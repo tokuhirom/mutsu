@@ -1,16 +1,12 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, EnumValue, RuntimeError, Value, ValueView};
-use num_traits::{Signed, ToPrimitive, Zero};
-use unicode_normalization::UnicodeNormalization;
+use num_traits::{Signed, ToPrimitive};
 
 use super::rng::builtin_rand;
 
 pub(crate) mod coercion;
 pub(crate) mod collection;
-pub(crate) mod cool_aggregate;
-use cool_aggregate::cool_aggregate_elems;
-pub(crate) mod complex_math;
 mod dispatch_core_coerce;
 mod dispatch_core_list;
 pub(crate) mod dispatch_core_math;
@@ -27,7 +23,7 @@ pub(crate) mod temporal_dispatch;
 use crate::value::ValueMap;
 
 /// Create an X::Multi::NoMatch error for a method called on a type object.
-fn make_no_match_error(method_name: &str) -> RuntimeError {
+pub(crate) fn make_no_match_error(method_name: &str) -> RuntimeError {
     let msg = format!("Cannot resolve caller {}", method_name);
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -114,7 +110,7 @@ fn normalize_unicode_digits(s: &str) -> Option<String> {
     if has_unicode { Some(result) } else { None }
 }
 
-fn parse_raku_int_from_str(s: &str) -> Option<Value> {
+pub(crate) fn parse_raku_int_from_str(s: &str) -> Option<Value> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return None;
@@ -187,76 +183,6 @@ fn parse_raku_int_from_str(s: &str) -> Option<Value> {
         }
     }
     None
-}
-
-fn int_lsb_value(target: &Value) -> Option<Value> {
-    match target.view() {
-        ValueView::Int(i) => {
-            if i == 0 {
-                Some(Value::NIL)
-            } else {
-                Some(Value::int(i.unsigned_abs().trailing_zeros() as i64))
-            }
-        }
-        ValueView::BigInt(n) => {
-            if n.is_zero() {
-                return Some(Value::NIL);
-            }
-            let one = num_bigint::BigInt::from(1u8);
-            let mut x = n.as_ref().abs();
-            let mut pos = 0_i64;
-            while (&x & &one).is_zero() {
-                x >>= 1;
-                pos += 1;
-            }
-            Some(Value::int(pos))
-        }
-        _ => None,
-    }
-}
-
-fn int_msb_value(target: &Value) -> Option<Value> {
-    match target.view() {
-        ValueView::Int(i) => {
-            if i == 0 {
-                return Some(Value::NIL);
-            }
-            if i > 0 {
-                return Some(Value::int((63 - i.leading_zeros()) as i64));
-            }
-            if i == -1 {
-                return Some(Value::int(0));
-            }
-            let m = i.unsigned_abs().saturating_sub(1);
-            let bitlen = (64 - m.leading_zeros()) as i64;
-            Some(Value::int(bitlen))
-        }
-        ValueView::BigInt(n) => {
-            if n.is_zero() {
-                return Some(Value::NIL);
-            }
-            if n.sign() == num_bigint::Sign::Minus {
-                if **n == num_bigint::BigInt::from(-1i8) {
-                    return Some(Value::int(0));
-                }
-                let mut x = n.as_ref().abs() - num_bigint::BigInt::from(1u8);
-                let mut bitlen = 0_i64;
-                while !x.is_zero() {
-                    x >>= 1;
-                    bitlen += 1;
-                }
-                return Some(Value::int(bitlen));
-            }
-            let mut x = n.as_ref().clone();
-            let mut msb = -1_i64;
-            while !x.is_zero() {
-                x >>= 1;
-                msb += 1;
-            }
-            Some(Value::int(msb))
-        }
-        _ => None,
-    }
 }
 
 /// Format a single item for 0-arg `.fmt()` on lists.
@@ -851,58 +777,6 @@ pub(crate) fn native_method_0arg_cascade(
         }
         return native_method_0arg(inner, method_sym);
     }
-    // Cool numeric coercion: when a Str calls a numeric method, coerce to numeric first.
-    // In Raku, Cool types (including Str) coerce to Numeric for numeric operations.
-    if let ValueView::Str(s) = target.view() {
-        match method {
-            "abs" | "sign" | "exp" | "log" | "log2" | "log10" | "sqrt" | "ceiling" | "floor"
-            | "truncate" | "round" | "conj" | "cis" | "rand" | "sin" | "cos" | "tan" | "asin"
-            | "acos" | "atan" | "sinh" | "cosh" | "tanh" | "sec" | "cosec" | "cotan" | "asec"
-            | "acosec" | "acotan" | "sech" | "cosech" | "cotanh" | "asech" | "acosech"
-            | "acotanh" | "atan2" | "narrow" | "polymod" | "base" | "chr" | "expmod" | "lsb"
-            | "msb" | "is-int" => {
-                let coerced = if let Ok(i) = s.parse::<i64>() {
-                    Value::int(i)
-                } else if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
-                    // A Str numifies the way `.Numeric` does before the numeric
-                    // method runs: a decimal is a Rat (`"-5.9".abs` is the Rat
-                    // 5.9, not the Num 5.9000000000000004 an `f64` parse gave),
-                    // and a Complex/Rat string (`"6+8i"`, `"1/2"`) coerces
-                    // fully, so `abs "6+8i"` is 10 and `"1+2i".conj` is 1-2i.
-                    v
-                } else {
-                    parse_raku_int_from_str(&s)?
-                };
-                return native_method_0arg(&coerced, method_sym);
-            }
-            _ => {}
-        }
-    }
-    // The Cool aggregates (List/Array, Map/Hash) numify to their element
-    // count for Cool's numeric methods: `{a => 1, b => 2}.round` is 2 and
-    // `[1, 2, 3].floor` is 3, as in raku. `nodemap` relies on it -- it does
-    // not descend into a nested Hash, so `%h.nodemap(*.round)` rounds each
-    // inner Hash as a number.
-    if matches!(
-        method,
-        "abs"
-            | "sign"
-            | "exp"
-            | "log"
-            | "log2"
-            | "log10"
-            | "sqrt"
-            | "ceiling"
-            | "floor"
-            | "truncate"
-            | "round"
-            | "narrow"
-            | "is-int"
-            | "conj"
-    ) && let Some(count) = cool_aggregate_elems(target)
-    {
-        return native_method_0arg(&Value::int(count), method_sym);
-    }
     // Any.nl-out returns the default newline separator "\n"
     if method == "nl-out" {
         return Some(Ok(Value::str_from("\n")));
@@ -916,52 +790,34 @@ pub(crate) fn native_method_0arg_cascade(
     if runtime::native_types::is_native_int_coerce_method(method) && target.isa_check("Cool") {
         return Some(raku_repr::native_int_coerce_method(target, method));
     }
-    // Uni types: override .chars, .codes, .comb to work on codepoints
+    // Uni types: the rows of `builtins::method_table::uni` answer `elems`, `codes`,
+    // `Int`, `Numeric`, `Str`, `list`, `gist`, `raku` and the positional
+    // subscript, and the table is asked first; the cascade reaches a `Uni` only
+    // when called without it (the debug cross-check), and then calls the rows'
+    // handlers. `.chars`, `.comb` and `.perl` (the deprecated alias of `.raku`)
+    // have no row.
     if let ValueView::Uni(u) = target.view() {
-        // Cost: O(1) (the codepoint array's length; no text is built).
-        if matches!(method, "chars" | "codes" | "Int" | "Numeric" | "elems") {
-            return Some(Ok(Value::int(u.len() as i64)));
-        }
-        let text = &u.text();
+        use crate::builtins::method_table::uni;
         match method {
+            // `chars` is no `Uni` method in current Rakudo, but roast pins it as the
+            // codepoint count (`S15-string-types/NF-types.t`: `NFC.chars`).
+            "chars" | "elems" | "codes" | "Int" | "Numeric" => {
+                return Some(uni::elems(target, &[]));
+            }
+            "Str" => return Some(uni::str(target, &[])),
+            "list" => return Some(uni::list(target, &[])),
+            "gist" => return Some(uni::gist(target, &[])),
+            "raku" => return Some(uni::raku(target, &[])),
+            "perl" => {
+                return Some(Ok(Value::str(raku_repr::uni_raku_repr(&u.text(), &u.form))));
+            }
             "comb" => {
-                let parts: Vec<Value> = text.chars().map(|c| Value::str(c.to_string())).collect();
+                let parts: Vec<Value> = u
+                    .text()
+                    .chars()
+                    .map(|c| Value::str(c.to_string()))
+                    .collect();
                 return Some(Ok(Value::seq(parts)));
-            }
-            "Str" => {
-                use unicode_normalization::UnicodeNormalization;
-                return Some(Ok(Value::str(text.nfc().collect::<String>())));
-            }
-            "list" => {
-                let codepoints: Vec<Value> = text.chars().map(|c| Value::int(c as i64)).collect();
-                return Some(Ok(Value::array(codepoints)));
-            }
-            "raku" | "perl" => {
-                return Some(Ok(Value::str(raku_repr::uni_raku_repr(text, &u.form))));
-            }
-            "gist" => {
-                let codepoints: Vec<String> =
-                    text.chars().map(|c| format!("{:04X}", c as u32)).collect();
-                let form = if u.form.is_empty() {
-                    "Uni"
-                } else {
-                    u.form.as_str()
-                };
-                return Some(Ok(Value::str(format!(
-                    "{}:0x<{}>",
-                    form,
-                    codepoints.join(" ")
-                ))));
-            }
-            // Cost: O(n), n = codepoints of the Uni.
-            "NFC" | "NFD" | "NFKC" | "NFKD" => {
-                let normalized: String = match method {
-                    "NFC" => text.nfc().collect(),
-                    "NFD" => text.nfd().collect(),
-                    "NFKC" => text.nfkc().collect(),
-                    _ => text.nfkd().collect(),
-                };
-                return Some(Ok(Value::uni(method.to_string(), normalized)));
             }
             _ => {}
         }
@@ -1213,7 +1069,7 @@ use crate::builtins::backtrace_methods::{
 pub use raku_repr::raku_value;
 
 /// Re-export complex_trig for external use.
-pub(crate) use complex_math::complex_trig;
+pub(crate) use crate::builtins::method_table::complex_math::complex_trig;
 
 /// Re-export the X::Str::Numeric Failure builder for the VM's prefix-`+` op.
 pub(crate) use dispatch_core_coerce::str_numeric_failure;

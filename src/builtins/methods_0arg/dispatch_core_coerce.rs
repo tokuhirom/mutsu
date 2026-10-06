@@ -1279,15 +1279,10 @@ pub(super) fn dispatch(
             };
             Some(Some(Ok(result)))
         }
+        // The numeric types' `Bridge` is a row (`method_table::real_misc`); this arm
+        // keeps `Instant` and `Duration`, which have no table shape.
         "Bridge" => {
             let result = match target.view() {
-                ValueView::Int(i) => Value::num(i as f64),
-                ValueView::BigInt(n) => Value::num(n.to_f64().unwrap_or(f64::INFINITY)),
-                ValueView::Num(f) => Value::num(f),
-                ValueView::Rat(n, d) if d != 0 => Value::num(crate::value::rat_to_f64(n, d)),
-                ValueView::FatRat(n, d) if d != 0 => {
-                    Value::num(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
-                }
                 ValueView::Instance {
                     class_name,
                     attributes,

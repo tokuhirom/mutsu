@@ -86,6 +86,7 @@ fn bool(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 pub(crate) fn int_of(target: &Value) -> Option<Value> {
     Some(match target.view() {
         ValueView::Int(_) | ValueView::BigInt(_) => target.clone(),
+        ValueView::Bool(b) => Value::int(i64::from(b)),
         ValueView::Num(f) if !f.is_finite() => cannot_convert_to_int_failure(target, f),
         ValueView::Num(f) => super::real::integral_num_to_int(f.trunc()),
         ValueView::Rat(_, 0) | ValueView::FatRat(_, 0) => {
@@ -108,6 +109,7 @@ pub(crate) fn int_of(target: &Value) -> Option<Value> {
 pub(crate) fn num_of(target: &Value) -> Option<Value> {
     Some(Value::num(match target.view() {
         ValueView::Int(i) => i as f64,
+        ValueView::Bool(b) => f64::from(u8::from(b)),
         ValueView::BigInt(n) => {
             num_traits::ToPrimitive::to_f64(n.as_ref()).unwrap_or(f64::INFINITY)
         }

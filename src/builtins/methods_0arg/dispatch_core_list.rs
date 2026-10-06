@@ -84,91 +84,19 @@ pub(super) fn dispatch(
             target,
             &[],
         )),
-        // The numeric types' rows' implementations (ADR-11276,
-        // `method_table::real`); the cascade still reaches them for receivers
-        // the table has no shape for.
-        // Cost: O(1) for word-sized values; O(b) for big ones, b = size in bits.
-        "floor" => Some(crate::builtins::method_table::real::floor_of(target)),
-        // Cost: as `floor`.
-        "ceiling" | "ceil" => Some(crate::builtins::method_table::real::ceiling_of(target)),
-        // Cost: as `floor`.
-        "round" => Some(crate::builtins::method_table::real::round_of(target)),
-        // Cost: as `floor`.
-        "truncate" => Some(crate::builtins::method_table::real::truncate_of(target)),
-        "narrow" => Some(match target.view() {
-            ValueView::Int(i) => Some(Ok(Value::int(i))),
-            ValueView::Rat(n, d) if d != 0 && n % d == 0 => Some(Ok(Value::int(n / d))),
-            ValueView::Rat(n, d) => Some(Ok(Value::rat_raw(n, d))),
-            ValueView::Num(f) if f.is_finite() => {
-                // Use tolerance (1e-15) to check if approximately an integer
-                let rounded = f.round();
-                let tol = 1e-15;
-                let diff = (f - rounded).abs();
-                let max = f.abs().max(rounded.abs());
-                let approx_int = if max == 0.0 { true } else { diff / max <= tol };
-                if approx_int {
-                    Some(Ok(Value::int(rounded as i64)))
-                } else {
-                    Some(Ok(Value::num(f)))
-                }
-            }
-            ValueView::Num(f) => Some(Ok(Value::num(f))),
-            ValueView::Complex(re, im) => {
-                // Check if imaginary part is approximately zero
-                let tol = 1e-15;
-                let im_approx_zero = if im == 0.0 {
-                    true
-                } else {
-                    let max_mag = re.abs().max(im.abs());
-                    if max_mag == 0.0 {
-                        true
-                    } else {
-                        im.abs() / max_mag <= tol
-                    }
-                };
-                if im_approx_zero {
-                    // Narrow to real part, then try narrowing that to Int
-                    let rounded = re.round();
-                    let re_approx_int = if re.is_finite() {
-                        let diff = (re - rounded).abs();
-                        let max = re.abs().max(rounded.abs());
-                        if max == 0.0 { true } else { diff / max <= tol }
-                    } else {
-                        false
-                    };
-                    if re_approx_int {
-                        Some(Ok(Value::int(rounded as i64)))
-                    } else {
-                        Some(Ok(Value::num(re)))
-                    }
-                } else {
-                    // Check if real part is approximately zero
-                    let re_approx_zero = if re == 0.0 {
-                        true
-                    } else {
-                        let max_mag = re.abs().max(im.abs());
-                        if max_mag == 0.0 {
-                            true
-                        } else {
-                            re.abs() / max_mag <= tol
-                        }
-                    };
-                    let new_re = if re_approx_zero { 0.0 } else { re };
-                    let new_im = im;
-                    Some(Ok(Value::complex(new_re, new_im)))
-                }
-            }
-            _ => Some(Ok(target.clone())),
-        }),
-        // Cost: O(n) for list-like inputs, n = elements; O(1) for fixed-width
-        // numeric inputs; O(d) for BigRat, d = numerator and denominator limbs.
-        "sqrt" => {
-            // List-like values numify to their element count before applying
-            // the numeric square-root method (`(0, 1, 2, 3).sqrt == 2`).
-            if let Some(items) = target.as_list_items() {
-                return Some(Some(Ok(Value::num((items.len() as f64).sqrt()))));
-            }
-            Some(crate::builtins::arith::sqrt_numeric(target).map(Ok))
+        // `narrow` of a numeric receiver is a row (`method_table::real_misc`); an
+        // `Instant` (no table shape yet) is its own narrowest form.
+        // Cost: O(1).
+        "narrow" if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Instant") => {
+            Some(Some(Ok(target.clone())))
+        }
+        // `Seq.sqrt` and the other list-likes with no table shape: `Cool`'s
+        // numeric method on the element count, through the `Cool.sqrt` row's
+        // handler (`method_table::math`). A `List` or `Array` is answered by the
+        // row itself.
+        // Cost: O(1).
+        "sqrt" if target.as_list_items().is_some() => {
+            Some(Some(crate::builtins::method_table::math::sqrt(target, &[])))
         }
         _ => None,
     }

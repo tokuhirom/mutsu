@@ -80,6 +80,17 @@ pub(crate) fn builtin_sample_value(type_name: &str) -> Option<Value> {
 pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     let sym = Symbol::intern(method_name);
     let mut arities = u8::from(crate::builtins::native_method_0arg(value, sym).is_some());
+    // A registered row recognizes its arity for a receiver of its shape
+    // (ADR-11276): the 1- and 2-argument cascades do not consult the table
+    // (only `native_method_0arg` does), so a migrated row has no arm there to
+    // probe.
+    if let Some(receiver) = crate::builtins::method_table::Receiver::of(value) {
+        for arity in 1..=2u8 {
+            if crate::builtins::method_table::resolve(receiver, sym, usize::from(arity)).is_some() {
+                arities |= 1 << arity;
+            }
+        }
+    }
     // A few 1/2-arg native methods inspect the argument type before recognizing
     // the call (e.g. `index`/`indices` want a Str), so a single dummy can miss
     // them. Try a small spread of representative arguments — recognition just
@@ -286,12 +297,12 @@ mod tests {
             0,
             "Str sample should do uc"
         );
-        // A Str has no native `abs` (it would need numeric coercion via the slow
-        // path), so the probe must reject it.
+        // A Str has no native `lsb` (Rakudo declares it on `Int`, not on `Cool`),
+        // so the probe must reject it. (`abs` is `Cool`'s, which a Str reaches.)
         assert_eq!(
-            native_method_arities(&s, "abs"),
+            native_method_arities(&s, "lsb"),
             0,
-            "Str sample must not claim native abs"
+            "Str sample must not claim native lsb"
         );
         assert_eq!(
             native_method_arities(&s, "no-such-method-xyz"),

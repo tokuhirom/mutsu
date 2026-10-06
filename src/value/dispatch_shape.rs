@@ -60,8 +60,8 @@ pub(crate) enum DispatchShape {
     FatRat,
     /// A `Complex`.
     Complex,
-    /// A `Bool`. Closed: its MRO is `Bool`, `Int`, `Cool`, `Any`, `Mu`, and no
-    /// `Int` row has been audited for it.
+    /// A `Bool`. Its MRO is `Bool`, `Int`, `Cool`, `Any`, `Mu`; slice 3B
+    /// audited those owners' rows for it and opened the shape.
     Bool,
     /// A `Range`, whatever its endpoints and exclusions (closed).
     Range,
@@ -153,9 +153,9 @@ impl DispatchShape {
     }
 
     /// Whether rows owned by an ancestor of this shape's type reach it. The
-    /// nine shapes the table started with inherit; a shape added later is
-    /// closed until the slice that owns it has audited every ancestor row for
-    /// it (see the module docs).
+    /// nine shapes the table started with inherit, and so does `Bool` (opened
+    /// by slice 3B); a shape added later is closed until the slice that owns
+    /// it has audited every ancestor row for it (see the module docs).
     // Cost: O(1).
     pub(crate) const fn inherits(self) -> bool {
         matches!(
@@ -169,6 +169,7 @@ impl DispatchShape {
                 | DispatchShape::Rat
                 | DispatchShape::FatRat
                 | DispatchShape::Complex
+                | DispatchShape::Bool
         )
     }
 

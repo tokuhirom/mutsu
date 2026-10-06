@@ -8,16 +8,23 @@ use super::{Handler, MethodRow, RowFlags};
 
 pub(crate) mod coerce;
 pub(crate) mod complex;
+pub(crate) mod complex_math;
+pub(crate) mod cool_real;
 mod int;
+pub(crate) mod math;
 mod num;
+pub(crate) mod numify;
 mod rational;
 pub(crate) mod real;
+pub(crate) mod real_misc;
 pub(crate) mod str;
 pub(crate) mod str_iter;
 pub(crate) mod str_search;
 mod stringify;
 pub(crate) mod succ_pred;
 pub(crate) mod truth;
+pub(crate) mod uni;
+pub(crate) mod unicode;
 pub(crate) mod version;
 
 /// Every family of this group.
@@ -60,4 +67,24 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     truth::BOOL_ROWS,
     truth::UNI_ROWS,
     version::ROWS,
+    math::INT_ROWS,
+    math::NUM_ROWS,
+    math::RAT_ROWS,
+    math::COMPLEX_ROWS,
+    math::COOL_ROWS,
+    real_misc::INT_ROWS,
+    real_misc::NUM_ROWS,
+    real_misc::RAT_ROWS,
+    real_misc::FAT_RAT_ROWS,
+    real_misc::COMPLEX_ROWS,
+    real_misc::COOL_ROWS,
+    real_misc::COOL_NATIVE_INT_ROWS,
+    real_misc::INT_NATIVE_INT_ROWS,
+    cool_real::COOL_ROWS,
+    cool_real::BOOL_ROWS,
+    unicode::STR_ROWS,
+    unicode::COOL_ROWS,
+    unicode::INT_ROWS,
+    unicode::UNI_ROWS,
+    uni::ROWS,
 ];

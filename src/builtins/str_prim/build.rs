@@ -172,17 +172,7 @@ pub(crate) enum Normal {
 }
 
 impl Normal {
-    /// The form a method name (`"NFKC"`) or nqp mode (3) names.
-    pub(crate) fn from_name(name: &str) -> Option<Normal> {
-        Some(match name {
-            "NFC" => Normal::Nfc,
-            "NFD" => Normal::Nfd,
-            "NFKC" => Normal::Nfkc,
-            "NFKD" => Normal::Nfkd,
-            _ => return None,
-        })
-    }
-
+    /// The form an nqp mode (3) names.
     pub(crate) fn from_nqp_mode(mode: i64) -> Option<Normal> {
         Some(match mode {
             1 => Normal::Nfc,

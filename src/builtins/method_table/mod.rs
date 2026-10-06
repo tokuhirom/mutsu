@@ -64,7 +64,8 @@ pub(crate) use collections::{
 };
 pub(crate) use instances::temporal;
 pub(crate) use scalars::{
-    coerce, complex, real, str, str_iter, str_search, succ_pred, truth, version,
+    coerce, complex, complex_math, cool_real, math, real, real_misc, str, str_iter, str_search,
+    succ_pred, truth, uni, unicode, version,
 };
 
 #[cfg(test)]

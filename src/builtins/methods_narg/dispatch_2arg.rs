@@ -155,34 +155,13 @@ pub(crate) fn native_method_2arg(
     }
 
     match method {
-        "expmod" => Some(crate::builtins::expmod(target, arg1, arg2)),
-        "unimatch" => {
-            // target.unimatch(prop_value, prop_name)
-            let prop_value = arg1.to_string_value();
-            let prop_name = arg2.to_string_value();
-            match target.view() {
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    Some(Ok(crate::builtins::uniprop::unimatch_for_codepoint(
-                        cp,
-                        &prop_value,
-                        Some(&prop_name),
-                    )))
-                }
-                _ => {
-                    let s = target.to_string_value();
-                    if s.is_empty() {
-                        return Some(Ok(Value::NIL));
-                    }
-                    let ch = s.chars().next().unwrap();
-                    Some(Ok(Value::truth(crate::builtins::uniprop::unimatch(
-                        ch,
-                        &prop_value,
-                        Some(&prop_name),
-                    ))))
-                }
-            }
-        }
+        // The `unimatch($value, $property)` row's handler
+        // (`method_table::unicode`), for the receivers with no table shape.
+        // Cost: O(1), a table lookup.
+        "unimatch" => crate::builtins::method_table::unicode::unimatch_in(
+            target,
+            &[arg1.clone(), arg2.clone()],
+        ),
         "fmt" => {
             // A Format object argument is handled by the slow-path Format dispatch.
             if matches!(arg1.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Format")

@@ -35,7 +35,6 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         {
             Some(Ok(Value::FALSE))
         }
-        "is-prime" => Some(value_is_prime(target)),
         "re" => match target.view() {
             ValueView::Complex(..) => Some(crate::builtins::method_table::complex::re(target, &[])),
             _ => None,
@@ -44,58 +43,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ValueView::Complex(..) => Some(crate::builtins::method_table::complex::im(target, &[])),
             _ => None,
         },
-        "conj" => match target.view() {
-            ValueView::Complex(..) => {
-                Some(crate::builtins::method_table::complex::conj(target, &[]))
-            }
-            ValueView::Int(_)
-            | ValueView::BigInt(_)
-            | ValueView::Num(_)
-            | ValueView::Rat(_, _)
-            | ValueView::FatRat(_, _)
-            | ValueView::Bool(_) => Some(crate::builtins::method_table::complex::conj(target, &[])),
-            // Str is handled by the Cool numeric coercion in native_method_0arg
-            _ => None,
-        },
         "reals" => match target.view() {
             ValueView::Complex(..) => {
                 Some(crate::builtins::method_table::complex::reals(target, &[]))
-            }
-            _ => None,
-        },
-        "polar" => match target.view() {
-            ValueView::Complex(r, i) => {
-                let mag = (r * r + i * i).sqrt();
-                let angle = i.atan2(r);
-                Some(Ok(Value::array(vec![Value::num(mag), Value::num(angle)])))
-            }
-            ValueView::Int(i) => {
-                let f = i as f64;
-                let mag = f.abs();
-                let angle = if f < 0.0 { std::f64::consts::PI } else { 0.0 };
-                Some(Ok(Value::array(vec![Value::num(mag), Value::num(angle)])))
-            }
-            ValueView::Num(f) => {
-                let mag = f.abs();
-                let angle = if f < 0.0 { std::f64::consts::PI } else { 0.0 };
-                Some(Ok(Value::array(vec![Value::num(mag), Value::num(angle)])))
-            }
-            _ => None,
-        },
-        "cis" => match target.view() {
-            ValueView::Int(i) => {
-                let x = i as f64;
-                Some(Ok(Value::complex(x.cos(), x.sin())))
-            }
-            ValueView::Num(f) => Some(Ok(Value::complex(f.cos(), f.sin()))),
-            ValueView::Rat(n, d) if d != 0 => {
-                let x = crate::value::rat_to_f64(n, d);
-                Some(Ok(Value::complex(x.cos(), x.sin())))
-            }
-            ValueView::Complex(re, im) => {
-                // cis(a+bi) = e^(i*(a+bi)) = e^(-b) * (cos(a) + i*sin(a))
-                let scale = (-im).exp();
-                Some(Ok(Value::complex(scale * re.cos(), scale * re.sin())))
             }
             _ => None,
         },

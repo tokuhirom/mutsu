@@ -13,8 +13,7 @@ use super::fmt_contains::{
 };
 use super::indent::str_indent;
 use super::numeric::{
-    compute_roots, int_to_subscript, int_to_superscript, sample_weighted_bag_key,
-    sample_weighted_mix_key,
+    int_to_subscript, int_to_superscript, sample_weighted_bag_key, sample_weighted_mix_key,
 };
 use crate::runtime;
 use crate::symbol::Symbol;
@@ -277,45 +276,22 @@ pub(crate) fn native_method_1arg(
             ))));
         }
     }
-    // Cool numeric coercion: when a Str calls a numeric 1-arg method, coerce to numeric first.
-    // Also coerce the arg if it's a Str for numeric methods.
+    // A `Str` argument of `base` and `polymod` numifies first (`10.base("2")`).
+    // The other numeric methods are rows of `builtins::method_table`, which
+    // numify their receiver and argument themselves (`Cool.round`, the math
+    // rows).
+    if matches!(method, "base" | "polymod")
+        && let ValueView::Str(s) = arg.view()
     {
-        let numeric_1arg_methods: &[&str] = &[
-            "exp", "log", "round", "roots", "unpolar", "base", "polymod", "expmod", "atan2",
-        ];
-        if numeric_1arg_methods.contains(&method) {
-            let coerced_target = if let ValueView::Str(s) = target.view() {
-                if let Ok(i) = s.parse::<i64>() {
-                    Some(Value::int(i))
-                } else if let Ok(f) = s.parse::<f64>() {
-                    Some(Value::num(f))
-                } else {
-                    return None;
-                }
-            } else if matches!(method, "round" | "log" | "exp") {
-                // A Cool aggregate numifies to its element count
-                // (`{a => 1}.round(0.5)`); see `cool_aggregate_elems`.
-                crate::builtins::methods_0arg::cool_aggregate::cool_aggregate_elems(target)
-                    .map(Value::int)
-            } else {
-                None
-            };
-            let coerced_arg = if let ValueView::Str(s) = arg.view() {
-                if let Ok(i) = s.parse::<i64>() {
-                    Some(Value::int(i))
-                } else if let Ok(f) = s.parse::<f64>() {
-                    Some(Value::num(f))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            if coerced_target.is_some() || coerced_arg.is_some() {
-                let t = coerced_target.as_ref().unwrap_or(target);
-                let a = coerced_arg.as_ref().unwrap_or(arg);
-                return native_method_1arg(t, method_sym, a);
-            }
+        let coerced = if let Ok(i) = s.parse::<i64>() {
+            Some(Value::int(i))
+        } else if let Ok(f) = s.parse::<f64>() {
+            Some(Value::num(f))
+        } else {
+            None
+        };
+        if let Some(coerced) = coerced {
+            return native_method_1arg(target, method_sym, &coerced);
         }
     }
     match method {
@@ -420,88 +396,20 @@ pub(crate) fn native_method_1arg(
             let result: String = s.chars().take(keep).collect();
             Some(Ok(Value::str(result)))
         }
+        // The argument forms of the Unicode methods are rows
+        // (`method_table::unicode`); these arms keep the `Cool` receivers with no
+        // table shape (a `Match`, a `Range`, ...).
+        // Cost: O(1), a table lookup.
         "uniprop" => {
-            let prop_name = arg.to_string_value();
-            match target.view() {
-                ValueView::Package(_) => {
-                    let msg = "Cannot resolve caller uniprop".to_string();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Some(Err(err));
-                }
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    return Some(Ok(
-                        crate::builtins::uniprop::unicode_property_value_for_codepoint(
-                            cp,
-                            Some(&prop_name),
-                        ),
-                    ));
-                }
-                _ => {}
-            }
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Ok(Value::NIL));
-            }
-            let ch = s.chars().next().unwrap();
-            Some(Ok(crate::builtins::uniprop::unicode_property_value(
-                ch, &prop_name,
-            )))
+            crate::builtins::method_table::unicode::uniprop_of(target, std::slice::from_ref(arg))
         }
+        // Cost: O(1), a table lookup.
         "unimatch" => {
-            let prop_value = arg.to_string_value();
-            match target.view() {
-                ValueView::Package(_) => {
-                    let msg = "Cannot resolve caller unimatch".to_string();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Some(Err(err));
-                }
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    return Some(Ok(crate::builtins::uniprop::unimatch_for_codepoint(
-                        cp,
-                        &prop_value,
-                        None,
-                    )));
-                }
-                _ => {}
-            }
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Ok(Value::NIL));
-            }
-            let ch = s.chars().next().unwrap();
-            Some(Ok(Value::truth(crate::builtins::uniprop::unimatch(
-                ch,
-                &prop_value,
-                None,
-            ))))
+            crate::builtins::method_table::unicode::unimatch(target, std::slice::from_ref(arg))
         }
+        // Cost: O(n), n = chars of the invocant.
         "uniprops" => {
-            let prop_name = arg.to_string_value();
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Ok(Value::array(vec![])));
-            }
-            let props: Vec<Value> = s
-                .chars()
-                .map(|ch| crate::builtins::uniprop::unicode_property_value(ch, &prop_name))
-                .collect();
-            Some(Ok(Value::array(props)))
+            crate::builtins::method_table::unicode::uniprops_of(target, std::slice::from_ref(arg))
         }
         // Cost: O(p + m), p = match position, m = chars of the needle (the
         // invocant is borrowed).
@@ -665,6 +573,14 @@ pub(crate) fn native_method_1arg(
         }
         // A Capture's positional part: the `Capture` row's implementation
         // (`method_table::capture`).
+        // A `Uni`'s positional subscript: the `Uni` rows' implementation
+        // (`method_table::uni`).
+        "AT-POS" if matches!(target.view(), ValueView::Uni(..)) => {
+            crate::builtins::method_table::uni::at_pos(target, std::slice::from_ref(arg))
+        }
+        "EXISTS-POS" if matches!(target.view(), ValueView::Uni(..)) => {
+            crate::builtins::method_table::uni::exists_pos(target, std::slice::from_ref(arg))
+        }
         "AT-POS" if matches!(target.view(), ValueView::Capture { .. }) => {
             crate::builtins::method_table::capture::at_pos(target, std::slice::from_ref(arg))
         }
@@ -1386,121 +1302,11 @@ pub(crate) fn native_method_1arg(
                 ArrayKind::List,
             )))
         }
+        // `round($scale)` is the `Cool.round` row's handler; this arm keeps the
+        // receivers the table has no shape for (an allomorph: `<1.5>.round(0.5)`).
+        // Cost: see `cool_real::round_to`.
         "round" => {
-            // Unwrap allomorphic types (IntStr, NumStr, RatStr, ComplexStr)
-            // to get the underlying numeric value for the scale
-            let unwrapped_arg = if let ValueView::Mixin(inner, _) = arg.view() {
-                inner.as_ref()
-            } else {
-                arg
-            };
-            // Unwrap target allomorphic types for the exact fast path.
-            let exact_target = if let ValueView::Mixin(inner, _) = target.view() {
-                inner.as_ref()
-            } else {
-                target
-            };
-            // Keep integer/rational rounding exact (Rakudo's Real.round(Real)):
-            // avoids f64 precision loss for large Ints and Rat scales such as
-            // `round(1000, 23.01)` (== 989.43, not 989.4300000000001).
-            if let Some(exact) =
-                crate::builtins::arith::exact_round_scaled(exact_target, unwrapped_arg)
-            {
-                return Some(Ok(exact));
-            }
-            // Determine the scale type category for return type selection
-            // Int/IntStr -> Int, Num/NumStr/Complex/ComplexStr -> Num,
-            // Rat/RatStr -> Rat
-            #[derive(Clone, Copy)]
-            enum RoundResult {
-                Int,
-                Num,
-                Rat,
-            }
-            let scale_type = match unwrapped_arg.view() {
-                ValueView::Int(_) | ValueView::BigInt(_) => RoundResult::Int,
-                ValueView::Num(_) => RoundResult::Num,
-                ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
-                    RoundResult::Rat
-                }
-                ValueView::Complex(_, _) => RoundResult::Num,
-                _ => return None,
-            };
-            let scale = match unwrapped_arg.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    crate::builtins::arith::bigint_ratio_to_f64(n, d)
-                }
-                ValueView::Complex(re, _) => re,
-                _ => return None,
-            };
-            fn raku_round(v: f64) -> f64 {
-                (v + 0.5).floor()
-            }
-            fn round_real(x: f64, scale: f64, scale_val: &Value) -> f64 {
-                if scale == 0.0 {
-                    raku_round(x)
-                } else {
-                    let k = raku_round(x / scale);
-                    // Multiply back by the scale, but when the scale is an exact
-                    // rational do the final step as `k * num / den` so a scale
-                    // like 0.1 (== 1/10) yields `k / 10` (the exact nearest
-                    // double) instead of `k * 0.1`, which carries float noise
-                    // (e.g. -39 * 0.1 == -3.9000000000000004).
-                    match scale_val.view() {
-                        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => {
-                            k * n as f64 / d as f64
-                        }
-                        ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                            k * crate::builtins::arith::bigint_ratio_to_f64(n, d)
-                        }
-                        _ => k * scale,
-                    }
-                }
-            }
-            // Unwrap target allomorphic types too
-            let unwrapped_target = if let ValueView::Mixin(inner, _) = target.view() {
-                inner.as_ref()
-            } else {
-                target
-            };
-            // Handle Complex target separately — always returns Complex
-            if let ValueView::Complex(re, im) = unwrapped_target.view() {
-                let rr = round_real(re, scale, unwrapped_arg);
-                let ri = round_real(im, scale, unwrapped_arg);
-                return Some(Ok(Value::complex(rr, ri)));
-            }
-            let x = match unwrapped_target.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::BigInt(bi) => bi.to_f64().unwrap_or(0.0),
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    crate::builtins::arith::bigint_ratio_to_f64(n, d)
-                }
-                _ => return None,
-            };
-            let result = round_real(x, scale, unwrapped_arg);
-            // Return type depends on the scale type
-            match scale_type {
-                RoundResult::Int => {
-                    let r = result.floor();
-                    if r >= i64::MIN as f64 && r <= i64::MAX as f64 {
-                        Some(Ok(Value::int(r as i64)))
-                    } else {
-                        Some(Ok(Value::num(r)))
-                    }
-                }
-                RoundResult::Num => Some(Ok(Value::num(result))),
-                RoundResult::Rat => {
-                    let (n, d) = f64_to_rat(result);
-                    Some(Ok(Value::rat_raw(n, d)))
-                }
-            }
+            crate::builtins::method_table::cool_real::round_to(target, std::slice::from_ref(arg))
         }
         // Cost: O(e + k) on a list/array, e = elements of the invocant (copied),
         // k = elements picked (each an O(1) swap_remove); `.pick(*)` is an O(e)
@@ -2024,121 +1830,6 @@ pub(crate) fn native_method_1arg(
                         .collect()
                 },
             ))))
-        }
-        "log" => {
-            let base_complex = match arg.view() {
-                ValueView::Int(i) => Some((i as f64, 0.0)),
-                ValueView::Num(f) => Some((f, 0.0)),
-                ValueView::Rat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::FatRat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    Some((crate::builtins::arith::bigint_ratio_to_f64(n, d), 0.0))
-                }
-                ValueView::Complex(r, i) => Some((r, i)),
-                _ => None,
-            };
-            let target_complex = match target.view() {
-                ValueView::Int(i) => Some((i as f64, 0.0)),
-                ValueView::Num(f) => Some((f, 0.0)),
-                ValueView::Rat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::FatRat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    Some((crate::builtins::arith::bigint_ratio_to_f64(n, d), 0.0))
-                }
-                ValueView::Complex(r, i) => Some((r, i)),
-                _ => None,
-            };
-            match (target_complex, base_complex) {
-                (Some((xr, xi)), Some((br, bi))) => {
-                    if bi == 0.0 && xi == 0.0 {
-                        if br.is_finite() && br > 0.0 && br != 1.0 && xr > 0.0 {
-                            return Some(Ok(Value::num(xr.ln() / br.ln())));
-                        }
-                        return Some(Ok(Value::num(f64::NAN)));
-                    }
-                    let ln_x_mag = (xr * xr + xi * xi).sqrt().ln();
-                    let ln_x_arg = xi.atan2(xr);
-                    let ln_b_mag = (br * br + bi * bi).sqrt().ln();
-                    let ln_b_arg = bi.atan2(br);
-                    let denom = ln_b_mag * ln_b_mag + ln_b_arg * ln_b_arg;
-                    if denom == 0.0 {
-                        return Some(Ok(Value::num(f64::NAN)));
-                    }
-                    let re = (ln_x_mag * ln_b_mag + ln_x_arg * ln_b_arg) / denom;
-                    let im = (ln_x_arg * ln_b_mag - ln_x_mag * ln_b_arg) / denom;
-                    Some(Ok(Value::complex(re, im)))
-                }
-                _ => None,
-            }
-        }
-        "exp" => {
-            // $x.exp($base) = $base ** $x
-            // Get base as real or complex
-            let (base_r, base_i) = match arg.view() {
-                ValueView::Int(i) => (i as f64, 0.0),
-                ValueView::Num(f) => (f, 0.0),
-                ValueView::Rat(n, d) if d != 0 => (crate::value::rat_to_f64(n, d), 0.0),
-                ValueView::Complex(r, i) => (r, i),
-                _ => return None,
-            };
-            // Get exponent as real or complex
-            let (exp_r, exp_i) = match target.view() {
-                ValueView::Int(i) => (i as f64, 0.0),
-                ValueView::Num(f) => (f, 0.0),
-                ValueView::Rat(n, d) if d != 0 => (crate::value::rat_to_f64(n, d), 0.0),
-                ValueView::Complex(r, i) => (r, i),
-                _ => return None,
-            };
-            // Compute base^exp via exp(exp * ln(base))
-            // ln(base) for complex: ln(|base|) + i*arg(base)
-            let ln_r = (base_r * base_r + base_i * base_i).sqrt().ln();
-            let ln_i = base_i.atan2(base_r);
-            // exp * ln(base): (exp_r + exp_i*i) * (ln_r + ln_i*i)
-            let prod_r = exp_r * ln_r - exp_i * ln_i;
-            let prod_i = exp_r * ln_i + exp_i * ln_r;
-            // exp(prod_r + prod_i*i)
-            let ea = prod_r.exp();
-            let result_r = ea * prod_i.cos();
-            let result_i = ea * prod_i.sin();
-            if result_i.abs() < 1e-15 && base_i == 0.0 && exp_i == 0.0 {
-                Some(Ok(Value::num(result_r)))
-            } else {
-                Some(Ok(Value::complex(result_r, result_i)))
-            }
-        }
-        "unpolar" => {
-            // $magnitude.unpolar($angle) = $magnitude * cis($angle)
-            let mag = match target.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                _ => return None,
-            };
-            let angle = match arg.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                _ => return None,
-            };
-            Some(Ok(Value::complex(mag * angle.cos(), mag * angle.sin())))
-        }
-        "roots" => {
-            // Instance types need runtime coercion via .Numeric
-            if matches!(target.view(), ValueView::Instance { .. }) {
-                return None;
-            }
-            Some(Ok(compute_roots(target, arg)))
-        }
-        "atan2" => {
-            // User-defined types need runtime coercion via .Numeric/.Bridge
-            if matches!(target.view(), ValueView::Instance { .. })
-                || matches!(arg.view(), ValueView::Instance { .. })
-            {
-                return None;
-            }
-            let y = runtime::to_float_value(target).unwrap_or(0.0);
-            let x = runtime::to_float_value(arg).unwrap_or(0.0);
-            Some(Ok(Value::num(y.atan2(x))))
         }
         // Buf/Blob read-num methods (1 arg: offset, uses NativeEndian)
         "read-num32" | "read-num64" => {

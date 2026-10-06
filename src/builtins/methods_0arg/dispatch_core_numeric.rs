@@ -1,5 +1,4 @@
-use super::{int_lsb_value, int_msb_value, range_elems_lazy_failure};
-use crate::builtins::rng::builtin_rand;
+use super::range_elems_lazy_failure;
 /// Numeric and element methods: elems, default, abs, lsb, msb, rand,
 /// uc, lc, fc, tc, sign
 use crate::symbol::Symbol;
@@ -41,6 +40,10 @@ fn check_numeric_type_object_method(
                 | "msb"
                 | "base"
                 | "polymod"
+                | "roots"
+                | "expmod"
+                | "is-prime"
+                | "chr"
         );
         if !is_d_method {
             return None;
@@ -175,73 +178,56 @@ pub(super) fn dispatch(
             ValueView::Hash(_) => crate::builtins::method_table::map::default(target, &[]),
             _ => None,
         }),
-        // Numeric receivers: the numeric types' rows' implementation
-        // (ADR-11276, `method_table::real`).
-        // Cost: O(1) for word-sized values; O(b) for big ones, b = size in bits.
-        "abs" => {
-            if let Some(result) = crate::builtins::method_table::real::abs_of(target) {
-                return Some(Some(result));
+        // `abs` of a number is a row (`method_table::real`, `cool_real`); this arm
+        // keeps `Instant` and `Duration`, which have no table shape.
+        // `Real.abs` keeps the type (`Instant.abs` is an `Instant`,
+        // `Duration.abs` a `Duration`), because rakudo's is `self < 0 ?? -self !!
+        // self` on the value itself. They store their seconds as a Real `value`
+        // attribute, the same shape the `.Rat`/`.Int` arms coerce.
+        // Cost: O(1).
+        "abs" => match target.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
+                let inner = attributes.as_map().get("value")?.clone();
+                let abs_inner = match crate::builtins::method_table::real::abs_of(&inner) {
+                    Some(Ok(v)) => v,
+                    Some(Err(e)) => return Some(Some(Err(e))),
+                    None => return Some(None),
+                };
+                let mut attrs = attributes.as_map().clone();
+                attrs.insert("value".to_string(), abs_inner);
+                Some(Some(Ok(Value::make_instance(class_name, attrs))))
             }
-            let result = match target.view() {
-                ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
-                // `Instant`/`Duration` `does Real`, so `Real.abs` applies — and
-                // it keeps the type (`Instant.abs` is an `Instant`,
-                // `Duration.abs` a `Duration`), because rakudo's `Real.abs`
-                // is `self < 0 ?? -self !! self` on the value itself. They store
-                // their seconds as a Real `value` attribute, the same shape the
-                // `.Rat`/`.Int` arms coerce.
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
-                    let inner = attributes.as_map().get("value")?.clone();
-                    let abs_inner = match dispatch(&inner, "abs") {
-                        Some(Some(Ok(v))) => v,
-                        Some(Some(Err(e))) => return Some(Some(Err(e))),
-                        _ => return Some(None),
-                    };
-                    let mut attrs = attributes.as_map().clone();
-                    attrs.insert("value".to_string(), abs_inner);
-                    Value::make_instance(class_name, attrs)
-                }
-                _ => return Some(None),
-            };
-            Some(Some(Ok(result)))
-        }
-        "lsb" => Some(int_lsb_value(target).map(Ok)),
-        "msb" => Some(int_msb_value(target).map(Ok)),
-        "rand" => {
-            let max = match target.view() {
-                ValueView::Int(n) => n as f64,
-                ValueView::Num(n) => n,
-                ValueView::Rat(n, d) => crate::value::rat_to_f64(n, d),
-                // `Duration`/`Instant` `does Real`, whose `rand` is
-                // `self.Bridge.rand`: a `Num` below the stored seconds.
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
-                    let inner = attributes.as_map().get("value")?.clone();
-                    return dispatch(&inner, "rand");
-                }
-                // `Range.rand` is the `Range` row's (`method_table::range`).
-                // Cool types: numify first (e.g., List.rand returns rand in 0..^elems)
-                ValueView::Array(items, ..) => items.len() as f64,
-                ValueView::Seq(items) => items.len() as f64,
-                ValueView::Str(s) => s.parse::<f64>().unwrap_or(0.0),
-                ValueView::Bool(b) => {
-                    if b {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                }
-                _ => return Some(None),
-            };
-            Some(Some(Ok(Value::num(builtin_rand() * max))))
-        }
+            _ => Some(None),
+        },
+        // `rand` of a numeric receiver is a row (`method_table::real_misc`);
+        // this arm keeps the receivers with no table shape.
+        // Cost: O(1).
+        "rand" => match target.view() {
+            // `Duration`/`Instant` `does Real`, whose `rand` is
+            // `self.Bridge.rand`: a `Num` below the stored seconds.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
+                let inner = attributes.as_map().get("value")?.clone();
+                Some(Some(crate::builtins::method_table::real_misc::rand(
+                    &inner,
+                    &[],
+                )))
+            }
+            // `Range.rand` is the `Range` row's (`method_table::range`). A
+            // `Seq` is `Cool` and numifies to its element count.
+            ValueView::Seq(_) => Some(Some(crate::builtins::method_table::real_misc::rand(
+                target,
+                &[],
+            ))),
+            _ => Some(None),
+        },
         // `Cool`'s case maps: the `Str` rows' handlers (ADR-11276), on the
         // receiver's string form.
         // Cost: O(n), n = chars of the invocant's string form.
@@ -252,19 +238,13 @@ pub(super) fn dispatch(
         "fc" => Some(Some(crate::builtins::method_table::str::fc(target, &[]))),
         // Cost: O(n), n = chars of the invocant's string form.
         "tc" => Some(Some(crate::builtins::method_table::str::tc(target, &[]))),
-        // Numeric receivers: the numeric types' rows' implementation
-        // (ADR-11276, `method_table::real`).
+        // `sign` of a number is a row; an enum value (no table shape) is the sign
+        // of its integer value.
         // Cost: O(1).
-        "sign" => {
-            if let Some(result) = crate::builtins::method_table::real::sign_of(target) {
-                return Some(Some(result));
-            }
-            let result = match target.view() {
-                ValueView::Enum { value, .. } => Value::int(value.as_i64().signum()),
-                _ => return Some(None),
-            };
-            Some(Some(Ok(result)))
-        }
+        "sign" => match target.view() {
+            ValueView::Enum { value, .. } => Some(Some(Ok(Value::int(value.as_i64().signum())))),
+            _ => Some(None),
+        },
         _ => None,
     }
 }
