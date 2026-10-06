@@ -40,6 +40,7 @@ pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::auto_default_expr_for_type;
 pub(crate) use stmt::decl::build_sigilless_bind_stmt;
+pub(crate) use stmt::try_split_decl_modifier;
 pub(crate) use stmt::decl::destructure::desugar::signature_decl as signature_decl_expansion;
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
 

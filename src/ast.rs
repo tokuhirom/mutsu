@@ -2646,6 +2646,7 @@ pub(crate) enum AssignOp {
 }
 
 pub(crate) mod bind_decl;
+pub(crate) mod decl_modifier;
 mod body_local_names;
 mod chains;
 pub(crate) mod keyed_hash;

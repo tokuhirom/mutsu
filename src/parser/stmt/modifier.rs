@@ -402,7 +402,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         })?;
         check_two_terms_across_lines(cond_input, r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
-        if let Some(split) = try_split_decl_modifier(&then_stmt, &cond) {
+        if let Some(split) = try_split_decl_modifier(&then_stmt, &cond, false) {
             return Ok(Some((r, split)));
         }
         return Ok(Some((
@@ -435,7 +435,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             op: TokenKind::Bang,
             expr: Box::new(cond),
         };
-        if let Some(split) = try_split_decl_modifier(&then_stmt, &neg_cond) {
+        if let Some(split) = try_split_decl_modifier(&then_stmt, &neg_cond, true) {
             return Ok(Some((r, split)));
         }
         return Ok(Some((

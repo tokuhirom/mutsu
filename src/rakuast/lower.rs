@@ -115,9 +115,16 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                     RakuAstClass::StatementModifierUnless => true,
                     _ => return Err(unsupported(modifier)),
                 };
-                let cond = lower_expr(named_child_or_positional(modifier)?)?;
+                let cond = negate_if(lower_expr(named_child_or_positional(modifier)?)?, is_unless);
+                // A declaration is split from its gated initializer, as the
+                // parser does.
+                if let Some(split) =
+                    crate::parser::try_split_decl_modifier(&statement, &cond, is_unless)
+                {
+                    return Ok(split);
+                }
                 return Ok(Stmt::If {
-                    cond: negate_if(cond, is_unless),
+                    cond,
                     then_branch: vec![statement],
                     else_branch: Vec::new(),
                     binding_var: None,

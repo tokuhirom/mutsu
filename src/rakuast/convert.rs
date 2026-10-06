@@ -284,6 +284,12 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 std::slice::from_ref(expr),
             )?)))
         }
+        // `my $x = 5 if COND`: the parser's split of the declaration and the
+        // gated assignment is rakudo's one statement with a modifier.
+        Stmt::SyntheticBlock(_) if crate::ast::decl_modifier::modified_declaration(stmt).is_some() => {
+            let modified = crate::ast::decl_modifier::modified_declaration(stmt).expect("just checked");
+            convert_stmt(&modified)
+        }
         // A sigilless declaration (`my \x = 5`, `my Int \x := $s`).
         Stmt::SyntheticBlock(_) if crate::ast::sigilless_decl::declaration(stmt).is_some() => {
             let decl = crate::ast::sigilless_decl::declaration(stmt).expect("just checked");
