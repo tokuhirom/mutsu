@@ -71,17 +71,26 @@ pub(crate) fn export_registration(type_name: &str, tags: &[String]) -> Stmt {
     })
 }
 
+fn is_declaration(stmt: &Stmt) -> bool {
+    matches!(stmt, Stmt::ClassDecl { .. } | Stmt::Package { .. })
+}
+
+/// The declaration `stmt` is, or the one inside its header wrapper (the
+/// wrapper is one level deep: [`wrap`] never nests).
+// Cost: O(p), p = statements in the wrapper.
+pub(crate) fn declaration_mut(stmt: &mut Stmt) -> Option<&mut Stmt> {
+    match stmt {
+        Stmt::SyntheticBlock(parts) => parts.iter_mut().find(|part| is_declaration(part)),
+        other => is_declaration(other).then_some(other),
+    }
+}
+
 /// The declaration inside `stmt` and the header around it, when `stmt` is the
 /// parser's wrapping of a package-like declaration.
 // Cost: O(n), n = size of the adverb values (they are cloned).
 pub(crate) fn unwrap(stmt: &Stmt) -> Option<(&Stmt, Header)> {
     let Stmt::SyntheticBlock(parts) = stmt else {
         return None;
-    };
-    let is_declaration = |s: &Stmt| match s {
-        Stmt::ClassDecl { .. } => true,
-        Stmt::Package { .. } => true,
-        _ => false,
     };
     let at = parts.iter().position(is_declaration)?;
     let (before, rest) = parts.split_at(at);

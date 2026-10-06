@@ -5592,37 +5592,33 @@ fn is_injected_named_arg(arg: &Expr) -> bool {
 /// one). `None` for any other statement.
 // Cost: O(n), n = size of `rest` (it is cloned).
 fn unit_package_taking(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
-    fn with_body(stmt: &Stmt, rest: &[Stmt]) -> Option<Stmt> {
-        match stmt {
-            Stmt::Package {
-                name,
-                kind,
-                is_unit: true,
-                is_my,
-                body,
-            } if body.is_empty() => Some(Stmt::Package {
-                name: *name,
-                body: rest.to_vec(),
-                kind: *kind,
-                is_unit: true,
-                is_my: *is_my,
-            }),
-            Stmt::SyntheticBlock(parts) => {
-                let mut taken = false;
-                let parts = parts
-                    .iter()
-                    .map(|part| match with_body(part, rest) {
-                        Some(package) => {
-                            taken = true;
-                            package
-                        }
-                        None => part.clone(),
-                    })
-                    .collect();
-                taken.then_some(Stmt::SyntheticBlock(parts))
-            }
-            _ => None,
-        }
+    let (declaration, header) = match crate::ast::package_header::unwrap(stmt) {
+        Some((declaration, header)) => (declaration, header),
+        None => (stmt, crate::ast::package_header::Header::default()),
+    };
+    let Stmt::Package {
+        name,
+        kind,
+        is_unit: true,
+        is_my,
+        body,
+    } = declaration
+    else {
+        return None;
+    };
+    if !body.is_empty() {
+        return None;
     }
-    with_body(stmt, rest)
+    let package = Stmt::Package {
+        name: *name,
+        body: rest.to_vec(),
+        kind: *kind,
+        is_unit: true,
+        is_my: *is_my,
+    };
+    Some(crate::ast::package_header::wrap(
+        package,
+        &name.resolve(),
+        header,
+    ))
 }

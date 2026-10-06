@@ -4338,15 +4338,14 @@ fn imaginary_part(number: &Value) -> Option<f64> {
 
 /// The body of the `unit module` / `unit package` `stmt` is (or wraps), taken
 /// out of it: the parser keeps that body beside the declaration, not in it.
-// Cost: O(d), d = nesting of the wrapper.
+// Cost: O(p), p = statements in the wrapper.
 fn take_unit_package_body(stmt: &mut Stmt) -> Vec<Stmt> {
-    match stmt {
-        Stmt::Package {
+    match crate::ast::package_header::declaration_mut(stmt) {
+        Some(Stmt::Package {
             is_unit: true,
             body,
             ..
-        } => std::mem::take(body),
-        Stmt::SyntheticBlock(parts) => parts.iter_mut().flat_map(take_unit_package_body).collect(),
+        }) => std::mem::take(body),
         _ => Vec::new(),
     }
 }

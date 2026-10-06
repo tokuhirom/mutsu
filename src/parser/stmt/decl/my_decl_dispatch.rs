@@ -351,11 +351,9 @@ pub(super) fn try_keyword_dispatch(
 
 /// Mark the package a `my module` declaration parsed to as lexical, whether it
 /// is bare or wrapped with its adverbs and export registration.
-// Cost: O(n), n = statements in the wrapper.
+// Cost: O(p), p = statements in the wrapper.
 fn mark_package_lexical(stmt: &mut Stmt) {
-    match stmt {
-        Stmt::Package { is_my, .. } => *is_my = true,
-        Stmt::SyntheticBlock(parts) => parts.iter_mut().for_each(mark_package_lexical),
-        _ => {}
+    if let Some(Stmt::Package { is_my, .. }) = crate::ast::package_header::declaration_mut(stmt) {
+        *is_my = true;
     }
 }
