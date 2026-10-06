@@ -782,12 +782,13 @@ What the work taught, which the remaining families follow:
   cross-check against a correct row. Where the row is the only implementation the cascade declines
   for the receiver (a three-line arm each), and slice 5 deletes the declines with the cascades.
 - **`Numeric` of a `Real` object is the object.** `Date.Numeric` is the day count and
-  `DateTime.Numeric` an `Instant`, as in Rakudo, and `+$duration` stays a `Duration`. Three places read
-  `.Numeric` as a number and now take the `Bridge` of an object they get back: `==` (the bridge
-  runs once more, so two `DateTime`s at different offsets compare by instant, roast
-  `S32-temporal/DateTime.t`), the argument coercion of a builtin function (`abs($duration)`), and
-  `sprintf`'s float directives. Roast found the first two; the third was a regression in
-  `Duration.fmt('%.2f')` that the probe script caught.
+  `DateTime.Numeric` an `Instant`, as in Rakudo, and `+$duration` stays a `Duration`. Four places read
+  `.Numeric` or `.Real` as a number and now take the seconds or the `Bridge` of an object they get
+  back: `==` (the bridge runs once more, so two `DateTime`s at different offsets compare by
+  instant, roast `S32-temporal/DateTime.t`), the argument coercion of a builtin function
+  (`abs($duration)`), `sprintf`'s float directives, and the slow path of `polymod` on an `Instant`
+  or `Duration`. Roast found the first two, the probe script the third, and the whole debug TAP run
+  (`t/vm/codegen/adr0051-catalog-ancestry-consumers.t`) the fourth.
 - **A shape for a lazy value needs a guard that never forces it.** `Value::view()` on a lazy
   `Match` materializes it, so no `Match` handler reads its receiver through it unless it needs the
   attribute map, and `value_type_name` (which the augment gate asks on every call) names a lazy

@@ -1,6 +1,6 @@
 use Test;
 
-plan 82;
+plan 85;
 
 # Instant's and Duration's methods are built-in method rows (ADR-11276 slice
 # 3D). Both do Real and keep their seconds in one number, so the same checks run
@@ -113,3 +113,8 @@ is sprintf('%.2f', $neg), '-2.50', 'sprintf formats the seconds of a Duration';
 is $neg.fmt('%.1f'), '-2.5', 'fmt formats the seconds of a Duration';
 is-deeply (Duration.new(4), Duration.new(-1)).max, Duration.new(4), 'max of Durations';
 is-deeply Date.new(2024, 3, 5) == DateTime.new(2024, 3, 5, 0, 0, 0), False, 'a Date and a DateTime are different values';
+
+# polymod divides the seconds, now that Real is the object itself.
+is Duration.new(3).polymod(2).join(' '), '1 1', 'Duration.polymod';
+is Duration.new(7).polymod(2, 2).join(' '), '1 1 1', 'Duration.polymod with two divisors';
+is Instant.from-posix(3).polymod(2).join(' '), '1 6', 'Instant.polymod divides the TAI seconds';

@@ -66,8 +66,8 @@ pub(crate) use collections::{
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::{date, dateish, datetime, regex_match, temporal};
 pub(crate) use scalars::{
-    coerce, complex, complex_math, cool_real, math, real, real_misc, str, str_iter, str_search,
-    succ_pred, truth, uni, unicode, version,
+    coerce, complex, complex_math, cool_real, math, numify, real, real_misc, str, str_iter,
+    str_search, succ_pred, truth, uni, unicode, version,
 };
 
 #[cfg(test)]
