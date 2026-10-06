@@ -1,6 +1,6 @@
 use super::*;
 use crate::symbol::Symbol;
-use crate::value::{DispatchShape, RuntimeError, Value};
+use crate::value::{DispatchShape, Value};
 
 mod collections;
 mod ctors_mop;
