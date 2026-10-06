@@ -1,5 +1,15 @@
 use super::*;
 
+/// Whether the lexical type key `key` -- which starts with `Name\u{0}`, that
+/// prefix being `prefix_len` bytes -- names a curried specialization of the
+/// declaration (`R\u{0}<id>[Str]`) rather than the declaration (`R\u{0}<id>`).
+// Cost: O(|key| - prefix_len).
+fn is_curried_lexical_key(key: &str, prefix_len: usize) -> bool {
+    key[prefix_len..]
+        .trim_start_matches(|c: char| c.is_ascii_digit())
+        .starts_with('[')
+}
+
 /// The built-in roles mutsu models natively rather than as a registered
 /// `RoleDef`. They are still roles: in Rakudo each carries a
 /// `ParametricRoleGroupHOW`, is composable with `but`/`does`, and shows up in
@@ -909,13 +919,23 @@ impl Interpreter {
             return None;
         }
         let prefix = format!("{qualified}\u{0}");
-        reg.classes
-            .keys()
-            .find(|key| key.starts_with(&prefix))
-            .or_else(|| reg.roles.keys().find(|key| key.starts_with(&prefix)))
-            .or_else(|| reg.enum_types.keys().find(|key| key.starts_with(&prefix)))
-            .or_else(|| reg.subsets.keys().find(|key| key.starts_with(&prefix)))
-            .cloned()
+        // The declaration itself, never one of its curried specializations: a
+        // lexical `my role R[::T]` curried with `Str` registers a class
+        // `R\u{0}<id>[Str]` beside the role, and the classes are searched first.
+        let find = |declared_only: bool| {
+            let matches = |key: &&String| {
+                key.starts_with(&prefix)
+                    && !(declared_only && is_curried_lexical_key(key, prefix.len()))
+            };
+            reg.classes
+                .keys()
+                .find(matches)
+                .or_else(|| reg.roles.keys().find(matches))
+                .or_else(|| reg.enum_types.keys().find(matches))
+                .or_else(|| reg.subsets.keys().find(matches))
+                .cloned()
+        };
+        find(true).or_else(|| find(false))
     }
 
     /// The storage key of the only lexical type (`Name\u{0}<decl-id>`) whose
@@ -931,7 +951,7 @@ impl Interpreter {
             .chain(reg.roles.keys())
             .chain(reg.enum_types.keys())
             .chain(reg.subsets.keys())
-            .filter(|key| key.starts_with(&prefix))
+            .filter(|key| key.starts_with(&prefix) && !is_curried_lexical_key(key, prefix.len()))
         {
             match found {
                 Some(prev) if prev != key => return None,
