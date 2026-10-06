@@ -21,7 +21,7 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 75;
+plan 80;
 
 sub exprs($src) {
     ('my ($a, $b, $c); my (@a, %h); sub foo(|) { }; sub infix:<foo>($x, $y) { }; '
@@ -138,3 +138,8 @@ same Q[class C { method bar($x) { "b$x" } }; my $o = C.new; bar $o: 5], 'b5', 'a
 same Q[class P1 { }; multi sub infix:<~>(P1 $a, P1 $b) { "USER" }; P1.new ~ P1.new], 'USER', 'an overloaded string operator';
 same Q[class P2 { }; multi sub infix:<eq>(P2 $a, P2 $b) { "USER" }; P2.new eq P2.new], 'USER', 'an overloaded word operator';
 same Q[class P3 { }; multi sub infix:<*>(P3 $a, P3 $b) { "USER" }; (P3.new * P3.new) ~ "," ~ (2 * 3)], 'USER,6', 'an overloaded arithmetic operator keeps the core candidate';
+same Q[class P4 { }; { multi sub infix:<==>(P4 $a, P4 $b) { "USER" }; }; my $x = 1; ($x == 1).raku], 'True', 'an operator overloaded in an inner block is not overloaded outside it';
+same Q[my @b = flat <a b c> Z (1 xx *); @b.join("|")], 'a|1|b|1|c|1', 'a `*` that extends a list operand does not curry';
+same Q[((* Z+ *)(1, 2)).raku], '(3,).Seq', 'a Whatever operand of `Z+` curries';
+same Q[((* R- *)(1, 2)).raku], '1', 'and of `R-`';
+same Q[(1 Z+ *)(5).raku], '(6,).Seq', 'beside an ordinary operand';

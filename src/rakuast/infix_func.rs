@@ -13,9 +13,10 @@
 //! $a | $b | $c         ApplyListInfix(Infix("|"), operands)        (flat chain)
 //! ```
 //!
-//! The lowering cannot see the parser's scope, so it re-derives "the unit
-//! declares this operator" from the declarations the unit holds (an
-//! `infix:<…>` sub or `&infix:<…>` variable, see `declared_routines`).
+//! The lowering cannot see the parser's scope, so it re-derives "this operator
+//! is declared here" from the declarations it passes on the way: each statement
+//! list is a scope, and an `infix:<…>` sub or `&infix:<…>` variable declared in
+//! it counts for the rest of that list and for what is nested in it.
 
 use super::convert::{
     convert_expr, leaf_field, node_field, plain_infix, unsupported as unsupported_expr,
@@ -27,6 +28,8 @@ use super::meta_infix::is_list_assoc;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::value::{RuntimeError, Value, ValueView};
+use std::cell::RefCell;
+use std::collections::HashSet;
 
 /// Whether `name` is a real infix: the parser also uses `InfixFunc` as a
 /// vehicle for the class-trait `is` and for its own `__*` helpers.
@@ -167,10 +170,64 @@ fn keeps_native_dispatch(name: &str) -> bool {
     )
 }
 
-/// Whether the unit declares the operator `name` (an `infix:<name>` routine).
+thread_local! {
+    /// The operators declared in each enclosing statement list, innermost last.
+    static SCOPES: RefCell<Vec<HashSet<String>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Pops the scope [`enter_scope`] pushed.
+pub(super) struct ScopeGuard;
+
+impl Drop for ScopeGuard {
+    fn drop(&mut self) {
+        SCOPES.with(|s| {
+            s.borrow_mut().pop();
+        });
+    }
+}
+
+/// Start a statement list: operators declared in it are visible to the rest of
+/// it and to what it contains, as in the parser.
 // Cost: O(1).
+pub(super) fn enter_scope() -> ScopeGuard {
+    SCOPES.with(|s| s.borrow_mut().push(HashSet::new()));
+    ScopeGuard
+}
+
+/// Forget every scope (a new unit starts).
+// Cost: O(s), s = open scopes.
+pub(super) fn reset() {
+    SCOPES.with(|s| s.borrow_mut().clear());
+}
+
+/// Record the `infix:<…>` the statement `stmt` declares, if it declares one.
+// Cost: O(1).
+pub(super) fn note_declaration(stmt: &RakuAstNode) {
+    let target = if stmt.class == RakuAstClass::StatementExpression {
+        match named_child(stmt, "expression") {
+            Ok(inner) => inner,
+            Err(_) => return,
+        }
+    } else {
+        stmt
+    };
+    let Some(name) = super::declared_routines::declared_by(target) else {
+        return;
+    };
+    if name.starts_with("infix:<") && name.ends_with('>') {
+        SCOPES.with(|s| {
+            if let Some(scope) = s.borrow_mut().last_mut() {
+                scope.insert(name);
+            }
+        });
+    }
+}
+
+/// Whether an enclosing scope declares the operator `name` (`infix:<name>`).
+// Cost: O(s), s = open scopes.
 fn is_declared(name: &str) -> bool {
-    super::declared_routines::is_declared(&format!("infix:<{name}>"))
+    let routine = format!("infix:<{name}>");
+    SCOPES.with(|s| s.borrow().iter().any(|scope| scope.contains(&routine)))
 }
 
 /// An infix application the parser makes an [`Expr::InfixFunc`] of, or `None`

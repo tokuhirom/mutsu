@@ -307,7 +307,24 @@ fn fold(node: &RakuAstNode, meta: &str, op: String) -> Result<Expr, RuntimeError
             right: Box::new(right),
         };
     }
-    // A standalone `*` operand of `X` / `Z` makes the whole a WhateverCode: the
-    // parser's own decision.
-    Ok(crate::parser::maybe_curry_xz_metaop(acc))
+    // A standalone `*` operand of `X` / `Z` makes the whole a WhateverCode. The
+    // lowered leaf of such a priming `*` is `WhateverArg`; a `*` that is a value
+    // (`1 xx *`, the extender of a list operand) is not one.
+    if matches!(meta, "X" | "Z") && primes(&acc) {
+        return Ok(Expr::WhateverCurry(Box::new(acc)));
+    }
+    Ok(acc)
+}
+
+/// Whether a (possibly chained) `X` / `Z` metaoperator has a priming `*` as an
+/// operand.
+// Cost: O(n), n = operands of the chain.
+fn primes(expr: &Expr) -> bool {
+    match expr {
+        Expr::WhateverArg => true,
+        Expr::MetaOp {
+            meta, left, right, ..
+        } if meta == "X" || meta == "Z" => primes(left) || primes(right),
+        _ => false,
+    }
 }

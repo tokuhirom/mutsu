@@ -31,6 +31,7 @@ pub(super) fn unsupported(node: &RakuAstNode) -> RuntimeError {
 pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     super::shadowed_terms::scan(node);
     super::declared_routines::scan(node);
+    super::infix_func::reset();
     let mut stmts = lower_stmts(node)?;
     // ADR-0033 Phase 3. A lowered tree carries `Expr::WhateverArg` leaves but no
     // priming *scopes*: those are planted by the parser at its own grammar
@@ -55,6 +56,8 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 /// variables written in it (see `anon_state`); the unit's own list is not,
 /// as the parser declares none at the top level either.
 pub(super) fn lower_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    // Operators the list declares are scoped to it.
+    let _operators = super::infix_func::enter_scope();
     match node.class {
         RakuAstClass::CompUnit => lower_stmt_list(named_child(node, "statement-list")?),
         _ => super::anon_state::with_frame(|| lower_stmt_list(node)),
@@ -76,6 +79,7 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
             let mut stmts = Vec::with_capacity(node.fields.len());
             for f in &node.fields {
                 let child = child_node(&f.value)?;
+                super::infix_func::note_declaration(child);
                 if let Some(line) = super::origin::line_of(child) {
                     stmts.push(Stmt::SetLine(line));
                 }
