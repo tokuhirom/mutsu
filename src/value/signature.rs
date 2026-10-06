@@ -1226,6 +1226,17 @@ pub(crate) fn parameter_to_raku(attrs: &AttrMap) -> String {
         param_str.push(':');
     }
     param_str.push_str(&name);
+    // An anonymous parameter still shows the sigil it was declared with: `Int $`,
+    // `@`, and the invocant's `K:D $:`. Captures (`|`) and sigilless parameters
+    // carry their own spelling in `name`, so they are left alone.
+    let is_capture = attrs.get("capture").map(Value::truthy).unwrap_or(false);
+    if name.is_empty() && !is_capture && !sigil.is_empty() {
+        param_str.push_str(&sigil);
+    }
+    // An invocant is followed by the marker that makes it one: `$self:`.
+    if attrs.get("invocant").map(Value::truthy).unwrap_or(false) {
+        param_str.push(':');
+    }
 
     // Optional/required suffix
     let suffix = attrs
