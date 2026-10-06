@@ -297,12 +297,12 @@ mod tests {
             0,
             "Str sample should do uc"
         );
-        // A Str has no native `abs` (it would need numeric coercion via the slow
-        // path), so the probe must reject it.
+        // A Str has no native `lsb` (Rakudo declares it on `Int`, not on `Cool`),
+        // so the probe must reject it. (`abs` is `Cool`'s, which a Str reaches.)
         assert_eq!(
-            native_method_arities(&s, "abs"),
+            native_method_arities(&s, "lsb"),
             0,
-            "Str sample must not claim native abs"
+            "Str sample must not claim native lsb"
         );
         assert_eq!(
             native_method_arities(&s, "no-such-method-xyz"),
