@@ -1,7 +1,6 @@
 /// Unicode and character methods: bytes, decode, chars, ord, ords, uniprop, uniname,
 /// uninames, uniparse, uniprops, unival, univals, chr, chrs
 use crate::value::{RuntimeError, Value, ValueView};
-use unicode_normalization::UnicodeNormalization;
 
 use super::make_no_match_error;
 
@@ -202,43 +201,6 @@ pub(super) fn dispatch(
             }
             // `.univals` returns a Seq in raku.
             Some(Some(Ok(Value::seq(result))))
-        }
-        "chr" => {
-            let (code, display) = match target.view() {
-                ValueView::Int(i) => (i, format!("{}", i)),
-                ValueView::BigInt(n) => {
-                    // BigInt is always out of range for chr
-                    let hex = format!("{:X}", &**n);
-                    return Some(Some(Err(RuntimeError::new(format!(
-                        "Codepoint {} (0x{}) is out of bounds in 'chr'",
-                        *n, hex
-                    )))));
-                }
-                ValueView::Num(f) => (f as i64, format!("{}", f as i64)),
-                _ => {
-                    let s = target.to_string_value();
-                    let i = s.parse::<i64>().unwrap_or(0);
-                    (i, format!("{}", i))
-                }
-            };
-            if !(0..=0x10FFFF).contains(&code) {
-                let hex = format!("{:X}", code);
-                return Some(Some(Err(RuntimeError::new(format!(
-                    "Codepoint {} (0x{}) is out of bounds in 'chr'",
-                    display, hex
-                )))));
-            }
-            if let Some(ch) = char::from_u32(code as u32) {
-                // NFC-normalize: some codepoints decompose in NFC
-                // (e.g., U+0F75 TIBETAN VOWEL SIGN UU -> U+0F71 + U+0F74)
-                let s: String = ch.to_string().nfc().collect();
-                Some(Some(Ok(Value::str(s))))
-            } else {
-                Some(Some(Err(RuntimeError::new(format!(
-                    "Codepoint {} (0x{:X}) is out of bounds in 'chr'",
-                    display, code
-                )))))
-            }
         }
         // Cost: O(e), e = elements of the invocant list.
         "chrs" => {

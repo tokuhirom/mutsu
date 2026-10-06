@@ -1,5 +1,4 @@
-use super::{int_lsb_value, int_msb_value, range_elems_lazy_failure};
-use crate::builtins::rng::builtin_rand;
+use super::range_elems_lazy_failure;
 /// Numeric and element methods: elems, default, abs, lsb, msb, rand,
 /// uc, lc, fc, tc, sign
 use crate::symbol::Symbol;
@@ -43,6 +42,8 @@ fn check_numeric_type_object_method(
                 | "polymod"
                 | "roots"
                 | "expmod"
+                | "is-prime"
+                | "chr"
         );
         if !is_d_method {
             return None;
@@ -211,39 +212,31 @@ pub(super) fn dispatch(
             };
             Some(Some(Ok(result)))
         }
-        "lsb" => Some(int_lsb_value(target).map(Ok)),
-        "msb" => Some(int_msb_value(target).map(Ok)),
-        "rand" => {
-            let max = match target.view() {
-                ValueView::Int(n) => n as f64,
-                ValueView::Num(n) => n,
-                ValueView::Rat(n, d) => crate::value::rat_to_f64(n, d),
-                // `Duration`/`Instant` `does Real`, whose `rand` is
-                // `self.Bridge.rand`: a `Num` below the stored seconds.
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
-                    let inner = attributes.as_map().get("value")?.clone();
-                    return dispatch(&inner, "rand");
-                }
-                // `Range.rand` is the `Range` row's (`method_table::range`).
-                // Cool types: numify first (e.g., List.rand returns rand in 0..^elems)
-                ValueView::Array(items, ..) => items.len() as f64,
-                ValueView::Seq(items) => items.len() as f64,
-                ValueView::Str(s) => s.parse::<f64>().unwrap_or(0.0),
-                ValueView::Bool(b) => {
-                    if b {
-                        1.0
-                    } else {
-                        0.0
-                    }
-                }
-                _ => return Some(None),
-            };
-            Some(Some(Ok(Value::num(builtin_rand() * max))))
-        }
+        // `rand` of a numeric receiver is a row (`method_table::real_misc`);
+        // this arm keeps the receivers with no table shape.
+        // Cost: O(1).
+        "rand" => match target.view() {
+            // `Duration`/`Instant` `does Real`, whose `rand` is
+            // `self.Bridge.rand`: a `Num` below the stored seconds.
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
+                let inner = attributes.as_map().get("value")?.clone();
+                Some(Some(crate::builtins::method_table::real_misc::rand(
+                    &inner,
+                    &[],
+                )))
+            }
+            // `Range.rand` is the `Range` row's (`method_table::range`). A
+            // `Seq` is `Cool` and numifies to its element count.
+            ValueView::Seq(_) => Some(Some(crate::builtins::method_table::real_misc::rand(
+                target,
+                &[],
+            ))),
+            _ => Some(None),
+        },
         // `Cool`'s case maps: the `Str` rows' handlers (ADR-11276), on the
         // receiver's string form.
         // Cost: O(n), n = chars of the invocant's string form.

@@ -35,26 +35,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         {
             Some(Ok(Value::FALSE))
         }
-        "is-prime" => Some(value_is_prime(target)),
         "re" => match target.view() {
             ValueView::Complex(..) => Some(crate::builtins::method_table::complex::re(target, &[])),
             _ => None,
         },
         "im" => match target.view() {
             ValueView::Complex(..) => Some(crate::builtins::method_table::complex::im(target, &[])),
-            _ => None,
-        },
-        "conj" => match target.view() {
-            ValueView::Complex(..) => {
-                Some(crate::builtins::method_table::complex::conj(target, &[]))
-            }
-            ValueView::Int(_)
-            | ValueView::BigInt(_)
-            | ValueView::Num(_)
-            | ValueView::Rat(_, _)
-            | ValueView::FatRat(_, _)
-            | ValueView::Bool(_) => Some(crate::builtins::method_table::complex::conj(target, &[])),
-            // Str is handled by the Cool numeric coercion in native_method_0arg
             _ => None,
         },
         "reals" => match target.view() {

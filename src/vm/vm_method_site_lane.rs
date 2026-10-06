@@ -286,6 +286,13 @@ impl Interpreter {
         answer: SiteLaneAnswer,
         full: Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
+        // A random answer (`rand`) differs between the two runs by design.
+        if method_table::row(answer.row)
+            .flags
+            .contains(method_table::RowFlags::RANDOM)
+        {
+            return full;
+        }
         let render = |r: Result<&Value, &RuntimeError>| match r {
             Ok(v) => format!("ok:{}", crate::runtime::gist_value(v)),
             Err(e) => format!("err:{}", e.message),

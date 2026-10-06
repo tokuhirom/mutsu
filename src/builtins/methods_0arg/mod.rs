@@ -1,7 +1,7 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, EnumValue, RuntimeError, Value, ValueView};
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{Signed, ToPrimitive};
 use unicode_normalization::UnicodeNormalization;
 
 use super::rng::builtin_rand;
@@ -186,76 +186,6 @@ pub(crate) fn parse_raku_int_from_str(s: &str) -> Option<Value> {
         }
     }
     None
-}
-
-fn int_lsb_value(target: &Value) -> Option<Value> {
-    match target.view() {
-        ValueView::Int(i) => {
-            if i == 0 {
-                Some(Value::NIL)
-            } else {
-                Some(Value::int(i.unsigned_abs().trailing_zeros() as i64))
-            }
-        }
-        ValueView::BigInt(n) => {
-            if n.is_zero() {
-                return Some(Value::NIL);
-            }
-            let one = num_bigint::BigInt::from(1u8);
-            let mut x = n.as_ref().abs();
-            let mut pos = 0_i64;
-            while (&x & &one).is_zero() {
-                x >>= 1;
-                pos += 1;
-            }
-            Some(Value::int(pos))
-        }
-        _ => None,
-    }
-}
-
-fn int_msb_value(target: &Value) -> Option<Value> {
-    match target.view() {
-        ValueView::Int(i) => {
-            if i == 0 {
-                return Some(Value::NIL);
-            }
-            if i > 0 {
-                return Some(Value::int((63 - i.leading_zeros()) as i64));
-            }
-            if i == -1 {
-                return Some(Value::int(0));
-            }
-            let m = i.unsigned_abs().saturating_sub(1);
-            let bitlen = (64 - m.leading_zeros()) as i64;
-            Some(Value::int(bitlen))
-        }
-        ValueView::BigInt(n) => {
-            if n.is_zero() {
-                return Some(Value::NIL);
-            }
-            if n.sign() == num_bigint::Sign::Minus {
-                if **n == num_bigint::BigInt::from(-1i8) {
-                    return Some(Value::int(0));
-                }
-                let mut x = n.as_ref().abs() - num_bigint::BigInt::from(1u8);
-                let mut bitlen = 0_i64;
-                while !x.is_zero() {
-                    x >>= 1;
-                    bitlen += 1;
-                }
-                return Some(Value::int(bitlen));
-            }
-            let mut x = n.as_ref().clone();
-            let mut msb = -1_i64;
-            while !x.is_zero() {
-                x >>= 1;
-                msb += 1;
-            }
-            Some(Value::int(msb))
-        }
-        _ => None,
-    }
 }
 
 /// Format a single item for 0-arg `.fmt()` on lists.
@@ -857,8 +787,8 @@ pub(crate) fn native_method_0arg_cascade(
     // `method_table::numify`; this list is what is left.
     if let ValueView::Str(s) = target.view() {
         match method {
-            "abs" | "sign" | "ceiling" | "floor" | "truncate" | "round" | "conj" | "rand"
-            | "narrow" | "polymod" | "base" | "chr" | "lsb" | "msb" | "is-int" => {
+            "abs" | "sign" | "ceiling" | "floor" | "truncate" | "round" | "polymod" | "base"
+            | "is-int" => {
                 // A Str numifies the way `.Numeric` does before the numeric
                 // method runs (`method_table::numify::numify_str`).
                 let coerced = crate::builtins::method_table::numify::numify_str(&s)?;
@@ -874,7 +804,7 @@ pub(crate) fn native_method_0arg_cascade(
     // inner Hash as a number.
     if matches!(
         method,
-        "abs" | "sign" | "ceiling" | "floor" | "truncate" | "round" | "narrow" | "is-int" | "conj"
+        "abs" | "sign" | "ceiling" | "floor" | "truncate" | "round" | "is-int"
     ) && let Some(count) = cool_aggregate_elems(target)
     {
         return native_method_0arg(&Value::int(count), method_sym);

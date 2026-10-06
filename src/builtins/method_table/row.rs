@@ -71,6 +71,10 @@ impl RowFlags {
     /// must autothread), a `Failure` (which may explode under `use fatal`)
     /// and a deferred `Seq` (which must be reified) take the cascades.
     pub(crate) const ANY_ARGS: RowFlags = RowFlags(1 << 1);
+    /// The answer is random (`rand`, `pick`, `roll`), so the debug cross-check
+    /// cannot re-run the call through the cascades and compare: two runs
+    /// differ by design. The handler is still pure.
+    pub(crate) const RANDOM: RowFlags = RowFlags(1 << 2);
 
     /// Whether every bit of `flag` is set.
     // Cost: O(1).

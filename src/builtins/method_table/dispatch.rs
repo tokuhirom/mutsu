@@ -10,8 +10,8 @@ use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value};
 
-/// What a row answered: its result, and whether the handler is pure (the
-/// debug cross-check may re-run a pure one).
+/// What a row answered: its result, and whether the debug cross-check may
+/// re-run the call (the handler is pure and its answer is not random).
 type Answer = (Result<Value, RuntimeError>, bool);
 
 /// Run row `id`'s handler on already-admitted arguments, or `None` when a
@@ -27,10 +27,12 @@ fn call(
     positional: &[Value],
     named: Named<'_>,
 ) -> Option<Answer> {
+    // A random answer cannot be checked by running the call a second time.
+    let rerunnable = !row.flags.contains(RowFlags::RANDOM);
     match row.handler {
-        Handler::Pure(f) => Some((f(target, positional), true)),
-        Handler::Narrow(f) => f(target, positional).map(|r| (r, true)),
-        Handler::Named(f) => f(target, positional, named).map(|r| (r, true)),
+        Handler::Pure(f) => Some((f(target, positional), rerunnable)),
+        Handler::Narrow(f) => f(target, positional).map(|r| (r, rerunnable)),
+        Handler::Named(f) => f(target, positional, named).map(|r| (r, rerunnable)),
         Handler::Interp(f) => f(interp?, target, positional, named).map(|r| (r, false)),
     }
 }
@@ -172,8 +174,10 @@ pub(crate) fn try_dispatch(
     method: Symbol,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
-    let (result, _) = dispatch(None, |_| true, target, method, args)?;
-    debug_assert_matches_full_path(target, method, args, &result);
+    let (result, rerunnable) = dispatch(None, |_| true, target, method, args)?;
+    if rerunnable {
+        debug_assert_matches_full_path(target, method, args, &result);
+    }
     Some(result)
 }
 

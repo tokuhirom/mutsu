@@ -15,6 +15,7 @@ mod num;
 pub(crate) mod numify;
 mod rational;
 pub(crate) mod real;
+pub(crate) mod real_misc;
 pub(crate) mod str;
 pub(crate) mod str_iter;
 pub(crate) mod str_search;
@@ -68,4 +69,12 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     math::RAT_ROWS,
     math::COMPLEX_ROWS,
     math::COOL_ROWS,
+    real_misc::INT_ROWS,
+    real_misc::NUM_ROWS,
+    real_misc::RAT_ROWS,
+    real_misc::FAT_RAT_ROWS,
+    real_misc::COMPLEX_ROWS,
+    real_misc::COOL_ROWS,
+    real_misc::COOL_NATIVE_INT_ROWS,
+    real_misc::INT_NATIVE_INT_ROWS,
 ];

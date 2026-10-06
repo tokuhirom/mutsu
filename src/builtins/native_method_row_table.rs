@@ -1765,6 +1765,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Cool", "truncate", 1, 56),
     ("Cool", "log2", 1, 56),
     ("Cool", "sin", 1, 56),
+    ("Cool", "conj", 1, 56),
+    ("Cool", "rand", 1, 56),
     ("Cool", "acosec", 1, 56),
     ("Cool", "acosech", 1, 56),
     ("Cool", "acotan", 1, 56),
