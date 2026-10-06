@@ -191,14 +191,56 @@ impl Interpreter {
                     Value::promise(promise)
                 })),
             "tail" => {
+                // A live (Supplier-backed) source has emitted nothing yet, so
+                // slicing its snapshot would answer an empty supply forever.
+                // Give `tail` a real pipeline stage instead -- its own derived
+                // supplier, fed by a tail tap that keeps the last N values and
+                // releases them when the source is done -- as `head` does
+                // (issue #11839).
+                if let Some(source_sid) =
+                    crate::runtime::native_methods::supplier_id_from_attrs(attributes)
+                {
+                    // The source's length is unknowable: `tail(*)`/`tail(Inf)`
+                    // keep everything (`i64::MAX`, not `usize::MAX`: the count
+                    // is clamped as an `i64`). A callable (`*-3`) is asked with
+                    // 0, the length of the snapshot it could ever have seen.
+                    let live_total = match args.first().map(Value::view) {
+                        Some(
+                            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. },
+                        ) => 0,
+                        _ => i64::MAX as usize,
+                    };
+                    let count = self.resolve_supply_tail_count(args.first(), live_total)?;
+                    let downstream_sid = next_supplier_id();
+                    register_supplier_tail_tap(source_sid, downstream_sid, count);
+                    let mut new_attrs = HashMap::new();
+                    new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
+                    // As `head`: rakudo's `.tail.live` is False even over a
+                    // live source.
+                    new_attrs.insert("live".to_string(), Value::FALSE);
+                    if let Some(scheduler) = attributes.get("scheduler") {
+                        new_attrs.insert("scheduler".to_string(), scheduler.clone());
+                    }
+                    return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
+                }
                 let values = match attributes.get("values").map(Value::view) {
                     Some(ValueView::Array(items, ..)) => items.to_vec(),
                     _ => Vec::new(),
                 };
                 let tail_count = self.resolve_supply_tail_count(args.first(), values.len())?;
                 let start = values.len().saturating_sub(tail_count);
+                let mut tail = values[start..].to_vec();
+                // `tail(1)` of an empty source still emits one undefined
+                // value, as a live tail does (see `take_supplier_tail_results`).
+                if tail.is_empty()
+                    && matches!(args.first().map(Value::view), None | Some(ValueView::Int(1)))
+                {
+                    tail.push(Value::package(Symbol::intern("Any")));
+                }
                 let mut new_attrs = HashMap::new();
-                new_attrs.insert("values".to_string(), Value::array(values[start..].to_vec()));
+                new_attrs.insert("values".to_string(), Value::array(tail));
                 new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                 new_attrs.insert("live".to_string(), Value::FALSE);
                 Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
