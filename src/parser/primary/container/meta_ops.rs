@@ -11,6 +11,11 @@ use crate::value::Value;
 /// Lifts embedded meta-ops (X/Z), minmax, and handles Whatever-curry.
 pub(crate) fn finalize_paren_list(items: Vec<Expr>) -> Expr {
     let lifted = lift_meta_ops_in_paren_list(items);
+    // A feed is looser than the comma: `(1, 2 ==> f())` feeds `(1, 2)`.
+    let lifted = crate::parser::lift_feed_in_list(lifted);
+    if lifted.len() == 1 && matches!(&lifted[0], Expr::Feed { .. }) {
+        return lifted.into_iter().next().unwrap();
+    }
     if let Some(expr) = lift_minmax_in_paren_list(&lifted) {
         return expr;
     }

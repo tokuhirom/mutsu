@@ -140,7 +140,9 @@ pub(in crate::parser) fn normalize_comma_list_items(items: Vec<Expr>) -> Vec<Exp
     // the bracket/assign spellings now agree with the parenthesised one by
     // construction. It also brings the `minmax` lift with it, which this site
     // never had (`my @m = 1, 2 minmax 3, 4` is `1..4`, not `1, 2..3, 4`).
-    merge_sequence_seeds(crate::parser::primary::lift_list_infix_in_arg_list(items))
+    crate::parser::lift_feed_in_list(merge_sequence_seeds(
+        crate::parser::primary::lift_list_infix_in_arg_list(items),
+    ))
 }
 
 /// In a comma-separated list, if the last item is a sequence expression
