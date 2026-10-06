@@ -218,6 +218,7 @@ pub(crate) fn resolve_library_candidates(library: &Option<String>) -> Vec<String
 
 /// Whether a library-name argument already names a file rather than a bare
 /// stem, so no `lib`/`.so` decoration should be applied to it.
+#[cfg_attr(not(feature = "libffi"), allow(dead_code))]
 pub(crate) fn is_decorated_library_name(name: &str) -> bool {
     name.contains('/')
         || name.contains('\\')
@@ -235,6 +236,7 @@ pub(crate) fn is_decorated_library_name(name: &str) -> bool {
 /// candidate. The version may be spelled as a `Version` literal (`v1`, whose
 /// `.Str` has already dropped the `v`) or as a plain string (`'v1'`), so a
 /// leading `v` and a trailing `+` are stripped defensively.
+#[cfg_attr(not(feature = "libffi"), allow(dead_code))]
 pub(crate) fn versioned_library_file_name(stem: &str, version: &str) -> String {
     let version = version.strip_prefix('v').unwrap_or(version);
     let version = version.strip_suffix('+').unwrap_or(version);
@@ -264,6 +266,7 @@ pub(crate) fn versioned_library_file_name(stem: &str, version: &str) -> String {
 /// (`my List $lib = ('foo', 'v1'); sub f is native($lib)`), used by
 /// `Archive::Libarchive::Raw` as `constant LIB = ('archive', v13)`. Only this
 /// layer can know the version, so it is decorated into the exact file name here.
+#[cfg_attr(not(feature = "libffi"), allow(dead_code))]
 pub(crate) fn library_name_from_value(v: &Value) -> Option<String> {
     if !crate::runtime::types::value_is_defined(v) {
         return None;
