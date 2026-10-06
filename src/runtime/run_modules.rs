@@ -454,7 +454,7 @@ impl Interpreter {
     /// operators from imported modules without seeing non-exported subs.
     /// Walks the already-parsed statements (fresh or from the precomp cache)
     /// rather than re-reading and re-parsing the source file.
-    fn extract_module_exported_operator_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+    pub(super) fn extract_module_exported_operator_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
         let mut out = Vec::new();
         for stmt in stmts {
             if let crate::ast::Stmt::SubDecl {
@@ -500,6 +500,32 @@ impl Interpreter {
         source_path: &Path,
     ) -> Result<(Vec<crate::ast::Stmt>, bool), RuntimeError> {
         self.parse_module_source_in(module, source_path, None)
+            .map(|(stmts, precompiled, _)| (stmts, precompiled))
+    }
+
+    /// Replay the parser state a module's parse left behind (see
+    /// `precomp::ParseEffects`), for a load that skips the parse.
+    // Cost: O(e), e = size of the effects.
+    pub(super) fn replay_parse_effects(
+        &mut self,
+        source_path: &Path,
+        effects: &crate::precomp::ParseEffects,
+    ) {
+        crate::parser::set_current_language_version(&effects.language_version);
+        crate::parser::replay_cached_type_names(
+            &effects.type_names,
+            &effects.enum_type_names,
+            &effects.enum_value_names,
+        );
+        crate::parser::decl_doc::set_unit_docs(effects.decl_docs.clone());
+        // The on-disk cache entry stores plain warning text (no per-warning
+        // origin tag, see `precomp::ParseEffects`); every warning in this
+        // batch was raised while parsing exactly this module, so tag them
+        // all with `source_path` here instead.
+        self.emit_parse_warnings_for_file(
+            &source_path.to_string_lossy(),
+            effects.warnings.iter().cloned(),
+        );
     }
 
     /// [`Self::parse_module_source`] for a module load that claimed `unit`
@@ -511,7 +537,7 @@ impl Interpreter {
         module: &str,
         source_path: &Path,
         unit: Option<&super::module_bytecode::ModuleUnit>,
-    ) -> Result<(Vec<crate::ast::Stmt>, bool), RuntimeError> {
+    ) -> Result<(Vec<crate::ast::Stmt>, bool, crate::precomp::ParseEffects), RuntimeError> {
         // Read source first so we can honor precompilation directives before cache lookup.
         let code = fs::read_to_string(source_path).map_err(|err| {
             RuntimeError::new(format!("Failed to read module {}: {}", module, err))
@@ -537,22 +563,8 @@ impl Interpreter {
             // compile of it would be cached with them. Re-parse instead.
             && (parse_session.is_none() || unit.effects.parse_session == parse_session)
         {
-            crate::parser::set_current_language_version(&unit.effects.language_version);
-            crate::parser::replay_cached_type_names(
-                &unit.effects.type_names,
-                &unit.effects.enum_type_names,
-                &unit.effects.enum_value_names,
-            );
-            crate::parser::decl_doc::set_unit_docs(unit.effects.decl_docs.clone());
-            // The on-disk cache entry stores plain warning text (no per-warning
-            // origin tag, see `precomp::ParseEffects`); every warning in this
-            // batch was raised while parsing exactly this module, so tag them
-            // all with `source_path` here instead.
-            self.emit_parse_warnings_for_file(
-                &source_path.to_string_lossy(),
-                unit.effects.warnings.iter().cloned(),
-            );
-            return Ok((unit.stmts, true));
+            self.replay_parse_effects(source_path, &unit.effects);
+            return Ok((unit.stmts, true, unit.effects));
         }
 
         let preprocessed = Self::maybe_preprocess_roast_directives(&code);
@@ -636,7 +648,7 @@ impl Interpreter {
             crate::precomp::save_cached_unit(source_path, &stmts, &effects);
         }
 
-        Ok((stmts, precomp_eligible))
+        Ok((stmts, precomp_eligible, effects))
     }
 
     /// Return the name of a top-level `unit module/package/class` statement
@@ -916,36 +928,74 @@ impl Interpreter {
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(
             crate::symbol::Symbol::intern(&source_path.to_string_lossy()),
         ));
-        let module_unit = super::module_bytecode::ModuleUnit::claim(self, &source_path);
-        let (mut stmts, precompiled) =
-            self.parse_module_source_in(module, &source_path, module_unit.as_ref())?;
-        // The module's BEGIN-time effects run first, in source order (ADR-0134).
-        let order =
-            |stmts: &mut Vec<crate::ast::Stmt>| crate::runtime::begin_prologue::order_unit(stmts);
-        let prologue_len = match &module_unit {
-            Some(unit) => {
-                crate::anon_names::with_content_unit(unit.rewrite_session(), || order(&mut stmts))
-            }
-            None => order(&mut stmts),
+        let mut module_unit = super::module_bytecode::ModuleUnit::claim(self, &source_path);
+        // ADR-12026 §2.1: a precompilation entry for this exact source carries
+        // the parse effects, the load facts and the AST its compile saw, so a
+        // load that finds one parses nothing and reads no AST cache.
+        let entry = module_unit
+            .as_mut()
+            .and_then(super::module_bytecode::ModuleUnit::take_entry);
+        let source_text = match &module_unit {
+            Some(unit) => unit.source.clone(),
+            None => fs::read_to_string(&source_path).map_err(|err| {
+                RuntimeError::new(format!("Failed to read module {}: {}", module, err))
+            })?,
         };
+        let path_text = source_path.to_string_lossy().into_owned();
+        let (mut module_ast, facts, effects, precompiled) = match &entry {
+            Some(entry) => {
+                // A hit skips the parse, which is where a unit's mention of a
+                // deferral builtin is noted (`parser::parse_program`).
+                crate::opcode::note_dispatcher_mention(&source_text);
+                self.replay_parse_effects(&source_path, &entry.effects);
+                let ast = super::module_load_facts::ModuleAst::encoded(
+                    entry.ast.clone(),
+                    &entry.facts,
+                    path_text,
+                );
+                Self::verify_load_facts(&source_path, &ast, &entry.facts)?;
+                (ast, entry.facts.clone(), entry.effects.clone(), true)
+            }
+            None => {
+                let (mut stmts, precompiled, effects) =
+                    self.parse_module_source_in(module, &source_path, module_unit.as_ref())?;
+                // The module's BEGIN-time effects run first, in source order (ADR-0134).
+                let order = |stmts: &mut Vec<crate::ast::Stmt>| {
+                    crate::runtime::begin_prologue::order_unit(stmts)
+                };
+                let prologue_len = match &module_unit {
+                    Some(unit) => crate::anon_names::with_content_unit(unit.rewrite_session(), || {
+                        order(&mut stmts)
+                    }),
+                    None => order(&mut stmts),
+                };
+                let facts = super::module_load_facts::ModuleLoadFacts::compute(&stmts, prologue_len);
+                // Track operator subs exported by this module so EVAL can see them.
+                for name in &facts.exported_operator_names {
+                    crate::runtime::cow_table_mut(&mut self.module.imported_operator_names)
+                        .insert(name.clone());
+                }
+                // Validate any `package EXPORTHOW { ... }` directives before running the
+                // module: a member named `<directive>::<declarator>` must use a known
+                // directive (DECLARE/SUPERSEDE/COMPOSE), else X::EXPORTHOW::InvalidDirective.
+                // An entry is written only for a unit that got past this.
+                Self::validate_exporthow_directives(&stmts)?;
+                let ast = super::module_load_facts::ModuleAst::loaded(stmts, prologue_len, path_text);
+                (ast, facts, effects, precompiled)
+            }
+        };
+        if entry.is_some() {
+            for name in &facts.exported_operator_names {
+                crate::runtime::cow_table_mut(&mut self.module.imported_operator_names)
+                    .insert(name.clone());
+            }
+        }
         // `$=pod` belongs to the compilation unit that declares it. The main
         // program establishes its Pod variables before execution, but a module
         // used to skip that step and therefore saw the importer's (or no)
         // document instead. Keep the source view aligned with the parser,
         // including the roast-directive preprocessing used by the main path.
-        let module_source = fs::read_to_string(&source_path)
-            .map(|source| Self::maybe_preprocess_roast_directives(&source).into_owned())
-            .map_err(|err| {
-                RuntimeError::new(format!("Failed to read module {}: {}", module, err))
-            })?;
-        // Track operator subs exported by this module so EVAL can see them.
-        for name in Self::extract_module_exported_operator_names(&stmts) {
-            crate::runtime::cow_table_mut(&mut self.module.imported_operator_names).insert(name);
-        }
-        // Validate any `package EXPORTHOW { ... }` directives before running the
-        // module: a member named `<directive>::<declarator>` must use a known
-        // directive (DECLARE/SUPERSEDE/COMPOSE), else X::EXPORTHOW::InvalidDirective.
-        Self::validate_exporthow_directives(&stmts)?;
+        let module_source = Self::maybe_preprocess_roast_directives(&source_text).into_owned();
         // A loaded module is its own compilation unit: rakudo rejects a call
         // to a routine declared nowhere in it at CHECK time
         // (X::Undeclared::Symbols), before the module body runs -- the same
@@ -955,23 +1005,38 @@ impl Interpreter {
         // `require_load_from_file`), so it is the one place that covers both
         // `use` and `require` of an installed/on-path module name. A verdict
         // that depends on a conditional `use` runs right after the prologue.
-        let guards = self.check_undeclared_routines_with_guards(&stmts)?;
-        let code_slot = super::module_bytecode::ModuleCodeSlot::new(module_unit);
-        stmts.splice(prologue_len..prologue_len, guards);
+        let guards = self.guards_for_recorded_calls(facts.recorded_calls.as_ref())?;
+        let code_slot =
+            super::module_bytecode::ModuleCodeSlot::new(super::module_bytecode::MainlineParts {
+                unit: module_unit,
+                entry,
+                effects,
+                facts: &facts,
+                ast: &module_ast,
+                guards: &guards,
+            })?;
+        let use_only = facts.use_only && guards.is_empty();
+        let decl_docs_present = !crate::parser::decl_doc::unit_docs_is_empty();
+        module_ast.set_guards(guards);
+        // The few consumers the load facts cannot serve read the AST itself.
+        // Decode it now, while an error can still leave the load cleanly.
+        if facts.has_state_sub || facts.has_block_phasers || decl_docs_present {
+            module_ast.stmts()?;
+        }
         let mut module_scope_names: ValueMap = ValueMap::default();
         let mut module_type_aliases: HashMap<String, String> = HashMap::new();
         let mut imported_lexical_names: HashSet<String> = HashSet::new();
         // Hoisted above the `should_skip_runtime_for_use_only_module` branch
         // (#7797) so the package-visibility bookkeeping after that branch can
         // read it too, for a use-only module that skips the branch entirely.
-        let unit_name = Self::detect_unit_package_name(&stmts);
+        let unit_name = facts.unit_name.clone();
         // ADR-11136: the module's own top-level constants, packages, enums and
         // subsets, attributed to it once the load has run.
         // A `unit class Foo;`/`unit module Foo;` declares its own bare package
         // name; its other declarations are `Foo::`-qualified and reached through
         // #7797's qualified gate.
         let own_scope_names = match unit_name.as_deref() {
-            None => self.module_scope_declared_names(&stmts),
+            None => self.unknown_scope_names(&facts.scope_name_candidates),
             Some(name) => {
                 let sym = Symbol::intern(name);
                 let known = self.env.contains_key(name)
@@ -1011,7 +1076,7 @@ impl Interpreter {
                     .insert(effective_pkg, dist.clone());
             }
         }
-        if !Self::should_skip_runtime_for_use_only_module(&stmts) {
+        if !use_only {
             // Module files should be compiled in a fresh GLOBAL scope, not
             // inheriting the caller's current_package.  Otherwise the compiler
             // would qualify top-level declarations inside the module file with
@@ -1027,7 +1092,7 @@ impl Interpreter {
             self.module
                 .module_loading_unit_stack
                 .push((module_unit_for_loading_stack, self.routine_stack_len()));
-            self.premerge_top_level_uses(module_unit_for_loading_stack, &stmts);
+            self.premerge_modules(module_unit_for_loading_stack, facts.top_level_uses.clone());
             // Scope `current_unit` to this module's own compilation unit while
             // its mainline runs, exactly like `?FILE` just below. Without this,
             // a top-level declaration made directly in the module's own body
@@ -1070,7 +1135,7 @@ impl Interpreter {
             // module's own initializers cannot clobber them, and move the module's
             // values into `unit_lexicals` once the body has run.
             let unit_lex_names: Vec<String> = if unit_name.is_some() {
-                Self::collect_unit_lexical_names(&stmts)
+                facts.unit_lexical_names.clone()
             } else {
                 Vec::new()
             };
@@ -1080,9 +1145,11 @@ impl Interpreter {
                 .collect();
             // The bindings a unit drops below take their type markers with them.
             let saved_type_markers = if unit_name.is_some() {
-                let dropped = Self::collect_unit_package_scope_names(&stmts)
-                    .into_iter()
-                    .chain(Self::collect_unit_our_var_names(&stmts));
+                let dropped = facts
+                    .unit_package_scope_names
+                    .iter()
+                    .cloned()
+                    .chain(facts.unit_our_var_names.iter().cloned());
                 self.snapshot_type_markers(unit_lex_names.iter().cloned().chain(dropped))
             } else {
                 Vec::new()
@@ -1090,7 +1157,7 @@ impl Interpreter {
             // The module's own `my $*x` file-scope declarations (#8241) --
             // collected regardless of `unit_name`, since a bare-file module
             // leaks these the same way. See `collect_module_own_dynamic_names`.
-            let module_own_dynamic_names = Self::collect_module_own_dynamic_names(&stmts);
+            let module_own_dynamic_names = facts.own_dynamic_names.clone();
             let before_function_keys: std::collections::HashSet<crate::symbol::Symbol> =
                 self.registry().functions.keys().copied().collect();
             // Capture the module's compiled sub bodies (keyed by fingerprint) so a
@@ -1098,7 +1165,9 @@ impl Interpreter {
             // body across threads instead of re-OTF-compiling it per thread (which
             // severs the shared `state` cell). Compiled under GLOBAL, matching the
             // package the module body runs under here.
-            self.capture_module_compiled_fns(&stmts);
+            if facts.has_state_sub {
+                self.capture_module_compiled_fns(module_ast.materialized_or_empty());
+            }
             // Scope `?FILE` to the module path while its mainline runs, so
             // routine registration records the module as each sub's
             // `source_file` (module backtrace frames, error-reporting.t 15).
@@ -1188,11 +1257,13 @@ impl Interpreter {
             let module_docs = crate::parser::decl_doc::take_unit_docs();
             let result = match self.establish_pod_variables_from_stmts(
                 &module_source,
-                &stmts,
+                module_ast.materialized_or_empty(),
                 module_docs,
             ) {
                 Ok(()) => self.run_compunit(|interp| {
-                    interp.run_module_mainline(|interp| interp.run_module_block(&stmts, code_slot))
+                    interp.run_module_mainline(|interp| {
+                        interp.run_module_block(&module_ast, facts.has_block_phasers, code_slot)
+                    })
                 }),
                 Err(err) => Err(err),
             };
@@ -1299,7 +1370,7 @@ impl Interpreter {
                 )
                 .cloned()
                 .collect();
-            let exported_type_names = Self::collect_exported_type_names(&stmts);
+            let exported_type_names: HashSet<String> = facts.exported_type_names.iter().cloned().collect();
             let leaked_packages: Vec<String> = module_scope_names
                 .iter()
                 .filter(|(name, value)| {
@@ -1347,7 +1418,7 @@ impl Interpreter {
             // and the `saved_plain_env` restore below puts back whatever the
             // loading scope had under the same name.
             if let Some(unit) = unit_name.as_deref() {
-                let package_scope_names = Self::collect_unit_package_scope_names(&stmts);
+                let package_scope_names = facts.unit_package_scope_names.clone();
                 // Also protect these names the same way a plain file-scope `my`
                 // is protected (below): `module_scope_lexicals` is consulted only
                 // as a LAST RESORT, after `env`, so a `my constant @x` (unlike a
@@ -1383,8 +1454,8 @@ impl Interpreter {
                 // module's own routines already resolve it to its package
                 // cell (`vm_our_package_vars`), and a unit-lexical alias would
                 // outrank a routine's own `my $x` captured by a closure.
-                for name in Self::collect_unit_our_var_names(&stmts) {
-                    self.env.remove(&name);
+                for name in &facts.unit_our_var_names {
+                    self.env.remove(name);
                 }
                 for name in &package_scope_names {
                     self.env.remove(name);
@@ -1559,7 +1630,7 @@ impl Interpreter {
             // The module's own package-less `our sub`s are part of its GLOBAL
             // merge (ADR-11136).
             if unit_name.is_none() {
-                let our_routines = Self::module_our_routine_names(&stmts);
+                let our_routines = facts.our_routine_names.clone();
                 self.record_module_routine_provenance(module, our_routines);
             }
         }
@@ -1706,7 +1777,7 @@ impl Interpreter {
             // the `unit` package the declarations actually live in so a
             // transitively loaded dependency's same-named export cannot claim
             // the alias.
-            let exported_here = Self::collect_exported_type_names(&stmts);
+            let exported_here: HashSet<String> = facts.exported_type_names.iter().cloned().collect();
             let unit_prefix = unit_name.as_deref().map(|n| format!("{n}::"));
             let owned_types = new_types.iter().filter(|qualified| {
                 if *qualified == module || qualified.starts_with(&format!("{module}::")) {
@@ -1861,7 +1932,7 @@ impl Interpreter {
     /// the stale "every mutating method resolves by name out of `self.env`"
     /// premise this comment used to record was corrected by that ADR.
     /// See `todo/deep/module-file-scope-array-and-hash-still-share-the-caller.md`.
-    fn collect_unit_lexical_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+    pub(super) fn collect_unit_lexical_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
         for s in stmts {
             let crate::ast::Stmt::VarDecl {
@@ -1946,7 +2017,7 @@ impl Interpreter {
     /// for a `unit`-declared compunit): a bare-file module with no `unit`
     /// statement leaks its own dynamics the same way, for the same reason
     /// (the whole body still runs against the caller's `env`).
-    fn collect_module_own_dynamic_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+    pub(super) fn collect_module_own_dynamic_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
         for s in stmts {
             let crate::ast::Stmt::VarDecl {
@@ -1997,7 +2068,7 @@ impl Interpreter {
     /// file scope beside a braced `class Log::Async { ... }`) makes those names
     /// visible to the importer under rakudo too, so removing them there would be
     /// a divergence rather than a fix.
-    fn collect_unit_package_scope_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+    pub(super) fn collect_unit_package_scope_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
         let mut push = |name: &str| {
             if crate::qualified::is_qualified_str(name) || name.contains("__ANON") {
@@ -2084,7 +2155,7 @@ impl Interpreter {
     /// excluded; see [`Self::collect_unit_package_scope_names`] for the
     /// constant case and the "after `unit`" rule.
     // Cost: O(n), n = the unit's top-level statements.
-    fn collect_unit_our_var_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
+    pub(super) fn collect_unit_our_var_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
         let after_unit = stmts
             .iter()
             .position(|s| {

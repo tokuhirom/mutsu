@@ -33,8 +33,12 @@ pub(crate) fn native_method_2arg(
         );
     }
     // Cost: O(n), n = chars in a string bound/value or the error label.
+    // The `Range.in-range` row's implementation (`method_table::range`).
     if method == "in-range" {
-        return super::dispatch_1arg::in_range(target, arg1, &arg2.to_string_value());
+        return crate::builtins::method_table::range::in_range_what(
+            target,
+            &[arg1.clone(), arg2.clone()],
+        );
     }
     // `Backtrace` introspection with two arguments -- a starting index plus a
     // named flag (`.next-interesting-index(2, :named)`), or two named flags.

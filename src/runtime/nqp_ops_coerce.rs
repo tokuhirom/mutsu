@@ -234,10 +234,24 @@ impl Interpreter {
             "fromI_I" => operand(args, 0),
 
             // -- boxing / native reads --
+            // A class with an `is box_target` attribute boxes into it
+            // (`runtime::box_native`); any other type operand is the plain value.
             // Cost: O(1).
-            "box_n" => Value::num(narg(args, 0)),
+            "box_n" => {
+                let boxed = Value::num(narg(args, 0));
+                match self.box_native_into_class(args.get(1), boxed.clone()) {
+                    Some(result) => return Some(result),
+                    None => boxed,
+                }
+            }
             // Cost: O(1) for a machine-word Int; O(d), d = digits of a BigInt.
-            "box_u" => uint64_value(&operand(args, 0)),
+            "box_u" => {
+                let boxed = uint64_value(&operand(args, 0));
+                match self.box_native_into_class(args.get(1), boxed.clone()) {
+                    Some(result) => return Some(result),
+                    None => boxed,
+                }
+            }
             // Only the matching boxed type unboxes, as in MoarVM.
             // Cost: O(1).
             "decont_i" => {

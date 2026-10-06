@@ -234,6 +234,11 @@ pub(crate) struct Registry {
     /// `my class Callsite`), by full name: their instances are the callsite
     /// `nqp::buildnativecall` fills in (see `runtime::box_target`).
     pub(crate) nativecall_classes: HashSet<String>,
+    /// Classes declared `is repr<CStr>` (upstream NativeCall's nested
+    /// `CStr`), by full name: `nqp::box_s($str, $class)` gives such a class an
+    /// object that owns a NUL-terminated copy of the string (see
+    /// `runtime::cstr_repr`).
+    pub(crate) cstr_classes: HashSet<String>,
     /// The attribute a class or role declared `is box_target`, keyed by the
     /// declaring class or role (a role by its base name). MoarVM's native ops
     /// on an object that has one apply to that attribute's value instead

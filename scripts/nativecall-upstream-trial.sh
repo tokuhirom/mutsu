@@ -36,7 +36,12 @@ for f in NativeCall.rakumod:UNC.rakumod \
          NativeCall/Dispatcher.rakumod:UNC/Dispatcher.rakumod \
          NativeCall/Compiler/GNU.rakumod:UNC/Compiler/GNU.rakumod \
          NativeCall/Compiler/MSVC.rakumod:UNC/Compiler/MSVC.rakumod; do
-    sed 's/NativeCall\b/UNC/g' "$src/${f%%:*}" > "$lib/${f##*:}"
+    # `repr<NativeCall>` is the VM's name for a REPR, not the module's, so it
+    # is not renamed (the rename would make `Callsite` a `repr<UNC>` class).
+    sed -e 's/repr<NativeCall>/repr<@NATIVECALL-REPR@>/g' \
+        -e 's/NativeCall\b/UNC/g' \
+        -e 's/repr<@NATIVECALL-REPR@>/repr<NativeCall>/g' \
+        "$src/${f%%:*}" > "$lib/${f##*:}"
 done
 
 # Each step: a label and a program. Later steps assume the earlier ones pass,
@@ -51,6 +56,7 @@ steps=(
     "load UNC|use UNC; print 'ok'"
     "UNC: nativesizeof|use UNC; print nativesizeof(int32) == 4 ?? 'ok' !! 'wrong'"
     "UNC: is native strlen|use UNC; sub strlen(Str --> size_t) is native {*}; print strlen('hello') == 5 ?? 'ok' !! 'wrong'"
+    "UNC: explicitly-manage|use UNC; use nqp; my \$r = explicitly-manage('héllo'); my \$c = \$r ~~ Str ?? \$r.cstr !! \$r; print \$c.REPR eq 'CStr' && nqp::unbox_s(\$c) eq 'héllo' ?? 'ok' !! 'wrong'"
     "UNC: CStruct round trip|use UNC; class TM is repr<CStruct> { has int32 \$.a; has int32 \$.b }; my \$t = TM.new(a => 1, b => 2); print \$t.b == 2 && nativesizeof(TM) == 8 ?? 'ok' !! 'wrong'"
 )
 

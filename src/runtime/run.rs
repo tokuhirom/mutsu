@@ -1025,13 +1025,25 @@ impl Interpreter {
 
     /// [`Self::run_block`] for a module's mainline: its main body is compiled
     /// through the compiled-bytecode cache when `slot` names the module
-    /// (ADR-11756). Phaser queues compile as usual.
+    /// (ADR-11756). Phaser queues compile as usual. A module with no block
+    /// phasers is run without its AST being decoded at all when the cache
+    /// serves its compile (ADR-12026 §2.1).
     pub(super) fn run_module_block(
         &mut self,
-        stmts: &[Stmt],
+        ast: &super::module_load_facts::ModuleAst,
+        has_block_phasers: bool,
         slot: Option<super::module_bytecode::ModuleCodeSlot>,
     ) -> Result<(), RuntimeError> {
-        self.run_block_with(stmts, slot)
+        match slot {
+            Some(slot) if !has_block_phasers && !ast.is_empty() => {
+                let (code, fns) = self.compile_module_mainline(
+                    super::module_bytecode::MainlineBody::Module(ast),
+                    &slot,
+                )?;
+                self.run_compiled_block_raw(&code, &fns)
+            }
+            slot => self.run_block_with(ast.stmts()?, slot),
+        }
     }
 
     fn run_block_with(
@@ -1052,7 +1064,10 @@ impl Interpreter {
         self.run_block_raw(&enter_ph)?;
         let body_result = match &slot {
             Some(slot) if !body_main.is_empty() => {
-                let (code, fns) = self.compile_module_mainline(&body_main, slot);
+                let (code, fns) = self.compile_module_mainline(
+                    super::module_bytecode::MainlineBody::Split(&body_main),
+                    slot,
+                )?;
                 self.run_compiled_block_raw(&code, &fns)
             }
             _ => self.run_block_raw(&body_main),

@@ -1,8 +1,7 @@
-use super::{int_lsb_value, int_msb_value, is_infinite_range, range_elems_lazy_failure};
+use super::{int_lsb_value, int_msb_value, range_elems_lazy_failure};
 use crate::builtins::rng::builtin_rand;
 /// Numeric and element methods: elems, default, abs, lsb, msb, rand,
 /// uc, lc, fc, tc, sign
-use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::types::is_stash_class_name;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -122,9 +121,10 @@ pub(super) fn dispatch(
             }
             let result = match target.view() {
                 ValueView::Hash(items) => Value::int(items.len() as i64),
-                ValueView::Set(items, _) => Value::int(items.len() as i64),
-                ValueView::Bag(items, _) => Value::int(items.len() as i64),
-                ValueView::Mix(items, _) => Value::int(items.len() as i64),
+                // The quant hashes' rows' implementation (`method_table::quanthash`).
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                    return Some(crate::builtins::method_table::quanthash::elems(target, &[]));
+                }
                 ValueView::Junction { values, .. } => Value::int(values.len() as i64),
                 ValueView::Instance {
                     class_name,
@@ -150,38 +150,9 @@ pub(super) fn dispatch(
                         "Cannot call '.elems' on a Channel instance".to_string(),
                     ))));
                 }
-                ValueView::Range(start, end) if start == i64::MIN || end == i64::MAX => {
-                    return Some(range_elems_lazy_failure("elems"));
-                }
-                ValueView::Range(start, end) => Value::int((end - start + 1).max(0)),
-                ValueView::RangeExcl(start, end) if start == i64::MIN || end == i64::MAX => {
-                    return Some(range_elems_lazy_failure("elems"));
-                }
-                ValueView::RangeExcl(start, end) => Value::int((end - start).max(0)),
-                ValueView::RangeExclStart(start, end) if start == i64::MIN || end == i64::MAX => {
-                    return Some(range_elems_lazy_failure("elems"));
-                }
-                ValueView::RangeExclStart(start, end) => Value::int((end - start).max(0)),
-                ValueView::RangeExclBoth(start, end) if start == i64::MIN || end == i64::MAX => {
-                    return Some(range_elems_lazy_failure("elems"));
-                }
-                ValueView::RangeExclBoth(start, end) => Value::int((end - start - 1).max(0)),
-                ValueView::GenericRange { .. } if is_infinite_range(target) => {
-                    return Some(range_elems_lazy_failure("elems"));
-                }
-                // An Int/BigInt-ended range counts from its endpoints (the same
-                // exact count `.Numeric` uses); expanding it would stop at
-                // `MAX_RANGE_EXPAND`.
-                // Cost: O(1) for Int/BigInt endpoints, O(e) otherwise.
-                ValueView::GenericRange { start, end, .. }
-                    if matches!(start.view(), ValueView::Int(_) | ValueView::BigInt(_))
-                        && matches!(end.view(), ValueView::Int(_) | ValueView::BigInt(_)) =>
-                {
-                    crate::value::radix_numeric::coerce_to_numeric(target.clone())
-                }
-                ValueView::GenericRange { .. } => {
-                    let list = crate::runtime::utils::value_to_list(target);
-                    Value::int(list.len() as i64)
+                // The `Range.elems` row's implementation (`method_table::range`).
+                _ if target.is_range() => {
+                    return Some(crate::builtins::method_table::range::elems(target, &[]));
                 }
                 ValueView::Instance {
                     class_name,
@@ -197,24 +168,13 @@ pub(super) fn dispatch(
             };
             Some(Some(Ok(result)))
         }
-        "default" => {
-            let result = match target.view() {
-                // A value-carried `is default(...)` (embedded in HashData/
-                // ArrayData) takes priority over the type default, so it survives
-                // raw-parameter binding and list construction.
-                ValueView::Array(a, _) if a.default.is_some() => {
-                    a.default.as_deref().cloned().unwrap()
-                }
-                ValueView::Hash(h) if h.default.is_some() => h.default.as_deref().cloned().unwrap(),
-                ValueView::Array(..) | ValueView::Hash(..) => {
-                    Value::package(crate::symbol::wk::any())
-                }
-                ValueView::Set(..) => Value::FALSE,
-                ValueView::Bag(..) | ValueView::Mix(..) => Value::int(0),
-                _ => return Some(None),
-            };
-            Some(Some(Ok(result)))
-        }
+        // `Array.default` and `Hash.default`: the rows' implementations
+        // (`method_table::list`, `method_table::map`).
+        "default" => Some(match target.view() {
+            ValueView::Array(..) => crate::builtins::method_table::list::default(target, &[]),
+            ValueView::Hash(_) => crate::builtins::method_table::map::default(target, &[]),
+            _ => None,
+        }),
         // Numeric receivers: the numeric types' rows' implementation
         // (ADR-11276, `method_table::real`).
         // Cost: O(1) for word-sized values; O(b) for big ones, b = size in bits.
@@ -266,105 +226,7 @@ pub(super) fn dispatch(
                     let inner = attributes.as_map().get("value")?.clone();
                     return dispatch(&inner, "rand");
                 }
-                ValueView::Range(start, end) => {
-                    let from = start as f64;
-                    let to = end as f64;
-                    let v = from + builtin_rand() * (to - from);
-                    return Some(Some(Ok(Value::num(v))));
-                }
-                ValueView::RangeExcl(start, end) => {
-                    let from = start as f64;
-                    let to = end as f64;
-                    if from >= to {
-                        return Some(Some(Ok(Value::NIL)));
-                    }
-                    let v = from + builtin_rand() * (to - from);
-                    // Ensure we don't generate the excluded endpoint
-                    let v = if v >= to {
-                        f64::from_bits(to.to_bits().saturating_sub(1))
-                    } else {
-                        v
-                    };
-                    return Some(Some(Ok(Value::num(v))));
-                }
-                ValueView::RangeExclStart(start, end) => {
-                    let from = start as f64;
-                    let to = end as f64;
-                    if from >= to {
-                        return Some(Some(Ok(Value::NIL)));
-                    }
-                    let v = from + builtin_rand() * (to - from);
-                    // Ensure we don't generate the excluded endpoint
-                    let v = if v <= from {
-                        f64::from_bits(from.to_bits().saturating_add(1))
-                    } else {
-                        v
-                    };
-                    return Some(Some(Ok(Value::num(v))));
-                }
-                ValueView::RangeExclBoth(start, end) => {
-                    let from = start as f64;
-                    let to = end as f64;
-                    if from >= to {
-                        return Some(Some(Ok(Value::NIL)));
-                    }
-                    let v = from + builtin_rand() * (to - from);
-                    // Ensure we don't generate either excluded endpoint
-                    let v = if v <= from {
-                        f64::from_bits(from.to_bits().saturating_add(1))
-                    } else {
-                        v
-                    };
-                    let v = if v >= to {
-                        f64::from_bits(to.to_bits().saturating_sub(1))
-                    } else {
-                        v
-                    };
-                    return Some(Some(Ok(Value::num(v))));
-                }
-                ValueView::GenericRange {
-                    start,
-                    end,
-                    excl_start,
-                    excl_end,
-                } => {
-                    let make_rand_failure = || -> Value {
-                        let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert(
-                            "message".to_string(),
-                            Value::str(
-                                "Cannot get a random value from a non-numeric Range".to_string(),
-                            ),
-                        );
-                        let ex = Value::make_instance(
-                            crate::symbol::Symbol::intern("X::AdHoc"),
-                            ex_attrs,
-                        );
-                        let mut failure_attrs = std::collections::HashMap::new();
-                        failure_attrs.insert("exception".to_string(), ex);
-                        Value::make_instance(
-                            crate::symbol::Symbol::intern("Failure"),
-                            failure_attrs,
-                        )
-                    };
-                    let Some(mut from) = runtime::to_float_value(start) else {
-                        return Some(Some(Ok(make_rand_failure())));
-                    };
-                    let Some(mut to) = runtime::to_float_value(end) else {
-                        return Some(Some(Ok(make_rand_failure())));
-                    };
-                    if excl_start {
-                        from = f64::from_bits(from.to_bits().saturating_add(1));
-                    }
-                    if excl_end {
-                        to = f64::from_bits(to.to_bits().saturating_sub(1));
-                    }
-                    if !from.is_finite() || !to.is_finite() || from > to {
-                        return Some(Some(Ok(Value::NIL)));
-                    }
-                    let v = from + builtin_rand() * (to - from);
-                    return Some(Some(Ok(Value::num(v))));
-                }
+                // `Range.rand` is the `Range` row's (`method_table::range`).
                 // Cool types: numify first (e.g., List.rand returns rand in 0..^elems)
                 ValueView::Array(items, ..) => items.len() as f64,
                 ValueView::Seq(items) => items.len() as f64,

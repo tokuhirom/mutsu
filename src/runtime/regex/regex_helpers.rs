@@ -1464,6 +1464,21 @@ fn atom_name_mult(
             } else {
                 NameMult::One
             };
+            // `<::(EXPR)>`'s lookup name is the `::` placeholder, not a rule
+            // name (see `collect_named_captures_in_atom`): only its alias and a
+            // name it spells out as a string literal are ever filed.
+            if spec.lookup_name == "::" {
+                if let (Some(alias), Some(sym)) = (spec.capture_name.as_deref(), spec.capture_sym)
+                    && !alias.is_empty()
+                {
+                    out.insert(sym, mult);
+                }
+                if let Some(written) = crate::runtime::Interpreter::symbolic_call_written_name(spec)
+                {
+                    out.insert(crate::symbol::Symbol::intern(&written), mult);
+                }
+                return out;
+            }
             if let Some(alias) = spec.capture_name.as_deref() {
                 if !alias.is_empty() {
                     // `capture_sym` is interned alongside `capture_name`

@@ -16,6 +16,7 @@ this report shows zero arms for their owners (ADR §10.3 rule 6).
     scripts/method-rows-report.py --arms          # only the cascade arms (no build)
     scripts/method-rows-report.py --rows-from F   # reuse a saved dump instead of running cargo
     scripts/method-rows-report.py --dump-rows     # print the raw `ROW` lines and exit
+    scripts/method-rows-report.py --inventory collections,"quant hashes"   # a slice's inventory
 
 The row dump is the ignored unit test `method_table::tests::dump_rows`.
 """
@@ -163,12 +164,87 @@ def report_rows(args):
     print(f"remaining: {grand} of {len(table)} recognition rows")
 
 
+def arm_files_by_name():
+    """`name -> {cascade file}` over every quoted-name arm the layers still hold."""
+    files_of = collections.defaultdict(set)
+    for _layer, patterns in LAYERS:
+        for path in sorted({f for p in patterns for f in glob.glob(os.path.join(ROOT, p), recursive=True)}):
+            for arm in arms_in(path):
+                for name in arm:
+                    files_of[name].add(os.path.basename(path))
+    return files_of
+
+
+def declared_by_rakudo():
+    """`owner -> {method names}` Rakudo declares in the type's own method table (the oracle snapshot)."""
+    declared = {}
+    path = os.path.join(ROOT, "src/builtins/rakudo_method_tables.txt")
+    for line in open(path, encoding="utf-8"):
+        fields = line.rstrip("\n").split("\t")
+        if fields[0] == "declared":
+            declared[fields[1]] = set(fields[2:])
+    return declared
+
+
+def report_inventory(args):
+    """A slice's first commit (ADR §10.4): every recognition row of its owners that has no registered row.
+
+    `--inventory` takes owner names or group names (see GROUPS), comma-separated. The rows are
+    printed per owner, then per method name, which is how a slice cuts its families: one handler
+    answers a name for every owner and shape that has it, and the cascade arms for that name go.
+
+    Only a pair Rakudo *declares* on the owner can be registered there (the unit test
+    `rows_are_declared_by_rakudo` enforces it). The others (`Array.keys`, declared on `List`)
+    are `inherited`: they are served by the ancestor's row once the receiver's shape inherits it.
+    """
+    owners = []
+    for item in args.inventory.split(","):
+        owners += GROUPS[item].split() if item in GROUPS else [item]
+    registered, _raw = registered_rows(args)
+    have = {(owner, name) for owner, name, *_ in registered}
+    declared = declared_by_rakudo()
+    files_of = arm_files_by_name()
+    per_owner = collections.defaultdict(list)
+    per_name = collections.defaultdict(list)
+    for (owner, name), (arity_bits, flag_bits) in sorted(recognition_rows().items()):
+        if owner in owners and (owner, name) not in have:
+            kind = kind_of(arity_bits, flag_bits)
+            is_declared = name in declared.get(owner, ())
+            per_owner[owner].append((name, kind, is_declared))
+            per_name[name].append((owner, kind, is_declared))
+    print("== Inventory: unregistered rows per owner (declared = Rakudo declares it there) ==")
+    total = collections.Counter()
+    for owner in owners:
+        kinds = collections.Counter(kind for _name, kind, is_declared in per_owner[owner] if is_declared)
+        inherited = sum(1 for _name, _kind, is_declared in per_owner[owner] if not is_declared)
+        total.update(kinds)
+        total["inherited"] += inherited
+        print(
+            f"{owner:10} declared {sum(kinds.values()):4d}  "
+            + " ".join(f"{k} {kinds[k]}" for k in sorted(kinds))
+            + f"   inherited-only {inherited}"
+        )
+    print(f"total declared {sum(v for k, v in total.items() if k != 'inherited')}, inherited-only {total['inherited']}, {len(per_name)} distinct names")
+    print("\n== Inventory: per method name (declared rows, kinds, owners; inherited-only owners in brackets; cascade files with an arm) ==")
+    for name, rows in sorted(per_name.items(), key=lambda item: (-len(item[1]), item[0])):
+        declared_rows = [(o, k) for o, k, d in rows if d]
+        inherited_owners = [o for o, _k, d in rows if not d]
+        kinds = "".join(sorted({k[0] for _o, k in declared_rows})) or "-"
+        owners_text = " ".join(o for o, _k in declared_rows)
+        extra = f" [{' '.join(inherited_owners)}]" if inherited_owners else ""
+        print(f"{name:16} {len(declared_rows):3d} {kinds:3} {owners_text}{extra}  <{','.join(sorted(files_of.get(name, [])))}>")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--arms", action="store_true", help="only the cascade arms (no build)")
     parser.add_argument("--rows-from", metavar="FILE", help="read the row dump from FILE instead of running cargo")
     parser.add_argument("--dump-rows", action="store_true", help="print the raw row dump and exit")
+    parser.add_argument("--inventory", metavar="OWNERS", help="a slice's inventory: the unregistered rows of these owners or groups")
     args = parser.parse_args()
+    if args.inventory:
+        report_inventory(args)
+        return
     if args.dump_rows:
         report_rows(args)
         return

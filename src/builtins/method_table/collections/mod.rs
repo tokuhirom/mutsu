@@ -9,19 +9,25 @@ use super::{Handler, MethodRow, RowFlags};
 
 pub(crate) mod any_collection;
 mod any_interp;
+pub(crate) mod capture;
+pub(crate) mod lazy;
 pub(crate) mod list;
 pub(crate) mod list_aggregate;
 pub(crate) mod list_transform;
 pub(crate) mod map;
 pub(crate) mod pair;
 pub(crate) mod positional;
+pub(crate) mod quanthash;
 pub(crate) mod range;
+pub(crate) mod subscript;
 mod truth;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     any_collection::ROWS,
+    capture::ROWS,
     any_interp::ROWS,
+    lazy::ROWS,
     list::ROWS,
     list_aggregate::ANY_ROWS,
     list_aggregate::LIST_ROWS,
@@ -32,6 +38,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     map::ROWS,
     positional::ROWS,
     pair::ROWS,
+    quanthash::ROWS,
+    subscript::ROWS,
     range::ROWS,
     truth::ROWS,
 ];

@@ -68,7 +68,7 @@ impl Interpreter {
     /// the roles that class composes, or the roles mixed into the value.
     // Cost: O(1) while no `is box_target` attribute is declared; else O(r + m),
     // r = roles mixed in, m = classes in the MRO.
-    fn box_target_attr_name(&mut self, obj: &Value) -> Option<String> {
+    pub(crate) fn box_target_attr_name(&mut self, obj: &Value) -> Option<String> {
         if self.registry().box_target_attrs.is_empty() {
             return None;
         }
@@ -84,22 +84,43 @@ impl Interpreter {
                 from_roles.or_else(|| self.box_target_attr_name(inner))
             }
             ValueView::Instance { class_name, .. } => {
-                let mro = self.class_mro(class_name.as_str());
-                let reg = self.registry();
-                mro.iter().find_map(|class| {
-                    let class = class.as_str();
-                    reg.box_target_attrs.get(class).cloned().or_else(|| {
-                        reg.class_composed_roles.get(class).and_then(|roles| {
-                            roles
-                                .iter()
-                                .find_map(|role| reg.box_target_attrs.get(role_base_name(role)))
-                                .cloned()
-                        })
-                    })
-                })
+                self.box_target_attr_of_class(class_name.as_str())
             }
             _ => None,
         }
+    }
+
+    /// The bare name of the box-target attribute `class` has, declared by the
+    /// class itself, a class it inherits from, or a role any of them composes.
+    // Cost: O(1) while no `is box_target` attribute is declared; else O(m + r),
+    // m = classes in the MRO, r = roles they compose.
+    pub(crate) fn box_target_attr_of_class(&mut self, class: &str) -> Option<String> {
+        if self.registry().box_target_attrs.is_empty() {
+            return None;
+        }
+        let mro = self.class_mro(class);
+        let reg = self.registry();
+        mro.iter().find_map(|class| {
+            let class = class.as_str();
+            reg.box_target_attrs.get(class).cloned().or_else(|| {
+                reg.class_composed_roles.get(class).and_then(|roles| {
+                    roles
+                        .iter()
+                        .find_map(|role| reg.box_target_attrs.get(role_base_name(role)))
+                        .cloned()
+                })
+            })
+        })
+    }
+
+    /// Whether `class` was declared with a REPR whose instance is its own body
+    /// (`is repr<NativeCall>`, `is repr<CStr>`): `.REPR` can report it for an
+    /// instance as well as for the type object, since there is no separate
+    /// body for it to under-report.
+    // Cost: O(n), n = chars of the name.
+    pub(crate) fn is_bodied_repr_class(&self, class: &str) -> bool {
+        let reg = self.registry();
+        reg.nativecall_classes.contains(class) || reg.cstr_classes.contains(class)
     }
 
     /// The object native ops on `obj` apply to: the value of `obj`'s

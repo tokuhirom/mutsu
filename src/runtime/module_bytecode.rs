@@ -21,14 +21,24 @@
 //! `MUTSU_PRECOMP_BYTECODE=0` turns it off, as does `--no-precomp`.
 //! `MUTSU_PRECOMP_VERIFY=1` makes every hit compile anyway and compare the
 //! two encodings byte for byte; a difference stops the run with status 70.
+//!
+//! The entry is looked up when the load claims its [`ModuleUnit`], before
+//! anything is parsed (ADR-12026 §2.1): a load that finds one takes its parse
+//! effects, load facts and AST from it and never reads the AST cache. Whether
+//! its *compile* fits is decided here, when the mainline is about to run; a
+//! compile that does not fit is redone from the entry's own AST.
 
 use super::Interpreter;
 use crate::ast::Stmt;
 use crate::compiler::compile_inputs::{self, Recorded};
 use crate::compiler::compile_session;
 use crate::opcode::{CompiledCode, CompiledFns};
-use crate::precomp::bytecode::{CompileContext, CompileLatches};
+use crate::precomp::ParseEffects;
+use crate::precomp::bytecode::{CodeEntry, CompileContext, CompileLatches, NewCodeEntry};
+use crate::value::RuntimeError;
 use std::path::PathBuf;
+
+use super::module_load_facts::{ModuleAst, ModuleLoadFacts};
 
 /// One load of a module eligible for precompilation: its source, its identity,
 /// and which load of it this is in the process.
@@ -41,9 +51,12 @@ use std::path::PathBuf;
 /// re-parses and recompiles under fresh values.
 pub(crate) struct ModuleUnit {
     source_path: PathBuf,
-    source: String,
+    pub(crate) source: String,
     unit_key: u64,
     occurrence: u32,
+    /// The precompilation entry for exactly this source, when the cache may
+    /// serve this load and has one.
+    entry: Option<CodeEntry>,
 }
 
 impl ModuleUnit {
@@ -64,12 +77,21 @@ impl ModuleUnit {
             hasher.finish()
         };
         let occurrence = compile_session::claim_next_occurrence(unit_key);
+        let entry = (occurrence == 0 && enabled())
+            .then(|| crate::precomp::bytecode::load_code_entry(source_path, &source))
+            .flatten();
         Some(ModuleUnit {
             source_path: source_path.to_path_buf(),
             source,
             unit_key,
             occurrence,
+            entry,
         })
+    }
+
+    /// The precompilation entry found for this load, taken out of the unit.
+    pub(crate) fn take_entry(&mut self) -> Option<CodeEntry> {
+        self.entry.take()
     }
 
     /// Whether this load may read and write the precompilation cache.
@@ -96,14 +118,87 @@ const REWRITE_SALT: u64 = 0x7265_7772_6974_6521;
 /// The module whose mainline the next [`Interpreter::run_module_block`] runs.
 pub(crate) struct ModuleCodeSlot {
     unit: ModuleUnit,
+    /// The compile half of the entry the load found, if any.
+    cached: Option<CachedCompile>,
+    /// What a new entry stores besides the compile.
+    effects: ParseEffects,
+    facts: ModuleLoadFacts,
+    ast: Vec<u8>,
+    guards_fingerprint: u64,
+}
+
+/// The compile half of a [`CodeEntry`].
+struct CachedCompile {
+    context: CompileContext,
+    inputs: crate::compiler::compile_inputs::CompileInputs,
+    latches: CompileLatches,
+    payload: Vec<u8>,
+}
+
+/// What a load knows about its module's mainline when it sets up the slot.
+pub(crate) struct MainlineParts<'a> {
+    pub(crate) unit: Option<ModuleUnit>,
+    /// The entry the load was served from, if any.
+    pub(crate) entry: Option<CodeEntry>,
+    pub(crate) effects: ParseEffects,
+    pub(crate) facts: &'a ModuleLoadFacts,
+    /// The AST before its guards are spliced in.
+    pub(crate) ast: &'a ModuleAst,
+    pub(crate) guards: &'a [Stmt],
 }
 
 impl ModuleCodeSlot {
-    /// A slot for `unit`, or `None` when the bytecode cache is off.
-    // Cost: O(1).
-    pub(crate) fn new(unit: Option<ModuleUnit>) -> Option<Self> {
-        let unit = unit?;
-        enabled().then_some(ModuleCodeSlot { unit })
+    /// A slot for the load's unit, or `None` when the bytecode cache is off
+    /// or the unit may not use it.
+    // Cost: O(n) on a miss (the AST is encoded for the entry), O(g) on a
+    // hit, g = size of the guards.
+    pub(crate) fn new(parts: MainlineParts<'_>) -> Result<Option<Self>, RuntimeError> {
+        let Some(unit) = parts.unit else {
+            return Ok(None);
+        };
+        if !enabled() || !unit.may_use_cache() {
+            return Ok(None);
+        }
+        let (ast, cached) = match parts.entry {
+            Some(entry) => (
+                entry.ast,
+                Some(CachedCompile {
+                    context: entry.context,
+                    inputs: entry.inputs,
+                    latches: entry.latches,
+                    payload: entry.payload,
+                }),
+            ),
+            None => match crate::precomp::encode_stmts(parts.ast.stmts()?) {
+                Some(ast) => (ast, None),
+                None => return Ok(None),
+            },
+        };
+        Ok(Some(ModuleCodeSlot {
+            unit,
+            cached,
+            effects: parts.effects,
+            facts: parts.facts.clone(),
+            ast,
+            guards_fingerprint: crate::ast::stable_hash::stable_hash(parts.guards),
+        }))
+    }
+}
+
+/// The statements a module's mainline compile is handed: the whole module,
+/// or the body left after its block phasers were split off.
+pub(crate) enum MainlineBody<'a> {
+    Module(&'a ModuleAst),
+    Split(&'a [Stmt]),
+}
+
+impl MainlineBody<'_> {
+    // Cost: O(n) on the first request for an encoded AST, else O(1).
+    fn stmts(&self) -> Result<&[Stmt], RuntimeError> {
+        match self {
+            MainlineBody::Module(ast) => ast.stmts(),
+            MainlineBody::Split(stmts) => Ok(stmts),
+        }
     }
 }
 
@@ -137,14 +232,14 @@ fn verify_enabled() -> bool {
 }
 
 impl Interpreter {
-    /// Compile a module's mainline `stmts`, from the cache when it can serve
-    /// them. See the module docs.
+    /// Compile a module's mainline `body`, from the cache when it can serve
+    /// it. See the module docs.
     // Cost: O(n), n = size of the compiled code (decoding, or compiling).
     pub(crate) fn compile_module_mainline(
         &self,
-        stmts: &[Stmt],
+        body: MainlineBody<'_>,
         slot: &ModuleCodeSlot,
-    ) -> (CompiledCode, CompiledFns) {
+    ) -> Result<(CompiledCode, CompiledFns), RuntimeError> {
         let (compiler, compile_unit) = self.block_compiler();
         let context = CompileContext {
             environment: compile_inputs::environment_fingerprint(),
@@ -153,26 +248,19 @@ impl Interpreter {
             enclosing_package: compiler.enclosing_package.clone(),
             has_distribution: compiler.current_distribution.is_some(),
             unit_file: compile_unit.map(|s| s.as_str().to_string()),
-            // Everything the compile is handed: the AST as parsed or read
-            // back, the prologue's rewrites, and the undeclared-routine guards
-            // (which depend on interpreter state). Gensyms the parser mints
-            // from process counters live in the AST, so an entry compiled from
-            // a different parse of the same source is told apart here.
-            ast_fingerprint: crate::ast::stable_hash::stable_hash(stmts),
+            guards_fingerprint: slot.guards_fingerprint,
         };
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(compile_unit);
         let unit = &slot.unit;
         let session = compile_session::content_session_id(unit.unit_key, unit.occurrence);
-        let cached = if unit.may_use_cache() {
-            crate::precomp::bytecode::load_cached_code(&unit.source_path, &unit.source, &context)
-                .filter(|cached| cached.inputs.still_hold())
-                .and_then(|cached| {
-                    let decoded = crate::precomp_codec::decode_compiled(&cached.payload).ok()?;
-                    Some((cached.latches, decoded))
-                })
-        } else {
-            None
-        };
+        let cached = slot
+            .cached
+            .as_ref()
+            .filter(|cached| cached.context == context && cached.inputs.still_hold())
+            .and_then(|cached| {
+                let decoded = crate::precomp_codec::decode_compiled(&cached.payload).ok()?;
+                Some((cached.latches, decoded))
+            });
         let (mut code, mut fns) = match cached {
             Some((latches, decoded)) => {
                 trace(slot, "hit");
@@ -182,30 +270,28 @@ impl Interpreter {
                 );
                 if verify_enabled() {
                     let _session = compile_session::enter_session(session);
-                    let fresh = compiler.compile(stmts);
+                    let fresh = compiler.compile(body.stmts()?);
                     verify_same(&unit.source_path, &decoded, &fresh);
                 }
                 decoded
             }
             None => {
+                let stmts = body.stmts()?;
                 let _session = compile_session::enter_session(session);
                 let recording = compile_inputs::start();
                 let compiled = compiler.compile(stmts);
                 let recorded = recording.map(compile_inputs::RecordingGuard::finish);
-                let encoded = match (&recorded, unit.may_use_cache()) {
-                    (Some(Recorded::Cacheable(_)), true) => {
+                let encoded = match &recorded {
+                    Some(Recorded::Cacheable(_)) => {
                         crate::precomp_codec::encode_compiled(&compiled.0, &compiled.1)
                             .map_err(|e| trace(slot, &format!("not cached: {e}")))
                             .ok()
                     }
-                    (Some(Recorded::Uncacheable(reason)), _) => {
+                    Some(Recorded::Uncacheable(reason)) => {
                         trace(slot, &format!("not cached: {reason}"));
                         None
                     }
-                    _ => {
-                        trace(slot, &format!("not cached: load {}", unit.occurrence));
-                        None
-                    }
+                    None => None,
                 };
                 if let (Some(Recorded::Cacheable(inputs)), Some(payload)) = (recorded, encoded) {
                     trace(slot, "compiled and cached");
@@ -213,20 +299,51 @@ impl Interpreter {
                         reflective_name_access: crate::opcode::reflective_name_access_possible(),
                         dispatcher: crate::opcode::dispatcher_possible(),
                     };
-                    crate::precomp::bytecode::save_cached_code(
+                    crate::precomp::bytecode::save_code_entry(
                         &unit.source_path,
                         &unit.source,
-                        context,
-                        inputs,
-                        latches,
-                        &payload,
+                        NewCodeEntry {
+                            context,
+                            inputs,
+                            latches,
+                            effects: &slot.effects,
+                            facts: &slot.facts,
+                            ast: &slot.ast,
+                            payload: &payload,
+                        },
                     );
                 }
                 compiled
             }
         };
-        self.inherit_frame_lexical_for_body(stmts, &mut code, &mut fns);
-        (code, fns)
+        if let MainlineBody::Split(stmts) = body {
+            self.inherit_frame_lexical_for_body(stmts, &mut code, &mut fns);
+        }
+        Ok((code, fns))
+    }
+
+    /// `MUTSU_PRECOMP_VERIFY`: the load facts an entry served must equal the
+    /// facts computed afresh from the entry's AST.
+    // Cost: O(n), n = size of the AST (decoded and walked again).
+    pub(crate) fn verify_load_facts(
+        source_path: &std::path::Path,
+        ast: &ModuleAst,
+        recorded: &ModuleLoadFacts,
+    ) -> Result<(), RuntimeError> {
+        if !verify_enabled() {
+            return Ok(());
+        }
+        let fresh = ModuleLoadFacts::compute(&ast.decode_unguarded()?, recorded.prologue_len);
+        if fresh != *recorded {
+            eprintln!(
+                "precomp verify: the load facts recorded for {} differ from fresh ones: {:?} != {:?}",
+                source_path.display(),
+                recorded,
+                fresh,
+            );
+            std::process::exit(70);
+        }
+        Ok(())
     }
 }
 

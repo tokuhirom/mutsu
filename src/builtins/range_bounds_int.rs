@@ -39,8 +39,22 @@ fn endpoints_are_int(range_val: &Value, start: &Value, end: &Value) -> bool {
     if open_i64_end(range_val) {
         return false;
     }
-    let is_int = |v: &Value| matches!(v.view(), ValueView::Int(_) | ValueView::BigInt(_));
+    let is_int = |v: &Value| {
+        matches!(
+            v.view(),
+            ValueView::Int(_) | ValueView::BigInt(_) | ValueView::Bool(_)
+        )
+    };
     is_int(start) && is_int(end)
+}
+
+/// `Range.is-int`: whether `range_val` is a Range whose endpoints are both
+/// genuine integers (`1..*`, `1..Inf` and `*..5` are not). `None` for a value
+/// that is not a Range. The one rule `int-bounds` and `minmax` share.
+// Cost: O(1).
+pub(crate) fn range_is_int(range_val: &Value) -> Option<bool> {
+    let (start, end, ..) = range_bounds(range_val)?;
+    Some(endpoints_are_int(range_val, &start, &end))
 }
 
 /// `floor` of a finite Real endpoint, as an `Int`/`BigInt`. `None` for
@@ -98,6 +112,8 @@ fn add_int(v: &Value, delta: i64) -> Value {
             None => Value::bigint(num_bigint::BigInt::from(i) + delta),
         },
         ValueView::BigInt(n) => Value::bigint(n.as_ref() + delta),
+        // A `Bool` end is the integer it numifies to (`(True..5).minmax` is `(1 5)`).
+        ValueView::Bool(b) => Value::int(i64::from(b) + delta),
         _ => v.clone(),
     }
 }
@@ -133,12 +149,8 @@ pub(crate) fn range_int_bounds(range_val: &Value) -> Option<(Value, Value)> {
 pub(crate) fn range_minmax(range_val: &Value) -> Option<Result<(Value, Value), ()>> {
     let (start, end, excl_start, excl_end) = range_bounds(range_val)?;
     if endpoints_are_int(range_val, &start, &end) {
-        let min = if excl_start {
-            add_int(&start, 1)
-        } else {
-            start
-        };
-        let max = if excl_end { add_int(&end, -1) } else { end };
+        let min = add_int(&start, i64::from(excl_start));
+        let max = add_int(&end, -i64::from(excl_end));
         return Some(Ok((min, max)));
     }
     if excl_start || excl_end {
