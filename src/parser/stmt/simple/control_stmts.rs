@@ -28,6 +28,14 @@ fn try_invocant_colon_stmt<'a>(name: &str, arg: &Expr, rest: &'a str) -> PResult
 
 /// Parse `return` statement.
 pub(crate) fn return_stmt(input: &str) -> PResult<'_, Stmt> {
+    // The glued form is a routine call when a lexical routine shadows the
+    // keyword (`sub return($x) { ... }; return(3)`). Leave it to expression
+    // parsing; the spaced `return (...)` remains the return statement.
+    if is_user_declared_sub("return")
+        && keyword("return", input).is_some_and(|rest| rest.starts_with('('))
+    {
+        return Err(PError::expected("return statement"));
+    }
     // If "return" is a declared term symbol (e.g. sigilless variable \return),
     // don't parse it as the return keyword.
     if keyword("return", input).is_some()
@@ -138,6 +146,9 @@ fn consume_empty_call_parens(input: &str) -> &str {
 /// Parse `last` / `next` / `redo`.
 pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("last", input).ok_or_else(|| PError::expected("last statement"))?;
+    if is_user_declared_sub("last") && rest.starts_with('(') {
+        return Err(PError::expected("last statement"));
+    }
     let (rest, _) = ws(rest)?;
     // `last |c` passes a slipped argument list and `last(LABEL)` a `Label`
     // value: the expression form owns both.
@@ -157,6 +168,9 @@ pub(crate) fn last_stmt(input: &str) -> PResult<'_, Stmt> {
 
 pub(crate) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("next", input).ok_or_else(|| PError::expected("next statement"))?;
+    if is_user_declared_sub("next") && rest.starts_with('(') {
+        return Err(PError::expected("next statement"));
+    }
     let (rest, _) = ws(rest)?;
     // `next |c` passes a slipped argument list and `next(LABEL)` a `Label`
     // value: the expression form owns both.
@@ -176,6 +190,9 @@ pub(crate) fn next_stmt(input: &str) -> PResult<'_, Stmt> {
 
 pub(crate) fn redo_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("redo", input).ok_or_else(|| PError::expected("redo statement"))?;
+    if is_user_declared_sub("redo") && rest.starts_with('(') {
+        return Err(PError::expected("redo statement"));
+    }
     let (rest, _) = ws(rest)?;
     // `redo |c` passes a slipped argument list and `redo(LABEL)` a `Label`
     // value: the expression form owns both.
@@ -779,7 +796,7 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         let stmt = crate::parser::primary::ident::slipped_control_stmt(&name, slip, flow);
         return parse_statement_modifier(after, stmt);
     }
-    if name == "proceed" {
+    if name == "proceed" && !is_user_declared_sub("proceed") {
         let (rest, _) = opt_char(rest, ';');
         return Ok((rest, Stmt::Proceed));
     }

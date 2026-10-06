@@ -171,9 +171,10 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
 /// The calls `lower_stmt_inner` turns into statements of their own, which a
 /// routine of the same name declared in the unit takes back.
 ///
-/// `return` / `last` / `next` / `redo` are left out: a user routine named like
-/// them does not work in the ordinary frontend either.
-const SHADOWABLE_STATEMENTS: [&str; 7] = ["say", "put", "print", "note", "die", "fail", "take"];
+const SHADOWABLE_STATEMENTS: [&str; 12] = [
+    "say", "put", "print", "note", "die", "fail", "take", "return", "last", "next", "redo",
+    "proceed",
+];
 
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
