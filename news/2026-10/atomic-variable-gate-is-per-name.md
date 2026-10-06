@@ -21,6 +21,16 @@ because the read sites hold a `&str` and must not intern. The JIT's inline
 `GetLocal` still reads the total spoiler counter; the interpreter's fast path
 reads a second counter without the atomic source and asks the name instead.
 
+The three READ gates (`GetLocal`'s slow path, `GetGlobal`, the `SetGlobal`
+reset) keep the per-interpreter flag as their first half and add the name as
+the second, so a read gate is never wider than it was. A first draft dropped
+the flag, and `t/concurrency/thread-lock/atomic-lane-retired-mid-cas.t` went
+from 0 failures in 400 loaded runs to 24: a worker thread's own `$x` was read
+through the lane of the same-spelled atomic `$x` of the main thread, which a
+thread cloned before the atomic existed had never done. The lane is keyed by
+bare name, so it cannot tell the two apart; that is a separate, older weakness
+(ADR-0062).
+
 Measured on the lexical `cas` loop from `roast/S17-lowlevel/cas-int.t`
 (4 threads x 10000 iterations, callgrind, release): 1,831,043,453 ->
 1,366,469,417 instructions, 45.5k -> 33.9k per iteration. The whole file went
