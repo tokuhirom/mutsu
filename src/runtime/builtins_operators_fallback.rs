@@ -877,7 +877,8 @@ impl Interpreter {
         let callable_from_plain = self.env.get(name).cloned();
         if let Some(callable) = callable_from_code_sigil
             .filter(|v| {
-                matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                (matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                    && !self.is_live_family_dispatcher(v, name))
                     || (matches!(v.view(), ValueView::Routine { .. })
                         && !is_dead_end_self_referential_routine(v, name))
                     // A `&name` bound to a `Callable` object (`for @its -> &it
@@ -892,7 +893,8 @@ impl Interpreter {
             })
             .or_else(|| {
                 callable_from_plain.filter(|v| {
-                    matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                    (matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                        && !self.is_live_family_dispatcher(v, name))
                         || (matches!(v.view(), ValueView::Routine { .. })
                             && !is_dead_end_self_referential_routine(v, name))
                 })

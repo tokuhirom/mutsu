@@ -335,6 +335,44 @@ impl Interpreter {
         }
     }
 
+    /// Whether `captured` -- the candidates a multi dispatcher code value
+    /// carries -- are exactly the ones the family `name` resolves to right now.
+    // Cost: O(c), c = candidates in the family.
+    pub(crate) fn captured_candidates_are_live(&self, name: &str, captured: &[Value]) -> bool {
+        let live = self.resolve_all_multi_candidates(name);
+        live.len() == captured.len()
+            && live.iter().zip(captured).all(|(live, captured)| {
+                matches!(
+                    captured.view(),
+                    ValueView::Sub(data)
+                        if data.package == live.package && data.name == live.name
+                )
+            })
+    }
+
+    /// A multi dispatcher code value of the family `name` whose captured
+    /// candidates are the live ones (`&trait_mod:<is>` exported by
+    /// `sub EXPORT`). Calling it re-enters resolution of `name`, so a by-name
+    /// call that already found no candidate to bind must not retry through it:
+    /// the retry resolves the same family again, forever.
+    // Cost: O(c), c = candidates in the family.
+    pub(crate) fn is_live_family_dispatcher(&self, v: &Value, name: &str) -> bool {
+        let ValueView::Sub(data) = v.view() else {
+            return false;
+        };
+        let Some(ValueView::Str(family)) = data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+        else {
+            return false;
+        };
+        if family.as_ref() != name {
+            return false;
+        }
+        data.env
+            .get("__mutsu_multi_dispatch_candidates")
+            .cloned()
+            .and_then(Value::into_array)
+            .is_some_and(|(candidates, _)| self.captured_candidates_are_live(name, &candidates))
+    }
     pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
@@ -651,17 +689,7 @@ impl Interpreter {
                 if let Some(ValueView::Str(name)) =
                     data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
                 {
-                    let same_live_candidates = self.resolve_all_multi_candidates(&name);
-                    let captured_match = same_live_candidates.len() == candidates.len()
-                        && same_live_candidates.iter().zip(candidates.iter()).all(
-                            |(live, captured)| {
-                                matches!(
-                                    captured.view(),
-                                    ValueView::Sub(data)
-                                        if data.package == live.package && data.name == live.name
-                                )
-                            },
-                        );
+                    let captured_match = self.captured_candidates_are_live(&name, &candidates);
                     // A live single routine of that name is the same family
                     // only when it is one of the captured candidates: a
                     // same-named routine imported later into the caller
@@ -735,6 +763,17 @@ impl Interpreter {
                     {
                         return self.call_sub_value(candidate.clone(), call_args, false);
                     }
+                }
+                // None of the captured candidates accepts the call. For a family
+                // that is X::Multi::NoMatch, not the first candidate's own
+                // binding error: a caller that treats "no candidate" as "try
+                // something else" (a trait application through an imported
+                // `&trait_mod:<is>`) tells the two apart by it.
+                if candidates.len() > 1
+                    && let Some(ValueView::Str(family)) =
+                        data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+                {
+                    return Err(self.multi_no_match_error(&family, &call_args));
                 }
                 if let Some(candidate) = candidates.first() {
                     return self.call_sub_value(candidate.clone(), call_args, false);
