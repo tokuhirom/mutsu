@@ -277,7 +277,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     // `GLOBAL` and a pseudo-package prefix on a name that resolves
     // (`CORE::DateTime`, `GLOBAL::A`): the same node as the bare name, over the
     // qualified one.
-    if name == "GLOBAL" {
+    if crate::qualified::is_global_package(Symbol::intern(name)) {
         return Some(simple_type_node(name));
     }
     if let Some(rest) = name
