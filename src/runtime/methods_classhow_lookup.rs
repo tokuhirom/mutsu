@@ -647,7 +647,7 @@ impl Interpreter {
 
     /// Check if a method name belongs to a built-in type (Str, Int, etc.)
     /// by checking the builtin method rows of the type and its ancestors.
-    fn is_builtin_type_method(&self, type_name: &str, method_name: &str) -> bool {
+    pub(super) fn is_builtin_type_method(&self, type_name: &str, method_name: &str) -> bool {
         let ancestors = self.builtin_method_ancestors(type_name);
         for tn in &ancestors {
             let mut methods = Vec::new();
