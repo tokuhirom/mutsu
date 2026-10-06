@@ -69,7 +69,7 @@ impl Interpreter {
         let row_method = if method == "perl" { "raku" } else { method };
         if let Some(result) = crate::builtins::method_table::invoke_owner(
             self,
-            &["IO::Handle"],
+            &["IO::Handle", "Mu"],
             row_method,
             &args,
             || Value::make_instance_without_destroy(Symbol::intern("IO::Handle"), target.clone()),

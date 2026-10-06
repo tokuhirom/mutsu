@@ -311,19 +311,21 @@ fn receivers_pack_into_distinct_bytes() {
 /// `Rat`, ADR-11276 §8), so a row is checked under its folded owner.
 #[test]
 fn rows_are_declared_by_rakudo() {
-    for row in rows() {
-        let owner = match crate::builtins::builtin_type_methods::canonical_builtin_owner(row.owner)
-        {
-            "" => row.owner,
-            folded => folded,
-        };
-        assert!(
-            crate::builtins::native_method_row::native_method_declared(owner, row.name),
-            "{}.{} has a row, but the catalog does not record Rakudo declaring it there",
-            row.owner,
-            row.name
-        );
-    }
+    let undeclared: Vec<String> = rows()
+        .filter(|row| {
+            let owner =
+                match crate::builtins::builtin_type_methods::canonical_builtin_owner(row.owner) {
+                    "" => row.owner,
+                    folded => folded,
+                };
+            !crate::builtins::native_method_row::native_method_declared(owner, row.name)
+        })
+        .map(|row| format!("{}.{}", row.owner, row.name))
+        .collect();
+    assert!(
+        undeclared.is_empty(),
+        "rows the catalog does not record Rakudo declaring: {undeclared:?}"
+    );
 }
 
 /// The name test carries the arity: a call with an argument count no row of

@@ -2134,6 +2134,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("IO::Handle", "opened", 8, 60),
     ("IO::Handle", "nl-in", 8, 60),
     ("IO::Handle", "nl-out", 1, 57),
+    ("IO::Handle", "out-buffer", 8, 60),
     ("IO::Handle", "chomp", 8, 61),
     ("IO::Handle", "encoding", 8, 28),
     ("IO::Handle", "decode", 8, 4),

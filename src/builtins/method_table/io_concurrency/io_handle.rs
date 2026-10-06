@@ -51,7 +51,17 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("IO", 0, path_row, RowFlags::NONE, &[]),
     row!("Str", 0, str_row, RowFlags::NONE, &[]),
     row!("gist", 0, gist_row, RowFlags::NONE, &[]),
-    row!("raku", 0, raku_row, RowFlags::NONE, &[]),
+    // `Mu.raku` as an `IO::Handle` renders it (`IO::Handle.new(path => ...)`, unopened):
+    // Rakudo declares no `raku` on `IO::Handle`, so the row's owner is `Mu`, which
+    // only the `IoHandle` shape reaches (`DispatchShape::reaches`).
+    MethodRow {
+        owner: "Mu",
+        name: "raku",
+        arity: 0,
+        handler: Handler::Interp(raku_row),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
     row!("nl-out", 0, nl_out_row, RowFlags::NONE, &[]),
     row!("nl-out", 1, nl_out_row, RowFlags::ANY_ARGS, &[]),
     row!("nl-in", 0, nl_in_row, RowFlags::NONE, &[]),

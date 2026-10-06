@@ -237,6 +237,8 @@ impl DispatchShape {
     pub(crate) fn reaches(self, owner: &str) -> bool {
         self.inherits()
             || owner == self.type_name()
+            // `IO::Handle` renders itself (`Mu.raku`) through a `Mu` row of its own.
+            || (self == DispatchShape::IoHandle && owner == "Mu")
             || (matches!(
                 self,
                 DispatchShape::IoSpecWin32 | DispatchShape::IoSpecCygwin | DispatchShape::IoSpecQnx
