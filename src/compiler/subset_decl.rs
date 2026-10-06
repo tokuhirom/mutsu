@@ -35,14 +35,16 @@ impl Compiler {
                 ..
             } => {
                 let is_closure = Self::is_closure_predicate(pred);
-                // A bare type name in the predicate (`where $_ ~~ Resolution`)
-                // may be an import of the declaring scope, which the checker
-                // -- running in the caller's scope -- cannot see; close over
-                // the declaration scope for it as well.
+                // A bare type name in the predicate (`where $_ ~~ Resolution`,
+                // `where Class|Interface`) may be an import of the declaring
+                // scope, which the checker -- running in the caller's scope --
+                // cannot see; close over the declaration scope for it as well.
+                // A value predicate is closed over as the `$_ ~~ PRED` lambda
+                // built below, which smartmatches exactly as the checker would.
                 let mut names = TypeNameScan(false);
                 names.visit_expr(pred);
                 let with_closure =
-                    is_closure && (names.0 || !self.decl_time_expr_free_var_syms(pred).is_empty());
+                    names.0 || (is_closure && !self.decl_time_expr_free_var_syms(pred).is_empty());
                 // `.^refinement` needs the predicate as a callable. A code
                 // literal is that already; anything else (`where /a/`) is
                 // wrapped as a block that smartmatches the value, as rakudo

@@ -1,0 +1,1 @@
+class SwjItf is export { }
