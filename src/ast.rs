@@ -2006,6 +2006,14 @@ pub(crate) enum Stmt {
         /// parameters are bound around every candidate's match.
         #[serde(default)]
         param_defs: Vec<ParamDef>,
+        /// The declarator (`proto regex`) and the scope (`my proto token`) as
+        /// written: the RakuAST boundary shows them, execution ignores them.
+        #[serde(default)]
+        regex_kind: crate::regex_tree::RegexDeclKind,
+        #[serde(default)]
+        is_my: bool,
+        #[serde(default)]
+        is_our: bool,
     },
     Package {
         name: Symbol,

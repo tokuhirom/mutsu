@@ -1281,6 +1281,19 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
+/// `(my, our)` of a regex declaration's `scope`.
+fn regex_declaration_scope(node: &RakuAstNode) -> Result<(bool, bool), RuntimeError> {
+    Ok(match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => (false, false),
+        Some(_) => match leaf_str(node, "scope")?.as_str() {
+            "my" => (true, false),
+            "our" => (false, true),
+            "has" => (false, false),
+            _ => return Err(unsupported(node)),
+        },
+    })
+}
+
 fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let body = named_child(node, "body")?;
@@ -1290,6 +1303,27 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::RuleDeclaration => crate::regex_tree::RegexDeclKind::Rule,
         _ => return Err(unsupported(node)),
     };
+    let multiness = match node.fields.iter().find(|f| f.name == Some("multiness")) {
+        None => String::new(),
+        Some(_) => leaf_str(node, "multiness")?,
+    };
+    if !matches!(multiness.as_str(), "" | "multi" | "proto") {
+        return Err(unsupported(node));
+    }
+    // `proto token t {*}`: only the dispatcher, whose body is `{*}`.
+    if multiness == "proto" {
+        if body.class != RakuAstClass::OnlyStar {
+            return Err(unsupported(node));
+        }
+        let (is_my, is_our) = regex_declaration_scope(node)?;
+        return Ok(Stmt::ProtoToken {
+            name: crate::symbol::Symbol::intern(&name),
+            param_defs: signature_positional_params(node)?.1,
+            regex_kind: declaration_kind,
+            is_my,
+            is_our,
+        });
+    }
     let tree = RegexTree {
         body: lower_regex_node(body)?,
         match_immediately: false,
@@ -1311,15 +1345,8 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let body = vec![Stmt::Expr(Expr::Literal(value))];
     let source_regex = Some(tree);
     let (params, param_defs) = signature_positional_params(node)?;
-    let (is_my, is_our) = match node.fields.iter().find(|f| f.name == Some("scope")) {
-        None => (false, false),
-        Some(_) => match leaf_str(node, "scope")?.as_str() {
-            "my" => (true, false),
-            "our" => (false, true),
-            "has" => (false, false),
-            _ => return Err(unsupported(node)),
-        },
-    };
+    let (is_my, is_our) = regex_declaration_scope(node)?;
+    let multi = multiness == "multi";
     if (is_my || is_our) && node.class == RakuAstClass::RuleDeclaration {
         // `Stmt::RuleDecl` has no scope; the converter never renders one.
         return Err(unsupported(node));
@@ -1336,7 +1363,7 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             } else {
                 crate::regex_tree::RegexDeclKind::Token
             },
-            multi: false,
+            multi,
             is_my,
             is_our,
             is_export: false,
@@ -1348,7 +1375,7 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             param_defs,
             body,
             source_regex,
-            multi: false,
+            multi,
             is_export: false,
             export_tags: Vec::new(),
         }),

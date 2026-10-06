@@ -4472,7 +4472,9 @@ impl Compiler {
                 }
                 self.code.emit(OpCode::RegisterDecl(idx));
             }
-            Stmt::ProtoToken { name, param_defs } => {
+            Stmt::ProtoToken {
+                name, param_defs, ..
+            } => {
                 let idx = self.code.add_proto_token_decl_plan(*name, param_defs);
                 self.code.emit(OpCode::RegisterDecl(idx));
             }

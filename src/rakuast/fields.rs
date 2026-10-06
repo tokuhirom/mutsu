@@ -331,6 +331,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         ],
         RegexDeclaration | TokenDeclaration | RuleDeclaration => &[
             ("scope", Absent::Str("has")),
+            ("multiness", Absent::Str("")),
             ("name", Absent::Required),
             ("signature", Absent::EmptyNode(Signature)),
             ("body", Absent::Required),

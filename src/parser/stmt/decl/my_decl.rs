@@ -140,7 +140,7 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
             rest = after_ws;
             // Fall through to normal variable parsing below
         } else {
-            return proto_decl_scoped(rest, is_our);
+            return proto_decl_scoped(rest, !is_our, is_our);
         }
     }
 

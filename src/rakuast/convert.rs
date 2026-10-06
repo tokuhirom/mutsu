@@ -205,8 +205,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             export_tags,
             ..
         } => {
-            if *multi || *is_export || !export_tags.is_empty() {
-                return Err(unsupported("multi / exported regex declaration"));
+            if *is_export || !export_tags.is_empty() {
+                return Err(unsupported("exported regex declaration"));
             }
             if params.len() != param_defs.len() {
                 return Err(unsupported(
@@ -234,7 +234,40 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 &name.resolve(),
                 tree,
                 scope,
+                multi.then_some("multi"),
                 param_defs,
+            )?)))
+        }
+        // `proto token t {*}`: the declaration with no regex, only the
+        // dispatcher.
+        Stmt::ProtoToken {
+            name,
+            param_defs,
+            regex_kind,
+            is_my,
+            is_our,
+        } => {
+            let scope = match (*is_my, *is_our) {
+                (false, false) => None,
+                (true, false) => Some("my"),
+                (false, true) => Some("our"),
+                (true, true) => return Err(unsupported("proto regex both `my` and `our`")),
+            };
+            let class = match regex_kind {
+                crate::regex_tree::RegexDeclKind::Token => RakuAstClass::TokenDeclaration,
+                crate::regex_tree::RegexDeclKind::Regex => RakuAstClass::RegexDeclaration,
+                crate::regex_tree::RegexDeclKind::Rule => RakuAstClass::RuleDeclaration,
+            };
+            Ok(Some(statement_expression(regex_declaration_with_body(
+                class,
+                &name.resolve(),
+                scope,
+                Some("proto"),
+                param_defs,
+                RakuAstNode {
+                    class: RakuAstClass::OnlyStar,
+                    fields: Vec::new(),
+                },
             )?)))
         }
         Stmt::RuleDecl {
@@ -247,8 +280,8 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             export_tags,
             ..
         } => {
-            if *multi || *is_export || !export_tags.is_empty() {
-                return Err(unsupported("multi / exported rule declaration"));
+            if *is_export || !export_tags.is_empty() {
+                return Err(unsupported("exported rule declaration"));
             }
             if params.len() != param_defs.len() {
                 return Err(unsupported(
@@ -263,6 +296,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 &name.resolve(),
                 tree,
                 None,
+                multi.then_some("multi"),
                 param_defs,
             )?)))
         }
@@ -4134,11 +4168,35 @@ fn regex_declaration(
     name: &str,
     tree: &RegexTree,
     scope: Option<&str>,
+    multiness: Option<&str>,
     param_defs: &[ParamDef],
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut fields = Vec::with_capacity(4);
+    regex_declaration_with_body(
+        class,
+        name,
+        scope,
+        multiness,
+        param_defs,
+        regex_node(&tree.body)?,
+    )
+}
+
+/// [`regex_declaration`] over an already converted body (the `{*}` of a proto).
+// Cost: O(p), p = size of the parameters.
+fn regex_declaration_with_body(
+    class: RakuAstClass,
+    name: &str,
+    scope: Option<&str>,
+    multiness: Option<&str>,
+    param_defs: &[ParamDef],
+    body: RakuAstNode,
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut fields = Vec::with_capacity(5);
     if let Some(scope) = scope {
         fields.push(leaf_field(Some("scope"), Value::str_from(scope)));
+    }
+    if let Some(multiness) = multiness {
+        fields.push(leaf_field(Some("multiness"), Value::str_from(multiness)));
     }
     fields.push(node_field(Some("name"), name_from_identifier(name)));
     if !param_defs.is_empty() {
@@ -4147,7 +4205,7 @@ fn regex_declaration(
             signature(param_defs, true, None)?,
         ));
     }
-    fields.push(node_field(Some("body"), regex_node(&tree.body)?));
+    fields.push(node_field(Some("body"), body));
     Ok(RakuAstNode { class, fields })
 }
 
