@@ -43,7 +43,10 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
     }
     let mut parameters = Vec::with_capacity(decl.vars.len());
     for var in &decl.vars {
-        parameters.push(Value::rakuast(Box::new(parameter(var)?)));
+        parameters.push(Value::rakuast(Box::new(parameter(
+            var,
+            decl.init.as_ref().is_some_and(|init| init.is_binding),
+        )?)));
     }
     let mut signature_fields = vec![RakuAstField {
         name: Some("parameters"),
@@ -63,6 +66,13 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
     if decl.is_our || decl.is_state {
         let scope = if decl.is_our { "our" } else { "state" };
         fields.push(leaf_field(Some("scope"), Value::str(scope.to_string())));
+    }
+    // The declaration's own type is also a field of the declaration.
+    if let Some(type_name) = &decl.type_constraint {
+        fields.push(node_field(
+            Some("type"),
+            super::convert::build_type_node(type_name)?,
+        ));
     }
     if let Some(init) = &decl.init {
         let class = if init.is_binding {
@@ -84,12 +94,13 @@ pub(super) fn convert(decl: &SignatureDecl) -> Result<RakuAstNode, RuntimeError>
     })
 }
 
-/// `Parameter([type,] [names,] default-rw => True, target => …[, optional =>
+/// `Parameter([type,] [names,] [default-rw => True,] target => …[, optional =>
 /// False][, slurpy][, where][, traits])` -- a declarator-list element, which
 /// unlike a routine parameter carries no implicit type and defaults to a
-/// writable container. A named or slurpy element has no `optional`.
+/// writable container (unless the declaration binds with `:=`). A named or
+/// slurpy element has no `optional`.
 // Cost: O(e), e = size of the element's `where` expression.
-fn parameter(var: &SignatureVar) -> Result<RakuAstNode, RuntimeError> {
+fn parameter(var: &SignatureVar, is_binding: bool) -> Result<RakuAstNode, RuntimeError> {
     let target = if var.sigilless {
         RakuAstNode {
             class: RakuAstClass::ParameterTargetTerm,
@@ -118,7 +129,10 @@ fn parameter(var: &SignatureVar) -> Result<RakuAstNode, RuntimeError> {
             value: RakuAstFieldValue::List(vec![Value::str(name.to_string())]),
         });
     }
-    fields.push(leaf_field(Some("default-rw"), Value::truth(true)));
+    // A `:=` declaration binds the targets as they are: no writable default.
+    if !is_binding {
+        fields.push(leaf_field(Some("default-rw"), Value::truth(true)));
+    }
     fields.push(node_field(Some("target"), target));
     if !var.is_named && !var.is_slurpy {
         fields.push(leaf_field(Some("optional"), Value::truth(false)));

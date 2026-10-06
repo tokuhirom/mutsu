@@ -1985,8 +1985,11 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if param_defs.iter().any(|p| p.is_invocant) {
         return Err(unsupported(node));
     }
-    let (return_type, custom_traits) = routine_return_type(node, None)?;
-    if !custom_traits.is_empty() {
+    let mut flags = super::routine_traits::IsTraits::default();
+    let (return_type, custom_traits) = routine_return_type(node, Some(&mut flags))?;
+    if !custom_traits.is_empty() || !flags.export_tags.is_empty() || flags.assoc.is_some()
+        || flags.precedence.is_some()
+    {
         return Err(unsupported(node));
     }
     let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
@@ -1995,12 +1998,12 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     } else {
         crate::ast::RoutineDeclarator::Method
     };
-    Ok(crate::parser::anon_method_expr(
-        param_defs,
-        return_type,
-        body,
-        declarator,
-    ))
+    let mut literal = crate::parser::anon_method_expr(param_defs, return_type, body, declarator);
+    if let Expr::AnonSubParams { is_rw, is_raw, .. } = &mut literal {
+        *is_rw = flags.is_rw;
+        *is_raw = flags.is_raw;
+    }
+    Ok(literal)
 }
 
 /// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`).
@@ -3621,8 +3624,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         RakuAstClass::Sub if !node.fields.iter().any(|f| f.name == Some("name")) => {
             let (params, param_defs) = signature_positional_params(node)?;
-            let (return_type, custom_traits) = routine_return_type(node, None)?;
-            if !custom_traits.is_empty() {
+            let mut flags = super::routine_traits::IsTraits::default();
+            let (return_type, custom_traits) = routine_return_type(node, Some(&mut flags))?;
+            if !custom_traits.is_empty() || !flags.export_tags.is_empty() || flags.assoc.is_some()
+                || flags.precedence.is_some()
+            {
                 // Only the `-->` spelling survives an anonymous sub's internal
                 // node (it keeps no `custom_traits`), so a `returns`/`of` trait
                 // would be silently dropped. Refuse instead.
@@ -3633,8 +3639,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             if params.is_empty() && return_type.is_none() {
                 return Ok(Expr::AnonSub {
                     body,
-                    is_rw: false,
-                    is_raw: false,
+                    is_rw: flags.is_rw,
+                    is_raw: flags.is_raw,
                     is_block: false,
                     doc: Default::default(),
                 });
@@ -3644,8 +3650,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 param_defs,
                 return_type,
                 body,
-                is_rw: false,
-                is_raw: false,
+                is_rw: flags.is_rw,
+                is_raw: flags.is_raw,
                 custom_traits: Default::default(),
                 is_whatever_code: false,
                 declarator: crate::ast::RoutineDeclarator::Sub,

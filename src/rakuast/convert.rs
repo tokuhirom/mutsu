@@ -3032,21 +3032,33 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             is_block,
             ..
         } => {
-            if *is_rw {
-                return Err(unsupported("`is rw` block"));
-            }
-            if *is_raw {
-                return Err(unsupported("`is raw` block"));
-            }
             if *is_block {
+                if *is_rw {
+                    return Err(unsupported("`is rw` block"));
+                }
+                if *is_raw {
+                    return Err(unsupported("`is raw` block"));
+                }
                 // A bare `{ ... }` block.
                 block_node(body)
             } else {
-                // An anonymous, parameter-less `sub { ... }`.
-                Ok(RakuAstNode {
+                // An anonymous, parameter-less `sub { ... }`, with the `is rw`
+                // / `is raw` it was written with.
+                let mut node = RakuAstNode {
                     class: RakuAstClass::Sub,
                     fields: vec![node_field(Some("body"), blockoid(body)?)],
-                })
+                };
+                routine_traits::add_flags(
+                    &mut node,
+                    false,
+                    false,
+                    &routine_traits::IsTraits {
+                        is_rw: *is_rw,
+                        is_raw: *is_raw,
+                        ..Default::default()
+                    },
+                )?;
+                Ok(node)
             }
         }
         Expr::Lambda {
@@ -3069,6 +3081,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             param_defs,
             body,
             is_rw,
+            is_raw,
             is_whatever_code,
             return_type,
             declarator,
@@ -3077,7 +3090,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if *is_whatever_code {
                 return Err(unsupported("Whatever-code closure (compound assignment)"));
             }
-            if *is_rw {
+            if (*is_rw || *is_raw) && !declarator.is_routine() {
                 return Err(unsupported("`is rw` pointy block"));
             }
             // A bare placeholder block is a Block whose body contains
@@ -3099,10 +3112,23 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 // whose parameters carry the implicit
                 // `type => Type::Setting(Any)` that every sub/method signature
                 // has, where a pointy block's do not.
-                if let Some(class) = method_literal_class(*declarator) {
-                    return method_literal_node(class, param_defs, body, return_type.as_deref());
-                }
-                return anon_routine_node(param_defs, body, return_type.as_deref());
+                let mut node = match method_literal_class(*declarator) {
+                    Some(class) => {
+                        method_literal_node(class, param_defs, body, return_type.as_deref())?
+                    }
+                    None => anon_routine_node(param_defs, body, return_type.as_deref())?,
+                };
+                routine_traits::add_flags(
+                    &mut node,
+                    false,
+                    false,
+                    &routine_traits::IsTraits {
+                        is_rw: *is_rw,
+                        is_raw: *is_raw,
+                        ..Default::default()
+                    },
+                )?;
+                return Ok(node);
             }
             pointy_block(param_defs, body, return_type.as_deref())
         }
