@@ -476,6 +476,18 @@ pub(crate) fn native_method_1arg(
             let encoding = arg.to_string_value();
             crate::builtins::decode_buf_method(target, Some(&encoding))
         }
+        // An allomorph (`IntStr`/`RatStr`/`NumStr`) answers with its numeric
+        // inner value, so the epsilon binds exactly where it does for that type.
+        // Cost: O(1) plus the inner value's own `Rat`/`FatRat` cost.
+        "Rat" | "FatRat"
+            if matches!(target.view(), ValueView::Mixin(inner, _)
+            if matches!(inner.view(), ValueView::Int(_) | ValueView::Rat(..) | ValueView::Num(_))) =>
+        {
+            let ValueView::Mixin(inner, _) = target.view() else {
+                return None;
+            };
+            native_method_1arg(inner, method_sym, arg)
+        }
         "Rat" => {
             // .Rat(epsilon) — use continued fraction algorithm with given epsilon.
             // Only an invocant that binds the epsilon type-checks it: an `Int`
