@@ -1,6 +1,6 @@
 # ADR-11209: A Raku-allocated `is repr('CStruct')` object owns a native body; C memory is the truth
 
-- **Status**: Proposed (2026-10-06); implemented on the branch that carries it, awaiting the maintainer's acceptance
+- **Status**: Accepted (user decision 2026-10-06); implemented in [#12113](https://github.com/tokuhirom/mutsu/pull/12113), with the CArray-in-CStruct reads in [#12124](https://github.com/tokuhirom/mutsu/pull/12124)
 - **Date**: 2026-10-06
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#11209](https://github.com/tokuhirom/mutsu/issues/11209)
