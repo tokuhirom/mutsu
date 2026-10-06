@@ -487,14 +487,20 @@ impl Interpreter {
         // without the guard `my _ $x` would accept `_` as a type name.
         // A sigil-less `constant Bar = Foo::Bar` alias lives in the term
         // namespace (#9962) and is consulted first.
-        if !crate::env::is_magic_sigilless_key(name)
-            && let Some(ValueView::Package(target)) = self
-                .term_value(name)
-                .or_else(|| self.env.get(name))
-                .map(Value::view)
-        {
-            let resolved = target.resolve();
-            if resolved != name && self.has_type_direct(&resolved) {
+        if !crate::env::is_magic_sigilless_key(name) {
+            let alias = self.term_value(name).or_else(|| self.env.get(name));
+            if let Some(ValueView::Package(target)) = alias.map(Value::view) {
+                let resolved = target.resolve();
+                if resolved != name && self.has_type_direct(&resolved) {
+                    return true;
+                }
+            }
+            // `constant OidArray = CArray[Oid]`: a parameterization is an
+            // undefined mixin type object, a type like any class.
+            if let Some(term) = self.term_value(name)
+                && matches!(term.view(), ValueView::Mixin(..))
+                && !crate::runtime::types::value_is_defined(term)
+            {
                 return true;
             }
         }
@@ -1565,6 +1571,14 @@ impl Interpreter {
                 .or_else(|| self.get_env_with_main_alias(&current))
                 .and_then(|value| match value.view() {
                     crate::value::ValueView::Package(target) => Some(target.resolve()),
+                    // `constant OidArray = CArray[Oid]`: a parameterization is
+                    // an undefined mixin type object, which names itself by
+                    // what its `^parameterize` gave `.^set_name`.
+                    crate::value::ValueView::Mixin(_, mixins) if !value_is_defined(&value) => {
+                        mixins
+                            .get("__mutsu_type_name__")
+                            .map(Value::to_string_value)
+                    }
                     _ => None,
                 });
             match next {

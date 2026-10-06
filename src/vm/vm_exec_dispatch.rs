@@ -5085,6 +5085,7 @@ impl Interpreter {
                     self.exec_index_autovivify_lazy_op(true, *is_positional)?;
                 } else {
                     self.exec_index_op_with_positional(*is_positional)?;
+                    self.decont_native_pos_ref_on_top()?;
                 }
                 *ip += 1;
             }

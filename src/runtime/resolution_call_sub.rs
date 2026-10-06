@@ -199,22 +199,38 @@ impl Interpreter {
             })
     }
 
-    /// A multi dispatcher code value of the family `name` whose captured
-    /// candidates are the live ones (`&trait_mod:<is>` exported by
-    /// `sub EXPORT`). Calling it re-enters resolution of `name`, so a by-name
-    /// call that already found no candidate to bind must not retry through it:
-    /// the retry resolves the same family again, forever.
-    // Cost: O(c), c = candidates in the family.
-    pub(crate) fn is_live_family_dispatcher(&self, v: &Value, name: &str) -> bool {
+    /// Whether `v` is a multi dispatcher code value of the family `name`.
+    // Cost: O(1).
+    pub(crate) fn is_family_dispatcher_of(v: &Value, name: &str) -> bool {
         let ValueView::Sub(data) = v.view() else {
             return false;
         };
-        let Some(ValueView::Str(family)) = data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
-        else {
+        matches!(
+            data.env.get("__mutsu_multi_dispatch_name").map(Value::view),
+            Some(ValueView::Str(family)) if family.as_ref() == name
+        )
+    }
+
+    /// A multi dispatcher code value of the family `name` that calling would
+    /// send straight back into resolution of `name` (`&trait_mod:<is>`
+    /// exported by `sub EXPORT`): either its captured candidates are the live
+    /// ones, or a by-name call is already running through a dispatcher of that
+    /// family. A by-name call that found no candidate to bind must not retry
+    /// through it: the retry resolves the same family again, forever.
+    // Cost: O(c), c = candidates in the family.
+    pub(crate) fn is_live_family_dispatcher(&self, v: &Value, name: &str) -> bool {
+        if !Self::is_family_dispatcher_of(v, name) {
+            return false;
+        }
+        let ValueView::Sub(data) = v.view() else {
             return false;
         };
-        if family.as_ref() != name {
-            return false;
+        if self
+            .dispatch
+            .family_dispatchers_in_flight
+            .contains(&Symbol::intern(name))
+        {
+            return true;
         }
         data.env
             .get("__mutsu_multi_dispatch_candidates")

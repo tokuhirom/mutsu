@@ -127,7 +127,8 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
 
 /// Strip the internal `\u{0}...` suffix from one name segment. Everything
 /// from the first `\u{0}` on is internal, except the argument list of a
-/// curried lexical role: `R\u{0}<id>[Int]` displays as `R[Int]`.
+/// curried lexical role (`R\u{0}<id>[Int]` displays as `R[Int]`) and a
+/// definiteness smiley (`Foo\u{0}<id>:D` displays as `Foo:D`).
 fn strip_site_keys(segment: &str) -> String {
     let Some((short, rest)) = segment.split_once('\u{0}') else {
         return segment.to_string();
@@ -135,6 +136,8 @@ fn strip_site_keys(segment: &str) -> String {
     let rest = rest.trim_start_matches(|c: char| c.is_ascii_digit());
     if rest.starts_with('[') {
         format!("{short}{}", strip_site_keys(rest))
+    } else if matches!(rest, ":D" | ":U") {
+        format!("{short}{rest}")
     } else {
         short.to_string()
     }

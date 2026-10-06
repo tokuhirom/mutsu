@@ -900,7 +900,20 @@ impl Interpreter {
                 })
             })
         {
-            return self.eval_call_on_value(callable, args.to_vec());
+            // Running a family's dispatcher re-enters resolution of the family:
+            // note it, so a nested call that finds no candidate does not come
+            // back through it (`is_live_family_dispatcher`).
+            let through_dispatcher = Self::is_family_dispatcher_of(&callable, name);
+            if through_dispatcher {
+                self.dispatch
+                    .family_dispatchers_in_flight
+                    .push(Symbol::intern(name));
+            }
+            let result = self.eval_call_on_value(callable, args.to_vec());
+            if through_dispatcher {
+                self.dispatch.family_dispatchers_in_flight.pop();
+            }
+            return result;
         }
         // A qualified call to a multi declared in a package nested in an
         // enclosing package of the running code (`Q::k` in a method of `M::C`
