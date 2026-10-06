@@ -3920,7 +3920,9 @@ fn postfix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, Run
 
 /// The `TokenKind` for an `Infix`/`Prefix` operator node (its positional operator
 /// string), or an error for an operator the lowerer doesn't handle yet.
-pub(super) fn infix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, RuntimeError> {
+pub(super) fn infix_token(
+    node: &RakuAstNode,
+) -> Result<crate::token_kind::TokenKind, RuntimeError> {
     let name = positional_leaf(node)?;
     let ValueView::Str(s) = name.view() else {
         return Err(unsupported(node));
@@ -3929,7 +3931,9 @@ pub(super) fn infix_token(node: &RakuAstNode) -> Result<crate::token_kind::Token
 }
 
 /// Resolve a `Prefix` operator's positional spelling in prefix context.
-pub(super) fn prefix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, RuntimeError> {
+pub(super) fn prefix_token(
+    node: &RakuAstNode,
+) -> Result<crate::token_kind::TokenKind, RuntimeError> {
     let name = positional_leaf(node)?;
     let ValueView::Str(s) = name.view() else {
         return Err(unsupported(node));

@@ -2088,8 +2088,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // `class { }` / `role { }` / `grammar { }` in expression position: the
         // parser wraps the declaration in a `DoStmt`, rakudo has the node itself.
-        Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }) => {
-            let statement = convert_stmt(stmt)?.ok_or_else(|| unsupported("package declaration"))?;
+        Expr::DoStmt(stmt)
+            if matches!(
+                stmt.as_ref(),
+                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }
+            ) =>
+        {
+            let statement =
+                convert_stmt(stmt)?.ok_or_else(|| unsupported("package declaration"))?;
             statement
                 .fields
                 .iter()

@@ -111,7 +111,8 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             .into_iter()
             .map(|t| Value::rakuast(Box::new(t))),
     );
-    let mut fields = package_header_fields(role.name, is_lexical, is_colons_package(role.custom_traits));
+    let mut fields =
+        package_header_fields(role.name, is_lexical, is_colons_package(role.custom_traits));
     if !traits.is_empty() {
         fields.push(RakuAstField {
             name: Some("traits"),

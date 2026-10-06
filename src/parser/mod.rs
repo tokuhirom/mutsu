@@ -17,12 +17,12 @@ pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
 };
 pub(crate) use primary::ident::{anon_method_expr, is_synthetic_invocant};
+pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
+pub(crate) use primary::var::is_pseudo_package;
 pub(crate) use primary::{
     ANON_COLONS_TRAIT, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
     prepend_does_header,
 };
-pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
-pub(crate) use primary::var::is_pseudo_package;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) mod helpers;
