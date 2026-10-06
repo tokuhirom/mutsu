@@ -1367,7 +1367,9 @@ impl Compiler {
                 // wants one, else pass the assignment's value (see
                 // `compile_gated_assigned_arg`).
                 if let Some(element) = Self::assign_arg_element(arg) {
-                    let callee = crate::opcode::RwArgCallee::CodeVar { name_idx: code_var_idx };
+                    let callee = crate::opcode::RwArgCallee::CodeVar {
+                        name_idx: code_var_idx,
+                    };
                     self.compile_gated_assigned_arg(
                         arg,
                         callee.clone(),
@@ -1384,7 +1386,9 @@ impl Compiler {
                     self.compile_expr(arg);
                     self.maybe_promote_attr_arg_read(arg);
                     self.mark_call_on_arg(
-                        crate::opcode::RwArgCallee::CodeVar { name_idx: code_var_idx },
+                        crate::opcode::RwArgCallee::CodeVar {
+                            name_idx: code_var_idx,
+                        },
                         positional_indices[i],
                         i as u32,
                         arg,
