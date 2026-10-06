@@ -311,11 +311,21 @@ pub(crate) fn exact_round_scaled(target: &Value, scale: &Value) -> Option<Value>
 }
 
 fn exact_round_scaled_i128(target: &Value, scale: &Value) -> Option<Value> {
-    let (tn, td) = exact_rat_parts_i128(&target.view())?;
     let (sn, sd) = exact_rat_parts_i128(&scale.view())?;
     if sn == 0 {
         return None;
     }
+    // A Num target: Rakudo computes `(x / $scale + 1/2).floor` in floating
+    // point (`Num / Rat` is a Num) and then `Int * $scale`, so the result is
+    // still an exact Int/Rat -- `round(0.34567e0, 0.001)` is the Rat 0.346.
+    if let ValueView::Num(x) = target.view() {
+        let q = (x / (sn as f64 / sd as f64) + 0.5).floor();
+        if !q.is_finite() || q.abs() >= 1e30 {
+            return None;
+        }
+        return int_times_scale(q as i128, scale, sn, sd);
+    }
+    let (tn, td) = exact_rat_parts_i128(&target.view())?;
     // r = self/scale + 1/2 = (2*tn*sd + td*sn) / (2*td*sn)
     let num = tn
         .checked_mul(sd)?
@@ -328,8 +338,12 @@ fn exact_round_scaled_i128(target: &Value, scale: &Value) -> Option<Value> {
         den = den.checked_neg()?;
     }
     // floor(num/den) with den > 0
-    let floor_q = num.div_euclid(den);
-    // result = floor_q * scale = floor_q * sn / sd
+    int_times_scale(num.div_euclid(den), scale, sn, sd)
+}
+
+/// `floor_q * scale` as Rakudo's `Int * Real` types it: an Int scale gives an
+/// Int, a `FatRat` scale a `FatRat`, any other rational scale a `Rat`.
+fn int_times_scale(floor_q: i128, scale: &Value, sn: i128, sd: i128) -> Option<Value> {
     let rn = floor_q.checked_mul(sn)?;
     if is_integer_scale(&scale.view()) {
         // sd == 1 for an integer scale, so the result is an exact integer.
