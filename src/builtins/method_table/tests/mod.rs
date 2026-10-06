@@ -47,6 +47,20 @@ fn sample(shape: DispatchShape) -> Value {
         DispatchShape::DateTime => {
             crate::builtins::methods_0arg::temporal::make_datetime(2024, 3, 5, 7, 8, 9.0, 0)
         }
+        DispatchShape::Instant => {
+            crate::builtins::method_table::instances_sample("Instant", Value::int(1_000_000_010))
+        }
+        DispatchShape::Duration => crate::builtins::method_table::instances_sample(
+            "Duration",
+            crate::value::make_rat(15, 2),
+        ),
+        DispatchShape::Match => Value::make_match_object_full(
+            3,
+            5,
+            &[],
+            &Default::default(),
+            crate::value::regex_caps::MatchTarget::new("xxxab"),
+        ),
     }
 }
 

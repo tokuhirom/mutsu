@@ -267,7 +267,13 @@ macro_rules! native_int_handlers {
         $(
             // Cost: O(1) (O(n) for a Str receiver, n = chars of the parse).
             fn $handler(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-                crate::value::raku_repr::native_int_coerce_method(target, $name)
+                // An `Instant` or `Duration` is its seconds.
+                match super::numify::temporal_seconds(target) {
+                    Some(seconds) => {
+                        crate::value::raku_repr::native_int_coerce_method(&seconds, $name)
+                    }
+                    None => crate::value::raku_repr::native_int_coerce_method(target, $name),
+                }
             }
         )*
     };

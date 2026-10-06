@@ -387,11 +387,19 @@ impl Interpreter {
                         // Only when BOTH numify to something that is no longer
                         // an object; otherwise keep the originals so an object
                         // with no `.Numeric` still reaches the structural path.
-                        (Ok(ln), Ok(rn))
+                        // `DateTime.Numeric` is an `Instant`, which does `Real`
+                        // (so `Date.Numeric` is a day count): the bridge
+                        // numifies that second object once more, as the
+                        // `Real` candidate of `==` does in rakudo.
+                        (Ok(ln), Ok(rn)) => {
+                            let (ln, rn) = vm.coerce_numeric_bridge_pair(ln, rn)?;
                             if !matches!(ln.view(), ValueView::Instance { .. })
-                                && !matches!(rn.view(), ValueView::Instance { .. }) =>
-                        {
-                            (ln, rn)
+                                && !matches!(rn.view(), ValueView::Instance { .. })
+                            {
+                                (ln, rn)
+                            } else {
+                                (l, r)
+                            }
                         }
                         _ => (l, r),
                     }

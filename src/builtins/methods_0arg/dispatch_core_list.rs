@@ -84,12 +84,6 @@ pub(super) fn dispatch(
             target,
             &[],
         )),
-        // `narrow` of a numeric receiver is a row (`method_table::real_misc`); an
-        // `Instant` (no table shape yet) is its own narrowest form.
-        // Cost: O(1).
-        "narrow" if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Instant") => {
-            Some(Some(Ok(target.clone())))
-        }
         // `Seq.sqrt` and the other list-likes with no table shape: `Cool`'s
         // numeric method on the element count, through the `Cool.sqrt` row's
         // handler (`method_table::math`). A `List` or `Array` is answered by the

@@ -150,6 +150,10 @@ pub(crate) fn sort(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
         | ValueView::BigRat(..)
         | ValueView::FatRat(..)
         | ValueView::Complex(..) => Some(Ok(Value::seq(vec![target.clone()]))),
+        // A `Date`, `DateTime`, `Instant` or `Duration` is one item too.
+        _ if super::any_collection::scalar_like(target) => {
+            Some(Ok(Value::seq(vec![target.clone()])))
+        }
         _ => None,
     }
 }

@@ -55,6 +55,13 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             {
                 None
             }
+            // `Instant` and `Duration` do `Real`: their `Complex` is a row's
+            // (`method_table::instances::instant`).
+            ValueView::Instance { class_name, .. }
+                if class_name == "Instant" || class_name == "Duration" =>
+            {
+                None
+            }
             ValueView::Complex(_, _) => Some(Ok(target.clone())),
             ValueView::Int(i) => Some(Ok(Value::complex(i as f64, 0.0))),
             ValueView::Num(f) => Some(Ok(Value::complex(f, 0.0))),

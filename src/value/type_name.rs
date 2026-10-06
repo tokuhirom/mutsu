@@ -5,6 +5,11 @@
 use super::{Value, ValueView};
 
 pub(crate) fn value_type_name(value: &Value) -> &'static str {
+    // A lazy `Match` names its class from its capture node: `view()` would
+    // materialize it, and the name is the same either way.
+    if value.is_lazy_match_value() {
+        return value.match_dispatch_class();
+    }
     match value.view() {
         // A `VarRef` is a transient binder wrapper, not a type: report the type
         // of the variable's value.

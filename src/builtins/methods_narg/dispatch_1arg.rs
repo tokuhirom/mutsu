@@ -497,6 +497,12 @@ pub(crate) fn native_method_1arg(
                 // `$*TOLERANCE`, which only the interpreter can read
                 // (`Interpreter::dispatch_complex_to_real`).
                 ValueView::Complex(..) => return None,
+                // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
+                ValueView::Instance { class_name, .. }
+                    if class_name == "Instant" || class_name == "Duration" =>
+                {
+                    return None;
+                }
                 ValueView::Str(s) => {
                     // `Str.Rat` takes no `Real` epsilon in Rakudo; the lenient
                     // reading of whatever was passed is kept.
@@ -532,6 +538,12 @@ pub(crate) fn native_method_1arg(
                 },
                 // As for `Rat` above: the interpreter judges the imaginary part.
                 ValueView::Complex(..) => return None,
+                // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
+                ValueView::Instance { class_name, .. }
+                    if class_name == "Instant" || class_name == "Duration" =>
+                {
+                    return None;
+                }
                 _ => Value::fat_rat_raw(0, 1),
             };
             Some(Ok(result))

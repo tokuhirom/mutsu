@@ -5,7 +5,6 @@ use crate::symbol::Symbol;
 use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::value_buf::{buf_len_or_zero, buf_storage, set_buf_storage};
 use crate::value::{RuntimeError, Value, ValueView};
-use num_traits::{ToPrimitive, Zero};
 
 use super::parse_raku_int_from_str;
 use crate::value::ValueMap;
@@ -783,14 +782,6 @@ pub(super) fn dispatch(
                     Some(Err(RuntimeError::new("Failed")))
                 }
             }
-            // Instant/Duration `.Str` is the same pure rendering as their gist
-            // (`value/display.rs::to_string_value`), so handle it natively
-            // instead of falling through to the interpreter.
-            ValueView::Instance { class_name, .. }
-                if class_name == "Instant" || class_name == "Duration" =>
-            {
-                Some(Ok(Value::str(target.to_string_value())))
-            }
             ValueView::Package(_) | ValueView::Instance { .. } => None,
             ValueView::LazyList(_) => None, // fall through to runtime to force the list
             // A lazy (infinite-backed) array stringifies to a bounded `...`
@@ -860,30 +851,6 @@ pub(super) fn dispatch(
                 | ValueView::Rat(..)
                 | ValueView::FatRat(..)
                 | ValueView::BigRat(..) => crate::builtins::method_table::coerce::int_of(target)?,
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Instant" || class_name == "Duration" => {
-                    let numeric = attributes
-                        .as_map()
-                        .get("value")
-                        .and_then(|v| match v.view() {
-                            ValueView::Int(i) => Some(i as f64),
-                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
-                            ValueView::FatRat(n, d) if d != 0 => {
-                                Some(crate::value::rat_to_f64(n, d))
-                            }
-                            ValueView::BigRat(n, d) if !d.is_zero() => {
-                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or(0.0);
-                    Value::int(numeric as i64)
-                }
                 // Cost: O(d^2), d = digits (num-bigint radix parse; a few O(n) copies first).
                 ValueView::Str(s) => {
                     if s.trim().is_empty() {
@@ -1059,30 +1026,6 @@ pub(super) fn dispatch(
                 return Some(Some(Ok(result)));
             }
             let result = match target.view() {
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Instant" || class_name == "Duration" => {
-                    let numeric = attributes
-                        .as_map()
-                        .get("value")
-                        .and_then(|v| match v.view() {
-                            ValueView::Int(i) => Some(i as f64),
-                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
-                            ValueView::FatRat(n, d) if d != 0 => {
-                                Some(crate::value::rat_to_f64(n, d))
-                            }
-                            ValueView::BigRat(n, d) if !d.is_zero() => {
-                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or(0.0);
-                    Value::num(numeric)
-                }
                 // Cost: O(d^2) for a d-digit integer string, O(n) otherwise (as `.Numeric`,
                 // plus a trimmed copy).
                 ValueView::Str(s) => {
@@ -1213,30 +1156,6 @@ pub(super) fn dispatch(
                 ValueView::Int(i) => Value::int(i),
                 ValueView::BigInt(_) => target.clone(),
                 ValueView::Num(f) => Value::num(f),
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Instant" || class_name == "Duration" => {
-                    let numeric = attributes
-                        .as_map()
-                        .get("value")
-                        .and_then(|v| match v.view() {
-                            ValueView::Int(i) => Some(i as f64),
-                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
-                            ValueView::FatRat(n, d) if d != 0 => {
-                                Some(crate::value::rat_to_f64(n, d))
-                            }
-                            ValueView::BigRat(n, d) if !d.is_zero() => {
-                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or(0.0);
-                    Value::num(numeric)
-                }
                 // Rational values stay exact under `.Numeric`; converting a
                 // `Rat` through f64 loses large denominators (and turns
                 // `1/100000` into the nearby `1/99999` when it is converted
@@ -1291,35 +1210,6 @@ pub(super) fn dispatch(
                         Some(n) => Value::num(n),
                         None => Value::int(0),
                     }
-                }
-                _ => return Some(None),
-            };
-            Some(Some(Ok(result)))
-        }
-        // The numeric types' `Bridge` is a row (`method_table::real_misc`); this arm
-        // keeps `Instant` and `Duration`, which have no table shape.
-        "Bridge" => {
-            let result = match target.view() {
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Instant" || class_name == "Duration" => {
-                    let bridged = attributes
-                        .as_map()
-                        .get("value")
-                        .and_then(|v| match v.view() {
-                            ValueView::Int(i) => Some(i as f64),
-                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
-                            ValueView::FatRat(n, d) if d != 0 => {
-                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or(0.0);
-                    Value::num(bridged)
                 }
                 _ => return Some(None),
             };
