@@ -1166,6 +1166,7 @@ impl ContainerCell {
     /// Record the container's `is default(...)` value (see `default`).
     // Cost: O(1).
     pub fn set_default(&self, value: Value) {
+        CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
         *self.default.lock().unwrap() = Some(value);
     }
 
@@ -1174,6 +1175,20 @@ impl ContainerCell {
     pub fn default_value(&self) -> Option<Value> {
         self.default.lock().unwrap().clone()
     }
+}
+
+/// Set once any cell has been given its own `of` constraint or `is default`
+/// ([`register_container_constraint`] and kin, [`ContainerCell::set_default`]),
+/// so an element assignment skips looking for such a cell under its target in
+/// the common program that never makes one.
+static CELL_METADATA_SEEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Whether a cell carrying its own constraint or default may exist anywhere.
+/// See [`CELL_METADATA_SEEN`].
+#[inline]
+pub fn cell_metadata_possible() -> bool {
+    CELL_METADATA_SEEN.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Set once any [`ContainerCell::new_readonly`] cell has been created, so the
@@ -1252,6 +1267,7 @@ pub fn register_container_constraint(
     cell: &crate::gc::Gc<crate::value::ContainerCell>,
     type_name: &str,
 ) {
+    CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: None,
@@ -1266,6 +1282,7 @@ pub fn register_container_constraint_named(
     type_name: &str,
     name: &str,
 ) {
+    CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: None,
@@ -1281,6 +1298,7 @@ pub fn register_element_constraint(
     type_name: &str,
     owner: &str,
 ) {
+    CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
     *cell.constraint.lock().unwrap() = Some(Box::new(CellConstraint {
         ty: type_name.to_string(),
         element_of: Some(owner.to_string()),

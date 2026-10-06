@@ -146,6 +146,27 @@ impl Interpreter {
         }
     }
 
+    /// What a `Nil` stored through `cell` resets to: the container's own
+    /// `is default`, else its `of` type object, else `Any` -- rakudo's
+    /// `$!descriptor`, which belongs to the container whichever name (a sigilless
+    /// alias, a `:=`-bound element) the write arrives through.
+    // Cost: O(1).
+    pub(crate) fn cell_nil_reset_value(
+        &mut self,
+        cell: &crate::gc::Gc<crate::value::ContainerCell>,
+    ) -> Value {
+        if let Some(def) = cell.default_value() {
+            return def;
+        }
+        match crate::value::lookup_container_constraint(cell) {
+            Some(tc) if tc != "Mu" && tc != "Nil" => {
+                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&tc));
+                Value::package(Symbol::intern(&nominal))
+            }
+            _ => Value::package(crate::symbol::wk::any()),
+        }
+    }
+
     /// What a `Nil` assigned through the sigilless alias in slot `idx` decays
     /// to, or `None` when the slot is not such an alias.
     ///
