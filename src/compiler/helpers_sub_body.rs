@@ -626,7 +626,7 @@ impl Compiler {
             std::mem::take(&mut sub_compiler.compiled_functions),
         );
         let mut cf = CompiledFunction {
-            code: sub_compiler.code,
+            code: std::sync::Arc::new(sub_compiler.code),
             source_file: None,
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),

@@ -264,7 +264,7 @@ impl Compiler {
 
         cc.method_fatal_pragma = self.fatal_pragma_active;
         let mut cf = CompiledFunction {
-            code: cc,
+            code: std::sync::Arc::new(cc),
             source_file: None,
             params: method_params,
             param_defs: effective_param_defs,

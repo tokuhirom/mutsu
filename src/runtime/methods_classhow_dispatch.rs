@@ -1476,7 +1476,7 @@ impl Interpreter {
                 // ever worked. See `t/add-method-named-routine.t`.
                 let method_compiled = match (&method_compiled, sub_data.compiled_routine.as_ref()) {
                     (None, Some(routine)) if method_body.is_empty() => {
-                        Some(std::sync::Arc::new(routine.code.clone()))
+                        Some(routine.code.clone())
                     }
                     _ => method_compiled,
                 };
