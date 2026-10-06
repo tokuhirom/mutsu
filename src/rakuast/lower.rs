@@ -3982,6 +3982,16 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // two leaf roles; the enclosing priming *scope* is planted afterwards by
         // `whatever_curry`, not here — see `lower`'s entry point.
         RakuAstClass::WhateverCodeArgument => Ok(Expr::WhateverArg),
+        // A loop or conditional statement in expression position (`(for 1, 2 { $_ })`,
+        // inside parentheses): the statement itself, which the parser carries as
+        // a `DoStmt`.
+        RakuAstClass::StatementFor
+        | RakuAstClass::StatementGiven
+        | RakuAstClass::StatementIf
+        | RakuAstClass::StatementUnless
+        | RakuAstClass::StatementLoopWhile
+        | RakuAstClass::StatementLoopUntil
+        | RakuAstClass::StatementLoop => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),
         // `once { … }` -> a once expression over the lowered block body.
         RakuAstClass::StatementPrefixOnce => Ok(Expr::Once {
             body: lower_block(named_child_or_positional(node)?)?,
