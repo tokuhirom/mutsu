@@ -31,6 +31,7 @@ pub(super) fn unsupported(node: &RakuAstNode) -> RuntimeError {
 pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     super::shadowed_terms::scan(node);
     super::declared_routines::scan(node);
+    super::infix_func::reset();
     let mut stmts = lower_stmts(node)?;
     // ADR-0033 Phase 3. A lowered tree carries `Expr::WhateverArg` leaves but no
     // priming *scopes*: those are planted by the parser at its own grammar
@@ -55,6 +56,8 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 /// variables written in it (see `anon_state`); the unit's own list is not,
 /// as the parser declares none at the top level either.
 pub(super) fn lower_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    // Operators the list declares are scoped to it.
+    let _operators = super::infix_func::enter_scope();
     match node.class {
         RakuAstClass::CompUnit => lower_stmt_list(named_child(node, "statement-list")?),
         _ => super::anon_state::with_frame(|| lower_stmt_list(node)),
@@ -76,6 +79,7 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
             let mut stmts = Vec::with_capacity(node.fields.len());
             for f in &node.fields {
                 let child = child_node(&f.value)?;
+                super::infix_func::note_declaration(child);
                 if let Some(line) = super::origin::line_of(child) {
                     stmts.push(Stmt::SetLine(line));
                 }
@@ -2240,8 +2244,14 @@ fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 
 /// Whether an `ApplyInfix` uses Raku's compound-assignment metaoperator.
 pub(super) fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
+    // `X+=` / `Z+=` hold a metaoperator, not a plain infix: `meta_infix` lowers them.
     named_child(node, "infix")
-        .map(|child| child.class == RakuAstClass::MetaInfixAssign)
+        .map(|child| {
+            child.class == RakuAstClass::MetaInfixAssign
+                && named_child_or_positional(child)
+                    .map(|inner| inner.class == RakuAstClass::Infix)
+                    .unwrap_or(true)
+        })
         .unwrap_or(false)
 }
 
@@ -2289,15 +2299,34 @@ fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError
 /// keeps for a `%h{…}` subscript -- as the parser's `IndexAssign`, or `None`
 /// when the left side is not a subscript.
 fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+    // `$::($n) = v` / `::($n) = v`.
+    if let Some(assign) = super::symbolic_deref::lower_assign(node)? {
+        return Ok(Some(assign));
+    }
     let left = named_child(node, "left")?;
     if left.class != RakuAstClass::ApplyPostfix {
         return Ok(None);
+    }
+    let lowered = lower_expr(left)?;
+    // `@a[0;1] = v`.
+    if let Expr::MultiDimIndex {
+        target,
+        dimensions,
+        is_positional,
+    } = lowered
+    {
+        return Ok(Some(Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value: Box::new(lower_expr(named_child(node, "right")?)?),
+            is_positional,
+        }));
     }
     let Expr::Index {
         target,
         index,
         is_positional,
-    } = lower_expr(left)?
+    } = lowered
     else {
         return Ok(None);
     };
@@ -2465,16 +2494,19 @@ fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 /// an empty vec when there are none.
 fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
     match node.fields.iter().find(|f| f.name == Some("args")) {
-        Some(f) => {
-            let arglist = child_node(&f.value)?;
-            arglist
-                .fields
-                .iter()
-                .map(|af| lower_expr(child_node(&af.value)?))
-                .collect()
-        }
+        Some(f) => arg_list_exprs(child_node(&f.value)?),
         None => Ok(Vec::new()),
     }
+}
+
+/// The lowered arguments of an `ArgList` node.
+// Cost: O(n), n = nodes of the arguments.
+pub(super) fn arg_list_exprs(arglist: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
+    arglist
+        .fields
+        .iter()
+        .map(|af| lower_expr(child_node(&af.value)?))
+        .collect()
 }
 
 /// Lower a plain `my $x = EXPR` declaration to `Stmt::VarDecl`. Scoped/typed/
@@ -3646,6 +3678,22 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if let Some(call) = super::atomic_op::lower(node) {
         return call;
     }
+    // `@a Z @b`, `@a X+ @b`, `@a R- @b`: the parser's `MetaOp` chain.
+    if let Some(meta) = super::meta_infix::lower(node) {
+        return meta;
+    }
+    // `$a minmax $b`, `$a foo $b`: the parser's `InfixFunc` call of the operator.
+    if let Some(call) = super::infix_func::lower(node) {
+        return call;
+    }
+    // `1 ==> foo()`: the parser's deferred feed node.
+    if let Some(feed) = super::feed_op::lower(node) {
+        return feed;
+    }
+    // `\(1, :a)` / `\$x`: the parser's capture literal.
+    if node.class == RakuAstClass::TermCapture {
+        return super::capture_term::lower(node);
+    }
     match node.class {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_term(node),
@@ -3950,11 +3998,16 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::CircumfixArrayComposer => {
             let semilist = named_child_or_positional(node)?;
             let inner = named_child_or_positional(semilist)?;
-            let items = match lower_expr(inner)? {
-                Expr::ArrayLiteral(items) => items,
-                other => vec![other],
+            // A one-operand comma list is `[$x,]`: the trailing comma that keeps
+            // a lone array element from flattening.
+            let (items, trailing_comma) = match lower_expr(inner)? {
+                Expr::ArrayLiteral(items) => {
+                    let single = items.len() == 1;
+                    (items, single)
+                }
+                other => (vec![other], false),
             };
-            Ok(Expr::BracketArray(items, false))
+            Ok(Expr::BracketArray(items, trailing_comma))
         }
         // A bareword naming something the unit declared, or a dynamic
         // `::(...)` name. Both are represented by RakuAST::Term::Name; the
@@ -4070,6 +4123,17 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 catch: None,
             })
         }
+        // `eager EXPR` -> the eager expression over the statement's expression.
+        RakuAstClass::StatementPrefixEager => {
+            let statement = named_child_or_positional(node)?;
+            if statement.class != RakuAstClass::StatementExpression {
+                return Err(unsupported(node));
+            }
+            Ok(Expr::Eager(Box::new(lower_expr(named_child(
+                statement,
+                "expression",
+            )?)?)))
+        }
         // `gather { … }` -> a gather expression over the lowered block body.
         RakuAstClass::StatementPrefixGather => {
             let block = named_child_or_positional(node)?;
@@ -4157,6 +4221,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             _ => Err(unsupported(node)),
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
+        RakuAstClass::VarPackage if let Some(deref) = super::symbolic_deref::lower(node) => deref,
         RakuAstClass::VarLexical | RakuAstClass::VarPackage | RakuAstClass::VarDynamic => {
             let name = variable_spelling(node)?;
             let (sigil, bare) = name.split_at(name.chars().next().map_or(0, char::len_utf8));
@@ -4413,10 +4478,17 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     modifier: Some('^'),
                     quoted: false,
                 }),
+                // `$o.$name(1)` / `$o.&f(1)`.
+                RakuAstClass::CallTermAsMethod | RakuAstClass::CallNameAsMethod => {
+                    super::dynamic_method::lower(operand, postfix)
+                }
                 // `@a>>.abs` -> MetaPostfix::Hyper wrapping the ordinary
                 // method-call postfix.
                 RakuAstClass::MetaPostfixHyper => {
                     let inner = named_child_or_positional(postfix)?;
+                    if super::dynamic_method::is_dynamic(inner) {
+                        return super::dynamic_method::lower_hyper(operand, inner);
+                    }
                     let (name, quoted) = match inner.class {
                         RakuAstClass::CallMethod => (call_name_str(inner)?, false),
                         RakuAstClass::CallQuotedMethod => (quoted_method_name(inner)?, true),
@@ -4459,13 +4531,48 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 | RakuAstClass::PostcircumfixHashIndex
                 | RakuAstClass::PostcircumfixLiteralHashIndex => {
                     let index_node = named_child(postfix, "index")?;
+                    let is_positional =
+                        matches!(postfix.class, RakuAstClass::PostcircumfixArrayIndex);
+                    // `@a[]` / `%h{}`: a subscript of no dimensions.
+                    if postfix.class != RakuAstClass::PostcircumfixLiteralHashIndex
+                        && index_node.fields.is_empty()
+                    {
+                        if named_child(postfix, "assignee").is_ok()
+                            || list_field(postfix, "colonpairs").is_ok_and(|c| !c.is_empty())
+                        {
+                            return Err(unsupported(postfix));
+                        }
+                        return Ok(Expr::ZenSlice(Box::new(operand)));
+                    }
+                    // `@a[0;1]`: a `SemiList` of several statements.
+                    if postfix.class != RakuAstClass::PostcircumfixLiteralHashIndex
+                        && index_node.fields.len() > 1
+                    {
+                        if named_child(postfix, "assignee").is_ok() {
+                            return Err(unsupported(postfix));
+                        }
+                        let mut dimensions = Vec::with_capacity(index_node.fields.len());
+                        for field in &index_node.fields {
+                            let statement = child_node(&field.value)?;
+                            if statement.class != RakuAstClass::StatementExpression {
+                                return Err(unsupported(postfix));
+                            }
+                            dimensions.push(lower_expr(named_child(statement, "expression")?)?);
+                        }
+                        return super::subscript_adverb::lower(
+                            Expr::MultiDimIndex {
+                                target: Box::new(operand),
+                                dimensions,
+                                is_positional,
+                            },
+                            postfix,
+                        );
+                    }
                     let index = if postfix.class == RakuAstClass::PostcircumfixLiteralHashIndex {
                         lower_expr(index_node)?
                     } else {
                         lower_expr(named_child_or_positional(index_node)?)?
                     };
-                    let is_positional =
-                        matches!(postfix.class, RakuAstClass::PostcircumfixArrayIndex);
                     // `@a[0] = 1`: rakudo folds an assignment to a subscript
                     // into the postcircumfix's `assignee`; the parser keeps it
                     // as `IndexAssign`.

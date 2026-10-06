@@ -319,6 +319,33 @@ impl Interpreter {
                     return self.call_function(&fq, args);
                 }
             }
+            // A native method object of a core type (`Map.^lookup('new')`,
+            // `Map.^lookup('raku')`): it has no registry class, and a core
+            // routine of the same name (`keys`) is not the method, so it
+            // dispatches on its invocant here, ahead of the function lookup.
+            // The native constructor / qualified native method is used, not
+            // `invocant.name`: a subclass overriding it by calling this object
+            // (`method new(|c) { &new(self, |c) }`) would re-enter itself.
+            // The catalog probe is O(1); `is_builtin_type_method` collects every
+            // builtin method row of the type and its ancestors, so it only runs
+            // for a package that is a core type at all.
+            if !args.is_empty()
+                && !self.has_class(&package.resolve())
+                && crate::builtin_types::catalog::builtin_type_info(&package.resolve()).is_some()
+            {
+                let pkg = package.resolve();
+                let method = name.resolve();
+                if self.is_builtin_type_method(&pkg, &method) {
+                    let mut args = args;
+                    let invocant = args.remove(0);
+                    return match invocant.view() {
+                        ValueView::Package(_) if method == "new" => {
+                            self.dispatch_native_new(invocant, args)
+                        }
+                        _ => self.call_method_with_values(invocant, &method, args),
+                    };
+                }
+            }
             let name_str = name.resolve();
             if self.resolve_function(&name_str).is_some()
                 || self.has_proto(&name_str)

@@ -304,6 +304,17 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 }
                 return Err(desugared(name.as_str()));
             }
+            // `foo $obj: 1` is the method call `$obj.foo(1)`.
+            if let Some(crate::ast::CallArg::Invocant(invocant)) = args.first() {
+                let method = Expr::MethodCall {
+                    target: Box::new(invocant.clone()),
+                    name: *name,
+                    args: call_args_as_exprs(&args[1..])?,
+                    modifier: None,
+                    quoted: false,
+                };
+                return Ok(Some(statement_expression(convert_expr(&method)?)));
+            }
             let args = call_args_as_exprs(args)?;
             Ok(Some(statement_expression(call_name(
                 name.as_str(),
@@ -1922,6 +1933,26 @@ fn var_decl_statement(
         Some((_, Some(data))) => data,
         _ => expr,
     };
+    // `my @a <== EXPR` is a declaration whose initializer is the parser's
+    // feed helper call; without the `__has_initializer` mark it would read as
+    // none and the feed would be dropped.
+    let unmarked = !is_binding && !custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+    if unmarked
+        && let Expr::Call { name: callee, .. } = expr
+        && is_desugar_marker(callee.as_str())
+    {
+        return Err(desugared(callee.as_str()));
+    }
+    // The same for a closure: `my &a := { ... }` is bound, and the parser leaves
+    // no mark of it on a `&` declaration.
+    if unmarked
+        && matches!(
+            expr,
+            Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. }
+        )
+    {
+        return Err(unsupported("`&` declaration bound to a block"));
+    }
     let init = if is_binding {
         Some(Initializer::Bind(expr))
     } else if shaped.as_ref().is_some_and(|(_, data)| data.is_none()) {
@@ -2305,9 +2336,32 @@ pub(super) fn subscript_node(
     assignee: Option<&Expr>,
     colonpairs: Vec<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    subscript_dims_node(
+        target,
+        std::slice::from_ref(index),
+        is_positional,
+        assignee,
+        colonpairs,
+    )
+}
+
+/// [`subscript_node`] over the dimensions of `@a[0;1]`: one statement of the
+/// `SemiList` per dimension.
+// Cost: O(n), n = nodes of the target and dimensions.
+pub(super) fn subscript_dims_node(
+    target: &Expr,
+    dims: &[Expr],
+    is_positional: bool,
+    assignee: Option<&Expr>,
+    colonpairs: Vec<Value>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut statements = Vec::with_capacity(dims.len());
+    for dim in dims {
+        statements.push(node_field(None, statement_expression(convert_expr(dim)?)));
+    }
     let semilist = RakuAstNode {
         class: RakuAstClass::SemiList,
-        fields: vec![node_field(None, statement_expression(convert_expr(index)?))],
+        fields: statements,
     };
     let mut index_node = RakuAstNode {
         class: if is_positional {
@@ -2426,6 +2480,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ));
             }
             Ok(var_lexical("$", name))
+        }
+        // `$::($n)` / `@::($n)` -> `Var::Package` over a dynamic name.
+        Expr::SymbolicDeref { sigil, expr } => super::symbolic_deref::convert(sigil, expr),
+        Expr::SymbolicDerefAssign { sigil, expr, value } => {
+            super::symbolic_deref::convert_assign(sigil, expr, value)
+        }
+        Expr::IndirectTypeLookupAssign { expr, value } => {
+            super::symbolic_deref::convert_type_assign(expr, value)
         }
         // `::("x")` / `::($name)` ->
         // `Term::Name(Name(Part::Empty.new, Part::Expression(EXPR)))`, the
@@ -2561,6 +2623,26 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             class: RakuAstClass::StatementPrefixGather,
             fields: vec![node_field(None, block_node(body)?)],
         }),
+        // `eager EXPR` -> `StatementPrefix::Eager(Statement::Expression(EXPR))`.
+        Expr::Eager(inner) => {
+            let operand = convert_expr(inner)?;
+            if operand.class == RakuAstClass::Block {
+                return Err(unsupported("eager block"));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::StatementPrefixEager,
+                fields: vec![node_field(None, statement_expression(operand))],
+            })
+        }
+        // `$@a` / `$%h` / `$[1, 2]` -> `Contextualizer::Item` over the term.
+        Expr::Itemize(inner) => super::contextualizer::convert_itemize(inner),
+        // `1 ==> foo()` -> `ApplyListInfix(Feed("==>"), operands)`.
+        Expr::Feed {
+            source,
+            sink,
+            append,
+            left_is_source,
+        } => super::feed_op::convert(source, sink, *append, *left_is_source),
         // A pair the parser marked POSITIONAL: a non-bareword key (`"a" => 1`,
         // `$k => 1`), or a parenthesized one, which carries an inner `Grouped`.
         // The marker itself says nothing about the rendering — raku renders a
@@ -3044,6 +3126,20 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ),
             ],
         }),
+        // `$o.$name(1)` / `$o.&f(1)` -> `Call::TermAsMethod` / `Call::NameAsMethod`.
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+            modifier,
+            quoted: false,
+        } => super::dynamic_method::convert(target, name_expr, args, *modifier),
+        Expr::HyperMethodCallDynamic {
+            target,
+            name_expr,
+            args,
+            modifier,
+        } => super::dynamic_method::convert_hyper(target, name_expr, args, *modifier),
         // Hyper method call `@a>>.abs` -> ApplyPostfix(operand,
         // postfix => MetaPostfix::Hyper(Call::Method(...))).
         Expr::HyperMethodCall {
@@ -3073,14 +3169,37 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Hash(pairs, spelling) => hash_literal::convert(pairs, *spelling),
         // `$(...)`, `@(...)`, `%(...)` -> `Contextualizer::Item/List/Hash`.
         Expr::Contextualizer { kind, inner } => super::contextualizer::convert(*kind, inner),
+        // `$a minmax $b`, `$a foo $b` (a declared `infix:<foo>`), `$a ff $b`:
+        // an ordinary application of an `Infix`.
+        Expr::InfixFunc {
+            name,
+            left,
+            right,
+            modifier,
+        } => super::infix_func::convert(name, left, right, modifier, expr),
+        // `\(1, :a)` / `\$x` -> `Term::Capture`.
+        Expr::CaptureLiteral(items, parenthesized) => {
+            super::capture_term::convert(items, *parenthesized)
+        }
+        // `@a Z @b`, `@a X+ @b`, `@a R- @b`: `ApplyListInfix` / `ApplyInfix` over
+        // `MetaInfix::Zip` / `Cross` / `Reverse`.
+        Expr::MetaOp {
+            meta,
+            op,
+            left,
+            right,
+        } => super::meta_infix::convert(meta, op, left, right, expr),
         // An array-composer literal `[1, 2, 3]` ->
         // `Circumfix::ArrayComposer(SemiList(Statement::Expression(comma-list)))`.
-        Expr::BracketArray(items, _) => {
+        Expr::BracketArray(items, trailing_comma) => {
             // `[EXPR for LIST]`: the parser holds the modified statement as the
             // one element; rakudo has it as the composer's statement.
             let statement = match items.as_slice() {
                 [Expr::DoStmt(stmt)] if is_modifier_statement(stmt) => convert_stmt(stmt)?
                     .ok_or_else(|| unsupported("empty statement in an array composer"))?,
+                // `[$x]` holds the element itself; `[$x,]` a one-operand comma
+                // list (which is why it does not flatten).
+                [single] if !*trailing_comma => statement_expression(convert_expr(single)?),
                 _ => statement_expression(comma_list_node(items)?),
             };
             let semilist = RakuAstNode {
@@ -3124,6 +3243,43 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             index,
             is_positional,
         } => subscript_node(target, index, *is_positional, None, Vec::new()),
+        // `@a[0;1]` / `%h{1;2}`: one `SemiList` statement per dimension.
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => subscript_dims_node(target, dimensions, *is_positional, None, Vec::new()),
+        // `@a[]` / `%h{}`: a subscript with no dimension at all.
+        Expr::ZenSlice(target) => subscript_dims_node(
+            target,
+            &[],
+            !matches!(&**target, Expr::HashVar(_)),
+            None,
+            Vec::new(),
+        ),
+        // `@a[0;1] = 5` keeps an `Assignment` infix over the subscript.
+        Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value,
+            is_positional,
+        } => Ok(RakuAstNode {
+            class: RakuAstClass::ApplyInfix,
+            fields: vec![
+                node_field(
+                    Some("left"),
+                    subscript_dims_node(target, dimensions, *is_positional, None, Vec::new())?,
+                ),
+                node_field(
+                    Some("infix"),
+                    RakuAstNode {
+                        class: RakuAstClass::Assignment,
+                        fields: Vec::new(),
+                    },
+                ),
+                node_field(Some("right"), convert_expr(value)?),
+            ],
+        }),
         // Measured on 2026.09: rakudo folds an assignment to `@a[…]` or
         // `%h<…>` into the postcircumfix as its `assignee`, but keeps an
         // `Assignment` infix over a `%h{…}` subscript. mutsu does not tell
@@ -3296,6 +3452,18 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // An interpolated string `"a $x b"` -> QuotedString with a segment per
         // part (a literal run is a `StrLiteral`, an interpolated term keeps its
         // own node).
+        // A `qq:to/END/` body: the parser keeps the raw text for the compiler to
+        // interpolate where the heredoc sits; the tree is that interpolation.
+        // The terminator (rakudo's `Heredoc(stop => ...)`) is not kept, so it
+        // renders as the quoted string it evaluates to. One that closes an
+        // enclosing block on its own line is a scope diagnostic the
+        // interpolation would lose.
+        Expr::HeredocInterpolation(content, closes_block_same_line) => {
+            if *closes_block_same_line {
+                return Err(unsupported("heredoc closing an enclosing block"));
+            }
+            convert_expr(&crate::parser::interpolate_heredoc_content(content))
+        }
         Expr::StringInterpolation(parts) => {
             let mut segments = Vec::with_capacity(parts.len());
             for p in parts {
@@ -6078,9 +6246,14 @@ fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, Runtime
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value.clone().unwrap_or(Expr::Literal(Value::TRUE))),
             }),
-            CallArg::Slip(_) | CallArg::Invocant(_) => Err(unsupported(
-                "statement call with a slip or invocant argument",
-            )),
+            // `foo |@a`: the slip is the tight prefix `|` over the term.
+            CallArg::Slip(expr) => Ok(Expr::Unary {
+                op: crate::token_kind::TokenKind::Pipe,
+                expr: Box::new(expr.clone()),
+            }),
+            CallArg::Invocant(_) => {
+                Err(unsupported("statement call with a later invocant argument"))
+            }
         })
         .collect()
 }

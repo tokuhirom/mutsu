@@ -55,11 +55,15 @@ pub(super) fn convert(
 fn contents_node(pairs: &[(String, Option<Expr>)]) -> Result<Option<RakuAstNode>, RuntimeError> {
     let mut fatarrows = Vec::with_capacity(pairs.len());
     for (key, value) in pairs {
-        let value = value.as_ref().ok_or_else(|| {
-            RuntimeError::new(
-                "RakuAST: `.AST` does not yet support this construct: value-less hash key",
-            )
-        })?;
+        // `{:x}`: the parser keeps a bare colonpair as a pair with no value,
+        // which is `x => True`; rakudo spells it `ColonPair::True`.
+        let Some(value) = value.as_ref() else {
+            fatarrows.push(RakuAstNode {
+                class: RakuAstClass::ColonPairTrue,
+                fields: vec![leaf_field(None, Value::str(key.clone()))],
+            });
+            continue;
+        };
         fatarrows.push(RakuAstNode {
             class: RakuAstClass::FatArrow,
             fields: vec![

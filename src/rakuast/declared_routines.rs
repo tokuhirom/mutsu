@@ -36,32 +36,39 @@ pub(super) fn is_declared(name: &str) -> bool {
     DECLARED.with(|d| d.borrow().contains(name))
 }
 
-fn visit(node: &RakuAstNode, found: &mut HashSet<String>) {
+/// The routine name `node` itself declares (not its children): a named `sub`,
+/// a `my &name`, a `&name` parameter.
+// Cost: O(1).
+pub(super) fn declared_by(node: &RakuAstNode) -> Option<String> {
     match node.class {
         RakuAstClass::Sub if node.fields.iter().any(|f| f.name == Some("name")) => {
-            if let Ok(name) = call_name_str(node) {
-                found.insert(name);
-            }
+            call_name_str(node).ok()
         }
         // `my &name` / `our &name`.
         RakuAstClass::VarDeclarationSimple if leaf_str(node, "sigil").is_ok_and(|s| s == "&") => {
-            if let Some(field) = node.fields.iter().find(|f| f.name == Some("desigilname"))
-                && let RakuAstFieldValue::Node(v) = &field.value
-                && let ValueView::RakuAst(name) = v.view()
-                && let Some(NameShape::Identifier(name)) = name_parts::name_shape(name)
-            {
-                found.insert(name);
+            let field = node.fields.iter().find(|f| f.name == Some("desigilname"))?;
+            let RakuAstFieldValue::Node(v) = &field.value else {
+                return None;
+            };
+            let ValueView::RakuAst(name) = v.view() else {
+                return None;
+            };
+            match name_parts::name_shape(name) {
+                Some(NameShape::Identifier(name)) => Some(name),
+                _ => None,
             }
         }
         // A `&name` parameter.
-        RakuAstClass::ParameterTargetVar => {
-            if let Ok(name) = leaf_str(node, "name")
-                && let Some(bare) = name.strip_prefix('&')
-            {
-                found.insert(bare.to_string());
-            }
-        }
-        _ => {}
+        RakuAstClass::ParameterTargetVar => leaf_str(node, "name")
+            .ok()
+            .and_then(|name| name.strip_prefix('&').map(str::to_string)),
+        _ => None,
+    }
+}
+
+fn visit(node: &RakuAstNode, found: &mut HashSet<String>) {
+    if let Some(name) = declared_by(node) {
+        found.insert(name);
     }
     for field in &node.fields {
         match &field.value {
