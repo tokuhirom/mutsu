@@ -1436,7 +1436,17 @@ impl Interpreter {
                         .canonical_signature_param_types(&existing.param_defs)
                         .is_some());
             redeclares_hoisted_twin = refines_aliases;
-            let same = same_decl && !refines_aliases && existing.return_type == new_def.return_type;
+            // The installed def carries the alias-resolved return type (the
+            // in-sequence pass rewrites `--> Pointer` to the type the constant
+            // names), so a hoist pass that re-arrives with the written spelling
+            // (a parametric role body running again for another
+            // parameterization) is the same declaration.
+            let same_return = existing.return_type == new_def.return_type
+                || new_def.return_type.as_deref().is_some_and(|rt| {
+                    self.declared_type_alias_target(rt)
+                        .is_some_and(|target| existing.return_type.as_deref() == Some(&*target))
+                });
+            let same = same_decl && !refines_aliases && same_return;
             // The identical declaration already installed here may have been
             // installed *without* a compiled body (a forward-declaration or
             // prelude pass registers from a source declaration and carries no
