@@ -208,7 +208,10 @@ user-visible wrong answer.
   82.5M. Reaching #11756's goal needs a second phase that stores the
   registration *result* and replays it, or makes it cheap (#11761 is part of
   that). That is a separate ADR, because it means serializing registry deltas,
-  which is a larger and different contract than serializing code.
+  which is a larger and different contract than serializing code. Phase 2 is
+  [ADR-12026](12026-precomp-hit-loads-from-facts-and-decodes-lazily.md). It
+  keeps registration as executed code and makes it cheap, and it serves a hit
+  from recorded load facts instead of the AST.
 - **BEGIN-time state** (ADR-0134 §1's accepted divergence). Running a module's
   BEGINs once at precompilation needs its BEGIN-time state serialized too.
   Phase 1 keeps re-running them on every load, which is what happens today.
