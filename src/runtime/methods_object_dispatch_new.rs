@@ -329,6 +329,7 @@ impl Interpreter {
         // `.new` allocates through the REPR (#11209): see
         // `install_carray_storage`.
         self.install_carray_storage(&target, &instance)?;
+        self.install_cstruct_storage(&instance);
         Ok(instance)
     }
 
@@ -1773,10 +1774,6 @@ impl Interpreter {
                     constructed?,
                     ValueMap::default(),
                 ));
-            }
-            // CUnion repr classes use byte-overlay construction
-            if self.registry().cunion_classes.contains(&cn_resolved) {
-                return self.construct_cunion_instance(&cn_resolved, &args);
             }
             // Auto-pun role to class if needed (e.g., role COERCE calling self.new)
             if !self.registry().classes.contains_key(&cn_resolved)

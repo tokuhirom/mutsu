@@ -61,6 +61,7 @@ mod nqp_radix;
 mod onlystar;
 mod param_bound_aggregates;
 pub(crate) use class_introspection::UserMethodOrAccessor;
+pub(crate) mod cstruct_body;
 pub(crate) mod cstruct_layout;
 pub(crate) mod decl_gate;
 mod decl_types;

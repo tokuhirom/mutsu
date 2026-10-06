@@ -230,6 +230,7 @@ impl Interpreter {
             ValueView::Instance { attributes, .. } => match actual_method {
                 "gist" | "raku" | "perl" => {
                     let display_name = crate::value::user_facing_type_name(&cn);
+                    self.seed_cstruct_fields_for_method(&cn, Some(target));
                     let public_attrs = self.collect_public_raku_attrs(&cn, &attributes.as_map());
                     let rendered = if public_attrs.is_empty() {
                         format!("{}.new", display_name)

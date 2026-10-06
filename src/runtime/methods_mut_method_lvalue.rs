@@ -260,7 +260,7 @@ impl Interpreter {
         // nothing reads — the assignment reported success and the struct never
         // changed. The guard is tight: only an instance carrying a non-null
         // `address` whose class is a registered CStruct declaring that field.
-        if method_args.is_empty() && self.cstruct_field_assign(&target, method, &value) {
+        if method_args.is_empty() && self.cstruct_field_assign(&target, method, &value)? {
             return Ok(value);
         }
         // Handle AT-POS lvalue assignment: @arr.AT-POS(idx...) = v  =>  ASSIGN-POS(idx..., v)

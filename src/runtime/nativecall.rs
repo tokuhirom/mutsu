@@ -489,6 +489,18 @@ pub fn call_native_with_out_args(
                 ArgOwner::Ptr(addr as *const std::ffi::c_void),
             )
         } else {
+            // A struct object that has no C storage -- a class with no fields
+            // or none NativeCall can lay out, which Rakudo refuses to compose
+            // at all -- would reach the callee as NULL and be dereferenced
+            // there (#11753). Refuse it with a catchable error instead.
+            if ps.ct == CType::Pointer && interp.is_bodyless_struct(&resolve_arg(v)) {
+                return Err(RuntimeError::new(format!(
+                    "Native call expected argument {} with CStruct representation, but got a \
+                     P6opaque ({})",
+                    i + 1,
+                    crate::value::types::what_type_name(&resolve_arg(v))
+                )));
+            }
             let (ty, owner) = marshal_arg(ps, v).map_err(|e| match e {
                 MarshalError::Detail(msg) => RuntimeError::new(format!(
                     "NativeCall: argument {} to '{}': {msg}",

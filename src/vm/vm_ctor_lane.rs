@@ -131,7 +131,6 @@ impl Interpreter {
         // whether the user `new` declines the replay's own arguments and
         // returns `None` (the whole chain) when one accepts them.
         if !(plan.eligible || plan.eligible_when_user_new_declines)
-            || plan.is_cunion
             || plan.has_build
             || plan.has_tweak
             || !plan.attrs_fully_known

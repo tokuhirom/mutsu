@@ -445,6 +445,8 @@ impl Interpreter {
                     self.register_cunion_class(&storage_name);
                 } else if repr_name == "CStruct" {
                     self.register_cstruct_class(&storage_name);
+                } else if repr_name == "CPPStruct" {
+                    self.register_cppstruct_class(&storage_name);
                 } else if repr_name == "CPointer" {
                     self.register_cpointer_class(&storage_name);
                 } else if repr_name == "CArray" {

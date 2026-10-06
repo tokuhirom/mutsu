@@ -412,6 +412,9 @@ impl Interpreter {
         }
         let class_key = class_name.resolve();
         let display_name = crate::value::user_facing_type_name(&class_key);
+        // A CStruct's fields live in C memory (a body it owns, or the memory C
+        // handed back): read them out before rendering them.
+        self.seed_cstruct_fields_for_method(&class_key, Some(target));
         self.raku_cycle_guards.leaf.enter(target_id);
         let public_attrs = self.collect_public_raku_attrs(&class_key, &(attributes).as_map());
         let cycle_hit = self.raku_cycle_guards.leaf.leave(&target_id);
@@ -3075,14 +3078,15 @@ impl Interpreter {
                     }
                 }
                 // Type objects only. An *instance* reaches here when it has no C
-                // storage (a Raku-constructed CStruct), and `t/nativecall-repr-body.t`
-                // pins that it must keep under-reporting `P6opaque`: answering
-                // the honest name without a body would make `BODY_OF`
-                // dereference whatever `.WHERE` returned. A live handle already
-                // answers `CStruct` through `try_native_handle_repr_where`.
+                // storage (a struct with no layout NativeCall can compute), and
+                // it must keep under-reporting `P6opaque`: answering the honest
+                // name without a body would make `BODY_OF` dereference whatever
+                // `.WHERE` returned. A live handle, and a struct that owns its
+                // body (ADR-11209), already answer `CStruct` through
+                // `try_native_handle_repr_where`.
                 // A `NativeCall`- or `CStr`-REPR instance (upstream's `Callsite`
-                // and `CStr`) is its body whole, so unlike a Raku-built CStruct
-                // it has no body for `.REPR` to under-report.
+                // and `CStr`) is its body whole, so it has no body for `.REPR` to
+                // under-report.
                 let class = match target.view() {
                     ValueView::Package(name) => Some(name.resolve()),
                     ValueView::Instance { class_name, .. }
