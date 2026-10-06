@@ -15,7 +15,7 @@ use Test;
 # round trip is the parsed program. The tree part also passes under `raku`; the
 # round trip part declares each name twice in one process, which raku refuses.
 
-plan 61;
+plan 64;
 
 sub exprs($src) { $src.AST.statements.map(*.expression) }
 sub run($src) { my $parsed = EVAL($src); my $round = EVAL($src.AST); ($parsed, $round) }
@@ -119,6 +119,6 @@ same Q[my class L8 is export { method m { 8 } }; L8.new.m], 8, 'a lexical export
 same Q[class W9 is rw is export { has $.a is rw }; my $w = W9.new(a => 1); $w.a = 9; $w.a], 9, 'rw and export together';
 same Q[class Hd1 is hidden { method m { 1 } }; Hd1.new.m], 1, 'a hidden class';
 same Q[class Hd2 { method who { "base" } }; class Hd3 hides Hd2 { method who { callsame } }; Hd3.new.who], 'base', 'a class that hides its parent';
-same Q[class Tr1 { trusts Tr2; has $!x = 5; method peek(Tr2 $o) { $o!Tr2::x2 } }; class Tr2 { has $!x2 = 7; }; 1], 1, 'a trusts declaration';
+same Q[class Tr2 { trusts Tr1; has $!x2 = 7; method x2 { $!x2 } }; class Tr1 { method peek(Tr2 $o) { $o!Tr2::x2 } }; Tr1.new.peek(Tr2.new)], 7, 'a trusts declaration';
 same Q[use MONKEY-TYPING; augment class Int { method triple { self * 3 } }; 4.triple], 12, 'an augmented class';
 same Q[our proto sub opf($x) {*}; our multi sub opf(Int $x) { $x + 1 }; opf(2)], 3, 'an `our proto`';
