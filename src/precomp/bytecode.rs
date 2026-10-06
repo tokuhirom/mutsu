@@ -12,12 +12,21 @@
 //! - the **recorded inputs** ([`CompileInputs`]): re-asked by the caller at the
 //!   point the compile would run, not here, because their answers depend on
 //!   the parser state at that moment.
+//!
+//! The entry is self-contained (ADR-12026 §2.1): it also carries the parse
+//! effects, the module's load facts and the AST the compile saw (prologue
+//! ordered, without guards). A load that finds the entry reads none of the
+//! AST cache and decodes the AST only if something asks for it, so the AST a
+//! reader gets is always the one the cached code was compiled from.
+//!
+//! Layout: magic, metadata length, metadata, AST length, AST, compiled payload.
 
 use super::{
-    cache_dir, content_hash, decode_config, interpreter_version, path_hash, source_mtime_nanos,
-    temp_cache_path, warn_cache_unavailable,
+    ParseEffects, cache_dir, content_hash, decode_config, interpreter_version, path_hash,
+    source_mtime_nanos, temp_cache_path, warn_cache_unavailable,
 };
 use crate::compiler::compile_inputs::CompileInputs;
+use crate::runtime::module_load_facts::ModuleLoadFacts;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -35,8 +44,10 @@ pub(crate) struct CompileContext {
     /// `Nil`, with one an instance (which the codec refuses).
     pub(crate) has_distribution: bool,
     pub(crate) unit_file: Option<String>,
-    /// [`crate::ast::stable_hash`] of the statements compiled.
-    pub(crate) ast_fingerprint: u64,
+    /// [`crate::ast::stable_hash`] of the undeclared-routine guards spliced
+    /// into the entry's AST before the compile. The rest of the AST is the
+    /// entry's own.
+    pub(crate) guards_fingerprint: u64,
 }
 
 /// The process-wide latches the compile left set, replayed on a hit.
@@ -55,13 +66,32 @@ struct CodeMetadata {
     context: CompileContext,
     inputs: CompileInputs,
     latches: CompileLatches,
+    effects: ParseEffects,
+    facts: ModuleLoadFacts,
 }
 
-/// A cached compiled mainline, not yet decoded.
-pub(crate) struct CachedCode {
+/// A cached module entry, not yet decoded beyond its metadata.
+pub(crate) struct CodeEntry {
+    pub(crate) context: CompileContext,
     pub(crate) inputs: CompileInputs,
     pub(crate) latches: CompileLatches,
+    pub(crate) effects: ParseEffects,
+    pub(crate) facts: ModuleLoadFacts,
+    /// The AST, encoded with [`super::encode_stmts`].
+    pub(crate) ast: Vec<u8>,
+    /// The compiled mainline, encoded with [`crate::precomp_codec`].
     pub(crate) payload: Vec<u8>,
+}
+
+/// What [`save_code_entry`] stores.
+pub(crate) struct NewCodeEntry<'a> {
+    pub(crate) context: CompileContext,
+    pub(crate) inputs: CompileInputs,
+    pub(crate) latches: CompileLatches,
+    pub(crate) effects: &'a ParseEffects,
+    pub(crate) facts: &'a ModuleLoadFacts,
+    pub(crate) ast: &'a [u8],
+    pub(crate) payload: &'a [u8],
 }
 
 // Cost: O(1).
@@ -72,21 +102,17 @@ fn code_file(source_path: &Path) -> Option<(PathBuf, String)> {
     Some((file, canonical.to_string_lossy().into_owned()))
 }
 
-/// The cached compile of `source_path`'s mainline, if one exists for exactly
-/// this source text, interpreter build and compile context.
-// Cost: O(n), n = size of the entry (read; the payload is not decoded here).
-pub(crate) fn load_cached_code(
-    source_path: &Path,
-    source: &str,
-    context: &CompileContext,
-) -> Option<CachedCode> {
+/// The cached entry of `source_path`, if one exists for exactly this source
+/// text and interpreter build. Whether its compile fits the current context
+/// is the caller's question.
+// Cost: O(n), n = size of the entry (read; nothing is decoded but the metadata).
+pub(crate) fn load_code_entry(source_path: &Path, source: &str) -> Option<CodeEntry> {
     let (file, canonical) = code_file(source_path)?;
     let data = fs::read(&file).ok()?;
     let rest = data.strip_prefix(CODE_MAGIC.as_slice())?;
-    let len = u32::from_le_bytes(rest.get(..4)?.try_into().ok()?) as usize;
-    let rest = &rest[4..];
+    let (meta_bytes, rest) = split_section(rest)?;
     let (meta, _): (CodeMetadata, usize) =
-        bincode::serde::decode_from_slice(rest.get(..len)?, decode_config()).ok()?;
+        bincode::serde::decode_from_slice(meta_bytes, decode_config()).ok()?;
     let fresh = meta.source_path == canonical
         && meta.version == interpreter_version()
         && Some(meta.mtime_nanos) == source_mtime_nanos(source_path)
@@ -95,27 +121,30 @@ pub(crate) fn load_cached_code(
         let _ = fs::remove_file(&file);
         return None;
     }
-    if meta.context != *context {
-        return None;
-    }
-    Some(CachedCode {
+    let (ast, payload) = split_section(rest)?;
+    Some(CodeEntry {
+        context: meta.context,
         inputs: meta.inputs,
         latches: meta.latches,
-        payload: rest[len..].to_vec(),
+        effects: meta.effects,
+        facts: meta.facts,
+        ast: ast.to_vec(),
+        payload: payload.to_vec(),
     })
+}
+
+/// A `u32` length-prefixed section, and what follows it.
+// Cost: O(1).
+fn split_section(data: &[u8]) -> Option<(&[u8], &[u8])> {
+    let len = u32::from_le_bytes(data.get(..4)?.try_into().ok()?) as usize;
+    let rest = &data[4..];
+    Some((rest.get(..len)?, &rest[len..]))
 }
 
 /// Store the compile of `source_path`'s mainline. Best effort, like the AST
 /// entry: any failure leaves no entry behind.
 // Cost: O(n), n = size of the entry.
-pub(crate) fn save_cached_code(
-    source_path: &Path,
-    source: &str,
-    context: CompileContext,
-    inputs: CompileInputs,
-    latches: CompileLatches,
-    payload: &[u8],
-) {
+pub(crate) fn save_code_entry(source_path: &Path, source: &str, entry: NewCodeEntry<'_>) {
     let Some((file, canonical)) = code_file(source_path) else {
         return;
     };
@@ -127,18 +156,23 @@ pub(crate) fn save_cached_code(
         mtime_nanos,
         source_hash: content_hash(source.as_bytes()),
         version: interpreter_version(),
-        context,
-        inputs,
-        latches,
+        context: entry.context,
+        inputs: entry.inputs,
+        latches: entry.latches,
+        effects: entry.effects.clone(),
+        facts: entry.facts.clone(),
     };
     let Ok(meta_bytes) = bincode::serde::encode_to_vec(&meta, bincode::config::standard()) else {
         return;
     };
-    let mut data = Vec::with_capacity(8 + meta_bytes.len() + payload.len());
+    let mut data =
+        Vec::with_capacity(12 + meta_bytes.len() + entry.ast.len() + entry.payload.len());
     data.extend_from_slice(CODE_MAGIC);
     data.extend_from_slice(&(meta_bytes.len() as u32).to_le_bytes());
     data.extend_from_slice(&meta_bytes);
-    data.extend_from_slice(payload);
+    data.extend_from_slice(&(entry.ast.len() as u32).to_le_bytes());
+    data.extend_from_slice(entry.ast);
+    data.extend_from_slice(entry.payload);
     let tmp = temp_cache_path(&file);
     let written = fs::write(&tmp, &data).and_then(|()| fs::rename(&tmp, &file));
     if let Err(err) = written {
