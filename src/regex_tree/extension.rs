@@ -28,7 +28,7 @@
 //! <rx=$r>    Assertion::Alias(name => "rx", assertion => Assertion::InterpolatedVar(...))
 //! ```
 
-use super::{RegexBacktrack, RegexNode};
+use super::{RegexBacktrack, RegexNode, RegexTree};
 use crate::ast::{Expr, Stmt};
 
 /// Code a construct runs: its spelling and the statements parsed from it.
@@ -221,6 +221,67 @@ impl RegexExtension {
                 format!("<{alias}={}", inner.strip_prefix('<').unwrap_or(&inner))
             }
         }
+    }
+}
+
+impl RegexTree {
+    /// Whether the tree holds a [`RegexExtension`] anywhere. Execution never
+    /// reads one, so a value carrying such a tree runs exactly as one with no
+    /// tree at all did: from its text, through the entry point that also runs
+    /// a declarative prefix (`:constant $x = 1;`) and ranks an anchored
+    /// subrule.
+    // Cost: O(n), n = number of nodes in the tree.
+    pub(crate) fn holds_extension(&self) -> bool {
+        holds_extension(&self.body)
+    }
+}
+
+// Cost: O(n), n = number of nodes below `node`.
+fn holds_extension(node: &RegexNode) -> bool {
+    match node {
+        RegexNode::Extension(_) => true,
+        RegexNode::Sequence(nodes)
+        | RegexNode::Alternation(nodes)
+        | RegexNode::SequentialAlternation(nodes) => nodes.iter().any(holds_extension),
+        RegexNode::Quantified { atom, quantifier } => {
+            holds_extension(atom)
+                || quantifier
+                    .separator
+                    .as_ref()
+                    .is_some_and(|separator| holds_extension(&separator.node))
+        }
+        RegexNode::Group(child)
+        | RegexNode::CapturingGroup(child)
+        | RegexNode::WithWhitespace(child) => holds_extension(child),
+        RegexNode::NamedCapture { regex, .. } => holds_extension(regex),
+        RegexNode::Lookaround { assertion, .. } | RegexNode::NamedLookaround { assertion, .. } => {
+            holds_extension(assertion)
+        }
+        RegexNode::Literal(_)
+        | RegexNode::Quote(_)
+        | RegexNode::Interpolation { .. }
+        | RegexNode::RegexValueInterpolation { .. }
+        | RegexNode::ArrayInterpolation { .. }
+        | RegexNode::ArrayLookaround { .. }
+        | RegexNode::Callable { .. }
+        | RegexNode::CodeAssertion { .. }
+        | RegexNode::CodeBlock { .. }
+        | RegexNode::InterpolatedBlock { .. }
+        | RegexNode::Subrule { .. }
+        | RegexNode::SubruleAlias { .. }
+        | RegexNode::AnchorBeginningOfString
+        | RegexNode::AnchorBeginningOfLine
+        | RegexNode::AnchorEndOfString
+        | RegexNode::AnchorEndOfLine
+        | RegexNode::AnchorLeftWordBoundary
+        | RegexNode::AnchorRightWordBoundary
+        | RegexNode::MatchFrom
+        | RegexNode::MatchTo
+        | RegexNode::AssertionPass
+        | RegexNode::AssertionFail
+        | RegexNode::CharClass(_)
+        | RegexNode::CharClassAssertion(_)
+        | RegexNode::InternalModifier { .. } => false,
     }
 }
 
