@@ -119,10 +119,7 @@ pub(crate) fn round_to(target: &Value, args: &[Value]) -> Option<Result<Value, R
     };
     // A `Str` scale numifies like a `Str` receiver does.
     let scale_number = match scale_arg.view() {
-        ValueView::Str(s) => match super::numify::numify_str(&s) {
-            Some(number) => number,
-            None => return None,
-        },
+        ValueView::Str(s) => super::numify::numify_str(&s)?,
         _ => scale_arg.clone(),
     };
     let scale_val = unwrap_allomorph(&scale_number);

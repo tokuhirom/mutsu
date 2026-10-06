@@ -241,11 +241,10 @@ fn chr(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
         ValueView::BigInt(n) => {
             return Err(out_of_bounds(n.to_string(), format!("{:X}", &**n)));
         }
-        _ => match super::coerce::int_of(&number).and_then(|v| v.as_int()) {
-            Some(code) => code,
-            // A Failure or a non-number: the codepoint is 0, as before.
-            None => 0,
-        },
+        // A Failure or a non-number: the codepoint is 0, as before.
+        _ => super::coerce::int_of(&number)
+            .and_then(|v| v.as_int())
+            .unwrap_or_default(),
     };
     match u32::try_from(code).ok().and_then(char::from_u32) {
         Some(ch) if code <= 0x10FFFF => {
