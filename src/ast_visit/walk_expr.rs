@@ -46,7 +46,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
         Expr::StringInterpolation(parts)
         | Expr::ArrayLiteral(parts)
         | Expr::BracketArray(parts, _)
-        | Expr::CaptureLiteral(parts) => exprs(v, parts),
+        | Expr::CaptureLiteral(parts, _) => exprs(v, parts),
         Expr::HeredocInterpolation(source, _) => v.visit_name(source, NameKind::Source),
         Expr::Var(name) => v.visit_name(name, NameKind::Var),
         Expr::CaptureVar(name) => v.visit_name(name, NameKind::CaptureVar),

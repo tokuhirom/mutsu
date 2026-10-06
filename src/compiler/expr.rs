@@ -562,7 +562,7 @@ impl Compiler {
             Expr::BracketArray(elems, trailing_comma) => {
                 self.compile_expr_bracket_array(elems, *trailing_comma);
             }
-            Expr::CaptureLiteral(items) => {
+            Expr::CaptureLiteral(items, _) => {
                 self.with_escape(true, |c| {
                     for item in items {
                         // A named scalar-var element (`\(:$a)` -> `a => $a`)

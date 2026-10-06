@@ -69,7 +69,9 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         Expr::WhateverCurry(inner) => mark_curry_body(inner),
         Expr::Grouped(inner) => mark_expr(inner),
         // Comma-list positions: `1, *, 2`, `[*]`, `\(*, 1)`.
-        Expr::ArrayLiteral(items) | Expr::BracketArray(items, _) | Expr::CaptureLiteral(items) => {
+        Expr::ArrayLiteral(items)
+        | Expr::BracketArray(items, _)
+        | Expr::CaptureLiteral(items, _) => {
             for item in items {
                 mark_value_leaf(item);
             }

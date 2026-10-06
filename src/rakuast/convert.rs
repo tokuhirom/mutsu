@@ -2561,6 +2561,26 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             class: RakuAstClass::StatementPrefixGather,
             fields: vec![node_field(None, block_node(body)?)],
         }),
+        // `eager EXPR` -> `StatementPrefix::Eager(Statement::Expression(EXPR))`.
+        Expr::Eager(inner) => {
+            let operand = convert_expr(inner)?;
+            if operand.class == RakuAstClass::Block {
+                return Err(unsupported("eager block"));
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::StatementPrefixEager,
+                fields: vec![node_field(None, statement_expression(operand))],
+            })
+        }
+        // `$@a` / `$%h` / `$[1, 2]` -> `Contextualizer::Item` over the term.
+        Expr::Itemize(inner) => super::contextualizer::convert_itemize(inner),
+        // `1 ==> foo()` -> `ApplyListInfix(Feed("==>"), operands)`.
+        Expr::Feed {
+            source,
+            sink,
+            append,
+            left_is_source,
+        } => super::feed_op::convert(source, sink, *append, *left_is_source),
         // A pair the parser marked POSITIONAL: a non-bareword key (`"a" => 1`,
         // `$k => 1`), or a parenthesized one, which carries an inner `Grouped`.
         // The marker itself says nothing about the rendering — raku renders a
@@ -3073,6 +3093,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Hash(pairs, spelling) => hash_literal::convert(pairs, *spelling),
         // `$(...)`, `@(...)`, `%(...)` -> `Contextualizer::Item/List/Hash`.
         Expr::Contextualizer { kind, inner } => super::contextualizer::convert(*kind, inner),
+        // `\(1, :a)` / `\$x` -> `Term::Capture`.
+        Expr::CaptureLiteral(items, parenthesized) => {
+            super::capture_term::convert(items, *parenthesized)
+        }
         // `@a Z @b`, `@a X+ @b`, `@a R- @b`: `ApplyListInfix` / `ApplyInfix` over
         // `MetaInfix::Zip` / `Cross` / `Reverse`.
         Expr::MetaOp {

@@ -2465,16 +2465,19 @@ fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 /// an empty vec when there are none.
 fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
     match node.fields.iter().find(|f| f.name == Some("args")) {
-        Some(f) => {
-            let arglist = child_node(&f.value)?;
-            arglist
-                .fields
-                .iter()
-                .map(|af| lower_expr(child_node(&af.value)?))
-                .collect()
-        }
+        Some(f) => arg_list_exprs(child_node(&f.value)?),
         None => Ok(Vec::new()),
     }
+}
+
+/// The lowered arguments of an `ArgList` node.
+// Cost: O(n), n = nodes of the arguments.
+pub(super) fn arg_list_exprs(arglist: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
+    arglist
+        .fields
+        .iter()
+        .map(|af| lower_expr(child_node(&af.value)?))
+        .collect()
 }
 
 /// Lower a plain `my $x = EXPR` declaration to `Stmt::VarDecl`. Scoped/typed/
@@ -3650,6 +3653,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if let Some(meta) = super::meta_infix::lower(node) {
         return meta;
     }
+    // `1 ==> foo()`: the parser's deferred feed node.
+    if let Some(feed) = super::feed_op::lower(node) {
+        return feed;
+    }
+    // `\(1, :a)` / `\$x`: the parser's capture literal.
+    if node.class == RakuAstClass::TermCapture {
+        return super::capture_term::lower(node);
+    }
     match node.class {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_term(node),
@@ -4073,6 +4084,17 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 body: lower_block(block)?,
                 catch: None,
             })
+        }
+        // `eager EXPR` -> the eager expression over the statement's expression.
+        RakuAstClass::StatementPrefixEager => {
+            let statement = named_child_or_positional(node)?;
+            if statement.class != RakuAstClass::StatementExpression {
+                return Err(unsupported(node));
+            }
+            Ok(Expr::Eager(Box::new(lower_expr(named_child(
+                statement,
+                "expression",
+            )?)?)))
         }
         // `gather { … }` -> a gather expression over the lowered block body.
         RakuAstClass::StatementPrefixGather => {

@@ -28,7 +28,7 @@ pub(crate) fn capture_literal(input: &str) -> PResult<'_, Expr> {
         // primary term (variable, literal, etc.), not a full expression.
         // This ensures `\3 eqv \4` parses as `(\3) eqv (\4)`.
         let (r, item) = crate::parser::primary::primary(r)?;
-        return Ok((r, Expr::CaptureLiteral(vec![item])));
+        return Ok((r, Expr::CaptureLiteral(vec![item], false)));
     }
     // Parenthesized capture literal: \(a, b, :c)
     let (r, _) = parse_char(r, '(')?;
@@ -36,7 +36,7 @@ pub(crate) fn capture_literal(input: &str) -> PResult<'_, Expr> {
     let (r, items) = crate::parser::primary::parse_call_arg_list(r)?;
     let (r, _) = ws(r)?;
     let (r, _) = parse_char(r, ')')?;
-    Ok((r, Expr::CaptureLiteral(items)))
+    Ok((r, Expr::CaptureLiteral(items, true)))
 }
 
 /// Parse `-> $param { body }` or `-> $a, $b { body }` arrow lambda.

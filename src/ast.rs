@@ -1329,8 +1329,11 @@ pub(crate) enum Expr {
     /// The bool flag is `true` when a trailing comma was present (e.g. `[x,]`),
     /// which prevents single-element flattening.
     BracketArray(Vec<Expr>, bool),
-    /// Capture literal: \(positional..., named...) — mixed exprs separated at compile time
-    CaptureLiteral(Vec<Expr>),
+    /// Capture literal: \(positional..., named...) — mixed exprs separated at compile time.
+    /// The bool flag is `true` when it was written with parentheses (`\(x)`) and
+    /// `false` for the bare single-term form (`\x`); the two mean the same, but
+    /// `.AST` renders them differently.
+    CaptureLiteral(Vec<Expr>, bool),
     Index {
         target: Box<Expr>,
         index: Box<Expr>,

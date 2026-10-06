@@ -14,6 +14,7 @@ mod anon_state;
 mod atomic_op;
 mod attribute;
 mod bareword;
+mod capture_term;
 mod chain;
 mod contextualizer;
 mod convert;
@@ -24,6 +25,7 @@ mod declared_routines;
 mod fields;
 mod formatter;
 pub(crate) mod frontend;
+mod feed_op;
 mod hash_literal;
 mod keyed_hash;
 mod lower;
@@ -196,6 +198,9 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     MetaInfixAssign,
+    Feed,
+    StatementPrefixEager,
+    TermCapture,
     MetaInfixReverse,
     MetaInfixCross,
     MetaInfixZip,
@@ -510,6 +515,9 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
+            Feed => "RakuAST::Feed",
+            StatementPrefixEager => "RakuAST::StatementPrefix::Eager",
+            TermCapture => "RakuAST::Term::Capture",
             MetaInfixReverse => "RakuAST::MetaInfix::Reverse",
             MetaInfixCross => "RakuAST::MetaInfix::Cross",
             MetaInfixZip => "RakuAST::MetaInfix::Zip",
@@ -1242,6 +1250,9 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
+    RakuAstClass::Feed,
+    RakuAstClass::StatementPrefixEager,
+    RakuAstClass::TermCapture,
     RakuAstClass::MetaInfixReverse,
     RakuAstClass::MetaInfixCross,
     RakuAstClass::MetaInfixZip,
@@ -2860,6 +2871,9 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
+        ("RakuAST::Feed", "new") => RakuAstClass::Feed,
+        ("RakuAST::StatementPrefix::Eager", "new") => RakuAstClass::StatementPrefixEager,
+        ("RakuAST::Term::Capture", "new") => RakuAstClass::TermCapture,
         ("RakuAST::MetaInfix::Reverse", "new") => RakuAstClass::MetaInfixReverse,
         ("RakuAST::MetaInfix::Cross", "new") => RakuAstClass::MetaInfixCross,
         ("RakuAST::MetaInfix::Zip", "new") => RakuAstClass::MetaInfixZip,
@@ -3215,6 +3229,9 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
+            | RakuAstClass::Feed
+            | RakuAstClass::StatementPrefixEager
+            | RakuAstClass::TermCapture
             | RakuAstClass::MetaInfixReverse
             | RakuAstClass::MetaInfixCross
             | RakuAstClass::MetaInfixZip
