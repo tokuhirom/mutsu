@@ -1,5 +1,6 @@
 use super::super::*;
 use super::regex_helpers::NamedRegexLookupSpec;
+use super::regex_multi_dispatch::MultiVerdict;
 use super::regex_token_candidates::TokenCandidates;
 use crate::symbol::Symbol;
 
@@ -125,9 +126,10 @@ impl Interpreter {
         }) {
             return Some(hit);
         }
-        let raw = self.resolve_raw_token_candidates_in_pkg(name, pkg, cache_key, tok_gen);
+        let (raw, dispatch_failed) =
+            self.resolve_raw_token_candidates_in_pkg(name, pkg, cache_key, tok_gen);
         let mut parsed_list = Vec::with_capacity(raw.len());
-        let mut all_static = true;
+        let mut all_static = !dispatch_failed;
         for (sub_pat, sub_pkg, sym_key) in raw.iter() {
             if !crate::runtime::regex_parse::regex_pattern_is_static(sub_pat) {
                 all_static = false;
@@ -135,7 +137,11 @@ impl Interpreter {
             let parsed = self.parse_candidate_in_pkg(sub_pat, *sub_pkg)?;
             parsed_list.push((parsed, *sub_pkg, sym_key.clone()));
         }
-        let arc = std::sync::Arc::new(TokenCandidates::new(parsed_list));
+        let arc = std::sync::Arc::new(if dispatch_failed {
+            TokenCandidates::with_failed_dispatch(parsed_list)
+        } else {
+            TokenCandidates::new(parsed_list)
+        });
         if all_static {
             PARSED_TOKEN_CANDIDATES.with(|c| {
                 c.borrow_mut()
@@ -149,13 +155,18 @@ impl Interpreter {
     /// [`Self::resolve_parsed_token_candidates_in_pkg`], memoized in
     /// [`RAW_TOKEN_CANDIDATES`] independently of whether any candidate is
     /// static — see that cache's doc comment for why this split is the fix.
+    ///
+    /// The flag is `true` when the call is a protoless multi call whose
+    /// dispatch died. The list is then every candidate (an analysis reading it
+    /// stays sound), and neither it nor the candidates built from it may be
+    /// memoized: the call that runs raises the error, again each time.
     fn resolve_raw_token_candidates_in_pkg(
-        &self,
+        &mut self,
         name: &str,
         pkg: Symbol,
         cache_key: (Symbol, Symbol),
         tok_gen: u64,
-    ) -> std::sync::Arc<Vec<RawTokenCandidate>> {
+    ) -> (std::sync::Arc<Vec<RawTokenCandidate>>, bool) {
         if let Some(hit) = RAW_TOKEN_CANDIDATES.with(|c| {
             c.borrow()
                 .get(&cache_key)
@@ -163,15 +174,22 @@ impl Interpreter {
                 .map(|(_, v)| std::sync::Arc::clone(v))
         }) {
             crate::vm::vm_stats::record_regex_raw_token_candidates(true);
-            return hit;
+            return (hit, false);
         }
         crate::vm::vm_stats::record_regex_raw_token_candidates(false);
-        let raw = std::sync::Arc::new(self.resolve_token_patterns_static_in_pkg(name, pkg));
-        RAW_TOKEN_CANDIDATES.with(|c| {
-            c.borrow_mut()
-                .insert(cache_key, (tok_gen, std::sync::Arc::clone(&raw)));
-        });
-        raw
+        let list = self.resolve_token_patterns_static_in_pkg(name, pkg);
+        let (list, failed) = match self.narrow_protoless_static(name, pkg, &list) {
+            Ok(narrowed) => (narrowed.unwrap_or(list), false),
+            Err(_) => (list, true),
+        };
+        let raw = std::sync::Arc::new(list);
+        if !failed {
+            RAW_TOKEN_CANDIDATES.with(|c| {
+                c.borrow_mut()
+                    .insert(cache_key, (tok_gen, std::sync::Arc::clone(&raw)));
+            });
+        }
+        (raw, failed)
     }
 
     /// Parse a candidate's pattern in its OWN package so nested unqualified
@@ -413,6 +431,19 @@ impl Interpreter {
     ) -> Vec<(String, Symbol, Option<String>)> {
         let mut out = Vec::new();
         let defs = self.resolve_token_defs_in_pkg(name, pkg);
+        // Several candidates and no proto: the call is an ordinary multi
+        // dispatch, so ONE candidate runs (or the call dies as ambiguous).
+        let defs = match self.dispatch_protoless_multi(name, pkg, &defs, arg_values) {
+            MultiVerdict::Winner(winner) => vec![winner],
+            MultiVerdict::Failed(err) => {
+                super::regex_arg_purity::note_opaque_read();
+                super::super::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                    *slot.borrow_mut() = Some(err);
+                });
+                return out;
+            }
+            MultiVerdict::NotApplicable => defs,
+        };
         // Rakudo multi semantics: a candidate whose literal parameter values
         // exactly match the arguments is narrower than a generic (`$p`)
         // candidate and wins the dispatch outright — `<expr(0)>` must pick
@@ -606,7 +637,16 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> Vec<(String, Symbol, Option<String>)> {
         if arg_values.is_empty() && !self.argless_call_needs_binding(&spec.lookup_name, pkg) {
-            self.resolve_token_patterns_static_in_pkg(&spec.lookup_name, pkg)
+            let list = self.resolve_token_patterns_static_in_pkg(&spec.lookup_name, pkg);
+            match self.narrow_protoless_static(&spec.lookup_name, pkg, &list) {
+                Ok(narrowed) => narrowed.unwrap_or(list),
+                Err(err) => {
+                    super::super::regex_parse::PENDING_REGEX_ERROR.with(|slot| {
+                        *slot.borrow_mut() = Some(err);
+                    });
+                    Vec::new()
+                }
+            }
         } else {
             self.resolve_token_patterns_with_args_in_pkg(&spec.lookup_name, pkg, arg_values)
         }
