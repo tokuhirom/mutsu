@@ -1157,7 +1157,9 @@ impl Interpreter {
             && let ValueView::Package(pkg) = target.view()
             && qualifier != pkg.as_str()
             && !self.has_class(qualifier)
-            && !self.is_role(qualifier)
+            // TODO: other core owners (`Pair`, `List`) once their subclasses
+            // have a representation; `Date`/`DateTime` keep their own path.
+            && matches!(qualifier, "Map" | "Hash")
             && self.class_mro(pkg.as_str()).iter().any(|c| c.as_str() == qualifier)
         {
             return Some(self.dispatch_native_new(target.clone(), args));
