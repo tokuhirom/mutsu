@@ -42,12 +42,17 @@ pub(crate) fn modified_declaration(stmt: &Stmt) -> Option<Stmt> {
     else {
         return None;
     };
-    let ([Stmt::Assign {
-        name: assigned,
-        expr,
-        op: AssignOp::Assign,
-        target_is_sigilless: false,
-    }], true) = (then_branch.as_slice(), else_branch.is_empty())
+    let (
+        [
+            Stmt::Assign {
+                name: assigned,
+                expr,
+                op: AssignOp::Assign,
+                target_is_sigilless: false,
+            },
+        ],
+        true,
+    ) = (then_branch.as_slice(), else_branch.is_empty())
     else {
         return None;
     };

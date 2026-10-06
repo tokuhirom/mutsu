@@ -37,7 +37,10 @@ pub(crate) fn declaration(stmt: &Stmt) -> Option<SigillessDecl<'_>> {
         return None;
     };
     let (decl, marked) = match stmts.as_slice() {
-        [decl @ Stmt::VarDecl { .. }, Stmt::MarkSigillessReadonly(marked)] => (decl, marked),
+        [
+            decl @ Stmt::VarDecl { .. },
+            Stmt::MarkSigillessReadonly(marked),
+        ] => (decl, marked),
         [
             Stmt::MarkBind,
             decl @ Stmt::VarDecl { .. },

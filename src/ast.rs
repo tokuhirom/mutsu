@@ -2646,15 +2646,15 @@ pub(crate) enum AssignOp {
 }
 
 pub(crate) mod bind_decl;
-pub(crate) mod decl_modifier;
 mod body_local_names;
 mod chains;
+pub(crate) mod decl_modifier;
 pub(crate) mod keyed_hash;
 mod lvalue;
 pub(crate) mod method_assign_decl;
-pub(crate) mod sigilless_decl;
 mod placeholder_kind;
 pub(crate) mod placeholders;
+pub(crate) mod sigilless_decl;
 pub(crate) mod signature_decl;
 pub(crate) mod stable_hash;
 pub(crate) mod stub;

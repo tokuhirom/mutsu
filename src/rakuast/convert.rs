@@ -289,8 +289,11 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         }
         // `my $x = 5 if COND`: the parser's split of the declaration and the
         // gated assignment is rakudo's one statement with a modifier.
-        Stmt::SyntheticBlock(_) if crate::ast::decl_modifier::modified_declaration(stmt).is_some() => {
-            let modified = crate::ast::decl_modifier::modified_declaration(stmt).expect("just checked");
+        Stmt::SyntheticBlock(_)
+            if crate::ast::decl_modifier::modified_declaration(stmt).is_some() =>
+        {
+            let modified =
+                crate::ast::decl_modifier::modified_declaration(stmt).expect("just checked");
             convert_stmt(&modified)
         }
         // A sigilless declaration (`my \x = 5`, `my Int \x := $s`).
@@ -2207,8 +2210,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             ) || crate::ast::sigilless_decl::declaration(stmt).is_some()
                 || crate::ast::bind_decl::declaration(stmt).is_some() =>
         {
-            let statement =
-                convert_stmt(stmt)?.ok_or_else(|| unsupported("declaration term"))?;
+            let statement = convert_stmt(stmt)?.ok_or_else(|| unsupported("declaration term"))?;
             statement
                 .fields
                 .iter()

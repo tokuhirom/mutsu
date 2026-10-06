@@ -7,7 +7,7 @@ pub(crate) mod predicates;
 mod sig_info;
 
 pub(in crate::parser) use block_arg_call::bareword_block_call_expr;
-pub(crate) use core::topic_dot_assign;
 pub(super) use core::expr_stmt;
+pub(crate) use core::topic_dot_assign;
 pub(super) use let_temp::{let_stmt, temp_stmt};
 pub(crate) use lvalue::decl_target_var_name;
