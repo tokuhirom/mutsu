@@ -71,7 +71,11 @@ impl Interpreter {
         if target.contains('\u{0}')
             || !(self.has_type(&target)
                 || self.native_decl(&target).is_some()
-                || crate::runtime::utils::is_known_type_constraint(&target))
+                || crate::runtime::utils::is_known_type_constraint(&target)
+                // `constant OidArray = CArray[Oid]` names a parameterization
+                // of a registered type.
+                || Self::parse_parametric_type_name(&target)
+                    .is_some_and(|(head, _)| self.has_type(&head)))
         {
             return None;
         }

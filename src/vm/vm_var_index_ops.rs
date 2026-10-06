@@ -787,6 +787,24 @@ impl Interpreter {
         &mut self,
         is_positional: bool,
     ) -> Result<(), RuntimeError> {
+        self.exec_index_op_general(is_positional)?;
+        // `$native-array[$i]` answers the element's reference (`IntPosRef`,
+        // what upstream's typed `CArray` returns from `AT-POS ... is raw`). A
+        // plain read wants the value in it: a number handed to `^`, `x`,
+        // `..`, a subscript or `-` is read by pure Rust that cannot FETCH. The
+        // forms that want the container -- a bind, an `is rw` argument, `.VAR`
+        // -- are other opcodes.
+        if let Some(top) = self.stack.last()
+            && crate::runtime::native_pos_ref::is_native_pos_ref(top)
+        {
+            let reference = self.stack.pop().unwrap();
+            let value = loan_env!(self, auto_fetch_proxy(&reference))?;
+            self.stack.push(value);
+        }
+        Ok(())
+    }
+
+    fn exec_index_op_general(&mut self, is_positional: bool) -> Result<(), RuntimeError> {
         // #8308: the ordinary `@a[$i]` read, answered without walking the
         // general path's preamble. See `index_fast_path_element`.
         if let Some(elem) = self.index_fast_path_element(is_positional) {

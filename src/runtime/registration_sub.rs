@@ -1228,6 +1228,12 @@ impl Interpreter {
         {
             effective_param_defs = defs;
         }
+        // An alias of a parameterization (`constant OidArray = CArray[Oid]`)
+        // only shows its `C[T]` spelling now.
+        self.resolve_decl_parameterizations(
+            &effective_param_defs,
+            effective_return_type.as_deref(),
+        );
         self.validate_static_default_typechecks(&effective_param_defs)?;
         let deprecated_message = custom_traits.iter().find_map(|(t, _)| {
             if t == "DEPRECATED" {

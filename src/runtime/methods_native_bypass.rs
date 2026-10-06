@@ -634,6 +634,32 @@ impl Interpreter {
         false
     }
 
+    /// Whether `target` is a role mixin over an object whose class declares
+    /// `method` itself: `Pointer.new(..) but TypedPointer[uint16]` still has the
+    /// class's own `Numeric`/`succ`, which `mixin_role_has_method` (the roles'
+    /// methods only) cannot see.
+    // Cost: O(d) for the mixin nesting depth d, plus one class-registry probe.
+    pub(crate) fn mixin_inner_instance_has_user_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+    ) -> bool {
+        if !target.is_mixin_value() {
+            return false;
+        }
+        let mut inner = target.clone();
+        while let ValueView::Mixin(next, _) = inner.view() {
+            let next: Value = (**next).clone();
+            inner = next;
+        }
+        match inner.view() {
+            ValueView::Instance { class_name, .. } => {
+                self.has_user_method(&class_name.resolve(), method)
+            }
+            _ => false,
+        }
+    }
+
     /// Render an object-hash pair KEY for `.raku`, applying Pair.raku's
     /// parenthesisation (mirrors `object_hash_key_repr`), but dispatching the
     /// key's own `.raku` through the real interpreter instead of the

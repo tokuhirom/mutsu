@@ -5609,7 +5609,7 @@ impl Interpreter {
             }
             // Cost: O(1) (lazy Range).
             OpCode::UptoRange => {
-                self.exec_upto_range_op();
+                self.exec_upto_range_op()?;
                 *ip += 1;
             }
             // Cost: O(1).

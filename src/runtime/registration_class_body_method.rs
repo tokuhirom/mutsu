@@ -113,6 +113,10 @@ impl Interpreter {
         {
             effective_param_defs = defs;
         }
+        // A `C[T]` parameter type is evaluated once, here, so the method's
+        // `Signature` reports the type object it denotes (`.REPR`, `.of`): an
+        // `is native` method's trait handler reads exactly that.
+        self.resolve_decl_parameterizations(&effective_param_defs, decl.return_type.as_deref());
         // Raku methods never get an implicit `*@_` (unlike subs) -- a
         // signature-less method body that reads a bare `@_` directly (ADR-
         // 0019 D3-9's precomputed `uses_bare_positional_args`, so this reads

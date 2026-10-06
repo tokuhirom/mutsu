@@ -32,6 +32,27 @@ impl Interpreter {
         if let Err(e) = self.reify_map_grep_seq_args(args) {
             return Some(Err(e));
         }
+        // A native method takes its arguments by value, as a routine's
+        // non-`raw` parameters do, so a `Proxy` argument is FETCHed once before
+        // it reaches pure Rust (the call-site auto-FETCH of a plain function
+        // call, `auto_fetch_proxy_args`). The element of a native `CArray`
+        // answers such a container (`$c[0]` is an `IntPosRef`), and
+        // `$blob.subbuf(0, $c[0])` reads the number in it. A bind keeps the
+        // container.
+        // Cost: O(n) tag probes, n = arguments; no allocation unless one is a Proxy.
+        if args.iter().any(Value::is_proxy_value)
+            && !method_sym.as_str().starts_with("BIND")
+            && !method_sym.as_str().starts_with("bind")
+        {
+            let mut fetched = Vec::with_capacity(args.len());
+            for arg in args {
+                match self.auto_fetch_proxy(arg) {
+                    Ok(value) => fetched.push(value),
+                    Err(e) => return Some(Err(e)),
+                }
+            }
+            return self.try_native_method(target, method_sym, &fetched);
+        }
         // The built-in method table (ADR-11276, #8888). For a plain receiver
         // of a shape it covers, a row is the method's implementation, and no
         // probe between here and the family cascade can claim the call: each

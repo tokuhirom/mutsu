@@ -832,13 +832,27 @@ impl Interpreter {
             );
         }
         if matches!(method, "candidates" | "dispatchees") && args.is_empty() {
-            // Multi-dispatch dispatcher: try name-based lookup first (preserves doc comments)
+            // Multi-dispatch dispatcher: try name-based lookup first (preserves
+            // doc comments) -- unless the dispatcher captured candidates the
+            // name no longer reaches. A `multi` declared inside `sub EXPORT`
+            // (upstream NativeCall's `:$native!` one) is lexical to that call:
+            // by the time a later importer asks, the registry has only the
+            // family's other candidates, and `&trait_mod:<is>.candidates` would
+            // be missing the one the dispatcher was built around.
+            let captured_len = match data
+                .env
+                .get("__mutsu_multi_dispatch_candidates")
+                .map(Value::view)
+            {
+                Some(ValueView::Array(cands, _)) => cands.len(),
+                _ => 0,
+            };
             if let Some(ValueView::Str(disp_name)) =
                 data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
             {
                 let name_based =
                     self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
-                if !name_based.is_empty() {
+                if !name_based.is_empty() && name_based.len() >= captured_len {
                     return Some(Ok(Value::array(name_based)));
                 }
             }

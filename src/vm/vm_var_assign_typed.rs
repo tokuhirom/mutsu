@@ -896,7 +896,10 @@ impl Interpreter {
         if let Some(payload) = crate::builtins::numeric_subclass::numeric_subclass_payload(val) {
             return Ok(Self::increment_value(&payload));
         }
-        if let ValueView::Instance { .. } = val.view() {
+        if matches!(val.view(), ValueView::Instance { .. })
+            || self.mixin_inner_instance_has_user_method(val, "succ")
+            || self.mixin_role_has_method(val, "succ")
+        {
             match self.try_compiled_method_or_interpret(val.clone(), "succ", Vec::new()) {
                 Ok(result) => return Ok(result),
                 Err(err) if !err.is_method_not_found_for("succ") => return Err(err),
@@ -1020,7 +1023,10 @@ impl Interpreter {
         if let Some(payload) = crate::builtins::numeric_subclass::numeric_subclass_payload(val) {
             return Ok(Self::decrement_value(&payload));
         }
-        if let ValueView::Instance { .. } = val.view() {
+        if matches!(val.view(), ValueView::Instance { .. })
+            || self.mixin_inner_instance_has_user_method(val, "pred")
+            || self.mixin_role_has_method(val, "pred")
+        {
             match self.try_compiled_method_or_interpret(val.clone(), "pred", Vec::new()) {
                 Ok(result) => return Ok(result),
                 Err(err) if !err.is_method_not_found_for("pred") => return Err(err),

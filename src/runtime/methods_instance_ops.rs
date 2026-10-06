@@ -2971,7 +2971,8 @@ impl Interpreter {
                     // so `'&trait_mod:<is>' => $t.dispatcher` reached the
                     // importer with no candidates at all (#11530).
                     let candidates = self.resolve_all_multi_candidates(&name);
-                    Ok(self.sub_value_from_multi_candidates(&name, candidates))
+                    let dispatcher = self.sub_value_from_multi_candidates(&name, candidates);
+                    Ok(self.dispatcher_containing(dispatcher, &target))
                 } else if self.resolve_proto_function(&qualified).is_some()
                     || self.resolve_proto_function_with_alias(&name).is_some()
                 {
@@ -3065,6 +3066,9 @@ impl Interpreter {
                         return Ok(Value::str(repr));
                     }
                     if let Some(repr) = crate::runtime::native_decl::builtin_native_repr(&name) {
+                        return Ok(Value::str_from(repr));
+                    }
+                    if let Some(repr) = crate::runtime::native_decl::builtin_buf_type_repr(&name) {
                         return Ok(Value::str_from(repr));
                     }
                     // A role type object -- `Blob`, `Positional[Int]`, a user

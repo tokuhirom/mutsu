@@ -306,6 +306,48 @@ impl Interpreter {
     /// same treatment as a directly resolved multi: the hook may return
     /// `&infix:<op>`, and that value must retain the private multi candidates
     /// declared by the exporting compilation unit after its load scope ends.
+    /// `dispatcher` (a [`Self::sub_value_from_multi_candidates`] value) with
+    /// `member` among its captured candidates. A candidate's `.dispatcher` is
+    /// the dispatcher of the family it belongs to, so it contains the
+    /// candidate: a `multi` declared inside `sub EXPORT` is lexical to the
+    /// call, and a later importer's `$candidate.dispatcher` gathers a visible
+    /// set that no longer has it (NativeLibs' `$exp.dispatcher`).
+    // Cost: O(c * p), c = captured candidates, p = parameters compared.
+    pub(crate) fn dispatcher_containing(&self, dispatcher: Value, member: &Value) -> Value {
+        let ValueView::Sub(disp) = dispatcher.view() else {
+            return dispatcher;
+        };
+        let ValueView::Sub(member_data) = member.view() else {
+            return dispatcher;
+        };
+        let Some(ValueView::Array(captured, kind)) = disp
+            .env
+            .get("__mutsu_multi_dispatch_candidates")
+            .map(Value::view)
+        else {
+            return dispatcher;
+        };
+        let member_sig = format!("{:?}", member_data.param_defs);
+        let present = captured.iter().any(|c| {
+            matches!(c.view(), ValueView::Sub(d)
+                if d.name == member_data.name && format!("{:?}", d.param_defs) == member_sig)
+        });
+        if present {
+            return dispatcher;
+        }
+        let mut items: Vec<Value> = captured.iter().cloned().collect();
+        items.push(member.clone());
+        let mut next: crate::value::SubData = (**disp).clone();
+        next.env.insert(
+            "__mutsu_multi_dispatch_candidates".to_string(),
+            Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                kind,
+            ),
+        );
+        Value::sub_value(crate::gc::Gc::new(next))
+    }
+
     pub(crate) fn sub_value_from_multi_candidates(
         &self,
         name: &str,

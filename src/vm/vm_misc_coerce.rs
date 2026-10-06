@@ -87,6 +87,7 @@ impl Interpreter {
         // generic value coercion (which cannot see the mixin's method table).
         if matches!(val.view(), ValueView::Instance { .. })
             || self.mixin_role_has_method(&val, "Numeric")
+            || self.mixin_inner_instance_has_user_method(&val, "Numeric")
         {
             // Slice F: a user `Numeric` method can mutate a captured-outer caller
             // lexical (`my $c; method Numeric { $c++; ... }`); this op-level
@@ -415,8 +416,12 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn exec_upto_range_op(&mut self) {
-        let val = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+    pub(super) fn exec_upto_range_op(&mut self) -> Result<(), RuntimeError> {
+        // The bound is read by value: a `Proxy` (an element of a native
+        // `CArray`) is FETCHed first, as `prefix:<+>` does.
+        let popped = self.stack.pop().unwrap();
+        let popped = loan_env!(self, auto_fetch_proxy(&popped))?;
+        let val = Self::scalarize_range_endpoint(popped);
         let numeric = if val.is_numeric() {
             val
         } else {
@@ -437,6 +442,7 @@ impl Interpreter {
             Value::range_excl(0, 0)
         };
         self.stack.push(result);
+        Ok(())
     }
 
     /// Carry an in-place `++`/`--` along the sigilless alias chain

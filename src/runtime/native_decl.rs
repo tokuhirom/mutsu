@@ -171,6 +171,21 @@ impl Interpreter {
     }
 }
 
+/// `.REPR` of the type object of a built-in buffer name. `buf8`, `blob16`, ...
+/// are the aliases of the parameterized roles (`Buf[uint8]`), so they are
+/// `Uninstantiable`; `utf8`/`utf16`/`utf32` are classes over a `VMArray`.
+/// NativeCall's `validnctype` accepts a `utf8` parameter by that REPR.
+// Cost: O(1).
+pub(crate) fn builtin_buf_type_repr(type_name: &str) -> Option<&'static str> {
+    match type_name {
+        "buf8" | "buf16" | "buf32" | "buf64" | "blob8" | "blob16" | "blob32" | "blob64" => {
+            Some("Uninstantiable")
+        }
+        "utf8" | "utf16" | "utf32" => Some("VMArray"),
+        _ => None,
+    }
+}
+
 /// `.REPR` of a built-in native type object: `int*`/`uint*`/`byte`/
 /// `atomicint` are `P6int`, `num*` is `P6num`, `str` is `P6str`.
 // Cost: O(1).
