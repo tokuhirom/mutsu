@@ -3001,11 +3001,25 @@ impl Interpreter {
                         _ => arc,
                     }
                 });
+                // The source's binding cell can live in its own slot, in the
+                // compunit's lexical store (a mainline lexical a named sub
+                // reads, ADR-0024) or in an env tier; wherever it is, the bind
+                // leaves it there (#11797).
                 let source_keeps_binding_cell =
                     Self::bind_source_local_slot(code, bind_source_slot, &resolved_source)
-                        .is_some_and(|s| Self::binding_cell_of(&self.locals[s]).is_some());
+                        .is_some_and(|s| Self::binding_cell_of(&self.locals[s]).is_some())
+                        || self
+                            .unit_lexical_slot(&resolved_source, None)
+                            .is_some_and(|slot| Self::binding_cell_of(slot).is_some())
+                        || self
+                            .env()
+                            .get(&resolved_source)
+                            .is_some_and(|slot| Self::binding_cell_of(slot).is_some());
                 let container = match (val.view(), source_cell) {
-                    (ValueView::ContainerRef(arc), _) => Value::container_ref(arc.clone()),
+                    // `val` can be the source's binding cell itself (a
+                    // `WrapVarRef` of a mainline lexical carries the raw cell):
+                    // bind to the container behind it, as `source_cell` does.
+                    (ValueView::ContainerRef(_), _) => Self::innermost_container(val.clone()),
                     (_, Some(arc)) => Value::container_ref(arc),
                     _ => {
                         // A freshly minted cell must inherit the SOURCE
