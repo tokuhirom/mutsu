@@ -1755,6 +1755,7 @@ impl Interpreter {
             }
             let container = cur.clone().into_container_ref();
             self.register_container_cell_constraint_for_name(&container, &s);
+            self.mark_fresh_cell_declared_untyped(&container, &s);
             let container = if rebound {
                 Self::wrap_in_binding_cell(container)
             } else {

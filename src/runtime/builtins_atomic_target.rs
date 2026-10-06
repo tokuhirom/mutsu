@@ -138,18 +138,30 @@ impl Interpreter {
     /// caller's container, a `:=` alias, an outer name): the type travels with
     /// the container, in its cell when it has one.
     ///
-    /// Only a *recorded* type refuses. A cell with no constraint is not proof
-    /// of an untyped variable: a cell is made at many sites (a closure's
-    /// capture, a `:=` alias, an `is rw` argument) and not every one of them
-    /// copies the declaring variable's type onto it, so `my atomicint $x; my
-    /// $y := $x; $y⚛++` reaches a constraint-less cell and must run.
+    /// Only a cell that *says* so refuses: one carrying a non-native `of`-type,
+    /// or one its creator marked as made from an untyped variable (#12007). A
+    /// cell with neither is not proof of an untyped variable: a cell is made at
+    /// many sites (a closure's capture, a `:=` alias, an `is rw` argument) and
+    /// not every one of them copies the declaring variable's type onto it, so
+    /// `my atomicint $x; my $y := $x; $y⚛++` can reach a cell that says
+    /// nothing and must run.
     fn lexical_target_verdict(&self, name: &str) -> Verdict {
         if let Some(ty) = self.var_type_constraint(name) {
             return verdict_for_type(&ty);
         }
-        self.scalar_cell_target(name)
-            .and_then(|cell| crate::value::lookup_container_constraint(&cell))
-            .map_or(Verdict::Unknown, |ty| verdict_for_type(&ty))
+        let Some(cell) = self.scalar_cell_target(name) else {
+            return Verdict::Unknown;
+        };
+        // A rebound variable's cell is a binding cell in front of the
+        // container it is bound to; that container is the one that answers.
+        let value_cell = Self::value_cell_of(&cell);
+        [cell, value_cell]
+            .iter()
+            .find_map(|cell| match crate::value::lookup_container_constraint(cell) {
+                Some(ty) => Some(verdict_for_type(&ty)),
+                None => cell.is_declared_untyped().then_some(Verdict::Boxed),
+            })
+            .unwrap_or(Verdict::Unknown)
     }
 
     /// The error Rakudo raises for an integer atomic on a non-native target.
