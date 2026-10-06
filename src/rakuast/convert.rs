@@ -4148,7 +4148,7 @@ fn quoted_regex_node(tree: &RegexTree) -> Result<RakuAstNode, RuntimeError> {
         let adverbs = tree
             .adverbs
             .iter()
-            .map(regex_adverb_node)
+            .map(super::substitution::adverb_node)
             .collect::<Result<Vec<_>, _>>()?;
         fields.push(RakuAstField {
             name: Some("adverbs"),
@@ -4163,16 +4163,6 @@ fn quoted_regex_node(tree: &RegexTree) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::QuotedRegex,
         fields,
-    })
-}
-
-fn regex_adverb_node(adverb: &crate::regex_tree::RegexAdverb) -> Result<RakuAstNode, RuntimeError> {
-    if adverb.argument.is_some() {
-        return Err(unsupported("regex adverb with an argument"));
-    }
-    Ok(RakuAstNode {
-        class: RakuAstClass::ColonPairTrue,
-        fields: vec![leaf_field(None, Value::str(adverb.name.clone()))],
     })
 }
 

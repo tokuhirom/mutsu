@@ -13,8 +13,7 @@ use crate::ast::{
 };
 use crate::regex_tree::{RegexNode, RegexTree};
 use crate::symbol::Symbol;
-use crate::value::{RegexAdverbs, RuntimeError, Value, ValueView};
-use std::sync::Arc;
+use crate::value::{RuntimeError, Value, ValueView};
 
 type LoweredEnumVariants = (Vec<(String, Option<Expr>)>, EnumVariantForm);
 
@@ -3587,90 +3586,15 @@ pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeE
     }
 }
 
-fn lower_regex_adverb(node: &RakuAstNode) -> Result<crate::regex_tree::RegexAdverb, RuntimeError> {
-    if node.class != RakuAstClass::ColonPairTrue {
-        return Err(unsupported(node));
-    }
-    let value = positional_leaf(node)?;
-    let ValueView::Str(name) = value.view() else {
-        return Err(unsupported(node));
-    };
-    Ok(crate::regex_tree::RegexAdverb {
-        name: name.to_string(),
-        argument: None,
-    })
-}
-
-/// Build the legacy execution value from source-level adverbs. This is a
-/// compatibility bridge; the shared tree remains the source of truth for
-/// RakuAST and the compiler still emits the existing match opcode.
+/// The execution value of a regex literal: what the parser builds from the
+/// same written adverbs (`rx:i/a/`, `m:g:x(2)/a/`), with the tree beside it.
+// Cost: O(n), n = size of the pattern and adverbs.
 fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
-    if tree.adverbs.is_empty() {
-        return Ok(Value::regex(tree.to_source()).with_regex_source_tree(tree.clone()));
-    }
-    let mut pattern = tree.to_source();
-    let mut value = RegexAdverbs {
-        pattern: Arc::new(String::new()),
-        global: false,
-        exhaustive: false,
-        overlap: false,
-        repeat: None,
-        nth: None,
-        pos: false,
-        pos_value: None,
-        continue_: false,
-        continue_value: None,
-        ignore_case: false,
-        sigspace: false,
-        samecase: false,
-        samespace: false,
-        source_adverbs: None,
-        captured: None,
-        topic: None,
-        source_tree: None,
-        id: Default::default(),
-        name: Default::default(),
-    };
-    for adverb in &tree.adverbs {
-        if adverb.argument.is_some() {
-            return Err(RuntimeError::new(format!(
-                "RakuAST: EVAL does not yet support regex adverb argument `{}`",
-                adverb.name
-            )));
-        }
-        match adverb.name.as_str() {
-            "g" | "global" => value.global = true,
-            "ex" | "exhaustive" => value.exhaustive = true,
-            "ov" | "overlap" => value.overlap = true,
-            "i" | "ignorecase" => {
-                value.ignore_case = true;
-                pattern = format!(":i {pattern}");
-            }
-            "ii" | "samecase" => {
-                value.samecase = true;
-                value.ignore_case = true;
-                pattern = format!(":i {pattern}");
-            }
-            "s" | "sigspace" => {
-                value.sigspace = true;
-                pattern = format!(":s {pattern}");
-            }
-            "ss" | "samespace" => {
-                value.samespace = true;
-                value.sigspace = true;
-                pattern = format!(":s {pattern}");
-            }
-            "r" | "ratchet" => pattern = format!(":ratchet {pattern}"),
-            "m" | "ignoremark" => pattern = format!(":m {pattern}"),
-            other => {
-                return Err(RuntimeError::new(format!(
-                    "RakuAST: EVAL does not yet support regex adverb `{other}`"
-                )));
-            }
-        }
-    }
-    value.pattern = Arc::new(pattern);
-    Ok(Value::regex_with_adverbs(value).with_regex_source_tree(tree.clone()))
+    crate::parser::regex_execution_value(tree.to_source(), &tree.adverbs)
+        .map(|value| value.with_regex_source_tree(tree.clone()))
+        .ok_or_else(|| {
+            RuntimeError::new("RakuAST: EVAL does not yet support this regex adverb".to_string())
+        })
 }
 
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
@@ -3768,7 +3692,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                             let ValueView::RakuAst(adverb) = item.view() else {
                                 return Err(unsupported(node));
                             };
-                            lower_regex_adverb(adverb)
+                            super::substitution::lower_adverb(adverb)
                         })
                         .collect::<Result<Vec<_>, _>>()?,
                     _ => return Err(unsupported(node)),

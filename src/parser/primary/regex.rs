@@ -27,7 +27,9 @@ mod trans;
 pub(in crate::parser) use call_args::{parse_call_arg_list, sigilless_item_assign_arg};
 pub(in crate::parser) use lit::regex_lit;
 pub(in crate::parser) use scan::scan_to_delim;
-pub(crate) use subst_source::{SubstFlags, parse_adverb_argument, subst_pattern_source};
+pub(crate) use subst_source::{
+    SubstFlags, parse_adverb_argument, regex_execution_value, subst_pattern_source,
+};
 
 // Items used by primary/mod.rs (sibling module).
 pub(super) use lit::{topic_method_call, version_lit};

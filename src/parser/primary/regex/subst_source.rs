@@ -9,9 +9,13 @@
 //! the parser's own adverb routine, so a substitution lowered from a tree
 //! cannot read an adverb differently from a parsed one.
 
-use super::adverbs::{MatchAdverbs, apply_inline_match_adverbs, parse_match_adverbs};
+use super::adverbs::{
+    MatchAdverbs, adverbs_need_value, apply_inline_match_adverbs, build_regex_with_adverbs,
+    parse_match_adverbs,
+};
 use crate::ast::Expr;
 use crate::regex_tree::{RegexAdverb, RegexTree};
+use crate::value::Value;
 
 /// The flags a substitution's adverbs set, as `Expr::Subst` carries them.
 pub(crate) struct SubstFlags {
@@ -97,6 +101,22 @@ pub(super) fn subst_expr(
     }
 }
 
+/// `adverbs` as they are written between the construct and its delimiter.
+// Cost: O(a), a = size of the adverbs.
+fn written_adverbs(adverbs: &[RegexAdverb]) -> String {
+    let mut written = String::new();
+    for adverb in adverbs {
+        written.push(':');
+        written.push_str(&adverb.name);
+        if let Some(argument) = &adverb.argument {
+            written.push('(');
+            written.push_str(argument);
+            written.push(')');
+        }
+    }
+    written
+}
+
 /// The normalized pattern text and flags of a substitution written with
 /// `adverbs` over `body` (the pattern's source). `ss` is set for the `ss///`
 /// construct, which is `:ss` without writing it. `None` for an adverb a
@@ -108,16 +128,7 @@ pub(crate) fn subst_pattern_source(
     adverbs: &[RegexAdverb],
     ss: bool,
 ) -> Option<(String, SubstFlags)> {
-    let mut written = String::new();
-    for adverb in adverbs {
-        written.push(':');
-        written.push_str(&adverb.name);
-        if let Some(argument) = &adverb.argument {
-            written.push('(');
-            written.push_str(argument);
-            written.push(')');
-        }
-    }
+    let written = written_adverbs(adverbs);
     let (rest, mut parsed) = parse_match_adverbs(&written, "s").ok()?;
     if !rest.is_empty() || parsed.overlap || parsed.exhaustive {
         return None;
@@ -146,4 +157,25 @@ pub(crate) fn parse_adverb_argument(source: &str) -> Option<Expr> {
         Ok((rest, expr)) if rest.trim().is_empty() => Some(expr),
         _ => None,
     }
+}
+
+/// The execution value of a regex literal whose source is `body`, written with
+/// `adverbs`: the one the parser builds for `rx:i/.../` or `m:g/.../`. `None`
+/// for an adverb the parser does not take.
+// Cost: O(|body| + a), a = size of the adverbs.
+pub(crate) fn regex_execution_value(body: String, adverbs: &[RegexAdverb]) -> Option<Value> {
+    if adverbs.is_empty() {
+        return Some(Value::regex(body));
+    }
+    let written = written_adverbs(adverbs);
+    let (rest, parsed) = parse_match_adverbs(&written, "m").ok()?;
+    if !rest.is_empty() {
+        return None;
+    }
+    let pattern = apply_inline_match_adverbs(body, &parsed);
+    Some(if adverbs_need_value(&parsed) {
+        build_regex_with_adverbs(pattern, &parsed)
+    } else {
+        Value::regex(pattern)
+    })
 }

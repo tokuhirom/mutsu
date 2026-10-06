@@ -277,7 +277,7 @@ fn adverbs_of(node: &RakuAstNode) -> Result<Vec<RegexAdverb>, RuntimeError> {
 }
 
 // Cost: O(n), n = size of the adverb.
-fn lower_adverb(node: &RakuAstNode) -> Result<RegexAdverb, RuntimeError> {
+pub(super) fn lower_adverb(node: &RakuAstNode) -> Result<RegexAdverb, RuntimeError> {
     let string = |v: Value| match v.view() {
         ValueView::Str(s) => Ok(s.to_string()),
         _ => Err(unsupported(node)),
