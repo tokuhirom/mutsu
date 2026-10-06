@@ -26,12 +26,22 @@ pub(super) fn process_trans_escapes(raw: &str) -> String {
     result
 }
 
+/// The adverbs and the opening delimiter of a `tr` / `TR`.
+pub(super) struct TransHead<'a> {
+    /// What follows the opening delimiter.
+    pub(super) rest: &'a str,
+    pub(super) open: char,
+    pub(super) close: char,
+    pub(super) is_paired: bool,
+    pub(super) delete: bool,
+    pub(super) complement: bool,
+    pub(super) squash: bool,
+    /// The adverbs as written, in order.
+    pub(super) adverbs: Vec<String>,
+}
+
 /// Parse tr/TR adverbs and the opening delimiter.
-/// Returns (remaining_after_open, delimiter_char, close_delimiter_char, is_paired,
-/// delete, complement, squash, the adverbs as written).
-pub(super) fn parse_trans_adverbs(
-    input: &str,
-) -> Option<(&str, char, char, bool, bool, bool, bool, Vec<String>)> {
+pub(super) fn parse_trans_adverbs(input: &str) -> Option<TransHead<'_>> {
     let mut rest = input;
     let mut written = Vec::new();
     let mut delete = false;
@@ -87,7 +97,14 @@ pub(super) fn parse_trans_adverbs(
         other => (other, false),
     };
     let after_open = &rest[open_ch.len_utf8()..];
-    Some((
-        after_open, open_ch, close_ch, is_paired, delete, complement, squash, written,
-    ))
+    Some(TransHead {
+        rest: after_open,
+        open: open_ch,
+        close: close_ch,
+        is_paired,
+        delete,
+        complement,
+        squash,
+        adverbs: written,
+    })
 }

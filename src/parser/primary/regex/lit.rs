@@ -37,7 +37,7 @@ use super::subst::{
     build_topic_subst_compound_expr, parse_subst_replacement_expr, try_strip_subst_compound_assign,
 };
 use super::subst_source::subst_expr;
-use super::trans::{parse_trans_adverbs, process_trans_escapes};
+use super::trans::{TransHead, parse_trans_adverbs, process_trans_escapes};
 
 /// Parse the optional message argument of a stub listop (`...`, `!!!`, `???`).
 /// These sit at "list prefix precedence" (`operators.rakudoc`'s `listop C«...»` /
@@ -829,7 +829,16 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         .or_else(|| input.strip_prefix("TR"))
         .and_then(parse_trans_adverbs)
     {
-        let (r, _open_ch, close_ch, is_paired, delete, complement, squash, adverbs) = r;
+        let TransHead {
+            rest: r,
+            open: _open_ch,
+            close: close_ch,
+            is_paired,
+            delete,
+            complement,
+            squash,
+            adverbs,
+        } = r;
         let close_byte = close_ch as u8;
         let mut end = 0;
         let bytes = r.as_bytes();
