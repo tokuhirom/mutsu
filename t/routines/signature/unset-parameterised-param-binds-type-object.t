@@ -1,6 +1,6 @@
 use Test;
 
-plan 6;
+plan 5;
 
 # An unset optional/named parameter with a parameterised type binds the type
 # object WITH its type arguments (#12105).
