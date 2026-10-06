@@ -1,5 +1,7 @@
+use lib 't/lib';
 use Test;
 use nqp;
+use AtomicRwTarget;
 
 # The integer atomics (`⚛++`, `⚛+=`, `atomic-fetch-add`, `nqp::atomicinc_i`, ...)
 # act on a native integer container: an `int` / `atomicint` variable or
@@ -193,22 +195,38 @@ my $nomatch = /'Cannot resolve caller ' .* '; the following candidates' \s+
 }
 
 {
-    # A native that a closure captured (so its cell was made on the way) and a
-    # state variable keep running through an `is rw` parameter.
+    # A native that a closure captured (so its cell was made on the way) keeps
+    # running through an `is rw` parameter. (Rakudo has no native `state`.)
     sub bump-rw($p is rw) { $p⚛++ }
     sub counter { my atomicint $c = 0; return { bump-rw($c); $c } }
     my &step = counter();
     step();
     is step(), 2, 'a native captured by a returned closure, through an is rw parameter';
 
-    sub tick { state atomicint $s = 0; bump-rw($s); $s }
-    tick();
-    is tick(), 2, 'a state atomicint through an is rw parameter';
-
     my atomicint ($x, $y) = 0, 0;
     bump-rw($x);
     bump-rw($y);
     is $x + $y, 2, 'natives declared together through an is rw parameter';
+
+    # A module's own variables, handed to an `is rw` parameter by its routines.
+    is bump-hits(), 1, 'a unit module\'s atomicint through an is rw parameter';
+    is bump-hits(), 2, '... and again';
+    throws-like { bump-plain() }, X::Multi::NoMatch, message => $nomatch, 'a unit module\'s untyped scalar through an is rw parameter';
+    is plain-value(), 0, '... leaves it alone';
+
+    module RwPkg {
+        my atomicint $hits = 0;
+        my int $count = 0;
+        my $plain = 0;
+        sub bump-rw($p is rw) { $p⚛++ }
+        our sub bump-hits() { bump-rw($hits); $hits }
+        our sub bump-count() { bump-rw($count); $count }
+        our sub bump-plain() { bump-rw($plain) }
+    }
+    is RwPkg::bump-hits(), 1, 'a module block\'s atomicint through an is rw parameter';
+    is RwPkg::bump-hits(), 2, '... and again';
+    is RwPkg::bump-count(), 1, 'a module block\'s int through an is rw parameter';
+    throws-like { RwPkg::bump-plain() }, X::Multi::NoMatch, message => $nomatch, 'a module block\'s untyped scalar through an is rw parameter';
     # (No `start` here: a thread started before the element section below makes
     # an element atomic after it a no-op, #11833; and a native bumped through an
     # `is rw` parameter from `start` blocks alone loses its updates, #12042.)
