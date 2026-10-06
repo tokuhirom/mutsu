@@ -745,6 +745,42 @@ and belong to 3D.
    `map`, `grep`, `first`, `reduce`, `produce`, `classify`, `categorize`, `rotor`, `skip`,
    `match`, `iterator`, `eager`, `splice`, `squish`, `categorize-list`, `classify-list`.
 
+**Progress (updated as families land; the closing paragraph is written when the PR opens).**
+
+- [x] Range's own methods (`bounds`, `is-int`, `infinite`, `int-bounds`, `rand`, `in-range`): arms
+  deleted (no catch-all answers a Range). `is-int` now shares `range_is_int` with `int-bounds` and
+  `minmax`, which moves it toward Rakudo (`1..*`, `1..Inf`, `*..5` are not Int ranges; a big-Int
+  end and a Bool end are).
+- [x] The quant hashes' views and sizes (`collections/quanthash.rs`): `keys`, `values`, `kv`,
+  `pairs`, `antipairs`, `total`, `elems`, `default`, `of`, `hash`, `kxxv`, `invert`,
+  `Baggy.Numeric`.
+- [x] `AT-KEY`, `EXISTS-KEY` and `ACCEPTS` of the associatives (`collections/subscript.rs`);
+  `Capture.AT-KEY` and `EXISTS-KEY` now work (they answered "does not support associative
+  indexing").
+- [x] Capture (`collections/capture.rs`): the views, `list`, `hash`, `elems`, `Numeric`, `AT-POS`
+  (new), `EXISTS-POS` (new), and the `.Capture` coercion of every collection owner.
+- [x] Pair's views (`keys`, `values`, `kv`, `pairs`, `antipairs`, `invert`).
+
+What the work taught, which the remaining families follow:
+
+- **A name whose cascade arm ends in a catch-all keeps one delegating branch.** `keys`, `values`,
+  `kv`, `pairs`, `antipairs`, `hash` and `elems` answer for every receiver in the end (`_ =>
+  value_to_list`), so an arm with a covered shape's branch deleted answers that shape wrongly and
+  the debug cross-check (`debug_assert_matches_full_path`) fails on it, as it should. Those arms
+  call the row's handler for the covered shapes (the handler is the one implementation); arms
+  with no catch-all (`total`, `default`, `of`, `kxxv`, Range's methods) are deleted outright.
+  The delegating branches are what slice 5 removes with the cascades.
+- **A one-argument row cannot replace its arm.** A row admits only plain arguments, and a
+  cascade arm answers for an object key (an Instance whose `Str` is user code), so
+  `AT-KEY`/`EXISTS-KEY`/`ACCEPTS`/`AT-POS` keep a delegating arm.
+- **A row that the table answers before a gate in `try_native_method_raw` must apply that gate.**
+  `Capture` on a list holding a `Pair` with a non-`Str` key is the interpreter's
+  (`try_interpreter_capture`): the row declines through `capture_needs_str_key`, the one helper
+  both use. Roast's `S02-types/capture.t` caught it.
+- **A row must be reachable by some shape** (`every_row_is_reached_and_answers`): `Map.AT-KEY`
+  has no row (no shape would reach it behind `Hash.AT-KEY`), and no `Seq` row can be registered
+  before the `Seq` shape exists.
+
 **What the slice has to decide.** The `Seq` shape (a method decides whether it consumes the
 `Seq`) is added with the first row `Seq` owns. The ancestor rows are audited, and the shape
 opened, for `Range`, `Pair`, `Capture` and the six quant hashes one shape at a time, when the
