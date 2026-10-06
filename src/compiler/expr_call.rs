@@ -2108,7 +2108,8 @@ impl Compiler {
                         // The shape test is repeated here so the common
                         // argument pays no `Symbol::resolve` allocation.
                         let callee = (accessor_ref_invocant.is_none()
-                            && matches!(arg, Expr::Index { .. }))
+                            && (matches!(arg, Expr::Index { .. })
+                                || Self::index_assign_arg_element(arg).is_some()))
                         .then(|| name.resolve());
                         self.compile_named_callee_arg(
                             callee.as_deref(),

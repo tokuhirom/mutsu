@@ -1078,6 +1078,7 @@ mod atomic_target;
 mod begin_use;
 mod bind_ternary;
 mod body_scans;
+mod call_arg_index_assign;
 pub(crate) mod compile_inputs;
 pub(crate) mod compile_session;
 mod const_fold;

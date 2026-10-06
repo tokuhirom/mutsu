@@ -987,6 +987,34 @@ impl Compiler {
         arg: &Expr,
         escaping: bool,
     ) {
+        // `f(@a[1] = v)`: bind the element's container when the callee wants
+        // one, else pass the assignment's value (see `compile_gated_assigned_arg`).
+        if let Some(callee_name) = callee
+            && positional.is_some()
+            && !callee_name.starts_with("__mutsu_")
+            && let Some(element) = Self::index_assign_arg_element(arg)
+        {
+            let name_idx = self.code.add_constant(Value::str(callee_name.to_string()));
+            self.compile_gated_assigned_arg(
+                arg,
+                crate::opcode::RwArgCallee::Named { name_idx },
+                positional,
+                0,
+                |s| s.compile_call_arg_with_escape(arg, escaping),
+                |s| s.compile_named_callee_index_arg(callee, positional, &element, escaping),
+            );
+            return;
+        }
+        self.compile_named_callee_index_arg(callee, positional, arg, escaping);
+    }
+
+    fn compile_named_callee_index_arg(
+        &mut self,
+        callee: Option<&str>,
+        positional: Option<u32>,
+        arg: &Expr,
+        escaping: bool,
+    ) {
         let callee = callee.filter(|callee| {
             matches!(arg, Expr::Index { .. })
                 && !Self::index_arg_is_static_slice(arg)

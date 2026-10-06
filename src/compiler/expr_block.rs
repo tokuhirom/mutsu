@@ -1337,10 +1337,17 @@ impl Compiler {
         // raku refuses to assign to (`{ $_ = 5 }(7)`). Decided here, from the
         // call site's own syntax, because the block is compiled elsewhere and
         // the same block is writable when called with an lvalue.
+        // The sources the VM binds `is rw` parameters from describe what is
+        // passed, i.e. the element of an assignment argument (see
+        // `assign_arg_element`), not the assignment.
+        let source_args: Vec<Expr> = args
+            .iter()
+            .map(|a| Self::assign_arg_element(a).unwrap_or_else(|| a.clone()))
+            .collect();
         let bare_args = !args.is_empty() && args.iter().all(Self::expr_yields_container_less_value);
         if let Expr::CodeVar(name) = target {
             self.fold_lexical_sub_free_vars_for_code_var(name);
-            let arg_sources_idx = self.add_arg_sources_constant(args);
+            let arg_sources_idx = self.add_arg_sources_constant(&source_args);
             // ADR-0067's argument producer: `&g($c.v)` has no callee on the
             // stack, but the code variable's NAME is a compile-time constant,
             // so the VM resolves it exactly as `CallOnCodeVar` does.
@@ -1356,24 +1363,37 @@ impl Compiler {
                 {
                     self.mint_named_pair = true;
                 }
-                self.compile_expr(arg);
-                self.maybe_promote_attr_arg_read(arg);
-                self.mark_arg_as_rw_container_candidate_callee(
-                    crate::opcode::RwArgCallee::CodeVar {
+                // `&g(@a[1] = v)`: bind the element's container when the callee
+                // wants one, else pass the assignment's value (see
+                // `compile_gated_assigned_arg`).
+                if let Some(element) = Self::assign_arg_element(arg) {
+                    let callee = crate::opcode::RwArgCallee::CodeVar {
                         name_idx: code_var_idx,
-                    },
-                    positional_indices[i],
-                    i as u32,
-                    arg,
-                );
-                self.mark_arg_index_as_container_candidate_callee(
-                    crate::opcode::RwArgCallee::CodeVar {
-                        name_idx: code_var_idx,
-                    },
-                    positional_indices[i],
-                    i as u32,
-                    arg,
-                );
+                    };
+                    self.compile_gated_assigned_arg(
+                        arg,
+                        callee.clone(),
+                        positional_indices[i],
+                        i as u32,
+                        |s| s.compile_expr(arg),
+                        |s| {
+                            s.compile_expr(&element);
+                            s.maybe_promote_attr_arg_read(&element);
+                            s.mark_call_on_arg(callee, positional_indices[i], i as u32, &element);
+                        },
+                    );
+                } else {
+                    self.compile_expr(arg);
+                    self.maybe_promote_attr_arg_read(arg);
+                    self.mark_call_on_arg(
+                        crate::opcode::RwArgCallee::CodeVar {
+                            name_idx: code_var_idx,
+                        },
+                        positional_indices[i],
+                        i as u32,
+                        arg,
+                    );
+                }
                 if !Self::is_named_arg_expr(arg) {
                     self.code.emit(OpCode::ContainerizePair);
                 }
@@ -1388,30 +1408,43 @@ impl Compiler {
             });
         } else {
             self.compile_expr(target);
-            let arg_sources_idx = self.add_arg_sources_constant(args);
+            let arg_sources_idx = self.add_arg_sources_constant(&source_args);
             let positional_indices = Self::arg_positional_indices(args);
             for (i, arg) in args.iter().enumerate() {
                 if matches!(arg, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow)
                 {
                     self.mint_named_pair = true;
                 }
-                self.compile_expr(arg);
-                self.maybe_promote_attr_arg_read(arg);
                 // ADR-0067's argument producer: the callee code object is the
                 // stack value `compile_expr(target)` just pushed, so the VM can
                 // read its real signature — no name is needed anywhere.
-                self.mark_arg_as_rw_container_candidate_callee(
-                    crate::opcode::RwArgCallee::Code,
-                    positional_indices[i],
-                    i as u32,
-                    arg,
-                );
-                self.mark_arg_index_as_container_candidate_callee(
-                    crate::opcode::RwArgCallee::Code,
-                    positional_indices[i],
-                    i as u32,
-                    arg,
-                );
+                // `&g(@a[1] = v)`: bind the element's container when the callee
+                // wants one, else pass the assignment's value (see
+                // `compile_gated_assigned_arg`).
+                if let Some(element) = Self::assign_arg_element(arg) {
+                    let callee = crate::opcode::RwArgCallee::Code;
+                    self.compile_gated_assigned_arg(
+                        arg,
+                        callee.clone(),
+                        positional_indices[i],
+                        i as u32,
+                        |s| s.compile_expr(arg),
+                        |s| {
+                            s.compile_expr(&element);
+                            s.maybe_promote_attr_arg_read(&element);
+                            s.mark_call_on_arg(callee, positional_indices[i], i as u32, &element);
+                        },
+                    );
+                } else {
+                    self.compile_expr(arg);
+                    self.maybe_promote_attr_arg_read(arg);
+                    self.mark_call_on_arg(
+                        crate::opcode::RwArgCallee::Code,
+                        positional_indices[i],
+                        i as u32,
+                        arg,
+                    );
+                }
                 if !Self::is_named_arg_expr(arg) {
                     self.code.emit(OpCode::ContainerizePair);
                 }
