@@ -460,7 +460,7 @@ pub(crate) fn numeric(target: &Value, _args: &[Value]) -> Option<Result<Value, R
         .then(|| numeric_coercion(target, "Numeric"))
 }
 
-/// `Range.list` (and `.Array`, through [`Self::listify`]'s cascade caller):
+/// `Range.list` (and `.Array`, through [`listify`]'s cascade caller):
 /// the elements. An unbounded range stays lazy: a lazy List for `.list`, a
 /// lazy Array for `.Array` (Rakudo: `(1..*).list.^name` is `List`,
 /// `(1.5..*).Array.is-lazy`). `want_array` makes the result a real `@`-sigiled
