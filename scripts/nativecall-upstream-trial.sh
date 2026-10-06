@@ -57,6 +57,7 @@ steps=(
     "UNC: nativesizeof|use UNC; print nativesizeof(int32) == 4 ?? 'ok' !! 'wrong'"
     "UNC: is native strlen|use UNC; sub strlen(Str --> size_t) is native {*}; print strlen('hello') == 5 ?? 'ok' !! 'wrong'"
     "UNC: explicitly-manage|use UNC; use nqp; my \$r = explicitly-manage('héllo'); my \$c = \$r ~~ Str ?? \$r.cstr !! \$r; print \$c.REPR eq 'CStr' && nqp::unbox_s(\$c) eq 'héllo' ?? 'ok' !! 'wrong'"
+    "UNC: CArray inside a CStruct|use UNC; class Mat is repr<CStruct> { HAS num32 @.m[4] is CArray; has int32 \$.n }; my \$m = Mat.new(n => 7); \$m.m[2] = 1.5e0; print \$m.m[2] == 1.5e0 && \$m.n == 7 ?? 'ok' !! 'wrong'"
     "UNC: CStruct.new storage|use UNC; class TM is repr<CStruct> { has int32 \$.a; has int32 \$.b }; sub memcpy(TM, TM, size_t --> Pointer) is native('c', v6) {*}; my \$t = TM.new(a => 1, b => 2); my \$u = TM.new; memcpy(\$u, \$t, nativesizeof(TM)); print \$u.b == 2 && \$t.REPR eq 'CStruct' && nativesizeof(TM) == 8 ?? 'ok' !! 'wrong'"
 )
 
