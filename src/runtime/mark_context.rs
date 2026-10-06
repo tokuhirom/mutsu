@@ -68,10 +68,17 @@ pub(crate) struct MarkContextState {
 
 impl MarkContextState {
     /// Save the whole family and clear it, as a call boundary does.
+    ///
+    /// Every member is a one-shot mark except `BOUND_DECONT_ACTIVE`, the sticky
+    /// "some `__mutsu_bound_decont::` marker exists" gate. It is NOT cleared: the
+    /// callee's env is a child of the caller's, so a marker the caller wrote is
+    /// visible there, and clearing the gate made `ItemizeVar` skip the probe in
+    /// every routine (`my $l := (1, 2, 3); sub f { my @a = $l }` kept the List
+    /// as one item, #12023).
     #[inline]
     pub(crate) fn take_all(&self) -> (u16, Option<String>) {
         let flags = self.flags.get();
-        self.flags.set(0);
+        self.flags.set(flags & bit::BOUND_DECONT_ACTIVE);
         // `Cell::take` on a `None` is a 24-byte move either way; there is no
         // cheaper peek on a `Cell`, and the bit that would gate it
         // (`ARRAY_SHARE`) is set independently of the source (`SetLocal`
@@ -117,10 +124,14 @@ impl MarkContextState {
         MarkFlags(w)
     }
 
-    /// Restore what [`MarkContextState::take_all`] saved.
+    /// Restore what [`MarkContextState::take_all`] saved. The sticky
+    /// `BOUND_DECONT_ACTIVE` gate is the union of the saved one and the callee's:
+    /// a marker the callee bound may outlive its frame (a write to an enclosing
+    /// lexical merges back), and a stale `true` only costs one env probe.
     #[inline]
     pub(crate) fn restore_all(&self, flags: u16, share_source: Option<String>) {
-        self.flags.set(flags);
+        let sticky = self.flags.get() & bit::BOUND_DECONT_ACTIVE;
+        self.flags.set(flags | sticky);
         self.share_source.set(share_source);
     }
 }
@@ -364,5 +375,27 @@ mod tests {
         assert!(MarkFlag::new(&st.flags, bit::ARRAY_SHARE).get());
         assert!(!MarkFlag::new(&st.flags, bit::BIND).get());
         assert_eq!(st.share_source.take(), Some("@z".to_string()));
+    }
+
+    #[test]
+    fn bound_decont_gate_is_sticky_across_a_call_boundary() {
+        let st = MarkContextState::default();
+        MarkFlag::new(&st.flags, bit::BOUND_DECONT_ACTIVE).set(true);
+        MarkFlag::new(&st.flags, bit::REBIND).set(true);
+
+        // The callee sees the gate (the caller's marker is visible in its env)
+        // but not the caller's one-shot marks.
+        let (flags, src) = st.take_all();
+        assert_eq!(st.flags.get(), bit::BOUND_DECONT_ACTIVE);
+        st.restore_all(flags, src);
+        assert!(MarkFlag::new(&st.flags, bit::REBIND).get());
+        assert!(MarkFlag::new(&st.flags, bit::BOUND_DECONT_ACTIVE).get());
+
+        // A marker the callee itself bound survives the return.
+        let st = MarkContextState::default();
+        let (flags, src) = st.take_all();
+        MarkFlag::new(&st.flags, bit::BOUND_DECONT_ACTIVE).set(true);
+        st.restore_all(flags, src);
+        assert!(MarkFlag::new(&st.flags, bit::BOUND_DECONT_ACTIVE).get());
     }
 }
