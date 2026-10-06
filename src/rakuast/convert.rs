@@ -2481,6 +2481,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             Ok(var_lexical("$", name))
         }
+        // `$::($n)` / `@::($n)` -> `Var::Package` over a dynamic name.
+        Expr::SymbolicDeref { sigil, expr } => super::symbolic_deref::convert(sigil, expr),
+        Expr::SymbolicDerefAssign { sigil, expr, value } => {
+            super::symbolic_deref::convert_assign(sigil, expr, value)
+        }
+        Expr::IndirectTypeLookupAssign { expr, value } => {
+            super::symbolic_deref::convert_type_assign(expr, value)
+        }
         // `::("x")` / `::($name)` ->
         // `Term::Name(Name(Part::Empty.new, Part::Expression(EXPR)))`, the
         // leading `::` being an empty name edge (measured on 2026.09). The
@@ -3436,6 +3444,18 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // An interpolated string `"a $x b"` -> QuotedString with a segment per
         // part (a literal run is a `StrLiteral`, an interpolated term keeps its
         // own node).
+        // A `qq:to/END/` body: the parser keeps the raw text for the compiler to
+        // interpolate where the heredoc sits; the tree is that interpolation.
+        // The terminator (rakudo's `Heredoc(stop => ...)`) is not kept, so it
+        // renders as the quoted string it evaluates to. One that closes an
+        // enclosing block on its own line is a scope diagnostic the
+        // interpolation would lose.
+        Expr::HeredocInterpolation(content, closes_block_same_line) => {
+            if *closes_block_same_line {
+                return Err(unsupported("heredoc closing an enclosing block"));
+            }
+            convert_expr(&crate::parser::interpolate_heredoc_content(content))
+        }
         Expr::StringInterpolation(parts) => {
             let mut segments = Vec::with_capacity(parts.len());
             for p in parts {

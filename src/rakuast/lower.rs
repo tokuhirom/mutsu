@@ -2299,6 +2299,10 @@ fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError
 /// keeps for a `%h{…}` subscript -- as the parser's `IndexAssign`, or `None`
 /// when the left side is not a subscript.
 fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+    // `$::($n) = v` / `::($n) = v`.
+    if let Some(assign) = super::symbolic_deref::lower_assign(node)? {
+        return Ok(Some(assign));
+    }
     let left = named_child(node, "left")?;
     if left.class != RakuAstClass::ApplyPostfix {
         return Ok(None);
@@ -4217,6 +4221,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             _ => Err(unsupported(node)),
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
+        RakuAstClass::VarPackage if let Some(deref) = super::symbolic_deref::lower(node) => deref,
         RakuAstClass::VarLexical | RakuAstClass::VarPackage | RakuAstClass::VarDynamic => {
             let name = variable_spelling(node)?;
             let (sigil, bare) = name.split_at(name.chars().next().map_or(0, char::len_utf8));
