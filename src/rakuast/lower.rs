@@ -2513,6 +2513,7 @@ fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     Ok(Expr::Call {
         name: crate::symbol::Symbol::intern(&name),
         args,
+        listop: false,
     })
 }
 
@@ -4155,6 +4156,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             ValueView::Str(s) if s.as_str() == "now" => Ok(Expr::Call {
                 name: Symbol::intern("now"),
                 args: vec![],
+                listop: false,
             }),
             _ => Err(unsupported(node)),
         },
@@ -4171,6 +4173,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(Expr::Call {
                 name: crate::symbol::Symbol::intern(name),
                 args: arg_exprs(node)?,
+                listop: false,
             })
         }
         // `True`/`False` -> the Bool literal; any other setting enum value

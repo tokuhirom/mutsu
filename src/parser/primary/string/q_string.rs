@@ -115,6 +115,7 @@ pub(crate) fn apply_post_processing<'a>(
             Expr::Call {
                 name: Symbol::intern("QX"),
                 args: vec![expr],
+                listop: false,
             },
         ));
     }
@@ -153,6 +154,7 @@ pub(crate) fn apply_post_processing<'a>(
             Expr::Call {
                 name: Symbol::intern(func_name),
                 args: vec![expr],
+                listop: false,
             },
         ));
     }
@@ -163,6 +165,7 @@ pub(crate) fn apply_post_processing<'a>(
             Expr::Call {
                 name: Symbol::intern("__mutsu_make_format"),
                 args: vec![expr],
+                listop: false,
             },
         ));
     }

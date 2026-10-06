@@ -121,7 +121,7 @@ impl TrirCompiler<'_> {
             }
             Expr::Unary { op, expr } => self.compile_unary(op, expr, false),
             Expr::Binary { left, op, right } => self.compile_binary(left, op, right),
-            Expr::Call { name, args } => self.compile_call(&name.resolve(), args),
+            Expr::Call { name, args, .. } => self.compile_call(&name.resolve(), args),
             Expr::MethodCall {
                 target,
                 name,
@@ -178,7 +178,7 @@ impl TrirCompiler<'_> {
         }
         // A control form in sink position leaves nothing, rather than a
         // value on each arm that the join then drops: the arms are sunk too.
-        if let Expr::Call { name, args } = e {
+        if let Expr::Call { name, args, .. } = e {
             let name = name.resolve();
             match name.as_str() {
                 "nqp::if" | "nqp::unless" if args.len() == 2 || args.len() == 3 => {

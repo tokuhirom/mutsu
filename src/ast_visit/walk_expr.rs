@@ -275,7 +275,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
                 }
             }
         }
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             v.visit_name(name.as_str(), NameKind::Call);
             exprs(v, args);
         }

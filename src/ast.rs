@@ -1447,6 +1447,13 @@ pub(crate) enum Expr {
     Call {
         name: Symbol,
         args: Vec<Expr>,
+        /// `true` when the source wrote the call as a listop, without
+        /// parentheses (`foo 1, 2`, `foo :a`, a bare `foo`); `false` for
+        /// `foo(1, 2)`, `foo()` and for a call the parser or compiler
+        /// synthesizes. The compiler ignores it; the RakuAST boundary renders
+        /// the node raku has for it (`Call::Name::WithoutParentheses` for a
+        /// listop, `Call::Name` otherwise).
+        listop: bool,
     },
     Try {
         body: Vec<Stmt>,
@@ -2086,6 +2093,8 @@ pub(crate) enum Stmt {
     Call {
         name: Symbol,
         args: Vec<CallArg>,
+        /// Written as a listop, without parentheses; see [`Expr::Call`].
+        listop: bool,
     },
     Use {
         module: String,
@@ -2753,13 +2762,14 @@ impl Expr {
         Expr::Call {
             name: Symbol::intern("__PROTO_DISPATCH__"),
             args: Vec::new(),
+            listop: false,
         }
     }
 
     /// Whether this is the onlystar dispatch [`Expr::onlystar_dispatch`] builds.
     // Cost: O(1).
     pub(crate) fn is_onlystar_dispatch(&self) -> bool {
-        matches!(self, Expr::Call { name, args } if args.is_empty() && name.as_str() == "__PROTO_DISPATCH__")
+        matches!(self, Expr::Call { name, args, .. } if args.is_empty() && name.as_str() == "__PROTO_DISPATCH__")
     }
 
     /// Whether this expression is one of the syntactic empty import lists

@@ -84,7 +84,7 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
                 rhs,
             )
         }
-        Expr::Call { name, args } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
+        Expr::Call { name, args, .. } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
         Expr::CallOn { target, args } => callable_lvalue_assign_expr(*target, args, rhs),
         other => callable_lvalue_assign_expr(other, Vec::new(), rhs),
     }
@@ -99,6 +99,7 @@ pub(crate) fn topic_dot_assign(method_call: Expr) -> Expr {
     let expanded = Expr::Call {
         name: Symbol::intern("__mutsu_topic_dotassign"),
         args: vec![method_call.clone()],
+        listop: false,
     };
     crate::parser::stmt::assign::dotty_assign_marker(
         Expr::Var("_".to_string()),
@@ -504,6 +505,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 let stmt = Stmt::Expr(Expr::Call {
                     name: Symbol::intern("sink"),
                     args: vec![make_rhs(expr)],
+                    listop: false,
                 });
                 return parse_statement_modifier(r, stmt);
             }
@@ -543,7 +545,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             is_positional,
         } = expr
         {
-            if let Expr::Call { name, args } = target.as_ref()
+            if let Expr::Call { name, args, .. } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"
                 && args.len() >= 3
                 && matches!(index.as_ref(), Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(1)))
@@ -713,7 +715,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             let stmt = Stmt::Expr(assigned);
             return parse_statement_modifier(r, stmt);
         }
-        if let Expr::Call { name, args } = &target_expr {
+        if let Expr::Call { name, args, .. } = &target_expr {
             let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
                 name.resolve(),
                 args.clone(),
@@ -870,7 +872,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             let stmt = Stmt::Expr(assigned);
             return parse_statement_modifier(r, stmt);
         }
-        if let Expr::Call { name, args } = &expr {
+        if let Expr::Call { name, args, .. } = &expr {
             let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
                 name.resolve(),
                 args.clone(),
@@ -902,6 +904,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Stmt::Expr(Expr::Call {
                         name: Symbol::intern("__mutsu_assignment_ro"),
                         args: vec![lit],
+                        listop: false,
                     }),
                 ]))
             }
@@ -1302,6 +1305,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::Literal(crate::value::Value::str(topic_name)),
                     Expr::Literal(crate::value::Value::truth(true)),
                 ],
+                listop: false,
             });
             return parse_statement_modifier(r, stmt);
         }
@@ -1354,6 +1358,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     cond: Box::new(Expr::Call {
                         name: Symbol::intern("defined"),
                         args: vec![lhs_expr.clone()],
+                        listop: false,
                     }),
                     then_expr: Box::new(lhs_expr),
                     else_expr: Box::new(rhs),
@@ -1425,6 +1430,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::Literal(crate::value::Value::str(topic_name)),
                     Expr::Literal(crate::value::Value::truth(true)),
                 ],
+                listop: false,
             };
             let stmt = Stmt::Expr(compound_assign_marker(
                 expr.clone(),
@@ -1472,6 +1478,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         Stmt::Expr(Expr::Call {
                             name: Symbol::intern("__mutsu_assignment_ro"),
                             args: Vec::new(),
+                            listop: false,
                         }),
                     ])),
                 })
@@ -1482,6 +1489,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Stmt::Expr(Expr::Call {
                         name: Symbol::intern("__mutsu_assignment_ro"),
                         args: Vec::new(),
+                        listop: false,
                     }),
                 ]))
             };

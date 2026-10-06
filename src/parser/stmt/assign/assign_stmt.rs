@@ -139,6 +139,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::Literal(Value::str(name)),
                     Expr::Literal(Value::truth(true)),
                 ],
+                listop: false,
             };
             let stmt = Stmt::Expr(compound_assign_marker(
                 source_target,
@@ -219,6 +220,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             let zip_call = Expr::Call {
                 name: crate::symbol::Symbol::intern("__mutsu_zip_assign"),
                 args: vec![var_expr, rhs],
+                listop: false,
             };
             let stmt = Stmt::Assign {
                 name,

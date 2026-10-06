@@ -176,7 +176,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         Stmt::Say(items) | Stmt::Put(items) | Stmt::Print(items) | Stmt::Note(items) => {
             exprs_mut(v, items)
         }
-        Stmt::Call { name: _, args } => {
+        Stmt::Call { name: _, args, .. } => {
             for a in args {
                 walk_call_arg_mut(v, a);
             }

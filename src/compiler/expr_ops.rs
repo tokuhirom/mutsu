@@ -270,6 +270,7 @@ impl Compiler {
             let assign_call = Expr::Call {
                 name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                 args: vec![left.clone(), Expr::ArrayLiteral(vec![]), value_expr],
+                listop: false,
             };
             self.compile_expr(&assign_call);
             return;
@@ -470,6 +471,7 @@ impl Compiler {
                     left.clone(),
                     thunked,
                 ],
+                listop: false,
             };
             self.compile_expr(&rewritten);
             return;
@@ -494,6 +496,7 @@ impl Compiler {
             let rewritten = Expr::Call {
                 name: Symbol::intern(carrier),
                 args: vec![right.clone(), thunks],
+                listop: false,
             };
             self.compile_expr(&rewritten);
             return;
@@ -511,6 +514,7 @@ impl Compiler {
                     left.clone(),
                     thunks,
                 ],
+                listop: false,
             };
             self.compile_expr(&rewritten);
             return;
@@ -533,6 +537,7 @@ impl Compiler {
                     left.clone(),
                     thunked,
                 ],
+                listop: false,
             };
             self.compile_expr(&rewritten);
             return;
@@ -563,6 +568,7 @@ impl Compiler {
                 let rewritten = Expr::Call {
                     name: Symbol::intern("__mutsu_reverse_andthen"),
                     args: vec![eval_left.clone(), thunked],
+                    listop: false,
                 };
                 self.compile_expr(&rewritten);
                 return;
@@ -597,6 +603,7 @@ impl Compiler {
                 let rewritten = Expr::Call {
                     name: Symbol::intern("__mutsu_reverse_xx"),
                     args: vec![eval_right.clone(), thunked],
+                    listop: false,
                 };
                 self.compile_expr(&rewritten);
                 return;
@@ -664,6 +671,7 @@ impl Compiler {
                     Expr::ArrayLiteral(Vec::new()),
                     Expr::Var(tmp_name),
                 ],
+                listop: false,
             };
             self.compile_expr(&assign_call);
             self.code.emit(OpCode::Pop);
@@ -793,7 +801,9 @@ impl Compiler {
                 args: vec![Expr::Call {
                     name: Symbol::intern(name),
                     args: junction_args.clone(),
+                    listop: false,
                 }],
+                listop: false,
             };
             self.compile_expr(&normalized);
             return;

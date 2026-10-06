@@ -29,6 +29,7 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern("hash"),
                     args,
+                    listop: false,
                 },
             ));
         }

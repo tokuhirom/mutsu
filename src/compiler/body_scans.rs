@@ -70,7 +70,7 @@ impl<'ast> Visit<'ast> for LetScan {
             Expr::Gather(_) | Expr::Once { .. } | Expr::PhaserExpr { .. } => {}
             // `undefine temp $var`: the compiler expands it to a save plus an
             // assignment, so the block needs the save frame.
-            Expr::Call { name, args }
+            Expr::Call { name, args, .. }
                 if !self.real_only
                     && name.resolve() == "undefine"
                     && args.len() == 1

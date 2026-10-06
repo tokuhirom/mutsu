@@ -199,6 +199,7 @@ impl Compiler {
             role_value_right = Expr::Call {
                 name: crate::symbol::Symbol::intern(role),
                 args: vec![index.as_ref().clone()],
+                listop: false,
             };
             &role_value_right
         } else {

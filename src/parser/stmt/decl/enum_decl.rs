@@ -37,7 +37,7 @@ pub(in crate::parser::stmt) fn collect_dynamic_enum_value_names(
         return;
     };
     for item in items {
-        let Expr::Call { name, args } = item.peel_parens() else {
+        let Expr::Call { name, args, .. } = item.peel_parens() else {
             continue;
         };
         if name.resolve() != "slip" {

@@ -212,6 +212,7 @@ impl Compiler {
                 Stmt::Expr(Expr::Call {
                     name: crate::symbol::Symbol::intern("__mutsu_assignment_ro"),
                     args: Vec::new(),
+                    listop: false,
                 }),
             ])
         })

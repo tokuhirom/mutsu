@@ -59,6 +59,7 @@ pub(super) fn method_lvalue_assign_expr(
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_method_lvalue"),
         args,
+        listop: false,
     }
 }
 
@@ -74,6 +75,7 @@ pub(super) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, va
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_callable_lvalue"),
         args: vec![target, Expr::ArrayLiteral(call_args), value],
+        listop: false,
     }
 }
 
@@ -109,6 +111,7 @@ pub(crate) fn bind_index_value(rhs: Expr) -> Expr {
     Expr::Call {
         name: Symbol::intern("__mutsu_bind_index_value"),
         args: vec![rhs, source_meta],
+        listop: false,
     }
 }
 
@@ -205,6 +208,7 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
                 expr: Expr::Call {
                     name: Symbol::intern("__mutsu_star_lvalue_rhs"),
                     args: vec![Expr::Literal(Value::str(format!("@{}", name))), array_rhs],
+                    listop: false,
                 },
                 op: AssignOp::Assign,
                 target_is_sigilless: false,

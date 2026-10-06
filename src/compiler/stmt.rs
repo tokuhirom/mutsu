@@ -893,7 +893,7 @@ impl Compiler {
     fn is_list_assign_call(expr: &Expr) -> bool {
         matches!(
             expr,
-            Expr::Call { name, args }
+            Expr::Call { name, args, .. }
                 if name.resolve() == "__mutsu_assign_callable_lvalue"
                     && args.len() == 3
                     && matches!(&args[0], Expr::ArrayLiteral(targets) if targets.iter().all(|t| {
@@ -2836,7 +2836,7 @@ impl Compiler {
                 // and aliases the same value containers (`clip-to 0, $_, 255 for
                 // values %r` writes through). Normalize it to the method form so
                 // it reuses the values-alias write-back path.
-                if let Expr::Call { name, args } = iterable
+                if let Expr::Call { name, args, .. } = iterable
                     && name.resolve() == "values"
                     && args.len() == 1
                     && matches!(args[0], Expr::HashVar(_) | Expr::ArrayVar(_))
@@ -2958,7 +2958,7 @@ impl Compiler {
                     self.compile_stmt(s);
                 }
             }
-            Stmt::Call { name, args } => {
+            Stmt::Call { name, args, .. } => {
                 // Check for invocant colon syntax: foo($obj:) → $obj.foo()
                 if let Some(method_call) = Self::invocant_colon_method_call(*name, args) {
                     self.compile_expr(&method_call);
@@ -2991,6 +2991,7 @@ impl Compiler {
                     let call_expr = Expr::Call {
                         name: *name,
                         args: Self::call_args_to_expr_args(args),
+                        listop: false,
                     };
                     self.compile_expr(&call_expr);
                     // Sink context: a bare call statement sinks its value (see
@@ -3041,6 +3042,7 @@ impl Compiler {
                     let call_expr = Expr::Call {
                         name: *name,
                         args: expr_args,
+                        listop: false,
                     };
                     self.compile_expr(&call_expr);
                     // Sink context: a bare call statement sinks its value, so a
@@ -3065,6 +3067,7 @@ impl Compiler {
                 let call_expr = Expr::Call {
                     name: *name,
                     args: Self::call_args_to_expr_args(&rewritten_args),
+                    listop: false,
                 };
                 self.compile_expr(&call_expr);
                 // Sink context, exactly as the normalized path above.
@@ -3645,6 +3648,7 @@ impl Compiler {
                         args: vec![Expr::Literal(Value::str(
                             "Useless generation of accessor method in mainline".to_string(),
                         ))],
+                        listop: false,
                     };
                     self.compile_expr(&warn_call);
                     self.code.emit(OpCode::Pop);
@@ -3742,6 +3746,7 @@ impl Compiler {
                     let call = Expr::Call {
                         name: Symbol::intern("take"),
                         args: vec![expr.clone()],
+                        listop: false,
                     };
                     self.compile_expr(&call);
                     self.code.emit(OpCode::Pop);
@@ -5075,6 +5080,7 @@ impl Compiler {
                         value,
                         Expr::Literal(Value::str(var_name.clone())),
                     ],
+                    listop: false,
                 };
                 self.compile_expr(&assign_expr);
                 self.code.emit(OpCode::Pop);
@@ -5128,7 +5134,7 @@ impl Compiler {
                 // Tail expression escapes the frame (implicit result).
                 self.with_escape(true, |c| c.with_stmt_root(|c| c.compile_expr(expr)));
             }
-            Stmt::Call { name, args } => {
+            Stmt::Call { name, args, .. } => {
                 self.compile_tail_stmt_call_value(*name, args);
             }
             Stmt::If {

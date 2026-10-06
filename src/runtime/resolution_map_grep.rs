@@ -222,12 +222,12 @@ pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<cr
         return body.to_vec();
     };
     match &body[last_idx] {
-        Stmt::Call { name, args } => {
+        Stmt::Call { name, args, .. } => {
             let expr_args = args.iter().map(call_arg_to_expr).collect();
             let mut out = body.to_vec();
             out[last_idx] = Stmt::Expr(Expr::Call {
                 name: *name,
-                args: expr_args,
+                args: expr_args, listop: false,
             });
             out
         }

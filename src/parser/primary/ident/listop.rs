@@ -40,7 +40,14 @@ pub(crate) fn operator_term_call<'a>(
     {
         return Ok((after, call));
     }
-    Ok((rest, Expr::Call { name, args: vec![] }))
+    Ok((
+        rest,
+        Expr::Call {
+            name,
+            args: vec![],
+            listop: false,
+        },
+    ))
 }
 
 pub(crate) fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Vec<Expr> {
@@ -89,6 +96,20 @@ pub(crate) fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr
     Expr::Call {
         name: Symbol::intern(&name),
         args: call_args,
+        listop: false,
+    }
+}
+
+/// A call written as a listop, without parentheses (`foo 1, 2`, a bare `foo`):
+/// [`make_call_expr`] with the spelling recorded for the RakuAST boundary.
+pub(crate) fn make_listop_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
+    match make_call_expr(name, input, args) {
+        Expr::Call { name, args, .. } => Expr::Call {
+            name,
+            args,
+            listop: true,
+        },
+        other => other,
     }
 }
 
@@ -159,7 +180,7 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
         } else {
             Expr::ArrayLiteral(exprs)
         };
-        return Ok((r, make_call_expr(name, input, vec![arg])));
+        return Ok((r, make_listop_expr(name, input, vec![arg])));
     }
 
     // Each argument parses at list-prefix precedence (`call_arg_expr`), exactly
@@ -179,7 +200,7 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
     // whole comma level like the parenthesized-list parser does.
     if let Some(result) = crate::parser::primary::try_parse_sequence_arg_list(input) {
         let (r, seq) = result?;
-        return Ok((r, make_call_expr(name, input, vec![seq])));
+        return Ok((r, make_listop_expr(name, input, vec![seq])));
     }
 
     let (r, first) = call_arg_expr(input).map_err(|err| PError {
@@ -241,7 +262,7 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
     // it across the full argument list, mirroring the parenthesized-list
     // finalizer (and `try_parse_sequence_arg_list` for the sequence operator).
     let args = crate::parser::primary::lift_list_infix_in_arg_list(args);
-    Ok((r, make_call_expr(name, input, args)))
+    Ok((r, make_listop_expr(name, input, args)))
 }
 
 /// Detect "two terms in a row" at the point a listop argument list is about
@@ -431,7 +452,7 @@ pub(crate) fn make_call_expr_from_listop_args<'a>(
         // call, handled by the normal path.
         let (r_ws, _) = ws(r)?;
         if !r_ws.starts_with(':') || r_ws.starts_with("::") {
-            return Ok((r, make_call_expr(name, input, vec![seq])));
+            return Ok((r, make_listop_expr(name, input, vec![seq])));
         }
     }
 
@@ -492,5 +513,5 @@ pub(crate) fn make_call_expr_from_listop_args<'a>(
     // the meta-op bound only to its neighbouring element; lift it across the
     // full argument list, mirroring `parse_expr_listop_args`.
     let args = crate::parser::primary::lift_list_infix_in_arg_list(args);
-    Ok((r, make_call_expr(name, input, args)))
+    Ok((r, make_listop_expr(name, input, args)))
 }

@@ -339,6 +339,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern(crate::ast::stub::FAIL),
                     args,
+                    listop: false,
                 },
             ));
         }
@@ -353,6 +354,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             Expr::Call {
                 name: Symbol::intern(crate::ast::stub::DIE),
                 args,
+                listop: false,
             },
         ));
     }
@@ -366,6 +368,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             Expr::Call {
                 name: Symbol::intern(crate::ast::stub::WARN),
                 args,
+                listop: false,
             },
         ));
     }

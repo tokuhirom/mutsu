@@ -268,6 +268,7 @@ pub(crate) fn normalize_chained_zip_meta(expr: Expr) -> Expr {
                 return Expr::Call {
                     name: Symbol::intern("zip"),
                     args,
+                    listop: false,
                 };
             }
             let left = normalize_chained_zip_meta(*left);
@@ -315,6 +316,7 @@ pub(crate) fn normalize_chained_zip_meta(expr: Expr) -> Expr {
                 return Expr::Call {
                     name: Symbol::intern("zip"),
                     args,
+                    listop: false,
                 };
             }
 
@@ -401,6 +403,7 @@ fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
             Expr::Call {
                 name: Symbol::intern("zip"),
                 args,
+                listop: false,
             }
         } else {
             // Left-fold the columns into a nested meta-op chain. This handles X

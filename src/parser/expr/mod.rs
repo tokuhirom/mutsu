@@ -650,7 +650,7 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
             value: bind,
             is_positional,
         } if is_bind_index_value(&bind) => {
-            let Expr::Call { name, mut args } = *bind else {
+            let Expr::Call { name, mut args, .. } = *bind else {
                 unreachable!("is_bind_index_value checked the shape");
             };
             let rhs = reassociate_fat_arrow_operand(args.remove(0), value);
@@ -662,6 +662,7 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
                 value: Box::new(Expr::Call {
                     name,
                     args: vec![rhs, source_meta],
+                    listop: false,
                 }),
                 is_positional,
             }
@@ -671,7 +672,7 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
 }
 
 fn is_bind_index_value(value: &Expr) -> bool {
-    matches!(value, Expr::Call { name, args }
+    matches!(value, Expr::Call { name, args, .. }
         if name.resolve() == "__mutsu_bind_index_value" && args.len() == 2)
 }
 

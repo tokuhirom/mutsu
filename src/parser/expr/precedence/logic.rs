@@ -523,7 +523,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 is_positional,
             },
         )),
-        Expr::Call { name, args } => Ok((
+        Expr::Call { name, args, .. } => Ok((
             r,
             crate::parser::stmt::assign::named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
         )),
@@ -578,18 +578,21 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                         Expr::Call {
                             name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                             args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                            listop: false,
                         }
                     }
                 } else {
                     Expr::Call {
                         name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                         args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                        listop: false,
                     }
                 }
             } else {
                 Expr::Call {
                     name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                     args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                    listop: false,
                 }
             },
         )),
@@ -637,6 +640,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                         Expr::ArrayLiteral(Vec::new()),
                         rhs,
                     ],
+                    listop: false,
                 },
             },
         )),

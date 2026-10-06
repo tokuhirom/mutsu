@@ -268,7 +268,7 @@ impl Compiler {
                     // so `do for ^2 { imported_sub() }` collected `Nil` per
                     // iteration while the parenthesized form — which parses as
                     // `Stmt::Expr` — collected correctly.
-                    Stmt::Call { name, args } => {
+                    Stmt::Call { name, args, .. } => {
                         self.compile_tail_stmt_call_value(*name, args);
                     }
                     // `BEGIN` runs at compile time but is still an ordinary
@@ -1218,7 +1218,7 @@ impl Compiler {
                         main_leaves_value = true;
                         tail_is_bare_container_read = Self::stmt_value_is_bare_container_read(expr);
                         continue;
-                    } else if let Stmt::Call { name, args } = stmt {
+                    } else if let Stmt::Call { name, args, .. } = stmt {
                         self.compile_tail_stmt_call_value(*name, args);
                         main_leaves_value = true;
                         continue;
@@ -1347,6 +1347,7 @@ impl Compiler {
         self.compile_expr(&Expr::Call {
             name,
             args: Self::call_args_to_expr_args(&rewritten_args),
+            listop: false,
         });
     }
 

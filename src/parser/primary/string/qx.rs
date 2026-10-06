@@ -57,6 +57,7 @@ pub(crate) fn qx_string(input: &str) -> PResult<'_, Expr> {
         Expr::Call {
             name: Symbol::intern("QX"),
             args: vec![command_expr],
+            listop: false,
         },
     ))
 }
@@ -83,6 +84,7 @@ pub(crate) fn backtick_qx_string(input: &str) -> PResult<'_, Expr> {
         Expr::Call {
             name: Symbol::intern("QX"),
             args: vec![command_expr],
+            listop: false,
         },
     ))
 }

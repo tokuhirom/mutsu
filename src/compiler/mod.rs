@@ -4573,7 +4573,7 @@ impl Compiler {
                             self.emit_unit_tail_result();
                             continue;
                         }
-                        Stmt::Call { name, args } => {
+                        Stmt::Call { name, args, .. } => {
                             // Tail call: its value is the body result, whether
                             // the args are positional-only or carry named/slip
                             // args (compile_tail_stmt_call_value handles both).

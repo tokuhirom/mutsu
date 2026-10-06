@@ -151,6 +151,7 @@ pub(crate) fn lower_subscript_named_adverbs(subscript: &Expr, pairs: Vec<Expr>) 
         return Some(Expr::Call {
             name: Symbol::intern(op_name),
             args,
+            listop: false,
         });
     }
     let mut args = vec![
@@ -163,5 +164,6 @@ pub(crate) fn lower_subscript_named_adverbs(subscript: &Expr, pairs: Vec<Expr>) 
     Some(Expr::Call {
         name: Symbol::intern("__mutsu_subscript_named_adverbs"),
         args,
+        listop: false,
     })
 }

@@ -31,6 +31,7 @@ pub(crate) fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
         let call = Expr::Call {
             name: Symbol::intern(&name),
             args: Vec::new(),
+            listop: false,
         };
         return crate::parser::primary::ident::export_term_or_call(&name, call);
     }

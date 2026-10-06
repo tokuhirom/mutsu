@@ -82,7 +82,7 @@ impl Interpreter {
         }
         let body = vec![Stmt::Expr(Expr::Call {
             name: Symbol::intern("sprintf"),
-            args: call_args,
+            args: call_args, listop: false,
         })];
         Value::make_sub(
             Symbol::intern("Formatter"),

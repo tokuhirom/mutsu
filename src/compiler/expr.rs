@@ -43,6 +43,7 @@ impl Compiler {
             other => Expr::Call {
                 name: crate::symbol::Symbol::intern("__mutsu_assign_callable_lvalue"),
                 args: vec![other, Expr::ArrayLiteral(Vec::new()), value],
+                listop: false,
             },
         }
     }
@@ -610,7 +611,7 @@ impl Compiler {
             // result, then `TopicDotAssign` (assigns `$_` bypassing the
             // whole-container read-only mark and writes through to a container
             // topic source). See `parser::expr::postfix::dot_assign` / `topic_method_call`.
-            Expr::Call { name, args }
+            Expr::Call { name, args, .. }
                 if name.resolve() == "__mutsu_topic_dotassign" && args.len() == 1 =>
             {
                 self.compile_expr(&args[0]);
@@ -622,7 +623,7 @@ impl Compiler {
             // reserved special form handled by the compiler, so lower the call to
             // an ordinary assignment (which binds arg0 as an lvalue and applies
             // type checks). Same for the bind form `infix:<:=>`.
-            Expr::Call { name, args }
+            Expr::Call { name, args, .. }
                 if args.len() == 2
                     && matches!(name.resolve().as_str(), "infix:<=>" | "infix:<:=>") =>
             {
@@ -662,7 +663,7 @@ impl Compiler {
                     quoted: false,
                 });
             }
-            Expr::Call { name, args } => {
+            Expr::Call { name, args, .. } => {
                 // `f(@a.AT-POS($i))` hands the callee the element's container
                 // exactly as `f(@a[$i])` does (List::MoreUtils `pairwise`
                 // binds `is rw` parameters this way), so spell it as the
@@ -757,6 +758,7 @@ impl Compiler {
                 let call = Expr::Call {
                     name: *name,
                     args: vec![(**target).clone()],
+                    listop: false,
                 };
                 self.compile_expr(&call);
             }
@@ -1795,12 +1797,14 @@ impl Compiler {
                     new_body.push(Stmt::Expr(Expr::Call {
                         name: crate::symbol::Symbol::intern("take"),
                         args: vec![inner_expr],
+                        listop: false,
                     }));
                 }
             } else {
                 new_body.push(Stmt::Expr(Expr::Call {
                     name: crate::symbol::Symbol::intern("take"),
                     args: vec![Expr::Var("_".to_string())],
+                    listop: false,
                 }));
             }
             let gather_body = vec![Stmt::For {

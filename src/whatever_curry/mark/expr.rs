@@ -223,7 +223,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
             mark_expr(rhs);
             mark_expr(expanded);
         }
-        Expr::Call { args, name } => {
+        Expr::Call { args, name, .. } => {
             // Not an annotation: ADR-0115's CORE type fold, which needs this
             // walk's whole-program reach (see `parser::core_type_fold`).
             crate::parser::core_type_fold::fold_nqp_operands(*name, args);

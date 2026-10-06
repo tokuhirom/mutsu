@@ -28,6 +28,7 @@ pub(crate) fn atomic_elem_update(routine: &str, expr: &Expr) -> Option<Expr> {
     is_atomic_elem_target(expr).then(|| Expr::Call {
         name: Symbol::intern(routine),
         args: vec![expr.clone()],
+        listop: false,
     })
 }
 
@@ -43,6 +44,7 @@ pub(crate) fn atomic_operator_call(operator: &str, expr: &Expr) -> Option<Expr> 
     (atomic_var_name(expr).is_some() || is_atomic_elem_target(expr)).then(|| Expr::Call {
         name: Symbol::intern(operator),
         args: vec![expr.clone()],
+        listop: false,
     })
 }
 
@@ -297,6 +299,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
             Expr::Call {
                 name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                 args: vec![lhs, Expr::ArrayLiteral(Vec::new()), value],
+                listop: false,
             }
         }
         // A method-call lvalue (`$obj.attr .= meth`). In Raku `$obj.attr .= meth`

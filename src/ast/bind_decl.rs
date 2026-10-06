@@ -68,10 +68,12 @@ pub(crate) fn expand(decl: Stmt) -> Stmt {
             stmts.push(Stmt::Expr(Expr::Call {
                 name: Symbol::intern("__mutsu_record_bound_array_len"),
                 args: vec![Expr::Literal(Value::str(bound_name.clone()))],
+                listop: false,
             }));
             stmts.push(Stmt::Expr(Expr::Call {
                 name: Symbol::intern("__mutsu_record_shaped_array_dims"),
                 args: vec![Expr::Literal(Value::str(bound_name.clone()))],
+                listop: false,
             }));
             // Return the bound variable so the expression evaluates to the
             // bound value (important for `+my @a := ...` which expects the

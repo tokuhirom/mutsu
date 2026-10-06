@@ -55,6 +55,7 @@ pub(crate) fn atomic_elem_store_call(target: &Expr, rhs: Expr) -> Option<Expr> {
     crate::parser::expr::is_atomic_elem_target(target).then(|| Expr::Call {
         name: Symbol::intern("atomic-assign"),
         args: vec![target.clone(), rhs],
+        listop: false,
     })
 }
 
@@ -90,6 +91,7 @@ pub(crate) fn atomic_compound_call(target: Expr, rhs: Expr, negate: bool) -> Exp
     Expr::Call {
         name: Symbol::intern(operator),
         args: vec![target, rhs],
+        listop: false,
     }
 }
 

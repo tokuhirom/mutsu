@@ -184,6 +184,7 @@ impl Compiler {
                             args: vec![Expr::Literal(Value::str_from(
                                 "First child of a 'bind' op must be a variable",
                             ))],
+                            listop: false,
                         });
                         return true;
                     }

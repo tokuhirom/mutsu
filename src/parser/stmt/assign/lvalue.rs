@@ -83,6 +83,7 @@ fn method_lvalue_assign_expr_with_intent(
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_method_lvalue"),
         args,
+        listop: false,
     }
 }
 
@@ -155,6 +156,7 @@ pub(crate) fn dynamic_method_lvalue_assign_expr(
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_method_lvalue"),
         args,
+        listop: false,
     }
 }
 
@@ -177,6 +179,7 @@ pub(crate) fn named_sub_lvalue_assign_expr(
             Expr::Call {
                 name: Symbol::intern(&name),
                 args: call_args,
+                listop: false,
             },
             Vec::new(),
             value,
@@ -222,6 +225,7 @@ pub(crate) fn named_sub_lvalue_assign_expr(
             Expr::ArrayLiteral(call_args),
             value,
         ],
+        listop: false,
     }
 }
 
@@ -229,12 +233,13 @@ pub(crate) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, va
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_callable_lvalue"),
         args: vec![target, Expr::ArrayLiteral(call_args), value],
+        listop: false,
     }
 }
 
 pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {
     fn subscript_parts(expr: &Expr) -> Option<(Expr, Expr, String)> {
-        let Expr::Call { name, args } = expr else {
+        let Expr::Call { name, args, .. } = expr else {
             return None;
         };
         if name != "__mutsu_subscript_adverb" || args.len() < 3 {

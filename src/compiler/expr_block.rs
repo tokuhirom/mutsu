@@ -1219,7 +1219,7 @@ impl Compiler {
             // interpolation inside a heredoc. Compiling it through the ordinary
             // statement path sinks the result and leaves Nil for the enclosing
             // string interpolation.
-            Stmt::Call { name, args } => {
+            Stmt::Call { name, args, .. } => {
                 self.compile_tail_stmt_call_value(*name, args);
             }
             // `anon sub NAME ... {...}` (marked `__anon_decl` by the parser):

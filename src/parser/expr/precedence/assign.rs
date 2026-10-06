@@ -7,6 +7,7 @@ pub(crate) fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
         Stmt::Expr(Expr::Call {
             name: Symbol::intern("__mutsu_assignment_ro"),
             args: Vec::new(),
+            listop: false,
         }),
     ])
 }
@@ -128,12 +129,13 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
                 value,
             )
         }
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             crate::parser::stmt::assign::named_sub_lvalue_assign_expr(name.resolve(), args, value)
         }
         Expr::CallOn { target, args } => Expr::Call {
             name: Symbol::intern("__mutsu_assign_callable_lvalue"),
             args: vec![*target, Expr::ArrayLiteral(args), value],
+            listop: false,
         },
         // A compound assignment is transparent to the execution AST marker.
         // When its result is itself used as an lvalue (for example the RHS of
@@ -455,6 +457,7 @@ pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Opt
                 expr: Box::new(Expr::Call {
                     name: Symbol::intern("__mutsu_star_lvalue_rhs"),
                     args: vec![Expr::Literal(Value::str(format!("@{}", name))), array_rhs],
+                    listop: false,
                 }),
                 is_bind: false,
             }

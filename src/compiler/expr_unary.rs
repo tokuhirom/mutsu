@@ -82,6 +82,7 @@ impl Compiler {
                         self.compile_expr(&Expr::Call {
                             name: Symbol::intern("__mutsu_incdec_nomatch"),
                             args: vec![Expr::Literal(Value::str_from("prefix:<++>"))],
+                            listop: false,
                         });
                     }
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
@@ -134,6 +135,7 @@ impl Compiler {
                     self.compile_expr(&Expr::Call {
                         name: Symbol::intern("__mutsu_incdec_nomatch"),
                         args: vec![Expr::Literal(Value::str_from("prefix:<++>"))],
+                        listop: false,
                     });
                 }
             }
@@ -165,6 +167,7 @@ impl Compiler {
                         self.compile_expr(&Expr::Call {
                             name: Symbol::intern("__mutsu_incdec_nomatch"),
                             args: vec![Expr::Literal(Value::str_from("prefix:<-->"))],
+                            listop: false,
                         });
                     }
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
@@ -211,6 +214,7 @@ impl Compiler {
                     self.compile_expr(&Expr::Call {
                         name: Symbol::intern("__mutsu_incdec_nomatch"),
                         args: vec![Expr::Literal(Value::str_from("prefix:<-->"))],
+                        listop: false,
                     });
                 }
             }
@@ -249,7 +253,7 @@ impl Compiler {
     /// used as an lvalue expression rather than a statement, such as the operand
     /// of `++`/`--`), return the underlying simple variable name.
     pub(super) fn temp_call_var(expr: &Expr) -> Option<String> {
-        if let Expr::Call { name, args } = expr
+        if let Expr::Call { name, args, .. } = expr
             && name.resolve() == "temp"
             && args.len() == 1
             && let Expr::Var(var) = &args[0]

@@ -67,6 +67,7 @@ pub(crate) fn infix_term_call(op: InfixTermOp, left: Expr, right: Vec<Expr>) -> 
             Expr::Call {
                 name: Symbol::intern(if m == 'X' { "cross" } else { "zip" }),
                 args,
+                listop: false,
             }
         }
         modifier => {

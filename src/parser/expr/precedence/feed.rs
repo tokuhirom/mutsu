@@ -129,6 +129,7 @@ pub(crate) fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
             expr: Box::new(Expr::Call {
                 name: Symbol::intern("__mutsu_feed_array_assign"),
                 args: vec![source],
+                listop: false,
             }),
             is_bind: false,
         },
@@ -137,6 +138,7 @@ pub(crate) fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
             expr: Box::new(Expr::Call {
                 name: Symbol::intern("__mutsu_feed_array_assign"),
                 args: vec![source],
+                listop: false,
             }),
             is_bind: false,
         },
@@ -170,9 +172,13 @@ pub(crate) fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
             value: Box::new(source),
             is_positional,
         },
-        Expr::Call { name, mut args } => {
+        Expr::Call { name, mut args, .. } => {
             args.push(source);
-            Expr::Call { name, args }
+            Expr::Call {
+                name,
+                args,
+                listop: false,
+            }
         }
         Expr::CallOn { target, mut args } => {
             args.push(source);
@@ -181,10 +187,12 @@ pub(crate) fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
         Expr::BareWord(name) => Expr::Call {
             name: Symbol::intern(&name),
             args: vec![source],
+            listop: false,
         },
         Expr::Whatever => Expr::Call {
             name: Symbol::intern("__mutsu_feed_whatever"),
             args: vec![source],
+            listop: false,
         },
         // Feed into an inline declaration: `... ==> my @o`. The sink parses as a
         // `DoStmt` wrapping a `VarDecl` with a default (empty) initializer;
@@ -219,6 +227,7 @@ pub(crate) fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
                 Expr::Call {
                     name: Symbol::intern("__mutsu_feed_array_assign"),
                     args: vec![source],
+                    listop: false,
                 }
             };
             Expr::DoStmt(Box::new(Stmt::VarDecl {
@@ -248,6 +257,7 @@ pub(crate) fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
             expr: Box::new(Expr::Call {
                 name: Symbol::intern("__mutsu_feed_append"),
                 args: vec![Expr::Var(name), source],
+                listop: false,
             }),
             is_bind: false,
         },
@@ -256,6 +266,7 @@ pub(crate) fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
             expr: Box::new(Expr::Call {
                 name: Symbol::intern("__mutsu_feed_append"),
                 args: vec![Expr::ArrayVar(name), source],
+                listop: false,
             }),
             is_bind: false,
         },
@@ -264,6 +275,7 @@ pub(crate) fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
             expr: Box::new(Expr::Call {
                 name: Symbol::intern("__mutsu_feed_append"),
                 args: vec![Expr::HashVar(name), source],
+                listop: false,
             }),
             is_bind: false,
         },
@@ -284,6 +296,7 @@ pub(crate) fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                 value: Box::new(Expr::Call {
                     name: Symbol::intern("__mutsu_feed_append"),
                     args: vec![current, source],
+                    listop: false,
                 }),
                 is_positional: true,
             }
@@ -291,10 +304,12 @@ pub(crate) fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
         Expr::Whatever => Expr::Call {
             name: Symbol::intern("__mutsu_feed_append_whatever"),
             args: vec![source],
+            listop: false,
         },
         other => Expr::Call {
             name: Symbol::intern("__mutsu_feed_append"),
             args: vec![other, source],
+            listop: false,
         },
     }
 }

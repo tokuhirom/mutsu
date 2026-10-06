@@ -33,6 +33,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             expr = Expr::Call {
                 name: Symbol::intern("__mutsu_feed_array_assign"),
                 args: vec![expr],
+                listop: false,
             };
         }
         let expr = if let Some(dims) = s.shape_dims {
@@ -79,6 +80,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         return handle_compound_assign(stripped, s, |var_expr, rhs| Expr::Call {
             name: Symbol::intern("__mutsu_zip_assign"),
             args: vec![var_expr, rhs],
+            listop: false,
         });
     }
     if let Some((stripped, op_name)) = super::super::assign::parse_custom_compound_assign_op(rest) {
@@ -898,6 +900,7 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         expr = Expr::Call {
             name: Symbol::intern(name),
             args: vec![arg_expr],
+            listop: false,
         };
         rest = r_after;
     }

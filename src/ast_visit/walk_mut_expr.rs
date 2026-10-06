@@ -249,7 +249,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
                 }
             }
         }
-        Expr::Call { name: _, args } => exprs_mut(v, args),
+        Expr::Call { name: _, args, .. } => exprs_mut(v, args),
         Expr::Try { body, catch } => {
             v.visit_stmts_mut(body);
             if let Some(c) = catch {

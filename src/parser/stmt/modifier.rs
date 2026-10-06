@@ -738,7 +738,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         }
         let mut stmt_for_branch = stmt.clone();
         let mut r_tail = r;
-        if let Stmt::Call { name, args } = &stmt_for_branch {
+        if let Stmt::Call { name, args, listop } = &stmt_for_branch {
             let mut call_args = args.clone();
             loop {
                 let (r_ws, _) = ws(r_tail)?;
@@ -755,6 +755,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             stmt_for_branch = Stmt::Call {
                 name: *name,
                 args: call_args,
+                listop: *listop,
             };
         }
         // `stmt with expr` is like `given expr { if .defined { stmt } }`.
@@ -831,7 +832,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         }
         let mut stmt_for_branch = stmt.clone();
         let mut r_tail = r;
-        if let Stmt::Call { name, args } = &stmt_for_branch {
+        if let Stmt::Call { name, args, listop } = &stmt_for_branch {
             let mut call_args = args.clone();
             loop {
                 let (r_ws, _) = ws(r_tail)?;
@@ -848,6 +849,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             stmt_for_branch = Stmt::Call {
                 name: *name,
                 args: call_args,
+                listop: *listop,
             };
         }
         // `stmt without expr` is like `given expr { unless .defined { stmt } }`.

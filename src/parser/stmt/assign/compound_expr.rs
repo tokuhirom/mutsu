@@ -352,12 +352,13 @@ pub(crate) fn build_compound_assign_expr(
         // immutable value" even though the plain `f() = v` form worked.
         // `__mutsu_assign_named_sub_lvalue` resolves the routine at runtime and
         // raises "sub is not rw" when it is not rw-capable.
-        Expr::Call { ref name, ref args }
-            if !name.with_str(|n| n.starts_with("__mutsu_") || n.starts_with("nqp::")) =>
-        {
+        Expr::Call {
+            ref name, ref args, ..
+        } if !name.with_str(|n| n.starts_with("__mutsu_") || n.starts_with("nqp::")) => {
             let read_back = Expr::Call {
                 name: *name,
                 args: args.clone(),
+                listop: false,
             };
             let assign_through = |value: Expr| Expr::Call {
                 name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
@@ -366,6 +367,7 @@ pub(crate) fn build_compound_assign_expr(
                     Expr::ArrayLiteral(args.clone()),
                     value,
                 ],
+                listop: false,
             };
             // A short-circuit `op=` must not assign at all when it short-circuits
             // (`$a //= $b` is `$a // ($a = $b)`), so keep the assignment inside
@@ -484,6 +486,7 @@ pub(crate) fn build_compound_assign_expr(
                     Expr::ArrayLiteral(Vec::new()),
                     assigned_value,
                 ],
+                listop: false,
             }
         }
         // `@a[i]:v += x`, `%h<k>:v ~= x`: an internal `__mutsu_*` call lowers a
@@ -494,6 +497,7 @@ pub(crate) fn build_compound_assign_expr(
             let assign_through = |value: Expr| Expr::Call {
                 name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                 args: vec![lhs.clone(), Expr::ArrayLiteral(Vec::new()), value],
+                listop: false,
             };
             if matches!(
                 op,
@@ -539,6 +543,7 @@ pub(crate) fn build_compound_assign_expr(
                         Stmt::Expr(Expr::Call {
                             name: Symbol::intern("__mutsu_assignment_ro"),
                             args: Vec::new(),
+                            listop: false,
                         }),
                     ])),
                 }
@@ -549,6 +554,7 @@ pub(crate) fn build_compound_assign_expr(
                     Stmt::Expr(Expr::Call {
                         name: Symbol::intern("__mutsu_assignment_ro"),
                         args: Vec::new(),
+                        listop: false,
                     }),
                 ])
             }
@@ -750,6 +756,7 @@ pub(crate) fn build_meta_assign_expr(
         let zip_call = Expr::Call {
             name: Symbol::intern("__mutsu_zip_assign"),
             args: vec![lhs, rhs],
+            listop: false,
         };
         return Ok(Expr::AssignExpr {
             name,

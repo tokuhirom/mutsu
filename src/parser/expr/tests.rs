@@ -311,7 +311,7 @@ fn parse_fat_arrow_chain_in_call_arguments() {
     let (rest, expr) = expression("is($list, 1 => 2 => 3 => 4, \"x\")").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "is");
             assert!(args.len() >= 3);
             // Non-bareword key => outermost PositionalPair wrapping

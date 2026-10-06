@@ -16,7 +16,7 @@ fn parse_custom_postfix_operator_call() {
     let (rest, expr) = expression("$base!").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "postfix:<!>");
             assert_eq!(args.len(), 1);
             assert!(matches!(args[0], Expr::Var(ref n) if n.as_str() == "base"));
@@ -30,7 +30,7 @@ fn parse_unicode_custom_postfix_operator_call() {
     let (rest, expr) = expression("3§").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "postfix:<§>");
             assert_eq!(args.len(), 1);
             assert!(
@@ -46,7 +46,7 @@ fn parse_dot_custom_postfix_operator_call() {
     let (rest, expr) = expression("5.!").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "postfix:<!>");
             assert_eq!(args.len(), 1);
             assert!(
@@ -322,7 +322,7 @@ fn parse_is_deeply_with_unicode_and_ascii_minus_complex_literals() {
     let (rest, expr) = expression("is-deeply −<42+2i>, -<42+2i>").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "is-deeply");
             assert!(args.len() >= 2);
             assert!(matches!(
@@ -349,7 +349,7 @@ fn parse_expr_listop_with_topic_method_first_arg() {
     let (rest, expr) = expression("is-deeply .bool-only, True, 'ok'").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "is-deeply");
             assert!(args.len() >= 3);
             assert!(matches!(args[0], Expr::MethodCall { .. }));

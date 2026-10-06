@@ -86,10 +86,14 @@ pub(crate) fn delete_flag() -> Expr {
 pub(crate) fn deleting(read: &Expr) -> Expr {
     match read {
         Expr::Exists { .. } => apply_delete_to_exists(read.clone()),
-        Expr::Call { name, args } if *name == SUBSCRIPT_ADVERB_FN => {
+        Expr::Call { name, args, .. } if *name == SUBSCRIPT_ADVERB_FN => {
             let mut args = args.clone();
             args.push(delete_flag());
-            Expr::Call { name: *name, args }
+            Expr::Call {
+                name: *name,
+                args,
+                listop: false,
+            }
         }
         _ => delete_key(read.clone()),
     }
@@ -120,6 +124,7 @@ pub(crate) fn build_adverb_error_call(
     Expr::Call {
         name: Symbol::intern("__mutsu_subscript_adverb_error"),
         args,
+        listop: false,
     }
 }
 
@@ -189,6 +194,7 @@ pub(crate) fn apply_delete_to_exists(expr: Expr) -> Expr {
     Expr::Call {
         name: Symbol::intern("__mutsu_multidim_exists_adverb_dyn"),
         args,
+        listop: false,
     }
 }
 
@@ -206,7 +212,7 @@ pub(crate) fn subscript_adverb_expr_with_cond(
     // `:v`) into the same delete+adverb `_dyn` form the reverse `:k:delete`
     // order produces, so both orders read the removed elements as
     // keys/kv-pairs/pairs/values. Args become [var, adverb, True(delete), dims...].
-    if let Expr::Call { name, args } = &expr
+    if let Expr::Call { name, args, .. } = &expr
         && *name == Symbol::intern("__mutsu_multidim_delete")
         && !args.is_empty()
     {
@@ -223,6 +229,7 @@ pub(crate) fn subscript_adverb_expr_with_cond(
         return Expr::Call {
             name: Symbol::intern("__mutsu_multidim_subscript_adverb_dyn"),
             args: new_args,
+            listop: false,
         };
     }
     // Handle MultiDimIndex: @a[0;0;0]:kv etc.
@@ -239,6 +246,7 @@ pub(crate) fn subscript_adverb_expr_with_cond(
         return Expr::Call {
             name: Symbol::intern("__mutsu_multidim_subscript_adverb"),
             args,
+            listop: false,
         };
     }
     let Expr::Index {
@@ -282,6 +290,7 @@ pub(crate) fn subscript_adverb_expr_with_cond(
     Expr::Call {
         name: Symbol::intern(SUBSCRIPT_ADVERB_FN),
         args,
+        listop: false,
     }
 }
 
@@ -483,7 +492,7 @@ fn read_back_read(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
             }
             Some((target.as_ref().clone(), adverbs))
         }
-        Expr::Call { name, args } if *name == SUBSCRIPT_ADVERB_FN => {
+        Expr::Call { name, args, .. } if *name == SUBSCRIPT_ADVERB_FN => {
             let [target, index, mode, _var_name, marker, extras @ ..] = args.as_slice() else {
                 return None;
             };
@@ -526,7 +535,7 @@ fn read_back_read(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
         }
         // `@a[0;1]:kv`: the by-name builtin over the target, the mode and the
         // dimensions (`subscript_adverb_expr_with_cond`).
-        Expr::Call { name, args }
+        Expr::Call { name, args, .. }
             if *name == Symbol::intern("__mutsu_multidim_subscript_adverb") =>
         {
             let [target, Expr::Literal(mode), rest @ ..] = args.as_slice() else {

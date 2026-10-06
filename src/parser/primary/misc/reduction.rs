@@ -452,6 +452,7 @@ fn parse_reduction_operand(input: &str) -> PResult<'_, Expr> {
             Expr::Call {
                 name: Symbol::intern("slip"),
                 args: vec![expr],
+                listop: false,
             },
         ));
     }

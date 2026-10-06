@@ -21,6 +21,7 @@ pub(crate) fn fetch_var(name: String) -> Expr {
     Expr::Call {
         name: Symbol::intern(FETCH_VAR),
         args: vec![Expr::Literal(Value::str(name))],
+        listop: false,
     }
 }
 
@@ -30,6 +31,7 @@ pub(crate) fn store_var(name: String, value: Expr) -> Expr {
     Expr::Call {
         name: Symbol::intern(STORE_VAR),
         args: vec![Expr::Literal(Value::str(name)), value],
+        listop: false,
     }
 }
 
@@ -40,6 +42,7 @@ pub(crate) fn operator_call(category: Category, operator: &str, args: Vec<Expr>)
     Expr::Call {
         name: Symbol::intern(&format!("{}:<{operator}>", category.word())),
         args,
+        listop: false,
     }
 }
 

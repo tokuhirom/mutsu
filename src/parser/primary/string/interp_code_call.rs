@@ -74,6 +74,7 @@ where
     let call = Expr::Call {
         name: Symbol::intern(name),
         args,
+        listop: false,
     };
     let (expr, remainder) = parse_postcircumfix_index(&after_name[pe + 1..], call);
     let (expr, remainder) = try_parse_interp_method_call(remainder, expr);

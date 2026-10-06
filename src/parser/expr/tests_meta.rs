@@ -5,7 +5,7 @@ fn parse_hash_literal_with_hash_spread_expr() {
     let (rest, expr) = expression("{year => 1984, %args}").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "hash");
             assert_eq!(args.len(), 2);
         }
@@ -137,7 +137,7 @@ fn parse_slip_prefix_with_space_before_french_quote_list() {
             *expr,
             // A word list lowers to the RESERVED `__mutsu_word_list`, not to a
             // plain `list` call a user's own `sub list` could capture.
-            Expr::Call { ref name, ref args }
+            Expr::Call { ref name, ref args, .. }
                 if name.resolve() == "__mutsu_word_list" && args.len() == 2
         )
     ));
@@ -179,7 +179,7 @@ fn parse_hyper_prefix_metaop_negate() {
     let (rest, expr) = expression("-« ([1, 2], 3)").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "__mutsu_hyper_prefix");
             assert_eq!(args.len(), 2);
             assert!(

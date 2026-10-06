@@ -122,6 +122,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: crate::symbol::Symbol::intern("__object_hash"),
                     args: Vec::new(),
+                    listop: false,
                 },
             ));
         }
@@ -271,6 +272,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                     Expr::Call {
                         name: Symbol::intern("UNBASE"),
                         args: call_args,
+                        listop: false,
                     },
                 ));
             }
@@ -307,6 +309,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                         Expr::Call {
                             name: Symbol::intern("RADIX_LIST"),
                             args: call_args,
+                            listop: false,
                         },
                     ));
                 }
@@ -833,6 +836,7 @@ fn parse_object_hash_body(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: crate::symbol::Symbol::intern("__object_hash"),
                     args,
+                    listop: false,
                 },
             ));
         }

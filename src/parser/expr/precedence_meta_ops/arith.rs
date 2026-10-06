@@ -465,6 +465,7 @@ fn autoincrement_expr(
                     Expr::Call {
                         name: Symbol::intern("__mutsu_hyper_prefix"),
                         args: vec![Expr::Literal(Value::str(symbol.to_string())), arg],
+                        listop: false,
                     },
                 ));
             }

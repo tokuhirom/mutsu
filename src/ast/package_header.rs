@@ -55,6 +55,7 @@ pub(crate) fn meta_setter(type_name: &str, key: &str, value: Expr) -> Stmt {
             Expr::Literal(Value::str(key.to_string())),
             value,
         ],
+        listop: false,
     })
 }
 
@@ -68,6 +69,7 @@ pub(crate) fn export_registration(type_name: &str, tags: &[String]) -> Stmt {
     Stmt::Expr(Expr::Call {
         name: Symbol::intern(EXPORT_TYPE),
         args,
+        listop: false,
     })
 }
 
@@ -101,7 +103,10 @@ pub(crate) fn unwrap(stmt: &Stmt) -> Option<(&Stmt, Header)> {
     let type_name = name.resolve();
     let mut header = Header::default();
     for part in before {
-        let Stmt::Expr(Expr::Call { name: call, args }) = part else {
+        let Stmt::Expr(Expr::Call {
+            name: call, args, ..
+        }) = part
+        else {
             return None;
         };
         let (Some(Expr::Literal(t)), Some(Expr::Literal(k)), Some(value)) =
@@ -118,7 +123,11 @@ pub(crate) fn unwrap(stmt: &Stmt) -> Option<(&Stmt, Header)> {
     }
     match after {
         [] => {}
-        [Stmt::Expr(Expr::Call { name: call, args })] if call.as_str() == EXPORT_TYPE => {
+        [
+            Stmt::Expr(Expr::Call {
+                name: call, args, ..
+            }),
+        ] if call.as_str() == EXPORT_TYPE => {
             let (Expr::Literal(t), tags) = args.split_first()? else {
                 return None;
             };

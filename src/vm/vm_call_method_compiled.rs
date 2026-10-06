@@ -44,7 +44,7 @@ impl Interpreter {
         let ValueView::Sub(data) = code_val.view() else {
             return Ok(None);
         };
-        let [Stmt::Call { name, args }] = data.body.as_slice() else {
+        let [Stmt::Call { name, args, .. }] = data.body.as_slice() else {
             return Ok(None);
         };
         let method = name.as_str();

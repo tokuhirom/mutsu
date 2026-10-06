@@ -104,6 +104,7 @@ fn obsolete_p5_deref_throw(sigil: char, inner: &str) -> Expr {
     Expr::Call {
         name: Symbol::intern("die"),
         args: vec![Expr::Literal(payload)],
+        listop: false,
     }
 }
 

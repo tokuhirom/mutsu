@@ -758,7 +758,7 @@ mod tests {
         let (rest, expr) = primary(":{ :42foo, (True) => False, 42e0 => 1 }").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Call { name, args } => {
+            Expr::Call { name, args, .. } => {
                 assert_eq!(name, "__object_hash");
                 assert_eq!(args.len(), 3);
             }
@@ -771,7 +771,7 @@ mod tests {
         let (rest, expr) = primary("{year => 1984, %args}").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Call { name, args } => {
+            Expr::Call { name, args, .. } => {
                 assert_eq!(name, "hash");
                 assert_eq!(args.len(), 2);
                 assert!(matches!(
@@ -810,7 +810,7 @@ mod tests {
         let (rest, expr) = primary("foo(   )").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Call { name, args } => {
+            Expr::Call { name, args, .. } => {
                 assert_eq!(name, "foo");
                 assert_eq!(args.len(), 1);
             }
@@ -996,7 +996,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::Call { ref name, ref args }
+            Expr::Call { ref name, ref args, .. }
                 if name == "__mutsu_make_format"
                     && args.len() == 1
                     && matches!(&args[0], Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "%5s"))
@@ -1009,7 +1009,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::Call { ref name, ref args }
+            Expr::Call { ref name, ref args, .. }
                 if name == "__mutsu_make_format"
                     && args.len() == 1
                     && matches!(args[0], Expr::StringInterpolation(_))
@@ -1363,7 +1363,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::Call { ref name, ref args } if name == "QX" && args.len() == 1
+            Expr::Call { ref name, ref args, .. } if name == "QX" && args.len() == 1
         ));
     }
 
@@ -1375,7 +1375,7 @@ mod tests {
         let (rest, expr) = primary("qx{echo $x}").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::Call { name, args } => {
+            Expr::Call { name, args, .. } => {
                 assert_eq!(name, "QX");
                 assert_eq!(args.len(), 1);
                 assert!(matches!(args[0], Expr::Literal(_)));
@@ -1391,7 +1391,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::Call { ref name, ref args } if name == "QX" && args.len() == 1
+            Expr::Call { ref name, ref args, .. } if name == "QX" && args.len() == 1
         ));
     }
 }

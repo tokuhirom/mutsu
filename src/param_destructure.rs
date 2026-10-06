@@ -187,6 +187,7 @@ pub(crate) fn destructure_binds(
                         args: vec![Expr::Literal(Value::str(format!(
                             "Required named argument '{lookup_name}' not passed in sub-signature"
                         )))],
+                        listop: false,
                     }),
                 }));
             }

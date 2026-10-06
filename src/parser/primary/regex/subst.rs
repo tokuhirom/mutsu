@@ -110,6 +110,7 @@ pub(super) fn build_topic_subst_compound_expr(
         Expr::Call {
             name: Symbol::intern(&format!("infix:<{op}>")),
             args: vec![match_var, rhs],
+            listop: false,
         }
     };
 

@@ -204,5 +204,6 @@ fn loop_control_call(name: &str, args: Vec<Expr>) -> Expr {
     Expr::Call {
         name: Symbol::intern(name),
         args,
+        listop: false,
     }
 }

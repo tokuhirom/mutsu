@@ -141,7 +141,7 @@ impl Interpreter {
                 Expr::Literal(Value::str(rw_routine.to_string())),
                 Expr::ArrayLiteral([vec![target], window()].concat()),
                 Expr::Var(STORE_VALUE_VAR.to_string()),
-            ],
+            ], listop: false,
         })];
         if track_len {
             store_body.push(Stmt::Assign {

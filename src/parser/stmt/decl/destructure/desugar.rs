@@ -115,6 +115,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         Expr::Call {
             name: Symbol::intern("__mutsu_list_assign_rhs"),
             args: vec![raw_rhs],
+            listop: false,
         }
     };
 

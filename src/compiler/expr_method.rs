@@ -714,6 +714,7 @@ impl Compiler {
                         (**delete_index).clone(),
                         Expr::Literal(Value::str(var_name)),
                     ],
+                    listop: false,
                 });
             } else {
                 // Last resort: the delete target is an arbitrary expression, most
@@ -741,6 +742,7 @@ impl Compiler {
             && let Expr::Call {
                 name: sub_name,
                 args: sub_args,
+                ..
             } = target
             && *sub_name == Symbol::intern("__mutsu_subscript_adverb")
         {
@@ -753,6 +755,7 @@ impl Compiler {
             self.compile_expr(&Expr::Call {
                 name: *sub_name,
                 args: call_args,
+                listop: false,
             });
             return;
         }
@@ -800,6 +803,7 @@ impl Compiler {
             self.compile_expr(&Expr::Call {
                 name: Symbol::intern("__mutsu_subscript_adverb"),
                 args: call_args,
+                listop: false,
             });
             return;
         }

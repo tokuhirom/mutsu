@@ -45,6 +45,7 @@ impl Compiler {
                 self.compile_expr(&Expr::Call {
                     name: Symbol::intern("return"),
                     args: vec![value.clone()],
+                    listop: false,
                 });
                 true
             }

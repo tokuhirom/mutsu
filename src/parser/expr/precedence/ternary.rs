@@ -371,6 +371,7 @@ pub(crate) fn ternary_trailing_assignment<'a>(
             Expr::Call {
                 name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                 args: vec![ternary_expr.clone(), Expr::ArrayLiteral(Vec::new()), rhs],
+                listop: false,
             },
         )));
     }

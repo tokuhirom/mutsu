@@ -141,7 +141,7 @@ fn parse_topic_mutating_method_stmt_with_colon_args() {
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
     match dotty_expansion(&stmts[0]) {
-        Some(Expr::Call { name, args }) => {
+        Some(Expr::Call { name, args, .. }) => {
             assert_eq!(name.resolve(), "__mutsu_topic_dotassign");
             assert_eq!(args.len(), 1);
             assert!(

@@ -660,6 +660,7 @@ impl Compiler {
                 value.clone(),
                 Expr::ArrayLiteral(vec![Expr::Literal(Value::str(source))]),
             ],
+            listop: false,
         })
     }
 
@@ -709,12 +710,13 @@ impl Compiler {
                     args: vec![Expr::Literal(Value::str(
                         "Cannot assign to an immutable value".to_string(),
                     ))],
+                    listop: false,
                 });
                 return true;
             }
             // `Pkg::<@a> := v` / `Pkg::<%h> := v`: the stash spelling of
             // `@Pkg::a := v`, which rebinds the package variable (#10546).
-            if let Some(Expr::Call { name, args }) = Some(value)
+            if let Some(Expr::Call { name, args, .. }) = Some(value)
                 && *name == "__mutsu_bind_index_value"
                 && let Some(sigil) = key.chars().next().filter(|c| matches!(c, '@' | '%'))
                 && key[1..].starts_with(|c: char| c.is_alphabetic() || c == '_')
@@ -734,7 +736,7 @@ impl Compiler {
                 return false;
             };
             let (is_bind, rhs) = match value {
-                Expr::Call { name, args } if *name == "__mutsu_bind_index_value" => (
+                Expr::Call { name, args, .. } if *name == "__mutsu_bind_index_value" => (
                     true,
                     args.first().cloned().unwrap_or(Expr::Literal(Value::NIL)),
                 ),
@@ -818,7 +820,7 @@ impl Compiler {
         value: &Expr,
         outer_positional: bool,
     ) -> bool {
-        let Expr::Call { name, args } = value else {
+        let Expr::Call { name, args, .. } = value else {
             return false;
         };
         if *name != "__mutsu_bind_index_value" {
@@ -871,6 +873,7 @@ impl Compiler {
         let rebound_source = Expr::Call {
             name: Symbol::intern("__mutsu_bind_index_value"),
             args: vec![Expr::Var(temp_name)],
+            listop: false,
         };
         self.compile_expr_index_assign(target, index, &rebound_source, outer_positional);
         true
@@ -1091,6 +1094,7 @@ impl Compiler {
                     modifier: None,
                     quoted: false,
                 }],
+                listop: false,
             });
             return;
         }
@@ -1148,7 +1152,7 @@ impl Compiler {
             && key.starts_with(['$', '@', '%', '&'])
         {
             let (is_bind, rhs) = match value {
-                Expr::Call { name, args } if *name == "__mutsu_bind_index_value" => (
+                Expr::Call { name, args, .. } if *name == "__mutsu_bind_index_value" => (
                     true,
                     args.first().cloned().unwrap_or(Expr::Literal(Value::NIL)),
                 ),
@@ -1176,7 +1180,7 @@ impl Compiler {
             && stash_name == "OUR::"
         {
             let rhs = match value {
-                Expr::Call { name, args } if *name == "__mutsu_bind_index_value" => {
+                Expr::Call { name, args, .. } if *name == "__mutsu_bind_index_value" => {
                     args.first().cloned().unwrap_or(Expr::Literal(Value::NIL))
                 }
                 other => other.clone(),
@@ -1343,6 +1347,7 @@ impl Compiler {
             let rewritten = Expr::Call {
                 name: Symbol::intern("__mutsu_index_assign_method_lvalue"),
                 args,
+                listop: false,
             };
             self.compile_expr(&rewritten);
         } else if let Some(arr_name) = self.map_rw_identity_target_name(target) {
@@ -1564,6 +1569,7 @@ impl Compiler {
             let ro_call = Expr::Call {
                 name: Symbol::intern("__mutsu_assignment_ro"),
                 args: Vec::new(),
+                listop: false,
             };
             self.compile_expr(&ro_call);
         }

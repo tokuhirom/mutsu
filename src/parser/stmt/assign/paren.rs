@@ -357,7 +357,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 method_lvalue_assign_expr(*target, target_var_name, method_name, args, rhs)
             }
         }
-        Expr::Call { name, args } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
+        Expr::Call { name, args, .. } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
         Expr::CallOn { target, args } => match *target {
             Expr::ArrayLiteral(items) if args.is_empty() => paren_list_assign_expr(items, rhs),
             target => callable_lvalue_assign_expr(target, args, rhs),

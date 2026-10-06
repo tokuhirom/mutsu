@@ -685,6 +685,7 @@ impl Compiler {
                     Stmt::Expr(Expr::Call {
                         name: crate::symbol::Symbol::intern("__mutsu_assignment_ro"),
                         args: Vec::new(),
+                        listop: false,
                     }),
                 ])
             });
@@ -694,6 +695,7 @@ impl Compiler {
                     Expr::Call {
                         name: crate::symbol::Symbol::intern("defined"),
                         args: vec![tmp_var],
+                        listop: false,
                     },
                     left_assign,
                     right_assign,
@@ -1279,6 +1281,7 @@ impl Compiler {
                 Expr::Call {
                     name: inner_name,
                     args: inner_args,
+                    ..
                 } if inner_name.resolve() == "temp" && inner_args.len() == 1 => {
                     inner_args[0].container_var_key()
                 }
@@ -1412,6 +1415,7 @@ impl Compiler {
                 args: vec![Expr::Literal(Value::str(format!(
                     "Unexpected named argument '{key}' passed"
                 )))],
+                listop: false,
             });
         }
         // Rewrite push($obj.attr, val...)/unshift/append/prepend on method call targets.
@@ -1443,6 +1447,7 @@ impl Compiler {
                 let call = Expr::Call {
                     name: builtin_name,
                     args: new_args,
+                    listop: false,
                 };
                 self.compile_expr(&call);
             }
@@ -1871,6 +1876,7 @@ impl Compiler {
                     let atomic_add = Expr::Call {
                         name: Symbol::intern("__mutsu_cas_add_var"),
                         args: vec![Expr::Literal(Value::str(vname)), delta],
+                        listop: false,
                     };
                     self.compile_expr(&atomic_add);
                     return;
@@ -1888,6 +1894,7 @@ impl Compiler {
                         let atomic_add = Expr::Call {
                             name: Symbol::intern("__mutsu_cas_add_var"),
                             args: vec![Expr::Literal(Value::str(vname)), delta],
+                            listop: false,
                         };
                         self.compile_expr(&atomic_add);
                         return;

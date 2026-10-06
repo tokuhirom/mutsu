@@ -180,7 +180,7 @@ impl VisitMut for SupplyBody<'_> {
                 *stmt = Stmt::Expr(self.emitter_call("emit", vec![Expr::Var("_".to_string())]));
             }
             // Statement-form `emit ARGS;` becomes `$emitter.emit(ARGS)`.
-            Stmt::Call { name, args } if is_builtin_emit(name) => {
+            Stmt::Call { name, args, .. } if is_builtin_emit(name) => {
                 let mut positional: Vec<Expr> = std::mem::take(args)
                     .into_iter()
                     .filter_map(|arg| match arg {

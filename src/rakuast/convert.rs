@@ -338,7 +338,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         // A call the parser resolved at statement level (an imported routine
         // such as `Test`'s `ok`) has `CallArg`s instead of argument
         // expressions; it is the same `Call::Name` as an expression call.
-        Stmt::Call { name, args } => {
+        Stmt::Call { name, args, listop } => {
             if is_desugar_marker(name.as_str()) {
                 let args = call_args_as_exprs(args)?;
                 if let Some(stub) = stub_node(name.as_str(), &args) {
@@ -369,7 +369,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             Ok(Some(statement_expression(call_name(
                 name.as_str(),
                 &args,
-                false,
+                *listop,
             )?)))
         }
         Stmt::Say(args) => Ok(Some(statement_expression(listop_call("say", args)?))),
@@ -1728,7 +1728,7 @@ fn stub_node(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, RuntimeErr
 // Cost: O(1).
 fn index_bind_rhs(value: &Expr) -> Option<&Expr> {
     match value {
-        Expr::Call { name, args } if name.as_str() == "__mutsu_bind_index_value" => {
+        Expr::Call { name, args, .. } if name.as_str() == "__mutsu_bind_index_value" => {
             match args.as_slice() {
                 [rhs, _] => Some(rhs),
                 _ => None,
@@ -1775,6 +1775,7 @@ fn call_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr
             Expr::Call {
                 name: crate::symbol::Symbol::intern(&routine),
                 args: call_args.clone(),
+                listop: false,
             }
         }
         // `(LVALUES) = rhs` assigns to a parenthesised list
@@ -2482,17 +2483,20 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             fields: Vec::new(),
         }),
         // `now` is `Term::Named`, not a call.
-        Expr::Call { name, args } if args.is_empty() && name.as_str() == "now" => Ok(RakuAstNode {
-            class: RakuAstClass::TermNamed,
-            fields: vec![leaf_field(None, Value::str("now".to_string()))],
-        }),
+        Expr::Call { name, args, .. } if args.is_empty() && name.as_str() == "now" => {
+            Ok(RakuAstNode {
+                class: RakuAstClass::TermNamed,
+                fields: vec![leaf_field(None, Value::str("now".to_string()))],
+            })
+        }
         Expr::Subst { .. } | Expr::NonDestructiveSubst { .. } | Expr::Transliterate { .. } => {
             super::substitution::convert(expr)
         }
         Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => {
             quoted_regex_node(tree)
         }
-        Expr::Call { name, args } | Expr::UserRoutineCall { name, args } => {
+        Expr::Call { name, args, .. } | Expr::UserRoutineCall { name, args } => {
+            let listop = matches!(expr, Expr::Call { listop: true, .. });
             if let Some(stub) = stub_node(name.as_str(), args) {
                 return stub;
             }
@@ -2510,7 +2514,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 }
                 return Err(desugared(name.as_str()));
             }
-            Ok(call_name(name.as_str(), args, false)?)
+            Ok(call_name(name.as_str(), args, listop)?)
         }
         Expr::Var(name) => {
             if let Some(capture) = super::match_vars::convert_positional(name) {

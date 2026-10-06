@@ -352,7 +352,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         // expression parser has already lowered `$obj.method = value` to the
         // `__mutsu_assign_method_lvalue` writeback call (an rw-accessor assignment
         // is a full expression). Recover the pieces to save/restore the target.
-        if let Expr::Call { name, args } = &expr
+        if let Expr::Call { name, args, .. } = &expr
             && name == "__mutsu_assign_method_lvalue"
             && args.len() == 5
             && let Some(var_name) = temp_method_invocant_name(&args[0])
@@ -385,7 +385,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 ..
             } = target.as_ref()
             && let Some(var_name) = temp_method_invocant_name(invocant)
-            && let Expr::Call { name, args } = expanded.as_ref()
+            && let Expr::Call { name, args, .. } = expanded.as_ref()
             && name == "__mutsu_assign_method_lvalue"
             && args.len() >= 4
         {
@@ -495,6 +495,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
             Stmt::Expr(Expr::Call {
                 name: crate::symbol::Symbol::intern("undefine"),
                 args: vec![make_var_expr(&var_name)],
+                listop: false,
             }),
         );
     }

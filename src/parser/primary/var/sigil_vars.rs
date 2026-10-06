@@ -473,6 +473,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
             Expr::Call {
                 name: crate::symbol::Symbol::intern("hash"),
                 args: vec![inner],
+                listop: false,
             },
         ));
     }
@@ -527,6 +528,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: crate::symbol::Symbol::intern("__mutsu_undeclared_var_die"),
                     args: vec![Expr::Literal(Value::str_from("%"))],
+                    listop: false,
                 },
             ));
         }

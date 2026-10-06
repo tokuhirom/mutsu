@@ -64,6 +64,7 @@ pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
             Expr::Call {
                 name: Symbol::intern(&name),
                 args: vec![],
+                listop: false,
             }
         } else {
             Expr::BareWord(name)
@@ -543,6 +544,7 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             Expr::Call {
                 name: Symbol::intern("rand"),
                 args: vec![],
+                listop: false,
             },
         ));
     }
@@ -564,6 +566,7 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern("rand"),
                     args: vec![],
+                    listop: false,
                 },
             ));
         }
@@ -600,6 +603,7 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern("now"),
                     args: vec![],
+                    listop: false,
                 },
             ));
         }
@@ -623,6 +627,7 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern("now"),
                     args: vec![],
+                    listop: false,
                 },
             ));
         }
@@ -639,6 +644,7 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern("time"),
                     args: vec![],
+                    listop: false,
                 },
             ));
         }
@@ -662,6 +668,7 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern("time"),
                     args: vec![],
+                    listop: false,
                 },
             ));
         }
@@ -678,6 +685,7 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             Expr::Call {
                 name: Symbol::intern("nano"),
                 args: vec![],
+                listop: false,
             },
         ));
     }

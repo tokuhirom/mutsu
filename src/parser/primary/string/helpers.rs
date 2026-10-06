@@ -39,6 +39,7 @@ pub(crate) fn make_list_expr(items: Vec<Expr>) -> Expr {
     Expr::Call {
         name: Symbol::intern("__mutsu_word_list"),
         args: items,
+        listop: false,
     }
 }
 
@@ -47,6 +48,7 @@ pub(crate) fn make_word_result_expr(items: Vec<Expr>) -> Expr {
         Expr::Call {
             name: Symbol::intern("__mutsu_qw_result"),
             args: items,
+            listop: false,
         }
     } else {
         make_list_expr(items)
@@ -88,6 +90,7 @@ pub(crate) fn quotewords_atom_expr_allomorphic(atom_expr: Expr, allomorphic: boo
     Expr::Call {
         name: Symbol::intern(func_name),
         args,
+        listop: false,
     }
 }
 
