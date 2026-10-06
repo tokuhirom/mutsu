@@ -211,11 +211,25 @@ impl Interpreter {
         if crate::vm::vm_stats::enabled() {
             self.record_method_site_lane_stats(answer.row);
         }
+        // The one way the lane runs user code: settling a warning runs a
+        // CONTROL handler inline.
+        let warned = matches!(&answer.result, Err(e) if e.is_warn());
         match self.settle_native_warning(answer.result) {
             Ok(value) => {
                 let base = self.stack.len() - answer.arity - 1;
                 self.stack.truncate(base);
                 self.stack.push(value);
+                if warned {
+                    // What the handler wrote to the caller's lexicals reaches
+                    // their slots the way the full path's post-call drains put
+                    // it there (`call_method_mut_site_around`); the entry guard
+                    // (no pending writeback) says nothing about what the
+                    // handler leaves behind. Without this, `$seen++` in
+                    // `CONTROL { when CX::Warn { $seen++; .resume } }` was lost
+                    // around a `@list.contains(...)` in release builds.
+                    self.apply_pending_rw_writeback(code);
+                    self.drain_pending_local_updates_after_call(code);
+                }
                 Ok(())
             }
             Err(e) => {
@@ -259,7 +273,18 @@ impl Interpreter {
             Ok(v) => format!("ok:{}", crate::runtime::gist_value(v)),
             Err(e) => format!("err:{}", e.message),
         };
-        let lane = render(answer.result.as_ref());
+        // A row may answer with a resumable warning (`List.contains`, `.index`)
+        // instead of a value: that is not an outcome yet, it settles at the
+        // raise site (`settle_native_warning`, which `finish_method_site_lane`
+        // and the full path both run). The full path has settled it by now, so
+        // compare the value the warning resumes with. A CONTROL handler may
+        // divert the settled call into an error; that is the handler's doing,
+        // not a dispatch difference, and there is nothing to compare it with.
+        let resumed = match &answer.result {
+            Err(e) if e.is_warn() => e.return_value.as_ref(),
+            _ => None,
+        };
+        let lane = resumed.map_or_else(|| render(answer.result.as_ref()), |v| render(Ok(v)));
         let full_rendered = match &full {
             Ok(()) => self
                 .stack
@@ -267,11 +292,12 @@ impl Interpreter {
                 .map_or_else(|| "<empty stack>".to_string(), |v| render(Ok(v))),
             Err(e) => render(Err(e)),
         };
-        debug_assert_eq!(
-            lane,
-            full_rendered,
+        let diverted_by_handler = resumed.is_some() && full.is_err();
+        debug_assert!(
+            diverted_by_handler || lane == full_rendered,
             "the method-table lane disagrees with the full CallMethodMut path for .{} \
-             (row owner {}) at ip {ip} -- a probe the lane skips now claims this call",
+             (row owner {}) at ip {ip} -- a probe the lane skips now claims this call\n  \
+             lane: {lane:?}\n  full: {full_rendered:?}",
             method_table::row(answer.row).name,
             method_table::row(answer.row).owner,
         );
