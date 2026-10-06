@@ -174,6 +174,19 @@ const NATIVECALL_TYPE_NAMES: &[&str] = &[
 /// parametrization suffix (`Pointer[uint8]` -> `NativeCall::Types::Pointer[uint8]`).
 /// Returns `None` for any name outside `NATIVECALL_TYPE_NAMES`.
 fn qualify_nativecall_type_name(base: &str) -> Option<String> {
+    // A definiteness smiley belongs to the type it follows, so the type is
+    // qualified and the smiley put back: `CArray:D` is
+    // `NativeCall::Types::CArray:D` (#11871). (`:_` is dropped before this
+    // runs, see `user_facing_type_name`.)
+    for smiley in [":D", ":U"] {
+        if let Some(inner) = base.strip_suffix(smiley)
+            && !inner.is_empty()
+            && !inner.ends_with(':')
+        {
+            return qualify_nativecall_type_name(inner)
+                .map(|qualified| format!("{qualified}{smiley}"));
+        }
+    }
     let split_at = base.find('[').unwrap_or(base.len());
     let (head, rest) = base.split_at(split_at);
     let slot = NATIVECALL_TYPE_NAMES.iter().position(|n| *n == head)?;
