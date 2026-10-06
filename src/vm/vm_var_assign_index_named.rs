@@ -1197,7 +1197,8 @@ impl Interpreter {
         // Associative twin of the positional block above).
         if !is_positional
             && let Some(inst) = self.env().get(&var_name).cloned()
-            && matches!(inst.view(), ValueView::Instance { .. })
+            && (matches!(inst.view(), ValueView::Instance { .. })
+                || Self::hash_pun_inner(&inst).is_some())
         {
             let key_val = match idx.view() {
                 ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),

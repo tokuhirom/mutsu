@@ -142,6 +142,9 @@ impl Interpreter {
         args: &[Value],
         honor_user_override: bool,
     ) -> Option<Result<Value, RuntimeError>> {
+        let pun_inner = Self::hash_pun_inner(target);
+        let outer_target = target;
+        let target = pun_inner.as_ref().unwrap_or(target);
         let ValueView::Instance {
             class_name: inst_class,
             attributes,
@@ -154,7 +157,11 @@ impl Interpreter {
             return None;
         }
         let cn = inst_class.resolve();
-        if honor_user_override && self.has_user_method(&cn, method) {
+        if honor_user_override
+            && (self.has_user_method(&cn, method)
+                || (self.registry().role_associative_base(&cn).is_some()
+                    && self.has_user_method_including_role(&cn, method)))
+        {
             return None;
         }
         if !attributes.contains_key("__mutsu_hash_storage") {
@@ -164,6 +171,7 @@ impl Interpreter {
             .mro_readonly(&cn)
             .iter()
             .any(|n| Self::is_associative_base(n))
+            && !self.registry().role_associative_base(&cn).is_some()
         {
             return None;
         }
@@ -213,7 +221,7 @@ impl Interpreter {
                 && let ValueView::Hash(new_gc) = new_storage.view()
             {
                 Self::hash_inplace_reassign(&old_gc, &new_gc);
-                return Some(Ok(target.clone()));
+                return Some(Ok(outer_target.clone()));
             }
             let updated_instance = self.write_back_hash_storage_instance(
                 target_name,
@@ -309,6 +317,8 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let method = method_sym.as_str();
+        let pun_inner = Self::hash_pun_inner(target);
+        let target = pun_inner.as_ref().unwrap_or(target);
         let ValueView::Instance {
             class_name: inst_class,
             attributes,
@@ -321,7 +331,10 @@ impl Interpreter {
             return None;
         }
         let cn = inst_class.resolve();
-        if self.has_user_method(&cn, method) {
+        if self.has_user_method(&cn, method)
+            || (self.registry().role_associative_base(&cn).is_some()
+                && self.has_user_method_including_role(&cn, method))
+        {
             return None;
         }
         if !attributes.contains_key("__mutsu_hash_storage") {
@@ -331,6 +344,7 @@ impl Interpreter {
             .mro_readonly(&cn)
             .iter()
             .any(|n| Self::is_associative_base(n))
+            && !self.registry().role_associative_base(&cn).is_some()
         {
             return None;
         }
