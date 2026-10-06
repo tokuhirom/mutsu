@@ -15,7 +15,7 @@ use Test;
 # Lowering restores the parser's expansion, so EVAL of `.AST` computes what
 # the parsed program does.
 
-plan 37;
+plan 38;
 
 sub stmts($src) { $src.AST.statements }
 sub exprs($src) { stmts($src).map(*.expression) }
@@ -82,6 +82,7 @@ is run(Q[my $s = "ab"; $s .= uc; $s]), 'AB', '`.=` assigns the call result';
 is run(Q[my @a = 3,1,2; @a .= sort; @a.join(",")]), '1,2,3', '`.=` on an array';
 is run(Q[my $t = "x"; $t .= uc if False; $t]), 'x', '`.=` under a false modifier does nothing';
 is run(Q[my $t = "x"; $t .= uc if True; $t]), 'X', 'and under a true one assigns';
+is run(Q[my $x = "a"; $x .= pred; $x.WHAT.^name]), 'Failure', 'a Failure assigned by `.=` is stored, not thrown';
 is run(Q[my $v = my $w = 3; $v + $w]), 6, 'a declaration as an initializer';
 is run(Q[my $n = (my $z = 4) + 1; $n + $z]), 9, 'a declaration inside an expression';
 is run(Q[sub f { my \x = 3; x * x }; f()]), 9, 'a sigilless declaration in a sub';
