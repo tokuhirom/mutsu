@@ -894,7 +894,7 @@ impl Interpreter {
             // is not the term `bar` (#11898): rakudo's "Undeclared routine".
             return Err(Self::undeclared_routine_error(
                 name,
-                i64::from(self.cur_source_line),
+                self.cur_source_line,
                 Vec::new(),
             ));
         } else {
