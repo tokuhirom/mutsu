@@ -284,8 +284,10 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             match target.view() {
                 // The `Map.keys` row's implementation (ADR-11276).
                 ValueView::Hash(_) => Some(crate::builtins::method_table::map::keys(target, &[])),
-                ValueView::Pair(key, _) => Some(Ok(Value::seq(vec![Value::str(key.clone())]))),
-                ValueView::ValuePair(key, _) => Some(Ok(Value::seq(vec![key.clone()]))),
+                // The `Pair` rows' implementation (`method_table::pair`).
+                ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                    crate::builtins::method_table::pair::keys(target, &[])
+                }
                 // `.keys` reports positional indices of the array's own elements,
                 // independent of itemization: an itemized array (`$[...]`) is still
                 // an Array here, not a single opaque list element. Using the backing
@@ -329,8 +331,8 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     // the inner value, not the cell (else sort/compare leak).
                     Some(crate::builtins::method_table::map::values(target, &[]))
                 }
-                ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
-                    Some(Ok(Value::seq(vec![value.clone()])))
+                ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                    crate::builtins::method_table::pair::values(target, &[])
                 }
                 // Mirror the `.keys` arm: `.values` yields the array's own elements
                 // regardless of itemization, so an itemized array (`$[...]`) does not
@@ -379,11 +381,8 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target.view() {
                 ValueView::Hash(_) => Some(crate::builtins::method_table::map::kv(target, &[])),
-                ValueView::Pair(key, value) => {
-                    Some(Ok(Value::seq(vec![Value::str(key.clone()), value.clone()])))
-                }
-                ValueView::ValuePair(key, value) => {
-                    Some(Ok(Value::seq(vec![key.clone(), value.clone()])))
+                ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                    crate::builtins::method_table::pair::kv(target, &[])
                 }
                 // Index/value pairs of the array's own elements, itemization-agnostic
                 // (an itemized `$[...]` must not collapse to one element).
@@ -447,8 +446,8 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
                     crate::builtins::method_table::quanthash::pairs(target, &[])
                 }
-                ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
-                    Some(Ok(Value::seq(vec![target.clone()])))
+                ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                    crate::builtins::method_table::pair::pairs(target, &[])
                 }
                 // Index => value pairs of the array's own elements, itemization-agnostic.
                 ValueView::Array(..) => {
@@ -538,6 +537,9 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
                     crate::builtins::method_table::quanthash::antipairs(target, &[])
+                }
+                ValueView::Pair(..) | ValueView::ValuePair(..) => {
+                    crate::builtins::method_table::pair::antipairs(target, &[])
                 }
                 ValueView::Capture { positional, named } => {
                     let mut pairs: Vec<Value> = positional

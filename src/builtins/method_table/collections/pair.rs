@@ -25,6 +25,12 @@ pub(super) static ROWS: &[MethodRow] = rows![
     "key" => key,
     "value" => value,
     "antipair" => antipair,
+    "keys" => keys,
+    "values" => values,
+    "kv" => kv,
+    "pairs" => pairs,
+    "antipairs" => antipairs,
+    "invert" => invert,
 ];
 
 /// `Pair.key`.
@@ -61,4 +67,58 @@ pub(crate) fn antipair(target: &Value, _args: &[Value]) -> Option<Result<Value, 
         ValueView::ValuePair(key, value) => Some(Ok(Value::value_pair(value.clone(), key.clone()))),
         _ => None,
     }
+}
+
+/// `Pair.keys`: the one key.
+// Cost: O(1) for a data pair; O(k) for a string-keyed one, k = key length.
+pub(crate) fn keys(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let key = key(target, args)?.ok()?;
+    Some(Ok(Value::seq(vec![key])))
+}
+
+/// `Pair.values`: the one value.
+// Cost: O(1).
+pub(crate) fn values(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Pair(_, value) | ValueView::ValuePair(_, value) => {
+            Some(Ok(Value::seq(vec![value.clone()])))
+        }
+        _ => None,
+    }
+}
+
+/// `Pair.kv`: the key, then the value.
+// Cost: O(1) for a data pair; O(k) for a string-keyed one, k = key length.
+pub(crate) fn kv(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Pair(key, value) => {
+            Some(Ok(Value::seq(vec![Value::str(key.clone()), value.clone()])))
+        }
+        ValueView::ValuePair(key, value) => Some(Ok(Value::seq(vec![key.clone(), value.clone()]))),
+        _ => None,
+    }
+}
+
+/// `Pair.pairs`: the pair itself.
+// Cost: O(1).
+pub(crate) fn pairs(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Pair(..) | ValueView::ValuePair(..) => {
+            Some(Ok(Value::seq(vec![target.clone()])))
+        }
+        _ => None,
+    }
+}
+
+/// `Pair.antipairs`: the one swapped pair.
+// Cost: O(1) for a data pair; O(k) for a string-keyed one, k = key length.
+pub(crate) fn antipairs(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let pair = antipair(target, args)?.ok()?;
+    Some(Ok(Value::seq(vec![pair])))
+}
+
+/// `Pair.invert`: the one swapped pair, as every `Map`-like inverts.
+// Cost: O(1) for a data pair; O(k) for a string-keyed one, k = key length.
+pub(crate) fn invert(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    super::list::invert(target, args)
 }
