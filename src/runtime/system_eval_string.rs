@@ -330,6 +330,7 @@ impl Interpreter {
         let class_role_param_bindings_snapshot = self.registry().class_role_param_bindings.clone();
         let env_snapshot = self.env.clone();
         let saved_topic = self.env.get("_").cloned();
+        let saved_package = self.current_package();
         let trimmed = code.trim();
         if trimmed == "<>" || trimmed == "<STDIN>" {
             return Err(RuntimeError::obsolete(
@@ -489,6 +490,9 @@ impl Interpreter {
         self.module.fatal_mode = saved_fatal_mode;
         self.module.lexical_fatal_mode = saved_lexical_fatal_mode;
         self.module.monkey_typing = saved_monkey_typing;
+        // A `unit package P;` / `unit module P;` in the snippet scopes only the
+        // snippet: a later EVAL starts in the caller's package again (#12135).
+        self.set_current_package(saved_package);
         self.restore_routine_registry_eval(routine_snapshot);
         let eval_main_keys: Vec<Symbol> = self
             .registry()
