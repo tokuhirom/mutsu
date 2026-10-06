@@ -3928,7 +3928,7 @@ impl Compiler {
                     self.hoist_sub_decls(body, true);
                     self.hoist_type_decl_shells(body);
                     for s in body {
-                        self.compile_stmt(s);
+                        self.compile_stmt_discarding_value(s);
                     }
                     self.pop_dynamic_scope_lexical(lexical_scope);
                     self.current_package = saved_package;
@@ -3993,7 +3993,7 @@ impl Compiler {
                 // bodies it is handled by BlockScope and filtered out before
                 // reaching this match arm).
                 for s in body {
-                    self.compile_stmt(s);
+                    self.compile_stmt_discarding_value(s);
                 }
             }
             Stmt::Phaser {
