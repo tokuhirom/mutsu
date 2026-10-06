@@ -317,7 +317,13 @@ pub(crate) unsafe fn write_field(base: usize, field: &FieldLayout, value: &crate
             // (a type object, an `Int`) has nothing to copy, so the field is
             // left alone rather than filled with garbage.
             FieldType::Embedded { size, .. } => {
-                let src = crate::runtime::nativecall::value_c_address(value);
+                // A bare integer is an address, not a struct to copy: the
+                // copy would read from wherever the program said (#11209).
+                let src = if matches!(value.view(), crate::value::ValueView::Int(_)) {
+                    0
+                } else {
+                    crate::runtime::nativecall::value_c_address(value)
+                };
                 if src != 0 && src != base + field.offset {
                     std::ptr::copy_nonoverlapping(src as *const u8, ptr, size);
                 }
@@ -602,7 +608,18 @@ impl crate::runtime::Interpreter {
         let field = layout.iter().find(|f| f.name == name)?;
         // SAFETY: `address` came from C as a pointer to a struct of this
         // declared type and the instance is alive, so the field is in bounds.
-        let raw = unsafe { read_field(address, field) };
+        // An object that owns its body reads under its cell's lock, so a
+        // replaced pointer's target is not freed mid-read (ADR-11209).
+        let (raw, retained) = match target.view() {
+            ValueView::Instance { attributes, .. }
+                if crate::runtime::cstruct_body::owns_body(&attributes) =>
+            {
+                unsafe {
+                    crate::runtime::cstruct_body::read_field_snapshot(&attributes, address, field)
+                }
+            }
+            _ => (unsafe { read_field(address, field) }, None),
+        };
         // A `HAS` member reads as the address of its inline storage, so it goes
         // through the same wrapping as a pointer field: what comes back is a
         // handle of the declared class onto the bytes inside this struct.
@@ -613,9 +630,7 @@ impl crate::runtime::Interpreter {
         let addr = crate::runtime::to_int(&raw) as usize;
         // The object this pointer field was last given, if it still points at
         // it: the field reads back as that object (ADR-11209).
-        if matches!(field.ty, FieldType::Pointer)
-            && let Some(child) = crate::runtime::cstruct_body::retained_child(target, name, addr)
-        {
+        if let Some(child) = retained {
             return Some(child);
         }
         // An inline `HAS T @.x[N] is CArray` member reads back as a `CArray[T]`
@@ -675,7 +690,7 @@ impl crate::runtime::Interpreter {
         target: &crate::value::Value,
         name: &str,
         value: &crate::value::Value,
-    ) -> bool {
+    ) -> Result<bool, crate::value::RuntimeError> {
         use crate::value::ValueView;
         let (class_name, address) = match target.view() {
             ValueView::Instance {
@@ -685,21 +700,36 @@ impl crate::runtime::Interpreter {
             } => {
                 let addr = match attributes.as_map().get("address").map(|v| v.view()) {
                     Some(ValueView::Int(a)) if a > 0 => a as usize,
-                    _ => return false,
+                    _ => return Ok(false),
                 };
                 (class_name.resolve(), addr)
             }
-            _ => return false,
+            _ => return Ok(false),
         };
         let Some(registered) = self.cstruct_class_name(&class_name) else {
-            return false;
+            return Ok(false);
         };
         let Some(layout) = self.cstruct_layout(&registered) else {
-            return false;
+            return Ok(false);
         };
         let Some(field) = layout.iter().find(|f| f.name == name) else {
-            return false;
+            return Ok(false);
         };
+        // A bare integer is a `Pointer`'s address, not a struct, a union or a
+        // `CArray`: storing one in a field of such a type would let the next
+        // read through it dereference whatever the program named. Rakudo's
+        // typed assignment refuses it too.
+        if matches!(value.view(), ValueView::Int(_))
+            && matches!(field.ty, FieldType::Pointer | FieldType::Embedded { .. })
+            && let Some(declared) = self.get_attr_type_constraint(&registered, name)
+            && !(declared == "Pointer" || declared.starts_with("Pointer["))
+        {
+            return Err(self.type_check_assignment_failure(
+                &format!("$!{name}"),
+                &declared,
+                value,
+            ));
+        }
         // SAFETY: `address` came from C as a pointer to a struct of this
         // declared type and the instance is alive, so the field is in bounds —
         // the same trust `cstruct_field_value` documents for the read.
@@ -720,7 +750,7 @@ impl crate::runtime::Interpreter {
             }
             _ => unsafe { write_field(address, field, value) },
         }
-        true
+        Ok(true)
     }
 
     /// The number of bytes a value of `type_name` occupies in C: the width of a

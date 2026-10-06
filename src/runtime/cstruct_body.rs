@@ -27,7 +27,7 @@
 //! from C, see `seed_cstruct_fields_for_method`); `$!x = v` writes the cell and
 //! then the body.
 
-use super::cstruct_layout::{FieldLayout, FieldType, write_field};
+use super::cstruct_layout::{FieldLayout, FieldType, read_field, write_field};
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::value_buf;
@@ -175,7 +175,7 @@ fn lookup_field(encoded: &Value, name: &str) -> Option<FieldLayout> {
         return None;
     };
     let items = data.items();
-    items.chunks_exact(STRIDE).find_map(|chunk| {
+    items.as_chunks::<STRIDE>().0.iter().find_map(|chunk| {
         if chunk[0].to_string_value() != name {
             return None;
         }
@@ -324,16 +324,22 @@ fn child_key(name: &str) -> Symbol {
     Symbol::intern(&format!("__mutsu_cstruct_child_{name}"))
 }
 
-/// Record `child` as what field `name` points at (`Nil` to drop the old one).
-/// Does nothing when there is nothing to drop, so a struct without reference
-/// fields never grows a hidden attribute.
+/// The hidden attribute recording the address the child under [`child_key`]
+/// stands for, so a reader can tell whether the field still points at it
+/// without touching the child's own cell.
 // Cost: O(n), n = chars of the field name.
-fn retain_child(attributes: &crate::value::InstanceAttrs, name: &str, child: Value) {
-    let key = child_key(name);
-    if child.is_nil() && !attributes.contains_key(key) {
-        return;
-    }
-    attributes.insert(key, child);
+fn child_addr_key(name: &str) -> Symbol {
+    Symbol::intern(&format!("__mutsu_cstruct_childaddr_{name}"))
+}
+
+/// Whether `value` is an object a pointer field can keep alive: anything that
+/// carries storage of its own, as opposed to a bare address or a type object.
+// Cost: O(1).
+fn is_retainable_object(value: &Value) -> bool {
+    matches!(
+        value.view(),
+        ValueView::Instance { .. } | ValueView::Array(..) | ValueView::Mixin(..)
+    )
 }
 
 /// Whether a union member's cell value was set by the constructor: the cell
@@ -348,21 +354,17 @@ fn is_set_value(value: &Value) -> bool {
     }
 }
 
-/// Whether `value` is an object a pointer field can keep alive: anything that
-/// carries storage of its own, as opposed to a bare address or a type object.
-// Cost: O(1).
-fn is_retainable_object(value: &Value) -> bool {
-    matches!(
-        value.view(),
-        ValueView::Instance { .. } | ValueView::Array(..) | ValueView::Mixin(..)
-    )
-}
-
 /// Store `value` into `field` of the body at `base`, keeping whatever the field
 /// then points at alive for as long as `attributes` lives: a `Str` field points
 /// at a copy this object owns (the body would otherwise point into a string
 /// that is leaked, or freed under it), a pointer field retains the object it
 /// was given.
+///
+/// The pointer and the object that keeps it valid change together under the
+/// attribute cell's write lock, and [`read_field_snapshot`] reads them under its
+/// read lock, so a reader on another thread never follows a pointer whose
+/// target the replacement is freeing: a Raku data race may give a wrong answer,
+/// never a use after free.
 ///
 /// # Safety
 /// `base` must be the address of a live body laid out by the layout `field`
@@ -375,9 +377,9 @@ pub(crate) unsafe fn store_owned_field(
     value: &Value,
 ) {
     let value = value.deref_container();
-    match field.ty {
+    let (addr, child) = match field.ty {
         FieldType::Str => {
-            let (addr, owner) = if crate::runtime::types::value_is_defined(&value) {
+            if crate::runtime::types::value_is_defined(&value) {
                 let text = value.to_string_value();
                 // A NUL in the middle truncates, as for every other `Str`
                 // NativeCall marshals.
@@ -389,41 +391,67 @@ pub(crate) unsafe fn store_owned_field(
                 (value_buf::byte_block_address(&block).unwrap_or(0), block)
             } else {
                 (0, Value::NIL)
-            };
-            // SAFETY: the caller guarantees `base + offset` is inside the body.
-            unsafe {
-                ((base + field.offset) as *mut usize).write_unaligned(addr);
             }
-            retain_child(attributes, &field.name, owner);
         }
         FieldType::Pointer => {
-            // SAFETY: as above.
-            unsafe { write_field(base, field, &value) };
+            let addr = crate::runtime::nativecall::value_c_address(&value);
             let child = if is_retainable_object(&value) {
                 value
             } else {
                 Value::NIL
             };
-            retain_child(attributes, &field.name, child);
+            (addr, child)
         }
-        // SAFETY: as above.
-        _ => unsafe { write_field(base, field, &value) },
-    }
+        // SAFETY: the caller guarantees `base + offset` is inside the body.
+        _ => {
+            unsafe { write_field(base, field, &value) };
+            return;
+        }
+    };
+    let (child_key, addr_key) = (child_key(&field.name), child_addr_key(&field.name));
+    let old = attributes.with_map_mut(|map| {
+        // SAFETY: the caller guarantees `base + offset` is inside the body.
+        unsafe { ((base + field.offset) as *mut usize).write_unaligned(addr) };
+        if child.is_nil() && !map.contains_key(child_key) {
+            // Nothing to drop and nothing to keep: a struct without reference
+            // fields never grows a hidden attribute.
+            return (None, None);
+        }
+        let old_addr = map.insert(addr_key, Value::int(addr as i64));
+        (map.insert(child_key, child), old_addr)
+    });
+    // The replaced child is freed here, outside the lock.
+    drop(old);
 }
 
-/// The object the pointer field `name` of `target` was last given, while the
-/// field still points at `address` (C may have rewritten it since). Gives a read
-/// of the field the object it was written as -- its identity and its type
-/// (`CArray[int32]`, a struct class) -- instead of a bare handle onto the
-/// address.
-// Cost: O(n), n = chars of the field name.
-pub(crate) fn retained_child(target: &Value, name: &str, address: usize) -> Option<Value> {
-    let ValueView::Instance { attributes, .. } = target.view() else {
-        return None;
+/// A field read as one step, consistent with [`store_owned_field`]: the value
+/// at the field and, for a pointer field, the object the field was last given if
+/// it still points at it. Holding the cell's read lock across the read is what
+/// keeps a replaced `Str` copy alive while it is being copied out.
+///
+/// # Safety
+/// `base` must be the address of a live body laid out by the layout `field`
+/// came from.
+// Cost: O(n) for a `Str` field, n = bytes of the string; O(m) otherwise, m = chars of the field name.
+pub(crate) unsafe fn read_field_snapshot(
+    attributes: &crate::value::InstanceAttrs,
+    base: usize,
+    field: &FieldLayout,
+) -> (Value, Option<Value>) {
+    let map = attributes.as_map();
+    // SAFETY: the caller guarantees `base + offset` is inside the body.
+    let raw = unsafe { read_field(base, field) };
+    if field.ty != FieldType::Pointer {
+        return (raw, None);
+    }
+    let address = crate::runtime::to_int(&raw) as usize;
+    let child = match (map.get(child_key(&field.name)), map.get(child_addr_key(&field.name))) {
+        (Some(child), Some(held)) if !child.is_nil() => (crate::runtime::to_int(held) as usize
+            == address)
+            .then(|| child.clone()),
+        _ => None,
     };
-    let child = attributes.as_map().get(child_key(name))?.clone();
-    (!child.is_nil() && crate::runtime::nativecall::value_c_address(&child) == address)
-        .then_some(child)
+    (raw, child)
 }
 
 /// Whether the attribute map `map` belongs to an object that owns a native body.

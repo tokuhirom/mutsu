@@ -6,7 +6,7 @@ use NativeCall;
 # retains what it was given (ADR-11209), and a `Str` field points at a copy the
 # struct owns.
 
-plan 17;
+plan 20;
 
 class Inner is repr<CStruct> { has int32 $.x; has int32 $.y }
 class Outer is repr<CStruct> {
@@ -78,3 +78,25 @@ $nm.reinner(Inner.new(x => 33));
 @churn = (1..20000).map({ Inner.new(x => 1, y => 1) });
 is $nm.inner.x, 33, 'a struct field rebound in a method survives';
 nok Named.new.inner.defined, 'and an unbound one is a type object';
+
+# Replacing a Str field while other threads read it must never leave a reader
+# following a freed copy: a data race may give a wrong answer, never memory
+# corruption.
+class Shared is repr<CStruct> {
+    has Str $.s;
+    submethod BUILD(Str :$s) { $!s := $s if $s.defined }
+    method set(Str $v) { $!s := $v; self }
+}
+my $sh = Shared.new(s => "start");
+my @readers = (1..3).map({ start { my $n = 0; for ^2000 { $n++ if $sh.s.chars > 0 }; $n } });
+my $writer = start { for ^2000 { $sh.set("value-$_" ~ "x" x ($_ % 50)) } };
+await $writer;
+is (await @readers).join(','), '2000,2000,2000', 'concurrent readers always read a whole string';
+
+# A bare integer is not a struct: storing one in a struct-typed field would let
+# the next read through it dereference whatever address the program named.
+class Line is repr<CStruct> { HAS Inner $.a is rw; has int32 $.w }
+my $line = Line.new(w => 1);
+dies-ok { $line.a = 12345 }, 'an integer cannot be assigned to an inline struct member';
+class Linked is repr<CStruct> { has Inner $.next is rw }
+dies-ok { Linked.new.next = 12345 }, 'nor to a pointer-to-struct field';

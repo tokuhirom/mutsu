@@ -316,6 +316,15 @@ impl InstanceAttrs {
         write_attrs(self.cell()).insert(key, value)
     }
 
+    /// Run `f` over the attribute map under the write lock, in place (visible
+    /// to every alias). For a caller that must change several things *and*
+    /// something outside the map as one step that a reader holding
+    /// [`Self::as_map`] cannot observe half-done.
+    // Cost: O(1) plus `f`.
+    pub(crate) fn with_map_mut<R>(&self, f: impl FnOnce(&mut AttrMap) -> R) -> R {
+        f(&mut write_attrs(self.cell()))
+    }
+
     /// In-place [`AttrMap::insert_seed`] through the shared cell.
     pub(crate) fn insert_seed<K: AttrKey>(&self, key: K, value: Value) {
         write_attrs(self.cell()).insert_seed(key, value);

@@ -74,6 +74,12 @@ is the object's state.**
    attribute of the parent, as `carray_ref` does for its slots; a read answers the recorded child
    only while the field still holds its address (C may have rewritten it) and builds a handle
    from the address otherwise. A `Str` field points at a NUL-terminated copy the parent owns.
+   The pointer and its child change together under the attribute cell's write lock, and a field
+   read takes the read lock for the same step, so a reader on another thread never follows a
+   pointer whose target a replacement is freeing (a Raku data race may give a wrong answer, never
+   a use after free; `docs/security.md`). A bare integer is refused for a struct-, union- or
+   `CArray`-typed field, as Rakudo's typed assignment refuses it, so the program cannot name an
+   address that the next read through the field would dereference.
 
 6. **The layout is memoised per registry generation** (`caches`, the `create_memo` pattern) for
    allocation, and each object carries the layout it was built with (encoded as plain values in a
