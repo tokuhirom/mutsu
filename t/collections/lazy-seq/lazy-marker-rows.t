@@ -4,7 +4,7 @@ use Test;
 # collections are handler rows (List, Map and Range own them; Array reaches
 # List's and Hash Map's). Every answer below was checked against Rakudo.
 
-plan 5;
+plan 6;
 
 subtest 'hyper and race', {
     plan 8;
@@ -50,4 +50,20 @@ subtest 'is-lazy of a Range', {
     ok (1..Inf).is-lazy, 'an Inf end';
     ok (-Inf..1).is-lazy, 'an -Inf start';
     nok ('a'..'c').is-lazy, 'a string Range';
+}
+
+subtest 'lazy of a Hash or a Map is a lazy Seq of its pairs', {
+    plan 10;
+    my %h = a => 1, b => 2;
+    is %h.lazy.^name, 'Seq', 'a Hash becomes a Seq';
+    ok %h.lazy.is-lazy, 'which is lazy';
+    is %h.lazy.eager.sort.map({ .key ~ '=' ~ .value }).join(' '), 'a=1 b=2', 'and keeps its pairs';
+    is %(a => 1).lazy.raku, '(:a(1)).lazy.Seq', 'raku';
+    is Map.new((a => 1)).lazy.^name, 'Seq', 'a Map becomes a Seq';
+    ok Map.new((a => 1)).lazy.is-lazy, 'a lazy Map';
+    is %().lazy.^name, 'Seq', 'an empty Hash';
+    is %().lazy.eager.elems, 0, 'with no pairs';
+    my @a = %(a => 1).lazy;
+    ok @a.is-lazy, 'assigning it to an array keeps it lazy';
+    is %h.lazy.head(1).elems, 1, 'a lazy Seq can be pulled from';
 }
