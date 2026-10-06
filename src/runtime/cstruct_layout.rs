@@ -374,19 +374,26 @@ impl crate::runtime::Interpreter {
     /// component on both sides.
     pub(crate) fn cstruct_class_name(&self, name: &str) -> Option<String> {
         let reg = self.registry();
-        if reg.cstruct_classes.contains(name) {
+        // A union is a struct whose fields overlay one another: it has the same
+        // handle, the same field reads and writes, and the same body, with every
+        // offset 0 (ADR-11209).
+        let sets = [&reg.cstruct_classes, &reg.cunion_classes];
+        if sets.iter().any(|set| set.contains(name)) {
             return Some(name.to_string());
         }
         let short = crate::qualified::last_segment(crate::symbol::Symbol::intern(name)).as_str();
-        reg.cstruct_classes
-            .iter()
-            .find(|c| {
-                crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str() == short
-            })
-            .cloned()
+        sets.iter().find_map(|set| {
+            set.iter()
+                .find(|c| {
+                    crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str()
+                        == short
+                })
+                .cloned()
+        })
     }
 
-    /// Whether `name` is a class declared `is repr('CStruct')`.
+    /// Whether `name` is a class declared `is repr('CStruct')`, `'CPPStruct'`
+    /// or `'CUnion'`.
     pub(crate) fn is_cstruct_class(&self, name: &str) -> bool {
         self.cstruct_class_name(name).is_some()
     }
@@ -506,7 +513,14 @@ impl crate::runtime::Interpreter {
             .map(|f| f.type_name.as_str())
             .filter(|ty| self.is_native_handle_class(ty))
             .collect();
-        layout_struct(&fields, |n| handle_fields.contains(n))
+        let mut layout = layout_struct(&fields, |n| handle_fields.contains(n))?;
+        // Every member of a union starts at the beginning.
+        if self.registry().cunion_classes.contains(&registered) {
+            for field in &mut layout {
+                field.offset = 0;
+            }
+        }
+        Some(layout)
     }
 
     /// Whether `attr_name` was declared with NativeCall's `HAS` scope on
@@ -543,8 +557,9 @@ impl crate::runtime::Interpreter {
         // asks for the struct's own footprint.
         if self.is_cstruct_class(type_name) {
             let layout = self.cstruct_layout(type_name)?;
-            let last = layout.last()?;
-            let end = last.offset + last.ty.size();
+            // The furthest end of any member: the last field's for a struct, the
+            // largest member's for a union.
+            let end = layout.iter().map(|f| f.offset + f.ty.size()).max()?;
             // C rounds a struct up to its strictest member's alignment, so an
             // array of them keeps every element aligned.
             let align = layout.iter().map(|f| f.ty.align()).max().unwrap_or(1);
@@ -896,10 +911,20 @@ impl crate::runtime::Interpreter {
                         == short
                 })
         };
-        let repr = if self.is_cstruct_class(&name) {
-            "CStruct"
+        let is_cppstruct = {
+            let reg = self.registry();
+            reg.cppstruct_classes.contains(&name)
+                || reg.cppstruct_classes.iter().any(|c| {
+                    crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str()
+                        == short
+                })
+        };
+        let repr = if is_cppstruct {
+            "CPPStruct"
         } else if is_cunion {
             "CUnion"
+        } else if self.is_cstruct_class(&name) {
+            "CStruct"
         } else if short == "CArray" || short.starts_with("CArray[") {
             "CArray"
         } else {
@@ -930,7 +955,9 @@ impl crate::runtime::Interpreter {
                         == short
                 })
         };
-        if holds(&reg.cstruct_classes) {
+        if holds(&reg.cppstruct_classes) {
+            Some("CPPStruct")
+        } else if holds(&reg.cstruct_classes) {
             Some("CStruct")
         } else if holds(&reg.cunion_classes) {
             Some("CUnion")

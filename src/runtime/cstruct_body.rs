@@ -107,6 +107,9 @@ pub(crate) struct BodyLayout {
     pub(crate) fields: Vec<FieldLayout>,
     pub(crate) size: usize,
     pub(crate) align: usize,
+    /// Every member starts at offset 0 (a union): a member the constructor
+    /// never set must not overwrite one it did.
+    overlaid: bool,
     encoded: Value,
 }
 
@@ -114,8 +117,7 @@ impl BodyLayout {
     /// `None` for a struct with no fields: it has no bytes to own.
     // Cost: O(f), f = fields.
     fn new(fields: Vec<FieldLayout>) -> Option<Self> {
-        let last = fields.last()?;
-        let end = last.offset + last.ty.size();
+        let end = fields.iter().map(|f| f.offset + f.ty.size()).max()?;
         let align = fields.iter().map(|f| f.ty.align()).max().unwrap_or(1);
         let mut flat = Vec::with_capacity(fields.len() * STRIDE);
         for field in &fields {
@@ -125,10 +127,12 @@ impl BodyLayout {
             flat.push(Value::int(tag));
             flat.push(Value::int(size));
         }
+        let overlaid = fields.len() > 1 && fields.iter().all(|f| f.offset == 0);
         Some(BodyLayout {
             fields,
             size: end.div_ceil(align) * align,
             align,
+            overlaid,
             encoded: Value::array(flat),
         })
     }
@@ -216,8 +220,11 @@ impl Interpreter {
     // Cost: O(1) when no CStruct class exists; O(f + z) otherwise, f = fields,
     // z = bytes of the struct (zeroed).
     pub(crate) fn install_cstruct_storage(&mut self, instance: &Value) {
-        if self.registry().cstruct_classes.is_empty() {
-            return;
+        {
+            let reg = self.registry();
+            if reg.cstruct_classes.is_empty() && reg.cunion_classes.is_empty() {
+                return;
+            }
         }
         let ValueView::Instance {
             class_name,
@@ -227,9 +234,12 @@ impl Interpreter {
         else {
             return;
         };
-        if !self.registry().cstruct_classes.contains(class_name.as_str())
-            || attributes.contains_key(address_key())
-        {
+        let declared = {
+            let reg = self.registry();
+            reg.cstruct_classes.contains(class_name.as_str())
+                || reg.cunion_classes.contains(class_name.as_str())
+        };
+        if !declared || attributes.contains_key(address_key()) {
             return;
         }
         let Some(layout) = self.cstruct_body_layout(class_name) else {
@@ -245,6 +255,9 @@ impl Interpreter {
             .collect();
         for field in &layout.fields {
             if let Some((_, value)) = cell.iter().find(|(name, _)| *name == field.name) {
+                if layout.overlaid && !is_set_value(value) {
+                    continue;
+                }
                 // SAFETY: `base` is the start of a live, zeroed block of
                 // `layout.size` bytes laid out by `layout.fields`, so the field
                 // is in bounds.
@@ -304,6 +317,18 @@ fn retain_child(attributes: &crate::value::InstanceAttrs, name: &str, child: Val
         return;
     }
     attributes.insert(key, child);
+}
+
+/// Whether a union member's cell value was set by the constructor: the cell
+/// holds a type object or a zero for a member nobody gave a value.
+// Cost: O(1).
+fn is_set_value(value: &Value) -> bool {
+    let value = value.deref_container();
+    match value.view() {
+        ValueView::Int(i) => i != 0,
+        ValueView::Num(n) => n != 0.0,
+        _ => crate::runtime::types::value_is_defined(&value),
+    }
 }
 
 /// Whether `value` is an object a pointer field can keep alive: anything that

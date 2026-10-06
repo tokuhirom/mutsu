@@ -1094,7 +1094,6 @@ impl MethodClassFrame {
 /// MOP mutators that alter class shape without passing those sites
 /// (`Attribute.set_build`, `^add_attribute`, `^add_method`, `^compose`).
 pub(crate) struct NativeCtorPlan {
-    pub(crate) is_cunion: bool,
     pub(crate) eligible: bool,
     /// Not `eligible` only because the class (or an ancestor) declares a
     /// user `new`: when no such candidate accepts a call's arguments, the

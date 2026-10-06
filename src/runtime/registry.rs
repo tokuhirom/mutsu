@@ -221,6 +221,10 @@ pub(crate) struct Registry {
     /// passed by pointer, even when the class name is lowercase (e.g.
     /// `evp_cipher_st`) and so would not match the name-shape heuristic.
     pub(crate) cstruct_classes: HashSet<String>,
+    /// Classes declared `is repr('CPPStruct')`: laid out and allocated as a
+    /// CStruct (they are also in [`cstruct_classes`](Self::cstruct_classes)),
+    /// but reporting their own REPR.
+    pub(crate) cppstruct_classes: HashSet<String>,
     /// Classes declared `is repr('CPointer')` — an opaque native handle with no
     /// declared field layout of its own (OpenSSL's `BIO`). Tracked separately
     /// from [`cstruct_classes`](Self::cstruct_classes) because such a class has no layout to compute,
