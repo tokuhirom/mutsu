@@ -88,7 +88,7 @@ thread_local! {
 
 static STMT_MEMO: ParseMemo<Stmt> = ParseMemo::new(&STMT_MEMO_TLS, &STMT_MEMO_STATS_TLS);
 
-fn stmt_memo_key(input: &str) -> MemoKey {
+fn stmt_memo_key(input: &str) -> Option<MemoKey> {
     super::memo::memo_key(input)
 }
 
@@ -256,7 +256,7 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
         // See `STMT_ANON_STATES_TLS`: the replayed statement's bare `$`s were
         // recorded into the scope of the parse that filled the memo.
         if let Some(names) =
-            STMT_ANON_STATES_TLS.with(|m| m.borrow().get(&stmt_memo_key(input)).cloned())
+            stmt_memo_key(input).and_then(|key| STMT_ANON_STATES_TLS.with(|m| m.borrow().get(&key).cloned()))
         {
             for name in &names {
                 simple::record_anon_state_name(name);
@@ -322,8 +322,10 @@ fn statement(input: &str) -> PResult<'_, Stmt> {
     }
     STMT_MEMO.store(input, &result);
     let minted = simple::current_scope_anon_state_names_from(anon_states_before);
-    if !minted.is_empty() {
-        STMT_ANON_STATES_TLS.with(|m| m.borrow_mut().insert(stmt_memo_key(input), minted));
+    if !minted.is_empty()
+        && let Some(key) = stmt_memo_key(input)
+    {
+        STMT_ANON_STATES_TLS.with(|m| m.borrow_mut().insert(key, minted));
     }
     result
 }
