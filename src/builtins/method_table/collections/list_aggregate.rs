@@ -145,6 +145,13 @@ fn extrema_pairs(
     if !args.is_empty() {
         return None;
     }
+    if matches!(target.view(), ValueView::Bool(_)) {
+        let (key, value) = if want_max { ("True", 1) } else { ("False", 0) };
+        return Some(Ok(Value::array(vec![Value::pair(
+            key.to_string(),
+            Value::int(value),
+        )])));
+    }
     if let ValueView::Hash(map) = target.view() {
         let mut best: Option<Value> = None;
         let mut result = Vec::new();
