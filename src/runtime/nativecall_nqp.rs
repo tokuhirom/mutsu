@@ -113,7 +113,9 @@ impl Interpreter {
     }
 
     fn nqp_buildnativecall(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let target = operand(args, 0);
+        // A routine that does upstream's `Native` role builds its call in the
+        // role's `is box_target` attribute (`has Callsite $!call is box_target`).
+        let target = self.box_target_operand("buildnativecall", operand(args, 0))?;
         let Some(key) = CallsiteKey::of(&target) else {
             return Err(RuntimeError::new(format!(
                 "nqp::buildnativecall: cannot hold a NativeCall body in a {}",
@@ -131,10 +133,6 @@ impl Interpreter {
         nativecall_info::store_callsite(key, spec);
         // A NativeCall-REPR object unboxes to a non-zero integer once it is
         // built (`return if nqp::unbox_i($!call)` in `Native!setup`).
-        // TODO: a routine target delegates to its `is box_target` attribute
-        // (`has Callsite $!call is box_target`), which must then unbox non-zero
-        // too, or `!setup` rebuilds the call on every invocation. That
-        // delegation is part of #11209 (the NativeCall REPR).
         if matches!(target.view(), ValueView::Instance { .. }) {
             Self::nqp_bindattr_value("bindattr_i", &target, "__mutsu_int_value", Value::int(1))?;
         }
@@ -143,7 +141,7 @@ impl Interpreter {
 
     fn nqp_nativecall(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let rettype = operand(args, 0);
-        let target = operand(args, 1);
+        let target = self.box_target_operand("nativecall", operand(args, 1))?;
         let Some(mut spec) = CallsiteKey::of(&target).and_then(nativecall_info::load_callsite)
         else {
             return Err(RuntimeError::new(

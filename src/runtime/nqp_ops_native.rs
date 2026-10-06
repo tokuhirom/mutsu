@@ -172,7 +172,11 @@ impl Interpreter {
                 let code = operand(args, 0);
                 match code.view() {
                     ValueView::Sub(data) => {
-                        Ok(Value::sub_value(crate::gc::Gc::new((**data).clone())))
+                        let mut fresh = (**data).clone();
+                        // A fresh code object is its own routine: renaming or
+                        // composing into it must leave `$code` alone.
+                        fresh.routine_cell = fresh.routine_cell.forked();
+                        Ok(Value::sub_value(crate::gc::Gc::new(fresh)))
                     }
                     _ => Err(RuntimeError::new(
                         "freshcoderef requires a code object".to_string(),

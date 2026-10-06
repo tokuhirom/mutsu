@@ -14,7 +14,10 @@ mod lambda_tests;
 mod reduction;
 mod topic_scan;
 
-pub(crate) use anon_decl::next_anon_role_name;
+pub(crate) use anon_decl::{
+    ANON_COLONS_TRAIT, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
+    prepend_does_header,
+};
 pub(super) use anon_decl::{
     anon_class_expr, anon_grammar_expr, indirect_method_call, mark_anon_package_decl,
 };

@@ -1451,5 +1451,8 @@ pub(crate) fn rename_code_object(target: &Value, name: &str) -> bool {
     // into this `SubData` is dereferenced across it. Code objects are not
     // structurally mutated from another thread.
     unsafe { crate::value::gc_contents_mut(&gc).name = Symbol::intern(name) };
+    // Every other value of the same routine (`&foo` is rebuilt on each read)
+    // answers the new name too (#11844).
+    gc.routine_cell.rename(Symbol::intern(name));
     true
 }

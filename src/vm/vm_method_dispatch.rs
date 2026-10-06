@@ -1055,8 +1055,10 @@ impl Interpreter {
             if self.stack.len() > saved_stack_depth {
                 self.stack.pop().unwrap_or(Value::NIL)
             } else {
-                // Implicit return from env "_"
-                self.env().get("_").cloned().unwrap_or(Value::NIL)
+                // A body that leaves no value (an empty body) returns Nil, as the
+                // fast path does; `$_` is always `Any` on method entry, so reading
+                // it here made `method m(D:D:) {}` answer `Any`.
+                Value::NIL
             }
         } else {
             Value::NIL
@@ -1341,25 +1343,8 @@ impl Interpreter {
         };
 
         // Apply return type spec (e.g. `--> 5` returns literal 5 from empty body)
-        // A `succeed` unwinding past this method is not its return value, so
-        // it skips the return-spec finalization as well.
-        let final_result = if let Some(ref effective_return_spec) = effective_return_spec
-            && !matches!(&final_result, Err(e) if cc.lets_succeed_through(e))
-        {
-            self.finalize_return_with_spec(final_result, Some(effective_return_spec.as_str()))
-        } else {
-            match final_result {
-                Ok(v) => Ok(v),
-                Err(e)
-                    if e.return_value.is_some()
-                        && e.return_target_callable_id().is_none()
-                        && !cc.lets_succeed_through(&e) =>
-                {
-                    Ok(e.return_value.unwrap())
-                }
-                Err(e) => Err(e),
-            }
-        };
+        let final_result =
+            self.finalize_method_result(cc, final_result, effective_return_spec.as_deref());
 
         // Restore the routine registry (removing this body's lexical routines)
         // unless an inner routine escaped via the return value, or a closure
@@ -2745,25 +2730,8 @@ impl Interpreter {
             Err(e) => Err(e),
         };
 
-        // A `succeed` unwinding past this method is not its return value, so
-        // it skips the return-spec finalization as well.
-        let final_result = if let Some(ref effective_return_spec) = effective_return_spec
-            && !matches!(&final_result, Err(e) if cc.lets_succeed_through(e))
-        {
-            self.finalize_return_with_spec(final_result, Some(effective_return_spec.as_str()))
-        } else {
-            match final_result {
-                Ok(v) => Ok(v),
-                Err(e)
-                    if e.return_value.is_some()
-                        && e.return_target_callable_id().is_none()
-                        && !cc.lets_succeed_through(&e) =>
-                {
-                    Ok(e.return_value.unwrap())
-                }
-                Err(e) => Err(e),
-            }
-        };
+        let final_result =
+            self.finalize_method_result(cc, final_result, effective_return_spec.as_deref());
 
         // Restore the routine registry (removing this body's lexical routines)
         // unless an inner routine escaped via the return value, or a closure
