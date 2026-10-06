@@ -45,13 +45,13 @@ fn aggregate_rows_resolve_to_the_rakudo_owners() {
             "Any.{name} should resolve for Array"
         );
         assert!(
-            owner_of(DispatchShape::Hash, sym, 0).is_some_and(|row| row.owner == "Any"),
+            lookup(DispatchShape::Hash, sym, 0).is_some_and(|row| row.owner == "Any"),
             "Any.{name} should resolve for Hash"
         );
     }
     for name in ["permutations", "combinations"] {
         let sym = Symbol::intern(name);
-        assert_eq!(lookup(DispatchShape::List, sym, 0), "List");
+        assert_eq!(owner_of(DispatchShape::List, sym, 0), "List");
         assert_eq!(owner_of(DispatchShape::Array, sym, 0), "List");
         assert!(lookup(DispatchShape::Hash, sym, 0).is_none());
     }

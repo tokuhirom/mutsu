@@ -50,8 +50,14 @@ fn sample(shape: DispatchShape) -> Value {
     }
 }
 
+/// The owner of the row an instance of `shape` dispatches `method` to, or
+/// `"-"` when there is none.
+fn owner_of(shape: DispatchShape, method: Symbol, arity: u8) -> &'static str {
+    lookup(shape, method, arity).map_or("-", |row| row.owner)
+}
+
 /// The row an instance of `shape` dispatches `method` to.
-fn owner_of(shape: DispatchShape, method: Symbol, arity: u8) -> Option<&'static MethodRow> {
+fn lookup(shape: DispatchShape, method: Symbol, arity: u8) -> Option<&'static MethodRow> {
     table::lookup(Receiver::instance(shape), method, arity)
 }
 
@@ -132,16 +138,16 @@ fn every_row_is_reached_and_answers() {
 #[test]
 fn lookup_walks_the_mro() {
     let elems = Symbol::intern("elems");
-    assert_eq!(lookup(DispatchShape::Array, elems, 0), "List");
+    assert_eq!(owner_of(DispatchShape::Array, elems, 0), "List");
     assert_eq!(owner_of(DispatchShape::List, elems, 0), "List");
     assert_eq!(owner_of(DispatchShape::Hash, elems, 0), "Map");
     assert_eq!(owner_of(DispatchShape::Str, elems, 0), "Any");
     let numerator = Symbol::intern("numerator");
-    assert!(owner_of(DispatchShape::Rat, numerator, 0).is_some());
+    assert!(lookup(DispatchShape::Rat, numerator, 0).is_some());
     assert!(lookup(DispatchShape::Num, numerator, 0).is_none());
     // Rakudo's `Int` does not do `Rational`: `5.numerator` is no method.
     assert!(lookup(DispatchShape::Int, numerator, 0).is_none());
-    assert_eq!(lookup(DispatchShape::FatRat, numerator, 0), "FatRat");
+    assert_eq!(owner_of(DispatchShape::FatRat, numerator, 0), "FatRat");
 }
 
 #[test]
