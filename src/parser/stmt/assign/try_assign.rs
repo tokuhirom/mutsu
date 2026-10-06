@@ -335,6 +335,22 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 b'%' => Expr::HashVar(var),
                 _ => Expr::Var(var),
             };
+            // `@a[0] ⚛= v` is the element's atomic store, not a plain assignment.
+            let atomic_store = super::strip_atomic_store_assign(r_after)
+                .filter(|_| !matches!(index_expr, Expr::ArrayLiteral(_)))
+                .and_then(|_| {
+                    super::atomic_elem_store_call(
+                        &Expr::Index {
+                            target: Box::new(target.clone()),
+                            index: Box::new(index_expr.clone()),
+                            is_positional,
+                        },
+                        rhs.clone(),
+                    )
+                });
+            if let Some(store) = atomic_store {
+                return Ok((rest, store));
+            }
             let assigned = Expr::IndexAssign {
                 target: Box::new(target),
                 index: Box::new(index_expr),
