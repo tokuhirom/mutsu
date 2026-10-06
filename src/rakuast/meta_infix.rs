@@ -320,11 +320,18 @@ fn fold(node: &RakuAstNode, meta: &str, op: String) -> Result<Expr, RuntimeError
 /// operand.
 // Cost: O(n), n = operands of the chain.
 fn primes(expr: &Expr) -> bool {
-    match expr {
-        Expr::WhateverArg => true,
-        Expr::MetaOp {
-            meta, left, right, ..
-        } if meta == "X" || meta == "Z" => primes(left) || primes(right),
-        _ => false,
+    let mut pending = vec![expr];
+    while let Some(operand) = pending.pop() {
+        match operand {
+            Expr::WhateverArg => return true,
+            Expr::MetaOp {
+                meta, left, right, ..
+            } if meta == "X" || meta == "Z" => {
+                pending.push(left);
+                pending.push(right);
+            }
+            _ => {}
+        }
     }
+    false
 }
