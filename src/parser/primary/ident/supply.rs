@@ -128,6 +128,23 @@ impl SupplyBody<'_> {
     }
 }
 
+impl SupplyBody<'_> {
+    /// `done` inside the supply body: `$emitter.done` and a stop of the body.
+    fn emitter_done(&self) -> Stmt {
+        Stmt::SyntheticBlock(vec![
+            Stmt::Expr(self.emitter_call("done", Vec::new())),
+            // Not `Stmt::Return`: a routine-return signal raised from a
+            // closure created inside a *method* gets stamped with that
+            // method's callable id and escapes past the (long-returned)
+            // method frame to the tap as an uncaught `CX::Return` —
+            // see todo/tickets/supply-done-in-method-supply-block-escapes-as-cx-return.md.
+            // `SupplyBodyDone` is always caught at the raising
+            // closure's own frame boundary regardless of nesting.
+            Stmt::SupplyBodyDone,
+        ])
+    }
+}
+
 fn is_builtin_emit(name: &Symbol) -> bool {
     name.resolve().as_str() == "emit" && !is_user_declared_sub("emit")
 }
@@ -176,18 +193,12 @@ impl VisitMut for SupplyBody<'_> {
                 }
                 *stmt = Stmt::Expr(self.emitter_call("emit", positional));
             }
-            Stmt::ReactDone => {
-                *stmt = Stmt::SyntheticBlock(vec![
-                    Stmt::Expr(self.emitter_call("done", Vec::new())),
-                    // Not `Stmt::Return`: a routine-return signal raised from a
-                    // closure created inside a *method* gets stamped with that
-                    // method's callable id and escapes past the (long-returned)
-                    // method frame to the tap as an uncaught `CX::Return` —
-                    // see todo/tickets/supply-done-in-method-supply-block-escapes-as-cx-return.md.
-                    // `SupplyBodyDone` is always caught at the raising
-                    // closure's own frame boundary regardless of nesting.
-                    Stmt::SupplyBodyDone,
-                ]);
+            Stmt::ReactDone => *stmt = self.emitter_done(),
+            // A `done` read back from RakuAST is the bare word, which the
+            // compiler resolves (a lexical `&done` shadows it); the parser
+            // makes the same choice at parse time with `is_user_declared_sub`.
+            Stmt::Expr(Expr::BareWord(word)) if word == "done" && !is_user_declared_sub("done") => {
+                *stmt = self.emitter_done();
             }
             // A CLOSE phaser in a `supply { ... }` block registers its body as
             // a close callback on the emitter, to run when the tap is closed

@@ -181,7 +181,7 @@ fn sync_accessor_entries_derives_from_attributes_and_clears_stale_rows() {
         source_file: None,
         default_is_seed: false,
     });
-    registry.classes.insert("Point".to_string(), class);
+    registry.classes.insert("Point".to_string(), class.into());
     registry.sync_accessor_entries(owner);
     assert_eq!(
         registry.method_entries[&MethodEntryKey {
@@ -197,7 +197,7 @@ fn sync_accessor_entries_derives_from_attributes_and_clears_stale_rows() {
     // index tracks the user-method column only).
     registry
         .classes
-        .insert("Point".to_string(), ClassDef::default());
+        .insert("Point".to_string(), ClassDef::default().into());
     registry.sync_accessor_entries(owner);
     assert!(!registry.method_entries.contains_key(&MethodEntryKey {
         owner,

@@ -3,7 +3,7 @@ use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
 
 use super::raku_repr::{promise_raku_repr, raku_value};
-use super::{format_temporal_num, gist_array_wrap, range_gist_string};
+use super::{gist_array_wrap, range_gist_string};
 use crate::value::types::is_stash_class_name;
 
 /// Rakudo caps an aggregate's `.gist` at the first 100 elements, then appends
@@ -46,6 +46,11 @@ fn leaf_gist(v: &Value) -> String {
         // A Version element keeps its `v` prefix (`[v1.2.3]`), which its
         // bare string value drops.
         return format!("v{}", v.to_string_value());
+    }
+    if let ValueView::Capture { positional, named } = v.view() {
+        // A Capture element keeps its call shape; its bare string value is
+        // the joined `.Str` form.
+        return crate::value::capture_text::capture_gist(positional, named);
     }
     v.to_string_value()
 }
@@ -318,7 +323,7 @@ pub(super) fn dispatch(
             class_name,
             attributes,
             ..
-        } if class_name == "Parameter" && (method == "raku" || method == "perl") => {
+        } if class_name == "Parameter" && matches!(method, "raku" | "perl" | "gist") => {
             Some(Ok(Value::str(crate::value::signature::parameter_to_raku(
                 &(attributes).as_map(),
             ))))
@@ -449,47 +454,6 @@ pub(super) fn dispatch(
                 }
             } else {
                 Some(Ok(Value::str(format!("{}()", class_name))))
-            }
-        }
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Instant" => {
-            if method == "gist" {
-                // `Instant:<tai>` — identical to the Str/gist rendering in
-                // `value/display.rs::to_string_value`.
-                Some(Ok(Value::str(target.to_string_value())))
-            } else {
-                let tai = attributes
-                    .as_map()
-                    .get("value")
-                    .map(|v| v.to_f64())
-                    .unwrap_or(0.0);
-                let posix = crate::builtins::methods_0arg::temporal::instant_to_posix(tai);
-                Some(Ok(Value::str(format!(
-                    "Instant.from-posix({})",
-                    format_temporal_num(posix)
-                ))))
-            }
-        }
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Duration" => {
-            if method == "gist" {
-                Some(Ok(Value::str(target.to_string_value())))
-            } else {
-                let val = attributes
-                    .as_map()
-                    .get("value")
-                    .cloned()
-                    .unwrap_or(Value::num(0.0));
-                Some(Ok(Value::str(format!(
-                    "Duration.new({})",
-                    format_temporal_num(val.to_f64())
-                ))))
             }
         }
         ValueView::Bag(_, _) => {

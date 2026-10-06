@@ -11,12 +11,12 @@
 //! same leading statements, and an `also` one is a `Statement::Also`.
 
 use super::convert::{
-    MY_SCOPED, blockoid, build_type_node, lexical_scope_field, name_from_identifier, node_field,
+    MY_SCOPED, blockoid, build_type_node, is_colons_package, node_field, package_header_fields,
     signature, unsupported,
 };
 use super::lower::{
-    call_name_str, lower_package_body, lower_signature_parameters, lower_stmts, named_child,
-    named_child_or_positional,
+    lower_package_body, lower_signature_parameters, lower_stmts, named_child,
+    named_child_or_positional, package_head,
 };
 use super::routine_traits::IsTraits;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -40,7 +40,10 @@ pub(super) struct RoleDecl<'a> {
 // Cost: O(n), n = size of the role's body.
 pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     let is_lexical = role.custom_traits.iter().any(|(t, _)| t == MY_SCOPED);
-    if role.custom_traits.iter().any(|(t, _)| t != MY_SCOPED)
+    if role
+        .custom_traits
+        .iter()
+        .any(|(t, _)| t != MY_SCOPED && t != crate::parser::ANON_COLONS_TRAIT)
         || role.is_export != !role.export_tags.is_empty()
     {
         return Err(unsupported("role with custom traits"));
@@ -108,11 +111,11 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             .into_iter()
             .map(|t| Value::rakuast(Box::new(t))),
     );
-    let mut fields = lexical_scope_field(is_lexical);
-    fields.push(node_field(
-        Some("name"),
-        name_from_identifier(&role.name.resolve()),
-    ));
+    let mut fields = package_header_fields(
+        role.name,
+        is_lexical.then_some("my"),
+        is_colons_package(role.custom_traits),
+    );
     if !traits.is_empty() {
         fields.push(RakuAstField {
             name: Some("traits"),
@@ -161,18 +164,15 @@ fn parent_clause(
 /// front of the body.
 // Cost: O(n), n = size of the node.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let name = call_name_str(node)?;
-    let mut custom_traits = Vec::new();
-    match node.fields.iter().find(|f| f.name == Some("scope")) {
-        None => {}
-        Some(RakuAstField {
-            value: RakuAstFieldValue::Node(scope),
-            ..
-        }) if matches!(scope.view(), ValueView::Str(s) if s.as_str() == "my") => {
-            custom_traits.push((MY_SCOPED.to_string(), None));
-        }
-        Some(_) => return Err(unsupported_node(node)),
+    let head = package_head(node, crate::parser::next_anon_role_name)?;
+    if head.is_unit {
+        return Err(super::lower::unsupported(node));
     }
+    let mut custom_traits = Vec::new();
+    if head.is_lexical {
+        custom_traits.push((MY_SCOPED.to_string(), None));
+    }
+    custom_traits.extend(head.custom_traits());
     let mut header = Vec::new();
     let mut flags = IsTraits::default();
     if let Some(field) = node.fields.iter().find(|f| f.name == Some("traits")) {
@@ -213,7 +213,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Err(_) => Vec::new(),
     };
     Ok(Stmt::RoleDecl {
-        name: Symbol::intern(&name),
+        name: Symbol::intern(&head.name),
         type_params: crate::parser::role_type_param_names(&type_param_defs),
         type_param_defs,
         is_export: !flags.export_tags.is_empty(),

@@ -188,6 +188,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
     // `{ ~($ ~= $_) }`.)
     let var = if sigil == b'$'
         && var == "__ANON_STATE__"
+        && !crate::parser::primary::var::starts_named_placeholder(r)
         && !matches!(
             r.trim_start().as_bytes().first(),
             Some(b'.') | Some(b'[') | Some(b'{') | Some(b'<')
@@ -334,6 +335,22 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 b'%' => Expr::HashVar(var),
                 _ => Expr::Var(var),
             };
+            // `@a[0] ⚛= v` is the element's atomic store, not a plain assignment.
+            let atomic_store = super::strip_atomic_store_assign(r_after)
+                .filter(|_| !matches!(index_expr, Expr::ArrayLiteral(_)))
+                .and_then(|_| {
+                    super::atomic_elem_store_call(
+                        &Expr::Index {
+                            target: Box::new(target.clone()),
+                            index: Box::new(index_expr.clone()),
+                            is_positional,
+                        },
+                        rhs.clone(),
+                    )
+                });
+            if let Some(store) = atomic_store {
+                return Ok((rest, store));
+            }
             let assigned = Expr::IndexAssign {
                 target: Box::new(target),
                 index: Box::new(index_expr),
@@ -667,13 +684,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         let name = format!("{}{}", prefix, var);
         return Ok((
             rest,
-            Expr::Call {
-                name: Symbol::intern("__mutsu_atomic_add_var"),
-                args: vec![
-                    Expr::Literal(Value::str(name)),
-                    super::atomic_delta_expr(rhs, negate),
-                ],
-            },
+            super::atomic_compound_call(Expr::Var(name), rhs, negate),
         ));
     }
     // Check simple chained assignment: $var = ...
@@ -696,13 +707,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         };
         let name = format!("{}{}", prefix, var);
         if is_atomic {
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_atomic_store_var"),
-                    args: vec![Expr::Literal(Value::str(name)), rhs],
-                },
-            ));
+            return Ok((rest, crate::ast::atomic_op::store_var(name, rhs)));
         }
         let name = format!("{}{}", prefix, var);
         return Ok((

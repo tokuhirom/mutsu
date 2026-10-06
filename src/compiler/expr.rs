@@ -396,8 +396,10 @@ impl Compiler {
                     } else {
                         // The local is a `$`-sigiled variable — a bare word with the
                         // same name should resolve as a type/package, not the variable.
+                        // The op says so: the runtime cannot tell the scalar's `env`
+                        // entry from a sigilless binding's by the shared key (#11898).
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
-                        self.code.emit(OpCode::GetBareWord(name_idx));
+                        self.code.emit(OpCode::GetBareWordOverScalar(name_idx));
                     }
                 } else if self.enclosing_sigilless.contains(name.as_str()) {
                     // A sigilless binding (`\thing`, `my \x`) from an ENCLOSING
@@ -433,6 +435,13 @@ impl Compiler {
                     // term first, so `-> \i` read back the imaginary unit `i`.
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetGlobal(name_idx));
+                } else if self.enclosing_local_names.contains(name.as_str()) {
+                    // No sigilless binding of the name is in scope (checked above),
+                    // so the same-named local of an ENCLOSING frame is a
+                    // `$`-sigiled variable: the bare word is not that variable
+                    // (`my $bar = 3; sub f { bar }`).
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::GetBareWordOverScalar(name_idx));
                 } else {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetBareWord(name_idx));

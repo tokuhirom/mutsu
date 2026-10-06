@@ -89,6 +89,27 @@ impl Interpreter {
         Ok(self.mixin_composition_overrides(key, mixins))
     }
 
+    /// The type name a role-mixed value `target` (a `Mixin` over `inner` with
+    /// `mixins`) reports: what `.^set_name` wrote to its composition-keyed
+    /// shared node, else the synthesized `Base+{Role,...}`. `.^name`,
+    /// `HOW.name` and the `.gist`/`.raku` of an instance all ask this, so a
+    /// rename made on the type object (`$w.^set_name(...)` in a
+    /// `^parameterize`) reaches every instance built from it.
+    // Cost: O(r), r = roles composed into the value (one composition-key build
+    // and a shared-node probe).
+    pub(super) fn mixin_instance_type_name(
+        &mut self,
+        target: &Value,
+        inner: &Arc<Value>,
+        mixins: &crate::value::MixinOverrides,
+    ) -> Result<String, RuntimeError> {
+        let overrides = self.mixin_instance_composition_overrides(inner, mixins)?;
+        Ok(match overrides.get("__mutsu_type_name__") {
+            Some(renamed) => renamed.to_string_value(),
+            None => crate::value::types::what_type_name(target),
+        })
+    }
+
     /// Build the composition-keyed punned-class type object for a role
     /// (ADR-0060 naming) — the exact value `R.new.WHAT` produces for an
     /// instance of `role_name`'s pun, computed WITHOUT constructing an

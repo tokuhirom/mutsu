@@ -317,6 +317,23 @@ pub(crate) fn collect_placeholders_shallow(stmts: &[Stmt]) -> Vec<String> {
     sorted(PlaceholderCollector::run(Scope::Own, true, true, stmts))
 }
 
+/// The signature of a routine declared without one: its own placeholder
+/// variables (`$^a`, `@^b`, `$:c`), sorted by name, as positional/named
+/// parameters. A routine that declares a signature (even an empty `()`) keeps
+/// it. The one rule behind both `sub f { $^a }` as the parser reads it and the
+/// same routine lowered from RakuAST, where the node carries no signature.
+// Cost: O(n log n), n = size of the routine's own placeholder scope.
+pub(crate) fn implicit_placeholder_signature(
+    params: Vec<String>,
+    param_defs: Vec<super::ParamDef>,
+    body: &[Stmt],
+) -> (Vec<String>, Vec<super::ParamDef>) {
+    if !params.is_empty() || !param_defs.is_empty() {
+        return (params, param_defs);
+    }
+    (collect_placeholders_shallow(body), param_defs)
+}
+
 /// Placeholder names (`^name`, sigil stripped) that are the *target* of an
 /// assignment anywhere in a `where`-block body — e.g. the `^epic` in
 /// `where { $^epic = "fail" }`. A `where`-block parameter is read-only, so the

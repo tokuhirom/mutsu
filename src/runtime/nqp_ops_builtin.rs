@@ -330,6 +330,9 @@ impl Interpreter {
                 let v = crate::runtime::types::unwrap_varref_value(
                     args.first().cloned().unwrap_or(Value::NIL),
                 );
+                // An object that boxes its value in an `is box_target`
+                // attribute unboxes that attribute.
+                let v = self.unbox_native_through(&v).unwrap_or(v);
                 if let ValueView::Instance { attributes, .. } = v.view()
                     && let Some(payload) = attributes.as_map().get("__mutsu_int_value")
                 {
@@ -348,6 +351,10 @@ impl Interpreter {
             // Cost: O(d), d = MRO length of the target type (class_mro, cached Arc); O(1) for a Pointer/Int target.
             "box_i" => {
                 let n = args.first().map(crate::runtime::to_int).unwrap_or(0);
+                // A class that boxes into an `is box_target` attribute.
+                if let Some(boxed) = self.box_native_into_class(args.get(1), Value::int(n)) {
+                    return Some(boxed);
+                }
                 // A CPointer-REPR class, or a mixin of one (upstream's
                 // `Pointer[T]`), boxes the address as an instance of *that*
                 // type, as MoarVM's CPointer REPR does: upstream NativeCall's

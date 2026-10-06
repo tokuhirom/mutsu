@@ -11,7 +11,9 @@ use super::call_method::{
     parse_custom_postfix_operator, parse_prefix_as_postfix, parse_private_method_name,
     parse_quoted_method_name,
 };
-use super::dot_assign::{atomic_elem_update, atomic_var_name, parse_dot_assign};
+use super::dot_assign::{
+    atomic_elem_update, atomic_operator_call, atomic_var_name, parse_dot_assign,
+};
 use super::helpers::{
     colonpair_adverb_follows, compose_prefix_into_whatevercode, extract_negative_literal,
     extract_range_negative_end, is_angle_subscript_key_char, make_negative_subscript_error,
@@ -183,16 +185,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(rest) = input.strip_prefix("++⚛") {
         let (rest, expr) = postfix_expr(rest)?;
-        if let Some(name) = atomic_var_name(&expr) {
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_atomic_pre_inc_var"),
-                    args: vec![Expr::Literal(Value::str(name))],
-                },
-            ));
-        }
-        if let Some(call) = atomic_elem_update("atomic-inc-fetch", &expr) {
+        if let Some(call) = atomic_operator_call("prefix:<++⚛>", &expr) {
             return Ok((rest, call));
         }
         return Ok((
@@ -205,16 +198,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(rest) = input.strip_prefix("--⚛") {
         let (rest, expr) = postfix_expr(rest)?;
-        if let Some(name) = atomic_var_name(&expr) {
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_atomic_pre_dec_var"),
-                    args: vec![Expr::Literal(Value::str(name))],
-                },
-            ));
-        }
-        if let Some(call) = atomic_elem_update("atomic-dec-fetch", &expr) {
+        if let Some(call) = atomic_operator_call("prefix:<--⚛>", &expr) {
             return Ok((rest, call));
         }
         return Ok((
@@ -228,13 +212,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     if let Some(rest) = input.strip_prefix('⚛') {
         let (rest, expr) = postfix_expr(rest)?;
         if let Some(name) = atomic_var_name(&expr) {
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_atomic_fetch_var"),
-                    args: vec![Expr::Literal(Value::str(name))],
-                },
-            ));
+            return Ok((rest, crate::ast::atomic_op::fetch_var(name)));
         }
         if let Some(call) = atomic_elem_update("atomic-fetch", &expr) {
             return Ok((rest, call));
@@ -3389,12 +3367,7 @@ fn postfix_expr_loop_from(
         // Atomic postfix updates: $x⚛++ / $x⚛--
         if let Some(after_atomic) = rest.strip_prefix("⚛++") {
             rest = after_atomic;
-            if let Some(name) = atomic_var_name(&expr) {
-                expr = Expr::Call {
-                    name: Symbol::intern("__mutsu_atomic_post_inc_var"),
-                    args: vec![Expr::Literal(Value::str(name))],
-                };
-            } else if let Some(call) = atomic_elem_update("atomic-fetch-inc", &expr) {
+            if let Some(call) = atomic_operator_call("postfix:<⚛++>", &expr) {
                 expr = call;
             } else {
                 expr = Expr::PostfixOp {
@@ -3406,12 +3379,7 @@ fn postfix_expr_loop_from(
         }
         if let Some(after_atomic) = rest.strip_prefix("⚛--") {
             rest = after_atomic;
-            if let Some(name) = atomic_var_name(&expr) {
-                expr = Expr::Call {
-                    name: Symbol::intern("__mutsu_atomic_post_dec_var"),
-                    args: vec![Expr::Literal(Value::str(name))],
-                };
-            } else if let Some(call) = atomic_elem_update("atomic-fetch-dec", &expr) {
+            if let Some(call) = atomic_operator_call("postfix:<⚛-->", &expr) {
                 expr = call;
             } else {
                 expr = Expr::PostfixOp {

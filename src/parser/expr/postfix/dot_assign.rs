@@ -31,6 +31,21 @@ pub(crate) fn atomic_elem_update(routine: &str, expr: &Expr) -> Option<Expr> {
     })
 }
 
+/// An integer-atomic operator applied to a variable or an array/hash element:
+/// the call of Rakudo's own routine for it (`postfix:<⚛++>($x)`,
+/// `prefix:<--⚛>(@a[0])`), else `None`.
+///
+/// The operator keeps its real routine name, so a refused target is reported
+/// under the spelling the program used, and the AST stays an ordinary call that
+/// round-trips through RakuAST (an internal `__mutsu_*` marker would not,
+/// #11834). The compiler lowers it onto the one atomic implementation.
+pub(crate) fn atomic_operator_call(operator: &str, expr: &Expr) -> Option<Expr> {
+    (atomic_var_name(expr).is_some() || is_atomic_elem_target(expr)).then(|| Expr::Call {
+        name: Symbol::intern(operator),
+        args: vec![expr.clone()],
+    })
+}
+
 /// The writeback variable name (`AssignExpr`-convention: `x` / `@a` / `%h`) for an
 /// expression whose value is a simple-variable lvalue, or `None` otherwise. Used to
 /// route an outer `.=` through a `do { … }`-block target back to its lvalue.
@@ -49,7 +64,7 @@ fn lvalue_assign_name(e: &Expr) -> Option<String> {
 fn chained_assign_writeback(
     target: Expr,
     assign_name: String,
-    method_call_fn: impl FnOnce(Expr) -> Expr,
+    method_call_fn: &impl Fn(Expr) -> Expr,
 ) -> Expr {
     let var_expr = if let Some(rest) = assign_name.strip_prefix('@') {
         Expr::ArrayVar(rest.to_string())
@@ -96,7 +111,24 @@ pub(crate) fn dot_assign_to_name(name: String, method_call: Expr) -> Expr {
 /// `AssignExpr { name, expr }`.
 /// For index expressions, generates an `IndexAssign` wrapped in a `DoBlock`.
 /// For non-lvalue targets, returns the method call as-is.
-pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) -> Expr) -> Expr {
+///
+/// Every shape carries the source-level `.=` marker
+/// ([`crate::parser::stmt::assign::dotty_assign_marker`]): the target as written
+/// and the method call, so the RakuAST conversion can render
+/// `ApplyDottyInfix` and the lowering can rebuild the same expansion.
+// Cost: O(n), n = size of the target and the method call (both are cloned).
+pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl Fn(Expr) -> Expr) -> Expr {
+    let source = target.clone();
+    let method_call = method_call_fn(source.clone());
+    let expanded = expand_dot_assign(target, &method_call_fn);
+    // The simple-variable expansion already carries the marker.
+    if crate::parser::stmt::assign::is_dotty_assign(&expanded) {
+        return expanded;
+    }
+    crate::parser::stmt::assign::dotty_assign_marker(source, method_call, expanded)
+}
+
+fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Expr {
     // Unwrap Grouped and identity `.self` calls to get at the lvalue. `.self`
     // returns its invocant unchanged, so `(X.self).=meth` is exactly `X.=meth`
     // (the assignment writes back through `X`).
@@ -112,6 +144,15 @@ pub(crate) fn wrap_dot_assign(target: Expr, method_call_fn: impl FnOnce(Expr) ->
             Expr::MethodCall { target: inner, .. } if is_self_call => *inner,
             other => break other,
         };
+    };
+    // A previous `.=` (or other compound) step whose expansion is not a simple
+    // variable write: continue from the expansion, which is what the chain
+    // keeps mutating (`@a[i] .= m1 .= m2`).
+    let target = match target {
+        Expr::CompoundAssign { expanded, .. } if lvalue_assign_name(&expanded).is_none() => {
+            *expanded
+        }
+        other => other,
     };
     match &target {
         // NOTE: an *expression*-position `$_ .= meth` keeps the plain `AssignExpr`

@@ -1074,9 +1074,11 @@ mod declaration_plan_tests {
 mod adverb_interp;
 mod amp_scope;
 mod atomic_elem_forms;
+mod atomic_target;
 mod begin_use;
 mod bind_ternary;
 mod body_scans;
+mod call_arg_index_assign;
 pub(crate) mod compile_inputs;
 pub(crate) mod compile_session;
 mod const_fold;
@@ -1200,7 +1202,7 @@ pub(crate) struct Compiler {
     /// coherence, and must be done as one campaign with §1.5 (remove name-based
     /// slot resolution) and §1.3 (collapse the dual store). See ANALYSIS.md §1.4.
     /// Frame 0 is the compilation-unit / routine top level and is never popped.
-    local_scopes: Vec<HashMap<String, Option<u32>>>,
+    local_scopes: Vec<lex_scope::ScopeFrame>,
     /// The `local_scopes` depths (frame index + 1) of the frames that hold a
     /// `use`/`import`/`no` statement of their own, ascending. Each such block
     /// runs inside a run-time `ImportScope`, which is where its imports are
@@ -1218,7 +1220,7 @@ pub(crate) struct Compiler {
     /// signature in the block's own scope), so they are parked here instead of
     /// getting a frame of their own, which would add a spurious level to every
     /// `OUTER::`/`CALLER::` resolved in the body.
-    pending_scope_frame: Option<HashMap<String, Option<u32>>>,
+    pending_scope_frame: Option<lex_scope::ScopeFrame>,
     /// Slots of multi-param `for` loop parameters whose names had no slot
     /// before their loop and were removed from `local_map` when it ended, so
     /// the name resolves by name again after the loop. Reused by
@@ -1286,6 +1288,10 @@ pub(crate) struct Compiler {
     hoisted_type_shells: Vec<(u64, u32)>,
     /// Track type constraints for local variables (for compile-time literal checks).
     local_types: HashMap<String, String>,
+    /// How the atomic routine being compiled was spelled at its call site, and
+    /// whether it is an integer-only `nqp::` op. Set around the lowering of the
+    /// call by `with_atomic_spelling`; read by `atomic_target.rs`.
+    atomic_spelling: Option<atomic_target::AtomicSpelling>,
     /// Names of `@`/`$` variables whose CURRENT declaration provably denotes a
     /// value with no container behind its own items — a `:=` bind of an `@`
     /// name to an immutable Positional (`my @a := (1,2,3)`), or a `$` name
@@ -1632,6 +1638,13 @@ pub(crate) struct Compiler {
     /// scalar (`my $x := $itemized`) inherits the item container and is NOT
     /// recorded. See `normalize_for_iterable`.
     noncontainer_bound_vars: std::collections::HashSet<String>,
+    /// The enclosing compilers' [`Self::noncontainer_bound_vars`], handed down by
+    /// `inherit_enclosing_scopes`: a routine or closure that reads such a
+    /// variable as a free variable (`my $l := (1, 2, 3); sub f { for $l {...} }`)
+    /// sees the same container-less binding the declaring scope does. Consulted
+    /// only for a name this compiler has NOT declared itself (`local_map`), so a
+    /// parameter or `my` of the same name in the child shadows it.
+    enclosing_noncontainer_bound_vars: std::collections::HashSet<String>,
     /// `$` parameters of the routine being compiled that bind WITHOUT a Scalar
     /// container ([`crate::vm::ScalarParamBind::Decont`], e.g. `Positional
     /// $x`), so `for $x` iterates and `my @a = $x` flattens the bound value.
@@ -1920,7 +1933,7 @@ impl Compiler {
             variables_pragma: None,
             trir_routines: HashMap::new(),
             // Frame 0 = compilation-unit / routine top level; never popped.
-            local_scopes: vec![HashMap::new()],
+            local_scopes: vec![lex_scope::ScopeFrame::new()],
             import_scope_levels: Vec::new(),
             scope_routine_decls: Vec::new(),
             pending_scope_frame: None,
@@ -1934,6 +1947,7 @@ impl Compiler {
             hoisted_sub_plans: Vec::new(),
             hoisted_type_shells: Vec::new(),
             local_types: HashMap::new(),
+            atomic_spelling: None,
             provably_bare_receiver_vars: HashSet::new(),
             native_rw_params: HashSet::new(),
             compiled_functions: CompiledFns::default(),
@@ -1985,6 +1999,7 @@ impl Compiler {
             pending_declarator_doc: None,
             constant_vars: std::collections::HashSet::new(),
             noncontainer_bound_vars: std::collections::HashSet::new(),
+            enclosing_noncontainer_bound_vars: std::collections::HashSet::new(),
             decont_scalar_params: std::collections::HashSet::new(),
             readonly_scalar_params: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
@@ -2565,6 +2580,18 @@ impl Compiler {
             .extend(self.enclosing_local_names.iter().cloned());
         sub.class_body_static_code_vars
             .extend(self.class_body_static_code_vars.iter().cloned());
+        // A `:=`-bound container-less scalar stays container-less inside the
+        // closures and routines that capture it (`for $l` iterates there too).
+        // Ours are inherited as they stand; an ancestor's only while this scope
+        // does not declare the same name itself (that declaration shadows it).
+        sub.enclosing_noncontainer_bound_vars
+            .extend(self.noncontainer_bound_vars.iter().cloned());
+        sub.enclosing_noncontainer_bound_vars.extend(
+            self.enclosing_noncontainer_bound_vars
+                .iter()
+                .filter(|n| !self.local_map.contains_key(n.as_str()))
+                .cloned(),
+        );
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
         sub.lexical_sub_written_vars = self.lexical_sub_written_vars.clone();
         sub.variables_pragma = self.variables_pragma;
@@ -4284,6 +4311,23 @@ impl Compiler {
             && !self.constant_vars.contains(name)
             && !self.noncontainer_bound_vars.contains(name)
             && !self.decont_scalar_params.contains(name)
+            && !self.captured_noncontainer_bound_var(name)
+    }
+
+    /// Whether `$rhs` — the right-hand side of a scalar `:=` bind — is NOT one of
+    /// the container-less bound scalars, so the bind inherits its item container.
+    // Cost: O(1).
+    pub(super) fn scalar_var_is_bound_item(&self, rhs: &str) -> bool {
+        !self.noncontainer_bound_vars.contains(rhs) && !self.captured_noncontainer_bound_var(rhs)
+    }
+
+    /// Whether `name` is a free variable here that an enclosing scope `:=`-bound
+    /// without a Scalar container. A name this compiler declares itself (a
+    /// parameter, a `my`, a loop variable) is that declaration's, not the
+    /// enclosing one's, so `local_map` hides the inherited fact.
+    // Cost: O(1).
+    fn captured_noncontainer_bound_var(&self, name: &str) -> bool {
+        self.enclosing_noncontainer_bound_vars.contains(name) && !self.local_map.contains_key(name)
     }
 
     /// Record a signature's container-less `$` parameters in
@@ -4506,8 +4550,14 @@ impl Compiler {
         } else if self.is_routine && Self::has_block_enter_leave_phasers(stmts) {
             self.compile_phaser_block_scope(stmts, PhaserBlockResult::ReturnViaTopic);
         } else {
+            // The statement whose value the unit evaluates to. Not simply the
+            // last one: reordering hoists a declaration (`constant X = 5`)
+            // ahead of the `SetLine` marker that preceded it, which then
+            // trails it and would take the tail's value with it.
+            let tail_index =
+                crate::ast::last_value_stmt_index(stmts, crate::ast::TailSkip::Markers);
             for (i, stmt) in stmts.iter().enumerate() {
-                let is_last = i == stmts.len() - 1;
+                let is_last = Some(i) == tail_index;
                 // A sunk tail expression or call compiles exactly as any other
                 // statement, `SinkPop` included (`unit_tail_sinks`).
                 let sunk_tail =

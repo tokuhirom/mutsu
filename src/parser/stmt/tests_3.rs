@@ -316,6 +316,9 @@ fn parse_my_no_space() {
 fn statement_memo_hits_on_reparse() {
     reset_statement_memo();
     let input = "say 42";
+    // A memo key exists only for text inside the buffer of a parse, as under
+    // `parse_program`.
+    let _parse = crate::parser::memo::begin_buffer_generation(input);
     let _ = statement_pub(input).unwrap();
     let (hits1, misses1, stores1) = statement_memo_stats();
     assert_eq!(hits1, 0);

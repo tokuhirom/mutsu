@@ -29,6 +29,7 @@
 // attacker-controlled data, so HashDoS hardening buys nothing here). The
 // `HashMap`/`HashSet` names are aliased so the ~40 field declarations below
 // stay textually unchanged.
+use super::registry_cow_table::CowTable;
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
 use std::sync::Arc;
 
@@ -97,7 +98,7 @@ pub(crate) struct Registry {
     pub(crate) monkey_eval_units: std::collections::HashSet<crate::symbol::Symbol>,
     /// Canonical type x method table. It initially owns the built-in entries;
     /// declaration registration will add user candidates to the same table.
-    pub(crate) method_entries: HashMap<MethodEntryKey, MethodEntry>,
+    pub(crate) method_entries: CowTable<HashMap<MethodEntryKey, MethodEntry>>,
     /// Monotonic invalidation generation for the canonical method table.
     pub(crate) method_generation: u64,
     /// ADR-0067 slice 3a: has any user method with a **raw invocant**
@@ -186,6 +187,11 @@ pub(crate) struct Registry {
     /// of a program-wide `has_any_wrap_chains()` prefilter disabling it
     /// whenever ANY method anywhere is wrapped).
     pub(crate) method_wrap_chains: HashMap<(String, String, usize), Vec<(u64, Value)>>,
+    /// `Method.set_name` renames: `(owner class, method name, candidate
+    /// index)` -> the name `.name` reports. The method table key (the dispatch
+    /// name) is unchanged, as in rakudo, where `set_name` only rewrites the
+    /// code object's `$!do` name.
+    pub(crate) method_renames: HashMap<(String, String, usize), String>,
     /// Method names that have ever had a wrapper pushed onto their multi
     /// DISPATCHER slot ([`DISPATCHER_WRAP_IDX`]). A conservative prefilter
     /// for `Interpreter::dispatcher_wrap_chain`: a name is never removed, so
@@ -205,7 +211,7 @@ pub(crate) struct Registry {
     /// short-lived `registry()` guards and clone the minimal projection they need
     /// (e.g. `mro.clone()`, `methods.get(name).cloned()`) rather than the whole
     /// `ClassDef`.
-    pub(crate) classes: HashMap<String, ClassDef>,
+    pub(crate) classes: CowTable<HashMap<String, CowTable<ClassDef>>>,
 
     // ----- class metadata (PR-A slice 2) -----
     /// Classes declared as a C `union` (native interop helper set).
@@ -215,6 +221,10 @@ pub(crate) struct Registry {
     /// passed by pointer, even when the class name is lowercase (e.g.
     /// `evp_cipher_st`) and so would not match the name-shape heuristic.
     pub(crate) cstruct_classes: HashSet<String>,
+    /// Classes declared `is repr('CPPStruct')`: laid out and allocated as a
+    /// CStruct (they are also in [`cstruct_classes`](Self::cstruct_classes)),
+    /// but reporting their own REPR.
+    pub(crate) cppstruct_classes: HashSet<String>,
     /// Classes declared `is repr('CPointer')` — an opaque native handle with no
     /// declared field layout of its own (OpenSSL's `BIO`). Tracked separately
     /// from [`cstruct_classes`](Self::cstruct_classes) because such a class has no layout to compute,
@@ -229,6 +239,20 @@ pub(crate) struct Registry {
     /// `class void`), by full name: they report that REPR and have no
     /// instances (`.new` / `nqp::create` die).
     pub(crate) uninstantiable_classes: HashSet<String>,
+    /// Classes declared `is repr<NativeCall>` (upstream NativeCall's
+    /// `my class Callsite`), by full name: their instances are the callsite
+    /// `nqp::buildnativecall` fills in (see `runtime::box_target`).
+    pub(crate) nativecall_classes: HashSet<String>,
+    /// Classes declared `is repr<CStr>` (upstream NativeCall's nested
+    /// `CStr`), by full name: `nqp::box_s($str, $class)` gives such a class an
+    /// object that owns a NUL-terminated copy of the string (see
+    /// `runtime::cstr_repr`).
+    pub(crate) cstr_classes: HashSet<String>,
+    /// The attribute a class or role declared `is box_target`, keyed by the
+    /// declaring class or role (a role by its base name). MoarVM's native ops
+    /// on an object that has one apply to that attribute's value instead
+    /// (see `runtime::box_target`).
+    pub(crate) box_target_attrs: HashMap<String, String>,
     /// `native`-declared types and the traits they recorded (`is repr`,
     /// `is ctype`, `is nativesize`, `is unsigned`; see `runtime::native_decl`).
     pub(crate) native_decls: HashMap<String, super::native_decl::NativeDecl>,
@@ -328,7 +352,7 @@ pub(crate) struct Registry {
     /// `trusts` relationships: class -> trusted classes, in declaration
     /// order (`Metamodel::Trusting`'s `.^trusts` answers an ordered `List`,
     /// so a set would lose the order the source declared).
-    pub(crate) class_trusts: HashMap<String, Vec<String>>,
+    pub(crate) class_trusts: CowTable<HashMap<String, Vec<String>>>,
     /// Per-class metaclass (`HOW`) value override.
     pub(crate) class_how_values: HashMap<String, Value>,
     /// Type name -> the NATIVE `Perl6::Metamodel::*HOW` metaclass that type
@@ -357,7 +381,7 @@ pub(crate) struct Registry {
     /// Roles composed into each class: class -> [role names]. This is the
     /// FLATTENED set (includes roles reached transitively through a composed
     /// role's own `does`), used for `~~`/role-membership checks.
-    pub(crate) class_composed_roles: HashMap<String, Vec<String>>,
+    pub(crate) class_composed_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Roles DIRECTLY declared on each class's `does` list (NOT the transitive
     /// closure): class -> [role names]. Qualified `self.Role::method` resolution
     /// of a parametric role uses this so a concretization reached only
@@ -365,13 +389,13 @@ pub(crate) struct Registry {
     /// `R2[::T] does R1[::T]`) does not make a directly-declared `R1[Int]`
     /// ambiguous (Raku resolves a qualified role call against the immediate
     /// roles of the consumer).
-    pub(crate) class_direct_composed_roles: HashMap<String, Vec<String>>,
+    pub(crate) class_direct_composed_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Roles composed PURELY via `does` (not `is Role` puns): class -> [role names].
     /// A `does`-composed role provides methods but is NOT an MRO entry in Rakudo's
     /// `.^mro_unhidden`, so this set is filtered out of that introspection.
-    pub(crate) class_does_only_roles: HashMap<String, Vec<String>>,
+    pub(crate) class_does_only_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Roles implicitly composed by enums: enum -> [role names].
-    pub(crate) class_enum_roles: HashMap<String, Vec<String>>,
+    pub(crate) class_enum_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Subs declared inside a class body: class -> (sub name -> value).
     pub(crate) class_subs: HashMap<String, HashMap<String, Value>>,
     /// Per-attribute `BUILD` override: (class, attr) -> builder value.
@@ -456,11 +480,11 @@ pub(crate) struct Registry {
     /// Parameterized role candidates: role name -> [candidate by arity/types].
     pub(crate) role_candidates: HashMap<String, Vec<RoleCandidateDef>>,
     /// Role inheritance: role -> [parent role specs].
-    pub(crate) role_parents: HashMap<String, Vec<String>>,
+    pub(crate) role_parents: CowTable<HashMap<String, Vec<String>>>,
     /// `also hides` relationships on roles: role -> [hidden names].
-    pub(crate) role_hides: HashMap<String, Vec<String>>,
+    pub(crate) role_hides: CowTable<HashMap<String, Vec<String>>>,
     /// Declared type parameters per parameterized role: role -> [param names].
-    pub(crate) role_type_params: HashMap<String, Vec<String>>,
+    pub(crate) role_type_params: CowTable<HashMap<String, Vec<String>>>,
     /// A role's body block, installed by `$role.^set_body_block(&block)` on a
     /// role built with `Metamodel::ParametricRoleHOW.new_type`. A declared
     /// role's body is `RoleDef::deferred_body`; a MOP-built role has only this
@@ -934,6 +958,43 @@ impl Registry {
         chain.retain(|(h, _)| *h != handle);
         chain.insert(0, (handle, body));
         self.bump_method_generation();
+    }
+
+    /// `Method.set_name`: make candidate `candidate_idx` of `class_name::method_name`
+    /// report `new_name` from `.name`, for every later read of the method table.
+    // Cost: O(1) expected plus the key's string clones.
+    pub(crate) fn rename_method_candidate(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        candidate_idx: usize,
+        new_name: &str,
+    ) {
+        self.method_renames.insert(
+            (class_name.to_string(), method_name.to_string(), candidate_idx),
+            new_name.to_string(),
+        );
+        self.bump_method_generation();
+    }
+
+    /// The `Method.set_name` rename of a candidate, if any.
+    // Cost: O(1) expected plus the key's string clones.
+    pub(crate) fn method_candidate_rename(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        candidate_idx: usize,
+    ) -> Option<String> {
+        if self.method_renames.is_empty() {
+            return None;
+        }
+        self.method_renames
+            .get(&(
+                class_name.to_string(),
+                method_name.to_string(),
+                candidate_idx,
+            ))
+            .cloned()
     }
 
     /// Pop the outermost wrapper off a method candidate's chain, returning it
@@ -2045,7 +2106,7 @@ mod tests {
         };
         registry
             .classes
-            .insert("Str".to_string(), ClassDef::default());
+            .insert("Str".to_string(), ClassDef::default().into());
         registry.set_user_methods(Symbol::intern("Str"), Symbol::intern("chars"), vec![method]);
         assert!(registry.method_generation > seeded_generation);
 

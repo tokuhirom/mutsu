@@ -32,7 +32,7 @@ impl Interpreter {
                     wildcard_handles: Vec::new(),
                     alias_attributes: HashSet::new(),
                     class_level_attrs: ValueMap::default(),
-                },
+                }.into(),
             );
         }
         Some(

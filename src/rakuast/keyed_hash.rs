@@ -58,6 +58,34 @@ pub(super) fn insert_shape(decl: &mut RakuAstNode, key: &str) -> Result<(), Runt
     Ok(())
 }
 
+/// The `shape` of a shaped array declaration: one statement per dimension.
+// Cost: O(d), d = size of the dimensions.
+pub(super) fn insert_dimensions(
+    decl: &mut RakuAstNode,
+    dims: &[crate::ast::Expr],
+) -> Result<(), RuntimeError> {
+    let statements = dims
+        .iter()
+        .map(|dim| {
+            Ok(node_field(
+                None,
+                statement_expression(super::convert::convert_expr(dim)?),
+            ))
+        })
+        .collect::<Result<Vec<_>, RuntimeError>>()?;
+    let shape = RakuAstNode {
+        class: RakuAstClass::SemiList,
+        fields: statements,
+    };
+    let at = decl
+        .fields
+        .iter()
+        .position(|f| f.name == Some("sigil"))
+        .unwrap_or(decl.fields.len());
+    decl.fields.insert(at, node_field(Some("shape"), shape));
+    Ok(())
+}
+
 /// A declaration's `shape` folded back into its type constraint: the parser's
 /// keyed-hash string, plus the implicit-value-type marker in `custom_traits`
 /// when the declaration has no `type`. A declaration without a `shape` keeps
@@ -73,6 +101,10 @@ pub(super) fn lower(
     let Some(field) = node.fields.iter().find(|f| f.name == Some("shape")) else {
         return Ok(type_constraint);
     };
+    // The shape of an array is its dimensions, read by `lower_dimensions`.
+    if sigil == "@" {
+        return Ok(type_constraint);
+    }
     let RakuAstFieldValue::Node(shape) = &field.value else {
         return Err(unsupported(node));
     };
@@ -92,4 +124,45 @@ pub(super) fn lower(
         custom_traits.push((IMPLICIT_VALUE_TYPE.to_string(), None));
     }
     Ok(Some(join(type_constraint.as_deref(), &key)))
+}
+
+/// The dimensions of a shaped array declaration's `shape`, or `None` when the
+/// declaration has no shape or is not an array.
+// Cost: O(d), d = size of the dimensions.
+pub(super) fn lower_dimensions(
+    node: &RakuAstNode,
+    sigil: &str,
+) -> Result<Option<Vec<Expr>>, RuntimeError> {
+    if sigil != "@" {
+        return Ok(None);
+    }
+    let Some(field) = node.fields.iter().find(|f| f.name == Some("shape")) else {
+        return Ok(None);
+    };
+    let RakuAstFieldValue::Node(shape) = &field.value else {
+        return Err(unsupported(node));
+    };
+    let super::ValueView::RakuAst(shape) = shape.view() else {
+        return Err(unsupported(node));
+    };
+    if shape.class != RakuAstClass::SemiList || shape.fields.is_empty() {
+        return Err(unsupported(node));
+    }
+    let mut dims = Vec::with_capacity(shape.fields.len());
+    for field in &shape.fields {
+        let RakuAstFieldValue::Node(statement) = &field.value else {
+            return Err(unsupported(node));
+        };
+        let super::ValueView::RakuAst(statement) = statement.view() else {
+            return Err(unsupported(node));
+        };
+        if statement.class != RakuAstClass::StatementExpression {
+            return Err(unsupported(node));
+        }
+        dims.push(super::lower::lower_expr(super::lower::named_child(
+            statement,
+            "expression",
+        )?)?);
+    }
+    Ok(Some(dims))
 }

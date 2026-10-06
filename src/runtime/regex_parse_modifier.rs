@@ -345,6 +345,17 @@ impl Interpreter {
             // skipping it as an angle construct swallowed the pattern up to the
             // next `>`, so a following `$tag` was never interpolated
             // (Template::HAML's `find-and-preserve`, #10638).
+            // `<<` is the left-word-boundary atom, not the start of a `<...>`
+            // construct: emit it verbatim so a following `$var` is interpolated
+            // (`s:g/<<$name>>/…/`, Inline::BASIC).
+            if ch == '<'
+                && chars.get(i + 1) == Some(&'<')
+                && !is_inside_regex_quote_literal(&chars, i)
+            {
+                out.push_str("<<");
+                i += 2;
+                continue;
+            }
             if ch == '<' && !is_inside_regex_quote_literal(&chars, i) {
                 out.push(ch);
                 let rest = &chars[i + 1..];

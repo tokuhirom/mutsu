@@ -812,6 +812,41 @@ impl Compiler {
         }
     }
 
+    /// A native-typed pointy `if`/`with` (`if $c -> str $t { $seq := ... }`)
+    /// lowers to a call of an anonymous block. When that block's tail is an
+    /// assignment/bind, the call statement is that bind: its value is wanted
+    /// by the bound variable, so the statement must not sink (consume) it.
+    fn stmt_is_pointy_bind_call(expr: &Expr) -> bool {
+        // The tail is a plain assignment/bind, also behind one trailing
+        // statement modifier (`$seq := $seq.reverse if $r`).
+        fn tail_binds_or_assigns(stmts: &[Stmt]) -> bool {
+            fn tail(stmts: &[Stmt]) -> Option<&Stmt> {
+                crate::ast::last_value_stmt(stmts, crate::ast::TailSkip::Markers)
+            }
+            let mut stmt = tail(stmts);
+            if let Some(Stmt::If {
+                then_branch,
+                else_branch,
+                is_statement_modifier: true,
+                ..
+            }) = stmt
+                && else_branch.is_empty()
+            {
+                stmt = tail(then_branch);
+            }
+            match stmt {
+                Some(Stmt::Assign { .. }) => true,
+                Some(Stmt::Expr(e)) => Compiler::stmt_value_is_assignment(e),
+                _ => false,
+            }
+        }
+        matches!(
+            expr,
+            Expr::CallOn { target, .. }
+                if matches!(target.as_ref(), Expr::AnonSubParams { body, .. } if tail_binds_or_assigns(body))
+        )
+    }
+
     /// Whether a statement-expression's value can only be the value of an
     /// element assignment — directly (`%h{$k} = ...;`) or behind an
     /// `if`/`unless` statement modifier. Deliberately does NOT descend into a
@@ -830,6 +865,10 @@ impl Compiler {
         }
         match expr {
             Expr::IndexAssign { .. } | Expr::MultiDimIndexAssign { .. } => true,
+            // `$x .= meth` is a scalar assignment too (the parser marks its
+            // expansion as a `CompoundAssign`, see `wrap_dot_assign`): the
+            // stored Failure of `$x .= pred` stays unthrown, as for `$x = ...`.
+            Expr::CompoundAssign { op, .. } => op == ".=",
             Expr::DoStmt(inner) => match inner.as_ref() {
                 Stmt::Expr(e) => Self::stmt_value_is_assignment(e),
                 Stmt::If {
@@ -951,7 +990,9 @@ impl Compiler {
                 // it — except under `use fatal`, which the opcode handles.
                 // Scalar `$x = ...` takes the Stmt::Assign path and already
                 // behaves this way.
-                if Self::stmt_value_is_assignment(expr) {
+                if Self::stmt_is_pointy_bind_call(expr) {
+                    self.code.emit(OpCode::Pop);
+                } else if Self::stmt_value_is_assignment(expr) {
                     self.code.emit(OpCode::SinkPopAssign);
                 } else {
                     self.code.emit(OpCode::SinkPop(
@@ -1862,6 +1903,17 @@ impl Compiler {
                     Some(slot) => slot,
                     None => self.declare_local(name),
                 };
+                // What an integer atomic on this scalar needs to know about its
+                // declaration (#11834). A `:=` bind takes the bound container,
+                // so its type is whatever that container's is: leave it unrecorded
+                // for the run-time check to answer.
+                if !bind_vardecl
+                    && !custom_traits
+                        .iter()
+                        .any(|(trait_name, _)| trait_name == "__scalar_bind")
+                {
+                    self.record_scalar_decl_type(name, type_constraint.as_deref());
+                }
                 if !*is_state
                     && !*is_our
                     && !is_constant_decl
@@ -1882,9 +1934,9 @@ impl Compiler {
                     // a bind to another already-non-itemized bound scalar stays
                     // non-itemized. Classify the RHS to distinguish these.
                     let rhs_is_itemized_scalar = match expr {
-                        Expr::Var(rhs) => !self.noncontainer_bound_vars.contains(rhs),
+                        Expr::Var(rhs) => self.scalar_var_is_bound_item(rhs),
                         Expr::Grouped(inner) => match inner.as_ref() {
-                            Expr::Var(rhs) => !self.noncontainer_bound_vars.contains(rhs),
+                            Expr::Var(rhs) => self.scalar_var_is_bound_item(rhs),
                             _ => false,
                         },
                         _ => false,
@@ -3876,7 +3928,7 @@ impl Compiler {
                     self.hoist_sub_decls(body, true);
                     self.hoist_type_decl_shells(body);
                     for s in body {
-                        self.compile_stmt(s);
+                        self.compile_stmt_discarding_value(s);
                     }
                     self.pop_dynamic_scope_lexical(lexical_scope);
                     self.current_package = saved_package;
@@ -3941,7 +3993,7 @@ impl Compiler {
                 // bodies it is handled by BlockScope and filtered out before
                 // reaching this match arm).
                 for s in body {
-                    self.compile_stmt(s);
+                    self.compile_stmt_discarding_value(s);
                 }
             }
             Stmt::Phaser {

@@ -1,5 +1,6 @@
 use super::Value;
 use super::ValueView;
+use super::user_facing_type_name;
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
@@ -600,7 +601,9 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
 
     let name = if is_implicit_topic {
         "_".to_string()
-    } else if is_anonymous_param_name(&p.name) {
+    } else if is_anonymous_param_name(&p.name) || p.is_implicit_invocant() {
+        // A parser-synthesized invocant (`Foo:D:`) is stored as `self` for the
+        // binder, but the source never named it: it introspects as `$`.
         String::new()
     } else if p.name.starts_with('@') || p.name.starts_with('%') || p.name.starts_with('&') {
         p.name[1..].to_string()
@@ -1199,7 +1202,7 @@ pub(crate) fn parameter_to_raku(attrs: &AttrMap) -> String {
         }
     }
     if !type_name.is_empty() && type_name != "Any" && type_name != "Mu" {
-        parts.push(type_name);
+        parts.push(user_facing_type_name(&type_name).into_owned());
     } else if type_name == "Mu" {
         parts.push("Mu".to_string());
     }
@@ -1224,6 +1227,17 @@ pub(crate) fn parameter_to_raku(attrs: &AttrMap) -> String {
         param_str.push(':');
     }
     param_str.push_str(&name);
+    // An anonymous parameter still shows the sigil it was declared with: `Int $`,
+    // `@`, and the invocant's `K:D $:`. Captures (`|`) and sigilless parameters
+    // carry their own spelling in `name`, so they are left alone.
+    let is_capture = attrs.get("capture").map(Value::truthy).unwrap_or(false);
+    if name.is_empty() && !is_capture && !sigil.is_empty() {
+        param_str.push_str(&sigil);
+    }
+    // An invocant is followed by the marker that makes it one: `$self:`.
+    if attrs.get("invocant").map(Value::truthy).unwrap_or(false) {
+        param_str.push(':');
+    }
 
     // Optional/required suffix
     let suffix = attrs
@@ -1384,6 +1398,7 @@ fn render_signature(info: &SigInfo) -> String {
         params_str.push_str(part);
     }
     if let Some(ref ret) = info.return_type {
+        let ret = user_facing_type_name(ret);
         if params_str.is_empty() {
             // Raku keeps the ` --> ` arrow spaced even with no parameters, so an
             // empty positional list renders as `:( --> Int)` (leading space),
@@ -1422,7 +1437,7 @@ fn render_param(p: &SigParam) -> String {
     if p.is_invocant {
         capture(&mut result);
         if let Some(ref tc) = p.type_constraint {
-            result.push_str(tc);
+            result.push_str(&user_facing_type_name(tc));
             result.push(' ');
         }
         result.push(p.sigil);
@@ -1439,7 +1454,7 @@ fn render_param(p: &SigParam) -> String {
         if let Some(ref tc) = p.type_constraint
             && tc != "Any"
         {
-            result.push_str(tc);
+            result.push_str(&user_facing_type_name(tc));
             result.push(' ');
         }
         result.push('|');
@@ -1458,7 +1473,7 @@ fn render_param(p: &SigParam) -> String {
     if p.sigilless {
         capture(&mut result);
         if let Some(ref tc) = p.type_constraint {
-            result.push_str(tc);
+            result.push_str(&user_facing_type_name(tc));
             result.push(' ');
         }
         result.push('\\');
@@ -1485,12 +1500,12 @@ fn render_param(p: &SigParam) -> String {
     capture(&mut result);
     if p.named {
         if let Some(ref tc) = p.type_constraint {
-            result.push_str(tc);
+            result.push_str(&user_facing_type_name(tc));
             result.push(' ');
         }
         result.push(':');
     } else if let Some(ref tc) = p.type_constraint {
-        result.push_str(tc);
+        result.push_str(&user_facing_type_name(tc));
         result.push(' ');
     }
 
@@ -1582,8 +1597,18 @@ fn where_expr_to_value(expr: &Expr) -> Value {
             Value::Package(Symbol::intern(name))
         }
         _ => {
-            // Fallback: wrap in a thunk
-            let body = vec![Stmt::Expr(expr.clone())];
+            // Fallback: wrap in a thunk. A `where * > 43` constraint is a
+            // WhateverCode, which the thunk must APPLY to the topic rather than
+            // return as a value (a returned code object is always truthy).
+            let body = if matches!(expr, Expr::WhateverCurry(_)) {
+                Expr::CallOn {
+                    target: Box::new(expr.clone()),
+                    args: vec![Expr::Var("_".to_string())],
+                }
+            } else {
+                expr.clone()
+            };
+            let body = vec![Stmt::Expr(body)];
             Value::make_sub(
                 Symbol::intern(""),
                 Symbol::intern("<constraints>"),

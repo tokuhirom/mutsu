@@ -25,11 +25,13 @@ pub(in crate::parser) use ident::parse_qualified_ident_prefix_with_hyphens;
 pub(crate) use ident::{is_pseudo_package, parse_ident_with_hyphens};
 pub(crate) use perl5::detect_perl5_scalar_var;
 pub(crate) use perl5::{brace_deref_text, is_brace_contextualizer};
-pub(in crate::parser) use scalar::mint_anon_state_name;
+pub(crate) use scalar::fresh_anon_state_name;
 pub(in crate::parser) use scalar::parse_symbolic_deref_segments;
+pub(in crate::parser) use scalar::{mint_anon_state_name, starts_named_placeholder};
 pub(in crate::parser) use sigil_vars::is_known_word_infix;
 
 // ── pub(super): accessible from parser::primary (the parent of `var`)
 //    and all its descendants via `crate::parser::primary::var::` paths ──────
 pub(super) use scalar::{parse_dollar_paren_block_pub, parse_var_name_from_str, scalar_var};
+pub(crate) use sigil_vars::fresh_anon_array_name;
 pub(crate) use sigil_vars::{array_var, code_var, hash_var};

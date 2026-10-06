@@ -216,15 +216,13 @@ impl Interpreter {
             // normal resolution and `X::Method::NotFound`, as in Rakudo.
             "polymod" if !self.e2_native_method_exists(&target, "polymod") => None,
             // `Instant`/`Duration` get `polymod` from their `Real` role, which
-            // divides the receiver's `Real` value.
+            // divides the receiver's `Real` value: its seconds (`Real` itself
+            // is the object, as in Rakudo).
             "polymod"
-                if matches!(target.view(), ValueView::Instance { class_name, .. }
-                    if matches!(class_name.resolve().as_str(), "Instant" | "Duration")) =>
+                if let Some(seconds) =
+                    crate::builtins::method_table::numify::temporal_seconds(&target) =>
             {
-                Some(
-                    self.call_method_with_values(target, "Real", vec![])
-                        .and_then(|real| self.method_polymod(&real, &args)),
-                )
+                Some(self.method_polymod(&seconds, &args))
             }
             "polymod" => Some(self.method_polymod(&target, &args)),
             "VAR" if args.is_empty() => {

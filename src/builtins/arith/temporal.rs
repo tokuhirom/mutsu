@@ -28,8 +28,12 @@ pub(crate) fn is_temporal_operand(value: &Value) -> bool {
     is_date_like(value)
         || match value.view() {
             ValueView::Mixin(inner, _) => is_temporal_operand(inner),
+            // Duck-typed like `is_date_like`: a `class G is DateTime` subclass
+            // subtracts and adds exactly as `DateTime` does.
             ValueView::Instance { class_name, .. } => {
-                class_name == "Instant" || class_name == "Duration"
+                class_name == "Instant"
+                    || class_name == "Duration"
+                    || instance_datetime_parts(value).is_some()
             }
             _ => false,
         }

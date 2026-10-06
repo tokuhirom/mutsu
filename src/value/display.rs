@@ -7,6 +7,16 @@ pub(crate) fn is_internal_anon_type_name(name: &str) -> bool {
     name.starts_with("__ANON_") && name.ends_with("__")
 }
 
+// Cost: O(1) (a prefix/suffix test and a short digit parse).
+/// Whether `name` is an internal `__ANON_*__` marker of a type that Raku shows
+/// WITHOUT a name — an anonymous enum, whose type object is the empty `()`.
+/// An anonymous `class`/`grammar`/`role` marker is not: it is a named type
+/// whose name is `<anon|N>` (see [`anon_type_display_name`]), so `.WHAT`,
+/// `.gist` and `.^name` of it keep the marker and render that name.
+pub(crate) fn is_nameless_anon_type_name(name: &str) -> bool {
+    is_internal_anon_type_name(name) && anon_type_display_name(name).is_none()
+}
+
 /// An anonymous `class`/`grammar`/`role` is registered under an internal
 /// `__ANON_<KIND>_<N>__` name; Rakudo displays these as `<anon|N>` (the
 /// number is arbitrary, only distinct within a run). Returns the display
@@ -174,6 +184,19 @@ const NATIVECALL_TYPE_NAMES: &[&str] = &[
 /// parametrization suffix (`Pointer[uint8]` -> `NativeCall::Types::Pointer[uint8]`).
 /// Returns `None` for any name outside `NATIVECALL_TYPE_NAMES`.
 fn qualify_nativecall_type_name(base: &str) -> Option<String> {
+    // A definiteness smiley belongs to the type it follows, so the type is
+    // qualified and the smiley put back: `CArray:D` is
+    // `NativeCall::Types::CArray:D` (#11871). (`:_` is dropped before this
+    // runs, see `user_facing_type_name`.)
+    for smiley in [":D", ":U"] {
+        if let Some(inner) = base.strip_suffix(smiley)
+            && !inner.is_empty()
+            && !inner.ends_with(':')
+        {
+            return qualify_nativecall_type_name(inner)
+                .map(|qualified| format!("{qualified}{smiley}"));
+        }
+    }
     let split_at = base.find('[').unwrap_or(base.len());
     let (head, rest) = base.split_at(split_at);
     let slot = NATIVECALL_TYPE_NAMES.iter().position(|n| *n == head)?;
@@ -192,6 +215,30 @@ fn qualify_nativecall_type_name(base: &str) -> Option<String> {
         None => rest.to_string(),
     };
     Some(format!("NativeCall::Types::{head}{rest}"))
+}
+
+/// The registry key a NativeCall type's QUALIFIED spelling denotes: the inverse
+/// of [`qualify_nativecall_type_name`], as a slice of `name`
+/// (`NativeCall::Types::CArray` -> `CArray`, `NativeCall::Types::Pointer:D` ->
+/// `Pointer:D`). `None` for any other name, for a NativeCall name followed by a
+/// further `::` segment, and for a name the program declared a type of its own
+/// under (`class void { }` is that class, not NativeCall's).
+///
+/// ADR-0056 keeps ONE registry key per NativeCall type, the bare one, and only
+/// qualifies it for a human. A type object built from the qualified spelling
+/// must therefore carry that same key, or `CArray === NativeCall::Types::CArray`,
+/// their `.WHICH`, `eqv` and object-hash keys compare two different names
+/// (#12031).
+// Cost: O(k), k = the fixed number of NativeCall type names (10).
+pub(crate) fn nativecall_registry_name(name: &str) -> Option<&str> {
+    let bare = name.strip_prefix("NativeCall::Types::")?;
+    let head_end = bare.find(['[', ':']).unwrap_or(bare.len());
+    let (head, rest) = bare.split_at(head_end);
+    if !(rest.is_empty() || rest.starts_with('[') || matches!(rest, ":D" | ":U" | ":_")) {
+        return None;
+    }
+    let slot = NATIVECALL_TYPE_NAMES.iter().position(|n| *n == head)?;
+    (!user_declared_nativecall_name(slot)).then_some(bare)
 }
 
 /// Which entries of [`NATIVECALL_TYPE_NAMES`] the running program has declared
@@ -228,32 +275,6 @@ pub(crate) fn note_user_declared_type_name(name: &str) {
     }
     if let Some(slot) = NATIVECALL_TYPE_NAMES.iter().position(|n| *n == name) {
         USER_DECLARED_NATIVECALL_NAMES.fetch_or(1 << slot, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
-/// Format a value for display inside a Capture gist.
-fn capture_value_gist(v: &Value) -> String {
-    match v.view() {
-        ValueView::Str(s) => format!("\"{}\"", *s),
-        ValueView::Mixin(inner, mixins) => {
-            if let Some(str_val) = mixins.get("Str") {
-                let str_s = str_val.to_string_value();
-                let type_name = match inner.view() {
-                    ValueView::Int(_) | ValueView::BigInt(_) => "IntStr",
-                    ValueView::Num(_) => "NumStr",
-                    _ => "Allomorph",
-                };
-                format!(
-                    "{}.new({}, \"{}\")",
-                    type_name,
-                    inner.to_string_value(),
-                    str_s
-                )
-            } else {
-                v.to_string_value()
-            }
-        }
-        _ => v.to_string_value(),
     }
 }
 
@@ -849,7 +870,7 @@ impl Value {
             }
             ValueView::Package(s) => {
                 let resolved = s.resolve();
-                if is_internal_anon_type_name(&resolved) {
+                if is_nameless_anon_type_name(&resolved) {
                     "()".to_string()
                 } else {
                     format!("({})", user_facing_type_name(&resolved))
@@ -1289,26 +1310,10 @@ impl Value {
             ValueView::Nil => String::new(),
             ValueView::Whatever => "*".to_string(),
             ValueView::HyperWhatever => "**".to_string(),
+            // Stringification is `Capture.Str`; the call-shape form is `.gist`
+            // (`gist_value`).
             ValueView::Capture { positional, named } => {
-                let mut parts = Vec::new();
-                for v in positional.iter() {
-                    match v.view() {
-                        ValueView::Str(s) => parts.push(format!("\"{}\"", *s)),
-                        _ => parts.push(v.to_string_value()),
-                    }
-                }
-                let mut named_entries: Vec<_> = named.iter().collect();
-                named_entries.sort_by_key(|(k, _)| (*k).clone());
-                for (k, v) in named_entries {
-                    if let ValueView::Bool(true) = v.view() {
-                        parts.push(format!(":{}(Bool::True)", k));
-                    } else if let ValueView::Bool(false) = v.view() {
-                        parts.push(format!(":{}(Bool::False)", k));
-                    } else {
-                        parts.push(format!(":{}({})", k, capture_value_gist(v)));
-                    }
-                }
-                format!("\\({})", parts.join(", "))
+                super::capture_text::capture_str(positional, named)
             }
             ValueView::Mixin(inner, mixins) => {
                 if let Some(str_val) = mixins.get("Str") {

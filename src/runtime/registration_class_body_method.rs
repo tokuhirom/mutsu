@@ -171,7 +171,7 @@ impl Interpreter {
                     && format!("{:?}", cf.param_defs) == format!("{raw_param_defs_for_key_check:?}")
             });
         let installed_compiled_code =
-            matched_compiled_fn.map(|cf| std::sync::Arc::new(cf.code.clone()));
+            matched_compiled_fn.map(|cf| cf.code.clone());
         let installed_compiled_fns = matched_compiled_fn.and_then(|cf| cf.compiled_fns.clone());
         // A method hoisted out of a nested block of the body closes over that
         // block's lexicals; the block filed the capture when it ran (see

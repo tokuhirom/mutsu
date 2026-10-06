@@ -128,7 +128,17 @@ impl Interpreter {
                 }
             })
             .filter(|&t| t >= 0)?;
-        let end = pos + to as usize;
+        // A grammar cursor (what `self.tok` returns) reports an ABSOLUTE `to`;
+        // any other Match keeps the relative reading.
+        let is_cursor = matches!(
+            v.view(),
+            ValueView::Instance { class_name, .. } if class_name == pkg
+        );
+        let end = if is_cursor {
+            to as usize
+        } else {
+            pos + to as usize
+        };
         (end <= chars.len()).then_some(end)
     }
 }

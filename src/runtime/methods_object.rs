@@ -45,12 +45,6 @@ impl Interpreter {
         if !self.registry().classes.contains_key(cn_resolved) {
             return false;
         }
-        // A `repr('CUnion')` class lays its native fields over shared memory, so
-        // construction is a byte overlay (`construct_cunion_instance`), not plain
-        // per-attribute data assignment. Keep it on the interpreter.
-        if self.registry().cunion_classes.contains(cn_resolved) {
-            return false;
-        }
         // A same-named attribute redeclared across the hierarchy (Parent and Child
         // both `has $.x`) needs per-class private storage (`"Class\0attr"` keys),
         // which only the full constructor path builds. Such classes are rare, so
@@ -288,11 +282,10 @@ impl Interpreter {
             return plan.clone();
         }
         let cn_resolved = class_name.as_str();
-        let is_cunion = self.registry().cunion_classes.contains(cn_resolved);
         let registered = self.registry().classes.contains_key(cn_resolved);
-        let eligible = !is_cunion && self.is_native_default_constructible(cn_resolved);
+        let eligible = self.is_native_default_constructible(cn_resolved);
         let eligible_when_user_new_declines =
-            !is_cunion && !eligible && self.is_native_default_constructible_with(cn_resolved, true);
+            !eligible && self.is_native_default_constructible_with(cn_resolved, true);
         // The class shape (attribute defs, BUILD/TWEAK/smiley probes) is
         // computed for EVERY registered class, not just natively-constructible
         // ones: `dispatch_bless` consumes it too, and bless has no
@@ -527,7 +520,6 @@ impl Interpreter {
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
             seed_defaults,
             alias_attributes,
-            is_cunion,
             eligible,
             eligible_when_user_new_declines,
             noarg_user_new_declines: std::sync::OnceLock::new(),
@@ -555,7 +547,7 @@ impl Interpreter {
         // Don't freeze a plan for a class that is not (yet) registered: e.g. a
         // role punned to a class on first use would otherwise keep a stale
         // negative plan without passing any invalidation site.
-        if registered || is_cunion {
+        if registered {
             self.caches
                 .native_ctor_plan_cache
                 .insert(class_name, plan.clone());
@@ -611,17 +603,6 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let plan = self.native_ctor_plan(class_name);
-        // A `repr('CUnion')` class constructs via a byte overlay
-        // (`construct_cunion_instance`): its native-int fields share the same
-        // underlying bytes. The interpreter's `dispatch_new` does *nothing else*
-        // for a CUnion class (no BUILD/TWEAK/required), so run that exact shared
-        // helper here and skip the interpreter round-trip. `is_native_default_
-        // constructible` still rejects CUnion classes, keeping
-        // `build_native_default_instance` (plain per-attribute assignment) from
-        // ever touching the byte overlay.
-        if plan.is_cunion {
-            return Some(self.construct_cunion_instance(class_name.as_str(), args));
-        }
         if !(plan.eligible
             || plan.eligible_when_user_new_declines
                 && if args.is_empty() {
@@ -639,7 +620,14 @@ impl Interpreter {
         {
             return None;
         }
-        self.build_native_default_instance(class_name, class_name.as_str(), args, &plan)
+        let result =
+            self.build_native_default_instance(class_name, class_name.as_str(), args, &plan);
+        // The REPR step of construction: an `is repr('CStruct')` object gets
+        // its native body (ADR-11209), as `dispatch_new` and `bless` give it.
+        if let Some(Ok(instance)) = &result {
+            self.install_cstruct_storage(instance);
+        }
+        result
     }
 
     /// True when a `.new(args)` on the type object `class_name` would find no

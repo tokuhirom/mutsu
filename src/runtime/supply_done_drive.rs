@@ -22,8 +22,8 @@ use crate::runtime::native_methods::{
     flush_supplier_words_taps, get_classify_sub_supplier_ids, get_start_output_supplier_ids,
     get_supplier_merge_state_ids, get_supplier_zip_latest_state_ids, get_supplier_zip_state_ids,
     get_transform_output_supplier_ids, merge_source_done, supplier_done,
-    take_supplier_done_callbacks, take_supplier_reduce_results, zip_latest_source_done,
-    zip_source_done,
+    take_supplier_done_callbacks, take_supplier_reduce_results, take_supplier_tail_results,
+    zip_latest_source_done, zip_source_done,
 };
 
 impl Interpreter {
@@ -55,6 +55,14 @@ impl Interpreter {
         }
         for (dsid, emitted) in flush_supplier_words_taps(sid) {
             self.handle_supply_forward(dsid, emitted)?;
+        }
+        // `tail` can only name its values once the source is done: release
+        // the held-back ones into its derived supplier now, and the
+        // transform-output loop below then finishes it (#11839).
+        for (dsid, values) in take_supplier_tail_results(sid) {
+            for value in values {
+                self.handle_supply_forward(dsid, value)?;
+            }
         }
         for done_cb in take_supplier_done_callbacks(sid) {
             if self.invoke_done_callback_or_quit(done_cb, sid)? {

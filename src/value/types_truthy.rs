@@ -104,6 +104,12 @@ impl Value {
                 if class_name == "Failure" {
                     return false;
                 }
+                // `Duration` does `Real`: a zero Duration is false.
+                if class_name == "Duration"
+                    && let Some(v) = attributes.as_map().get("value")
+                {
+                    return v.truthy();
+                }
                 // A failed `.subparse` Match is falsy (but still defined).
                 if self.is_match_instance() && self.match_is_failed() {
                     return false;

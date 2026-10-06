@@ -23,10 +23,11 @@ static TMP_INDEX_COUNTER: AtomicUsize = AtomicUsize::new(0);
 /// the input and whether the delta must be negated.
 ///
 /// `⚛+=` and `⚛-=` are the same read-modify-write on the same target; only the
-/// sign of the delta differs, so both lower to `__mutsu_atomic_add_var` and the
-/// subtract forms negate their right-hand side. Doing it here rather than with
-/// a second builtin keeps the atomicity identical — the negation is applied to
-/// the delta expression, before the atomic update ever runs.
+/// sign of the delta differs, so the compiler lowers both onto
+/// `__mutsu_atomic_add_var` and negates the right-hand side of the subtract
+/// form. Doing it there rather than with a second builtin keeps the atomicity
+/// identical — the negation is applied to the delta expression, before the
+/// atomic update ever runs.
 ///
 /// rakudo declares the minus form under two spellings (see
 /// `runtime::core_infix_names`): ASCII HYPHEN-MINUS and U+2212 MINUS SIGN.
@@ -43,6 +44,18 @@ pub(crate) fn strip_atomic_compound_assign(rest: &str) -> Option<(&str, bool)> {
         }
     }
     None
+}
+
+/// The atomic store `@a[0] ⚛= rhs` / `%h<k> ⚛= rhs` is: the call
+/// `atomic-assign(@a[0], rhs)`, which the compiler lowers onto the element's own
+/// atomic cell (the one `cas(@a[0], ...)` swaps), so a refused element --
+/// one of a narrow native-int array (#12008) -- is refused like any other
+/// atomic. `None` for a target that is not an `@`/`%` element.
+pub(crate) fn atomic_elem_store_call(target: &Expr, rhs: Expr) -> Option<Expr> {
+    crate::parser::expr::is_atomic_elem_target(target).then(|| Expr::Call {
+        name: Symbol::intern("atomic-assign"),
+        args: vec![target.clone(), rhs],
+    })
 }
 
 /// Strip a leading atomic STORE operator, returning the rest of the input.
@@ -63,16 +76,20 @@ pub(crate) fn strip_atomic_store_assign(rest: &str) -> Option<&str> {
     Some(after.strip_prefix('=').unwrap_or(after))
 }
 
-/// Wrap an atomic compound assignment's right-hand side in unary minus when the
-/// operator was a subtract form. See [`strip_atomic_compound_assign`].
-pub(crate) fn atomic_delta_expr(rhs: Expr, negate: bool) -> Expr {
-    if negate {
-        Expr::Unary {
-            op: TokenKind::Minus,
-            expr: Box::new(rhs),
-        }
+/// The `⚛+=` / `⚛-=` update of `target` (a variable, or an array / hash element)
+/// by `rhs`: a call of Rakudo's own `infix:<⚛+=>` / `infix:<⚛-=>`, so a refused
+/// target is reported under the operator the program wrote and the AST
+/// round-trips through RakuAST (#11834). The compiler lowers both onto the one
+/// atomic add; the subtract form negates its operand there.
+pub(crate) fn atomic_compound_call(target: Expr, rhs: Expr, negate: bool) -> Expr {
+    let operator = if negate {
+        "infix:<⚛-=>"
     } else {
-        rhs
+        "infix:<⚛+=>"
+    };
+    Expr::Call {
+        name: Symbol::intern(operator),
+        args: vec![target, rhs],
     }
 }
 

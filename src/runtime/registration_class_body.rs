@@ -374,7 +374,7 @@ impl Interpreter {
                 }
                 self.registry_mut()
                     .classes
-                    .insert(cx.name.to_string(), cx.class_def.clone());
+                    .insert(cx.name.to_string(), cx.class_def.clone().into());
                 self.registry_mut()
                     .sync_accessor_entries(Symbol::intern(cx.name));
             }
@@ -467,7 +467,7 @@ impl Interpreter {
             result?;
         }
         if let Some(updated) = self.registry().classes.get(cx.name).cloned() {
-            cx.class_def = updated;
+            cx.class_def = updated.into_value();
         }
         Ok(())
     }
@@ -522,7 +522,7 @@ impl Interpreter {
         // Also execute the statement so the code variable is set
         self.registry_mut()
             .classes
-            .insert(cx.name.to_string(), cx.class_def.clone());
+            .insert(cx.name.to_string(), cx.class_def.clone().into());
         self.registry_mut()
             .sync_accessor_entries(Symbol::intern(cx.name));
         self.run_class_body_chunk_or_raw(chunk, std::slice::from_ref(stmt))?;
@@ -535,7 +535,7 @@ impl Interpreter {
             }
         }
         if let Some(updated) = self.registry().classes.get(cx.name).cloned() {
-            cx.class_def = updated;
+            cx.class_def = updated.into_value();
         }
         Ok(())
     }
@@ -651,7 +651,7 @@ impl Interpreter {
         // follow-up) instead of re-matching `stmt`'s shape here.
         self.registry_mut()
             .classes
-            .insert(cx.name.to_string(), cx.class_def.clone());
+            .insert(cx.name.to_string(), cx.class_def.clone().into());
         self.registry_mut()
             .sync_accessor_entries(Symbol::intern(cx.name));
         // Mark this class as "being defined" so a `has`-attribute
@@ -712,7 +712,7 @@ impl Interpreter {
             }
         }
         if let Some(updated) = self.registry().classes.get(cx.name).cloned() {
-            cx.class_def = updated;
+            cx.class_def = updated.into_value();
         }
         Ok(())
     }

@@ -158,6 +158,12 @@ fn with_table<R>(f: impl FnOnce(&mut Table) -> R) -> Option<R> {
 
 /// The documented declarations of the compilation unit parsed last, in source
 /// order. Taken by the runtime to build `.WHY` and `$=pod`.
+/// Whether the last unit left no declarator docs behind.
+// Cost: O(1).
+pub(crate) fn unit_docs_is_empty() -> bool {
+    LAST_UNIT_DOCS.with(|d| d.borrow().is_empty())
+}
+
 pub(crate) fn take_unit_docs() -> Vec<DocComment> {
     LAST_UNIT_DOCS.with(|d| std::mem::take(&mut *d.borrow_mut()))
 }

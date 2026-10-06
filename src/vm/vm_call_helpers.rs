@@ -327,12 +327,33 @@ impl Interpreter {
         }
     }
 
+    /// The atomic scalar helpers (`__mutsu_atomic_*_var`, `__mutsu_cas_var`,
+    /// `__mutsu_cas_add_var`) take their target binding as the first argument.
+    /// The compiler tags it with the frame slot the call site reaches
+    /// (`Compiler::emit_atomic_target`), which is how a helper tells an inner
+    /// `my atomicint $y` from the outer `$y` it shadows (#12006).
+    // Cost: O(|name|).
+    fn is_atomic_var_helper(name: &str) -> bool {
+        name.ends_with("_var")
+            && (name.starts_with("__mutsu_atomic_") || name.starts_with("__mutsu_cas_"))
+    }
+
     pub(super) fn normalize_call_args_for_target(
         &mut self,
         name: &str,
         name_sym: Symbol,
         raw_args: Vec<Value>,
     ) -> Vec<Value> {
+        // The target keeps its `VarRef` tag, the operands are plain values. These
+        // names are never user routines, so the registry probes below cannot
+        // answer differently.
+        if Self::is_atomic_var_helper(name) {
+            let mut args = raw_args;
+            for arg in args.iter_mut().skip(1) {
+                *arg = Self::unwrap_var_ref_value(std::mem::replace(arg, Value::NIL));
+            }
+            return args;
+        }
         let plain_args: Vec<Value> = raw_args
             .iter()
             .cloned()

@@ -734,6 +734,27 @@ fn try_parse_plain_int(body: &str, sign: i32) -> Option<Value> {
     }
 }
 
+// Cost: O(1) for a string that does not end in `i`, else O(n) as
+// `parse_raku_str_to_numeric`, n = length of `input`.
+/// The real and imaginary parts of `input` when it numifies to a `Complex`
+/// (`"1+2i"`), `None` for any other string.
+///
+/// Rakudo's `Str.Int`, `.Num`, `.Rat`, ... are `self.Numeric.METHOD`, so a
+/// string that numifies to a `Complex` is coerced as the `Complex` it is: its
+/// imaginary part is tested against `$*TOLERANCE` (a dynamic variable, so
+/// `Interpreter::dispatch_complex_to_real` does it). The builtin `Str` arms ask
+/// this and decline such a string rather than truncating its real part.
+pub(crate) fn str_numifies_to_complex(input: &str) -> Option<(f64, f64)> {
+    // Every Complex spelling ends in `i` (or `\i`).
+    if !input.trim_end().ends_with('i') {
+        return None;
+    }
+    match parse_raku_str_to_numeric(input)?.view() {
+        ValueView::Complex(re, im) => Some((re, im)),
+        _ => None,
+    }
+}
+
 /// Parse complex number strings like `1+2i`, `-1-2i`, `3+Inf\i`, `42i`, `42\i`, etc.
 fn try_parse_complex(s: &str) -> Option<Value> {
     parse_complex_str(s).map(|(value, _)| value)

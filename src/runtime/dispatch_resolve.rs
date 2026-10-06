@@ -44,6 +44,15 @@ pub(crate) fn function_key_base_name(key: &str) -> &str {
     let mut j = hb.len();
     while j >= 2 {
         if hb[j - 1] == b':' && hb[j - 2] == b':' {
+            // A `::` inside a categorical's bracket group (`term:<Foo::Bar>`)
+            // is part of the name; only a bracket in front of it can put it
+            // there, so the plain hit stays the common case.
+            if hb[..j - 2].iter().any(|&b| b == b'<' || b == 0xAB) {
+                return match crate::qualified::last_separator(head) {
+                    Some(at) => &head[at + 2..],
+                    None => head,
+                };
+            }
             return &head[j..];
         }
         j -= 1;

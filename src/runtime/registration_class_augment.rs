@@ -856,6 +856,15 @@ impl Interpreter {
         self.registry_mut().cstruct_classes.insert(name.to_string());
     }
 
+    /// `is repr('CPPStruct')`: a struct with C++ layout rules, which for the
+    /// fields NativeCall marshals are C's. Laid out and allocated as a CStruct;
+    /// only the REPR it reports differs.
+    pub(crate) fn register_cppstruct_class(&mut self, name: &str) {
+        let mut reg = self.registry_mut();
+        reg.cstruct_classes.insert(name.to_string());
+        reg.cppstruct_classes.insert(name.to_string());
+    }
+
     pub(crate) fn register_cpointer_class(&mut self, name: &str) {
         self.registry_mut()
             .cpointer_classes
@@ -874,106 +883,6 @@ impl Interpreter {
         } else {
             self.registry_mut().vmarray_classes.insert(name);
         }
-    }
-
-    pub(crate) fn construct_cunion_instance(
-        &mut self,
-        class_name: &str,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        use crate::runtime::native_types::native_int_bounds;
-
-        // Collect class attributes with their types
-        let class_attrs = self.collect_class_attributes(class_name);
-
-        // Parse named args
-        let mut named_args: ValueMap = ValueMap::default();
-        for arg in args {
-            if let ValueView::Pair(key, value) = arg.view() {
-                named_args.insert(key.clone(), value.clone());
-            }
-        }
-
-        // Find the widest provided value and convert to bytes
-        let mut max_bytes = 0u32;
-        let mut raw_value: u64 = 0;
-
-        for attr in &class_attrs {
-            let attr_name = &attr.name;
-            if let Some(val) = named_args.get(attr_name) {
-                let int_val = match val.view() {
-                    ValueView::Int(i) => i as u64,
-                    ValueView::BigInt(n) => {
-                        use num_traits::ToPrimitive;
-                        n.to_u64().unwrap_or(0)
-                    }
-                    _ => 0,
-                };
-                raw_value = int_val;
-                // Find the type of this attribute to determine byte width
-                if let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr_name)
-                {
-                    let byte_width = Self::native_type_byte_width(&type_constraint);
-                    if byte_width > max_bytes {
-                        max_bytes = byte_width;
-                    }
-                }
-            }
-        }
-
-        // Build attributes from shared bytes
-        let bytes = raw_value.to_le_bytes();
-        let mut attrs = HashMap::new();
-        for attr in &class_attrs {
-            let attr_name = &attr.name;
-            let default = &attr.default;
-            if let Some(type_constraint) = self.get_attr_type_constraint(class_name, attr_name) {
-                let byte_width = Self::native_type_byte_width(&type_constraint);
-                let val = match byte_width {
-                    1 => Value::int(bytes[0] as i64),
-                    2 => Value::int(u16::from_le_bytes([bytes[0], bytes[1]]) as i64),
-                    4 => Value::int(
-                        u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i64
-                    ),
-                    8 => {
-                        let v = u64::from_le_bytes(bytes);
-                        if let Some((_min, _max)) = native_int_bounds(&type_constraint) {
-                            if type_constraint.starts_with('u') || type_constraint == "byte" {
-                                // Unsigned: store as BigInt if needed
-                                if v > i64::MAX as u64 {
-                                    Value::bigint(num_bigint::BigInt::from(v as u128))
-                                } else {
-                                    Value::int(v as i64)
-                                }
-                            } else {
-                                // Signed: reinterpret as i64
-                                Value::int(v as i64)
-                            }
-                        } else {
-                            Value::int(v as i64)
-                        }
-                    }
-                    _ => {
-                        if let Some(v) = named_args.get(attr_name) {
-                            v.clone()
-                        } else if let Some(arg) = default {
-                            self.eval_decl_trait_arg(arg)?
-                        } else {
-                            Value::int(0)
-                        }
-                    }
-                };
-                attrs.insert(attr_name.clone(), val);
-            } else if let Some(v) = named_args.get(attr_name) {
-                attrs.insert(attr_name.clone(), v.clone());
-            } else if let Some(arg) = default {
-                attrs.insert(attr_name.clone(), self.eval_decl_trait_arg(arg)?);
-            } else {
-                attrs.insert(attr_name.clone(), Value::int(0));
-            }
-        }
-
-        Ok(Value::make_instance(Symbol::intern(class_name), attrs))
     }
 
     /// Get the type constraint for a class attribute, searching MRO.
@@ -1015,16 +924,6 @@ impl Interpreter {
             return Some(self.resolve_type_name_for_owner(class_name, tc));
         }
         None
-    }
-
-    fn native_type_byte_width(type_name: &str) -> u32 {
-        match type_name {
-            "uint8" | "int8" | "byte" => 1,
-            "uint16" | "int16" => 2,
-            "uint32" | "int32" => 4,
-            "uint64" | "int64" | "uint" | "int" => 8,
-            _ => 0,
-        }
     }
 
     /// Materialise the class a *parameterised* role puns to, e.g. `R[Int]` for
@@ -1385,7 +1284,7 @@ impl Interpreter {
         };
         self.registry_mut()
             .classes
-            .insert(role_name.to_string(), punned_class);
+            .insert(role_name.to_string(), punned_class.into());
         for (attr, ty) in attribute_is_types {
             self.registry_mut()
                 .class_attribute_is_types

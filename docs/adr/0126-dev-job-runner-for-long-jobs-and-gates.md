@@ -254,3 +254,20 @@ release build — is exactly what CI's lint and test jobs run, so CI remains the
 report records `profile` and `focus`, and `status` prints both, so a PR body that quotes the
 summary says which gate it passed. The agent is still responsible for choosing the focus: a
 change to shared machinery names the t/ categories and roast synopses that exercise it.
+
+### Amendment (2026-10-06): the gate applies the formatter instead of checking it
+
+The `fmt` stage ran `cargo fmt --all -- --check` and was blocking, so a file `rustfmt` would have
+fixed in a second failed the gate and cost a rerun (and, in a remote container, a model turn to
+read the failure and run the formatter by hand). A format *check* is the wrong tool for a gate
+whose caller is going to commit the result anyway.
+
+`scripts/dev gate` now runs `cargo fmt --all` itself, before it takes the tree id, and `fmt` is no
+longer a stage of either profile (`--only fmt` is an unknown stage). Taking the tree id *after*
+formatting keeps §2.4 intact: the stored result describes the formatted tree, and a second
+`gate` on it is reused. The files `rustfmt` rewrote are read off the tree ids before and after
+(`git diff-tree`), and the gate names them on stderr: it verifies the working tree and CI checks the
+pushed commit, so **the formatter's changes must be committed**. When `cargo fmt` itself fails (a
+file that does not parse, `rustfmt` missing) the gate exits non-zero before starting a job, since
+no later stage could pass either. CI keeps its own `cargo fmt --all -- --check`; the lefthook
+pre-commit hook still formats on commit.

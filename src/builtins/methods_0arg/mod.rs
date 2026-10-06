@@ -1,16 +1,12 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, EnumValue, RuntimeError, Value, ValueView};
-use num_traits::{Signed, ToPrimitive, Zero};
-use unicode_normalization::UnicodeNormalization;
+use num_traits::{Signed, ToPrimitive};
 
 use super::rng::builtin_rand;
 
 pub(crate) mod coercion;
 pub(crate) mod collection;
-pub(crate) mod cool_aggregate;
-use cool_aggregate::cool_aggregate_elems;
-pub(crate) mod complex_math;
 mod dispatch_core_coerce;
 mod dispatch_core_list;
 pub(crate) mod dispatch_core_math;
@@ -27,7 +23,7 @@ pub(crate) mod temporal_dispatch;
 use crate::value::ValueMap;
 
 /// Create an X::Multi::NoMatch error for a method called on a type object.
-fn make_no_match_error(method_name: &str) -> RuntimeError {
+pub(crate) fn make_no_match_error(method_name: &str) -> RuntimeError {
     let msg = format!("Cannot resolve caller {}", method_name);
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -114,7 +110,7 @@ fn normalize_unicode_digits(s: &str) -> Option<String> {
     if has_unicode { Some(result) } else { None }
 }
 
-fn parse_raku_int_from_str(s: &str) -> Option<Value> {
+pub(crate) fn parse_raku_int_from_str(s: &str) -> Option<Value> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return None;
@@ -187,76 +183,6 @@ fn parse_raku_int_from_str(s: &str) -> Option<Value> {
         }
     }
     None
-}
-
-fn int_lsb_value(target: &Value) -> Option<Value> {
-    match target.view() {
-        ValueView::Int(i) => {
-            if i == 0 {
-                Some(Value::NIL)
-            } else {
-                Some(Value::int(i.unsigned_abs().trailing_zeros() as i64))
-            }
-        }
-        ValueView::BigInt(n) => {
-            if n.is_zero() {
-                return Some(Value::NIL);
-            }
-            let one = num_bigint::BigInt::from(1u8);
-            let mut x = n.as_ref().abs();
-            let mut pos = 0_i64;
-            while (&x & &one).is_zero() {
-                x >>= 1;
-                pos += 1;
-            }
-            Some(Value::int(pos))
-        }
-        _ => None,
-    }
-}
-
-fn int_msb_value(target: &Value) -> Option<Value> {
-    match target.view() {
-        ValueView::Int(i) => {
-            if i == 0 {
-                return Some(Value::NIL);
-            }
-            if i > 0 {
-                return Some(Value::int((63 - i.leading_zeros()) as i64));
-            }
-            if i == -1 {
-                return Some(Value::int(0));
-            }
-            let m = i.unsigned_abs().saturating_sub(1);
-            let bitlen = (64 - m.leading_zeros()) as i64;
-            Some(Value::int(bitlen))
-        }
-        ValueView::BigInt(n) => {
-            if n.is_zero() {
-                return Some(Value::NIL);
-            }
-            if n.sign() == num_bigint::Sign::Minus {
-                if **n == num_bigint::BigInt::from(-1i8) {
-                    return Some(Value::int(0));
-                }
-                let mut x = n.as_ref().abs() - num_bigint::BigInt::from(1u8);
-                let mut bitlen = 0_i64;
-                while !x.is_zero() {
-                    x >>= 1;
-                    bitlen += 1;
-                }
-                return Some(Value::int(bitlen));
-            }
-            let mut x = n.as_ref().clone();
-            let mut msb = -1_i64;
-            while !x.is_zero() {
-                x >>= 1;
-                msb += 1;
-            }
-            Some(Value::int(msb))
-        }
-        _ => None,
-    }
 }
 
 /// Format a single item for 0-arg `.fmt()` on lists.
@@ -379,26 +305,27 @@ pub(crate) fn native_method_0arg_cascade(
         match method {
             // Cost: O(1) (`.from`/`.to`/`.pos` read the capture node; `.orig`
             // returns the shared subject Value; `.Str` copies the k matched chars).
-            "from" => return Some(Ok(Value::int(match_helpers::match_value_from(target)))),
-            "to" => return Some(Ok(Value::int(match_helpers::match_value_to(target)))),
-            "pos" => {
-                return Some(Ok(Value::int(match_helpers::match_visible_pos(
-                    target,
-                    target.match_pos().unwrap_or(0),
-                ))));
-            }
+            // The `Match` rows' handlers (`method_table::regex_match`), for the
+            // lazy matches the table has no shape for (a grammar cursor).
+            "from" => return Some(Ok(crate::builtins::method_table::regex_match::from(target))),
+            "to" => return Some(Ok(crate::builtins::method_table::regex_match::to(target))),
+            "pos" => return Some(Ok(crate::builtins::method_table::regex_match::pos(target))),
             "Str" => {
-                return Some(Ok(target
-                    .match_str_value()
-                    .unwrap_or_else(|| Value::str(String::new()))));
+                return Some(Ok(crate::builtins::method_table::regex_match::str_value(
+                    target,
+                )));
             }
-            "Bool" => return Some(Ok(Value::truth(!target.match_is_failed()))),
+            "Bool" => {
+                return Some(Ok(crate::builtins::method_table::regex_match::truthiness(
+                    target,
+                )));
+            }
             "orig" | "target" => {
-                return Some(Ok(target
-                    .match_orig()
-                    .unwrap_or_else(|| Value::str(String::new()))));
+                return Some(Ok(crate::builtins::method_table::regex_match::orig(target)));
             }
-            "ast" | "made" => return Some(Ok(target.match_ast().unwrap_or(Value::NIL))),
+            "ast" | "made" => {
+                return Some(Ok(crate::builtins::method_table::regex_match::made(target)));
+            }
             "Capture" | "clone" => return Some(Ok(target.clone())),
             // `$<>` / `$/<>`: the zen slice of a Match is the Match itself.
             // Cost: O(1).
@@ -569,31 +496,12 @@ pub(crate) fn native_method_0arg_cascade(
     // Version introspection: `.parts` (list of Int/Str/Whatever parts),
     // `.plus` (trailing `+`), `.whatever` (any `*` part). Used by zef's
     // DependencySpecification version matching.
-    if let ValueView::Version { parts, plus, .. } = target.view() {
+    // The `Version` rows' handlers (ADR-11276, `method_table::scalars::version`).
+    if let ValueView::Version { .. } = target.view() {
         match method {
-            "parts" => {
-                let items: Vec<Value> = parts
-                    .iter()
-                    .map(|p| match p {
-                        crate::value::VersionPart::Num(n) => Value::int(*n),
-                        crate::value::VersionPart::Str(s) => Value::str_from(s.as_str()),
-                        crate::value::VersionPart::Whatever => Value::WHATEVER,
-                    })
-                    .collect();
-                return Some(Ok(Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                    crate::value::ArrayKind::List,
-                )));
-            }
-            "plus" => {
-                return Some(Ok(if plus { Value::TRUE } else { Value::FALSE }));
-            }
-            "whatever" => {
-                let any_star = parts
-                    .iter()
-                    .any(|p| matches!(p, crate::value::VersionPart::Whatever));
-                return Some(Ok(if any_star { Value::TRUE } else { Value::FALSE }));
-            }
+            "parts" => return crate::builtins::method_table::version::parts(target, &[]),
+            "plus" => return crate::builtins::method_table::version::plus(target, &[]),
+            "whatever" => return crate::builtins::method_table::version::whatever(target, &[]),
             _ => {}
         }
     }
@@ -870,58 +778,6 @@ pub(crate) fn native_method_0arg_cascade(
         }
         return native_method_0arg(inner, method_sym);
     }
-    // Cool numeric coercion: when a Str calls a numeric method, coerce to numeric first.
-    // In Raku, Cool types (including Str) coerce to Numeric for numeric operations.
-    if let ValueView::Str(s) = target.view() {
-        match method {
-            "abs" | "sign" | "exp" | "log" | "log2" | "log10" | "sqrt" | "ceiling" | "floor"
-            | "truncate" | "round" | "conj" | "cis" | "rand" | "sin" | "cos" | "tan" | "asin"
-            | "acos" | "atan" | "sinh" | "cosh" | "tanh" | "sec" | "cosec" | "cotan" | "asec"
-            | "acosec" | "acotan" | "sech" | "cosech" | "cotanh" | "asech" | "acosech"
-            | "acotanh" | "atan2" | "narrow" | "polymod" | "base" | "chr" | "expmod" | "lsb"
-            | "msb" | "is-int" => {
-                let coerced = if let Ok(i) = s.parse::<i64>() {
-                    Value::int(i)
-                } else if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
-                    // A Str numifies the way `.Numeric` does before the numeric
-                    // method runs: a decimal is a Rat (`"-5.9".abs` is the Rat
-                    // 5.9, not the Num 5.9000000000000004 an `f64` parse gave),
-                    // and a Complex/Rat string (`"6+8i"`, `"1/2"`) coerces
-                    // fully, so `abs "6+8i"` is 10 and `"1+2i".conj` is 1-2i.
-                    v
-                } else {
-                    parse_raku_int_from_str(&s)?
-                };
-                return native_method_0arg(&coerced, method_sym);
-            }
-            _ => {}
-        }
-    }
-    // The Cool aggregates (List/Array, Map/Hash) numify to their element
-    // count for Cool's numeric methods: `{a => 1, b => 2}.round` is 2 and
-    // `[1, 2, 3].floor` is 3, as in raku. `nodemap` relies on it -- it does
-    // not descend into a nested Hash, so `%h.nodemap(*.round)` rounds each
-    // inner Hash as a number.
-    if matches!(
-        method,
-        "abs"
-            | "sign"
-            | "exp"
-            | "log"
-            | "log2"
-            | "log10"
-            | "sqrt"
-            | "ceiling"
-            | "floor"
-            | "truncate"
-            | "round"
-            | "narrow"
-            | "is-int"
-            | "conj"
-    ) && let Some(count) = cool_aggregate_elems(target)
-    {
-        return native_method_0arg(&Value::int(count), method_sym);
-    }
     // Any.nl-out returns the default newline separator "\n"
     if method == "nl-out" {
         return Some(Ok(Value::str_from("\n")));
@@ -943,52 +799,34 @@ pub(crate) fn native_method_0arg_cascade(
         }
         return Some(raku_repr::native_int_coerce_method(target, method));
     }
-    // Uni types: override .chars, .codes, .comb to work on codepoints
+    // Uni types: the rows of `builtins::method_table::uni` answer `elems`, `codes`,
+    // `Int`, `Numeric`, `Str`, `list`, `gist`, `raku` and the positional
+    // subscript, and the table is asked first; the cascade reaches a `Uni` only
+    // when called without it (the debug cross-check), and then calls the rows'
+    // handlers. `.chars`, `.comb` and `.perl` (the deprecated alias of `.raku`)
+    // have no row.
     if let ValueView::Uni(u) = target.view() {
-        // Cost: O(1) (the codepoint array's length; no text is built).
-        if matches!(method, "chars" | "codes" | "Int" | "Numeric" | "elems") {
-            return Some(Ok(Value::int(u.len() as i64)));
-        }
-        let text = &u.text();
+        use crate::builtins::method_table::uni;
         match method {
+            // `chars` is no `Uni` method in current Rakudo, but roast pins it as the
+            // codepoint count (`S15-string-types/NF-types.t`: `NFC.chars`).
+            "chars" | "elems" | "codes" | "Int" | "Numeric" => {
+                return Some(uni::elems(target, &[]));
+            }
+            "Str" => return Some(uni::str(target, &[])),
+            "list" => return Some(uni::list(target, &[])),
+            "gist" => return Some(uni::gist(target, &[])),
+            "raku" => return Some(uni::raku(target, &[])),
+            "perl" => {
+                return Some(Ok(Value::str(raku_repr::uni_raku_repr(&u.text(), &u.form))));
+            }
             "comb" => {
-                let parts: Vec<Value> = text.chars().map(|c| Value::str(c.to_string())).collect();
+                let parts: Vec<Value> = u
+                    .text()
+                    .chars()
+                    .map(|c| Value::str(c.to_string()))
+                    .collect();
                 return Some(Ok(Value::seq(parts)));
-            }
-            "Str" => {
-                use unicode_normalization::UnicodeNormalization;
-                return Some(Ok(Value::str(text.nfc().collect::<String>())));
-            }
-            "list" => {
-                let codepoints: Vec<Value> = text.chars().map(|c| Value::int(c as i64)).collect();
-                return Some(Ok(Value::array(codepoints)));
-            }
-            "raku" | "perl" => {
-                return Some(Ok(Value::str(raku_repr::uni_raku_repr(text, &u.form))));
-            }
-            "gist" => {
-                let codepoints: Vec<String> =
-                    text.chars().map(|c| format!("{:04X}", c as u32)).collect();
-                let form = if u.form.is_empty() {
-                    "Uni"
-                } else {
-                    u.form.as_str()
-                };
-                return Some(Ok(Value::str(format!(
-                    "{}:0x<{}>",
-                    form,
-                    codepoints.join(" ")
-                ))));
-            }
-            // Cost: O(n), n = codepoints of the Uni.
-            "NFC" | "NFD" | "NFKC" | "NFKD" => {
-                let normalized: String = match method {
-                    "NFC" => text.nfc().collect(),
-                    "NFD" => text.nfd().collect(),
-                    "NFKC" => text.nfkc().collect(),
-                    _ => text.nfkd().collect(),
-                };
-                return Some(Ok(Value::uni(method.to_string(), normalized)));
             }
             _ => {}
         }
@@ -1006,7 +844,7 @@ pub(crate) fn native_method_0arg_cascade(
     }
     // Capture methods
     if let ValueView::Capture { positional, named } = target.view()
-        && let result @ Some(_) = dispatch_capture(positional, named, method)
+        && let result @ Some(_) = dispatch_capture(target, positional, named, method)
     {
         return result;
     }
@@ -1023,81 +861,25 @@ pub(crate) fn native_method_0arg_cascade(
 }
 
 fn dispatch_capture(
+    target: &Value,
     positional: &[Value],
     named: &ValueMap,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
+    // Capture `.keys`/`.values`/`.kv`/`.pairs` interleave the positional
+    // part (indexed 0..n) with the named part (raku Capture semantics).
+    // These are the `Capture` rows' implementations (`method_table::capture`).
+    use crate::builtins::method_table::capture;
     match method {
-        "hash" | "Hash" => {
-            let mut map = ValueMap::default();
-            for (k, v) in named {
-                map.insert(k.clone(), v.clone());
-            }
-            // Capture.hash returns an immutable Map, not a mutable Hash — and
-            // a Map's values are not element containers (raku:
-            // `\(:x<1 2>).hash<x>.VAR.^name` is `List`).
-            let mut data = crate::value::HashData::new(map);
-            data.declared_type = Some("Map".to_string());
-            data.bare_values = true;
-            Some(Ok(Value::hash_with_data(crate::gc::Gc::new(data))))
-        }
-        "list" => Some(Ok(Value::array(positional.to_vec()))),
-        "elems" => Some(Ok(Value::int(positional.len() as i64))),
-        "Numeric" | "Int" => Some(Ok(Value::int(positional.len() as i64))),
+        "hash" | "Hash" => capture::hash(target, &[]),
+        "list" => capture::list(target, &[]),
+        "elems" | "Numeric" | "Int" => capture::elems(target, &[]),
         "is-lazy" => Some(Ok(Value::FALSE)),
-        // Capture `.keys`/`.values`/`.kv`/`.pairs` interleave the positional
-        // part (indexed 0..n) with the named part (raku Capture semantics).
-        "keys" => {
-            let mut keys: Vec<Value> = (0..positional.len() as i64).map(Value::int).collect();
-            keys.extend(named.keys().map(|k| Value::str(k.clone())));
-            Some(Ok(Value::seq(keys)))
-        }
-        "values" => {
-            let mut vals = positional.to_vec();
-            vals.extend(named.values().cloned());
-            Some(Ok(Value::seq(vals)))
-        }
-        "kv" => {
-            let mut kv = Vec::with_capacity(positional.len() * 2 + named.len() * 2);
-            for (idx, v) in positional.iter().enumerate() {
-                kv.push(Value::int(idx as i64));
-                kv.push(v.clone());
-            }
-            for (k, v) in named.iter() {
-                kv.push(Value::str(k.clone()));
-                kv.push(v.clone());
-            }
-            Some(Ok(Value::seq(kv)))
-        }
-        "pairs" => {
-            let mut pairs: Vec<Value> = positional
-                .iter()
-                .enumerate()
-                .map(|(idx, v)| Value::value_pair(Value::int(idx as i64), v.clone()))
-                .collect();
-            // ADR-0021 I2/P3: `.pairs`' output is data, not a call site — the
-            // named lane's entries default positional like the positional
-            // lane above, even though they came from a named argument.
-            pairs.extend(
-                named
-                    .iter()
-                    .map(|(k, v)| Value::value_pair(Value::str(k.clone()), v.clone())),
-            );
-            Some(Ok(Value::seq(pairs)))
-        }
-        "antipairs" => {
-            let mut pairs: Vec<Value> = positional
-                .iter()
-                .enumerate()
-                .map(|(idx, v)| Value::value_pair(v.clone(), Value::int(idx as i64)))
-                .collect();
-            pairs.extend(
-                named
-                    .iter()
-                    .map(|(k, v)| Value::value_pair(v.clone(), Value::str(k.clone()))),
-            );
-            Some(Ok(Value::seq(pairs)))
-        }
+        "keys" => capture::keys(target, &[]),
+        "values" => capture::values(target, &[]),
+        "kv" => capture::kv(target, &[]),
+        "pairs" => capture::pairs(target, &[]),
+        "antipairs" => capture::antipairs(target, &[]),
         "raku" | "perl" => {
             let mut parts = Vec::new();
             for v in positional {
@@ -1133,10 +915,12 @@ fn dispatch_capture(
             }
             Some(Ok(Value::str(format!("\\({})", parts.join(", ")))))
         }
-        "gist" | "Str" => {
-            let target = Value::capture(positional.to_vec(), named.clone());
-            Some(Ok(Value::str(target.to_string_value())))
-        }
+        "gist" => Some(Ok(Value::str(crate::value::capture_text::capture_gist(
+            positional, named,
+        )))),
+        "Str" => Some(Ok(Value::str(crate::value::capture_text::capture_str(
+            positional, named,
+        )))),
         "Bool" => Some(Ok(Value::truth(
             !positional.is_empty() || !named.is_empty(),
         ))),
@@ -1261,33 +1045,6 @@ fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
     }
 }
 
-/// Format a numeric value for Instant/Duration .raku output.
-/// Always includes a decimal point (e.g. "42.0", "-400.2").
-fn format_temporal_num(f: f64) -> String {
-    if f.is_nan() {
-        return "NaN".to_string();
-    }
-    if f.is_infinite() {
-        return if f > 0.0 {
-            "Inf".to_string()
-        } else {
-            "-Inf".to_string()
-        };
-    }
-    // For values outside the safe i64 Rat range, emit scientific notation
-    // so that Str -> Num literal round-trips through the parser instead of
-    // overflowing the Rat literal parser.
-    if f.is_finite() && f.abs() >= 1e18 {
-        return format!("{:e}", f);
-    }
-    let s = format!("{}", f);
-    if s.contains('.') {
-        s
-    } else {
-        format!("{}.0", s)
-    }
-}
-
 use crate::builtins::backtrace_methods::{
     frame_is_routine as backtrace_frame_is_routine, frame_str as backtrace_frame_str,
 };
@@ -1296,11 +1053,11 @@ use crate::builtins::backtrace_methods::{
 pub use raku_repr::raku_value;
 
 /// Re-export complex_trig for external use.
-pub(crate) use complex_math::complex_trig;
+pub(crate) use crate::builtins::method_table::complex_math::complex_trig;
 
-/// Re-export the X::Str::Numeric Failure builder for the VM's prefix-`+` op.
-pub(crate) use dispatch_core_coerce::str_numeric_failure;
 pub(crate) use dispatch_core_coerce::{complex_not_real_error, complex_not_real_exception};
+/// Re-export the X::Str::Numeric Failure builder for the VM's prefix-`+` op.
+pub(crate) use dispatch_core_coerce::{str_numeric_error, str_numeric_failure};
 
 /// Unicode case folding for `.fc` and `fc()`.
 pub(crate) fn unicode_foldcase(s: &str) -> String {
@@ -1383,146 +1140,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         return Some(Ok(v));
     }
 
-    // Instant.Instant returns self (identity coercion)
-    if method == "Instant" {
-        match target.view() {
-            ValueView::Instance { class_name, .. } if class_name == "Instant" => {
-                return Some(Ok(target.clone()));
-            }
-            ValueView::Package(name) if name == "Instant" => {
-                return Some(Ok(target.clone()));
-            }
-            _ => {}
-        }
-    }
-
-    // `Instant`/`Duration` do `Real`: `succ`/`pred` step by one second.
-    if matches!(method, "succ" | "pred")
-        && let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-        && (class_name == "Instant" || class_name == "Duration")
-    {
-        return Some(temporal_dispatch::real_role_step(
-            class_name,
-            attributes.to_map(),
-            method == "succ",
-        ));
-    }
-
-    // Instant methods: to-posix, DateTime, Date, tai
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-    {
-        if class_name == "Instant" {
-            use crate::builtins::methods_0arg::temporal;
-            match method {
-                "to-posix" => {
-                    let val = attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::int(0));
-                    let tai = crate::runtime::to_float_value(&val).unwrap_or(0.0);
-                    let tai_int = tai.floor() as i64;
-                    let mut is_leap = false;
-                    for &(threshold, cumulative) in temporal::LEAP_SECONDS.iter().skip(1) {
-                        if tai_int == threshold + (cumulative - 1) {
-                            is_leap = true;
-                            break;
-                        }
-                    }
-                    let posix = temporal::instant_to_posix(tai);
-                    let posix_val = if posix == posix.floor() {
-                        Value::int(posix as i64)
-                    } else {
-                        Value::num(posix)
-                    };
-                    return Some(Ok(Value::array(vec![posix_val, Value::truth(is_leap)])));
-                }
-                "DateTime" => {
-                    let val = attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::int(0));
-                    let (tai_int, tai_frac) = match val.view() {
-                        ValueView::Rat(n, d) if d != 0 => (n / d, (n % d) as f64 / d as f64),
-                        _ => {
-                            let f = crate::runtime::to_float_value(&val).unwrap_or(0.0);
-                            (f.floor() as i64, f - f.floor())
-                        }
-                    };
-                    let (y, m, d, h, mi, s) =
-                        temporal::instant_to_datetime_leap_aware_parts(tai_int, tai_frac, 0);
-                    return Some(Ok(temporal::make_datetime(y, m, d, h, mi, s, 0)));
-                }
-                "Date" => {
-                    let val = attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::int(0));
-                    let tai = crate::runtime::to_float_value(&val).unwrap_or(0.0);
-                    let posix = temporal::instant_to_posix(tai);
-                    let (y, m, d) = temporal::epoch_days_to_civil((posix / 86400.0).floor() as i64);
-                    return Some(Ok(temporal::make_date(y, m, d)));
-                }
-                "tai" => {
-                    return Some(Ok(attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::int(0))));
-                }
-                _ => {}
-            }
-        }
-        if class_name == "Duration" {
-            match method {
-                "narrow" => {
-                    let val = attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::num(0.0));
-                    // Rakudo's Duration always holds a Rat, and every
-                    // constructor here stores one (`arith::tai_rat`, #11273);
-                    // a Num can only come from a hand-built instance, which
-                    // narrows through the same Num -> Rat conversion `.Rat`
-                    // uses.
-                    let val = match val.view() {
-                        ValueView::Num(f) if f.is_finite() => {
-                            crate::builtins::arith::real_to_rat(&val)
-                        }
-                        _ => val.clone(),
-                    };
-                    match val.view() {
-                        ValueView::Num(f) => return Some(Ok(Value::num(f))),
-                        ValueView::Rat(n, d) if d != 0 && n % d == 0 => {
-                            return Some(Ok(Value::int(n / d)));
-                        }
-                        ValueView::Rat(n, d) => return Some(Ok(Value::rat_raw(n, d))),
-                        ValueView::Int(i) => return Some(Ok(Value::int(i))),
-                        _ => return Some(Ok(val.clone())),
-                    }
-                }
-                "tai" => {
-                    return Some(Ok(attributes
-                        .as_map()
-                        .get("value")
-                        .cloned()
-                        .unwrap_or(Value::num(0.0))));
-                }
-                _ => {}
-            }
-        }
-    }
+    // `Instant` and `Duration` (`do Real`) answer from the rows of the method
+    // table (`method_table::instances::instant`): `Instant.Instant`, `succ`/`pred`,
+    // `to-posix`, `DateTime`, `Date`, `tai` and `narrow` have no arm here.
 
     // Buf/Blob.Str throws X::Buf::AsStr — except `utf8`, whose `.Str`/`.Stringy`
     // decodes (rakudo: `utf8.new(98,117).Str` is "bu", while `Buf`, `Blob` and
@@ -2124,44 +1744,40 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         let list_v = target.match_list();
         let named_v = target.match_named();
         match method {
+            // The `Match` rows' handlers (`method_table::regex_match`), for the
+            // matches the table has no shape for (a grammar cursor, an instance
+            // of a subclass).
             "from" => {
-                return Some(Ok(Value::int(match_helpers::match_value_from(target))));
+                return Some(Ok(crate::builtins::method_table::regex_match::from(target)));
             }
             "to" => {
-                return Some(Ok(Value::int(match_helpers::match_value_to(target))));
+                return Some(Ok(crate::builtins::method_table::regex_match::to(target)));
             }
             "pos" => {
-                return Some(Ok(Value::int(match_helpers::match_visible_pos(
-                    target,
-                    target.match_pos().unwrap_or(0),
-                ))));
+                return Some(Ok(crate::builtins::method_table::regex_match::pos(target)));
             }
             "gist" => {
-                // Full Match gist: corner-quoted text plus positional/named
-                // sub-captures, ordered by position and nested recursively.
-                let gist = crate::runtime::utils::match_gist(&(attributes).as_map(), 0);
-                return Some(Ok(Value::str(gist)));
+                return Some(Ok(crate::builtins::method_table::regex_match::gist(
+                    &(attributes).as_map(),
+                )));
             }
             "Str" => {
-                return Some(Ok(target
-                    .match_str_value()
-                    .unwrap_or_else(|| Value::str(String::new()))));
+                return Some(Ok(crate::builtins::method_table::regex_match::str_value(
+                    target,
+                )));
             }
             "Bool" => {
-                // A failed `.subparse` Match is falsy; every other Match is truthy.
-                return Some(Ok(Value::truth(!target.match_is_failed())));
+                return Some(Ok(crate::builtins::method_table::regex_match::truthiness(
+                    target,
+                )));
             }
             "orig" | "target" => {
-                // `.target` is the original string the match ran against; for an
-                // ordinary Match it is identical to `.orig`.
-                return Some(Ok(target
-                    .match_orig()
-                    .unwrap_or_else(|| Value::str(String::new()))));
+                return Some(Ok(crate::builtins::method_table::regex_match::orig(target)));
             }
             "raku" | "perl" => {
-                return Some(Ok(Value::str(match_helpers::match_raku_repr(
+                return Some(Ok(crate::builtins::method_table::regex_match::raku(
                     &(attributes).as_map(),
-                ))));
+                )));
             }
             "list" => {
                 return Some(Ok(target.match_list_view()));
@@ -2295,50 +1911,32 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 return Some(Ok(Value::int(count as i64)));
             }
             "ast" | "made" => {
-                return Some(Ok(target.match_ast().unwrap_or(Value::NIL)));
+                return Some(Ok(crate::builtins::method_table::regex_match::made(target)));
             }
-            // Cost: O(p), p = chars of the prefix, for a lazy Match (sliced from its
-            // shared subject); O(n), n = chars of `.orig`, for a rebuilt eager one.
             "prematch" => {
-                if let Some(pre) = target.match_side_text(true) {
-                    return Some(Ok(Value::str(pre)));
-                }
-                if let Some(orig_val) = target.match_orig() {
-                    let orig = orig_val.to_string_value();
-                    let from = target.match_from().unwrap_or(0).max(0) as usize;
-                    let chars: Vec<char> = orig.chars().collect();
-                    let pre: String = chars[..from.min(chars.len())].iter().collect();
-                    return Some(Ok(Value::str(pre)));
-                }
-                return Some(Ok(Value::str(String::new())));
+                return Some(Ok(crate::builtins::method_table::regex_match::prematch(
+                    target,
+                )));
             }
-            // Cost: O(s), s = chars of the suffix, for a lazy Match (sliced from its
-            // shared subject); O(n), n = chars of `.orig`, for a rebuilt eager one.
             "postmatch" => {
-                if let Some(post) = target.match_side_text(false) {
-                    return Some(Ok(Value::str(post)));
-                }
-                if let Some(orig_val) = target.match_orig() {
-                    let orig = orig_val.to_string_value();
-                    let to = target.match_to().unwrap_or(0).max(0) as usize;
-                    let chars: Vec<char> = orig.chars().collect();
-                    let post: String = chars[to.min(chars.len())..].iter().collect();
-                    return Some(Ok(Value::str(post)));
-                }
-                return Some(Ok(Value::str(String::new())));
+                return Some(Ok(crate::builtins::method_table::regex_match::postmatch(
+                    target,
+                )));
             }
             "actions" => {
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("actions")
-                    .cloned()
-                    .unwrap_or(Value::NIL)));
+                return Some(Ok(crate::builtins::method_table::regex_match::actions(
+                    &(attributes).as_map(),
+                )));
             }
             "caps" => {
-                return Some(Ok(match_helpers::match_caps(&(attributes).as_map())));
+                return Some(Ok(crate::builtins::method_table::regex_match::caps(
+                    &(attributes).as_map(),
+                )));
             }
             "chunks" => {
-                return Some(Ok(match_helpers::match_chunks(&(attributes).as_map())));
+                return Some(Ok(crate::builtins::method_table::regex_match::chunks(
+                    &(attributes).as_map(),
+                )));
             }
             "Capture" => {
                 // Match.Capture returns self
@@ -2419,37 +2017,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 .unwrap_or_else(|| Value::bigint(max_big));
             return Some(Ok(Value::generic_range(min_val, max_val, false, false)));
         }
-    }
-    // .int-bounds on Range values
-    // Note: i64 Range variants use i64::MIN/MAX as a sentinel for -Inf/Inf
-    // (e.g. `1..Inf`, `1..*`, `-Inf..1`). An Inf endpoint has no integer bound,
-    // so `.int-bounds` must throw — matching raku, where both `(1..*).int-bounds`
-    // and `(1..Inf).int-bounds` fail with "Cannot determine integer bounds".
-    // GenericRange handles true Inf/NaN endpoints below.
-    if method == "int-bounds"
-        && matches!(
-            target.view(),
-            ValueView::Range(..)
-                | ValueView::RangeExcl(..)
-                | ValueView::RangeExclStart(..)
-                | ValueView::RangeExclBoth(..)
-                | ValueView::GenericRange { .. }
-        )
-    {
-        // The zero-argument candidate: raku returns the `(from, to)` List and
-        // fails with `Cannot determine integer bounds` when the range has none
-        // (an infinite / `Whatever` end, a `Str` range, or a fractional lower
-        // bound). The two-argument `int-bounds($from is rw, $to is rw --> Bool)`
-        // candidate needs the caller's containers, so it is served by the VM
-        // (`vm/vm_range_int_bounds.rs`), not by this pure arity cascade.
-        return Some(
-            match crate::builtins::range_bounds_int::range_int_bounds(target) {
-                Some((from, to)) => Ok(Value::array(vec![from, to])),
-                None => Err(crate::value::RuntimeError::new(
-                    "Cannot determine integer bounds",
-                )),
-            },
-        );
     }
     // Kernel type object methods
     // `Kernel.hostname` works on the type object (Sys::Hostname does exactly this).

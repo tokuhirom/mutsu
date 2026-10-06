@@ -137,7 +137,7 @@ the roast suite's wall-clock are 12-core numbers, so budget more on a smaller co
 the specific tests your change touches while you iterate. The pre-publication gate differs: on the
 local box `scripts/dev gate` runs the full profile (`make lint`, `make test` and `make roast` on
 the release binary), while in a remote container it defaults to the **quick profile**
-(ADR-0126, amendment 2026-10-02). That profile runs the static checks, fmt, the default clippy
+(ADR-0126, amendment 2026-10-02). That profile runs the static checks, the default clippy
 and the debug `cargo test`, then `prove` on the debug binary over the `t/`/`roast/` files the
 branch touches and any `--focus PATH...`. It compiles the crate twice instead of about seven
 times and builds no release binary; CI covers the other lint configurations and the full suites.

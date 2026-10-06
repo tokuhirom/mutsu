@@ -12,6 +12,40 @@
 use super::*;
 
 impl Interpreter {
+    /// Replace an existing scalar held by a metadata-bearing bound element
+    /// with the aggregate needed for a chained lvalue, checking the source
+    /// cell before the chain mutates it.
+    // Cost: O(1) plus the source cell's type check.
+    pub(crate) fn prepare_bound_cell_for_chained_store(
+        &mut self,
+        slot: &mut Value,
+        positional: bool,
+    ) -> Result<(), RuntimeError> {
+        let ValueView::ContainerRef(cell) = slot.view() else {
+            return Ok(());
+        };
+        let cell = cell.clone();
+        if crate::value::lookup_cell_constraint(&cell).is_none() && cell.default_value().is_none() {
+            return Ok(());
+        }
+        let current = cell.lock().unwrap().clone();
+        let is_aggregate = matches!(
+            (current.deref_container().view(), positional),
+            (ValueView::Array(..), true) | (ValueView::Hash(..), false)
+        );
+        if !is_aggregate {
+            let aggregate = (if positional {
+                Value::real_array_unassigned(Vec::new())
+            } else {
+                Value::hash(crate::value::ValueMap::default())
+            })
+            .itemize_for_element_store();
+            let aggregate = self.element_store_through_cell(&cell, aggregate)?;
+            *cell.lock().unwrap() = aggregate;
+        }
+        Ok(())
+    }
+
     /// The cell a `%h.BIND-KEY($k, <src>)` installs for key `$k`:
     ///
     /// - a writable source variable (`%h.BIND-KEY($k, $x)`): `$x`'s own cell,
@@ -65,6 +99,65 @@ impl Interpreter {
             source_name,
         );
         cell
+    }
+
+    /// The metadata-bearing cell at one actual aggregate slot. `positional`
+    /// comes from the subscript syntax, so scalar variables holding Arrays or
+    /// Hashes use the same lookup as sigiled variables.
+    // Cost: O(1) plus index/key conversion.
+    pub(crate) fn element_cell_with_metadata(
+        &self,
+        container: &Value,
+        idx: &Value,
+        positional: bool,
+    ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
+        if !crate::value::cell_metadata_possible() {
+            return None;
+        }
+        let idx = match idx.view() {
+            ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+            ValueView::Array(..) => return None,
+            _ => idx.clone(),
+        };
+        let slot = match container.view() {
+            ValueView::Array(items, _) if positional => {
+                items.get(Self::index_to_usize(&idx)?).cloned()
+            }
+            ValueView::Hash(map) if !positional => {
+                let key = if map.key_type.is_some() {
+                    crate::runtime::utils::value_which_key(&idx)
+                } else {
+                    idx.to_string_value()
+                };
+                map.map.get(&key).cloned()
+            }
+            _ => None,
+        }?;
+        let ValueView::ContainerRef(cell) = slot.view() else {
+            return None;
+        };
+        (crate::value::lookup_cell_constraint(&cell).is_some() || cell.default_value().is_some())
+            .then(|| cell.clone())
+    }
+
+    /// The value a plain element assignment of `val` through `cell` stores. An
+    /// element `:=`-bound to a variable IS that variable's container, so the
+    /// container's own `is default` and `of` constraint decide it, not the
+    /// aggregate's: `Nil` resets to the cell's default (or its type object) and
+    /// anything else is type-checked against the cell (#11810).
+    ///
+    // Cost: O(1) plus the type check of `val` against the cell's constraint.
+    pub(crate) fn element_store_through_cell(
+        &mut self,
+        cell: &crate::gc::Gc<crate::value::ContainerCell>,
+        val: Value,
+    ) -> Result<Value, RuntimeError> {
+        let val = if val.is_nil() {
+            self.cell_nil_reset_value(cell)
+        } else {
+            val
+        };
+        self.coerce_container_cell_store(cell, val)
     }
 
     /// Refuse `ASSIGN-KEY` on a key whose entry was bound to a bare value.

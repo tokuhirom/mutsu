@@ -102,7 +102,7 @@ impl Interpreter {
                 let resolved = enum_type.resolve();
                 // An anonymous enum (`enum <one two>`) has no type name: raku's
                 // `.WHAT` is the empty type object `()`.
-                let visible = if crate::value::is_internal_anon_type_name(&resolved) {
+                let visible = if crate::value::is_nameless_anon_type_name(&resolved) {
                     ""
                 } else {
                     &resolved
@@ -114,7 +114,7 @@ impl Interpreter {
             ValueView::Nil => return Ok(Value::NIL),
             ValueView::Package(name) => {
                 let resolved = name.resolve();
-                let visible = if crate::value::is_internal_anon_type_name(&resolved) {
+                let visible = if crate::value::is_nameless_anon_type_name(&resolved) {
                     ""
                 } else {
                     &resolved
@@ -144,7 +144,7 @@ impl Interpreter {
             ValueView::CompUnitDepSpec { .. } => "CompUnit::DependencySpecification",
             ValueView::Instance { class_name, .. } => {
                 let resolved = class_name.resolve();
-                let visible = if crate::value::is_internal_anon_type_name(&resolved) {
+                let visible = if crate::value::is_nameless_anon_type_name(&resolved) {
                     ""
                 } else {
                     &resolved
@@ -237,7 +237,7 @@ impl Interpreter {
             }
             ValueView::ContainerView(_) => "Scalar",
         };
-        let visible_type_name = if crate::value::is_internal_anon_type_name(type_name) {
+        let visible_type_name = if crate::value::is_nameless_anon_type_name(type_name) {
             ""
         } else {
             type_name
@@ -911,8 +911,20 @@ impl Interpreter {
             }
             _ => vec![],
         };
+        // A routine declared in a loaded module is documented by that module's
+        // table, not by the running unit's: same-named declarations of the
+        // two (`&inc`) are different declarations (#12037).
+        let declaring_unit = match target.view() {
+            ValueView::Sub(sub_data) => Some(self.unit_of_source_sym(sub_data.source_file_sym())),
+            _ => None,
+        };
+        if let Some(unit) = declaring_unit
+            && let Some(pod) = self.loaded_module_why(Some(unit), &keys, target)
+        {
+            return Ok(pod);
+        }
         // Try to find matching doc comment, checking cache first for each key
-        for key in keys {
+        for key in keys.iter().cloned() {
             if let Some(cached) = self.declarator_docs.why_cache.get(&key) {
                 return Ok(cached.clone());
             }
@@ -922,7 +934,37 @@ impl Interpreter {
                 return Ok(pod);
             }
         }
+        // A type object (or any target that names no declaring file) may be
+        // documented by any module that was loaded.
+        if declaring_unit.is_none()
+            && let Some(pod) = self.loaded_module_why(None, &keys, target)
+        {
+            return Ok(pod);
+        }
         Ok(Value::NIL)
+    }
+
+    /// `.WHY` from the docs a loaded module kept (see
+    /// `DeclaratorDocs::loaded_units`), cached under the module's unit so
+    /// that every `.WHY` on one declaration is the same object.
+    // Cost: O(u * k + |doc|), u = loaded units consulted, k = keys.
+    fn loaded_module_why(
+        &mut self,
+        unit: Option<Symbol>,
+        keys: &[String],
+        target: &Value,
+    ) -> Option<Value> {
+        let (found_unit, key, doc) = self.declarator_docs.loaded_doc(unit, keys)?;
+        let cache_key = format!("{}\u{0}{}", found_unit.resolve(), key);
+        let doc = doc.doc.clone();
+        if let Some(cached) = self.declarator_docs.why_cache.get(&cache_key) {
+            return Some(cached.clone());
+        }
+        let pod = Self::make_pod_declarator(&doc, target.clone());
+        self.declarator_docs
+            .why_cache
+            .insert(cache_key, pod.clone());
+        Some(pod)
     }
 
     /// Create a Pod::Block::Declarator instance documenting `wherefore`.
@@ -1011,11 +1053,7 @@ impl Interpreter {
             // `.^name` path resolves that same node here before falling back
             // to the synthesized `Base+{Role,...}` name.
             ValueView::Mixin(inner, mixins) => {
-                let overrides = self.mixin_instance_composition_overrides(inner, mixins)?;
-                match overrides.get("__mutsu_type_name__") {
-                    Some(renamed) => renamed.to_string_value(),
-                    None => crate::value::types::what_type_name(target),
-                }
+                self.mixin_instance_type_name(target, inner, mixins)?
             }
             // `p.class_name()` is the raw internal storage name, which for a
             // lexical Promise subclass (`my class Meows is Promise {}`)
@@ -1068,7 +1106,12 @@ impl Interpreter {
                     // A declared type (e.g. an immutable `Map`) names the value
                     // directly, mirroring `.WHAT`.
                     if let Some(ref declared) = info.declared_type {
-                        return Ok(Value::str(declared.clone()));
+                        // A NativeCall type is reported package-qualified
+                        // (`NativeCall::Types::CArray[Str]`), as it is for an
+                        // instance of the same class.
+                        return Ok(Value::str(
+                            crate::value::user_facing_type_name(declared).into_owned(),
+                        ));
                     }
                     match target.view() {
                         ValueView::Hash(_) => {

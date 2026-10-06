@@ -17,22 +17,31 @@ pub(super) type SplitPhasers<'a> = (
 impl Interpreter {
     // Cost: O(n) to scan, n = statements; the body is only copied when a
     // phaser is split off.
+    /// Whether `stmt` is a block phaser [`Self::split_block_phasers`] takes
+    /// out of the body.
+    fn splits_off(stmt: &Stmt) -> bool {
+        matches!(
+            stmt,
+            Stmt::Phaser {
+                kind: PhaserKind::Pre
+                    | PhaserKind::Enter
+                    | PhaserKind::Post
+                    | PhaserKind::Leave
+                    | PhaserKind::Keep
+                    | PhaserKind::Undo,
+                ..
+            }
+        )
+    }
+
+    /// Whether [`Self::split_block_phasers`] would split anything off `stmts`.
+    // Cost: O(n), n = top-level statements.
+    pub(super) fn block_has_split_phasers(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(Self::splits_off)
+    }
+
     pub(super) fn split_block_phasers<'a>(&self, stmts: &'a [Stmt]) -> SplitPhasers<'a> {
-        let splits_off = |stmt: &Stmt| {
-            matches!(
-                stmt,
-                Stmt::Phaser {
-                    kind: PhaserKind::Pre
-                        | PhaserKind::Enter
-                        | PhaserKind::Post
-                        | PhaserKind::Leave
-                        | PhaserKind::Keep
-                        | PhaserKind::Undo,
-                    ..
-                }
-            )
-        };
-        if !stmts.iter().any(splits_off) {
+        if !Self::block_has_split_phasers(stmts) {
             return (
                 Vec::new(),
                 Vec::new(),

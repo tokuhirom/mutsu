@@ -10,13 +10,17 @@
 //! maps to/from the internal AST. See docs/adr/0011 for the full design and
 //! phasing (construction, EVAL, macros are later phases).
 
+mod anon_state;
+mod atomic_op;
 mod attribute;
 mod bareword;
+mod chain;
 mod contextualizer;
 mod convert;
 mod core_term_names;
 mod core_type_names;
 mod decl_traits;
+mod declared_routines;
 mod fields;
 mod formatter;
 pub(crate) mod frontend;
@@ -26,6 +30,9 @@ mod lower;
 mod method_assign_decl;
 mod name_parts;
 mod named_param;
+mod origin;
+mod package_header;
+mod placeholder;
 mod proto;
 mod react;
 mod regex_char_class;
@@ -37,6 +44,7 @@ mod routine_traits;
 mod shadowed_terms;
 mod signature_decl;
 mod subscript_adverb;
+mod temporize;
 mod type_args;
 mod type_lower;
 mod use_stmt;
@@ -88,6 +96,9 @@ pub enum RakuAstClass {
     IntLiteral,
     NumLiteral,
     RatLiteral,
+    // `v6.d` / `<1+2i>`: the value is the node's one positional field.
+    VersionLiteral,
+    ComplexLiteral,
     StrLiteral,
     QuotedString,
     QuotedRegex,
@@ -196,6 +207,7 @@ pub enum RakuAstClass {
     Blockoid,
     PointyBlock,
     VarDeclarationPlaceholderPositional,
+    VarDeclarationPlaceholderNamed,
     VarDeclarationPlaceholderSlurpyArray,
     VarDeclarationPlaceholderSlurpyHash,
     Signature,
@@ -218,6 +230,9 @@ pub enum RakuAstClass {
     StatementLoopRepeatWhile,
     // Phase 2 slice 9: `:=` binding and comma lists.
     ApplyListInfix,
+    // `$x .= meth`: `ApplyDottyInfix(left, DottyInfix::CallAssign, Call::Method)`.
+    ApplyDottyInfix,
+    DottyInfixCallAssign,
     // Phase 2 slice 10: scoped/typed variable declarations.
     TypeSimple,
     // `enum Color <Red Green>` -> `Type::Enum(name, term)`.
@@ -307,6 +322,10 @@ pub enum RakuAstClass {
     // `Block`; mutsu's one `Stmt::Phaser { kind, .. }` maps onto them 1:1.
     // `constant X = 5` — a declaration of its own, not a scoped `my`.
     VarDeclarationConstant,
+    // `my \x = 5` / `my \x := $s`.
+    VarDeclarationTerm,
+    // A bare `$` / `@` / `%`: an anonymous `state` variable.
+    VarDeclarationAnonymous,
     // A bareword naming something the unit declared that is not a type — a
     // `constant`, in practice.
     TermName,
@@ -325,6 +344,10 @@ pub enum RakuAstClass {
     /// `handles TERM` on an attribute.
     TraitHandles,
     TraitDoes,
+    /// `class A hides B`.
+    TraitHides,
+    /// `trusts B` in a class body.
+    StatementTrusts,
     StatementPrefixPhaserBegin,
     StatementPrefixPhaserCheck,
     StatementPrefixPhaserInit,
@@ -361,6 +384,9 @@ pub enum RakuAstClass {
     // An argument-less core `use` pragma (`use strict`, `use fatal`, ...).
     Pragma,
     StatementUse,
+    // `need Module;` / `import Module :tag;`.
+    StatementNeed,
+    StatementImport,
     StatementLanguageVersion,
 }
 
@@ -386,6 +412,8 @@ impl RakuAstClass {
             IntLiteral => "RakuAST::IntLiteral",
             NumLiteral => "RakuAST::NumLiteral",
             RatLiteral => "RakuAST::RatLiteral",
+            VersionLiteral => "RakuAST::VersionLiteral",
+            ComplexLiteral => "RakuAST::ComplexLiteral",
             StrLiteral => "RakuAST::StrLiteral",
             QuotedString => "RakuAST::QuotedString",
             QuotedRegex => "RakuAST::QuotedRegex",
@@ -485,6 +513,7 @@ impl RakuAstClass {
             VarDeclarationPlaceholderPositional => {
                 "RakuAST::VarDeclaration::Placeholder::Positional"
             }
+            VarDeclarationPlaceholderNamed => "RakuAST::VarDeclaration::Placeholder::Named",
             VarDeclarationPlaceholderSlurpyArray => {
                 "RakuAST::VarDeclaration::Placeholder::SlurpyArray"
             }
@@ -505,6 +534,8 @@ impl RakuAstClass {
             TypeSetting => "RakuAST::Type::Setting",
             StatementLoopRepeatWhile => "RakuAST::Statement::Loop::RepeatWhile",
             ApplyListInfix => "RakuAST::ApplyListInfix",
+            ApplyDottyInfix => "RakuAST::ApplyDottyInfix",
+            DottyInfixCallAssign => "RakuAST::DottyInfix::CallAssign",
             TypeSimple => "RakuAST::Type::Simple",
             TypeEnum => "RakuAST::Type::Enum",
             TypeDefinedness => "RakuAST::Type::Definedness",
@@ -557,6 +588,8 @@ impl RakuAstClass {
             StatementPrefixGather => "RakuAST::StatementPrefix::Gather",
             CallTerm => "RakuAST::Call::Term",
             VarDeclarationConstant => "RakuAST::VarDeclaration::Constant",
+            VarDeclarationTerm => "RakuAST::VarDeclaration::Term",
+            VarDeclarationAnonymous => "RakuAST::VarDeclaration::Anonymous",
             TermName => "RakuAST::Term::Name",
             TermNamed => "RakuAST::Term::Named",
             TermTopicCall => "RakuAST::Term::TopicCall",
@@ -566,6 +599,8 @@ impl RakuAstClass {
             TraitIs => "RakuAST::Trait::Is",
             TraitHandles => "RakuAST::Trait::Handles",
             TraitDoes => "RakuAST::Trait::Does",
+            TraitHides => "RakuAST::Trait::Hides",
+            StatementTrusts => "RakuAST::Statement::Trusts",
             StatementPrefixPhaserBegin => "RakuAST::StatementPrefix::Phaser::Begin",
             StatementPrefixPhaserCheck => "RakuAST::StatementPrefix::Phaser::Check",
             StatementPrefixPhaserInit => "RakuAST::StatementPrefix::Phaser::Init",
@@ -592,6 +627,8 @@ impl RakuAstClass {
             StubWarn => "RakuAST::Stub::Warn",
             Pragma => "RakuAST::Pragma",
             StatementUse => "RakuAST::Statement::Use",
+            StatementNeed => "RakuAST::Statement::Need",
+            StatementImport => "RakuAST::Statement::Import",
             StatementLanguageVersion => "RakuAST::Statement::LanguageVersion",
         }
     }
@@ -603,6 +640,7 @@ impl RakuAstClass {
         matches!(
             self,
             RakuAstClass::Assignment
+                | RakuAstClass::DottyInfixCallAssign
                 | RakuAstClass::TermWhatever
                 | RakuAstClass::WhateverCodeArgument
                 | RakuAstClass::TermHyperWhatever
@@ -700,6 +738,8 @@ impl RakuAstClass {
             IntLiteral
             | NumLiteral
             | RatLiteral
+            | VersionLiteral
+            | ComplexLiteral
             | StrLiteral
             | QuotedString
             | QuotedRegex
@@ -712,6 +752,7 @@ impl RakuAstClass {
             | Block
             | PointyBlock
             | VarDeclarationPlaceholderPositional
+            | VarDeclarationPlaceholderNamed
             | VarDeclarationPlaceholderSlurpyArray
             | VarDeclarationPlaceholderSlurpyHash
             | CallName
@@ -732,7 +773,9 @@ impl RakuAstClass {
             | TermSelf => TERM,
             // Measured MRO: `Fail, Stub, Term, Termish, Expression, ..., Node`.
             StubFail | StubDie | StubWarn => &["RakuAST::Stub", "RakuAST::Term", "RakuAST::Expression"],
-            ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | Ternary => EXPR,
+            ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | ApplyDottyInfix | Ternary => {
+                EXPR
+            }
             RegexLiteral
             | RegexQuote
             | RegexGroup
@@ -822,7 +865,14 @@ impl RakuAstClass {
                 "RakuAST::Termish",
                 "RakuAST::Expression",
             ],
-            Pragma | StatementUse | StatementLanguageVersion | StatementAlso | StatementWhenever => {
+            Pragma
+            | StatementUse
+            | StatementNeed
+            | StatementTrusts
+            | StatementImport
+            | StatementLanguageVersion
+            | StatementAlso
+            | StatementWhenever => {
                 &["RakuAST::Statement"]
             }
             RegexQuantifierZeroOrMore
@@ -930,6 +980,8 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         "RakuAST::IntLiteral"
         | "RakuAST::NumLiteral"
         | "RakuAST::RatLiteral"
+        | "RakuAST::VersionLiteral"
+        | "RakuAST::ComplexLiteral"
         | "RakuAST::StrLiteral"
         | "RakuAST::QuotedString"
         | "RakuAST::Type::Enum"
@@ -941,6 +993,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Block"
         | "RakuAST::PointyBlock"
         | "RakuAST::VarDeclaration::Placeholder::Positional"
+        | "RakuAST::VarDeclaration::Placeholder::Named"
         | "RakuAST::VarDeclaration::Placeholder::SlurpyArray"
         | "RakuAST::VarDeclaration::Placeholder::SlurpyHash"
         | "RakuAST::Call::Name"
@@ -953,6 +1006,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::ApplyPrefix"
         | "RakuAST::ApplyPostfix"
         | "RakuAST::ApplyListInfix"
+        | "RakuAST::ApplyDottyInfix"
         | "RakuAST::Ternary" => EXPR,
         "RakuAST::Grammar" => &[
             "RakuAST::Class",
@@ -1076,6 +1130,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::IntLiteral,
     RakuAstClass::NumLiteral,
     RakuAstClass::RatLiteral,
+    RakuAstClass::VersionLiteral,
+    RakuAstClass::ComplexLiteral,
     RakuAstClass::StrLiteral,
     RakuAstClass::QuotedString,
     RakuAstClass::QuotedRegex,
@@ -1181,6 +1237,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Blockoid,
     RakuAstClass::PointyBlock,
     RakuAstClass::VarDeclarationPlaceholderPositional,
+    RakuAstClass::VarDeclarationPlaceholderNamed,
     RakuAstClass::VarDeclarationPlaceholderSlurpyArray,
     RakuAstClass::VarDeclarationPlaceholderSlurpyHash,
     RakuAstClass::Signature,
@@ -1197,6 +1254,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TypeSetting,
     RakuAstClass::StatementLoopRepeatWhile,
     RakuAstClass::ApplyListInfix,
+    RakuAstClass::ApplyDottyInfix,
+    RakuAstClass::DottyInfixCallAssign,
     RakuAstClass::TypeSimple,
     RakuAstClass::TypeEnum,
     RakuAstClass::TypeDefinedness,
@@ -1249,6 +1308,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementPrefixGather,
     RakuAstClass::CallTerm,
     RakuAstClass::VarDeclarationConstant,
+    RakuAstClass::VarDeclarationTerm,
+    RakuAstClass::VarDeclarationAnonymous,
     RakuAstClass::TermName,
     RakuAstClass::TermNamed,
     RakuAstClass::TermTopicCall,
@@ -1258,6 +1319,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TraitIs,
     RakuAstClass::TraitHandles,
     RakuAstClass::TraitDoes,
+    RakuAstClass::TraitHides,
+    RakuAstClass::StatementTrusts,
     RakuAstClass::StatementPrefixPhaserBegin,
     RakuAstClass::StatementPrefixPhaserCheck,
     RakuAstClass::StatementPrefixPhaserInit,
@@ -1284,6 +1347,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StubWarn,
     RakuAstClass::Pragma,
     RakuAstClass::StatementUse,
+    RakuAstClass::StatementNeed,
+    RakuAstClass::StatementImport,
     RakuAstClass::StatementLanguageVersion,
 ];
 
@@ -2760,9 +2825,12 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::IntLiteral", "new") => RakuAstClass::IntLiteral,
         ("RakuAST::NumLiteral", "new") => RakuAstClass::NumLiteral,
         ("RakuAST::RatLiteral", "new") => RakuAstClass::RatLiteral,
+        ("RakuAST::VersionLiteral", "new") => RakuAstClass::VersionLiteral,
+        ("RakuAST::ComplexLiteral", "new") => RakuAstClass::ComplexLiteral,
         ("RakuAST::StrLiteral", "new") => RakuAstClass::StrLiteral,
         ("RakuAST::Name", "from-identifier") => RakuAstClass::Name,
         ("RakuAST::Trait::Does", "new") => RakuAstClass::TraitDoes,
+        ("RakuAST::Trait::Hides", "new") => RakuAstClass::TraitHides,
         ("RakuAST::Name::Part::Simple", "new") => RakuAstClass::NamePartSimple,
         ("RakuAST::Name::Part::Expression", "new") => RakuAstClass::NamePartExpression,
         ("RakuAST::Term::Name", "new") => RakuAstClass::TermName,
@@ -2779,6 +2847,9 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Circumfix::Parentheses", "new") => RakuAstClass::CircumfixParentheses,
         ("RakuAST::VarDeclaration::Placeholder::Positional", "new") => {
             RakuAstClass::VarDeclarationPlaceholderPositional
+        }
+        ("RakuAST::VarDeclaration::Placeholder::Named", "new") => {
+            RakuAstClass::VarDeclarationPlaceholderNamed
         }
         ("RakuAST::Initializer::Assign", "new") => RakuAstClass::InitializerAssign,
         ("RakuAST::Initializer::CallAssign", "new") => RakuAstClass::InitializerCallAssign,
@@ -3103,6 +3174,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::IntLiteral
             | RakuAstClass::NumLiteral
             | RakuAstClass::RatLiteral
+            | RakuAstClass::VersionLiteral
+            | RakuAstClass::ComplexLiteral
             | RakuAstClass::StrLiteral
             | RakuAstClass::Infix
             | RakuAstClass::Prefix
@@ -3124,6 +3197,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Blockoid
             | RakuAstClass::CircumfixParentheses
             | RakuAstClass::VarDeclarationPlaceholderPositional
+            | RakuAstClass::VarDeclarationPlaceholderNamed
             | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
             | RakuAstClass::VarDeclarationPlaceholderSlurpyHash
             | RakuAstClass::Sub

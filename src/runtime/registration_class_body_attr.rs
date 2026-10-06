@@ -416,6 +416,9 @@ impl Interpreter {
                 .embedded_attributes
                 .insert(attr_name_str.clone());
         }
+        if Self::declares_box_target(&decl) {
+            self.register_box_target(cx.name, &attr_name_str);
+        }
         if let Some(it) = &decl.is_type {
             self.registry_mut()
                 .class_attribute_is_types
@@ -450,7 +453,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         self.registry_mut()
             .classes
-            .insert(cx.name.to_string(), cx.class_def.clone());
+            .insert(cx.name.to_string(), cx.class_def.clone().into());
         self.registry_mut()
             .sync_accessor_entries(Symbol::intern(cx.name));
         self.trait_mod_default_writeback = None;
@@ -479,7 +482,7 @@ impl Interpreter {
             );
             self.registry_mut()
                 .classes
-                .insert(cx.name.to_string(), cx.class_def.clone());
+                .insert(cx.name.to_string(), cx.class_def.clone().into());
             self.registry_mut()
                 .sync_accessor_entries(Symbol::intern(cx.name));
         }
@@ -498,7 +501,7 @@ impl Interpreter {
             a.default = Some(crate::opcode::DeclTraitArg::Literal(default_val));
             self.registry_mut()
                 .classes
-                .insert(cx.name.to_string(), cx.class_def.clone());
+                .insert(cx.name.to_string(), cx.class_def.clone().into());
         }
         Ok(())
     }

@@ -1,12 +1,9 @@
-/// Math and miscellaneous methods: tclc, wordcase, succ, pred, log, log2, log10,
-/// exp, atan2, trig functions, Rat, FatRat, tree, encode, sink, item, race/hyper,
-/// NFC/NFD/NFKC/NFKD
-use crate::runtime;
+/// Miscellaneous methods: tclc, wordcase, succ, pred, Rat, FatRat, tree, encode,
+/// sink, item, race/hyper, NFC/NFD/NFKC/NFKD. (The transcendental math methods
+/// are rows of `builtins::method_table::scalars::math`.)
 use crate::symbol::Symbol;
+use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_rat};
-use num_traits::ToPrimitive;
-
-use super::complex_math::complex_trig;
 
 /// Convert a string to Rat, handling integer, decimal, scientific notation, and complex forms.
 /// Parses with BigInt so values past i64 keep their magnitude
@@ -143,25 +140,6 @@ pub(super) fn cool_instance_numeric(target: &Value) -> Option<f64> {
     }
 }
 
-/// Convert a Value to a string for Unicode normalization.
-/// If the value is an Array of Int (Uni-like), convert codepoints to a string.
-fn uni_or_str(target: &Value) -> String {
-    match target.view() {
-        ValueView::Array(items, ..)
-            if items.iter().all(|v| matches!(v.view(), ValueView::Int(_))) =>
-        {
-            items
-                .iter()
-                .filter_map(|v| match v.view() {
-                    ValueView::Int(cp) => char::from_u32(cp as u32),
-                    _ => None,
-                })
-                .collect()
-        }
-        _ => target.to_string_value(),
-    }
-}
-
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
@@ -187,172 +165,6 @@ pub(super) fn dispatch(
             ValueView::Enum { .. } | ValueView::Instance { .. } => None,
             _ => Some(crate::builtins::method_table::succ_pred::pred(target, &[])),
         }),
-        "log" => Some(match target.view() {
-            ValueView::Int(i) => Some(Ok(Value::num((i as f64).ln()))),
-            ValueView::BigInt(i) => Some(Ok(Value::num(i.to_f64().unwrap_or(f64::INFINITY).ln()))),
-            ValueView::Num(f) => Some(Ok(Value::num(f.ln()))),
-            ValueView::Rat(n, d) if d != 0 => {
-                Some(Ok(Value::num((crate::value::rat_to_f64(n, d)).ln())))
-            }
-            ValueView::FatRat(n, d) if d != 0 => {
-                Some(Ok(Value::num((crate::value::rat_to_f64(n, d)).ln())))
-            }
-            ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::num(
-                crate::builtins::arith::bigint_ratio_to_f64(n, d).ln(),
-            ))),
-            ValueView::Complex(r, i) => {
-                let mag = (r * r + i * i).sqrt().ln();
-                let arg = i.atan2(r);
-                Some(Ok(Value::complex(mag, arg)))
-            }
-            _ => None,
-        }),
-        "log2" => Some(match target.view() {
-            ValueView::Int(i) => Some(Ok(Value::num((i as f64).log2()))),
-            ValueView::BigInt(i) => {
-                Some(Ok(Value::num(i.to_f64().unwrap_or(f64::INFINITY).log2())))
-            }
-            ValueView::Num(f) => Some(Ok(Value::num(f.log2()))),
-            ValueView::Rat(n, d) if d != 0 => {
-                Some(Ok(Value::num((crate::value::rat_to_f64(n, d)).log2())))
-            }
-            ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::num(
-                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).log2(),
-            ))),
-            ValueView::Complex(r, i) => {
-                let mag = (r * r + i * i).sqrt().ln();
-                let arg = i.atan2(r);
-                let ln2 = 2.0f64.ln();
-                Some(Ok(Value::complex(mag / ln2, arg / ln2)))
-            }
-            _ => None,
-        }),
-        "log10" => Some(match target.view() {
-            ValueView::Int(i) => Some(Ok(Value::num(crate::builtins::math_prim::log10(i as f64)))),
-            ValueView::BigInt(i) => Some(Ok(Value::num(crate::builtins::math_prim::log10(
-                i.to_f64().unwrap_or(f64::INFINITY),
-            )))),
-            ValueView::Num(f) => Some(Ok(Value::num(crate::builtins::math_prim::log10(f)))),
-            ValueView::Rat(n, d) if d != 0 => Some(Ok(Value::num(
-                crate::builtins::math_prim::log10(crate::value::rat_to_f64(n, d)),
-            ))),
-            ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
-                Some(Ok(Value::num(crate::builtins::math_prim::log10(
-                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0),
-                ))))
-            }
-            ValueView::Complex(r, i) => {
-                let mag = (r * r + i * i).sqrt().ln();
-                let arg = i.atan2(r);
-                let ln10 = 10.0f64.ln();
-                Some(Ok(Value::complex(mag / ln10, arg / ln10)))
-            }
-            _ => None,
-        }),
-        "exp" => Some(match target.view() {
-            ValueView::Int(i) => Some(Ok(Value::num((i as f64).exp()))),
-            ValueView::BigInt(i) => Some(Ok(Value::num(i.to_f64().unwrap_or(f64::INFINITY).exp()))),
-            ValueView::Num(f) => Some(Ok(Value::num(f.exp()))),
-            ValueView::Rat(n, d) if d != 0 => {
-                Some(Ok(Value::num((crate::value::rat_to_f64(n, d)).exp())))
-            }
-            ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => Some(Ok(Value::num(
-                (n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)).exp(),
-            ))),
-            ValueView::Complex(r, i) => {
-                // exp(a+bi) = exp(a) * (cos(b) + i*sin(b))
-                let ea = r.exp();
-                Some(Ok(Value::complex(ea * i.cos(), ea * i.sin())))
-            }
-            _ => None,
-        }),
-        "atan2" => {
-            // .atan2 with no args defaults to x=1
-            let y = match target.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::BigInt(i) => i.to_f64().unwrap_or(f64::INFINITY),
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
-                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
-                }
-                ValueView::Str(s) => match s.parse::<f64>() {
-                    Ok(f) => f,
-                    Err(_) => return Some(Some(Ok(Value::num(f64::NAN)))),
-                },
-                _ => return Some(None), // fall through to runtime for user types
-            };
-            Some(Some(Ok(Value::num(y.atan2(1.0)))))
-        }
-        "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "sec" | "cosec" | "cotan" | "asec"
-        | "acosec" | "acotan" | "sinh" | "cosh" | "tanh" | "sech" | "cosech" | "cotanh"
-        | "asinh" | "acosh" | "atanh" | "asech" | "acosech" | "acotanh" => {
-            // Complex: dispatch to complex trig
-            if let ValueView::Complex(re, im) = target.view() {
-                let result = complex_trig(method, re, im);
-                return Some(Some(Ok(Value::complex(result.0, result.1))));
-            }
-            let x = match target.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::BigInt(i) => i.to_f64().unwrap_or(f64::INFINITY),
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
-                    n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0)
-                }
-                ValueView::Str(s) => match s.parse::<f64>() {
-                    Ok(f) => f,
-                    Err(_) => return Some(Some(Ok(Value::num(f64::NAN)))),
-                },
-                _ => return Some(None), // fall through to runtime for user types
-            };
-            let result = match method {
-                "sin" => x.sin(),
-                "cos" => x.cos(),
-                "tan" => x.tan(),
-                "asin" => x.asin(),
-                "acos" => x.acos(),
-                "atan" => x.atan(),
-                "sec" => 1.0 / x.cos(),
-                "cosec" => 1.0 / x.sin(),
-                "cotan" => 1.0 / x.tan(),
-                "asec" => (1.0 / x).acos(),
-                "acosec" => (1.0 / x).asin(),
-                "acotan" => (1.0 / x).atan(),
-                "sinh" => x.sinh(),
-                "cosh" => x.cosh(),
-                "tanh" => x.tanh(),
-                "sech" => 1.0 / x.cosh(),
-                "cosech" => 1.0 / x.sinh(),
-                "cotanh" => 1.0 / x.tanh(),
-                "asinh" => {
-                    let sign = x.signum();
-                    let ax = x.abs();
-                    sign * (ax + (ax * ax + 1.0).sqrt()).ln()
-                }
-                "acosh" => {
-                    if x < 1.0 {
-                        f64::NAN
-                    } else {
-                        (x + (x * x - 1.0).sqrt()).ln()
-                    }
-                }
-                "atanh" => crate::builtins::math_prim::atanh(x),
-                "asech" => {
-                    let y = 1.0 / x;
-                    (y + (y * y - 1.0).sqrt()).ln()
-                }
-                "acosech" => {
-                    let y = 1.0 / x;
-                    (y + (y * y + 1.0).sqrt()).ln()
-                }
-                "acotanh" => (1.0 / x).atanh(),
-                _ => f64::NAN,
-            };
-            Some(Some(Ok(Value::num(result))))
-        }
         "Rat" => Some(match target.view() {
             ValueView::Rat(_, _) => Some(Ok(target.clone())),
             // A big FatRat coerces to a big Rat: drop the FatRat flag.
@@ -385,6 +197,8 @@ pub(super) fn dispatch(
                     crate::builtins::methods_0arg::dispatch_core_coerce::str_numeric_failure(&s),
                 ))
             }
+            // `"1+2i".Rat` is `Complex.Rat`: the runtime tests the imaginary part.
+            ValueView::Str(s) if str_numifies_to_complex(&s).is_some() => None,
             // Cost: O(d^2), d = digits (parsed twice: the guard above and `str_to_rat`).
             ValueView::Str(s) => Some(Ok(str_to_rat(&s))),
             // A Complex is Real when its imaginary part is `≅ 0`; the runtime
@@ -424,20 +238,11 @@ pub(super) fn dispatch(
                     Some(Ok(make_rat(0, 1)))
                 }
             }
-            // Duration/Instant store their seconds as a Real `value`; coerce that
-            // directly so the exact Rat is preserved (e.g. Duration.new(42).Rat).
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if matches!(class_name.resolve().as_str(), "Duration" | "Instant") => {
-                match attributes.as_map().get("value") {
-                    Some(inner) => match dispatch(inner, "Rat") {
-                        Some(Some(r)) => Some(r),
-                        _ => Some(Ok(make_rat(0, 1))),
-                    },
-                    None => Some(Ok(make_rat(0, 1))),
-                }
+            // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
+            ValueView::Instance { class_name, .. }
+                if class_name == "Instant" || class_name == "Duration" =>
+            {
+                None
             }
             ValueView::Instance { .. } => cool_instance_numeric(target).map(|n| {
                 if n.fract() == 0.0 && n.is_finite() {
@@ -497,6 +302,8 @@ pub(super) fn dispatch(
                     crate::builtins::methods_0arg::dispatch_core_coerce::str_numeric_failure(&s),
                 ))
             }
+            // As `.Rat`: coerced as the `Complex` it numifies to.
+            ValueView::Str(s) if str_numifies_to_complex(&s).is_some() => None,
             ValueView::Str(s) => {
                 let rat = str_to_rat(&s);
                 match rat.view() {
@@ -545,6 +352,12 @@ pub(super) fn dispatch(
             }
             ValueView::Package(_) => Some(Ok(Value::fat_rat_raw(0, 1))),
             // IO::Path/Match/StrDistance numify via their Cool string/distance.
+            // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
+            ValueView::Instance { class_name, .. }
+                if class_name == "Instant" || class_name == "Duration" =>
+            {
+                None
+            }
             ValueView::Instance { .. } if cool_instance_numeric(target).is_some() => {
                 let n = cool_instance_numeric(target).unwrap_or(0.0);
                 if n.fract() == 0.0 && n.is_finite() {
@@ -627,52 +440,21 @@ pub(super) fn dispatch(
                     })
                 })
         }
-        // Cost: O(1) -- flips a tag/flag over the shared payload, or boxes the
-        // value in a `Scalar`; never copies the aggregate.
-        "item" => crate::builtins::method_table::list::item(target, &[])
-            .map(Some)
-            .or_else(|| {
-                Some(match target.view() {
-                    ValueView::LazyList(_) => None, // fall through to runtime to force
-                    // `Value::item` is the one place that decides HOW a value records
-                    // its `$` container, and this arm is the method form of it:
-                    //
-                    // - an Array/List flips its `ArrayKind` over the shared `Gc`;
-                    // - a Hash sets its itemized flag over the SAME `HashData` `Gc`, so
-                    //   it stays a plain `Hash` value that every consumer (and every
-                    //   element store, `$h<k> = v` included) sees as the hash itself.
-                    //   Wrapping it in a `Scalar` instead hid the hash from the
-                    //   subscript-assign lanes, which then replaced the whole variable
-                    //   with a fresh `{k => v}` -- `my $h = %hh.item; $h<a> = 1` lost
-                    //   the write (#10601);
-                    // - a Slip records the `$` as a flag too, NOT a `Scalar` wrapper,
-                    //   because a `$`-held Slip still flattens (`(1, slip(5, 6).item,
-                    //   2).elems` is 4);
-                    // - any other aggregate is wrapped in a `Scalar` so it is a single
-                    //   non-flattening element in list context.
-                    _ => Some(Ok(target.clone().item())),
-                })
-            }),
-        "race" | "hyper" => {
-            if matches!(target.view(), ValueView::LazyList(_)) {
-                return Some(None);
-            }
-            // Single-threaded: materialize and wrap in HyperSeq/RaceSeq
-            let items = runtime::value_to_list(target);
-            let result = if method == "hyper" {
-                Value::hyper_seq(items)
-            } else {
-                Value::race_seq(items)
-            };
-            Some(Some(Ok(result)))
-        }
+        // The `item` rows' implementation (`method_table::lazy`).
+        "item" => Some(crate::builtins::method_table::lazy::item(target, &[])),
+        // The `race`/`hyper` rows' implementation (`method_table::lazy`).
+        "race" => Some(crate::builtins::method_table::lazy::race(target, &[])),
+        "hyper" => Some(crate::builtins::method_table::lazy::hyper(target, &[])),
+        // The normalization forms are rows (`method_table::unicode`); these arms
+        // keep the `Cool` receivers with no table shape (a `Match`, a `Range`, ...).
         // Cost: O(n), n = codepoints of the invocant.
-        "NFC" | "NFD" | "NFKC" | "NFKD" => {
-            let s = uni_or_str(target);
-            let form = crate::builtins::str_prim::Normal::from_name(method)?;
-            let normalized = crate::builtins::str_prim::normalize(&s, form).into_owned();
-            Some(Some(Ok(Value::uni(method.to_string(), normalized))))
-        }
+        "NFC" => crate::builtins::method_table::unicode::nfc(target, &[]).map(Some),
+        // Cost: O(n), n = codepoints of the invocant.
+        "NFD" => crate::builtins::method_table::unicode::nfd(target, &[]).map(Some),
+        // Cost: O(n), n = codepoints of the invocant.
+        "NFKC" => crate::builtins::method_table::unicode::nfkc(target, &[]).map(Some),
+        // Cost: O(n), n = codepoints of the invocant.
+        "NFKD" => crate::builtins::method_table::unicode::nfkd(target, &[]).map(Some),
         _ => None,
     }
 }

@@ -31,7 +31,11 @@ impl Interpreter {
         let r = match name {
             "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(args),
             "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(args),
+            "__mutsu_atomic_int_target" => self.builtin_atomic_int_target(args),
+            "__mutsu_atomic_narrow_target" => self.builtin_atomic_narrow_target(args),
             "__mutsu_atomic_add_var" => self.builtin_atomic_add_var(args),
+            // `cas($x, * + n)`: an add that, unlike `⚛+=`, takes any scalar.
+            "__mutsu_cas_add_var" => self.builtin_atomic_add_var(args),
             "__mutsu_atomic_fetch_add_var" => self.builtin_atomic_fetch_add_var(args),
             "__mutsu_atomic_post_inc_var" => self.builtin_atomic_post_inc_var(args),
             "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(args),
@@ -40,6 +44,7 @@ impl Interpreter {
             "__mutsu_cas_var" => self.builtin_cas_var(args.to_vec()),
             "__mutsu_atomic_elem" => self.builtin_atomic_elem(args),
             "__mutsu_cas_array_elem" => self.builtin_cas_array_elem(args.to_vec()),
+            "__mutsu_cas_attr" => self.builtin_cas_attr(args.to_vec()),
             "__mutsu_cas_array_elem_code" => self.builtin_cas_array_elem_code(args.to_vec()),
             "__mutsu_cas_array_multidim_code" => {
                 self.builtin_cas_array_multidim_code(args.to_vec())
@@ -84,14 +89,43 @@ impl Interpreter {
         raw_name.to_string()
     }
 
-    pub(super) fn atomic_var_name_arg(&self, args: &[Value]) -> Result<String, RuntimeError> {
-        let Some(name) = args.first() else {
+    /// The variable an atomic scalar helper targets: its canonical name and, when
+    /// the compiler resolved the call site to one of the running frame's own
+    /// slots (`Compiler::emit_atomic_target`), that slot (#12006).
+    ///
+    /// A name alone cannot tell an inner `my atomicint $y` from the outer `$y`
+    /// it shadows; the slot can, so it travels with the name as a `VarRef` tag.
+    /// A plain string argument (a helper called from anywhere else) has no slot
+    /// and keeps the by-name lookup.
+    // Cost: O(e), e = the size of the frame env when the name is not in it
+    // (`canonical_atomic_var_name`'s alias search), O(1) otherwise.
+    pub(super) fn atomic_target_arg(&self, arg: &Value) -> (String, Option<u32>) {
+        match arg.as_varref() {
+            Some((name, inner, _)) => {
+                let slot = arg.varref_slot().filter(|slot| *slot != u32::MAX);
+                (
+                    self.canonical_atomic_var_name(&name.resolve(), Some(inner)),
+                    slot,
+                )
+            }
+            None => (
+                self.canonical_atomic_var_name(&arg.to_string_value(), Some(arg)),
+                None,
+            ),
+        }
+    }
+
+    /// [`Self::atomic_target_arg`] of a helper's first argument.
+    pub(super) fn atomic_var_name_arg(
+        &self,
+        args: &[Value],
+    ) -> Result<(String, Option<u32>), RuntimeError> {
+        let Some(target) = args.first() else {
             return Err(RuntimeError::new(
                 "atomic variable operation requires variable name",
             ));
         };
-        let raw_name = name.to_string_value();
-        Ok(self.canonical_atomic_var_name(&raw_name, Some(name)))
+        Ok(self.atomic_target_arg(target))
     }
 
     pub(super) fn atomic_shared_value_key(id: u64) -> String {
@@ -108,6 +142,7 @@ impl Interpreter {
         mut value: Value,
     ) -> Result<Value, RuntimeError> {
         self.check_readonly_for_modify(name)?;
+        self.refuse_narrow_attribute(name)?;
         if let Some(constraint) = self.var_type_constraint(name)
             && !name.starts_with('%')
             && !name.starts_with('@')
@@ -283,23 +318,43 @@ impl Interpreter {
         &mut self,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        let name = self.atomic_var_name_arg(args)?;
+        let (name, slot) = self.atomic_var_name_arg(args)?;
+        self.atomic_fetch_named(&name, slot)
+    }
+
+    /// `__mutsu_atomic_fetch_var` for a plain read of the local at `slot`
+    /// (`GetLocal`): the read knows its binding, so a same-named shadow elsewhere
+    /// in the frame cannot answer for it (#12006).
+    // Cost: as `builtin_atomic_fetch_var`.
+    pub(crate) fn atomic_fetch_local(
+        &mut self,
+        name: &str,
+        slot: u32,
+    ) -> Result<Value, RuntimeError> {
+        let target = Value::str(name.to_string());
+        let name = self.canonical_atomic_var_name(name, Some(&target));
+        self.atomic_fetch_named(&name, Some(slot))
+    }
+
+    // Cost: as `builtin_atomic_fetch_var`.
+    fn atomic_fetch_named(&mut self, name: &str, slot: Option<u32>) -> Result<Value, RuntimeError> {
         // Phase 3 cell-CAS: attribute targets read the receiver's shared cell.
-        if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
+        if let Some((attrs, key)) = self.self_attr_cell_target(name) {
+            self.refuse_narrow_attribute(name)?;
             let val = attrs.as_map().get(&key).cloned().unwrap_or(Value::NIL);
             return Ok(val);
         }
         // A binding that already lives in a shared cell reads through it — see
         // `atomic_cell_update`.
-        if let Some(cell) = self.atomic_scalar_cell(&name) {
+        if let Some(cell) = self.atomic_scalar_cell(name, slot) {
             let guard = cell.lock().unwrap_or_else(|e| e.into_inner());
             return Ok(guard.clone());
         }
-        let value_key = self.atomic_value_key_for_name(&name);
+        let value_key = self.atomic_value_key_for_name(name);
         // ADR-0010: atomics are process-wide shared state -> the root lineage.
         let atomic_root = self.threads.shared_vars.root_store();
         let shared = atomic_root.own_map().read().unwrap();
-        Ok(self.atomic_current_value(&shared, &name, &value_key))
+        Ok(self.atomic_current_value(&shared, name, &value_key))
     }
 
     pub(super) fn builtin_atomic_store_var(
@@ -311,8 +366,7 @@ impl Interpreter {
                 "atomic store requires variable name and value",
             ));
         }
-        let raw_name = args[0].to_string_value();
-        let name = self.canonical_atomic_var_name(&raw_name, args.first());
+        let (name, slot) = self.atomic_target_arg(&args[0]);
         let value = self.atomic_assign_coerced_value(&name, args[1].clone())?;
         // Phase 3 cell-CAS: attribute targets store into the receiver's cell.
         if let Some((attrs, key)) = self.self_attr_cell_target(&name) {
@@ -323,7 +377,7 @@ impl Interpreter {
         // Store through the cell, never over it: `env` holds the `ContainerRef`
         // itself, so writing the plain value under `name` would replace the
         // binding's container and disconnect every other alias.
-        if let Some(cell) = self.atomic_scalar_cell(&name) {
+        if let Some(cell) = self.atomic_scalar_cell(&name, slot) {
             let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
             *guard = value.clone();
             return Ok(value);
@@ -350,8 +404,7 @@ impl Interpreter {
                 "atomic add requires variable name and increment value",
             ));
         }
-        let raw_name = args[0].to_string_value();
-        let name = self.canonical_atomic_var_name(&raw_name, args.first());
+        let (name, slot) = self.atomic_target_arg(&args[0]);
         let delta = args[1].clone();
         self.check_readonly_for_modify(&name)?;
         // Phase 3 cell-CAS: attribute targets RMW the receiver's shared cell.
@@ -366,7 +419,7 @@ impl Interpreter {
             self.env.insert(name, next.clone());
             return Ok(next);
         }
-        if let Some(cell) = self.atomic_scalar_cell(&name) {
+        if let Some(cell) = self.atomic_scalar_cell(&name, slot) {
             let (_, next) = Self::atomic_cell_update(&cell, |cur| {
                 crate::builtins::arith_add(cur, delta.clone())
             })?;
@@ -398,8 +451,7 @@ impl Interpreter {
                 "atomic-fetch-add requires variable name and increment value",
             ));
         }
-        let raw_name = args[0].to_string_value();
-        let name = self.canonical_atomic_var_name(&raw_name, args.first());
+        let (name, slot) = self.atomic_target_arg(&args[0]);
         let delta = args[1].clone();
         self.check_readonly_for_modify(&name)?;
         // Phase 3 cell-CAS: attribute targets RMW the receiver's shared cell.
@@ -414,7 +466,7 @@ impl Interpreter {
             self.env.insert(name, next);
             return Ok(old);
         }
-        if let Some(cell) = self.atomic_scalar_cell(&name) {
+        if let Some(cell) = self.atomic_scalar_cell(&name, slot) {
             let (old, _) = Self::atomic_cell_update(&cell, |cur| {
                 crate::builtins::arith_add(cur, delta.clone())
             })?;
@@ -442,7 +494,7 @@ impl Interpreter {
         delta: i64,
         return_old: bool,
     ) -> Result<Value, RuntimeError> {
-        let name = self.atomic_var_name_arg(args)?;
+        let (name, slot) = self.atomic_var_name_arg(args)?;
         self.check_readonly_for_modify(&name)?;
         // Phase 3 cell-CAS: instance attribute variables (private `!attr` or
         // public `.attr`) read-modify-write the receiver's shared attribute
@@ -470,7 +522,7 @@ impl Interpreter {
             self.env.insert(name, next.clone());
             return if return_old { Ok(current) } else { Ok(next) };
         }
-        if let Some(cell) = self.atomic_scalar_cell(&name) {
+        if let Some(cell) = self.atomic_scalar_cell(&name, slot) {
             let (current, next) = Self::atomic_cell_update(&cell, |cur| {
                 crate::builtins::arith_add(cur, Value::int(delta))
             })?;

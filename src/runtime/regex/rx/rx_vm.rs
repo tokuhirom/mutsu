@@ -644,6 +644,19 @@ impl Interpreter {
                                             cursor,
                                         ) {
                                             Some(end) => {
+                                                // The method's answer is filed under
+                                                // the subrule's name (`<foo>` ->
+                                                // `$<foo>`) like a token's own match;
+                                                // `<.foo>` files nothing.
+                                                let (end, delta) = self
+                                                    .build_named_candidate_from_inner(
+                                                        end,
+                                                        RegexCaptures::default(),
+                                                        pos,
+                                                        name.spec(),
+                                                        None,
+                                                    );
+                                                levels.edit(|s| s.merge_delta(delta));
                                                 pos = end;
                                                 true
                                             }

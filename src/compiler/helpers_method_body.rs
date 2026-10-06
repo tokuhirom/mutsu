@@ -99,6 +99,18 @@ impl Compiler {
         // declared-method capture closes over the enclosing `my &k` instead of
         // resolving the name against whichever frame calls the method (#11046).
         self.inherit_outer_code_var_names(&mut method_compiler);
+        // A sigilless binding of the enclosing routine (`sub mk(\t) { role {
+        // method of { t } } }`, `my \x`) is a lexical the method closes over.
+        // Handing the names down makes the method compile a bare `t` as the
+        // by-name read `compute_free_vars` captures (as the same name does for
+        // a nested closure), instead of a `GetBareWord` that finds no binding
+        // and degrades to the string "t" (#11804).
+        method_compiler.enclosing_sigilless.extend(
+            self.sigilless_locals
+                .iter()
+                .chain(self.enclosing_sigilless.iter())
+                .cloned(),
+        );
         method_compiler.class_body_static_code_vars = self.class_body_static_code_vars.clone();
         method_compiler.variables_pragma = self.variables_pragma;
         // A `my class NAME` shadowing an outer `constant NAME` is what a bare
@@ -252,7 +264,7 @@ impl Compiler {
 
         cc.method_fatal_pragma = self.fatal_pragma_active;
         let mut cf = CompiledFunction {
-            code: cc,
+            code: std::sync::Arc::new(cc),
             source_file: None,
             params: method_params,
             param_defs: effective_param_defs,

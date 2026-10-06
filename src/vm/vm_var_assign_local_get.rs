@@ -278,10 +278,9 @@ impl Interpreter {
                         == Some("atomicint")
                     || self.get_shared_var(&atomic_name_key).is_some());
             if is_atomic_int {
-                let fetched = loan_env!(
-                    self,
-                    builtin_atomic_fetch_var(&[Value::str(atomic_name.to_string())])
-                )?;
+                // The read is of THIS slot: a same-named shadow elsewhere in the
+                // frame is another variable (#12006).
+                let fetched = loan_env!(self, atomic_fetch_local(atomic_name, idx as u32))?;
                 self.locals[idx] = fetched.clone();
                 self.stack.push(fetched);
                 return Ok(());
@@ -692,6 +691,7 @@ impl Interpreter {
         }
         let mut container = cur.into_container_ref();
         self.register_container_cell_constraint_for_name(&container, name);
+        self.mark_fresh_cell_declared_untyped(&container, name);
         // A lexical this frame later rebinds (`$a := ...`) needs a binding
         // cell so the rebind reaches every sharer of the cell.
         if code.rebound_slots.contains(&(idx as u32)) {

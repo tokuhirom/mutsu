@@ -507,8 +507,17 @@ impl Interpreter {
                     // the builtin takes its `Int` payload.
                     coerced_args.push(payload);
                 } else if matches!(arg.view(), ValueView::Instance { .. }) {
+                    // `Real`'s `Numeric` is the object itself (`Duration`,
+                    // `Instant`, `DateTime`): its `Bridge` is the number.
                     let coerced = self
                         .call_method_with_values(arg.clone(), "Numeric", vec![])
+                        .and_then(|numeric| {
+                            if matches!(numeric.view(), ValueView::Instance { .. }) {
+                                self.call_method_with_values(numeric, "Bridge", vec![])
+                            } else {
+                                Ok(numeric)
+                            }
+                        })
                         .or_else(|_| self.call_method_with_values(arg.clone(), "Bridge", vec![]));
                     match coerced {
                         Ok(val) => coerced_args.push(val),

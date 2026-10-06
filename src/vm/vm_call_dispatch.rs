@@ -365,7 +365,7 @@ impl Interpreter {
             )
         });
         let mut cf = CompiledFunction {
-            code: cc,
+            code: std::sync::Arc::new(cc),
             source_file: def.source_file.clone(),
             params: def.params.clone(),
             param_defs: def.param_defs.clone(),

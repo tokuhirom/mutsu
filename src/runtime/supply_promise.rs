@@ -948,7 +948,9 @@ impl Interpreter {
     /// materializing `values` in the first place) runs the whenever's QUIT
     /// phasers if any are registered, otherwise its reason is returned as
     /// the second tuple element for the caller to deliver (quit callback or
-    /// hard error). LAST phasers run on normal completion. A `return` from
+    /// hard error). LAST phasers run on normal completion, unless a body
+    /// `done` completed the enclosing supply, which the third element reports
+    /// so the caller subscribes none of the block's remaining sources. A `return` from
     /// the body is not a quit: it is the `Err`, unwinding to the routine that
     /// encloses the `whenever`.
     pub(crate) fn drive_whenever_body_over_values(
@@ -958,7 +960,7 @@ impl Interpreter {
         callback: &Value,
         last_cbs: &[Value],
         quit_cbs: &[Value],
-    ) -> Result<(Vec<Value>, Option<Value>), RuntimeError> {
+    ) -> Result<(Vec<Value>, Option<Value>, bool), RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
         // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
@@ -967,12 +969,23 @@ impl Interpreter {
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
         let mut quit_reason = initial_quit;
 
+        // Runs `cb` once and reports whether it completed the enclosing
+        // `supply` block: a `done` in the body is rewritten to
+        // `$emitter.done` plus a `SupplyBodyDone` that ends only the body's own
+        // closure (`vm_closure_dispatch`), so the signal never reaches this
+        // loop and the emitter's done count is the record that it ran.
         fn run_capture(
             this: &mut Interpreter,
             cb: Value,
             args: Vec<Value>,
             captured: &mut Vec<Value>,
-        ) -> Result<(), RuntimeError> {
+        ) -> Result<bool, RuntimeError> {
+            let (emitter, stamped) = Interpreter::whenever_tap_emitter(&cb);
+            let emitter_sid = emitter
+                .as_ref()
+                .filter(|_| stamped)
+                .and_then(Interpreter::emitter_supplier_id_of);
+            let done_before = emitter_sid.map(supplier_done_call_count);
             this.async_state
                 .supply_emit_buffer
                 .push(EmitFrame::default());
@@ -993,7 +1006,11 @@ impl Interpreter {
                 .unwrap_or_default()
                 .values;
             captured.append(&mut emitted);
-            res.map(|_| ())
+            let completed = match (emitter_sid, done_before) {
+                (Some(sid), Some(before)) => supplier_done_call_count(sid) > before,
+                _ => false,
+            };
+            res.map(|_| completed)
         }
 
         let err_to_value = |err: &RuntimeError| -> Value {
@@ -1004,6 +1021,10 @@ impl Interpreter {
         };
 
         let mut captured: Vec<Value> = Vec::new();
+        // A body `done` completed the enclosing supply: the rest of the source
+        // is not replayed and this whenever's LAST phasers do not run (the
+        // block closes its subscriptions, it does not see them finish).
+        let mut supply_completed = false;
         'replay: for v in values {
             let lazy = if let ValueView::LazyList(ll) = v.view() {
                 Some(ll.clone())
@@ -1021,37 +1042,44 @@ impl Interpreter {
                 None => vec![v],
             };
             for item in items {
-                if let Err(err) = run_capture(self, callback.clone(), vec![item], &mut captured) {
-                    if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
+                match run_capture(self, callback.clone(), vec![item], &mut captured) {
+                    Ok(true) => {
+                        supply_completed = true;
                         break 'replay;
                     }
-                    // A `return` leaves the routine enclosing the `whenever`
-                    // (which tapped this supply), not the supply: unwind.
-                    if err.is_return() {
-                        return Err(err);
+                    Ok(false) => {}
+                    Err(err) => {
+                        if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
+                            break 'replay;
+                        }
+                        // A `return` leaves the routine enclosing the `whenever`
+                        // (which tapped this supply), not the supply: unwind.
+                        if err.is_return() {
+                            return Err(err);
+                        }
+                        if err.is_next() || err.is_redo() {
+                            continue;
+                        }
+                        quit_reason = Some(err_to_value(&err));
+                        break 'replay;
                     }
-                    if err.is_next() || err.is_redo() {
-                        continue;
-                    }
-                    quit_reason = Some(err_to_value(&err));
-                    break 'replay;
                 }
             }
         }
 
         if let Some(reason) = quit_reason {
             if quit_cbs.is_empty() {
-                return Ok((captured, Some(reason)));
+                return Ok((captured, Some(reason), false));
             }
             for q in quit_cbs {
                 let _ = run_capture(self, q.clone(), vec![reason.clone()], &mut captured);
             }
-        } else {
+        } else if !supply_completed {
             for l in last_cbs {
                 let _ = run_capture(self, l.clone(), Vec::new(), &mut captured);
             }
         }
-        Ok((captured, None))
+        Ok((captured, None, supply_completed))
     }
 
     /// Drive a `whenever` body over an already-materialized list of source

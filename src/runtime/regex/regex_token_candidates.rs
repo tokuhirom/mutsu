@@ -21,6 +21,10 @@ type ProtoNfaSlot = (u64, Arc<LtmNfa>);
 pub(in crate::runtime::regex) struct TokenCandidates {
     list: Vec<ParsedTokenCandidate>,
     proto_nfa: Mutex<Option<ProtoNfaSlot>>,
+    /// The call is a protoless multi call whose signature dispatch died
+    /// (`regex_multi_dispatch`). `list` is then every candidate, for an
+    /// analysis to read; the call that runs raises the error.
+    dispatch_failed: bool,
 }
 
 impl TokenCandidates {
@@ -29,7 +33,25 @@ impl TokenCandidates {
         TokenCandidates {
             list,
             proto_nfa: Mutex::new(None),
+            dispatch_failed: false,
         }
+    }
+
+    /// The candidates of a call whose multi dispatch died; see
+    /// [`Self::dispatch_failed`].
+    // Cost: O(1).
+    pub(in crate::runtime::regex) fn with_failed_dispatch(list: Vec<ParsedTokenCandidate>) -> Self {
+        TokenCandidates {
+            dispatch_failed: true,
+            ..Self::new(list)
+        }
+    }
+
+    /// Whether the call's protoless multi dispatch died: the call raises an
+    /// error instead of running any of [`Self::deref`]'s candidates.
+    // Cost: O(1).
+    pub(in crate::runtime::regex) fn dispatch_failed(&self) -> bool {
+        self.dispatch_failed
     }
 
     /// The proto NFA built under `generation`, if there is one.

@@ -489,6 +489,18 @@ pub fn call_native_with_out_args(
                 ArgOwner::Ptr(addr as *const std::ffi::c_void),
             )
         } else {
+            // A struct object that has no C storage -- a class with no fields
+            // or none NativeCall can lay out, which Rakudo refuses to compose
+            // at all -- would reach the callee as NULL and be dereferenced
+            // there (#11753). Refuse it with a catchable error instead.
+            if ps.ct == CType::Pointer && interp.is_bodyless_struct(&resolve_arg(v)) {
+                return Err(RuntimeError::new(format!(
+                    "Native call expected argument {} with CStruct representation, but got a \
+                     P6opaque ({})",
+                    i + 1,
+                    crate::value::types::what_type_name(&resolve_arg(v))
+                )));
+            }
             let (ty, owner) = marshal_arg(ps, v).map_err(|e| match e {
                 MarshalError::Detail(msg) => RuntimeError::new(format!(
                     "NativeCall: argument {} to '{}': {msg}",
@@ -1142,8 +1154,12 @@ fn marshal_arg(
             // corrupted the heap: OpenSSL's `ERR_error_string($e, Nil)` — where
             // NULL means "use your own static buffer" — writes up to 256 bytes
             // and aborted mutsu with "realloc(): invalid next size".
-            if let Some(addr) = crate::runtime::nativecall_manage::explicitly_managed_address(v) {
-                // An `explicitly-manage`d string: hand C the leaked buffer
+            if let Some(addr) = crate::runtime::nativecall_manage::explicitly_managed_address(v)
+                .or_else(|| crate::runtime::cstr_repr::cstr_repr_address(v))
+            {
+                // An `explicitly-manage`d string -- the provider's `CStr`, or a
+                // `Str` that did upstream's `ExplicitlyManagedString` (its
+                // `cstr` is a `CStr`-REPR object): hand C the leaked buffer
                 // itself, so a callee that RETAINS the pointer keeps seeing
                 // live memory after the call returns.
                 (
@@ -1317,13 +1333,16 @@ fn marshal_carray_arg(
     // An unparameterized `CArray` parameter carries no element type in the
     // signature, so take it from the argument itself (`CArray[int32].new` tags
     // the array with its element type).
-    let elem = ps
-        .elem
-        .or_else(|| carray_value_elem_type(raw))
-        .ok_or_else(|| "CArray parameter is missing its element type".to_string())?;
     let list = arr
         .with_array_inplace(|data, _| data.items().to_vec())
         .unwrap_or_default();
+    let elem = match ps.elem.or_else(|| carray_value_elem_type(raw)) {
+        Some(elem) => elem,
+        // An untyped `CArray.new` has neither elements nor an element type:
+        // its storage is empty, which C sees as NULL (as MoarVM's does).
+        None if list.is_empty() => return Ok((Type::pointer(), ArgOwner::Ptr(std::ptr::null()))),
+        None => return Err("CArray parameter is missing its element type".to_string().into()),
+    };
 
     if elem == CType::Str {
         let mut strings = Vec::with_capacity(list.len());

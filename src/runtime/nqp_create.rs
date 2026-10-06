@@ -159,10 +159,16 @@ impl Interpreter {
             // Allocate directly rather than through `call_method_with_values`,
             // whose resolution walk before its own `CREATE` arm cost ~20K
             // instructions a call (#9122).
-            CreateKind::Create => match self.dispatch_create(&ty) {
-                Some(result) => result,
-                None => self.call_method_with_values(ty, "CREATE", vec![]),
-            },
+            CreateKind::Create => {
+                let instance = match self.dispatch_create(&ty) {
+                    Some(result) => result?,
+                    None => self.call_method_with_values(ty, "CREATE", vec![])?,
+                };
+                // A bare REPR allocation: an `is repr('CStruct')` object gets
+                // its zeroed native body (ADR-11209).
+                self.install_cstruct_storage(&instance);
+                Ok(instance)
+            }
         }
     }
 

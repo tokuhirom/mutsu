@@ -43,6 +43,38 @@ pub(crate) fn is_native_int_type(name: &str) -> bool {
     NATIVE_INT_TYPES.contains(&name)
 }
 
+/// Whether a binding declared with the type `name` is a native-integer
+/// container of the machine's native size, which the integer atomics (`⚛++`,
+/// `⚛+=`, `atomic-fetch-add`, `nqp::atomicinc_i`, ...) accept as their
+/// `atomicint $target is rw`.
+///
+/// That is the 64-bit signed family: `int`, `atomicint`, `int64` and the C-width
+/// aliases that are 64 bits wide on the platforms mutsu targets. The narrower
+/// signed types ([`is_narrow_atomic_int_type`]) reach the same candidate in
+/// Rakudo and are then refused by MoarVM; an unsigned type (`uint`, `byte`,
+/// `size_t`, ...), a native `num`/`str` and every boxed type (`Int`, `Any`, a
+/// subset, no type at all) match no candidate: `my uint $u; $u⚛++` is a
+/// dispatch failure.
+// Cost: O(1).
+pub(crate) fn is_atomic_int_target_type(name: &str) -> bool {
+    matches!(
+        name,
+        "int" | "atomicint" | "int64" | "long" | "longlong" | "ssize_t"
+    )
+}
+
+/// Whether `name` is a signed native integer narrower than the machine word
+/// (`int8`/`int16`/`int32`, and `bool`, which is C's one-byte `_Bool`).
+///
+/// Rakudo's integer-atomic candidate (`atomicint $target is rw`) takes such a
+/// container, and MoarVM then refuses *every* atomic operation on it -- the
+/// lenient ones (`atomic-fetch`, `⚛=`, `cas`) too -- as "not of the machine's
+/// native size" (#12008).
+// Cost: O(1).
+pub(crate) fn is_narrow_atomic_int_type(name: &str) -> bool {
+    matches!(name, "int8" | "int16" | "int32" | "bool")
+}
+
 /// The native integer types that are also spelled as a *coercion method* on
 /// `Cool` — `42.int8`, `"42".byte`. This is a strict subset of
 /// [`NATIVE_INT_TYPES`]: the C-width aliases `NativeCall::Types` exports

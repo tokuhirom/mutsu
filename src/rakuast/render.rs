@@ -23,6 +23,11 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     {
         return rendered;
     }
+    if node.class == RakuAstClass::Name
+        && let Some(rendered) = render_name_with_colonpairs(node, indent)
+    {
+        return rendered;
+    }
     // A bare-class-name node (e.g. `RakuAST::Parameter::Slurpy::Flattened`) has no
     // constructor call at all.
     if node.class.renders_bare() {
@@ -92,6 +97,44 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     s.push_str(&" ".repeat(indent));
     s.push(')');
     s
+}
+
+/// A name written with colonpairs (`class A:ver<1.0> { }`), which rakudo
+/// renders with the pairs inside the constructor call:
+///
+/// ```text
+/// RakuAST::Name.from-identifier("A", colonpairs => (
+///   RakuAST::ColonPair::Value.new(...),
+/// ))
+/// ```
+///
+/// `indent` is the column of the line the name sits on.
+// Cost: O(n), n = size of the colonpairs.
+fn render_name_with_colonpairs(node: &RakuAstNode, indent: usize) -> Option<String> {
+    let pairs = node.fields.iter().find(|f| f.name == Some("colonpairs"))?;
+    let RakuAstFieldValue::List(pairs) = &pairs.value else {
+        return None;
+    };
+    let identifier = node.fields.iter().find(|f| f.name.is_none())?;
+    let RakuAstFieldValue::Node(identifier) = &identifier.value else {
+        return None;
+    };
+    let mut s = format!(
+        "RakuAST::Name.from-identifier({}, colonpairs => (\n",
+        render_leaf(identifier)
+    );
+    let pad = " ".repeat(indent + 2);
+    for pair in pairs {
+        s.push_str(&pad);
+        match pair.view() {
+            ValueView::RakuAst(pair) => s.push_str(&render_node(pair, indent + 2)),
+            _ => s.push_str(&render_leaf(pair)),
+        }
+        s.push_str(",\n");
+    }
+    s.push_str(&" ".repeat(indent));
+    s.push_str("))");
+    Some(s)
 }
 
 /// Render a `RakuAST::Name` built from a `parts` list, picking the spelling
@@ -170,7 +213,8 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
     node.fields
         .iter()
         .filter(|field| {
-            !(node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")
+            !(super::origin::is_origin(field)
+                || node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")
                 || node.class == RakuAstClass::RegexAssertionNamedRegexArg
                     && field.name == Some("capturing"))
         })
@@ -288,6 +332,9 @@ fn render_leaf(v: &Value) -> String {
         ValueView::Version { .. } => format!("v{}", v.to_string_value()),
         // A Num leaf renders as its literal (`NumLiteral.new(1e0)`, `Inf`).
         ValueView::Num(f) => crate::builtins::methods_0arg::raku_repr::format_num_raku(f),
+        // A complex leaf renders as the angle-bracket literal that is its
+        // `.raku` (`ComplexLiteral.new(<1+2i>)`).
+        ValueView::Complex(..) => format!("<{}>", v.to_string_value()),
         _ => v.to_string_value(),
     }
 }

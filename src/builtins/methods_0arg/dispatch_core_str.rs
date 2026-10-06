@@ -130,116 +130,60 @@ pub(super) fn dispatch(
             Some(Some(Ok(Value::truth(is_value_lazy(target)))))
         }
         "lazy" => {
-            if is_value_lazy(target) {
-                if let ValueView::LazyList(list) = target.view() {
-                    let mut env = list.env.clone();
-                    env.insert(
-                        "__mutsu_preserve_lazy_on_array_assign".to_string(),
-                        Value::TRUE,
-                    );
-                    let cache = list.cache.lock().unwrap().clone();
-                    return Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                        crate::value::LazyList {
-                            body: list.body.clone(),
-                            env,
-                            cache: std::sync::Mutex::new(cache),
-                            generation_state: std::sync::Mutex::new(None),
-                            compiled_code: list.compiled_code.clone(),
-                            compiled_fns: list.compiled_fns.clone(),
-                            elems_count: list.elems_count.clone(),
-                            scan_spec: list
-                                .scan_spec
-                                .as_ref()
-                                .map(|s| std::sync::Mutex::new(s.lock().unwrap().clone())),
-                            sequence_spec: list.sequence_spec.clone(),
-                            coroutine: list
-                                .coroutine
-                                .as_ref()
-                                .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
-                            lazy_pipe: list
-                                .lazy_pipe
-                                .as_ref()
-                                .map(|p| std::sync::Mutex::new(p.lock().unwrap().clone())),
-                            closure_seq: list
-                                .closure_seq
-                                .as_ref()
-                                .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
-                            walk_pending: list
-                                .walk_pending
-                                .as_ref()
-                                .map(|w| std::sync::Mutex::new(w.lock().unwrap().clone())),
-                            cat_pull: list
-                                .cat_pull
-                                .as_ref()
-                                .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
-                            array_context: list.array_context,
-                            list_context: list.list_context,
-                            cached_no_sink: list.cached_no_sink,
-                            itemized: list.itemized,
-                        },
-                    )))));
-                }
-                // An unbounded range is lazy already, but `.lazy` still makes
-                // it a `Seq` (`(1..*).lazy.raku` is `(1, 2, ...).lazy.Seq`).
-                if crate::runtime::unbounded_range::first(target).is_some() {
-                    return Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                        crate::value::LazyList::new_index_pipe(
-                            target.clone(),
-                            crate::value::IndexTransform::Identity,
-                        ),
-                    )))));
-                }
-                return Some(Some(Ok(target.clone())));
-            }
-            let items = if let Some(items) = target.as_list_items() {
-                items.to_vec()
-            } else if matches!(
-                target.view(),
-                ValueView::Range(..)
-                    | ValueView::RangeExcl(..)
-                    | ValueView::RangeExclStart(..)
-                    | ValueView::RangeExclBoth(..)
-                    | ValueView::GenericRange { .. }
-            ) {
-                crate::runtime::utils::value_to_list(target)
-            } else if matches!(target.view(), ValueView::Sub(..)) {
-                // lazy { block } -- create a lazy thunk that evaluates the block on first access
-                return Some(Some(Ok(Value::lazy_thunk(std::sync::Arc::new(
-                    crate::value::LazyThunkData {
-                        thunk: target.clone(),
-                        cache: std::sync::Mutex::new(None),
+            // A lazy `LazyList` is re-tagged so that assigning it to an array
+            // keeps it lazy; every other receiver is the `lazy` rows'
+            // implementation (`method_table::lazy`).
+            if is_value_lazy(target)
+                && let ValueView::LazyList(list) = target.view()
+            {
+                let mut env = list.env.clone();
+                env.insert(
+                    "__mutsu_preserve_lazy_on_array_assign".to_string(),
+                    Value::TRUE,
+                );
+                let cache = list.cache.lock().unwrap().clone();
+                return Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
+                    crate::value::LazyList {
+                        body: list.body.clone(),
+                        env,
+                        cache: std::sync::Mutex::new(cache),
+                        generation_state: std::sync::Mutex::new(None),
+                        compiled_code: list.compiled_code.clone(),
+                        compiled_fns: list.compiled_fns.clone(),
+                        elems_count: list.elems_count.clone(),
+                        scan_spec: list
+                            .scan_spec
+                            .as_ref()
+                            .map(|s| std::sync::Mutex::new(s.lock().unwrap().clone())),
+                        sequence_spec: list.sequence_spec.clone(),
+                        coroutine: list
+                            .coroutine
+                            .as_ref()
+                            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+                        lazy_pipe: list
+                            .lazy_pipe
+                            .as_ref()
+                            .map(|p| std::sync::Mutex::new(p.lock().unwrap().clone())),
+                        closure_seq: list
+                            .closure_seq
+                            .as_ref()
+                            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+                        walk_pending: list
+                            .walk_pending
+                            .as_ref()
+                            .map(|w| std::sync::Mutex::new(w.lock().unwrap().clone())),
+                        cat_pull: list
+                            .cat_pull
+                            .as_ref()
+                            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+                        array_context: list.array_context,
+                        list_context: list.list_context,
+                        cached_no_sink: list.cached_no_sink,
+                        itemized: list.itemized,
                     },
                 )))));
-            } else {
-                return Some(Some(Ok(target.clone())));
-            };
-            let mut env = crate::env::Env::new();
-            env.insert(
-                "__mutsu_preserve_lazy_on_array_assign".to_string(),
-                Value::TRUE,
-            );
-            Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                crate::value::LazyList {
-                    body: vec![],
-                    env,
-                    cache: std::sync::Mutex::new(Some(items)),
-                    generation_state: std::sync::Mutex::new(None),
-                    compiled_code: None,
-                    compiled_fns: None,
-                    elems_count: None,
-                    scan_spec: None,
-                    sequence_spec: None,
-                    coroutine: None,
-                    lazy_pipe: None,
-                    closure_seq: None,
-                    walk_pending: None,
-                    cat_pull: None,
-                    array_context: false,
-                    list_context: false,
-                    cached_no_sink: false,
-                    itemized: false,
-                },
-            )))))
+            }
+            Some(crate::builtins::method_table::lazy::lazy(target, &[]))
         }
         // Cost: O(1) when nothing is chomped (see chomp_value); O(n) otherwise, n =
         // chars of the invocant.
@@ -348,12 +292,7 @@ pub(super) fn dispatch(
             }
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
-                let joined = leaves
-                    .iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join("");
-                return Some(Some(Ok(Value::str(joined))));
+                return Some(crate::builtins::method_table::list::join_items(&leaves, "").map(Ok));
             }
             // A list's elements: the `List.join` row's implementation
             // (ADR-11276, `method_table::list`).
@@ -366,18 +305,7 @@ pub(super) fn dispatch(
                 // which renders the Range with space-separated gist semantics
                 // (`(1..5).join` must be "12345", not "1 2 3 4 5").
                 let items = crate::runtime::utils::value_to_list(target);
-                if items
-                    .iter()
-                    .any(|v| matches!(v.view(), ValueView::Instance { .. }))
-                {
-                    return Some(None);
-                }
-                let joined = items
-                    .iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join("");
-                Some(Some(Ok(Value::str(joined))))
+                Some(crate::builtins::method_table::list::join_items(&items, "").map(Ok))
             } else if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Thread")
             {
                 // `.join` on a Thread is the thread-join primitive (block until the

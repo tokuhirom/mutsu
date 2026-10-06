@@ -262,7 +262,7 @@ impl Interpreter {
                     && format!("{:?}", cf.param_defs) == format!("{effective_param_defs:?}")
             });
         let installed_compiled_code =
-            matched_compiled_fn.map(|cf| std::sync::Arc::new(cf.code.clone()));
+            matched_compiled_fn.map(|cf| cf.code.clone());
         let installed_compiled_fns = matched_compiled_fn.and_then(|cf| cf.compiled_fns.clone());
         // A role method is lexically inside the ROLE, and that is the only
         // anchor a lookup from its body can use: composition rewrites

@@ -329,11 +329,17 @@ fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
         parent_args,
         body_parents,
     };
-    if is_export && !is_lexical {
-        let export = super::class_decl::export_type_stmt(&name, &export_tags);
-        return Ok((rest, Stmt::SyntheticBlock(vec![grammar_stmt, export])));
-    }
-    Ok((rest, grammar_stmt))
+    Ok((
+        rest,
+        crate::ast::package_header::wrap(
+            grammar_stmt,
+            &name,
+            crate::ast::package_header::Header {
+                adverbs: Vec::new(),
+                export_tags: (is_export && !is_lexical).then_some(export_tags),
+            },
+        ),
+    ))
 }
 
 /// Parse `module Name { ... }` declaration (non-unit form).
@@ -360,12 +366,10 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
     if !exported.is_empty() {
         super::super::simple::register_inline_module_exports(&name, exported);
     }
-    let mut stmts = Vec::new();
-    for (trait_name, trait_value) in traits {
-        if trait_name == "ver" || trait_name == "auth" || trait_name == "api" {
-            stmts.push(meta_setter_stmt(&name, &trait_name, trait_value));
-        }
-    }
+    let adverbs = traits
+        .into_iter()
+        .filter(|(trait_name, _)| matches!(trait_name.as_str(), "ver" | "auth" | "api"))
+        .collect();
     let package_stmt = Stmt::Package {
         name: Symbol::intern(&name),
         body,
@@ -373,14 +377,17 @@ pub(crate) fn module_decl(input: &str) -> PResult<'_, Stmt> {
         is_unit: false,
         is_my: false,
     };
-    if stmts.is_empty() && export_tags.is_none() {
-        return Ok((rest, package_stmt));
-    }
-    stmts.push(package_stmt);
-    if let Some(tags) = export_tags {
-        stmts.push(super::class_decl::export_type_stmt(&name, &tags));
-    }
-    Ok((rest, Stmt::SyntheticBlock(stmts)))
+    Ok((
+        rest,
+        crate::ast::package_header::wrap(
+            package_stmt,
+            &name,
+            crate::ast::package_header::Header {
+                adverbs,
+                export_tags,
+            },
+        ),
+    ))
 }
 
 /// Reject an attribute variable used inside a `token`/`regex`/`rule` body at

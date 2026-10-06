@@ -624,6 +624,10 @@ impl Interpreter {
             return (self.locals[idx].clone(), true);
         }
         let cell = self.locals[idx].clone().into_container_ref();
+        // A fresh cell made from this frame's own slot of `name` (the alias
+        // root, so never an alias's name): the one place an `is rw` argument
+        // learns that its caller's variable is an untyped scalar (#12007).
+        self.mark_fresh_cell_declared_untyped(&cell, name);
         self.locals[idx] = cell.clone();
         // The captured local is now a shared `ContainerRef`. It MUST also reach
         // env unconditionally: a later interpreter-side mutation (e.g. `$pair.value

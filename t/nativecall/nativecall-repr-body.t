@@ -11,7 +11,7 @@ use NativeCall;
 # body is read at `.WHERE` itself. The bodies below are the same hand-written
 # CStruct mirrors that module declares.
 
-plan 20;
+plan 23;
 
 sub calloc(size_t, size_t --> Pointer) is native { * }
 sub free(Pointer) is native { * }
@@ -85,9 +85,9 @@ free($blk);
 # so — which is what makes `NativeHelpers::Blob`'s `pointer-to` work.
 my $buf = Buf.new(11, 22, 33);
 is $buf.REPR, 'VMArray',          'a Buf reports VMArray';
-my $boff = body-offset($buf.WHERE, 3);
-ok $boff.defined,                 'the VMArray body is found within ten words';
-my $ab = nativecast(MVMArrayB, Pointer.new($buf.WHERE + $boff));
+my $vboff = body-offset($buf.WHERE, 3);
+ok $vboff.defined,                'the VMArray body is found within ten words';
+my $ab = nativecast(MVMArrayB, Pointer.new($buf.WHERE + $vboff));
 is $ab.elems, 3,                  'the body reports the element count';
 is $ab.start, 0,                  'mutsu storage has no unused prefix';
 
@@ -100,14 +100,19 @@ is nativecast(CArray[uint8], $ab.any)[1], 22,
 # that captured the address keeps reading a live element pointer.
 is $buf.WHERE, $buf.WHERE,        'a Buf keeps one body block';
 
-# --- what deliberately does NOT get a body ---
-# The two assertions below pin a *deliberate under-report*: raku answers
-# `CStruct` for the first, because that object has C storage and mutsu's does
-# not yet. Reporting the honest name without a body is the one thing that must
-# never happen — `BODY_OF` would dereference whatever `.WHERE` returned.
-# Under-report and it refuses loudly instead. Giving a Raku-constructed CStruct
-# real storage is ADR-0015's P3.
-is Rec.new.REPR, 'P6opaque',      'a Raku-constructed CStruct has no body yet';
+# --- a CStruct built in Raku owns its storage (ADR-11209) ---
+# It used to under-report `P6opaque` here, because it had no C storage and
+# answering `CStruct` without a body would have made `BODY_OF` dereference
+# whatever `.WHERE` returned. Now the object owns a zeroed block, so it answers
+# exactly as a handle C returned does, and the body route reaches that block.
+my $built = Rec.new(one => 3, two => 4);
+is $built.REPR, 'CStruct',        'a Raku-constructed CStruct reports CStruct';
+my $block = nativecast(Pointer, $built);
+isnt $block.Int, 0,               'and owns a non-NULL block';
+my $boff = body-offset($built.WHERE, $block.Int);
+ok $boff.defined,                 'its CStruct body is found within ten words';
+is nativecast(CStructB, Pointer.new($built.WHERE + $boff)).cstruct.Int, $block.Int,
+                                  'and the body points at the struct itself';
 
 class Plain { has $.address = 12345; }
 is Plain.new.REPR, 'P6opaque',    'an ordinary class is untouched';

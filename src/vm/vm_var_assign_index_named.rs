@@ -1096,7 +1096,20 @@ impl Interpreter {
         // (raku: `@a[0] = Nil; @a[0]` is Any for a plain untyped element). An
         // `is default(Nil)` container genuinely stores Nil. A `:=` bind
         // replaces the container, so Nil stays Nil there.
-        let val = if val.is_nil() && !bind_mode {
+        //
+        // An element `:=`-bound to a variable that carries its own `of`
+        // constraint or `is default` is that variable's container (#11810): the
+        // cell, not the aggregate, decides the `Nil` reset and the type check.
+        let bound_cell = if bind_mode {
+            None
+        } else {
+            index_target_deref.as_ref().and_then(|container| {
+                self.element_cell_with_metadata(container, &idx, is_positional)
+            })
+        };
+        let val = if let Some(cell) = &bound_cell {
+            self.element_store_through_cell(cell, val)?
+        } else if val.is_nil() && !bind_mode {
             let container = self.get_env_with_main_alias(&var_name).unwrap_or_else(|| {
                 if is_positional {
                     Value::real_array(Vec::new())
@@ -3853,11 +3866,20 @@ impl Interpreter {
         // element is not a `Scalar`, so its `STORE` takes the raw `Nil`. A
         // `:=` bind replaces the element container rather than storing into
         // it, so `Nil` stays `Nil` there too.
-        let val = if val.is_nil() && !is_bind_value {
-            let row = self
-                .env()
-                .get(&var_name)
-                .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional));
+        let row = self
+            .env()
+            .get(&var_name)
+            .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional));
+        let bound_leaf_cell = (!is_bind_value)
+            .then(|| {
+                row.as_ref().and_then(|row| {
+                    self.element_cell_with_metadata(row, &outer_idx, outer_positional)
+                })
+            })
+            .flatten();
+        let val = if let Some(cell) = &bound_leaf_cell {
+            self.element_store_through_cell(cell, val)?
+        } else if val.is_nil() && !is_bind_value {
             self.nested_store_nil_default(row, outer_positional)
         } else {
             val
@@ -3996,6 +4018,14 @@ impl Interpreter {
         // descent stepped through, which is what makes the key shared between
         // threads (a node-keyed lock excludes nothing — `Gc::make_mut` copies
         // an aliased node, see ADR-0068 §7).
+        if !is_bind_value
+            && let Some(mut slot) = self
+                .env()
+                .get(&var_name)
+                .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional))
+        {
+            self.prepare_bound_cell_for_chained_store(&mut slot, outer_positional)?;
+        }
         let mut nested_cell_addr: Option<usize> = None;
         if let Some(handled) = self
             .env_root_descended_mut_tracked(&var_name, &mut nested_cell_addr)
@@ -4147,6 +4177,14 @@ impl Interpreter {
         // change the pointer and break .WHICH identity stability.
         if let Some(slot) = self.find_local_slot(code, &var_name) {
             self.locals[slot] = Value::NIL;
+        }
+        if !is_bind_value
+            && let Some(mut slot) = self
+                .env()
+                .get(&var_name)
+                .and_then(|root| Self::subscript_peek_step(root, &inner_key, inner_positional))
+        {
+            self.prepare_bound_cell_for_chained_store(&mut slot, outer_positional)?;
         }
         // Same ADR-0068 §4 step 3 exclusion as the array-outer arm above.
         let mut nested_cell_addr: Option<usize> = None;
@@ -5131,12 +5169,25 @@ impl Interpreter {
         // step the `*-1` resolution above takes) and decay against that. A
         // level that does not exist yet stops the walk, and `None` then means
         // the row is about to be walk-created untyped.
-        let val = if val.is_nil() && !is_bind_value {
-            let mut row = self.env().get(&var_name).cloned();
-            for level in 0..depth - 1 {
-                let Some(current) = row.as_ref() else { break };
-                row = Self::subscript_peek_step(current, &indices[level], positional_flags[level]);
-            }
+        let mut row = self.env().get(&var_name).cloned();
+        for level in 0..depth - 1 {
+            let Some(current) = row.as_ref() else { break };
+            row = Self::subscript_peek_step(current, &indices[level], positional_flags[level]);
+        }
+        let bound_leaf_cell = (!is_bind_value)
+            .then(|| {
+                row.as_ref().and_then(|row| {
+                    self.element_cell_with_metadata(
+                        row,
+                        &indices_val[depth - 1],
+                        positional_flags[depth - 1],
+                    )
+                })
+            })
+            .flatten();
+        let val = if let Some(cell) = &bound_leaf_cell {
+            self.element_store_through_cell(cell, val)?
+        } else if val.is_nil() && !is_bind_value {
             self.nested_store_nil_default(row, positional_flags[depth - 1])
         } else {
             val

@@ -1756,7 +1756,10 @@ impl Interpreter {
         // to the whole interpolated value instead of just its last spliced
         // char — see `try_consume_quantifier`'s doc comment.
         let mut interp_span_start: Option<usize> = None;
+        let mut prev_was_ws = false;
         'atoms: while let Some(c) = chars.next() {
+            let was_ws = std::mem::replace(&mut prev_was_ws, c.is_whitespace());
+            let prev_was_ws = was_ws;
             if c == Self::NON_DECLARATIVE_INTERP_MARK {
                 in_non_declarative_interp = !in_non_declarative_interp;
                 if in_non_declarative_interp {
@@ -2445,6 +2448,66 @@ impl Interpreter {
                             continue 'atoms;
                         }
                     }
+                }
+                if matches!(c, '*' | '+' | '?') {
+                // A zero-width anchor (`^^`, `$$`, `$`) followed by whitespace and
+                // then a quantifier takes it (`^^ ** 2 a`), as in rakudo; only an
+                // adjacent quantifier (`^^+`) is NonQuantifiable.
+                if prev_was_ws
+                    && matches!(
+                        tokens.last().map(|t| (&t.atom, &t.quant)),
+                        Some((
+                            RegexAtom::StartOfLine
+                                | RegexAtom::EndOfLine
+                                | RegexAtom::EndOfString,
+                            RegexQuant::One
+                        ))
+                    )
+                {
+                    let rest: String = std::iter::once(c).chain(chars.clone()).collect();
+                    let mut probe = rest.chars().peekable();
+                    if let Some((quant, frugal)) = try_consume_quantifier(&mut probe) {
+                        let consumed = rest.chars().count() - probe.count() - 1;
+                        for _ in 0..consumed {
+                            chars.next();
+                        }
+                        if let Some(last) = tokens.last_mut() {
+                            last.quant = quant;
+                            last.frugal = frugal;
+                        }
+                        continue 'atoms;
+                    }
+                }
+                // A leading `^` pushes no token (it sets `anchor_start`), so the
+                // same whitespace-separated quantifier has no token to attach to
+                // (`^ ** 2 a`, #12039). It repeats a zero-width assertion, so a
+                // minimum of 1 or more is still start-of-string, and a minimum of
+                // 0 (`^ ?`, `^ ** 0..2`) makes the assertion optional.
+                if prev_was_ws && tokens.is_empty() && anchor_start {
+                    let rest: String = std::iter::once(c).chain(chars.clone()).collect();
+                    let mut probe = rest.chars().peekable();
+                    if let Some((quant, _frugal)) = try_consume_quantifier(&mut probe) {
+                        let optional = match quant {
+                            RegexQuant::ZeroOrMore
+                            | RegexQuant::ZeroOrOne
+                            | RegexQuant::Repeat(0, _) => Some(true),
+                            RegexQuant::OneOrMore | RegexQuant::Repeat(..) => Some(false),
+                            // A runtime count is neither: leave it NonQuantifiable.
+                            RegexQuant::One | RegexQuant::RepeatCode(_) => None,
+                        };
+                        if let Some(optional) = optional {
+                            let consumed = rest.chars().count() - probe.count() - 1;
+                            for _ in 0..consumed {
+                                chars.next();
+                            }
+                            if optional {
+                                anchor_start = false;
+                            }
+                            continue 'atoms;
+                        }
+                    }
+                }
+
                 }
                 // Validate mode: a quantifier metacharacter (`*`, `+`, `?`) reaching
                 // atom position usually has nothing valid to quantify — any quantifier

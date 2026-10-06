@@ -315,11 +315,11 @@ impl Interpreter {
                 )
                 .as_str();
                 if !self.registry().classes.contains_key(alias) {
-                    class_aliases.push((name.clone(), alias.to_string(), class_def.clone()));
+                    class_aliases.push((name.clone(), alias.to_string(), class_def.clone().into_value()));
                 }
             }
             for (name, alias, class_def) in class_aliases {
-                self.registry_mut().classes.insert(alias.clone(), class_def);
+                self.registry_mut().classes.insert(alias.clone(), class_def.into());
                 // ADR-0019 F4c-9b: the aliased class's method rows must also
                 // land in the registry's canonical `method_entries` table
                 // under the alias name -- there is no `ClassDef::methods`
@@ -542,10 +542,13 @@ impl Interpreter {
         let leaked: Vec<Symbol> = functions
             .keys()
             .filter(|k| {
-                if before_keys.contains(*k) {
+                // A key whose text never spells `MAIN` cannot name one: a
+                // substring test is far cheaper than the segment split below,
+                // and almost every key fails it.
+                let ks = k.as_str();
+                if !ks.contains("MAIN") || before_keys.contains(*k) {
                     return false;
                 }
-                let ks = k.resolve();
                 let after_pkg = crate::qualified::last_segment(**k).as_str();
                 let short = after_pkg.split(['/', ':']).next().unwrap_or(after_pkg);
                 if short != "MAIN" {

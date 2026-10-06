@@ -12,10 +12,10 @@
 //! attributes using the platform's C alignment rules, and reads a field out of
 //! the pointed-to memory.
 //!
-//! Reads and writes go through a pointer that C gave us. A `HAS`-declared
-//! member is laid out **by value** — its own bytes live inside the enclosing
-//! struct — which is what NativeCall's `HAS` scope means; allocating a struct
-//! from Raku (`MyStruct.new`) remains follow-up work.
+//! Reads and writes go through a pointer: one C gave us, or the address of the
+//! native body a struct built in Raku owns (`runtime::cstruct_body`, ADR-11209).
+//! A `HAS`-declared member is laid out **by value** — its own bytes live inside
+//! the enclosing struct — which is what NativeCall's `HAS` scope means.
 
 /// The C type of one CStruct field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,6 +230,17 @@ pub(crate) fn short_base_name(type_name: &str) -> &str {
     &type_name[base_end - short.as_str().len()..]
 }
 
+/// Whether `set` of registered class names holds the class a type was spelled
+/// as: by the full spelling, or by the last `::` component of `base` -- the
+/// same "one class, several spellings" matching `cstruct_class_name` does.
+// Cost: O(c), c = classes in the set.
+fn set_holds_class(set: &rustc_hash::FxHashSet<String>, name: &str, base: &str) -> bool {
+    set.contains(name)
+        || set.iter().any(|c| {
+            crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str() == base
+        })
+}
+
 /// The element type of a parameterised `Pointer[T]` spelling, or `None` for a
 /// plain `Pointer`. The base may be qualified (`NativeCall::Types::Pointer[T]`);
 /// the parameter is returned exactly as written, since every consumer resolves
@@ -317,7 +328,13 @@ pub(crate) unsafe fn write_field(base: usize, field: &FieldLayout, value: &crate
             // (a type object, an `Int`) has nothing to copy, so the field is
             // left alone rather than filled with garbage.
             FieldType::Embedded { size, .. } => {
-                let src = crate::runtime::nativecall::value_c_address(value);
+                // A bare integer is an address, not a struct to copy: the
+                // copy would read from wherever the program said (#11209).
+                let src = if matches!(value.view(), crate::value::ValueView::Int(_)) {
+                    0
+                } else {
+                    crate::runtime::nativecall::value_c_address(value)
+                };
                 if src != 0 && src != base + field.offset {
                     std::ptr::copy_nonoverlapping(src as *const u8, ptr, size);
                 }
@@ -374,42 +391,62 @@ impl crate::runtime::Interpreter {
     /// component on both sides.
     pub(crate) fn cstruct_class_name(&self, name: &str) -> Option<String> {
         let reg = self.registry();
-        if reg.cstruct_classes.contains(name) {
+        // A union is a struct whose fields overlay one another: it has the same
+        // handle, the same field reads and writes, and the same body, with every
+        // offset 0 (ADR-11209).
+        let sets = [&reg.cstruct_classes, &reg.cunion_classes];
+        if sets.iter().any(|set| set.contains(name)) {
             return Some(name.to_string());
         }
         let short = crate::qualified::last_segment(crate::symbol::Symbol::intern(name)).as_str();
-        reg.cstruct_classes
-            .iter()
-            .find(|c| {
-                crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str() == short
-            })
-            .cloned()
+        sets.iter().find_map(|set| {
+            set.iter()
+                .find(|c| {
+                    crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str()
+                        == short
+                })
+                .cloned()
+        })
     }
 
-    /// Whether `name` is a class declared `is repr('CStruct')`.
+    /// Whether `name` is a class declared `is repr('CStruct')`, `'CPPStruct'`
+    /// or `'CUnion'`.
     pub(crate) fn is_cstruct_class(&self, name: &str) -> bool {
         self.cstruct_class_name(name).is_some()
     }
 
     /// Whether a *field* of type `name` occupies one pointer inside an
     /// enclosing CStruct: any class NativeCall holds by reference, i.e. one
-    /// declared `is repr('CStruct')`, `'CPointer'` or `'CUnion'`.
+    /// declared `is repr('CStruct')`, `'CPointer'`, `'CUnion'` or `'CArray'`.
+    /// A parameterised spelling (`Pointer[T]`, `CArray[T]`: a mixin of the
+    /// class that holds the REPR) is judged by its base.
+    // Cost: O(c), c = classes registered with a by-reference REPR.
     pub(crate) fn is_native_handle_class(&self, name: &str) -> bool {
-        let short = crate::qualified::last_segment(crate::symbol::Symbol::intern(name)).as_str();
+        let short = short_base_name(name);
+        let base = short.split_once('[').map_or(short, |(base, _)| base);
         let reg = self.registry();
         [
             &reg.cstruct_classes,
             &reg.cpointer_classes,
             &reg.cunion_classes,
+            &reg.carray_classes,
         ]
         .iter()
-        .any(|set| {
-            set.contains(name)
-                || set.iter().any(|c| {
-                    crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str()
-                        == short
-                })
-        })
+        .any(|set| set_holds_class(set, name, base))
+    }
+
+    /// Whether `spelling` -- a field's declared type, possibly `C[T]` -- names a
+    /// class declared `is repr('CArray')`, so that the field reads back as a
+    /// `CArray` over the C memory it points at.
+    // Cost: O(c), c = classes declared `is repr('CArray')`.
+    fn is_carray_repr_spelling(&self, spelling: &str) -> bool {
+        let reg = self.registry();
+        if reg.carray_classes.is_empty() {
+            return false;
+        }
+        let short = short_base_name(spelling);
+        let base = short.split_once('[').map_or(short, |(base, _)| base);
+        set_holds_class(&reg.carray_classes, spelling, base)
     }
 
     /// Follow a `constant` type alias a field's declared type is spelled with.
@@ -506,7 +543,14 @@ impl crate::runtime::Interpreter {
             .map(|f| f.type_name.as_str())
             .filter(|ty| self.is_native_handle_class(ty))
             .collect();
-        layout_struct(&fields, |n| handle_fields.contains(n))
+        let mut layout = layout_struct(&fields, |n| handle_fields.contains(n))?;
+        // Every member of a union starts at the beginning.
+        if self.registry().cunion_classes.contains(&registered) {
+            for field in &mut layout {
+                field.offset = 0;
+            }
+        }
+        Some(layout)
     }
 
     /// Whether `attr_name` was declared with NativeCall's `HAS` scope on
@@ -543,8 +587,9 @@ impl crate::runtime::Interpreter {
         // asks for the struct's own footprint.
         if self.is_cstruct_class(type_name) {
             let layout = self.cstruct_layout(type_name)?;
-            let last = layout.last()?;
-            let end = last.offset + last.ty.size();
+            // The furthest end of any member: the last field's for a struct, the
+            // largest member's for a union.
+            let end = layout.iter().map(|f| f.offset + f.ty.size()).max()?;
             // C rounds a struct up to its strictest member's alignment, so an
             // array of them keeps every element aligned.
             let align = layout.iter().map(|f| f.ty.align()).max().unwrap_or(1);
@@ -587,7 +632,18 @@ impl crate::runtime::Interpreter {
         let field = layout.iter().find(|f| f.name == name)?;
         // SAFETY: `address` came from C as a pointer to a struct of this
         // declared type and the instance is alive, so the field is in bounds.
-        let raw = unsafe { read_field(address, field) };
+        // An object that owns its body reads under its cell's lock, so a
+        // replaced pointer's target is not freed mid-read (ADR-11209).
+        let (raw, retained) = match target.view() {
+            ValueView::Instance { attributes, .. }
+                if crate::runtime::cstruct_body::owns_body(&attributes) =>
+            {
+                unsafe {
+                    crate::runtime::cstruct_body::read_field_snapshot(&attributes, address, field)
+                }
+            }
+            _ => (unsafe { read_field(address, field) }, None),
+        };
         // A `HAS` member reads as the address of its inline storage, so it goes
         // through the same wrapping as a pointer field: what comes back is a
         // handle of the declared class onto the bytes inside this struct.
@@ -596,13 +652,40 @@ impl crate::runtime::Interpreter {
         }
         let declared = self.get_attr_type_constraint(&registered, name)?;
         let addr = crate::runtime::to_int(&raw) as usize;
+        // The object this pointer field was last given, if it still points at
+        // it: the field reads back as that object (ADR-11209).
+        if let Some(child) = retained {
+            return Some(child);
+        }
         // An inline `HAS T @.x[N] is CArray` member reads back as a `CArray[T]`
         // onto its own storage — that handle is what makes `$s.x[2]` reach the
         // bytes inside this struct.
         if matches!(field.ty, FieldType::Embedded { .. })
             && let Some(tag) = self.embedded_array_tag(&registered, name)
         {
+            // With upstream NativeCall loaded, `CArray[T]` is its own mixin
+            // type and the member reads back as an unmanaged CArray of
+            // exactly that type over the inline bytes (#11209).
+            if self.is_carray_repr_spelling(&tag)
+                && let Some(built) = self.native_pointer_of_declared(&tag, addr, false)
+            {
+                return built.ok();
+            }
             return Some(crate::runtime::nativecall::make_native_handle(&tag, addr));
+        }
+        // A `CArray`-typed field whose class was declared `is repr('CArray')`
+        // (upstream's `CArray[T]`, or any other class with that REPR) reads
+        // back as that type over the memory it points at; a NULL pointer is
+        // the type object, as in rakudo. The name-keyed handle below serves
+        // the native provider's own `CArray`.
+        // The layout resolves the declared name the same way, so a `my class`
+        // (registered under its declaration-site storage name) is the class
+        // the field was laid out as.
+        let carray_class = self.resolve_field_type_alias(&declared, &registered);
+        if self.is_carray_repr_spelling(&carray_class)
+            && let Some(built) = self.native_pointer_of_declared(&carray_class, addr, true)
+        {
+            return built.ok();
         }
         // A `CArray`-typed field is a `CArray` handle, not a bare `Pointer`:
         // being able to index it is the whole reason a binding declares the
@@ -653,7 +736,7 @@ impl crate::runtime::Interpreter {
         target: &crate::value::Value,
         name: &str,
         value: &crate::value::Value,
-    ) -> bool {
+    ) -> Result<bool, crate::value::RuntimeError> {
         use crate::value::ValueView;
         let (class_name, address) = match target.view() {
             ValueView::Instance {
@@ -663,26 +746,57 @@ impl crate::runtime::Interpreter {
             } => {
                 let addr = match attributes.as_map().get("address").map(|v| v.view()) {
                     Some(ValueView::Int(a)) if a > 0 => a as usize,
-                    _ => return false,
+                    _ => return Ok(false),
                 };
                 (class_name.resolve(), addr)
             }
-            _ => return false,
+            _ => return Ok(false),
         };
         let Some(registered) = self.cstruct_class_name(&class_name) else {
-            return false;
+            return Ok(false);
         };
         let Some(layout) = self.cstruct_layout(&registered) else {
-            return false;
+            return Ok(false);
         };
         let Some(field) = layout.iter().find(|f| f.name == name) else {
-            return false;
+            return Ok(false);
         };
+        // A bare integer is a `Pointer`'s address, not a struct, a union or a
+        // `CArray`: storing one in a field of such a type would let the next
+        // read through it dereference whatever the program named. Rakudo's
+        // typed assignment refuses it too.
+        if matches!(value.view(), ValueView::Int(_))
+            && matches!(field.ty, FieldType::Pointer | FieldType::Embedded { .. })
+            && let Some(declared) = self.get_attr_type_constraint(&registered, name)
+            && !(declared == "Pointer" || declared.starts_with("Pointer["))
+        {
+            return Err(self.type_check_assignment_failure(
+                &format!("$!{name}"),
+                &declared,
+                value,
+            ));
+        }
         // SAFETY: `address` came from C as a pointer to a struct of this
         // declared type and the instance is alive, so the field is in bounds —
         // the same trust `cstruct_field_value` documents for the read.
-        unsafe { write_field(address, field, value) };
-        true
+        match target.view() {
+            // An object that owns its body keeps what a reference field points
+            // at alive (ADR-11209).
+            ValueView::Instance { attributes, .. }
+                if crate::runtime::cstruct_body::owns_body(&attributes) =>
+            {
+                unsafe {
+                    crate::runtime::cstruct_body::store_owned_field(
+                        &attributes,
+                        address,
+                        field,
+                        value,
+                    )
+                };
+            }
+            _ => unsafe { write_field(address, field, value) },
+        }
+        Ok(true)
     }
 
     /// The number of bytes a value of `type_name` occupies in C: the width of a
@@ -773,10 +887,11 @@ impl crate::runtime::Interpreter {
     /// P2, `value::value_buf_repr`). This is the answer `NativeHelpers::Blob`'s
     /// `pointer-to` needs.
     ///
-    /// A CStruct *constructed in Raku* deliberately does not qualify: it has no
-    /// C storage yet, so it keeps `P6opaque` and `BODY_OF` keeps refusing it
-    /// loudly instead of quietly reading a NULL body. Giving it real storage is
-    /// ADR-0015's P3.
+    /// A CStruct *constructed in Raku* qualifies as soon as it owns its native
+    /// body (`runtime::cstruct_body`, ADR-11209), because it then carries an
+    /// `address` like a handle C returned. One that has no body (no layout
+    /// NativeCall can compute) keeps `P6opaque`, so `BODY_OF` refuses it loudly
+    /// instead of quietly reading a NULL body.
     pub(crate) fn try_native_handle_repr_where(
         &mut self,
         target: &crate::value::Value,
@@ -873,11 +988,25 @@ impl crate::runtime::Interpreter {
                         == short
                 })
         };
-        let repr = if self.is_cstruct_class(&name) {
-            "CStruct"
+        let is_cppstruct = {
+            let reg = self.registry();
+            reg.cppstruct_classes.contains(&name)
+                || reg.cppstruct_classes.iter().any(|c| {
+                    crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str()
+                        == short
+                })
+        };
+        let repr = if is_cppstruct {
+            "CPPStruct"
         } else if is_cunion {
             "CUnion"
-        } else if short == "CArray" || short.starts_with("CArray[") {
+        } else if self.is_cstruct_class(&name) {
+            "CStruct"
+        } else if self.is_carray_repr_class(&name)
+            // The native provider's own `CArray[T]` handle is named, not declared.
+            || short == "CArray"
+            || short.starts_with("CArray[")
+        {
             "CArray"
         } else {
             return None;
@@ -907,7 +1036,9 @@ impl crate::runtime::Interpreter {
                         == short
                 })
         };
-        if holds(&reg.cstruct_classes) {
+        if holds(&reg.cppstruct_classes) {
+            Some("CPPStruct")
+        } else if holds(&reg.cstruct_classes) {
             Some("CStruct")
         } else if holds(&reg.cunion_classes) {
             Some("CUnion")
@@ -915,6 +1046,10 @@ impl crate::runtime::Interpreter {
             Some("CPointer")
         } else if reg.uninstantiable_classes.contains(name) {
             Some("Uninstantiable")
+        } else if reg.nativecall_classes.contains(name) {
+            Some("NativeCall")
+        } else if reg.cstr_classes.contains(name) {
+            Some("CStr")
         } else {
             drop(reg);
             self.is_carray_repr_class(name).then_some("CArray")

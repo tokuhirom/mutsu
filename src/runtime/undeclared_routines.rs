@@ -223,13 +223,27 @@ fn known_without_an_interpreter(
     declared: &HashSet<String>,
     if_imports: &HashSet<&str>,
 ) -> bool {
+    known_from_the_unit_alone(name, declared) || imported_here(name, if_imports)
+}
+
+/// The part of [`known_without_an_interpreter`] that depends on the unit's
+/// AST alone, so it can be recorded with the unit (ADR-12026 §2.1).
+fn known_from_the_unit_alone(name: &str, declared: &HashSet<String>) -> bool {
     declared.contains(name)
         || Interpreter::is_builtin_function(name)
         || Interpreter::is_test_function_name(name)
         || super::system_eval_names::EVAL_KNOWN_ROUTINE_NAMES.contains(&name)
         || NATIVE_TYPE_NAMES.contains(&name)
         || COMPILER_SPECIAL_CALL_NAMES.contains(&name)
-        || (crate::parser::is_imported_function(name) && !if_imports.contains(name))
+}
+
+/// The part of [`known_without_an_interpreter`] that asks the parser's
+/// import table, which is state at the moment of the check.
+fn imported_here<S: std::borrow::Borrow<str> + Eq + std::hash::Hash>(
+    name: &str,
+    if_imports: &HashSet<S>,
+) -> bool {
+    crate::parser::is_imported_function(name) && !if_imports.contains(name)
 }
 
 /// What the walker found: every call the static tables cannot explain, in
@@ -243,6 +257,73 @@ struct Unexplained {
     /// The slots holding the `:if` values of the unit's conditional `use`s.
     /// When there are any, a call is an error only if none of them loaded.
     condition_slots: Vec<String>,
+}
+
+/// The AST half of the mainline undeclared-routine check, recorded with a
+/// precompiled unit (ADR-12026 §2.1): every call that the unit's own
+/// declarations and the static tables leave unexplained. The parser's import
+/// table and the registry are asked again on each load
+/// ([`Interpreter::guards_for_recorded_calls`]), exactly as an unrecorded
+/// check asks them.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) struct RecordedCalls {
+    calls: Vec<(String, i64)>,
+    declared_routines: Vec<String>,
+    condition_slots: Vec<String>,
+    if_imports: Vec<String>,
+}
+
+/// Record the mainline check's AST half for `stmts`, or `None` when the unit
+/// is not judged at all.
+// Cost: O(n), n = size of the unit's AST.
+pub(crate) fn record_mainline_calls(stmts: &[Stmt]) -> Option<RecordedCalls> {
+    let scan = scan_unit(stmts, ScanMode::Mainline);
+    if scan.bail {
+        return None;
+    }
+    let mut if_imports: Vec<String> = scan
+        .conditional_uses
+        .iter()
+        .flat_map(|cu| cu.imports.iter().cloned())
+        .collect();
+    if_imports.sort();
+    if_imports.dedup();
+    let calls = scan
+        .calls
+        .into_iter()
+        .filter(|(name, _)| !known_from_the_unit_alone(name, &scan.declared))
+        .collect();
+    let mut declared_routines: Vec<String> = scan.declared_routines.into_iter().collect();
+    declared_routines.sort();
+    Some(RecordedCalls {
+        calls,
+        declared_routines,
+        condition_slots: scan
+            .conditional_uses
+            .into_iter()
+            .map(|cu| cu.slot)
+            .collect(),
+        if_imports,
+    })
+}
+
+impl RecordedCalls {
+    /// The [`Unexplained`] a fresh scan would find now: the recorded calls
+    /// minus those the parser's import table explains at this moment.
+    // Cost: O(c), c = recorded calls.
+    fn unexplained_now(&self) -> Unexplained {
+        let if_imports: HashSet<&str> = self.if_imports.iter().map(String::as_str).collect();
+        Unexplained {
+            calls: self
+                .calls
+                .iter()
+                .filter(|(name, _)| !imported_here(name, &if_imports))
+                .cloned()
+                .collect(),
+            declared_routines: self.declared_routines.iter().cloned().collect(),
+            condition_slots: self.condition_slots.clone(),
+        }
+    }
 }
 
 fn scan_unit(stmts: &[Stmt], mode: ScanMode) -> Scan {
@@ -408,6 +489,25 @@ impl Interpreter {
         let Some(found) = unexplained_calls(stmts, mode) else {
             return Ok(());
         };
+        self.judge_found(&found, guards)
+    }
+
+    /// [`Self::check_undeclared_routines_with_guards`] for a unit whose AST
+    /// half was recorded ([`record_mainline_calls`]).
+    // Cost: O(c * r), c = recorded calls, r = cost of one registry/env lookup.
+    pub(crate) fn guards_for_recorded_calls(
+        &self,
+        recorded: Option<&RecordedCalls>,
+    ) -> Result<Vec<Stmt>, RuntimeError> {
+        let mut guards = Vec::new();
+        if let Some(recorded) = recorded {
+            self.judge_found(&recorded.unexplained_now(), &mut guards)?;
+        }
+        Ok(guards)
+    }
+
+    // Cost: O(c * r), as `guards_for_recorded_calls`.
+    fn judge_found(&self, found: &Unexplained, guards: &mut Vec<Stmt>) -> Result<(), RuntimeError> {
         let mut guarded: HashSet<&str> = HashSet::new();
         for (name, line) in &found.calls {
             // Everything beyond the static tables is per-interpreter registry
@@ -421,6 +521,10 @@ impl Interpreter {
                 // A sigilless constant in scope: an `EVAL` of a bare term
                 // (`EVAL 'indiana-pi'` for a `--> indiana-pi` return value).
                 || self.term_binding(name).is_some()
+                // An enum key (`enum E <aa bb>; EVAL 'aa'`, #11818) -- a
+                // module's own key only where that module is merged
+                // (ADR-11136), like its classes.
+                || (self.enum_bare_value(name).is_some() && !self.module_name_hidden_here(name))
                 || self.registry().classes.contains_key(name)
                 || self.registry().roles.contains_key(name)
                 || self.registry().subsets.contains_key(name)

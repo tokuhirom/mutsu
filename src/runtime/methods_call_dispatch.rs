@@ -757,6 +757,32 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::array(vec![]));
             return self.call_method_with_values(frames, method, args);
         }
+        // An `IterationBuffer` is an `Any`: the list-shaped `Any` methods run on
+        // its elements as a List, not on the buffer as one opaque item
+        // (`$buf.head(2)`, `$buf.first(...)`), unless the class overrides them.
+        if matches!(
+            method,
+            "head" | "tail" | "first" | "skip" | "grep" | "map" | "sort" | "min" | "max"
+        ) && crate::runtime::nqp_ops_list::is_iteration_buffer(&target)
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && !self.has_user_method(class_name.as_str(), method)
+        {
+            let items = match attributes
+                .as_map()
+                .get("__mutsu_iterationbuffer_items")
+                .map(Value::view)
+            {
+                Some(ValueView::Array(values, ..)) => values.to_vec(),
+                Some(ValueView::Seq(values)) => values.to_vec(),
+                Some(ValueView::Slip(values)) => values.to_vec(),
+                _ => Vec::new(),
+            };
+            return self.call_method_with_values(Value::array(items), method, args);
+        }
         // A `Match` answers `Any`'s list methods from its positional captures
         // (see `is_capture_list_method`), unless the grammar defines the method.
         if crate::value::match_view::is_capture_list_method(method)
@@ -3929,11 +3955,29 @@ impl Interpreter {
             // line whose time is a native builtin is the user's own code being
             // slow, while one whose time is `method-dispatch` is mutsu's.
             let _region = crate::profile::enter(crate::profile::Region::NativeBuiltin);
-            match cascade_args {
-                [] => crate::builtins::native_method_0arg(&target, method_sym),
-                [a] => crate::builtins::native_method_1arg(&target, method_sym, a),
-                [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b),
-                _ => None,
+            // The built-in method table first (ADR-11276): a row that needs
+            // the interpreter (`Handler::Interp`) is reachable only from an
+            // entry that has one, and the pure rows the cascades ask for
+            // themselves are found here without walking them. `args`, not
+            // `cascade_args`: a row binds the named arguments it declares,
+            // and a call with any other takes the cascades with the
+            // stripped list as before. `bypass_native_fastpath` already
+            // covers an `augment` of the receiver's type.
+            if let Some(result) = crate::builtins::method_table::try_dispatch_in(
+                self,
+                |_| true,
+                &target,
+                method_sym,
+                &args,
+            ) {
+                Some(result)
+            } else {
+                match cascade_args {
+                    [] => crate::builtins::native_method_0arg(&target, method_sym),
+                    [a] => crate::builtins::native_method_1arg(&target, method_sym, a),
+                    [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b),
+                    _ => None,
+                }
             }
         };
         if native_result.is_some() {
@@ -4344,10 +4388,26 @@ impl Interpreter {
         // Complex -> Real type conversion (`$*TOLERANCE` decides whether the
         // imaginary part is negligible)
         if matches!(method, "Int" | "UInt" | "Num" | "Rat" | "FatRat" | "Real")
-            && args.is_empty()
-            && let ValueView::Complex(r, im) = target.view()
+            && (args.is_empty() || (args.len() == 1 && matches!(method, "Rat" | "FatRat")))
         {
-            return self.dispatch_complex_to_real(method, r, im, &target);
+            if let ValueView::Complex(r, im) = target.view() {
+                return self.dispatch_complex_to_real(method, r, im, &target, &args);
+            }
+            // A string that numifies to a `Complex` (`"1+2i"`) is coerced as
+            // that `Complex` (`Str.Int` is `self.Numeric.Int`), and an error
+            // names the number, not the string it was spelled in.
+            if args.is_empty()
+                && let ValueView::Str(s) = target.view()
+                && let Some((r, im)) = crate::value::str_numeric::str_numifies_to_complex(&s)
+            {
+                return self.dispatch_complex_to_real(
+                    method,
+                    r,
+                    im,
+                    &Value::complex(r, im),
+                    &args,
+                );
+            }
         }
 
         // Zero-denominator Rat/FatRat .Str
@@ -5053,7 +5113,10 @@ impl Interpreter {
                 let rendered =
                     self.call_method_with_values_unviewed(inner.as_ref().clone(), method, args)?;
                 let base = crate::value::types::what_type_name(inner.as_ref());
-                let composed = crate::value::types::what_type_name(&target);
+                // The name `.^name` reports: a `.^set_name` on the type object
+                // this instance was built from (`Box[Int]`) wins over the
+                // synthesized `Box+{BoxOf[Int]}`.
+                let composed = self.mixin_instance_type_name(&target, inner, mixins)?;
                 if composed != base
                     && let ValueView::Str(text) = rendered.view()
                     && let Some(tail) = text.strip_prefix(base.as_str())
@@ -5090,17 +5153,9 @@ impl Interpreter {
                 self.call_method_with_values(target.clone(), "Seq", vec![])
                     .and_then(|seq| self.list_to_capture(&seq)),
             ),
-            ValueView::Array(..) | ValueView::Seq(_) => {
-                let needs_str_key = Self::value_to_list(target).iter().any(
-                    |i| matches!(i.view(), ValueView::ValuePair(k, _) if !matches!(k.view(), ValueView::Str(_))),
-                );
-                needs_str_key.then(|| self.list_to_capture(target))
-            }
-            ValueView::Slip(_) => {
-                let needs_str_key = Self::value_to_list(target).iter().any(
-                    |i| matches!(i.view(), ValueView::ValuePair(k, _) if !matches!(k.view(), ValueView::Str(_))),
-                );
-                needs_str_key.then(|| self.list_to_capture(target))
+            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => {
+                crate::builtins::methods_0arg::coercion::capture_needs_str_key(target)
+                    .then(|| self.list_to_capture(target))
             }
             // `Mu.Capture` on a user-declared object: the named arguments are
             // the object's PUBLIC attributes, and each one is read through its

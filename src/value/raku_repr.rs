@@ -372,6 +372,19 @@ pub(crate) fn is_adverbial_pair_key(s: &str) -> bool {
     true
 }
 
+// Cost: O(n), n = total length of `parts`.
+/// The `.raku` text of an immutable `Map` from its already-rendered pairs:
+/// `Map.new((:a(1),:b(2)))`, and the bare `Map.new` for an empty one. Rakudo
+/// drops the argument list when there are no pairs, where `.gist` keeps it as
+/// `Map.new(())` (so this is not the gist renderers' shape).
+pub(crate) fn raku_map_new(parts: &[String]) -> String {
+    if parts.is_empty() {
+        "Map.new".to_string()
+    } else {
+        format!("Map.new(({}))", parts.join(","))
+    }
+}
+
 /// Render a Hash/Map value in a colon-pair position.
 ///
 /// A raw Boolean is the shorthand Pair form (`:a`/`:!a`), while a Boolean
@@ -1010,7 +1023,7 @@ pub fn raku_value(v: &Value) -> String {
                         }
                     })
                     .collect();
-                return format!("Map.new(({}))", parts.join(","));
+                return raku_map_new(&parts);
             }
             // Cycle detection for recursive hash structures.
             // When a self-referencing hash is found, produce Raku-style output:

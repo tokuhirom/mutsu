@@ -57,7 +57,23 @@ pub(crate) fn whenever_stmt(input: &str) -> PResult<'_, Stmt> {
     if rest.starts_with("->") || rest.starts_with("<->") {
         let (rest, lambda) = crate::parser::primary::arrow_lambda_pub(rest)?;
         let (params, param_defs, body) = match lambda {
-            Expr::Lambda { param, body, .. } => (vec![param], Vec::new(), body),
+            Expr::Lambda {
+                param,
+                body,
+                param_sigilless,
+                ..
+            } => {
+                // A sigilless parameter (`-> \row`) is a term: the body spells it
+                // as a bare word, so its signature is kept (it is empty for a
+                // plain `-> $x`) and the routine binder reads it from its slot
+                // like a `sub f(\row)` parameter (#11898).
+                let param_defs = if param_sigilless && !param.is_empty() {
+                    vec![crate::ast::ParamDef::sigilless_term(&param)]
+                } else {
+                    Vec::new()
+                };
+                (vec![param], param_defs, body)
+            }
             Expr::AnonSubParams {
                 params,
                 param_defs,

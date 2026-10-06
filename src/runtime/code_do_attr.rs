@@ -102,7 +102,15 @@ fn method_object_do_slot(obj: &Value, name: &str) -> Option<(String, String, usi
     let ValueView::Instance { attributes, .. } = obj.view() else {
         return None;
     };
-    let attrs = attributes.as_map();
+    method_instance_slot(&attributes.as_map())
+}
+
+/// The `(class, method, candidate)` slot recorded in a `Method` object's
+/// attributes, if it carries one.
+// Cost: O(1).
+pub(crate) fn method_instance_slot(
+    attrs: &crate::value::AttrMap,
+) -> Option<(String, String, usize)> {
     let cls = attrs.get("__mutsu_lookup_class")?.to_string_value();
     let meth = attrs.get("__mutsu_lookup_method")?.to_string_value();
     let ValueView::Int(idx) = attrs.get("__mutsu_lookup_candidate_idx")?.view() else {
@@ -278,7 +286,8 @@ impl Interpreter {
     /// `Code.name` of a `Sub`: the name of its [name holder](Self::code_name_holder).
     // Cost: as `code_name_holder`.
     pub(crate) fn code_name(&self, data: &Gc<SubData>) -> Symbol {
-        self.code_name_holder(data).name
+        let holder = self.code_name_holder(data);
+        holder.routine_cell.renamed().unwrap_or(holder.name)
     }
 
     /// `Code.set_name` / `nqp::setcodename`: rename code object `target`

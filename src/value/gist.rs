@@ -393,6 +393,11 @@ pub(crate) fn gist_value(value: &Value) -> String {
         format!("(\\{}_{} = {})", name, ptr, rendered)
     }
     match value.view() {
+        // A Capture gists as its call shape; its string form (`.Str`, which
+        // `to_string_value` answers) joins the arguments instead.
+        ValueView::Capture { positional, named } => {
+            crate::value::capture_text::capture_gist(positional, named)
+        }
         // A Uni / normalization form gists as e.g. NFKC:0x<0066 0066>, not as
         // the plain decoded text.
         ValueView::Uni(u) => {

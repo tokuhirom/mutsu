@@ -23,6 +23,14 @@ impl Compiler {
             ("atomic-fetch-inc", 1) => ("fetch-add", Some(1), false),
             ("atomic-inc-fetch", 1) => ("add-fetch", Some(1), false),
             ("atomic-fetch-dec", 1) => ("fetch-add", Some(-1), false),
+            // The operators, as calls of their own routines (`@a[0]⚛++`).
+            ("postfix:<⚛++>", 1) => ("fetch-add", Some(1), false),
+            ("prefix:<++⚛>", 1) => ("add-fetch", Some(1), false),
+            ("postfix:<⚛-->", 1) => ("fetch-add", Some(-1), false),
+            ("prefix:<--⚛>", 1) => ("add-fetch", Some(-1), false),
+            // `@a[0] ⚛+= 5` / `⚛-= 2`: the add of the (negated) operand.
+            ("infix:<⚛+=>", 2) => ("add-fetch", None, false),
+            ("infix:<⚛-=>", 2) => ("add-fetch", None, true),
             ("atomic-dec-fetch", 1) => ("add-fetch", Some(-1), false),
             ("atomic-fetch-add", 2) => ("fetch-add", None, false),
             ("atomic-add-fetch", 2) => ("add-fetch", None, false),
@@ -39,7 +47,28 @@ impl Compiler {
         else {
             return false;
         };
-        let container_idx = self.code.add_constant(Value::str(container));
+        // The routine's spelling belongs to this one call (see
+        // `atomic_target.rs`). The add / increment family needs a native-integer
+        // container, so does an `nqp::` `_i` load, store or `cas`; the plain
+        // routines take any element.
+        let spelling = self.atomic_spelling.take();
+        let guard_display = match (&spelling, op) {
+            (spelling, "fetch-add" | "add-fetch") => Some(
+                spelling
+                    .as_ref()
+                    .map_or_else(|| name.resolve(), |s| s.display.clone()),
+            ),
+            (Some(spelling), _) if spelling.int_only => Some(spelling.display.clone()),
+            _ => None,
+        };
+        if let Some(display) = &guard_display
+            && args.get(1).is_none()
+        {
+            // No operand of the user's (`atomic-fetch-inc(@a[0])`): the guard is
+            // a statement. With one, the guard below passes it through.
+            self.emit_int_atomic_guard(&container, display, None, true);
+        }
+        let container_idx = self.code.add_constant(Value::str(container.clone()));
         self.code.emit(OpCode::LoadConst(container_idx));
         self.compile_expr(index);
         let op_idx = self.code.add_constant(Value::str_from(op));
@@ -51,7 +80,13 @@ impl Compiler {
                 4
             }
             (None, Some(operand)) => {
-                self.compile_expr(operand);
+                // The guard answers its operand, so it replaces compiling it.
+                match &guard_display {
+                    Some(display) => {
+                        self.emit_int_atomic_guard(&container, display, Some(operand), true);
+                    }
+                    None => self.compile_expr(operand),
+                }
                 if negate {
                     self.code.emit(OpCode::Negate);
                 }

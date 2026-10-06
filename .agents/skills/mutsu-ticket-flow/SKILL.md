@@ -243,9 +243,10 @@ Two rules that go with the loop:
 If a ticket genuinely needs two branches in flight, stop and ask the user rather than pushing
 elsewhere.
 
-Before publishing an implementation PR, run `cargo fmt --all`, then `scripts/dev gate` and wait
-for it with `scripts/dev wait <id>` (`run_in_background: true`). The gate runs `make checks` (the
-build-free static guards, first), `cargo fmt --check`, `make lint` (all four configurations CI's `lint-configs` job gates on, not just the default clippy),
+Before publishing an implementation PR, run `scripts/dev gate` and wait
+for it with `scripts/dev wait <id>` (`run_in_background: true`). The gate first applies
+`cargo fmt --all` itself (commit any file it reports rewriting), then runs `make checks` (the
+build-free static guards, first), `make lint` (all four configurations CI's `lint-configs` job gates on, not just the default clippy),
 `make test` and `make roast`, and **do not publish until its verdict is `pass`**. The verdict
 already accounts for the remote container's environment-only roast failures
 (`ci/known-env-failures.toml`, matched by exact shape), so there is nothing to compare by eye:

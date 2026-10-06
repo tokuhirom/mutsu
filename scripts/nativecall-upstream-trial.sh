@@ -36,7 +36,12 @@ for f in NativeCall.rakumod:UNC.rakumod \
          NativeCall/Dispatcher.rakumod:UNC/Dispatcher.rakumod \
          NativeCall/Compiler/GNU.rakumod:UNC/Compiler/GNU.rakumod \
          NativeCall/Compiler/MSVC.rakumod:UNC/Compiler/MSVC.rakumod; do
-    sed 's/NativeCall\b/UNC/g' "$src/${f%%:*}" > "$lib/${f##*:}"
+    # `repr<NativeCall>` is the VM's name for a REPR, not the module's, so it
+    # is not renamed (the rename would make `Callsite` a `repr<UNC>` class).
+    sed -e 's/repr<NativeCall>/repr<@NATIVECALL-REPR@>/g' \
+        -e 's/NativeCall\b/UNC/g' \
+        -e 's/repr<@NATIVECALL-REPR@>/repr<NativeCall>/g' \
+        "$src/${f%%:*}" > "$lib/${f##*:}"
 done
 
 # Each step: a label and a program. Later steps assume the earlier ones pass,
@@ -48,10 +53,13 @@ steps=(
     "Types: Pointer.new|use UNC::Types; print UNC::Types::Pointer.new.raku eq 'UNC::Types::Pointer.new(0)' ?? 'ok' !! UNC::Types::Pointer.new.raku"
     "Types: CArray[int32] elements|use UNC::Types; my \$a = UNC::Types::CArray[int32].new(1,2,3); print \$a[1] == 2 && \$a.elems == 3 ?? 'ok' !! 'wrong'"
     "Types: CArray[int32] write|use UNC::Types; my \$a = UNC::Types::CArray[int32].new(1,2,3); \$a[0] = 7; print \$a[0] == 7 ?? 'ok' !! 'wrong'"
+    "Types: untyped CArray.new|use UNC::Types; my \$a = UNC::Types::CArray.new; sub f(UNC::Types::CArray \$x) { 1 }; print \$a ~~ UNC::Types::CArray && \$a.^name eq 'UNC::Types::CArray' && f(\$a) == 1 ?? 'ok' !! 'wrong'"
     "load UNC|use UNC; print 'ok'"
     "UNC: nativesizeof|use UNC; print nativesizeof(int32) == 4 ?? 'ok' !! 'wrong'"
     "UNC: is native strlen|use UNC; sub strlen(Str --> size_t) is native {*}; print strlen('hello') == 5 ?? 'ok' !! 'wrong'"
-    "UNC: CStruct round trip|use UNC; class TM is repr<CStruct> { has int32 \$.a; has int32 \$.b }; my \$t = TM.new(a => 1, b => 2); print \$t.b == 2 && nativesizeof(TM) == 8 ?? 'ok' !! 'wrong'"
+    "UNC: explicitly-manage|use UNC; use nqp; my \$r = explicitly-manage('héllo'); my \$c = \$r ~~ Str ?? \$r.cstr !! \$r; print \$c.REPR eq 'CStr' && nqp::unbox_s(\$c) eq 'héllo' ?? 'ok' !! 'wrong'"
+    "UNC: CArray inside a CStruct|use UNC; class Mat is repr<CStruct> { HAS num32 @.m[4] is CArray; has int32 \$.n }; my \$m = Mat.new(n => 7); \$m.m[2] = 1.5e0; print \$m.m[2] == 1.5e0 && \$m.n == 7 ?? 'ok' !! 'wrong'"
+    "UNC: CStruct.new storage|use UNC; class TM is repr<CStruct> { has int32 \$.a; has int32 \$.b }; sub memcpy(TM, TM, size_t --> Pointer) is native('c', v6) {*}; my \$t = TM.new(a => 1, b => 2); my \$u = TM.new; memcpy(\$u, \$t, nativesizeof(TM)); print \$u.b == 2 && \$t.REPR eq 'CStruct' && nativesizeof(TM) == 8 ?? 'ok' !! 'wrong'"
 )
 
 fail=0

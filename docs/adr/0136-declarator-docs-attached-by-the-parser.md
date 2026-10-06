@@ -83,3 +83,19 @@ it to the variable — the declaration right after it.
 - **A `doc` field on every declarator AST node**: ~12 node kinds and hundreds of construction
   sites, for information the runtime reads by name anyway. Only anonymous code, which has no
   name, carries its documentation on the node.
+
+## Amendment (2026-10-06): a loaded module's docs outlive its load (#12037)
+
+Decision 4 installs a unit's docs when the unit starts and the importer's tables come back
+when a module load ends, so a module's named docs vanished with the load: `.WHY` on `&inc`
+was `Nil` after `use M`, from the importer and from the module's own routines alike. The
+structural keys stay; what changes is that a finished load keeps its table.
+`DeclaratorDocs::loaded_units` holds, in load order, the named docs of every loaded module
+under the module's compilation unit (`unit_of_source`, the unit its routines record as
+`source_file`); a module that documents nothing has no entry.
+
+`.WHY` on a routine reads the table of the unit the routine was declared in, so two modules
+documenting `&inc`, and the importer's own `&inc`, stay apart. A target that names no file (a
+type object) is looked up in the loaded modules in load order, after the running unit's own
+table; a package name has no unit to disambiguate by, which is the residual this leaves until
+named declarations carry a stable declaration identity (see Consequences).

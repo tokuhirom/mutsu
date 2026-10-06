@@ -76,6 +76,7 @@ impl Absent {
 
 const EXPRESSION: Absent = Absent::TypeObject("RakuAST::Expression");
 const BLOCK: Absent = Absent::TypeObject("RakuAST::Block");
+const NAME: Absent = Absent::TypeObject("RakuAST::Name");
 const BACKTRACK: Absent = Absent::TypeObject("RakuAST::Regex::Backtrack");
 
 /// The fields a RakuAST class declares, in rakudo's own declaration order
@@ -139,7 +140,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
                 Absent::TypeObject("RakuAST::StatementModifier::Loop"),
             ),
         ],
-        IntLiteral | NumLiteral | RatLiteral | StrLiteral => &[("value", Absent::Required)],
+        IntLiteral | NumLiteral | RatLiteral | VersionLiteral | ComplexLiteral | StrLiteral => {
+            &[("value", Absent::Required)]
+        }
         VarLexical | VarDynamic => &[("name", Absent::Required)],
         VarPackage => &[("name", Absent::Required), ("sigil", Absent::Required)],
         Name => &[("parts", Absent::EmptyList)],
@@ -172,7 +175,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("body", Absent::TypeObject("RakuAST::Blockoid")),
         ],
         Blockoid => &[("statement-list", Absent::Required)],
-        VarDeclarationPlaceholderPositional => &[("lexical-name", Absent::Required)],
+        VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => {
+            &[("lexical-name", Absent::Required)]
+        }
         VarDeclarationPlaceholderSlurpyArray => &[],
         VarDeclarationPlaceholderSlurpyHash => &[],
         StubFail | StubDie | StubWarn => &[("args", Absent::EmptyNode(ArgList))],
@@ -193,7 +198,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("infix", Absent::Required),
             ("dwim-right", Absent::False),
         ],
-        TraitReturns | TraitOf | TraitDoes => &[("type", Absent::Required)],
+        TraitReturns | TraitOf | TraitDoes | TraitHides => &[("type", Absent::Required)],
+        StatementTrusts => &[("type", Absent::Required)],
         TraitHandles => &[("term", Absent::Required)],
         TraitIs => &[
             ("name", Absent::TypeObject("RakuAST::Name")),
@@ -224,6 +230,12 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("sigil", Absent::Required),
             ("desigilname", Absent::Required),
             ("traits", Absent::EmptyList),
+            ("initializer", Absent::TypeObject("RakuAST::Initializer")),
+        ],
+        VarDeclarationAnonymous => &[
+            ("type", Absent::TypeObject("RakuAST::Type")),
+            ("scope", Absent::Required),
+            ("sigil", Absent::Required),
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
         ],
         InitializerAssign | InitializerBind => &[("expression", Absent::Required)],
@@ -287,13 +299,30 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("signature", Absent::EmptyNode(Signature)),
             ("body", Absent::Required),
         ],
-        Grammar => &[("name", Absent::Required), ("body", Absent::Required)],
+        // A package declaration without a source name (`class { }`) has no
+        // `name`: its accessor answers the undefined `Name`, as rakudo's.
+        Class | Role | Grammar => &[
+            ("scope", Absent::Str("our")),
+            ("name", NAME),
+            ("repr", Absent::TypeObject("Str")),
+            ("traits", Absent::EmptyList),
+            ("body", Absent::Required),
+        ],
+        Module | Package => &[
+            ("scope", Absent::Str("our")),
+            ("name", NAME),
+            ("repr", Absent::TypeObject("Str")),
+            ("traits", Absent::EmptyList),
+            ("body", Absent::Required),
+        ],
         Pragma => &[
             ("name", Absent::Required),
             ("argument", EXPRESSION),
             ("off", Absent::Zero),
         ],
         StatementUse => &[("module-name", Absent::Required), ("argument", EXPRESSION)],
+        StatementImport => &[("module-name", Absent::Required), ("argument", EXPRESSION)],
+        StatementNeed => &[("module-names", Absent::EmptyList)],
         StatementLanguageVersion => &[("version", Absent::Required)],
         // The conditional family. `If` and `With` take the `elsif`/`orwith`
         // chain and an `else`; `Unless` and `Without` take neither (rakudo
@@ -329,7 +358,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
 pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
     use RakuAstClass::*;
     Some(match class {
-        IntLiteral | NumLiteral | RatLiteral | StrLiteral => "value",
+        IntLiteral | NumLiteral | RatLiteral | VersionLiteral | ComplexLiteral | StrLiteral => {
+            "value"
+        }
         FunctionInfix => "function",
         Infix | Prefix => "operator",
         VarLexical | VarDynamic => "name",
@@ -338,11 +369,11 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         TermName | TermNamed | ParameterTargetTerm => "name",
         TermTopicCall => "call",
         Blockoid => "statement-list",
-        VarDeclarationPlaceholderPositional => "lexical-name",
+        VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => "lexical-name",
         InitializerAssign | InitializerBind => "expression",
         MetaInfixAssign => "infix",
         TypeSimple | TypeSetting | TypeCapture => "name",
-        TraitReturns | TraitOf | TraitDoes => "type",
+        TraitReturns | TraitOf | TraitDoes | TraitHides => "type",
         TraitHandles => "term",
         RegexLiteral => "text",
         RegexQuote => "quoted",

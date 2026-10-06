@@ -167,6 +167,17 @@ pub(crate) fn make_no_candidates_error(
     err
 }
 
+/// An `X::Multi::NoMatch` carrying `msg` verbatim, for a dispatch failure whose
+/// full text the caller has already composed.
+pub(crate) fn make_no_match_error_with_message(msg: String) -> RuntimeError {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(msg.clone()));
+    let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(ex));
+    err
+}
+
 /// Create a structured X::Multi::NoMatch error.
 pub(crate) fn make_multi_no_match_error(method_name: &str) -> RuntimeError {
     let msg = format!("No matching candidates for method: {}", method_name);

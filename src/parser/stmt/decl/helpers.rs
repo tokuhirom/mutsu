@@ -2,8 +2,6 @@ use super::super::super::expr::expression;
 use super::super::super::parse_result::{PError, PResult, parse_char};
 use super::ws;
 use crate::ast::Expr;
-use crate::symbol::Symbol;
-use crate::token_kind::TokenKind;
 use crate::value::Value;
 
 pub(super) fn is_supported_variable_trait(trait_name: &str) -> bool {
@@ -168,54 +166,11 @@ pub(in crate::parser::stmt) fn parse_array_shape_suffix(input: &str) -> PResult<
 }
 
 pub(super) fn shaped_array_new_expr(dims: Vec<Expr>) -> Expr {
-    let shape_value = if dims.len() == 1 {
-        dims.into_iter()
-            .next()
-            .unwrap_or(Expr::Literal(Value::int(0)))
-    } else {
-        Expr::ArrayLiteral(dims)
-    };
-
-    Expr::MethodCall {
-        target: Box::new(Expr::BareWord("Array".to_string())),
-        name: Symbol::intern("new"),
-        args: vec![Expr::Binary {
-            left: Box::new(Expr::Literal(Value::str_from("shape"))),
-            op: TokenKind::FatArrow,
-            right: Box::new(shape_value),
-        }],
-        modifier: None,
-        quoted: false,
-    }
+    crate::ast::shaped_decl::new_expr(dims)
 }
 
 pub(super) fn shaped_array_new_with_data_expr(dims: Vec<Expr>, data: Expr) -> Expr {
-    let shape_value = if dims.len() == 1 {
-        dims.into_iter()
-            .next()
-            .unwrap_or(Expr::Literal(Value::int(0)))
-    } else {
-        Expr::ArrayLiteral(dims)
-    };
-
-    Expr::MethodCall {
-        target: Box::new(Expr::BareWord("Array".to_string())),
-        name: Symbol::intern("new"),
-        args: vec![
-            Expr::Binary {
-                left: Box::new(Expr::Literal(Value::str_from("shape"))),
-                op: TokenKind::FatArrow,
-                right: Box::new(shape_value),
-            },
-            Expr::Binary {
-                left: Box::new(Expr::Literal(Value::str_from("data"))),
-                op: TokenKind::FatArrow,
-                right: Box::new(data),
-            },
-        ],
-        modifier: None,
-        quoted: false,
-    }
+    crate::ast::shaped_decl::new_with_data_expr(dims, data)
 }
 
 pub(super) fn register_term_symbol_from_decl_name(name: &str) {

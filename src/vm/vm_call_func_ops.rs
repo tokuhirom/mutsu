@@ -2294,7 +2294,12 @@ impl Interpreter {
                     // candidate still work because compile_and_call_function_def pushes
                     // the same multi-dispatch + samewith frames the interpreter would.
                     let returns_container = Self::routine_is_rw_capable(&def);
-                    let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
+                    // The binder names a raw / `is rw` parameter's caller
+                    // variable from these, as on the single-sub arm below.
+                    self.set_pending_call_arg_sources(arg_sources.clone());
+                    let result = self.compile_and_call_function_def(&def, args, compiled_fns);
+                    self.set_pending_call_arg_sources(None);
+                    let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
                 } else if self.has_proto_cached_sym(name, name_sym)
                     && let Some(result) =
@@ -2351,8 +2356,10 @@ impl Interpreter {
                         && Self::def_is_otf_compilable_multi_candidate(&def)
                     {
                         let returns_container = Self::routine_is_rw_capable(&def);
-                        let result =
-                            self.compile_and_call_function_def(&def, args, compiled_fns)?;
+                        self.set_pending_call_arg_sources(arg_sources.clone());
+                        let result = self.compile_and_call_function_def(&def, args, compiled_fns);
+                        self.set_pending_call_arg_sources(None);
+                        let result = result?;
                         loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
                     } else {
                         crate::vm::vm_stats::record_function_fallback(name);

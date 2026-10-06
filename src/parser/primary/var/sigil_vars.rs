@@ -14,10 +14,17 @@ use super::ident::{
     is_pseudo_package, parse_ident_with_hyphens, parse_qualified_ident_with_hyphens,
 };
 use super::perl5::detect_perl5_sigil_var;
-use super::scalar::scalar_var;
+use super::scalar::{scalar_var, starts_named_placeholder};
 use super::self_call::contextualized_self_call;
 
 static ANON_ARRAY_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// A fresh name for a bare `@` (each occurrence is its own anonymous array).
+// Cost: O(1).
+pub(crate) fn fresh_anon_array_name() -> String {
+    let id = ANON_ARRAY_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("__ANON_ARRAY_{id}__")
+}
 
 /// Find the `]` that closes the outer `[` of an `&[op]` operator reference,
 /// balancing nested brackets. `input` starts just past the outer `[`. This lets
@@ -231,6 +238,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
         || input.starts_with('?')
         || input.starts_with('!')
         || input.starts_with('^')
+        || starts_named_placeholder(input)
         || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
     {
         (&input[1..], &input[..1])
@@ -358,8 +366,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
     if !next_is_ident && twigil.is_empty() {
-        let id = ANON_ARRAY_COUNTER.fetch_add(1, Ordering::Relaxed);
-        return Ok((rest, Expr::ArrayVar(format!("__ANON_ARRAY_{id}__"))));
+        return Ok((rest, Expr::ArrayVar(fresh_anon_array_name())));
     }
     let (rest, name) = super::ident::parse_var_longname_with_hyphens(rest)?;
     let (rest, name) = parse_var_name_adverb_suffixes(rest, name);
@@ -430,6 +437,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
         || input.starts_with('?')
         || input.starts_with('!')
         || input.starts_with('^')
+        || starts_named_placeholder(input)
         || (input.starts_with('~') && input.len() > 1 && input.as_bytes()[1].is_ascii_alphabetic())
     {
         (&input[1..], &input[..1])
@@ -802,6 +810,8 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
         (stripped, "!")
     } else if let Some(stripped) = input.strip_prefix('^') {
         (stripped, "^")
+    } else if starts_named_placeholder(input) {
+        (&input[1..], ":")
     } else if let Some(stripped) = input.strip_prefix('*') {
         (stripped, "*")
     } else {

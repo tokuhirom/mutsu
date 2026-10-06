@@ -445,6 +445,8 @@ impl Interpreter {
                     self.register_cunion_class(&storage_name);
                 } else if repr_name == "CStruct" {
                     self.register_cstruct_class(&storage_name);
+                } else if repr_name == "CPPStruct" {
+                    self.register_cppstruct_class(&storage_name);
                 } else if repr_name == "CPointer" {
                     self.register_cpointer_class(&storage_name);
                 } else if repr_name == "CArray" {
@@ -452,6 +454,12 @@ impl Interpreter {
                 } else if repr_name == "Uninstantiable" {
                     self.registry_mut()
                         .uninstantiable_classes
+                        .insert(storage_name.to_string());
+                } else if repr_name == "NativeCall" {
+                    self.register_nativecall_class(&storage_name);
+                } else if repr_name == "CStr" {
+                    self.registry_mut()
+                        .cstr_classes
                         .insert(storage_name.to_string());
                 } else if repr_name == "VMArray" || repr_name == "VMHash" {
                     self.register_vm_storage_class(&storage_name, repr_name == "VMHash");

@@ -527,7 +527,21 @@ impl Interpreter {
                     let mut plain_values = Vec::new();
                     // true when the block body itself ran `done`.
                     let body_done = body_ran_done;
+                    // A `whenever` body ran `done` while its source was
+                    // replayed: the block is complete, so its remaining
+                    // subscriptions are never opened (a plain emitted value
+                    // still is delivered).
+                    let mut supply_completed = false;
                     for item in emitted {
+                        if supply_completed
+                            && matches!(item.view(), ValueView::Array(arr, ..)
+                                if arr.len() == 5
+                                    && matches!(arr[0].view(),
+                                        ValueView::Instance { class_name, .. }
+                                            if class_name == "Supply"))
+                        {
+                            continue;
+                        }
                         if let ValueView::Array(arr, ..) = item.view()
                             && arr.len() == 5
                             && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
@@ -1036,7 +1050,7 @@ impl Interpreter {
                                     }
                                     _ => (Vec::new(), None),
                                 };
-                                let (mut captured, unhandled_quit) = self
+                                let (mut captured, unhandled_quit, completed) = self
                                     .drive_whenever_body_over_values(
                                         values,
                                         initial_quit,
@@ -1047,6 +1061,7 @@ impl Interpreter {
                                 if !outer_tap_registered {
                                     plain_values.append(&mut captured);
                                 }
+                                supply_completed |= completed;
                                 if let Some(reason) = unhandled_quit {
                                     if let Some(ref qf) = quit_cb {
                                         self.call_supply_quit_handler(qf.clone(), reason)?;

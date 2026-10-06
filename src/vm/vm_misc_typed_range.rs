@@ -1,4 +1,5 @@
 use super::*;
+use crate::builtins::arith::range::int_range;
 
 impl Interpreter {
     pub(super) fn array_elements_match_constraint(
@@ -237,7 +238,7 @@ impl Interpreter {
             return Err(err);
         }
         let result = match (left.view(), right.view()) {
-            (ValueView::Int(a), ValueView::Int(b)) => Value::range(a, b),
+            (ValueView::Int(a), ValueView::Int(b)) => int_range(a, b, false, false),
             (ValueView::Int(a), ValueView::Num(b)) if b.is_infinite() && b.is_sign_positive() => {
                 Value::range(a, i64::MAX)
             }
@@ -294,7 +295,7 @@ impl Interpreter {
             return Err(err);
         }
         let result = match (left.view(), right.view()) {
-            (ValueView::Int(a), ValueView::Int(b)) => Value::range_excl(a, b),
+            (ValueView::Int(a), ValueView::Int(b)) => int_range(a, b, false, true),
             (_, _) if left.is_numeric() || right.is_numeric() => {
                 Value::generic_range(left.clone(), right.clone(), false, true)
             }
@@ -310,7 +311,7 @@ impl Interpreter {
             return Err(err);
         }
         let result = match (left.view(), right.view()) {
-            (ValueView::Int(a), ValueView::Int(b)) => Value::range_excl_start(a, b),
+            (ValueView::Int(a), ValueView::Int(b)) => int_range(a, b, true, false),
             (_, _) if left.is_numeric() || right.is_numeric() => {
                 Value::generic_range(left.clone(), right.clone(), true, false)
             }
@@ -326,7 +327,7 @@ impl Interpreter {
             return Err(err);
         }
         let result = match (left.view(), right.view()) {
-            (ValueView::Int(a), ValueView::Int(b)) => Value::range_excl_both(a, b),
+            (ValueView::Int(a), ValueView::Int(b)) => int_range(a, b, true, true),
             (_, _) if left.is_numeric() || right.is_numeric() => {
                 Value::generic_range(left.clone(), right.clone(), true, true)
             }

@@ -12,12 +12,18 @@ pub(crate) use expr::{
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
 pub(crate) use primary::decimal_literal_value;
-pub(crate) use primary::ident::TEST_CALLSITE_LINE_KEY;
 pub(crate) use primary::ident::supply_block;
+pub(crate) use primary::ident::{
+    TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
+};
 pub(crate) use primary::ident::{anon_method_expr, is_synthetic_invocant};
-pub(crate) use primary::next_anon_role_name;
 pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
-pub(crate) use primary::var::is_pseudo_package;
+pub(crate) use primary::var::{fresh_anon_array_name, fresh_anon_state_name, is_pseudo_package};
+pub(crate) use primary::{
+    ANON_COLONS_TRAIT, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
+    prepend_does_header,
+};
+pub(crate) use stmt::class::{EXPORT_TYPE_MARKER, export_type_marker};
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) mod helpers;
@@ -29,13 +35,18 @@ mod primary;
 mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;
+pub(crate) use expr::{atomic_elem_update, wrap_dot_assign};
+pub(crate) use outer_redecl::{find_scope_diagnostic, scope_diagnostic_error};
 pub(crate) use stmt::assign::{DOTTY_ASSIGN_OP, compound_assign_op_from_name};
 pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_type_param_names};
 /// The default the parser plants for a typed scalar attribute with no
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::auto_default_expr_for_type;
+pub(crate) use stmt::decl::build_sigilless_bind_stmt;
 pub(crate) use stmt::decl::destructure::desugar::signature_decl as signature_decl_expansion;
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
+pub(crate) use stmt::simple_expr_stmt::topic_dot_assign;
+pub(crate) use stmt::try_split_decl_modifier;
 
 /// Parse a regex callable's argument list without exposing the parser's
 /// private diagnostic type to the source-level regex tree.
@@ -146,6 +157,7 @@ pub(crate) use stmt::simple::is_user_declared_enum_value;
 /// `subset` (or class/role/grammar/enum) as a type constraint rather than a
 /// definite return value, independent of runtime sub-hoisting order (#8657).
 pub(crate) use stmt::simple::is_user_declared_type;
+pub(crate) use stmt::simple::{DeclaredNameKind, declared_name_kind};
 
 /// Snapshot parse-time type facts that affect compiling a module's cached AST.
 /// The parser normally leaves these in its thread-local scope; precompilation
@@ -719,10 +731,10 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
         primary::reset_primary_memo();
         stmt::reset_statement_memo();
     }
-    // Give this parse its own memo generation so entries keyed to `input` can
-    // never be confused with entries a nested parse stored for a since-dropped
-    // buffer at the same address (see `memo::MemoKey`).
-    let _memo_generation = memo::begin_parse_generation();
+    // Give this parse its own memo generation, over `input`, so entries keyed
+    // to `input` can never be confused with entries a nested parse stored for a
+    // since-dropped buffer at the same address (see `memo::MemoKey`).
+    let _memo_generation = memo::begin_buffer_generation(input);
     stmt::reset_user_subs();
     stmt::simple::register_preload_module_exports();
     apply_inherited_scopes();
@@ -935,7 +947,7 @@ pub(crate) fn parse_program_recovering(
     // buffer; the guard restores the enclosing parse's generation on return so
     // the entries this parse stored can never leak into the outer parse via
     // allocator address reuse (see `memo::MemoKey`).
-    let _memo_generation = memo::begin_parse_generation();
+    let _memo_generation = memo::begin_buffer_generation(input);
     // This is a best-effort nested sub-parse (module export scan / EVAL / pseudo
     // package). It must not leak the scanned source's `use vX` pragma into the
     // caller: `reset_user_subs` resets the language version to the 6.d default and

@@ -496,15 +496,48 @@ impl Compiler {
         // by their dedicated branches below). The builtin resolves its target by
         // NAME from env, so record the target local for the gated
         // `needs_env_sync` fold. Recording only; compilation proceeds normally.
-        name.with_str(|n| {
-            if ((n.starts_with("__mutsu_atomic_") && n.ends_with("_var")) || n == "__mutsu_cas_var")
+        let atomic_helper_target = name.with_str(|n| {
+            if ((n.starts_with("__mutsu_atomic_") && n.ends_with("_var"))
+                || n == "__mutsu_cas_var"
+                || n == "__mutsu_cas_add_var")
                 && let Some(Expr::Literal(lit)) = args.first()
                 && let crate::value::ValueView::Str(vn) = lit.view()
             {
-                let vn = String::clone(&vn);
-                self.note_atomic_env_sync_target(&vn, true);
+                return Some(String::clone(&vn));
             }
+            None
         });
+        if let Some(vn) = &atomic_helper_target {
+            self.note_atomic_env_sync_target(vn, true);
+        }
+        // `⚛$x` and `$x ⚛= v` are the lenient atomics: any scalar, but not a
+        // narrow native integer (#12008). Their `atomic-fetch($x)` /
+        // `atomic-assign($x, v)` spellings are guarded by their own branches below.
+        if (name == "__mutsu_atomic_fetch_var" || name == "__mutsu_atomic_store_var")
+            && let Some(vn) = &atomic_helper_target
+        {
+            self.emit_lenient_atomic_guard(vn, false);
+        }
+        // The target literal names a variable; tag it with the slot of the
+        // binding this call site reaches, so a same-named shadow cannot answer
+        // for it (#12006). The remaining operands are plain values.
+        if let Some(vn) = &atomic_helper_target
+            && self.atomic_target_slot(vn).is_some()
+        {
+            self.emit_atomic_target(vn);
+            for arg in &args[1..] {
+                self.compile_expr(arg);
+            }
+            let name_idx = self.code.add_constant(Value::str(name.resolve()));
+            self.code.emit(OpCode::CallFunc {
+                name_idx,
+                arity: args.len() as u32,
+                arg_sources_idx: None,
+                literal_native_args: 0,
+                static_arg_types: false,
+            });
+            return;
+        }
         // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
         // The parser emits __mutsu_assign_callable_lvalue(DoStmt(VarDecl{..}), [], rhs).
         // We compile this as: declare the state var, then unconditionally assign the RHS.
@@ -1066,9 +1099,9 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_fetch_var"));
+            self.emit_lenient_atomic_guard(var_name, false);
             self.note_atomic_env_sync_target(var_name, true);
-            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.emit_atomic_target(var_name);
             self.code.emit(OpCode::CallFunc {
                 name_idx: call_name_idx,
                 arity: 1,
@@ -1084,9 +1117,9 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_store_var"));
+            self.emit_lenient_atomic_guard(var_name, false);
             self.note_atomic_env_sync_target(var_name, true);
-            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(arg_idx));
+            self.emit_atomic_target(var_name);
             self.compile_expr(&args[1]);
             self.code.emit(OpCode::CallFunc {
                 name_idx: call_name_idx,
@@ -1096,140 +1129,14 @@ impl Compiler {
                 static_arg_types: false,
             });
             return;
-        } else if name == "atomic-fetch-inc"
-            && args.len() == 1
-            && let Expr::Var(var_name) = &args[0]
-        {
-            let call_name_idx = self
-                .code
-                .add_constant(Value::str_from("__mutsu_atomic_post_inc_var"));
-            self.note_atomic_env_sync_target(var_name, true);
-            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(arg_idx));
-            self.code.emit(OpCode::CallFunc {
-                name_idx: call_name_idx,
-                arity: 1,
-                arg_sources_idx: None,
-                literal_native_args: 0,
-                static_arg_types: false,
-            });
-            return;
-        } else if name == "atomic-inc-fetch"
-            && args.len() == 1
-            && let Expr::Var(var_name) = &args[0]
-        {
-            let call_name_idx = self
-                .code
-                .add_constant(Value::str_from("__mutsu_atomic_pre_inc_var"));
-            self.note_atomic_env_sync_target(var_name, true);
-            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(arg_idx));
-            self.code.emit(OpCode::CallFunc {
-                name_idx: call_name_idx,
-                arity: 1,
-                arg_sources_idx: None,
-                literal_native_args: 0,
-                static_arg_types: false,
-            });
-            return;
-        } else if name == "atomic-fetch-dec"
-            && args.len() == 1
-            && let Expr::Var(var_name) = &args[0]
-        {
-            let call_name_idx = self
-                .code
-                .add_constant(Value::str_from("__mutsu_atomic_post_dec_var"));
-            self.note_atomic_env_sync_target(var_name, true);
-            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(arg_idx));
-            self.code.emit(OpCode::CallFunc {
-                name_idx: call_name_idx,
-                arity: 1,
-                arg_sources_idx: None,
-                literal_native_args: 0,
-                static_arg_types: false,
-            });
-            return;
-        } else if name == "atomic-dec-fetch"
-            && args.len() == 1
-            && let Expr::Var(var_name) = &args[0]
-        {
-            let call_name_idx = self
-                .code
-                .add_constant(Value::str_from("__mutsu_atomic_pre_dec_var"));
-            self.note_atomic_env_sync_target(var_name, true);
-            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(arg_idx));
-            self.code.emit(OpCode::CallFunc {
-                name_idx: call_name_idx,
-                arity: 1,
-                arg_sources_idx: None,
-                literal_native_args: 0,
-                static_arg_types: false,
-            });
-            return;
-        } else if name == "atomic-fetch-add"
-            && args.len() == 2
-            && let Expr::Var(var_name) = &args[0]
-        {
-            let call_name_idx = self
-                .code
-                .add_constant(Value::str_from("__mutsu_atomic_fetch_add_var"));
-            self.note_atomic_env_sync_target(var_name, true);
-            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(arg_idx));
-            self.compile_expr(&args[1]);
-            self.code.emit(OpCode::CallFunc {
-                name_idx: call_name_idx,
-                arity: 2,
-                arg_sources_idx: None,
-                literal_native_args: 0,
-                static_arg_types: false,
-            });
-            return;
-        } else if name == "atomic-add-fetch"
-            && args.len() == 2
-            && let Expr::Var(var_name) = &args[0]
-        {
-            let call_name_idx = self
-                .code
-                .add_constant(Value::str_from("__mutsu_atomic_add_var"));
-            self.note_atomic_env_sync_target(var_name, true);
-            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(arg_idx));
-            self.compile_expr(&args[1]);
-            self.code.emit(OpCode::CallFunc {
-                name_idx: call_name_idx,
-                arity: 2,
-                arg_sources_idx: None,
-                literal_native_args: 0,
-                static_arg_types: false,
-            });
-            return;
-        } else if (name == "atomic-fetch-sub" || name == "atomic-sub-fetch")
-            && args.len() == 2
+        } else if let Some((helper, has_operand, negate)) = Self::int_atomic_routine(name.as_str())
+            && args.len() == 1 + usize::from(has_operand)
             && let Expr::Var(var_name) = &args[0]
         {
             // Subtraction is the add primitive with the delta negated, so the
-            // read-modify-write stays the one atomic implementation.
-            let helper = if name == "atomic-fetch-sub" {
-                "__mutsu_atomic_fetch_add_var"
-            } else {
-                "__mutsu_atomic_add_var"
-            };
-            let call_name_idx = self.code.add_constant(Value::str_from(helper));
-            self.note_atomic_env_sync_target(var_name, true);
-            let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(arg_idx));
-            self.compile_expr(&args[1]);
-            self.code.emit(OpCode::Negate);
-            self.code.emit(OpCode::CallFunc {
-                name_idx: call_name_idx,
-                arity: 2,
-                arg_sources_idx: None,
-                literal_native_args: 0,
-                static_arg_types: false,
-            });
+            // read-modify-write stays the one atomic implementation. The
+            // target's guard (#11834) is part of the one lowering.
+            self.compile_int_atomic_var_call(helper, var_name, name.as_str(), args.get(1), negate);
             return;
         }
         // Rewrite cas($var, ...) -> __mutsu_cas_var($var_name_str, ...)
@@ -1237,6 +1144,8 @@ impl Compiler {
             && (args.len() == 2 || args.len() == 3)
             && let Some(var_name) = Self::atomic_target_name(&args[0])
         {
+            // `cas` takes any `$target is rw`; `nqp::cas_i` wants a native int.
+            self.emit_lenient_atomic_guard(&var_name, false);
             // ADR-0033 Phase 1: `cas($var, * + delta)` is still an un-expanded
             // `WhateverCurry` at this point rather than the built `Lambda`
             // the parser used to produce eagerly — its single placeholder
@@ -1255,10 +1164,9 @@ impl Compiler {
             {
                 let call_name_idx = self
                     .code
-                    .add_constant(Value::str_from("__mutsu_atomic_add_var"));
+                    .add_constant(Value::str_from("__mutsu_cas_add_var"));
                 self.note_atomic_env_sync_target(&var_name, true);
-                let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-                self.code.emit(OpCode::LoadConst(name_idx));
+                self.emit_atomic_target(&var_name);
                 self.compile_expr(&delta);
                 self.code.emit(OpCode::CallFunc {
                     name_idx: call_name_idx,
@@ -1293,7 +1201,7 @@ impl Compiler {
                     if let Some(delta) = delta {
                         let call_name_idx = self
                             .code
-                            .add_constant(Value::str_from("__mutsu_atomic_add_var"));
+                            .add_constant(Value::str_from("__mutsu_cas_add_var"));
                         // Same classification as the general `cas` path
                         // below: this delta shape and that path target the
                         // SAME variable depending only on incidental
@@ -1301,8 +1209,7 @@ impl Compiler {
                         // must not diverge between them (see
                         // todo/tickets/cas-delta-lambda-rewrite-is-dead-code.md).
                         self.note_atomic_env_sync_target(&var_name, true);
-                        let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-                        self.code.emit(OpCode::LoadConst(name_idx));
+                        self.emit_atomic_target(&var_name);
                         self.compile_expr(&delta);
                         self.code.emit(OpCode::CallFunc {
                             name_idx: call_name_idx,
@@ -1335,8 +1242,7 @@ impl Compiler {
             // protected is now guarded by `legacy_atomic_lane_owns`, which
             // makes the capture side decline while that lane is live.
             self.note_atomic_env_sync_target(&var_name, true);
-            let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-            self.code.emit(OpCode::LoadConst(name_idx));
+            self.emit_atomic_target(&var_name);
             for arg in &args[1..] {
                 self.compile_expr(arg);
             }
@@ -1806,12 +1712,39 @@ impl Compiler {
             } = &args[0]
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
+                // `cas` takes any element; `nqp::cas_i` wants a native integer.
+                self.emit_lenient_atomic_guard(&arr_name, true);
                 let call_name_idx = self
                     .code
                     .add_constant(Value::str_from("__mutsu_cas_array_elem"));
                 let name_idx = self.code.add_constant(Value::str(arr_name));
                 self.code.emit(OpCode::LoadConst(name_idx));
                 self.compile_expr(index);
+                self.compile_expr(&args[1]);
+                self.compile_expr(&args[2]);
+                self.code.emit(OpCode::CallFunc {
+                    name_idx: call_name_idx,
+                    arity: 4,
+                    arg_sources_idx: None,
+                    literal_native_args: 0,
+                    static_arg_types: false,
+                });
+            }
+            // Accessor CAS: cas($obj.attr, $expected, $new) swaps the attribute
+            // cell atomically: __mutsu_cas_attr(obj, "attr", expected, new)
+            else if let Expr::MethodCall {
+                target,
+                name: method,
+                args: method_args,
+                modifier: None,
+                quoted: false,
+            } = &args[0]
+                && method_args.is_empty()
+            {
+                let call_name_idx = self.code.add_constant(Value::str_from("__mutsu_cas_attr"));
+                self.compile_expr(target);
+                let attr_idx = self.code.add_constant(Value::str(method.resolve()));
+                self.code.emit(OpCode::LoadConst(attr_idx));
                 self.compile_expr(&args[1]);
                 self.compile_expr(&args[2]);
                 self.code.emit(OpCode::CallFunc {
@@ -1887,7 +1820,7 @@ impl Compiler {
                         Stmt::If {
                             cond: Expr::Binary {
                                 left: Box::new(Expr::Var(seen_name.clone())),
-                                op: TokenKind::EqEq,
+                                op: TokenKind::EqEqEq,
                                 right: Box::new(args[1].clone()),
                             },
                             then_branch: vec![assign_stmt],
@@ -1936,7 +1869,7 @@ impl Compiler {
                     && let Some(delta) = delta
                 {
                     let atomic_add = Expr::Call {
-                        name: Symbol::intern("__mutsu_atomic_add_var"),
+                        name: Symbol::intern("__mutsu_cas_add_var"),
                         args: vec![Expr::Literal(Value::str(vname)), delta],
                     };
                     self.compile_expr(&atomic_add);
@@ -1953,7 +1886,7 @@ impl Compiler {
                     };
                     if let Some(delta) = delta {
                         let atomic_add = Expr::Call {
-                            name: Symbol::intern("__mutsu_atomic_add_var"),
+                            name: Symbol::intern("__mutsu_cas_add_var"),
                             args: vec![Expr::Literal(Value::str(vname)), delta],
                         };
                         self.compile_expr(&atomic_add);
@@ -2191,7 +2124,8 @@ impl Compiler {
                         // The shape test is repeated here so the common
                         // argument pays no `Symbol::resolve` allocation.
                         let callee = (accessor_ref_invocant.is_none()
-                            && matches!(arg, Expr::Index { .. }))
+                            && (matches!(arg, Expr::Index { .. })
+                                || Self::index_assign_arg_element(arg).is_some()))
                         .then(|| name.resolve());
                         self.compile_named_callee_arg(
                             callee.as_deref(),

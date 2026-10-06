@@ -3017,6 +3017,9 @@ impl Interpreter {
                         if let ValueView::ContainerRef(arc) = fresh.view() {
                             self.register_container_cell_default_for_name(&arc, &resolved_source);
                         }
+                        // The same promotion, so `my $alias := $plain` hands an
+                        // integer atomic a cell that says it is untyped (#12007).
+                        self.mark_fresh_cell_declared_untyped(&fresh, &resolved_source);
                         fresh
                     }
                 };

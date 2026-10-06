@@ -412,6 +412,9 @@ impl Interpreter {
         }
         let class_key = class_name.resolve();
         let display_name = crate::value::user_facing_type_name(&class_key);
+        // A CStruct's fields live in C memory (a body it owns, or the memory C
+        // handed back): read them out before rendering them.
+        self.seed_cstruct_fields_for_method(&class_key, Some(target));
         self.raku_cycle_guards.leaf.enter(target_id);
         let public_attrs = self.collect_public_raku_attrs(&class_key, &(attributes).as_map());
         let cycle_hit = self.raku_cycle_guards.leaf.leave(&target_id);
@@ -2701,7 +2704,7 @@ impl Interpreter {
             },
             "gist" if args.is_empty() => match target.view() {
                 ValueView::Package(name) => {
-                    if crate::value::is_internal_anon_type_name(&name.resolve()) {
+                    if crate::value::is_nameless_anon_type_name(&name.resolve()) {
                         return Ok(Value::str_from("()"));
                     }
                     let resolved = name.resolve();
@@ -3075,13 +3078,22 @@ impl Interpreter {
                     }
                 }
                 // Type objects only. An *instance* reaches here when it has no C
-                // storage (a Raku-constructed CStruct), and `t/nativecall-repr-body.t`
-                // pins that it must keep under-reporting `P6opaque`: answering
-                // the honest name without a body would make `BODY_OF`
-                // dereference whatever `.WHERE` returned. A live handle already
-                // answers `CStruct` through `try_native_handle_repr_where`.
+                // storage (a struct with no layout NativeCall can compute), and
+                // it must keep under-reporting `P6opaque`: answering the honest
+                // name without a body would make `BODY_OF` dereference whatever
+                // `.WHERE` returned. A live handle, and a struct that owns its
+                // body (ADR-11209), already answer `CStruct` through
+                // `try_native_handle_repr_where`.
+                // A `NativeCall`- or `CStr`-REPR instance (upstream's `Callsite`
+                // and `CStr`) is its body whole, so it has no body for `.REPR` to
+                // under-report.
                 let class = match target.view() {
                     ValueView::Package(name) => Some(name.resolve()),
+                    ValueView::Instance { class_name, .. }
+                        if self.is_bodied_repr_class(class_name.as_str()) =>
+                    {
+                        Some(class_name.resolve())
+                    }
                     _ => None,
                 };
                 match class.as_deref().and_then(|c| self.declared_class_repr(c)) {
@@ -3238,6 +3250,33 @@ impl Interpreter {
                         self.types.pending_proxy_subclass_attr.take()
                 {
                     return self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args);
+                }
+
+                // `Method.set_name`: the rename belongs to the class's method
+                // table entry, so it shows on every later `.^find_method` /
+                // `.^methods` read, as `RoutineCell::renamed` does for a sub.
+                if method == "set_name"
+                    && let [new_name] = args.as_slice()
+                    && let ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = target.view()
+                    && self.is_method_object_class(&class_name.resolve())
+                {
+                    // The read guard must be gone before `insert` below takes
+                    // the write lock.
+                    let slot = crate::runtime::code_do_attr::method_instance_slot(&attributes.as_map());
+                    let Some((cls, meth, idx)) = slot else {
+                        return Err(RuntimeError::new(
+                            "Method.set_name: not a method table entry",
+                        ));
+                    };
+                    let new_name = new_name.to_string_value();
+                    self.registry_mut()
+                        .rename_method_candidate(&cls, &meth, idx, &new_name);
+                    attributes.insert("name", Value::str(new_name.clone()));
+                    return Ok(Value::str(new_name));
                 }
 
                 // `CALL-ME` on a Method/Submethod `Instance` (`.^lookup`/
@@ -3498,7 +3537,9 @@ impl Interpreter {
                         .map(|d| !d.is_empty())
                         .unwrap_or(false)
                     {
-                        let mut call_args = match Interpreter::cursor_call_position(&target) {
+                        let mut call_args = match Interpreter::cursor_call_position(&target)
+                            .or_else(|| Interpreter::subrule_invocant_position(&target))
+                        {
                             Some((orig, pos, anchored)) => vec![
                                 Value::str(orig),
                                 Value::pair(

@@ -605,12 +605,24 @@ impl Interpreter {
         type_name: &str,
         element: bool,
     ) -> Result<Value, RuntimeError> {
+        self.warn_type_object_string_context_named(type_name, None, element)
+    }
+
+    /// Warn when a bare type object in a collection is stringified, preserving
+    /// the collection variable's name when its container descriptor has one.
+    pub(crate) fn warn_type_object_string_context_named(
+        &mut self,
+        type_name: &str,
+        variable_name: Option<&str>,
+        element: bool,
+    ) -> Result<Value, RuntimeError> {
         // A lexically-scoped or role-candidate type carries a mangled storage
         // name (ADR-0047 P1: `Foo\u{0}<decl-id>`) — show the user-facing bare
         // name in the message.
         let msg = format!(
-            "Use of uninitialized value{} of type {} in string context.\nMethods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
+            "Use of uninitialized value{}{} of type {} in string context.\nMethods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
             if element { " element" } else { "" },
+            variable_name.map(|name| format!(" {name}")).unwrap_or_default(),
             crate::value::user_facing_type_name(type_name),
         );
         let caller_code = self.current_code;

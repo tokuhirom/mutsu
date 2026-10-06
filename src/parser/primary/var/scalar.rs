@@ -29,14 +29,36 @@ static ANON_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// by the assignment-statement parser for a bare-`$` assignment target, which
 /// otherwise collapsed every occurrence onto one shared `__ANON_STATE__` name.
 pub(in crate::parser) fn mint_anon_state_name() -> String {
+    let name = fresh_anon_state_name(crate::parser::stmt::simple::anon_state_is_per_call());
+    crate::parser::stmt::simple::record_anon_state_name(&name);
+    name
+}
+
+/// A fresh anonymous-state variable name that no scope records: the name the
+/// RakuAST lowering gives a `VarDeclaration::Anonymous`, which declares it
+/// itself. `per_call` names the variant of a block nested below a routine
+/// body (see [`mint_anon_state_name`]).
+// Cost: O(1).
+pub(crate) fn fresh_anon_state_name(per_call: bool) -> String {
     let id = ANON_STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let name = if crate::parser::stmt::simple::anon_state_is_per_call() {
+    if per_call {
         format!("__ANON_STATE_PC_{id}__")
     } else {
         format!("__ANON_STATE_{id}__")
-    };
-    crate::parser::stmt::simple::record_anon_state_name(&name);
-    name
+    }
+}
+
+/// Whether `rest`, the text after a bare `$`, starts a named placeholder
+/// (`$:foo`): the `:` directly followed by an identifier. That `$` is the
+/// twigil's sigil, not a bare-`$` anonymous state variable, so a statement
+/// parser that speculatively read it as an assignment target must not mint a
+/// state name for it (the name would stay recorded in the scope after the
+/// attempt failed and declare a variable nobody wrote).
+// Cost: O(1).
+pub(in crate::parser) fn starts_named_placeholder(rest: &str) -> bool {
+    rest.strip_prefix(':')
+        .and_then(|after| after.chars().next())
+        .is_some_and(is_raku_identifier_start)
 }
 
 /// Build a string concatenation expression: left ~ right

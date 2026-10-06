@@ -13,7 +13,7 @@ use crate::parser::primary::ident::anon_sub::{
 };
 use crate::parser::primary::ident::circumfix::parse_raw_braced_regex_body;
 use crate::parser::primary::ident::listop::{
-    TEST_CALLSITE_LINE_KEY, export_term_or_call, make_call_expr, make_call_expr_from_listop_args,
+    callsite_line_arg, export_term_or_call, make_call_expr, make_call_expr_from_listop_args,
     operator_term_call, parse_expr_listop_args, parse_listop_arg,
     try_parse_no_paren_invocant_colon_call,
 };
@@ -1539,7 +1539,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         "require" => {
             return parse_require_expr(input, rest);
         }
-        "last" => {
+        "last" if !crate::parser::stmt::simple::is_user_declared_sub("last") => {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
@@ -1557,7 +1557,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        "next" => {
+        "next" if !crate::parser::stmt::simple::is_user_declared_sub("next") => {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
@@ -1575,7 +1575,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 },
             ));
         }
-        "redo" => {
+        "redo" if !crate::parser::stmt::simple::is_user_declared_sub("redo") => {
             if rest.trim_start().starts_with("=>") {
                 return Ok((rest, Expr::BareWord(name)));
             }
@@ -1881,13 +1881,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let (rest, _) = parse_char(rest, ')')?;
         let mut args = args;
         if args.is_empty() {
-            args.push(Expr::Binary {
-                left: Box::new(Expr::Literal(Value::str(
-                    TEST_CALLSITE_LINE_KEY.to_string(),
-                ))),
-                op: crate::token_kind::TokenKind::FatArrow,
-                right: Box::new(Expr::Literal(Value::int(current_line_number(input)))),
-            });
+            args.push(callsite_line_arg(current_line_number(input)));
         }
         return Ok((rest, make_call_expr(name, input, args)));
     }
@@ -2522,13 +2516,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || (rest_trimmed.starts_with(',')
                 && !name.starts_with(char::is_uppercase)))
     {
-        let args = vec![Expr::Binary {
-            left: Box::new(Expr::Literal(Value::str(
-                TEST_CALLSITE_LINE_KEY.to_string(),
-            ))),
-            op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::int(current_line_number(input)))),
-        }];
+        let args = vec![callsite_line_arg(current_line_number(input))];
         let call = make_call_expr(name.clone(), input, args);
         return Ok((rest, export_term_or_call(&name, call)));
     }

@@ -120,7 +120,7 @@ pub(crate) fn interpreter_version() -> String {
     // lost `perl5` (the `:P5` regex adverb is gone, ADR-0138).
     // 16: `SerValue` gained `RegexDeclared` (a grammar token's verbatim
     // declaration text), shifting the discriminants after `Regex`.
-    const CACHE_FORMAT_VERSION: u32 = 17;
+    const CACHE_FORMAT_VERSION: u32 = 18;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
@@ -425,6 +425,20 @@ pub(crate) fn load_cached_unit(source_path: &Path, source: Option<&str>) -> Opti
             stmts,
             effects: meta.effects,
         })
+}
+
+/// Encode a unit's statements the way the AST entry stores them.
+// Cost: O(n), n = size of the AST.
+pub(crate) fn encode_stmts(stmts: &[Stmt]) -> Option<Vec<u8>> {
+    bincode::serde::encode_to_vec(stmts, bincode::config::standard()).ok()
+}
+
+/// Decode statements written by [`encode_stmts`].
+// Cost: O(n), n = size of the encoding.
+pub(crate) fn decode_stmts(bytes: &[u8]) -> Option<Vec<Stmt>> {
+    bincode::serde::decode_from_slice(bytes, decode_config())
+        .ok()
+        .map(|(stmts, _)| stmts)
 }
 
 /// Save a parsed compilation unit — the AST *and* the parse effects to replay —

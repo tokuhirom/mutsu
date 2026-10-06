@@ -326,6 +326,7 @@ impl Compiler {
         sub_compiler.set_current_package(state_scope);
         sub_compiler.seed_native_rw_params(param_defs);
         sub_compiler.seed_native_int_param_types(param_defs);
+        sub_compiler.seed_param_decl_types(param_defs);
         // Pre-allocate locals for parameters
         for param in params {
             sub_compiler.declare_param(param);
@@ -625,7 +626,7 @@ impl Compiler {
             std::mem::take(&mut sub_compiler.compiled_functions),
         );
         let mut cf = CompiledFunction {
-            code: sub_compiler.code,
+            code: std::sync::Arc::new(sub_compiler.code),
             source_file: None,
             params: params.to_vec(),
             param_defs: param_defs.to_vec(),
@@ -1348,6 +1349,7 @@ impl Compiler {
             sub_compiler.native_rw_params = self.native_rw_params.clone();
         }
         sub_compiler.seed_native_int_param_types(param_defs);
+        sub_compiler.seed_param_decl_types(param_defs);
         // Pre-allocate locals for parameters
         for param in params {
             sub_compiler.declare_param(param);

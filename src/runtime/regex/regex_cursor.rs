@@ -279,6 +279,23 @@ impl Interpreter {
         Some((orig, start, anchored))
     }
 
+    /// The `(orig, pos, anchored)` triple of the grammar instance a method
+    /// subrule is invoked on (`try_regex_subrule_as_method`): a plain
+    /// instance, not a Match, that carries the in-progress `orig`/`pos`.
+    /// `self.tok` inside such a method continues from that position.
+    pub(crate) fn subrule_invocant_position(value: &Value) -> Option<(String, usize, bool)> {
+        let ValueView::Instance { attributes, .. } = value.view() else {
+            return None;
+        };
+        let attrs = attributes.as_map();
+        let orig = attrs.get("orig")?;
+        if !matches!(orig.view(), ValueView::Str(_)) {
+            return None;
+        }
+        let pos = usize::try_from(attrs.get("pos")?.as_int()?).ok()?;
+        Some((orig.to_string_value(), pos, true))
+    }
+
     /// `$regex($cursor)` — run a `Regex` value against the cursor and return
     /// the resulting cursor. `None` when the argument is not a cursor, so an
     /// ordinary (unsupported) `Regex.CALL-ME` still reports itself as such.

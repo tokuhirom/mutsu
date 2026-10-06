@@ -98,10 +98,9 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, lhs) = expression_no_sequence(rest)?;
     let (rest, _) = ws(rest)?;
     if let Some((stripped, negate)) = super::strip_atomic_compound_assign(rest) {
-        let name = match lhs {
-            Expr::Var(name) => name,
-            _ => return Err(PError::expected("atomic compound assignment expression")),
-        };
+        if !matches!(lhs, Expr::Var(_)) && !crate::parser::expr::is_atomic_elem_target(&lhs) {
+            return Err(PError::expected("atomic compound assignment expression"));
+        }
         let (rest, _) = ws(stripped)?;
         let (rest, rhs) = match try_parse_assign_expr(rest) {
             Ok(r) => r,
@@ -109,16 +108,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
         };
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
-        return Ok((
-            rest,
-            Expr::Call {
-                name: Symbol::intern("__mutsu_atomic_add_var"),
-                args: vec![
-                    Expr::Literal(Value::str(name)),
-                    super::atomic_delta_expr(rhs, negate),
-                ],
-            },
-        ));
+        return Ok((rest, super::atomic_compound_call(lhs, rhs, negate)));
     }
     if let Some((stripped, op)) = parse_compound_assign_op(rest) {
         let (rest, _) = ws(stripped)?;
@@ -383,13 +373,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     };
     if is_atomic {
         if let Expr::AssignExpr { name, expr, .. } = expr {
-            return Ok((
-                rest,
-                Expr::Call {
-                    name: Symbol::intern("__mutsu_atomic_store_var"),
-                    args: vec![Expr::Literal(Value::str(name)), *expr],
-                },
-            ));
+            return Ok((rest, crate::ast::atomic_op::store_var(name, *expr)));
         }
         return Err(PError::expected("atomic assignment expression"));
     }

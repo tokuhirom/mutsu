@@ -13,14 +13,82 @@ use super::fmt_contains::{
 };
 use super::indent::str_indent;
 use super::numeric::{
-    compute_roots, int_to_subscript, int_to_superscript, sample_weighted_bag_key,
-    sample_weighted_mix_key,
+    int_to_subscript, int_to_superscript, sample_weighted_bag_key, sample_weighted_mix_key,
 };
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
-use num_traits::{Signed, ToPrimitive, Zero};
+use num_traits::{Signed, ToPrimitive};
+
+/// Whether `arg` is a `Real`, the type of the `Real $epsilon` parameter of
+/// `.Rat(eps)` / `.FatRat(eps)`: a number, a `Bool`, an enum value, an allomorph
+/// (`<0.01>`), or an object that carries a numeric payload (`Duration`,
+/// `Instant`). A `Str`, `Nil`, a type object, a `Complex` and every container
+/// are not.
+// Cost: O(1).
+fn is_real_epsilon(arg: &Value) -> bool {
+    match arg.view() {
+        ValueView::Num(_)
+        | ValueView::Int(_)
+        | ValueView::BigInt(_)
+        | ValueView::Rat(..)
+        | ValueView::BigRat(..)
+        | ValueView::FatRat(..)
+        | ValueView::Bool(_)
+        | ValueView::Enum { .. } => true,
+        ValueView::Mixin(inner, _) => is_real_epsilon(inner),
+        ValueView::Scalar(inner) => is_real_epsilon(inner),
+        // `Duration` and `Instant` keep their number in `value`; an instance of
+        // a user subclass of `Int` / `Num` / `Rat` keeps it in a payload.
+        ValueView::Instance { class_name, .. } => {
+            class_name == "Duration"
+                || class_name == "Instant"
+                || crate::value::numeric_payload::numeric_subclass_payload(arg).is_some()
+        }
+        _ => false,
+    }
+}
+
+/// The epsilon `.Rat(eps)` / `.FatRat(eps)` was bound to. Rakudo's parameter is
+/// `Real $epsilon`, so anything else (a `Str`, `Nil`, a type object, a
+/// `Complex`) fails the bind with `X::TypeCheck::Binding::Parameter`, as
+/// `Num.Rat('0.01')` does there (#12043). `param` is the parameter's name as
+/// Rakudo reports it: the `Num` candidates name theirs `epsilon` (`Rat`) and
+/// `$epsilon` (`FatRat`), the `Rat` candidates leave it anonymous (`<anon>`).
+/// A `Real` numifies; a non-finite one has no usable value and keeps the
+/// default `1e-6`.
+// Cost: O(1).
+fn rat_epsilon_arg(arg: &Value, param: &str) -> Result<f64, RuntimeError> {
+    if !is_real_epsilon(arg) {
+        return Err(runtime::utils::typecheck_binding_parameter_with_hint(
+            param,
+            "Real",
+            arg,
+            &runtime::utils::value_short_repr(arg),
+            None,
+        ));
+    }
+    let value = match arg.view() {
+        // `Value::to_f64` reads the `Duration` / `Instant` / payload instances.
+        ValueView::Instance { .. } => Some(arg.to_f64()),
+        _ => crate::runtime::to_float_value(arg),
+    };
+    Ok(value.filter(|f| f.is_finite()).unwrap_or(1e-6))
+}
+
+/// `f.Rat(epsilon)`: the simplest rational within `epsilon` of `f` (a continued
+/// fraction), with `NaN` as `0/0` and the infinities as `±1/0`.
+// Cost: O(log(1/epsilon)) continued-fraction steps.
+fn num_rat_with_epsilon(f: f64, epsilon: f64) -> Value {
+    if f.is_nan() {
+        Value::rat_raw(0, 0)
+    } else if f.is_infinite() {
+        Value::rat_raw(if f.is_sign_positive() { 1 } else { -1 }, 0)
+    } else {
+        crate::builtins::num_to_rat_with_epsilon(f, epsilon)
+    }
+}
 
 pub(crate) fn native_method_1arg(
     target: &Value,
@@ -208,45 +276,22 @@ pub(crate) fn native_method_1arg(
             ))));
         }
     }
-    // Cool numeric coercion: when a Str calls a numeric 1-arg method, coerce to numeric first.
-    // Also coerce the arg if it's a Str for numeric methods.
+    // A `Str` argument of `base` and `polymod` numifies first (`10.base("2")`).
+    // The other numeric methods are rows of `builtins::method_table`, which
+    // numify their receiver and argument themselves (`Cool.round`, the math
+    // rows).
+    if matches!(method, "base" | "polymod")
+        && let ValueView::Str(s) = arg.view()
     {
-        let numeric_1arg_methods: &[&str] = &[
-            "exp", "log", "round", "roots", "unpolar", "base", "polymod", "expmod", "atan2",
-        ];
-        if numeric_1arg_methods.contains(&method) {
-            let coerced_target = if let ValueView::Str(s) = target.view() {
-                if let Ok(i) = s.parse::<i64>() {
-                    Some(Value::int(i))
-                } else if let Ok(f) = s.parse::<f64>() {
-                    Some(Value::num(f))
-                } else {
-                    return None;
-                }
-            } else if matches!(method, "round" | "log" | "exp") {
-                // A Cool aggregate numifies to its element count
-                // (`{a => 1}.round(0.5)`); see `cool_aggregate_elems`.
-                crate::builtins::methods_0arg::cool_aggregate::cool_aggregate_elems(target)
-                    .map(Value::int)
-            } else {
-                None
-            };
-            let coerced_arg = if let ValueView::Str(s) = arg.view() {
-                if let Ok(i) = s.parse::<i64>() {
-                    Some(Value::int(i))
-                } else if let Ok(f) = s.parse::<f64>() {
-                    Some(Value::num(f))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            if coerced_target.is_some() || coerced_arg.is_some() {
-                let t = coerced_target.as_ref().unwrap_or(target);
-                let a = coerced_arg.as_ref().unwrap_or(arg);
-                return native_method_1arg(t, method_sym, a);
-            }
+        let coerced = if let Ok(i) = s.parse::<i64>() {
+            Some(Value::int(i))
+        } else if let Ok(f) = s.parse::<f64>() {
+            Some(Value::num(f))
+        } else {
+            None
+        };
+        if let Some(coerced) = coerced {
+            return native_method_1arg(target, method_sym, &coerced);
         }
     }
     match method {
@@ -255,110 +300,38 @@ pub(crate) fn native_method_1arg(
             // Instance args need the interpreter to call .Numeric, so return None
             allomorph_accepts(target, arg).map(|result| Ok(Value::truth(result)))
         }
-        // ACCEPTS for Set/Bag/Mix types: equality check
-        "ACCEPTS" if matches!(target.view(), ValueView::Set(..)) => {
-            let result = match (target.view(), arg.view()) {
-                (ValueView::Set(set1, _), ValueView::Set(set2, _)) => {
-                    set1.len() == set2.len() && set1.iter().all(|k| set2.contains(k))
-                }
-                _ => false,
-            };
-            Some(Ok(Value::truth(result)))
-        }
-        "ACCEPTS" if matches!(target.view(), ValueView::Bag(..)) => {
-            let result = match (target.view(), arg.view()) {
-                (ValueView::Bag(bag1, _), ValueView::Bag(bag2, _)) => {
-                    bag1.len() == bag2.len() && bag1.iter().all(|(k, v)| bag2.get(k) == Some(v))
-                }
-                _ => false,
-            };
-            Some(Ok(Value::truth(result)))
-        }
-        "ACCEPTS" if matches!(target.view(), ValueView::Mix(..)) => {
-            let result = match (target.view(), arg.view()) {
-                (ValueView::Mix(mix1, _), ValueView::Mix(mix2, _)) => {
-                    mix1.len() == mix2.len()
-                        && mix1.iter().all(|(k, v)| {
-                            mix2.get(k)
-                                .copied()
-                                .is_some_and(|v2| (v - v2).abs() < f64::EPSILON)
-                        })
-                }
-                _ => false,
-            };
-            Some(Ok(Value::truth(result)))
+        // ACCEPTS for Set/Bag/Mix types: equality check (the quant hashes'
+        // rows' implementation, `method_table::subscript`).
+        "ACCEPTS"
+            if matches!(
+                target.view(),
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+            ) =>
+        {
+            crate::builtins::method_table::subscript::accepts_quant(
+                target,
+                std::slice::from_ref(arg),
+            )
         }
         // ACCEPTS for Pair: checks if the argument has the matching key->value
+        // (the `Pair` row's implementation, `method_table::subscript`).
         "ACCEPTS"
             if matches!(
                 target.view(),
                 ValueView::Pair(..) | ValueView::ValuePair(..)
             ) =>
         {
-            let (pk, pv) = match target.view() {
-                ValueView::Pair(k, v) => (k.to_string(), v.clone()),
-                ValueView::ValuePair(k, v) => (k.to_string_value(), v.clone()),
-                _ => unreachable!(),
-            };
-            // Set/Bag/Mix store elements under their `.WHICH` key, so membership
-            // lookups must key by the pair-key's `.WHICH`, not its raw string.
-            let elem_key = match target.view() {
-                ValueView::Pair(k, _) => crate::runtime::utils::str_elem_key(k),
-                ValueView::ValuePair(k, _) => crate::runtime::utils::value_which_key(k),
-                _ => unreachable!(),
-            };
-            let result = match arg.view() {
-                ValueView::Bag(data, _) => {
-                    let count = data
-                        .counts
-                        .get(&elem_key)
-                        .cloned()
-                        .unwrap_or_else(BigInt::zero);
-                    Value::from_bigint(count) == pv
-                }
-                ValueView::Mix(data, _) => {
-                    let w = data.weights.get(&elem_key).copied().unwrap_or(0.0);
-                    let mv = if w.fract() == 0.0 {
-                        Value::int(w as i64)
-                    } else {
-                        Value::num(w)
-                    };
-                    mv == pv
-                }
-                ValueView::Set(data, _) => {
-                    let in_set = data.elements.contains(&elem_key);
-                    Value::truth(in_set) == pv
-                }
-                ValueView::Hash(items) => {
-                    let hv = items.get(&pk).cloned().unwrap_or(Value::int(0));
-                    hv == pv
-                }
-                ValueView::Pair(ok, ov) => pk == ok.as_str() && *ov == pv,
-                ValueView::ValuePair(ok, ov) => {
-                    let tk = match target.view() {
-                        ValueView::Pair(k, _) => Value::str(k.to_string()),
-                        ValueView::ValuePair(k, _) => k.clone(),
-                        _ => unreachable!(),
-                    };
-                    tk == *ok && *ov == pv
-                }
-                ValueView::Instance { .. } | ValueView::Package(_) => return None,
-                _ => false,
-            };
-            Some(Ok(Value::truth(result)))
+            crate::builtins::method_table::subscript::accepts_pair(
+                target,
+                std::slice::from_ref(arg),
+            )
         }
         // ACCEPTS for Range: value ~~ Range containment, Range ~~ Range subset
-        "ACCEPTS" if target.is_range() => {
-            let arg = arg.descalarize();
-            let result = if arg.is_range() {
-                // Range ~~ Range: subset check — delegate to pure_smart_match
-                crate::vm::vm_smart_match::pure_smart_match(arg, target).unwrap_or(false)
-            } else {
-                // Value ~~ Range: containment check
-                runtime::Interpreter::value_in_range(arg, target)
-            };
-            Some(Ok(Value::truth(result)))
-        }
+        // (the `Range` row's implementation, `method_table::subscript`).
+        "ACCEPTS" if target.is_range() => crate::builtins::method_table::subscript::accepts_range(
+            target,
+            std::slice::from_ref(arg),
+        ),
         "Str" => {
             // Int.Str(:superscript) and Int.Str(:subscript)
             if let ValueView::Pair(key, val) = arg.view()
@@ -423,88 +396,20 @@ pub(crate) fn native_method_1arg(
             let result: String = s.chars().take(keep).collect();
             Some(Ok(Value::str(result)))
         }
+        // The argument forms of the Unicode methods are rows
+        // (`method_table::unicode`); these arms keep the `Cool` receivers with no
+        // table shape (a `Match`, a `Range`, ...).
+        // Cost: O(1), a table lookup.
         "uniprop" => {
-            let prop_name = arg.to_string_value();
-            match target.view() {
-                ValueView::Package(_) => {
-                    let msg = "Cannot resolve caller uniprop".to_string();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Some(Err(err));
-                }
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    return Some(Ok(
-                        crate::builtins::uniprop::unicode_property_value_for_codepoint(
-                            cp,
-                            Some(&prop_name),
-                        ),
-                    ));
-                }
-                _ => {}
-            }
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Ok(Value::NIL));
-            }
-            let ch = s.chars().next().unwrap();
-            Some(Ok(crate::builtins::uniprop::unicode_property_value(
-                ch, &prop_name,
-            )))
+            crate::builtins::method_table::unicode::uniprop_of(target, std::slice::from_ref(arg))
         }
+        // Cost: O(1), a table lookup.
         "unimatch" => {
-            let prop_value = arg.to_string_value();
-            match target.view() {
-                ValueView::Package(_) => {
-                    let msg = "Cannot resolve caller unimatch".to_string();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Some(Err(err));
-                }
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    return Some(Ok(crate::builtins::uniprop::unimatch_for_codepoint(
-                        cp,
-                        &prop_value,
-                        None,
-                    )));
-                }
-                _ => {}
-            }
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Ok(Value::NIL));
-            }
-            let ch = s.chars().next().unwrap();
-            Some(Ok(Value::truth(crate::builtins::uniprop::unimatch(
-                ch,
-                &prop_value,
-                None,
-            ))))
+            crate::builtins::method_table::unicode::unimatch(target, std::slice::from_ref(arg))
         }
+        // Cost: O(n), n = chars of the invocant.
         "uniprops" => {
-            let prop_name = arg.to_string_value();
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Ok(Value::array(vec![])));
-            }
-            let props: Vec<Value> = s
-                .chars()
-                .map(|ch| crate::builtins::uniprop::unicode_property_value(ch, &prop_name))
-                .collect();
-            Some(Ok(Value::array(props)))
+            crate::builtins::method_table::unicode::uniprops_of(target, std::slice::from_ref(arg))
         }
         // Cost: O(p + m), p = match position, m = chars of the needle (the
         // invocant is borrowed).
@@ -572,32 +477,37 @@ pub(crate) fn native_method_1arg(
             crate::builtins::decode_buf_method(target, Some(&encoding))
         }
         "Rat" => {
-            // .Rat(epsilon) — use continued fraction algorithm with given epsilon
-            let epsilon = match arg.view() {
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::Int(i) => i as f64,
-                _ => 1e-6,
-            };
+            // .Rat(epsilon) — use continued fraction algorithm with given epsilon.
+            // Only an invocant that binds the epsilon type-checks it: an `Int`
+            // (already rational) never does, so `7.Rat('0.01')` is `7.0`.
             let result = match target.view() {
-                ValueView::Rat(_, _) => target.clone(),
-                ValueView::Int(i) => Value::rat_raw(i, 1),
-                ValueView::Num(f) => {
-                    if f.is_nan() {
-                        Value::rat_raw(0, 0)
-                    } else if f.is_infinite() {
-                        if f.is_sign_positive() {
-                            Value::rat_raw(1, 0)
-                        } else {
-                            Value::rat_raw(-1, 0)
-                        }
-                    } else {
-                        crate::builtins::num_to_rat_with_epsilon(f, epsilon)
+                ValueView::Rat(_, _) => {
+                    if let Err(e) = rat_epsilon_arg(arg, "<anon>") {
+                        return Some(Err(e));
                     }
+                    target.clone()
                 }
+                ValueView::Int(i) => Value::rat_raw(i, 1),
+                ValueView::Num(f) => match rat_epsilon_arg(arg, "epsilon") {
+                    Ok(epsilon) => num_rat_with_epsilon(f, epsilon),
+                    Err(e) => return Some(Err(e)),
+                },
                 ValueView::FatRat(n, d) => Value::rat_raw(n, d),
+                // Whether the imaginary part is negligible is judged against
+                // `$*TOLERANCE`, which only the interpreter can read
+                // (`Interpreter::dispatch_complex_to_real`).
+                ValueView::Complex(..) => return None,
+                // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
+                ValueView::Instance { class_name, .. }
+                    if class_name == "Instant" || class_name == "Duration" =>
+                {
+                    return None;
+                }
                 ValueView::Str(s) => {
+                    // `Str.Rat` takes no `Real` epsilon in Rakudo; the lenient
+                    // reading of whatever was passed is kept.
                     if let Ok(f) = s.parse::<f64>() {
+                        let epsilon = rat_epsilon_arg(arg, "epsilon").unwrap_or(1e-6);
                         crate::builtins::num_to_rat_with_epsilon(f, epsilon)
                     } else {
                         Value::rat_raw(0, 1)
@@ -608,15 +518,31 @@ pub(crate) fn native_method_1arg(
             Some(Ok(result))
         }
         "FatRat" => {
-            // .FatRat or .FatRat(epsilon) — convert to FatRat
+            // .FatRat(epsilon) — a `Num` is rationalized with the epsilon as
+            // `.Rat(epsilon)` does (`3.14159e0.FatRat(0.01)` is `22/7`).
             let result = match target.view() {
                 ValueView::FatRat(_, _) => target.clone(),
                 ValueView::Int(i) => Value::fat_rat_raw(i, 1),
-                ValueView::Rat(n, d) => Value::fat_rat_raw(n, d),
-                ValueView::Num(f) => {
-                    let denom = 1_000_000i64;
-                    let numer = (f * denom as f64).round() as i64;
-                    Value::fat_rat_raw(numer, denom)
+                ValueView::Rat(n, d) => {
+                    if let Err(e) = rat_epsilon_arg(arg, "<anon>") {
+                        return Some(Err(e));
+                    }
+                    Value::fat_rat_raw(n, d)
+                }
+                ValueView::Num(f) => match rat_epsilon_arg(arg, "$epsilon") {
+                    Ok(epsilon) => match num_rat_with_epsilon(f, epsilon).view() {
+                        ValueView::Rat(n, d) => Value::fat_rat_raw(n, d),
+                        _ => Value::fat_rat_raw(0, 1),
+                    },
+                    Err(e) => return Some(Err(e)),
+                },
+                // As for `Rat` above: the interpreter judges the imaginary part.
+                ValueView::Complex(..) => return None,
+                // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
+                ValueView::Instance { class_name, .. }
+                    if class_name == "Instant" || class_name == "Duration" =>
+                {
+                    return None;
                 }
                 _ => Value::fat_rat_raw(0, 1),
             };
@@ -657,31 +583,35 @@ pub(crate) fn native_method_1arg(
             }
             Some(Ok(Value::str(result)))
         }
+        // A Capture's positional part: the `Capture` row's implementation
+        // (`method_table::capture`).
+        // A `Uni`'s positional subscript: the `Uni` rows' implementation
+        // (`method_table::uni`).
+        "AT-POS" if matches!(target.view(), ValueView::Uni(..)) => {
+            crate::builtins::method_table::uni::at_pos(target, std::slice::from_ref(arg))
+        }
+        "EXISTS-POS" if matches!(target.view(), ValueView::Uni(..)) => {
+            crate::builtins::method_table::uni::exists_pos(target, std::slice::from_ref(arg))
+        }
+        "AT-POS" if matches!(target.view(), ValueView::Capture { .. }) => {
+            crate::builtins::method_table::capture::at_pos(target, std::slice::from_ref(arg))
+        }
+        "EXISTS-POS" if matches!(target.view(), ValueView::Capture { .. }) => {
+            crate::builtins::method_table::capture::exists_pos(target, std::slice::from_ref(arg))
+        }
         "AT-POS" => {
-            // A Str or Rat index is coerced to Int, as Rakudo's `AT-POS(Any)`
-            // candidate does (`.AT-POS("1")` reads element 1). A Str that is not
-            // a number is declined to the general path, which dies on it as
-            // Rakudo does; answering Nil here made the reply depend on which
-            // path the call took (`.AT-POS("a", :zzz)` was Nil, #9905).
-            let idx = match arg.view() {
-                ValueView::Int(i) if i >= 0 => i as usize,
-                ValueView::Num(f) if f >= 0.0 => f as usize,
-                ValueView::Rat(n, d) if d > 0 && n >= 0 => (n / d) as usize,
-                ValueView::Str(s) => match s.trim().parse::<f64>() {
-                    Ok(f) if f >= 0.0 => f as usize,
-                    Ok(_) => return Some(Ok(Value::NIL)),
-                    Err(_) => return None,
-                },
-                _ => return Some(Ok(Value::NIL)),
+            // The index a Str, Rat or Num stands for (the `AT-POS` rows'
+            // implementation, `method_table::positional`).
+            let idx = match crate::builtins::method_table::positional::at_pos_index(arg) {
+                Ok(idx) => idx,
+                Err(answer) => return answer,
             };
-            // A Range is not array-backed; index its (possibly lazy) element
-            // sequence directly.
-            if crate::builtins::arith::range::range_bounds(target).is_some() {
-                return Some(Ok(range_at_pos(target, idx)));
+            // A Range or a list's element: the `AT-POS` rows' implementation.
+            if let Some(answer) = crate::builtins::method_table::positional::at_pos_of(target, idx)
+            {
+                return Some(answer);
             }
-            if let Some(items) = target.as_list_items() {
-                Some(Ok(items.get(idx).cloned().unwrap_or(Value::NIL)))
-            } else {
+            {
                 match target.view() {
                     ValueView::Str(s) => {
                         let ch = s.chars().nth(idx).map(|c| Value::str(c.to_string()));
@@ -791,45 +721,23 @@ pub(crate) fn native_method_1arg(
             }
         }
         "EXISTS-POS" => {
+            // A Range's or list's slot: the `EXISTS-POS` rows' implementation
+            // (`method_table::positional`).
+            if let Some(answer) = crate::builtins::method_table::positional::exists_pos(
+                target,
+                std::slice::from_ref(arg),
+            ) {
+                return Some(answer);
+            }
+            // (Past here the index is a non-negative number.)
             let idx = match arg.view() {
                 ValueView::Int(i) => i,
                 ValueView::Num(f) => f as i64,
+                ValueView::Str(s) if s.trim().parse::<f64>().is_err() => {
+                    return Some(Err(crate::builtins::methods_0arg::str_numeric_error(&s)));
+                }
                 _ => return Some(Ok(Value::FALSE)),
             };
-            if idx < 0 {
-                return Some(Ok(Value::FALSE));
-            }
-            // On a Range, an index exists when it is below the element count.
-            // A lazy (infinite) range cannot report `.elems`, so — like raku —
-            // `.EXISTS-POS` on it throws X::Cannot::Lazy.
-            if crate::builtins::arith::range::range_bounds(target).is_some() {
-                match range_elem_count(target) {
-                    None => {
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::str("Cannot .elems a lazy list".to_string()),
-                        );
-                        let ex = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), attrs);
-                        let mut err = RuntimeError::new("Cannot .elems a lazy list");
-                        err.exception = Some(Box::new(ex));
-                        return Some(Err(err));
-                    }
-                    Some(n) => return Some(Ok(Value::truth((idx as usize) < n))),
-                }
-            }
-            // An in-range slot of a mutable array may still be a hole — a
-            // deleted element or an unassigned gap — and raku reports those as
-            // absent. A shaped array is no exception: it is fixed-size, but
-            // `my @a[3]` starts with every slot unassigned, so `@a.EXISTS-POS(0)`
-            // is False until something is written there.
-            if let ValueView::Array(data, ..) = target.view() {
-                let i = idx as usize;
-                return Some(Ok(Value::truth(i < data.len() && !data.hole_at(i))));
-            }
-            if let Some(items) = target.as_list_items() {
-                return Some(Ok(Value::truth((idx as usize) < items.len())));
-            }
             // `Any.EXISTS-POS`: a non-Positional value is a one-element list
             // holding itself under a positional subscript, so index 0 is the
             // only one that exists. The Associative containers are included —
@@ -842,7 +750,10 @@ pub(crate) fn native_method_1arg(
             None
         }
         // Cost: O(n), n = chars in a string bound/value for comparison and error rendering.
-        "in-range" => in_range(target, arg, "Value"),
+        // The `Range.in-range` row's implementation (`method_table::range`).
+        "in-range" => {
+            crate::builtins::method_table::range::in_range_value(target, std::slice::from_ref(arg))
+        }
         // Cost: see `native_split_method`.
         "split" => {
             if let ValueView::Instance { class_name, .. } = target.view()
@@ -961,12 +872,7 @@ pub(crate) fn native_method_1arg(
             if crate::runtime::utils::is_shaped_array(target) {
                 let leaves = crate::runtime::utils::shaped_array_leaves(target);
                 let sep = arg.to_string_value();
-                let joined = leaves
-                    .iter()
-                    .map(|v| v.to_str_context())
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                return Some(Ok(Value::str(joined)));
+                return crate::builtins::method_table::list::join_items(&leaves, &sep).map(Ok);
             }
             // A list's elements (a hole reads as the array's `is default`
             // value): the `List.join` row's implementation (ADR-11276,
@@ -983,7 +889,7 @@ pub(crate) fn native_method_1arg(
                     let sep = arg.to_string_value();
                     let joined = positional
                         .iter()
-                        .map(|v| v.to_string_value())
+                        .map(Value::to_string_value)
                         .collect::<Vec<_>>()
                         .join(&sep);
                     Some(Ok(Value::str(joined)))
@@ -999,7 +905,7 @@ pub(crate) fn native_method_1arg(
                         .unwrap_or_default();
                     let joined = items
                         .iter()
-                        .map(|v| v.to_str_context())
+                        .map(Value::to_str_context)
                         .collect::<Vec<_>>()
                         .join(&sep);
                     Some(Ok(Value::str(joined)))
@@ -1033,7 +939,9 @@ pub(crate) fn native_method_1arg(
         }
         "flat" => {
             if is_hammer_pair(arg) {
-                return Some(Ok(flatten_target(target, None, true)));
+                return Some(Ok(
+                    crate::builtins::method_table::list_transform::flat_hammer(target),
+                ));
             }
             if let Some(depth) = parse_flat_depth(arg) {
                 return Some(Ok(flatten_target(target, Some(depth), false)));
@@ -1045,43 +953,12 @@ pub(crate) fn native_method_1arg(
         "head" | "tail" => super::head_tail::dispatch(target, method, arg),
         // Cost: O(e) per call, e = elements of the invocant (snapshotted), then O(k)
         // per combination of size k pulled (`ListGen::Combinations`).
-        "combinations" => {
-            use crate::builtins::methods_0arg::collection::combinations_seq;
-            let items = target
-                .as_list_items()
-                .map(|items| items.to_vec())
-                .unwrap_or_else(|| runtime::value_to_list_for_receiver(target));
-            match arg.view() {
-                ValueView::Range(a, b) => Some(Ok(combinations_seq(items, a, b))),
-                ValueView::RangeExcl(a, b) => Some(Ok(combinations_seq(items, a, b - 1))),
-                ValueView::RangeExclStart(a, b) => Some(Ok(combinations_seq(items, a + 1, b))),
-                ValueView::RangeExclBoth(a, b) => Some(Ok(combinations_seq(items, a + 1, b - 1))),
-                ValueView::GenericRange {
-                    start,
-                    end,
-                    excl_start,
-                    excl_end,
-                } => {
-                    let mut lo = runtime::to_int(start);
-                    let mut hi = runtime::to_int(end);
-                    if excl_start {
-                        lo += 1;
-                    }
-                    if excl_end {
-                        hi -= 1;
-                    }
-                    Some(Ok(combinations_seq(items, lo, hi)))
-                }
-                _ => {
-                    let k = runtime::to_int(arg);
-                    if k < 0 {
-                        Some(Ok(Value::seq(Vec::new())))
-                    } else {
-                        Some(Ok(combinations_seq(items, k, k)))
-                    }
-                }
-            }
-        }
+        // The `List.combinations` row's handler (ADR-11276): the cascade
+        // answers the receivers the table has no shape for.
+        "combinations" => crate::builtins::method_table::list_aggregate::combinations_of(
+            target,
+            std::slice::from_ref(arg),
+        ),
         // Cost: O(1) per call on an Array (lazy, `ListGen::Batch`), O(n) per batch
         // pulled; O(e) on any other invocant, e = elements (decomposed, then chunked
         // eagerly; a lazy invocant throws X::Cannot::Lazy before reaching here).
@@ -1440,121 +1317,11 @@ pub(crate) fn native_method_1arg(
                 ArrayKind::List,
             )))
         }
+        // `round($scale)` is the `Cool.round` row's handler; this arm keeps the
+        // receivers the table has no shape for (an allomorph: `<1.5>.round(0.5)`).
+        // Cost: see `cool_real::round_to`.
         "round" => {
-            // Unwrap allomorphic types (IntStr, NumStr, RatStr, ComplexStr)
-            // to get the underlying numeric value for the scale
-            let unwrapped_arg = if let ValueView::Mixin(inner, _) = arg.view() {
-                inner.as_ref()
-            } else {
-                arg
-            };
-            // Unwrap target allomorphic types for the exact fast path.
-            let exact_target = if let ValueView::Mixin(inner, _) = target.view() {
-                inner.as_ref()
-            } else {
-                target
-            };
-            // Keep integer/rational rounding exact (Rakudo's Real.round(Real)):
-            // avoids f64 precision loss for large Ints and Rat scales such as
-            // `round(1000, 23.01)` (== 989.43, not 989.4300000000001).
-            if let Some(exact) =
-                crate::builtins::arith::exact_round_scaled(exact_target, unwrapped_arg)
-            {
-                return Some(Ok(exact));
-            }
-            // Determine the scale type category for return type selection
-            // Int/IntStr -> Int, Num/NumStr/Complex/ComplexStr -> Num,
-            // Rat/RatStr -> Rat
-            #[derive(Clone, Copy)]
-            enum RoundResult {
-                Int,
-                Num,
-                Rat,
-            }
-            let scale_type = match unwrapped_arg.view() {
-                ValueView::Int(_) | ValueView::BigInt(_) => RoundResult::Int,
-                ValueView::Num(_) => RoundResult::Num,
-                ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
-                    RoundResult::Rat
-                }
-                ValueView::Complex(_, _) => RoundResult::Num,
-                _ => return None,
-            };
-            let scale = match unwrapped_arg.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    crate::builtins::arith::bigint_ratio_to_f64(n, d)
-                }
-                ValueView::Complex(re, _) => re,
-                _ => return None,
-            };
-            fn raku_round(v: f64) -> f64 {
-                (v + 0.5).floor()
-            }
-            fn round_real(x: f64, scale: f64, scale_val: &Value) -> f64 {
-                if scale == 0.0 {
-                    raku_round(x)
-                } else {
-                    let k = raku_round(x / scale);
-                    // Multiply back by the scale, but when the scale is an exact
-                    // rational do the final step as `k * num / den` so a scale
-                    // like 0.1 (== 1/10) yields `k / 10` (the exact nearest
-                    // double) instead of `k * 0.1`, which carries float noise
-                    // (e.g. -39 * 0.1 == -3.9000000000000004).
-                    match scale_val.view() {
-                        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => {
-                            k * n as f64 / d as f64
-                        }
-                        ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                            k * crate::builtins::arith::bigint_ratio_to_f64(n, d)
-                        }
-                        _ => k * scale,
-                    }
-                }
-            }
-            // Unwrap target allomorphic types too
-            let unwrapped_target = if let ValueView::Mixin(inner, _) = target.view() {
-                inner.as_ref()
-            } else {
-                target
-            };
-            // Handle Complex target separately — always returns Complex
-            if let ValueView::Complex(re, im) = unwrapped_target.view() {
-                let rr = round_real(re, scale, unwrapped_arg);
-                let ri = round_real(im, scale, unwrapped_arg);
-                return Some(Ok(Value::complex(rr, ri)));
-            }
-            let x = match unwrapped_target.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::BigInt(bi) => bi.to_f64().unwrap_or(0.0),
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    crate::builtins::arith::bigint_ratio_to_f64(n, d)
-                }
-                _ => return None,
-            };
-            let result = round_real(x, scale, unwrapped_arg);
-            // Return type depends on the scale type
-            match scale_type {
-                RoundResult::Int => {
-                    let r = result.floor();
-                    if r >= i64::MIN as f64 && r <= i64::MAX as f64 {
-                        Some(Ok(Value::int(r as i64)))
-                    } else {
-                        Some(Ok(Value::num(r)))
-                    }
-                }
-                RoundResult::Num => Some(Ok(Value::num(result))),
-                RoundResult::Rat => {
-                    let (n, d) = f64_to_rat(result);
-                    Some(Ok(Value::rat_raw(n, d)))
-                }
-            }
+            crate::builtins::method_table::cool_real::round_to(target, std::slice::from_ref(arg))
         }
         // Cost: O(e + k) on a list/array, e = elements of the invocant (copied),
         // k = elements picked (each an O(1) swap_remove); `.pick(*)` is an O(e)
@@ -2079,121 +1846,6 @@ pub(crate) fn native_method_1arg(
                 },
             ))))
         }
-        "log" => {
-            let base_complex = match arg.view() {
-                ValueView::Int(i) => Some((i as f64, 0.0)),
-                ValueView::Num(f) => Some((f, 0.0)),
-                ValueView::Rat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::FatRat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    Some((crate::builtins::arith::bigint_ratio_to_f64(n, d), 0.0))
-                }
-                ValueView::Complex(r, i) => Some((r, i)),
-                _ => None,
-            };
-            let target_complex = match target.view() {
-                ValueView::Int(i) => Some((i as f64, 0.0)),
-                ValueView::Num(f) => Some((f, 0.0)),
-                ValueView::Rat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::FatRat(n, d) if d != 0 => Some((crate::value::rat_to_f64(n, d), 0.0)),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    Some((crate::builtins::arith::bigint_ratio_to_f64(n, d), 0.0))
-                }
-                ValueView::Complex(r, i) => Some((r, i)),
-                _ => None,
-            };
-            match (target_complex, base_complex) {
-                (Some((xr, xi)), Some((br, bi))) => {
-                    if bi == 0.0 && xi == 0.0 {
-                        if br.is_finite() && br > 0.0 && br != 1.0 && xr > 0.0 {
-                            return Some(Ok(Value::num(xr.ln() / br.ln())));
-                        }
-                        return Some(Ok(Value::num(f64::NAN)));
-                    }
-                    let ln_x_mag = (xr * xr + xi * xi).sqrt().ln();
-                    let ln_x_arg = xi.atan2(xr);
-                    let ln_b_mag = (br * br + bi * bi).sqrt().ln();
-                    let ln_b_arg = bi.atan2(br);
-                    let denom = ln_b_mag * ln_b_mag + ln_b_arg * ln_b_arg;
-                    if denom == 0.0 {
-                        return Some(Ok(Value::num(f64::NAN)));
-                    }
-                    let re = (ln_x_mag * ln_b_mag + ln_x_arg * ln_b_arg) / denom;
-                    let im = (ln_x_arg * ln_b_mag - ln_x_mag * ln_b_arg) / denom;
-                    Some(Ok(Value::complex(re, im)))
-                }
-                _ => None,
-            }
-        }
-        "exp" => {
-            // $x.exp($base) = $base ** $x
-            // Get base as real or complex
-            let (base_r, base_i) = match arg.view() {
-                ValueView::Int(i) => (i as f64, 0.0),
-                ValueView::Num(f) => (f, 0.0),
-                ValueView::Rat(n, d) if d != 0 => (crate::value::rat_to_f64(n, d), 0.0),
-                ValueView::Complex(r, i) => (r, i),
-                _ => return None,
-            };
-            // Get exponent as real or complex
-            let (exp_r, exp_i) = match target.view() {
-                ValueView::Int(i) => (i as f64, 0.0),
-                ValueView::Num(f) => (f, 0.0),
-                ValueView::Rat(n, d) if d != 0 => (crate::value::rat_to_f64(n, d), 0.0),
-                ValueView::Complex(r, i) => (r, i),
-                _ => return None,
-            };
-            // Compute base^exp via exp(exp * ln(base))
-            // ln(base) for complex: ln(|base|) + i*arg(base)
-            let ln_r = (base_r * base_r + base_i * base_i).sqrt().ln();
-            let ln_i = base_i.atan2(base_r);
-            // exp * ln(base): (exp_r + exp_i*i) * (ln_r + ln_i*i)
-            let prod_r = exp_r * ln_r - exp_i * ln_i;
-            let prod_i = exp_r * ln_i + exp_i * ln_r;
-            // exp(prod_r + prod_i*i)
-            let ea = prod_r.exp();
-            let result_r = ea * prod_i.cos();
-            let result_i = ea * prod_i.sin();
-            if result_i.abs() < 1e-15 && base_i == 0.0 && exp_i == 0.0 {
-                Some(Ok(Value::num(result_r)))
-            } else {
-                Some(Ok(Value::complex(result_r, result_i)))
-            }
-        }
-        "unpolar" => {
-            // $magnitude.unpolar($angle) = $magnitude * cis($angle)
-            let mag = match target.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                _ => return None,
-            };
-            let angle = match arg.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                _ => return None,
-            };
-            Some(Ok(Value::complex(mag * angle.cos(), mag * angle.sin())))
-        }
-        "roots" => {
-            // Instance types need runtime coercion via .Numeric
-            if matches!(target.view(), ValueView::Instance { .. }) {
-                return None;
-            }
-            Some(Ok(compute_roots(target, arg)))
-        }
-        "atan2" => {
-            // User-defined types need runtime coercion via .Numeric/.Bridge
-            if matches!(target.view(), ValueView::Instance { .. })
-                || matches!(arg.view(), ValueView::Instance { .. })
-            {
-                return None;
-            }
-            let y = runtime::to_float_value(target).unwrap_or(0.0);
-            let x = runtime::to_float_value(arg).unwrap_or(0.0);
-            Some(Ok(Value::num(y.atan2(x))))
-        }
         // Buf/Blob read-num methods (1 arg: offset, uses NativeEndian)
         "read-num32" | "read-num64" => {
             if let ValueView::Package(type_name) = target.view() {
@@ -2242,31 +1894,15 @@ pub(crate) fn native_method_1arg(
             )))
         }
         "AT-KEY" => match target.view() {
-            ValueView::Hash(map) => {
-                // An object hash stores `.WHICH` keys (fall back to the plain
-                // string key for the ordinary Str-keyed hash).
-                let v = if map.key_type.is_some() {
-                    let which = crate::runtime::utils::value_which_key(arg);
-                    map.get(&which).cloned()
-                } else {
-                    None
-                };
-                let v = v.or_else(|| map.get(&arg.to_string_value()).cloned());
-                Some(Ok(v.unwrap_or(Value::NIL)))
-            }
-            ValueView::Set(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                Some(Ok(Value::truth(data.elements.contains(&key))))
-            }
-            ValueView::Bag(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                let count = data.counts.get(&key).cloned().unwrap_or_else(BigInt::zero);
-                Some(Ok(Value::from_bigint(count)))
-            }
-            ValueView::Mix(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                let weight = data.weights.get(&key).copied().unwrap_or(0.0);
-                Some(Ok(crate::value::mix_weight_to_value(weight)))
+            // The associative rows' implementation (`method_table::subscript`).
+            ValueView::Hash(_)
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..)
+            | ValueView::Pair(..)
+            | ValueView::ValuePair(..)
+            | ValueView::Capture { .. } => {
+                crate::builtins::method_table::subscript::at_key(target, std::slice::from_ref(arg))
             }
             // IO::Path::Parts does Associative: `$parts<volume>` returns the part.
             ValueView::Instance {
@@ -2280,19 +1916,6 @@ pub(crate) fn native_method_1arg(
                     .get(&key)
                     .cloned()
                     .unwrap_or(Value::NIL)))
-            }
-            // A `Pair` does `Associative` with a single entry.
-            ValueView::Pair(key, value) => Some(Ok(if *key == arg.to_string_value() {
-                value.clone()
-            } else {
-                Value::NIL
-            })),
-            ValueView::ValuePair(key, value) => {
-                Some(Ok(if key.to_string_value() == arg.to_string_value() {
-                    (*value).clone()
-                } else {
-                    Value::NIL
-                }))
             }
             ValueView::Nil => Some(Ok(Value::package(crate::symbol::wk::any()))),
             ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
@@ -2313,30 +1936,17 @@ pub(crate) fn native_method_1arg(
             _ => None,
         },
         "EXISTS-KEY" => match target.view() {
-            ValueView::Hash(map) => {
-                // An object hash stores `.WHICH` keys (fall back to the plain
-                // string key for the ordinary Str-keyed hash).
-                let found = (map.key_type.is_some()
-                    && map.contains_key(&crate::runtime::utils::value_which_key(arg)))
-                    || map.contains_key(&arg.to_string_value());
-                Some(Ok(Value::truth(found)))
-            }
-            ValueView::Set(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                Some(Ok(Value::truth(data.elements.contains(&key))))
-            }
-            ValueView::Bag(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                Some(Ok(Value::truth(data.counts.contains_key(&key))))
-            }
-            ValueView::Mix(data, _) => {
-                let (key, _) = crate::runtime::utils::quanthash_elem_entry(arg);
-                Some(Ok(Value::truth(data.weights.contains_key(&key))))
-            }
-            ValueView::Pair(key, _) => Some(Ok(Value::truth(*key == arg.to_string_value()))),
-            ValueView::ValuePair(key, _) => Some(Ok(Value::truth(
-                key.to_string_value() == arg.to_string_value(),
-            ))),
+            // The associative rows' implementation (`method_table::subscript`).
+            ValueView::Hash(_)
+            | ValueView::Set(..)
+            | ValueView::Bag(..)
+            | ValueView::Mix(..)
+            | ValueView::Pair(..)
+            | ValueView::ValuePair(..)
+            | ValueView::Capture { .. } => crate::builtins::method_table::subscript::exists_key(
+                target,
+                std::slice::from_ref(arg),
+            ),
             ValueView::Nil => Some(Ok(Value::FALSE)),
             ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
                 Some(Ok(Value::FALSE))
@@ -2415,97 +2025,4 @@ pub(crate) fn native_method_1arg(
         }
         _ => None,
     }
-}
-
-/// The 0-based `n`th element of a Range, or Nil when `idx` is past the end.
-/// An infinite integer range (`a..*`) is indexed arithmetically; every other
-/// range materializes its (finite) element list.
-fn range_at_pos(range: &Value, idx: usize) -> Value {
-    if crate::value::flat::is_infinite_range(range) {
-        // Element `idx` of an unbounded range of any element type: `first +
-        // idx` for a numeric start, `idx` `.succ` steps otherwise.
-        let Some(first) = crate::runtime::unbounded_range::first(range) else {
-            return Value::NIL;
-        };
-        if let Some(v) = crate::runtime::unbounded_range::nth(&first, idx) {
-            return v;
-        }
-        let mut steps = crate::runtime::unbounded_range::Steps::new(range);
-        return steps
-            .as_mut()
-            .and_then(|s| s.take(idx + 1).pop())
-            .unwrap_or(Value::NIL);
-    }
-    crate::runtime::value_to_list(range)
-        .get(idx)
-        .cloned()
-        .unwrap_or(Value::NIL)
-}
-
-/// Number of elements in a Range, or None when the range is infinite.
-fn range_elem_count(range: &Value) -> Option<usize> {
-    if crate::value::flat::is_infinite_range(range) {
-        return None;
-    }
-    Some(crate::runtime::value_to_list(range).len())
-}
-
-/// Return True for a contained value, otherwise throw X::OutOfRange.
-// Cost: O(n), n = chars in a string bound/value for comparison and error rendering.
-pub(super) fn in_range(
-    target: &Value,
-    value: &Value,
-    what: &str,
-) -> Option<Result<Value, RuntimeError>> {
-    crate::builtins::arith::range::range_bounds(target)?;
-    if range_contains_value(target, value) {
-        return Some(Ok(Value::TRUE));
-    }
-    use crate::builtins::methods_0arg::raku_repr::raku_value;
-    let msg = format!(
-        "{} out of range. Is: {}, should be in {}",
-        what,
-        raku_value(value),
-        raku_value(target)
-    );
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("message".to_string(), Value::str(msg.clone()));
-    attrs.insert("got".to_string(), value.clone());
-    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
-    let mut err = RuntimeError::new(msg);
-    err.exception = Some(Box::new(ex));
-    Some(Err(err))
-}
-
-/// Whether `val` lies within `range`, honoring the range's exclusivity and
-/// Whatever endpoints. Mirrors `Interpreter::value_in_range` for the numeric
-/// and string-endpoint cases used by `.in-range`.
-pub(super) fn range_contains_value(range: &Value, val: &Value) -> bool {
-    let Some((start, end, excl_start, excl_end)) =
-        crate::builtins::arith::range::range_bounds(range)
-    else {
-        return false;
-    };
-    let start_whatever = matches!(start.view(), ValueView::Whatever | ValueView::HyperWhatever);
-    let end_whatever = matches!(end.view(), ValueView::Whatever | ValueView::HyperWhatever);
-    let string_range =
-        matches!(start.view(), ValueView::Str(_)) || matches!(end.view(), ValueView::Str(_));
-    if string_range {
-        let v = val.to_string_value();
-        let smin = start.to_string_value();
-        let smax = end.to_string_value();
-        let min_ok = start_whatever || if excl_start { v > smin } else { v >= smin };
-        let max_ok = end_whatever || if excl_end { v < smax } else { v <= smax };
-        return min_ok && max_ok;
-    }
-    let v = val.to_f64();
-    let min_ok = start_whatever || {
-        let vmin = start.to_f64();
-        if excl_start { v > vmin } else { v >= vmin }
-    };
-    let max_ok = end_whatever || {
-        let vmax = end.to_f64();
-        if excl_end { v < vmax } else { v <= vmax }
-    };
-    min_ok && max_ok
 }

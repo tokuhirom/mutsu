@@ -167,12 +167,44 @@ impl Interpreter {
 
     /// `$repo.loaded`: the CompUnits a repository has loaded, in load order.
     pub(crate) fn cur_repo_loaded(&self, prefix: &str) -> Vec<Value> {
-        self.module
+        let mut loaded = self
+            .module
             .cur_repo
             .loaded
             .get(prefix)
             .cloned()
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // Modules pulled in by `use`/`need` are loaded from the repository
+        // whose prefix holds their source file, just as in Rakudo; derive
+        // them on demand rather than recording at every load site.
+        let Ok(canonical_prefix) = std::path::Path::new(prefix).canonicalize() else {
+            return loaded;
+        };
+        let mut names: Vec<&String> = self.module.loaded_modules.iter().collect();
+        names.sort();
+        for name in names {
+            if loaded.iter().any(|cu| {
+                matches!(cu.view(), ValueView::Instance { attributes, .. }
+                    if attributes.as_map().get("short-name").is_some_and(|v| v.to_string_value() == *name))
+            }) {
+                continue;
+            }
+            let Some((path, None)) = self.resolve_module_path(name) else {
+                continue;
+            };
+            if !path
+                .canonicalize()
+                .is_ok_and(|p| p.starts_with(&canonical_prefix))
+            {
+                continue;
+            }
+            let mut attrs = HashMap::new();
+            attrs.insert("short-name".to_string(), Value::str(name.clone()));
+            attrs.insert("from".to_string(), Value::str_from("Raku"));
+            attrs.insert("repo-id".to_string(), Value::str(name.clone()));
+            loaded.push(Value::make_instance(Symbol::intern("CompUnit"), attrs));
+        }
+        loaded
     }
 
     pub(crate) fn cur_repo_loaded_push(&mut self, prefix: &str, compunit: Value) {

@@ -38,6 +38,42 @@
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
 
+/// Whether `op` is a comparison the parser chains: every operator of
+/// `parser::expr::operators::ComparisonOp` except the non-associative
+/// structural ones (`<=>`, `leg`, `cmp`, `coll`, `unicmp`), which bind tighter
+/// than `==` and never chain (a unit test there keeps the two lists equal).
+// Cost: O(1).
+pub(crate) fn is_chain_op(op: &TokenKind) -> bool {
+    match op {
+        TokenKind::EqEqEq
+        | TokenKind::BangEqEqEq
+        | TokenKind::EqEq
+        | TokenKind::BangPercentPercent
+        | TokenKind::BangEq
+        | TokenKind::BangTilde
+        | TokenKind::SmartMatch
+        | TokenKind::Lte
+        | TokenKind::Gte
+        | TokenKind::Lt
+        | TokenKind::Gt => true,
+        TokenKind::Ident(name) => matches!(
+            name.as_str(),
+            "eq" | "ne"
+                | "lt"
+                | "gt"
+                | "le"
+                | "ge"
+                | "eqv"
+                | "before"
+                | "after"
+                | "=~="
+                | "=:="
+                | "!=:="
+        ),
+        _ => false,
+    }
+}
+
 /// Build a single (possibly negated) comparison `left OP right`.
 pub(crate) fn make_chain_cmp(left: Expr, op: TokenKind, right: Expr, negated: bool) -> Expr {
     let cmp = Expr::Binary {

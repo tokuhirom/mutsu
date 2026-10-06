@@ -9,8 +9,8 @@
 
 use super::convert::{leaf_field, routine_node, unsupported};
 use super::lower::{
-    call_name_str, lower_stmts, named_child, named_child_or_positional, routine_return_type,
-    signature_positional_params,
+    call_name_str, lower_routine_stmts, named_child, named_child_or_positional,
+    routine_return_type, signature_positional_params,
 };
 use super::routine_traits::{IsTraits, add_flags};
 use super::{RakuAstClass, RakuAstNode};
@@ -28,6 +28,8 @@ pub(super) struct ProtoDecl<'a> {
     /// Empty for the untagged `is export`, unlike `SubDecl`'s `DEFAULT`.
     pub export_tags: &'a [String],
     pub has_traits: bool,
+    /// How the return type, if any, was written.
+    pub spelling: super::convert::ReturnSpelling,
     pub is_method: bool,
     pub is_our: bool,
 }
@@ -47,8 +49,8 @@ fn is_onlystar_body(body: &[Stmt]) -> bool {
 /// The `Sub` / `Method` node for a proto declaration.
 // Cost: O(n), n = size of the declaration.
 pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
-    if proto.has_traits || proto.is_our || proto.return_type.is_some() {
-        return Err(unsupported("proto with traits / scope / a return type"));
+    if proto.has_traits {
+        return Err(unsupported("proto with traits"));
     }
     let class = if proto.is_method {
         RakuAstClass::Method
@@ -57,7 +59,13 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
     };
     let onlystar = is_onlystar_body(proto.body);
     let body: &[Stmt] = if onlystar { &[] } else { proto.body };
-    let mut node = routine_node(class, &proto.name.resolve(), proto.param_defs, body, None)?;
+    let mut node = routine_node(
+        class,
+        &proto.name.resolve(),
+        proto.param_defs,
+        body,
+        proto.return_type.map(|t| (t, proto.spelling)),
+    )?;
     if onlystar {
         let field = node
             .fields
@@ -81,6 +89,10 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
     add_flags(&mut node, false, false, &traits)?;
     node.fields
         .insert(0, leaf_field(Some("multiness"), Value::str_from("proto")));
+    if proto.is_our {
+        node.fields
+            .insert(0, leaf_field(Some("scope"), Value::str_from("our")));
+    }
     Ok(node)
 }
 
@@ -97,33 +109,46 @@ pub(super) fn is_proto(node: &RakuAstNode) -> bool {
 /// A `proto` `Sub` / `Method` -> `Stmt::ProtoDecl`.
 // Cost: O(n), n = size of the node.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let is_our = match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => false,
+        Some(_) => match super::lower::leaf_str(node, "scope")?.as_str() {
+            "our" => true,
+            _ => return Err(super::lower::unsupported(node)),
+        },
+    };
     let name = call_name_str(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
     let mut is_traits = IsTraits::default();
     let (return_type, custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
-    if return_type.is_some() || !custom_traits.is_empty() || is_traits.is_rw || is_traits.is_raw {
+    // Only the markers of how the return type was written are kept.
+    if custom_traits
+        .iter()
+        .any(|(t, _)| !matches!(t.as_str(), "__return_via_trait" | "__return_via_of"))
+        || is_traits.is_rw
+        || is_traits.is_raw
+    {
         return Err(super::lower::unsupported(node));
     }
     let body_node = named_child(node, "body")?;
     let body = if body_node.class == RakuAstClass::OnlyStar {
         vec![Stmt::Expr(Expr::Whatever)]
     } else {
-        lower_stmts(named_child_or_positional(body_node)?)?
+        lower_routine_stmts(named_child_or_positional(body_node)?)?
     };
     Ok(Stmt::ProtoDecl {
         name: Symbol::intern(&name),
         params,
         param_defs,
-        return_type: None,
+        return_type,
         body,
         is_export: !is_traits.export_tags.is_empty(),
         export_tags: match is_traits.export_tags.as_slice() {
             [only] if only == "DEFAULT" => Vec::new(),
             _ => is_traits.export_tags,
         },
-        custom_traits: Vec::new(),
+        custom_traits: custom_traits.into_iter().map(|(t, _)| t).collect(),
         trait_args: Vec::new(),
         is_method: node.class == RakuAstClass::Method,
-        is_our: false,
+        is_our,
     })
 }

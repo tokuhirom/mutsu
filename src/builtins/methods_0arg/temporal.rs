@@ -273,8 +273,8 @@ pub fn with_formatter(value: Value, formatter: Option<Value>) -> Value {
     Value::write_back_sharing(&attributes, class_name, updated, id)
 }
 
-/// Format a date in one of Raku's `yyyy-mm-dd` / `mm-dd-yyyy` / `dd-mm-yyyy`
-/// orderings, joined by `sep` (default `-`).
+/// Format a date in one of Raku's `Dateish` orderings (`yyyy-mm-dd`,
+/// `mm-dd-yyyy`, `dd-mm-yyyy`, `mm-dd`, `yyyy-mm`), joined by `sep` (default `-`).
 pub fn format_date_ordered(order: &str, year: i64, month: i64, day: i64, sep: &str) -> String {
     let y = format_year_part(year);
     let m = format!("{:02}", month);
@@ -282,6 +282,8 @@ pub fn format_date_ordered(order: &str, year: i64, month: i64, day: i64, sep: &s
     match order {
         "mm-dd-yyyy" => format!("{m}{sep}{d}{sep}{y}"),
         "dd-mm-yyyy" => format!("{d}{sep}{m}{sep}{y}"),
+        "mm-dd" => format!("{m}{sep}{d}"),
+        "yyyy-mm" => format!("{y}{sep}{m}"),
         // "yyyy-mm-dd"
         _ => format!("{y}{sep}{m}{sep}{d}"),
     }

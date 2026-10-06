@@ -17,7 +17,16 @@ use crate::value::Value;
 /// negated for `unless`). Returns `None` for anything that is not a hoistable
 /// scalar/array/hash `my`/`our` declaration (e.g. `state`, routines), leaving the
 /// generic modifier wrapping in place.
-pub(super) fn try_split_decl_modifier(stmt: &Stmt, effective_cond: &Expr) -> Option<Stmt> {
+///
+/// `is_unless` is whether the modifier was written `unless`; the gated
+/// assignment keeps it, as the generic modifier wrapping does, so the
+/// RakuAST conversion can tell `unless C` from `if !C`.
+// Cost: O(n), n = size of the declaration's initializer (it is cloned).
+pub(crate) fn try_split_decl_modifier(
+    stmt: &Stmt,
+    effective_cond: &Expr,
+    is_unless: bool,
+) -> Option<Stmt> {
     let Stmt::VarDecl {
         name,
         expr,
@@ -84,7 +93,7 @@ pub(super) fn try_split_decl_modifier(stmt: &Stmt, effective_cond: &Expr) -> Opt
         else_branch: Vec::new(),
         binding_var: None,
         is_statement_modifier: true,
-        is_unless: false,
+        is_unless,
         with_kind: None,
     };
     Some(Stmt::SyntheticBlock(vec![decl, init]))
@@ -105,7 +114,7 @@ pub(super) fn split_decl_for_topic_modifier(stmt: &Stmt) -> Option<(Stmt, Option
         return None;
     }
     let always = Expr::Literal(Value::TRUE);
-    match try_split_decl_modifier(stmt, &always)? {
+    match try_split_decl_modifier(stmt, &always, false)? {
         Stmt::SyntheticBlock(mut parts) if parts.len() == 2 => {
             let Some(Stmt::If { then_branch, .. }) = parts.pop() else {
                 return None;

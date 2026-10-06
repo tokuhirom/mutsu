@@ -27,14 +27,28 @@ pub(crate) fn sigilless_storage_name(name: &str) -> &str {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(u32);
 
+/// A symbol serializes as its text, except inside a compiled-bytecode encode
+/// (`precomp_codec::encode`), where it is an index into the entry's symbol
+/// table: decoding it is then a table lookup, not an allocation and an intern
+/// per occurrence (#11756). The two forms never mix, because a decode reads
+/// the table form exactly while `precomp_codec::decode` runs, and only what an
+/// encode wrote is ever decoded there.
 impl Serialize for Symbol {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if let Some(idx) = crate::precomp_codec::serde_symbol_index(*self) {
+            return serializer.serialize_u32(idx);
+        }
         self.as_str().serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for Symbol {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        if crate::precomp_codec::serde_symbols_active() {
+            let idx = u32::deserialize(deserializer)?;
+            return crate::precomp_codec::serde_symbol_at(idx)
+                .ok_or_else(|| serde::de::Error::custom("symbol index out of range"));
+        }
         let s = String::deserialize(deserializer)?;
         Ok(Symbol::intern(&s))
     }

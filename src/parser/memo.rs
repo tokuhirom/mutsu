@@ -42,53 +42,124 @@ pub(super) struct MemoStats {
 /// dropped mid-way through the enclosing parse, and the allocator readily
 /// hands the freed address to an unrelated later allocation — so a bare
 /// pointer key can return a stale entry from a dead buffer for different
-/// input, silently corrupting the parse. Mixing in a per-parse generation
-/// makes that impossible: within one generation every live buffer's
-/// `(ptr, len)` is unique, and entries from other generations never match.
+/// input, silently corrupting the parse. Two things make that impossible:
+///
+/// * A per-parse generation. Within one generation every live buffer's
+///   `(ptr, len)` is unique, and entries from other generations never match.
+/// * A key is made only for text inside the buffer the current generation was
+///   begun for (or inside a permanently leaked region). A temporary `String`
+///   built and parsed *inside* a generation — `format!("({args})")` for a trait
+///   argument list is one — has no key at all, so it is parsed fresh and can
+///   never be answered by the entry of an earlier temporary that sat at the
+///   same address with the same length (#12065: `native('c', v6)` read back for
+///   `native('m', v6)`). The soundness no longer depends on every call site
+///   remembering to open a generation around its own scratch buffer.
 pub(super) type MemoKey = (u64, usize, usize);
 
+/// The parse generation in force and the live buffer it covers, as a half-open
+/// address range. Outside any parse the range is empty, so nothing is keyed.
+#[derive(Clone, Copy)]
+struct Scope {
+    generation: u64,
+    start: usize,
+    end: usize,
+}
+
+const NO_SCOPE: Scope = Scope {
+    generation: 0,
+    start: 0,
+    end: 0,
+};
+
 thread_local! {
-    static CURRENT_GENERATION: Cell<u64> = const { Cell::new(0) };
+    static CURRENT_SCOPE: Cell<Scope> = const { Cell::new(NO_SCOPE) };
     static NEXT_GENERATION: Cell<u64> = const { Cell::new(1) };
 }
 
-/// RAII guard returned by `begin_parse_generation()`; restores the enclosing
-/// parse's generation on drop (the outer buffer is still alive, so its keys
-/// are valid again).
+/// RAII guard returned by `begin_parse_generation()` /
+/// `begin_buffer_generation()`; restores the enclosing parse's scope on drop
+/// (the outer buffer is still alive, so its keys are valid again).
 pub(super) struct ParseGenerationGuard {
-    prev: u64,
+    prev: Scope,
 }
 
 impl Drop for ParseGenerationGuard {
     fn drop(&mut self) {
-        CURRENT_GENERATION.with(|g| g.set(self.prev));
+        CURRENT_SCOPE.with(|c| c.set(self.prev));
     }
 }
 
-/// Enter a fresh parse generation for the duration of one `parse_program` /
-/// `parse_program_partial` call. Never reuses a generation number: a nested
-/// parse must not share the generation of any parse whose buffer has been
-/// freed.
-pub(super) fn begin_parse_generation() -> ParseGenerationGuard {
-    let prev = CURRENT_GENERATION.with(|g| g.get());
-    let fresh = NEXT_GENERATION.with(|n| {
+/// A generation number that no parse has used. Never reused: a nested parse
+/// must not share the generation of any parse whose buffer has been freed.
+fn fresh_generation() -> u64 {
+    NEXT_GENERATION.with(|n| {
         let v = n.get();
         n.set(v + 1);
         v
+    })
+}
+
+/// Enter a fresh parse generation over the *same* live buffer as the enclosing
+/// one, for a lexical scope whose declarations change what the same text means
+/// (`block_with_pointy_params`, a routine body with parameters): entries made
+/// under the enclosing scope must not be replayed inside it.
+// Cost: O(1).
+pub(super) fn begin_parse_generation() -> ParseGenerationGuard {
+    let prev = CURRENT_SCOPE.with(|c| c.get());
+    CURRENT_SCOPE.with(|c| {
+        c.set(Scope {
+            generation: fresh_generation(),
+            ..prev
+        })
     });
-    CURRENT_GENERATION.with(|g| g.set(fresh));
     ParseGenerationGuard { prev }
 }
 
-/// Build the memo key for `input` under the current parse generation. Shared
+/// Enter a fresh parse generation for one `parse_program` /
+/// `parse_program_recovering` call over `buffer`, the text every memo key of
+/// this parse points into. The caller keeps `buffer` alive until the guard
+/// drops.
+// Cost: O(1).
+pub(super) fn begin_buffer_generation(buffer: &str) -> ParseGenerationGuard {
+    let prev = CURRENT_SCOPE.with(|c| c.get());
+    let start = buffer.as_ptr() as usize;
+    CURRENT_SCOPE.with(|c| {
+        c.set(Scope {
+            generation: fresh_generation(),
+            start,
+            end: start.saturating_add(buffer.len()),
+        })
+    });
+    ParseGenerationGuard { prev }
+}
+
+/// Build the memo key for `input` under the current parse generation, or
+/// `None` when `input` is not inside the buffer that generation covers (a
+/// temporary buffer: it has no identity a later buffer cannot share). Shared
 /// with sibling pointer-keyed tables (`STMT_ANON_STATES_TLS`) so they stay
 /// sound the same way the memo tables do.
-pub(in crate::parser) fn memo_key(input: &str) -> MemoKey {
-    (
-        CURRENT_GENERATION.with(|g| g.get()),
-        input.as_ptr() as usize,
-        input.len(),
-    )
+// Cost: O(1) for text inside the parse's buffer; O(r) otherwise, r = leaked
+// heredoc regions (usually none).
+pub(in crate::parser) fn memo_key(input: &str) -> Option<MemoKey> {
+    let scope = CURRENT_SCOPE.with(|c| c.get());
+    let start = input.as_ptr() as usize;
+    let end = start.saturating_add(input.len());
+    // A leaked region is never freed, so its addresses are unique forever.
+    if (start >= scope.start && end <= scope.end) || super::primary::is_within_leaked_region(input)
+    {
+        Some((scope.generation, start, input.len()))
+    } else {
+        None
+    }
+}
+
+/// [`memo_key`] for a table that only *compares* keys of a short-lived record
+/// (`PENDING_EXTRA_MODIFIER`): text outside the parse's buffer gets a key in a
+/// namespace of its own instead of none, so the record is still matched for
+/// the same `(ptr, len)`.
+// Cost: as `memo_key`.
+pub(in crate::parser) fn record_key(input: &str) -> MemoKey {
+    memo_key(input).unwrap_or((u64::MAX, input.as_ptr() as usize, input.len()))
 }
 
 /// A thread-local memoization table for parser results.
@@ -110,16 +181,12 @@ impl<T: Clone + 'static> ParseMemo<T> {
         ParseMemo { memo, stats }
     }
 
-    fn key(input: &str) -> MemoKey {
-        memo_key(input)
-    }
-
     /// Look up a cached parse result. Returns `None` on cache miss.
     pub fn get<'a>(&self, input: &'a str) -> Option<PResult<'a, T>> {
         if !super::parse_memo_enabled() {
             return None;
         }
-        let key = Self::key(input);
+        let key = memo_key(input)?;
         let hit = self.memo.with(|m| m.borrow().get(&key).cloned());
         if let Some(entry) = hit {
             self.stats.with(|s| s.borrow_mut().hits += 1);
@@ -162,6 +229,9 @@ impl<T: Clone + 'static> ParseMemo<T> {
         if !super::parse_memo_enabled() {
             return;
         }
+        let Some(key) = memo_key(input) else {
+            return;
+        };
         // Memoization assumes `rest` is a subslice of `input` so we can
         // recover it later as `&input[consumed..]`. Some parsers (notably
         // heredoc forms whose marker line carries trailing code) instead
@@ -202,7 +272,6 @@ impl<T: Clone + 'static> ParseMemo<T> {
             }
             Err(err) => MemoEntry::Err(err.clone()),
         };
-        let key = Self::key(input);
         self.memo.with(|m| {
             m.borrow_mut().insert(key, entry);
         });
@@ -245,16 +314,15 @@ mod tests {
         TEST_MEMO.reset();
         let buffer = String::from("abcdef");
         let input: &str = &buffer;
-        let outer = begin_parse_generation();
+        let outer = begin_buffer_generation(input);
 
         let result: PResult<'_, i32> = Ok((&input[3..], 1));
         TEST_MEMO.store(input, &result);
         assert!(matches!(TEST_MEMO.get(input), Some(Ok((_, 1)))));
 
         {
-            // A nested parse of a buffer that happens to sit at the same
-            // (ptr, len) — modeled with the very same slice — must neither see
-            // the outer entry nor leak its own entry back out.
+            // A nested scope over the same buffer must neither see the outer
+            // entry nor leak its own entry back out.
             let _nested = begin_parse_generation();
             assert!(TEST_MEMO.get(input).is_none());
             let nested_result: PResult<'_, i32> = Ok((&input[1..], 2));
@@ -265,5 +333,76 @@ mod tests {
         assert!(matches!(TEST_MEMO.get(input), Some(Ok((_, 1)))));
         drop(outer);
         TEST_MEMO.reset();
+    }
+
+    /// #12065: a scratch `String` built and parsed inside a parse (a trait's
+    /// argument list wrapped in parentheses) is dropped, and the next scratch
+    /// `String` lands at the same address with the same length. It is not part
+    /// of the parse's buffer, so it has no key: nothing is stored for it and
+    /// nothing is served to its successor.
+    #[test]
+    fn a_scratch_buffer_inside_a_parse_is_not_memoized() {
+        if !crate::parser::parse_memo_enabled() {
+            return;
+        }
+        TEST_MEMO.reset();
+        let program = String::from("sub f() is native('c', v6) { * }");
+        let _parse = begin_buffer_generation(&program);
+
+        // Text inside the program's buffer is keyed and memoized.
+        let inside: &str = &program[4..];
+        let kept: PResult<'_, i32> = Ok((&inside[2..], 7));
+        TEST_MEMO.store(inside, &kept);
+        assert!(matches!(TEST_MEMO.get(inside), Some(Ok((_, 7)))));
+        assert!(memo_key(inside).is_some());
+
+        // The same scratch buffer, rewritten in place: same address, same length.
+        let mut scratch = String::from("('c', v6)");
+        let address = scratch.as_ptr();
+        assert!(memo_key(&scratch).is_none(), "a scratch buffer has no key");
+        let first: PResult<'_, i32> = Ok((&scratch[9..], 1));
+        TEST_MEMO.store(&scratch, &first);
+        scratch.clear();
+        scratch.push_str("('m', v6)");
+        assert_eq!(scratch.as_ptr(), address, "the buffer must not move");
+        assert!(
+            TEST_MEMO.get(&scratch).is_none(),
+            "the successor must not be answered with the predecessor's entry"
+        );
+        TEST_MEMO.reset();
+    }
+
+    /// The same shape through the real expression memo: `parse_sub_traits`
+    /// re-parses `format!("({args})")` of `is native('c', v6)` and then of
+    /// `is native('m', v6)`. Rewriting one scratch `String` in place gives both
+    /// the same address and length deterministically.
+    #[test]
+    fn the_expression_memo_does_not_answer_a_rewritten_scratch_buffer() {
+        crate::parser::expr::reset_expression_memo();
+        let program = String::from("sub a() is native('c', v6) { * }");
+        let _parse = begin_buffer_generation(&program);
+        let render = |text: &str| match crate::parser::expr::expression(text) {
+            Ok((_, expr)) => format!("{expr:?}"),
+            Err(_) => String::from("parse error"),
+        };
+        let mut scratch = String::from("('c', v6)");
+        let address = scratch.as_ptr();
+        let first = render(&scratch);
+        assert!(first.contains("\"c\""), "{first}");
+        scratch.clear();
+        scratch.push_str("('m', v6)");
+        assert_eq!(scratch.as_ptr(), address, "the buffer must not move");
+        let second = render(&scratch);
+        assert!(second.contains("\"m\""), "{second}");
+        assert!(!second.contains("\"c\""), "{second}");
+        crate::parser::expr::reset_expression_memo();
+    }
+
+    #[test]
+    fn nothing_is_keyed_outside_a_parse() {
+        let loose = String::from("abcdef");
+        assert!(memo_key(&loose).is_none());
+        // A record key (compared, never replayed) still distinguishes it.
+        assert_eq!(record_key(&loose), record_key(&loose));
     }
 }

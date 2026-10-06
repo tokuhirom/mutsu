@@ -2,9 +2,9 @@
 /// Num, Real, Numeric, Bridge
 use crate::runtime;
 use crate::symbol::Symbol;
+use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::value_buf::{buf_len_or_zero, buf_storage, set_buf_storage};
 use crate::value::{RuntimeError, Value, ValueView};
-use num_traits::{ToPrimitive, Zero};
 
 use super::parse_raku_int_from_str;
 use crate::value::ValueMap;
@@ -104,6 +104,23 @@ pub(crate) fn str_numeric_failure(s: &str) -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
+/// The thrown `X::Str::Numeric` for a string that cannot be numified, for a
+/// caller that coerces its argument itself (`(1..3).EXISTS-POS("a")`).
+// Cost: O(d), d = chars of `s`.
+pub(crate) fn str_numeric_error(s: &str) -> RuntimeError {
+    let attrs = str_numeric_exception_attrs(s);
+    let message = attrs
+        .get("message")
+        .map(|m| m.to_string_value())
+        .unwrap_or_default();
+    let mut err = RuntimeError::new(message);
+    err.exception = Some(Box::new(Value::make_instance(
+        Symbol::intern("X::Str::Numeric"),
+        attrs,
+    )));
+    err
+}
+
 /// Render a Complex's literal form (`1+2i`, `1-2i`, `3.7+1e-20i`) for an
 /// `X::Numeric::Real` message: its `.Str`, as raku prints the source value.
 fn render_complex_literal(re: f64, im: f64) -> String {
@@ -170,7 +187,9 @@ pub(super) fn dispatch(
     // ("Cannot convert Inf to Int"). Handle this before the per-method arms,
     // which only know how to numerify scalar types.
     if target.is_range() && matches!(method, "Int" | "Numeric" | "Real" | "Num") {
-        return Some(Some(range_numeric_coercion(target, method)));
+        return Some(Some(
+            crate::builtins::method_table::range::numeric_coercion(target, method),
+        ));
     }
     // A lazy (infinite-backed) array numerifies to its element count, which it
     // cannot report: raku throws `X::Cannot::Lazy` (`Cannot .elems a lazy list`)
@@ -763,14 +782,6 @@ pub(super) fn dispatch(
                     Some(Err(RuntimeError::new("Failed")))
                 }
             }
-            // Instant/Duration `.Str` is the same pure rendering as their gist
-            // (`value/display.rs::to_string_value`), so handle it natively
-            // instead of falling through to the interpreter.
-            ValueView::Instance { class_name, .. }
-                if class_name == "Instant" || class_name == "Duration" =>
-            {
-                Some(Ok(Value::str(target.to_string_value())))
-            }
             ValueView::Package(_) | ValueView::Instance { .. } => None,
             ValueView::LazyList(_) => None, // fall through to runtime to force the list
             // A lazy (infinite-backed) array stringifies to a bounded `...`
@@ -840,30 +851,6 @@ pub(super) fn dispatch(
                 | ValueView::Rat(..)
                 | ValueView::FatRat(..)
                 | ValueView::BigRat(..) => crate::builtins::method_table::coerce::int_of(target)?,
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Instant" || class_name == "Duration" => {
-                    let numeric = attributes
-                        .as_map()
-                        .get("value")
-                        .and_then(|v| match v.view() {
-                            ValueView::Int(i) => Some(i as f64),
-                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
-                            ValueView::FatRat(n, d) if d != 0 => {
-                                Some(crate::value::rat_to_f64(n, d))
-                            }
-                            ValueView::BigRat(n, d) if !d.is_zero() => {
-                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or(0.0);
-                    Value::int(numeric as i64)
-                }
                 // Cost: O(d^2), d = digits (num-bigint radix parse; a few O(n) copies first).
                 ValueView::Str(s) => {
                     if s.trim().is_empty() {
@@ -872,6 +859,10 @@ pub(super) fn dispatch(
                         Value::int(0)
                     } else if let Some(v) = parse_raku_int_from_str(&s) {
                         v
+                    } else if str_numifies_to_complex(&s).is_some() {
+                        // `"1+2i".Int` is `Complex.Int`: the runtime tests the
+                        // imaginary part (`Interpreter::dispatch_complex_to_real`).
+                        return Some(None);
                     } else if let Some(v) =
                         runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
                             .as_ref()
@@ -931,6 +922,9 @@ pub(super) fn dispatch(
                 ValueView::Str(s) => {
                     if let Some(v) = parse_raku_int_from_str(&s) {
                         Some(v)
+                    } else if str_numifies_to_complex(&s).is_some() {
+                        // As `.Int`: coerced as the `Complex` it numifies to.
+                        return Some(None);
                     } else if let Some(v) =
                         runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
                             .as_ref()
@@ -1009,36 +1003,29 @@ pub(super) fn dispatch(
             _ => None,
         },
         "Num" => {
+            // `.Num` on a concrete-only Cool type's type object dies with
+            // X::Parameter::InvalidConcreteness; `Num.Num` is identity (below)
+            // and the other type objects inherit Mu/Cool's warn-and-0.
+            if let ValueView::Package(name) = target.view() {
+                let n = name.resolve();
+                let expected = match n.as_str() {
+                    "Int" | "Str" | "Complex" => Some(n.as_str()),
+                    "UInt" => Some("Int"),
+                    "Rat" | "FatRat" => Some("Rational"),
+                    _ => None,
+                };
+                if let Some(expected) = expected {
+                    return Some(Some(Err(RuntimeError::parameter_invalid_concreteness(
+                        expected, &n, "Num", "self", true, true,
+                    ))));
+                }
+            }
             // A real number: the numeric types' `Num` rows' implementation
             // (ADR-11276, `method_table::coerce`).
             if let Some(result) = crate::builtins::method_table::coerce::num_of(target) {
                 return Some(Some(Ok(result)));
             }
             let result = match target.view() {
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Instant" || class_name == "Duration" => {
-                    let numeric = attributes
-                        .as_map()
-                        .get("value")
-                        .and_then(|v| match v.view() {
-                            ValueView::Int(i) => Some(i as f64),
-                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
-                            ValueView::FatRat(n, d) if d != 0 => {
-                                Some(crate::value::rat_to_f64(n, d))
-                            }
-                            ValueView::BigRat(n, d) if !d.is_zero() => {
-                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or(0.0);
-                    Value::num(numeric)
-                }
                 // Cost: O(d^2) for a d-digit integer string, O(n) otherwise (as `.Numeric`,
                 // plus a trimmed copy).
                 ValueView::Str(s) => {
@@ -1053,6 +1040,10 @@ pub(super) fn dispatch(
                         // underscores, rationals, strict Inf/NaN) so `.Num` agrees
                         // with `.Numeric`/`.Int`/prefix `+`. `.Num` always yields a Num.
                         let normalized = trimmed.replace('\u{2212}', "-");
+                        if str_numifies_to_complex(&normalized).is_some() {
+                            // As `.Int`: coerced as the `Complex` it numifies to.
+                            return Some(None);
+                        }
                         if let Some(v) =
                             crate::runtime::str_numeric::parse_raku_str_to_numeric(&normalized)
                         {
@@ -1122,6 +1113,10 @@ pub(super) fn dispatch(
                     // `.Real` yields the natural numeric type (Int/Rat/Num); use the
                     // canonical parser so radix prefixes and underscores work and the
                     // result agrees with `.Numeric`.
+                    if str_numifies_to_complex(&s).is_some() {
+                        // As `.Int`: coerced as the `Complex` it numifies to.
+                        return Some(None);
+                    }
                     if let Some(v) =
                         crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
                     {
@@ -1161,30 +1156,6 @@ pub(super) fn dispatch(
                 ValueView::Int(i) => Value::int(i),
                 ValueView::BigInt(_) => target.clone(),
                 ValueView::Num(f) => Value::num(f),
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Instant" || class_name == "Duration" => {
-                    let numeric = attributes
-                        .as_map()
-                        .get("value")
-                        .and_then(|v| match v.view() {
-                            ValueView::Int(i) => Some(i as f64),
-                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
-                            ValueView::FatRat(n, d) if d != 0 => {
-                                Some(crate::value::rat_to_f64(n, d))
-                            }
-                            ValueView::BigRat(n, d) if !d.is_zero() => {
-                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or(0.0);
-                    Value::num(numeric)
-                }
                 // Rational values stay exact under `.Numeric`; converting a
                 // `Rat` through f64 loses large denominators (and turns
                 // `1/100000` into the nearby `1/99999` when it is converted
@@ -1244,79 +1215,6 @@ pub(super) fn dispatch(
             };
             Some(Some(Ok(result)))
         }
-        "Bridge" => {
-            let result = match target.view() {
-                ValueView::Int(i) => Value::num(i as f64),
-                ValueView::BigInt(n) => Value::num(n.to_f64().unwrap_or(f64::INFINITY)),
-                ValueView::Num(f) => Value::num(f),
-                ValueView::Rat(n, d) if d != 0 => Value::num(crate::value::rat_to_f64(n, d)),
-                ValueView::FatRat(n, d) if d != 0 => {
-                    Value::num(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
-                }
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Instant" || class_name == "Duration" => {
-                    let bridged = attributes
-                        .as_map()
-                        .get("value")
-                        .and_then(|v| match v.view() {
-                            ValueView::Int(i) => Some(i as f64),
-                            ValueView::BigInt(n) => Some(n.to_f64().unwrap_or(f64::INFINITY)),
-                            ValueView::Num(f) => Some(f),
-                            ValueView::Rat(n, d) if d != 0 => Some(crate::value::rat_to_f64(n, d)),
-                            ValueView::FatRat(n, d) if d != 0 => {
-                                Some(n.to_f64().unwrap_or(0.0) / d.to_f64().unwrap_or(1.0))
-                            }
-                            _ => None,
-                        })
-                        .unwrap_or(0.0);
-                    Value::num(bridged)
-                }
-                _ => return Some(None),
-            };
-            Some(Some(Ok(result)))
-        }
         _ => None,
     }
-}
-
-/// Numerify a Range to its element count for `.Int`/`.Numeric`/`.Real`/`.Num`.
-/// Finite ranges yield the count (as `Num` for `.Num`, else `Int`); an infinite
-/// range yields `Inf` for the real-valued coercions and fails for `.Int`.
-/// `target` is assumed to be a Range (checked by the caller).
-fn range_numeric_coercion(target: &Value, method: &str) -> Result<Value, RuntimeError> {
-    if super::is_infinite_range(target) {
-        return if method == "Int" {
-            Err(RuntimeError::new("Cannot convert Inf to Int".to_string()))
-        } else {
-            Ok(Value::num(f64::INFINITY))
-        };
-    }
-    // An Int/BigInt-ended range counts from its endpoints (no expansion cap).
-    if let ValueView::GenericRange { start, end, .. } = target.view()
-        && matches!(start.view(), ValueView::Int(_) | ValueView::BigInt(_))
-        && matches!(end.view(), ValueView::Int(_) | ValueView::BigInt(_))
-    {
-        let exact = crate::value::radix_numeric::coerce_to_numeric(target.clone());
-        return Ok(if method == "Num" {
-            Value::num(exact.to_f64())
-        } else {
-            exact
-        });
-    }
-    let count = match target.view() {
-        ValueView::Range(s, e) => (e - s + 1).max(0),
-        ValueView::RangeExcl(s, e) | ValueView::RangeExclStart(s, e) => (e - s).max(0),
-        ValueView::RangeExclBoth(s, e) => (e - s - 1).max(0),
-        // GenericRange (e.g. Rat endpoints `1.5..5.5`) has no closed-form count;
-        // materialize it the same way `.elems` does.
-        _ => crate::runtime::utils::value_to_list(target).len() as i64,
-    };
-    Ok(if method == "Num" {
-        Value::num(count as f64)
-    } else {
-        Value::int(count)
-    })
 }

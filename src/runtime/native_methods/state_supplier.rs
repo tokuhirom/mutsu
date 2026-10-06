@@ -1,5 +1,6 @@
 use crate::runtime::*;
 use crate::value::ValueView;
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 use super::state::take_complete_lines_from_buffer;
@@ -99,6 +100,10 @@ struct SupplierTapSubscription {
     /// (Supplier-backed) supply so the transform stays live rather than
     /// snapshotting the source.
     transform_state: Option<TransformState>,
+    /// Tail tap: `Supply.tail` on a live supply keeps the last N emitted values
+    /// and releases them to its own derived supplier when the source is done
+    /// (issue #11839).
+    tail_state: Option<TailState>,
     /// Stable identifier so taps can be closed individually.
     tap_id: u64,
     /// When set, this tap is closed and should no longer receive emits.
@@ -122,6 +127,16 @@ struct TransformState {
     callable: Value,
     mode: TransformMode,
     /// The downstream supplier that receives the forwarded/transformed values.
+    downstream_supplier_id: u64,
+}
+
+/// A live `Supply.tail` stage: the last `count` values seen so far, held back
+/// until the source is done (a tail is only knowable at the end).
+#[derive(Clone)]
+struct TailState {
+    count: usize,
+    buffer: std::collections::VecDeque<Value>,
+    /// `tail`'s own derived supplier (see `UniqueFilterState::downstream_supplier_id`).
     downstream_supplier_id: u64,
 }
 
@@ -679,6 +694,7 @@ pub(in crate::runtime) fn register_supplier_migrate_tap(master_sid: u64, downstr
                 }),
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -722,6 +738,7 @@ pub(in crate::runtime) fn register_supplier_forward_tap(
                 migrate_state: None,
                 forward_downstream: Some(downstream_sid),
                 transform_state: None,
+                tail_state: None,
             });
     }
     tap_id
@@ -829,6 +846,7 @@ pub(in crate::runtime) fn register_supplier_channel_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -886,6 +904,7 @@ pub(in crate::runtime) fn register_supplier_tap(supplier_id: u64, tap: Value, de
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -934,8 +953,87 @@ pub(in crate::runtime) fn register_supplier_head_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
+}
+
+/// Register a `Supply.tail` tap on a live supplier: hold the last `count`
+/// emitted values and release them to `downstream_sid`, the derived supply
+/// `tail` handed back, when the source is done (see
+/// [`take_supplier_tail_results`]). Like `head`, `tail` is a pipeline stage that
+/// owns a supplier of its own, so it can sit anywhere in a chain (issue #11839).
+// Cost: O(1) amortized; each later emit costs O(1) and the tap holds at most
+// `count` values.
+pub(in crate::runtime) fn register_supplier_tail_tap(
+    supplier_id: u64,
+    downstream_sid: u64,
+    count: usize,
+) {
+    if let Ok(mut map) = supplier_subscriptions_map().lock() {
+        map.entry(supplier_id)
+            .or_default()
+            .taps
+            .push(SupplierTapSubscription {
+                callback: Value::NIL,
+                line_mode: false,
+                line_chomp: true,
+                line_buffer: String::new(),
+                delay_seconds: 0.0,
+                unique_filter: None,
+                classify_state: None,
+                elems_trace: None,
+                head_limit: None,
+                head_count: 0,
+                head_downstream: None,
+                produce_state: None,
+                start_state: None,
+                batch_state: None,
+                words_mode: false,
+                words_buffer: String::new(),
+                line_downstream: None,
+                words_downstream: None,
+                flat_downstream: None,
+                channel_sink: None,
+                zip_tap: None,
+                zip_latest_tap: None,
+                tap_id: next_tap_id(),
+                closed: false,
+                migrate_state: None,
+                forward_downstream: None,
+                transform_state: None,
+                tail_state: Some(TailState {
+                    count,
+                    buffer: std::collections::VecDeque::new(),
+                    downstream_supplier_id: downstream_sid,
+                }),
+            });
+    }
+}
+
+/// The values every `tail` tap of a finished supplier owes its derived supplier:
+/// one `(downstream_supplier_id, last_values)` per tail tap, oldest first. The
+/// derived supplier itself is finished afterwards with every other stage's
+/// (`get_transform_output_supplier_ids`).
+// Cost: O(t + k), t = taps on the supplier, k = values handed out.
+pub(in crate::runtime) fn take_supplier_tail_results(supplier_id: u64) -> Vec<(u64, Vec<Value>)> {
+    let mut out = Vec::new();
+    if let Ok(mut map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get_mut(&supplier_id)
+    {
+        for tap in subs.taps.iter_mut() {
+            if let Some(ref mut ts) = tap.tail_state {
+                let mut values: Vec<Value> = std::mem::take(&mut ts.buffer).into();
+                // `tail(1)` of a source that emitted nothing still emits one
+                // undefined value (rakudo's `$last` was never assigned).
+                if ts.count == 1 && values.is_empty() {
+                    values.push(Value::package(Symbol::intern("Any")));
+                }
+                out.push((ts.downstream_supplier_id, values));
+            }
+        }
+    }
+    out
 }
 
 /// Register a `Supply.lines` tap on a live supplier: split incoming chunks
@@ -979,6 +1077,7 @@ pub(in crate::runtime) fn register_supplier_lines_transform_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -1022,6 +1121,7 @@ pub(in crate::runtime) fn register_supplier_words_transform_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -1073,6 +1173,7 @@ pub(in crate::runtime) fn register_supplier_elems_transform_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -1317,6 +1418,15 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                         value: Value::int(elems.emitted_count),
                     });
                 }
+            } else if let Some(ref mut ts) = tap.tail_state {
+                // Held back until the source is done: only the last `count`
+                // values can ever be the tail.
+                if ts.count > 0 {
+                    if ts.buffer.len() >= ts.count {
+                        ts.buffer.pop_front();
+                    }
+                    ts.buffer.push_back(emitted_value.clone());
+                }
             } else if let Some(dsid) = tap.head_downstream {
                 actions.push(SupplierEmitAction::ForwardEmit {
                     downstream_supplier_id: dsid,
@@ -1520,6 +1630,7 @@ pub(in crate::runtime) fn register_supplier_unique_transform_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -1572,6 +1683,7 @@ pub(in crate::runtime) fn register_supplier_produce_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -1621,6 +1733,7 @@ pub(in crate::runtime) fn register_supplier_reduce_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -1688,6 +1801,7 @@ pub(in crate::runtime) fn register_supplier_start_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -1777,6 +1891,7 @@ pub(in crate::runtime) fn register_supplier_classify_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -2110,6 +2225,7 @@ pub(in crate::runtime) fn register_supplier_batch_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -2153,6 +2269,7 @@ pub(in crate::runtime) fn register_supplier_flat_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -2203,6 +2320,7 @@ pub(in crate::runtime) fn register_supplier_transform_tap(
                     mode,
                     downstream_supplier_id,
                 }),
+                tail_state: None,
             });
     }
 }
@@ -2221,47 +2339,7 @@ pub(in crate::runtime) fn get_transform_output_supplier_ids(supplier_id: u64) ->
     let mut pending: Vec<u64> = vec![supplier_id];
     let mut seen: Vec<u64> = vec![supplier_id];
     while let Some(sid) = pending.pop() {
-        let mut next: Vec<u64> = Vec::new();
-        if let Ok(map) = supplier_subscriptions_map().lock()
-            && let Some(subs) = map.get(&sid)
-        {
-            for tap in &subs.taps {
-                if let Some(ref ts) = tap.transform_state {
-                    next.push(ts.downstream_supplier_id);
-                }
-                next.extend(supplier_share_output_ids(sid));
-                if let Some(ref ps) = tap.produce_state
-                    && let Some(ds) = ps.produce_downstream
-                {
-                    next.push(ds);
-                }
-                if let Some(ds) = tap.flat_downstream {
-                    next.push(ds);
-                }
-                // `head`/`unique`/`lines`/`words`/`elems` own a derived
-                // supplier like every other pipeline stage now (issue #8474),
-                // so the source's `done` must propagate to theirs too. A
-                // `head` whose limit was already reached (a separate,
-                // earlier `HeadLimitReached` action) is harmless to mark done
-                // again here.
-                if let Some(ds) = tap.head_downstream {
-                    next.push(ds);
-                }
-                if let Some(ds) = tap.line_downstream {
-                    next.push(ds);
-                }
-                if let Some(ds) = tap.words_downstream {
-                    next.push(ds);
-                }
-                if let Some(ref uf) = tap.unique_filter {
-                    next.push(uf.downstream_supplier_id);
-                }
-                if let Some(ref elems) = tap.elems_trace {
-                    next.push(elems.downstream_supplier_id);
-                }
-            }
-        }
-        for ds in next {
+        for ds in get_direct_transform_output_supplier_ids(sid) {
             if seen.contains(&ds) {
                 continue;
             }
@@ -2271,6 +2349,55 @@ pub(in crate::runtime) fn get_transform_output_supplier_ids(supplier_id: u64) ->
         }
     }
     result
+}
+
+/// Get only the immediate downstream suppliers owned by transforms on `sid`.
+/// This lets terminal drivers preserve each stage's own handling outcome
+/// before deciding whether to propagate to its children.
+// Cost: O(t * s), t = taps on `sid`, s = shared output suppliers.
+pub(in crate::runtime) fn get_direct_transform_output_supplier_ids(supplier_id: u64) -> Vec<u64> {
+    let mut next = Vec::new();
+    if let Ok(map) = supplier_subscriptions_map().lock()
+        && let Some(subs) = map.get(&supplier_id)
+    {
+        for tap in &subs.taps {
+            if let Some(ref ts) = tap.transform_state {
+                next.push(ts.downstream_supplier_id);
+            }
+            next.extend(supplier_share_output_ids(supplier_id));
+            if let Some(ref ps) = tap.produce_state
+                && let Some(ds) = ps.produce_downstream
+            {
+                next.push(ds);
+            }
+            if let Some(ds) = tap.flat_downstream {
+                next.push(ds);
+            }
+            // `head`/`unique`/`lines`/`words`/`elems` own a derived supplier
+            // like every other pipeline stage now (issue #8474).
+            if let Some(ds) = tap.head_downstream {
+                next.push(ds);
+            }
+            if let Some(ref ts) = tap.tail_state {
+                next.push(ts.downstream_supplier_id);
+            }
+            if let Some(ds) = tap.line_downstream {
+                next.push(ds);
+            }
+            if let Some(ds) = tap.words_downstream {
+                next.push(ds);
+            }
+            if let Some(ref uf) = tap.unique_filter {
+                next.push(uf.downstream_supplier_id);
+            }
+            if let Some(ref elems) = tap.elems_trace {
+                next.push(elems.downstream_supplier_id);
+            }
+        }
+    }
+    let mut seen = HashSet::with_capacity(next.len());
+    next.retain(|id| seen.insert(*id));
+    next
 }
 
 /// Flush any remaining values in batch tap buffers when the supplier is done.
@@ -2362,6 +2489,7 @@ pub(in crate::runtime) fn register_supplier_zip_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }
@@ -2406,6 +2534,7 @@ pub(in crate::runtime) fn register_supplier_zip_latest_tap(
                 migrate_state: None,
                 forward_downstream: None,
                 transform_state: None,
+                tail_state: None,
             });
     }
 }

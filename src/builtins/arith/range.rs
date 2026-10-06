@@ -96,14 +96,32 @@ pub(crate) fn canonical_int_range(
     excl_end: bool,
 ) -> Value {
     if let (Some(a), Some(b)) = (start.as_int(), end.as_int()) {
-        return match (excl_start, excl_end) {
-            (false, false) => Value::range(a, b),
-            (false, true) => Value::range_excl(a, b),
-            (true, false) => Value::range_excl_start(a, b),
-            (true, true) => Value::range_excl_both(a, b),
-        };
+        return int_range(a, b, excl_start, excl_end);
     }
     Value::generic_range(start, end, excl_start, excl_end)
+}
+
+/// A range between two genuine `Int` endpoints (the one constructor for
+/// `a..b`, `a..^b`, `a^..b` and `a^..^b` over plain integers).
+///
+/// The compact kinds (`Range`, `RangeExcl`, ...) store an open end -- `1..*`,
+/// `1..Inf` -- as the sentinel `i64::MAX` (an open start as `i64::MIN`), so a
+/// range that really ends at `9223372036854775807` or starts at
+/// `-9223372036854775808` would read as open (`.infinite`, `.elems`, a lazy
+/// iteration). Such a range stays a `GenericRange` of two `Int`s, the same
+/// shape `1..2**70` already has, and every compact range keeps meaning what
+/// its bounds say.
+// Cost: O(1).
+pub(crate) fn int_range(a: i64, b: i64, excl_start: bool, excl_end: bool) -> Value {
+    if b == i64::MAX || a == i64::MIN {
+        return Value::generic_range(Value::int(a), Value::int(b), excl_start, excl_end);
+    }
+    match (excl_start, excl_end) {
+        (false, false) => Value::range(a, b),
+        (false, true) => Value::range_excl(a, b),
+        (true, false) => Value::range_excl_start(a, b),
+        (true, true) => Value::range_excl_both(a, b),
+    }
 }
 
 /// Divide a Range by a numeric factor. Returns Some(range) if the left is a Range.

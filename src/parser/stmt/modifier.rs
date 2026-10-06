@@ -40,7 +40,7 @@ thread_local! {
 /// enclosing statement actually consuming the keyword clears it, in
 /// `clear_pending_extra_modifier`.
 pub(crate) fn pending_extra_modifier_error(at: &str) -> Option<PError> {
-    let key = crate::parser::memo::memo_key(at);
+    let key = crate::parser::memo::record_key(at);
     PENDING_EXTRA_MODIFIER.with(|p| match p.borrow().as_ref() {
         Some((k, e)) if *k == key => Some(e.clone()),
         _ => None,
@@ -50,7 +50,7 @@ pub(crate) fn pending_extra_modifier_error(at: &str) -> Option<PError> {
 /// Drop the deferred error once an enclosing statement has consumed the keyword
 /// it was recorded for.
 fn clear_pending_extra_modifier(at: &str) {
-    let key = crate::parser::memo::memo_key(at);
+    let key = crate::parser::memo::record_key(at);
     PENDING_EXTRA_MODIFIER.with(|p| {
         let mut slot = p.borrow_mut();
         if slot.as_ref().is_some_and(|(k, _)| *k == key) {
@@ -306,7 +306,7 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
             let mut err =
                 PError::fatal_with_exception("Missing semicolon".to_string(), Box::new(ex));
             err.remaining_len = Some(rest.len());
-            let key = crate::parser::memo::memo_key(rest);
+            let key = crate::parser::memo::record_key(rest);
             PENDING_EXTRA_MODIFIER.with(|p| {
                 *p.borrow_mut() = Some((key, err));
             });
@@ -402,7 +402,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         })?;
         check_two_terms_across_lines(cond_input, r)?;
         let then_stmt = rewrite_placeholder_block_modifier_stmt(stmt, &cond);
-        if let Some(split) = try_split_decl_modifier(&then_stmt, &cond) {
+        if let Some(split) = try_split_decl_modifier(&then_stmt, &cond, false) {
             return Ok(Some((r, split)));
         }
         return Ok(Some((
@@ -435,7 +435,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             op: TokenKind::Bang,
             expr: Box::new(cond),
         };
-        if let Some(split) = try_split_decl_modifier(&then_stmt, &neg_cond) {
+        if let Some(split) = try_split_decl_modifier(&then_stmt, &neg_cond, true) {
             return Ok(Some((r, split)));
         }
         return Ok(Some((

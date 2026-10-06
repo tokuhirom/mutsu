@@ -339,6 +339,37 @@ pub(crate) fn scalar_var_expr(name: String) -> Expr {
 }
 
 impl ParamDef {
+    /// The plain sigilless parameter `\name`: untyped, no default, no traits.
+    // Cost: O(|name|).
+    pub(crate) fn sigilless_term(name: &str) -> Self {
+        ParamDef {
+            type_capture: None,
+            name: name.to_string(),
+            default: None,
+            multi_invocant: false,
+            required: false,
+            named: false,
+            named_alias: false,
+            slurpy: false,
+            double_slurpy: false,
+            onearg: false,
+            sigilless: true,
+            type_constraint: None,
+            literal_value: None,
+            sub_signature: None,
+            where_constraint: None,
+            traits: Vec::new(),
+            optional_marker: false,
+            outer_sub_signature: None,
+            code_signature: None,
+            is_invocant: false,
+            shape_constraints: None,
+            block_param: false,
+            code: Default::default(),
+            trait_args: Vec::new(),
+        }
+    }
+
     /// The type constraint to register in the **assignment-time** lane when this
     /// parameter binds (`Interpreter::bind_param_type_constraint`).
     ///
@@ -382,7 +413,16 @@ impl ParamDef {
     /// anonymous invocant is excluded: it is named `self` only because that is the
     /// invocant's env key, and it declares no lexical (ADR-0061).
     pub(crate) fn declares_self_lexical(&self) -> bool {
-        self.name == "self" && !self.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT)
+        self.name == "self" && !self.is_implicit_invocant()
+    }
+
+    /// True for an invocant the parser *synthesized* (`method (Foo:D:)`,
+    /// `method (::?CLASS:)`): the source never named it, so it is anonymous
+    /// to introspection (`Parameter.name` is empty, `.raku` renders `$:`)
+    /// even though it is stored under the env key `self`.
+    // Cost: O(t), t = the parameter's trait count.
+    pub(crate) fn is_implicit_invocant(&self) -> bool {
+        self.traits.iter().any(|t| t == IMPLICIT_INVOCANT_TRAIT)
     }
 
     /// The name a `::T` type capture on this parameter binds, if any.
@@ -2636,18 +2676,26 @@ pub(crate) enum AssignOp {
     MatchAssign,
 }
 
+pub(crate) mod anon_state;
+pub(crate) mod atomic_op;
 pub(crate) mod bind_decl;
 mod body_local_names;
 mod chains;
+pub(crate) mod decl_modifier;
+pub(crate) mod dotty_assign;
 pub(crate) mod keyed_hash;
 mod lvalue;
 pub(crate) mod method_assign_decl;
+pub(crate) mod package_header;
 mod placeholder_kind;
 pub(crate) mod placeholders;
+pub(crate) mod shaped_decl;
+pub(crate) mod sigilless_decl;
 pub(crate) mod signature_decl;
 pub(crate) mod stable_hash;
 pub(crate) mod stub;
 pub(crate) mod subscript_adverb;
+pub(crate) mod temporize;
 pub(crate) use signature_decl::{
     ParamTrait, SignatureDecl, SignatureInit, SignatureVar, SourceForm, is_group_declaration,
 };
@@ -2662,7 +2710,7 @@ pub(crate) use lvalue::{LvaluePeel, LvalueRoot};
 pub(crate) use placeholder_kind::ArgSupply;
 pub(crate) use placeholders::{
     collect_placeholders, collect_placeholders_shallow, collect_unattached_placeholders,
-    collect_where_assign_placeholders,
+    collect_where_assign_placeholders, implicit_placeholder_signature,
 };
 pub(crate) use scope_members::{scope_members, scope_members_mut};
 pub(crate) use tail::{
