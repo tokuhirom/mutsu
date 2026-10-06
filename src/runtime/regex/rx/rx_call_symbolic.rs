@@ -48,6 +48,10 @@ impl Interpreter {
         });
         let spec = called.spec();
         let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &[]);
+        if candidates.dispatch_failed() {
+            self.park_protoless_dispatch_error(&spec.lookup_name, pkg);
+            return Vec::new();
+        }
         if !candidates.is_empty() {
             return self.subrule_seed_ends(spec, &candidates, chars, pos, pkg, &[], false, options);
         }

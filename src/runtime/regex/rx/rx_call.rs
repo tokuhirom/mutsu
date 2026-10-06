@@ -343,6 +343,12 @@ impl Interpreter {
         candidates: Arc<TokenCandidates>,
     ) -> CallTarget {
         let spec = name.spec();
+        // Several candidates and no proto, and no signature wins the dispatch:
+        // the call dies as it does in rakudo, instead of running any of them.
+        if candidates.dispatch_failed() {
+            self.park_protoless_dispatch_error(&spec.lookup_name, pkg);
+            return CallTarget::Single;
+        }
         // Candidates none of which parses: a call of no rule, as in the walk.
         if candidates.is_empty() {
             return CallTarget::Single;
