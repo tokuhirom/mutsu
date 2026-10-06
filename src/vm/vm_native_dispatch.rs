@@ -25,6 +25,10 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let _region = crate::profile::enter(crate::profile::Region::NativeBuiltin);
+        // A `Cool` method on a user subclass of `IO::Path` runs on its path (#12149).
+        if let Some(path) = self.io_path_subclass_cool_receiver(target, method_sym.as_str()) {
+            return self.try_native_method(&path, method_sym, args);
+        }
         // ADR-0058: a native method reads its ARGUMENTS' elements through pure
         // Rust (the receiver is already handled by
         // `reify_or_consume_seq_target`), so a still-deferred `.map` argument —
