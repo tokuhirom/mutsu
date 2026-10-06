@@ -151,8 +151,12 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         TermName => &[("name", Absent::Required)],
         TermNamed => &[("name", Absent::Required)],
         TermTopicCall => &[("call", Absent::Required)],
-        CallName | CallNameWithoutParentheses | CallMethod => &[
+        CallName | CallNameWithoutParentheses | CallMethod | CallNameAsMethod => &[
             ("name", Absent::Required),
+            ("args", Absent::EmptyNode(ArgList)),
+        ],
+        CallTermAsMethod => &[
+            ("callee", Absent::Required),
             ("args", Absent::EmptyNode(ArgList)),
         ],
         ApplyInfix => &[
@@ -193,6 +197,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("is-array", Absent::False),
         ],
         MetaInfixAssign => &[("infix", Absent::Required)],
+        MetaPostfixHyper => &[("postfix", Absent::Required)],
         TermCapture => &[("source", Absent::Required)],
         MetaInfixReverse => &[("infix", Absent::Required)],
         MetaInfixCross => &[("infix", Absent::Required)],
@@ -382,6 +387,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => "lexical-name",
         InitializerAssign | InitializerBind => "expression",
         MetaInfixAssign => "infix",
+        MetaPostfixHyper => "postfix",
         TermCapture => "source",
         MetaInfixReverse => "infix",
         MetaInfixCross => "infix",

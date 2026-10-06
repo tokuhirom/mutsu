@@ -2299,15 +2299,34 @@ fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError
 /// keeps for a `%h{…}` subscript -- as the parser's `IndexAssign`, or `None`
 /// when the left side is not a subscript.
 fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+    // `$::($n) = v` / `::($n) = v`.
+    if let Some(assign) = super::symbolic_deref::lower_assign(node)? {
+        return Ok(Some(assign));
+    }
     let left = named_child(node, "left")?;
     if left.class != RakuAstClass::ApplyPostfix {
         return Ok(None);
+    }
+    let lowered = lower_expr(left)?;
+    // `@a[0;1] = v`.
+    if let Expr::MultiDimIndex {
+        target,
+        dimensions,
+        is_positional,
+    } = lowered
+    {
+        return Ok(Some(Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value: Box::new(lower_expr(named_child(node, "right")?)?),
+            is_positional,
+        }));
     }
     let Expr::Index {
         target,
         index,
         is_positional,
-    } = lower_expr(left)?
+    } = lowered
     else {
         return Ok(None);
     };
@@ -4202,6 +4221,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             _ => Err(unsupported(node)),
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
+        RakuAstClass::VarPackage if let Some(deref) = super::symbolic_deref::lower(node) => deref,
         RakuAstClass::VarLexical | RakuAstClass::VarPackage | RakuAstClass::VarDynamic => {
             let name = variable_spelling(node)?;
             let (sigil, bare) = name.split_at(name.chars().next().map_or(0, char::len_utf8));
@@ -4458,10 +4478,17 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     modifier: Some('^'),
                     quoted: false,
                 }),
+                // `$o.$name(1)` / `$o.&f(1)`.
+                RakuAstClass::CallTermAsMethod | RakuAstClass::CallNameAsMethod => {
+                    super::dynamic_method::lower(operand, postfix)
+                }
                 // `@a>>.abs` -> MetaPostfix::Hyper wrapping the ordinary
                 // method-call postfix.
                 RakuAstClass::MetaPostfixHyper => {
                     let inner = named_child_or_positional(postfix)?;
+                    if super::dynamic_method::is_dynamic(inner) {
+                        return super::dynamic_method::lower_hyper(operand, inner);
+                    }
                     let (name, quoted) = match inner.class {
                         RakuAstClass::CallMethod => (call_name_str(inner)?, false),
                         RakuAstClass::CallQuotedMethod => (quoted_method_name(inner)?, true),
@@ -4504,13 +4531,48 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 | RakuAstClass::PostcircumfixHashIndex
                 | RakuAstClass::PostcircumfixLiteralHashIndex => {
                     let index_node = named_child(postfix, "index")?;
+                    let is_positional =
+                        matches!(postfix.class, RakuAstClass::PostcircumfixArrayIndex);
+                    // `@a[]` / `%h{}`: a subscript of no dimensions.
+                    if postfix.class != RakuAstClass::PostcircumfixLiteralHashIndex
+                        && index_node.fields.is_empty()
+                    {
+                        if named_child(postfix, "assignee").is_ok()
+                            || list_field(postfix, "colonpairs").is_ok_and(|c| !c.is_empty())
+                        {
+                            return Err(unsupported(postfix));
+                        }
+                        return Ok(Expr::ZenSlice(Box::new(operand)));
+                    }
+                    // `@a[0;1]`: a `SemiList` of several statements.
+                    if postfix.class != RakuAstClass::PostcircumfixLiteralHashIndex
+                        && index_node.fields.len() > 1
+                    {
+                        if named_child(postfix, "assignee").is_ok() {
+                            return Err(unsupported(postfix));
+                        }
+                        let mut dimensions = Vec::with_capacity(index_node.fields.len());
+                        for field in &index_node.fields {
+                            let statement = child_node(&field.value)?;
+                            if statement.class != RakuAstClass::StatementExpression {
+                                return Err(unsupported(postfix));
+                            }
+                            dimensions.push(lower_expr(named_child(statement, "expression")?)?);
+                        }
+                        return super::subscript_adverb::lower(
+                            Expr::MultiDimIndex {
+                                target: Box::new(operand),
+                                dimensions,
+                                is_positional,
+                            },
+                            postfix,
+                        );
+                    }
                     let index = if postfix.class == RakuAstClass::PostcircumfixLiteralHashIndex {
                         lower_expr(index_node)?
                     } else {
                         lower_expr(named_child_or_positional(index_node)?)?
                     };
-                    let is_positional =
-                        matches!(postfix.class, RakuAstClass::PostcircumfixArrayIndex);
                     // `@a[0] = 1`: rakudo folds an assignment to a subscript
                     // into the postcircumfix's `assignee`; the parser keeps it
                     // as `IndexAssign`.
