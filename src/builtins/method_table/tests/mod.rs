@@ -51,7 +51,7 @@ fn sample(shape: DispatchShape) -> Value {
 }
 
 /// The row an instance of `shape` dispatches `method` to.
-fn lookup(shape: DispatchShape, method: Symbol, arity: u8) -> Option<&'static MethodRow> {
+fn owner_of(shape: DispatchShape, method: Symbol, arity: u8) -> Option<&'static MethodRow> {
     table::lookup(Receiver::instance(shape), method, arity)
 }
 
@@ -132,22 +132,16 @@ fn every_row_is_reached_and_answers() {
 #[test]
 fn lookup_walks_the_mro() {
     let elems = Symbol::intern("elems");
-    assert_eq!(
-        lookup(DispatchShape::Array, elems, 0).unwrap().owner,
-        "List"
-    );
-    assert_eq!(lookup(DispatchShape::List, elems, 0).unwrap().owner, "List");
-    assert_eq!(lookup(DispatchShape::Hash, elems, 0).unwrap().owner, "Map");
-    assert_eq!(lookup(DispatchShape::Str, elems, 0).unwrap().owner, "Any");
+    assert_eq!(lookup(DispatchShape::Array, elems, 0), "List");
+    assert_eq!(owner_of(DispatchShape::List, elems, 0), "List");
+    assert_eq!(owner_of(DispatchShape::Hash, elems, 0), "Map");
+    assert_eq!(owner_of(DispatchShape::Str, elems, 0), "Any");
     let numerator = Symbol::intern("numerator");
-    assert!(lookup(DispatchShape::Rat, numerator, 0).is_some());
+    assert!(owner_of(DispatchShape::Rat, numerator, 0).is_some());
     assert!(lookup(DispatchShape::Num, numerator, 0).is_none());
     // Rakudo's `Int` does not do `Rational`: `5.numerator` is no method.
     assert!(lookup(DispatchShape::Int, numerator, 0).is_none());
-    assert_eq!(
-        lookup(DispatchShape::FatRat, numerator, 0).unwrap().owner,
-        "FatRat"
-    );
+    assert_eq!(lookup(DispatchShape::FatRat, numerator, 0), "FatRat");
 }
 
 #[test]
@@ -382,9 +376,11 @@ fn an_interpreter_row_needs_an_interpreter() {
     assert!(names_a_row(collate, 0));
     assert!(try_dispatch(&list, collate, &[]).is_none());
     assert!(answer(&list, collate, &[]).is_none());
-    let row = resolve(Receiver::instance(DispatchShape::List), collate, 0)
-        .expect("Any.collate resolves for a List");
-    assert!(!super::row(row).handler.is_pure());
+    let row = resolve(Receiver::instance(DispatchShape::List), collate, 0);
+    assert!(
+        row.is_some_and(|id| !super::row(id).handler.is_pure()),
+        "Any.collate resolves for a List, to an interpreter row"
+    );
 }
 
 /// Not a check: prints every registered row as a tab-separated line

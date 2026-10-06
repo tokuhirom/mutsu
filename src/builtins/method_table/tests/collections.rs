@@ -10,7 +10,7 @@ fn counted_head_tail_rows_resolve_for_every_plain_shape() {
             .filter(|shape| shape.inherits())
         {
             assert_eq!(
-                lookup(shape, Symbol::intern(name), 1).unwrap().owner,
+                owner_of(shape, Symbol::intern(name), 1),
                 "Any",
                 "Any.{name} should resolve for {shape:?}"
             );
@@ -24,9 +24,9 @@ fn counted_head_tail_rows_resolve_for_every_plain_shape() {
 fn count_rows_reach_their_subtypes() {
     for name in ["keys", "Numeric", "Int"] {
         let sym = Symbol::intern(name);
-        assert_eq!(lookup(DispatchShape::Array, sym, 0).unwrap().owner, "List");
-        assert_eq!(lookup(DispatchShape::List, sym, 0).unwrap().owner, "List");
-        assert_eq!(lookup(DispatchShape::Hash, sym, 0).unwrap().owner, "Map");
+        assert_eq!(owner_of(DispatchShape::Array, sym, 0), "List");
+        assert_eq!(owner_of(DispatchShape::List, sym, 0), "List");
+        assert_eq!(owner_of(DispatchShape::Hash, sym, 0), "Map");
     }
 }
 
@@ -35,24 +35,24 @@ fn aggregate_rows_resolve_to_the_rakudo_owners() {
     for name in ["minmax", "sum"] {
         let sym = Symbol::intern(name);
         assert_eq!(
-            lookup(DispatchShape::List, sym, 0).unwrap().owner,
+            owner_of(DispatchShape::List, sym, 0),
             "Any",
             "Any.{name} should resolve for List"
         );
         assert_eq!(
-            lookup(DispatchShape::Array, sym, 0).unwrap().owner,
+            owner_of(DispatchShape::Array, sym, 0),
             "Any",
             "Any.{name} should resolve for Array"
         );
         assert!(
-            lookup(DispatchShape::Hash, sym, 0).is_some_and(|row| row.owner == "Any"),
+            owner_of(DispatchShape::Hash, sym, 0).is_some_and(|row| row.owner == "Any"),
             "Any.{name} should resolve for Hash"
         );
     }
     for name in ["permutations", "combinations"] {
         let sym = Symbol::intern(name);
-        assert_eq!(lookup(DispatchShape::List, sym, 0).unwrap().owner, "List");
-        assert_eq!(lookup(DispatchShape::Array, sym, 0).unwrap().owner, "List");
+        assert_eq!(lookup(DispatchShape::List, sym, 0), "List");
+        assert_eq!(owner_of(DispatchShape::Array, sym, 0), "List");
         assert!(lookup(DispatchShape::Hash, sym, 0).is_none());
     }
 }
