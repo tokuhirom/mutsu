@@ -58,8 +58,8 @@ test: checks
 	(cargo build --release && RUST_MIN_STACK=8388608 MUTSU_GC=on cargo test -- --test-threads=1 && RUST_MIN_STACK=8388608 cargo test -p mutsu-lsp && MUTSU_BIN='$(CARGO_TARGET_DIR)/release/mutsu' MUTSU_T_TIMEOUT=60 prove -r -e 'scripts/run-t-test.sh' t/) 2>&1 | tee tmp/make-test.log
 
 # The static guards: no build, seconds in total. `make test` depends on them,
-# and `scripts/dev gate` runs them as its first stage (`checks`), ahead of fmt
-# and lint, so a misplaced `t/` file or a ratchet overshoot fails the gate in
+# and `scripts/dev gate` runs them as its first stage (`checks`), ahead of
+# lint, so a misplaced `t/` file or a ratchet overshoot fails the gate in
 # seconds instead of after `make lint` and the release build.
 checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-ast-walkers check-layer-deps check-interp-fields check-bench-det check-prims check-dev check-adr check-runner-pins check-integration-tests
 
