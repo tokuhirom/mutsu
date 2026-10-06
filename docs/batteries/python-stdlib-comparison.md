@@ -150,7 +150,7 @@ module).
 | `logging` | — | Ecosystem (not bundled) | No general-purpose structured-logging framework bundled; `Log::Timeline` and similar exist on the ecosystem. |
 | `platform` | `$*DISTRO`, `$*KERNEL`, `$*VM` | Core language | |
 | `errno` | typed `X::*` exceptions | Core language | Different paradigm (typed exceptions vs. numeric codes) — arguably a superset. |
-| `ctypes` | `NativeCall` | Core/bundled | Ships by convention (`use NativeCall`); a justified rung-3 native provider per `BATTERIES.md` §1, far more ergonomic than `ctypes`. |
+| `ctypes` | `NativeCall` | Core/bundled | Ships by convention (`use NativeCall`): the vendored upstream module, far more ergonomic than `ctypes`. |
 
 ## Command-Line Interface Libraries
 

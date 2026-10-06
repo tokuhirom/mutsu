@@ -349,7 +349,7 @@ last-resort provider whose own justification is still to be written:
 | --- | --- |
 | D1/D2 — rung ordering, rung-3 ban | In force since 2026-08-01 (user decision); `BATTERIES.md` §1, `CLAUDE.md` |
 | D3 — optimization vs. substitution | Stated here for the first time; no known violation other than E2 |
-| D4/E1 — `NativeCall` | **Superseded 2026-10-03** by [ADR-11203](11203-nativecall-runs-upstream-via-the-backend-neutral-path.md): both structural blockers were found not to hold (QAST is a dead import; the dispatcher is optional upstream), so `NativeCall` moves to rung 2. The native provider stays until that ADR's integration step lands ([#11203](https://github.com/tokuhirom/mutsu/issues/11203)) |
+| D4/E1 — `NativeCall` | **Superseded 2026-10-03** by [ADR-11203](11203-nativecall-runs-upstream-via-the-backend-neutral-path.md): both structural blockers were found not to hold (QAST is a dead import; the dispatcher is optional upstream), so `NativeCall` moves to rung 2. The integration step has landed ([#11203](https://github.com/tokuhirom/mutsu/issues/11203)): `use NativeCall` loads the vendored module and the native provider is deleted |
 | D4/E2 — JSON interception | **Closed 2026-09-13.** Interception retired ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)); the `JSON::Fast` provider **deleted** and the real distribution vendored ([#8226](https://github.com/tokuhirom/mutsu/issues/8226)) — 14/14 upstream files, 931 assertions. What remains is `Rakudo::Internals::JSON`, a core class outside this ledger. The list is now one entry: `NativeCall` |
 | D5 — accurate `nqp::` framing | Stated here; 111 ops shipped |
 | D6 — retirement precedent | `Pod::To::Text` and native `Test` both retired |

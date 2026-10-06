@@ -1,6 +1,6 @@
 # ADR-0056: NativeCall's `Pointer`/`CArray`/`long`/... display under `NativeCall::Types::*` — display-only, registry key stays bare
 
-- Status: Accepted (implemented)
+- Status: Superseded by [ADR-11203](11203-nativecall-runs-upstream-via-the-backend-neutral-path.md) (2026-10-06): the vendored upstream `NativeCall::Types` declares these types under their qualified names, so there is no bare registry key left to qualify for display
 - Date: 2026-08-20
 - Supersedes: nothing
 - Related: `todo/deep/nativecall-types-package-qualification.md` (the investigation this

@@ -29,22 +29,17 @@ genuine upstream implementation instead of reimplementing it natively.
 
 (`LICENSE` is `rakudo-2026.06/LICENSE`, md5 `18740546821e33d23e8809da70d4a79a`.)
 
-### `NativeCall` is vendored but not yet loaded
+### `NativeCall` runs verbatim, and is what `use NativeCall` resolves to
 
-The five `NativeCall` files are here, verbatim, ahead of the switch
+The five `NativeCall` files here are the unmodified upstream sources
 ([ADR-11203](../../docs/adr/11203-nativecall-runs-upstream-via-the-backend-neutral-path.md),
-[#11203](https://github.com/tokuhirom/mutsu/issues/11203)). `use NativeCall` and
-`use NativeCall::Types` are still intercepted by name and served by the native
-provider (`src/runtime/nativecall*.rs`) until the interpreter runs these files
-and every bundled-library suite passes under them; they are deliberately absent
-from `META6.json`'s `provides` until then. `NativeCall::Dispatcher` is never
-loaded on mutsu even after the switch: upstream only `require`s it when
-`$*RAKU.compiler.?supports-op('dispatch_v')` is true, and mutsu takes the
-backend-neutral `nqp::nativecall` path instead.
-
-To see how far the real module gets today, run `scripts/nativecall-upstream-trial.sh`:
-it copies these files under a renamed namespace (`UNC`, so the name interception
-does not apply) and runs a probe script against them.
+[#11203](https://github.com/tokuhirom/mutsu/issues/11203)), and `META6.json`'s
+`provides` lists them: a bare `use NativeCall` or `use NativeCall::Types` loads
+these files, and there is no native provider answering the name any more. An
+`is native` routine applies upstream's own `Native` role; the call itself is the
+backend-neutral `nqp::nativecall` (built on `src/runtime/nativecall*.rs`), so
+`NativeCall::Dispatcher` is never loaded: upstream only `require`s it when
+`$*RAKU.compiler.?supports-op('dispatch_v')` is true.
 
 ### `Test` runs verbatim, and is what `use Test` resolves to
 
