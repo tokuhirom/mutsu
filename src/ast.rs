@@ -2651,6 +2651,7 @@ mod chains;
 pub(crate) mod keyed_hash;
 mod lvalue;
 pub(crate) mod method_assign_decl;
+pub(crate) mod sigilless_decl;
 mod placeholder_kind;
 pub(crate) mod placeholders;
 pub(crate) mod signature_decl;

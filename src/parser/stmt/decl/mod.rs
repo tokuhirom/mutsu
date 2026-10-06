@@ -5,6 +5,7 @@ mod enum_decl_traits;
 mod handles;
 mod has_decl;
 pub(crate) use has_decl::auto_default_expr_for_type;
+pub(crate) use my_decl_helpers::build_sigilless_bind_stmt;
 mod helpers;
 mod my_decl;
 mod my_decl_assign;

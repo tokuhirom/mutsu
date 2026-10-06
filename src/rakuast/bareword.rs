@@ -132,6 +132,14 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 | Stmt::RoleDecl { name, .. }
                 | Stmt::SubsetDecl { name, .. }
                 | Stmt::Package { name, .. } => insert_declared_type(*name, self.0),
+                // `my \x = 5` / `my \x := $s` declares the term `x`.
+                Stmt::SyntheticBlock(_) => {
+                    if let Some(decl) = crate::ast::sigilless_decl::declaration(stmt) {
+                        self.0
+                            .entry(decl.name.to_string())
+                            .or_insert(DeclaredKind::Term);
+                    }
+                }
                 Stmt::VarDecl {
                     name,
                     custom_traits,

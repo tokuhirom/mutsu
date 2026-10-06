@@ -38,17 +38,24 @@ use super::parse_comma_or_expr;
 /// bind machinery would give it a container cell that a later same-named
 /// declaration in a callee can collide with.
 ///
+/// `is_value_term` says whether a bareword names a declared sigilless value
+/// term: the parser asks its own scopes, the RakuAST lowering the terms the
+/// unit declares (there is no parse scope to ask by then).
+///
 /// This does NOT depend on whether a type constraint was written — `my Mu
 /// \a := $a` and `my \a := $a` behave the same way in raku.
 static ANON_SIGILLESS_SRC_COUNTER: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
-fn build_sigilless_bind_stmt(
+// Cost: O(1), plus the cost of the container test on the right-hand side.
+pub(crate) fn build_sigilless_bind_stmt(
     name: String,
     expr: Expr,
     type_constraint: Option<String>,
     is_state: bool,
     is_our: bool,
+    assigned: bool,
+    is_value_term: fn(&str) -> bool,
 ) -> Stmt {
     // `my \foo = my $x = 3` / `my \foo = my $ = -3`: the RHS declaration
     // evaluates to its new Scalar container, and `foo` binds THAT (raku: `foo
@@ -82,8 +89,15 @@ fn build_sigilless_bind_stmt(
         } else {
             inner_name.clone()
         };
-        let bind =
-            build_sigilless_bind_stmt(name, Expr::Var(var_name), type_constraint, is_state, is_our);
+        let bind = build_sigilless_bind_stmt(
+            name,
+            Expr::Var(var_name),
+            type_constraint,
+            is_state,
+            is_our,
+            assigned,
+            is_value_term,
+        );
         return Stmt::SyntheticBlock(vec![inner_decl, bind]);
     }
     let binds_a_container = match &expr {
@@ -113,7 +127,7 @@ fn build_sigilless_bind_stmt(
         // call) keeps the readonly path. The sigiled-target twin
         // (`my $x := y`) already routes this way, through the `__scalar_bind`
         // branch in `compile_stmt`'s `VarDecl` arm.
-        Expr::BareWord(n) => crate::parser::stmt::simple::is_user_declared_value_term(n),
+        Expr::BareWord(n) => is_value_term(n),
         _ => false,
     };
     let decl = Stmt::VarDecl {
@@ -128,7 +142,13 @@ fn build_sigilless_bind_stmt(
         // A sigilless term always carries a user-written initializer, so an
         // explicit `Nil` RHS (`my \x = Nil`) must not be mistaken for the
         // synthesized default and re-seeded as `Any`.
-        custom_traits: vec![("__has_initializer".to_string(), None)],
+        custom_traits: vec![
+            ("__has_initializer".to_string(), None),
+            (
+                crate::ast::sigilless_decl::SIGILLESS_DECL.to_string(),
+                Some(Expr::Literal(Value::truth(assigned))),
+            ),
+        ],
         where_constraint: None,
     };
     if binds_a_container {
@@ -153,7 +173,15 @@ pub(super) fn parse_sigilless_decl(
     if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
         let (r, _) = ws(r)?;
         let (r, expr) = parse_assign_expr_or_comma(r)?;
-        let stmt = build_sigilless_bind_stmt(name, expr, type_constraint, is_state, is_our);
+        let stmt = build_sigilless_bind_stmt(
+            name,
+            expr,
+            type_constraint,
+            is_state,
+            is_our,
+            false,
+            crate::parser::stmt::simple::is_user_declared_value_term,
+        );
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }
@@ -215,7 +243,15 @@ pub(super) fn parse_sigilless_decl(
         let r = &r[1..];
         let (r, _) = ws(r)?;
         let (r, expr) = parse_assign_expr_or_comma(r)?;
-        let stmt = build_sigilless_bind_stmt(name, expr, type_constraint, is_state, is_our);
+        let stmt = build_sigilless_bind_stmt(
+            name,
+            expr,
+            type_constraint,
+            is_state,
+            is_our,
+            true,
+            crate::parser::stmt::simple::is_user_declared_value_term,
+        );
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }

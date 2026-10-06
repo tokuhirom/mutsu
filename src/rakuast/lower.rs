@@ -190,6 +190,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
+        RakuAstClass::VarDeclarationTerm => lower_term_declaration(node),
         RakuAstClass::StatementIf => lower_if(node),
         // `with X { … }` / `without X { … }`. Both rebuild the conditional the
         // parser desugars them into, tagged so a round trip renders the same
@@ -684,6 +685,36 @@ fn class_traits(
 /// pair. The package-scoped default spelling is `is_our`; `scope => "my"` is the
 /// lexical one. Only the sigilless form round-trips, matching what the
 /// converter renders.
+/// `VarDeclaration::Term` (`my \x = 5`, `my Int \x := $s`) -> the parser's own
+/// expansion of a sigilless declaration. Only the default scope round-trips.
+// Cost: O(n), n = size of the initializer.
+fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if node.fields.iter().any(|f| f.name == Some("scope")) {
+        return Err(unsupported(node));
+    }
+    let name = call_name_str(node)?;
+    let type_constraint = match named_child(node, "type") {
+        Ok(type_node) => Some(simple_type_name(node, type_node)?),
+        Err(_) => None,
+    };
+    let init = named_child(node, "initializer")?;
+    let assigned = match init.class {
+        RakuAstClass::InitializerAssign => true,
+        RakuAstClass::InitializerBind => false,
+        _ => return Err(unsupported(node)),
+    };
+    let expr = lower_expr(named_child_or_positional(init)?)?;
+    Ok(crate::parser::build_sigilless_bind_stmt(
+        name,
+        expr,
+        type_constraint,
+        false,
+        false,
+        assigned,
+        super::shadowed_terms::is_declared_term,
+    ))
+}
+
 fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let written = leaf_str(node, "name")?;
     // The parser strips a `$` sigil into `__constant_sigil` and keeps the
@@ -1880,6 +1911,20 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
 }
 
 fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    // `v = …` where `v` is a sigilless term (`my \v = @a`) assigns into what
+    // the term is bound to.
+    let left = named_child(node, "left")?;
+    if left.class == RakuAstClass::TermName
+        && let Some(NameShape::Identifier(name)) =
+            name_parts::name_shape(named_child_or_positional(left)?)
+    {
+        return Ok(Stmt::Assign {
+            name,
+            expr: lower_expr(named_child(node, "right")?)?,
+            op: crate::ast::AssignOp::Assign,
+            target_is_sigilless: true,
+        });
+    }
     let (name, expr) = lower_assign_parts(node)?;
     // `$.x = v` writes through the attribute's rw accessor; the parser builds
     // it as an assignment expression, as `Stmt::Assign` has no accessor path.
@@ -3232,6 +3277,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // `foo(my $e = %())`): the parser carries a statement in expression
         // position as a `DoStmt`.
         RakuAstClass::VarDeclarationSimple
+        | RakuAstClass::VarDeclarationTerm
         | RakuAstClass::TypeEnum
         | RakuAstClass::Method
         | RakuAstClass::Submethod => Ok(Expr::DoStmt(Box::new(lower_stmt_inner(node)?))),
@@ -3336,6 +3382,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 && matches!(
                     declaration.class,
                     RakuAstClass::VarDeclarationSimple
+                        | RakuAstClass::VarDeclarationTerm
                         | RakuAstClass::VarDeclarationConstant
                         | RakuAstClass::VarDeclarationSignature
                 )

@@ -312,6 +312,8 @@ pub enum RakuAstClass {
     // `Block`; mutsu's one `Stmt::Phaser { kind, .. }` maps onto them 1:1.
     // `constant X = 5` — a declaration of its own, not a scoped `my`.
     VarDeclarationConstant,
+    // `my \x = 5` / `my \x := $s`.
+    VarDeclarationTerm,
     // A bareword naming something the unit declared that is not a type — a
     // `constant`, in practice.
     TermName,
@@ -563,6 +565,7 @@ impl RakuAstClass {
             StatementPrefixGather => "RakuAST::StatementPrefix::Gather",
             CallTerm => "RakuAST::Call::Term",
             VarDeclarationConstant => "RakuAST::VarDeclaration::Constant",
+            VarDeclarationTerm => "RakuAST::VarDeclaration::Term",
             TermName => "RakuAST::Term::Name",
             TermNamed => "RakuAST::Term::Named",
             TermTopicCall => "RakuAST::Term::TopicCall",
@@ -1258,6 +1261,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementPrefixGather,
     RakuAstClass::CallTerm,
     RakuAstClass::VarDeclarationConstant,
+    RakuAstClass::VarDeclarationTerm,
     RakuAstClass::TermName,
     RakuAstClass::TermNamed,
     RakuAstClass::TermTopicCall,

@@ -284,6 +284,11 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 std::slice::from_ref(expr),
             )?)))
         }
+        // A sigilless declaration (`my \x = 5`, `my Int \x := $s`).
+        Stmt::SyntheticBlock(_) if crate::ast::sigilless_decl::declaration(stmt).is_some() => {
+            let decl = crate::ast::sigilless_decl::declaration(stmt).expect("just checked");
+            Ok(Some(statement_expression(term_declaration(&decl)?)))
+        }
         // A binding declaration (`my $x := …`, `my @a := …`, `my %h := …`):
         // the statement is exactly `ast::bind_decl::expand`'s form of the
         // declaration inside it.
@@ -1138,6 +1143,33 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             )?;
             Ok(Some(statement_expression(decl)))
         }
+        // `v = EXPR` where `v` is a sigilless term: rakudo's left side is the
+        // `Term::Name`, and the assignment is a list assignment (no `:item`).
+        Stmt::Assign {
+            name,
+            expr,
+            op: AssignOp::Assign,
+            target_is_sigilless: true,
+        } => Ok(Some(statement_expression(RakuAstNode {
+            class: RakuAstClass::ApplyInfix,
+            fields: vec![
+                node_field(
+                    Some("left"),
+                    RakuAstNode {
+                        class: RakuAstClass::TermName,
+                        fields: vec![node_field(None, name_from_identifier(name))],
+                    },
+                ),
+                node_field(
+                    Some("infix"),
+                    RakuAstNode {
+                        class: RakuAstClass::Assignment,
+                        fields: Vec::new(),
+                    },
+                ),
+                node_field(Some("right"), convert_expr(expr)?),
+            ],
+        }))),
         Stmt::Assign { name, expr, op, .. } => match op {
             // `$x = EXPR` — the special `Assignment` infix (slice 2). A compound
             // assignment keeps its source-level metaop marker inside the ordinary
@@ -1727,6 +1759,37 @@ pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
     Err(unsupported(&format!("type `{t}`")))
 }
 
+/// `my \x = 5` / `my Int \x := $s` -> `VarDeclaration::Term(type?, name,
+/// initializer)`. A scoped one (`our \x`, `state \x`) stays the boundary.
+// Cost: O(n), n = size of the initializer.
+fn term_declaration(
+    decl: &crate::ast::sigilless_decl::SigillessDecl<'_>,
+) -> Result<RakuAstNode, RuntimeError> {
+    if decl.is_our || decl.is_state {
+        return Err(unsupported("scoped sigilless declaration"));
+    }
+    let mut fields = Vec::new();
+    if let Some(type_name) = decl.type_constraint {
+        fields.push(node_field(Some("type"), build_type_node(type_name)?));
+    }
+    fields.push(node_field(Some("name"), name_from_identifier(decl.name)));
+    fields.push(node_field(
+        Some("initializer"),
+        RakuAstNode {
+            class: if decl.assigned {
+                RakuAstClass::InitializerAssign
+            } else {
+                RakuAstClass::InitializerBind
+            },
+            fields: vec![node_field(None, convert_expr(decl.expr)?)],
+        },
+    ));
+    Ok(RakuAstNode {
+        class: RakuAstClass::VarDeclarationTerm,
+        fields,
+    })
+}
+
 /// Split a declaration name into `(sigil, desigilname)`. mutsu keeps the sigil
 /// on `@`/`%`/`&` declarations but strips it from `$` ones.
 pub(super) fn split_sigil(name: &str) -> (&str, &str) {
@@ -2098,7 +2161,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     | Stmt::SubDecl { .. }
                     | Stmt::MethodDecl { .. }
                     | Stmt::EnumDecl { .. }
-            ) =>
+            ) || crate::ast::sigilless_decl::declaration(stmt).is_some()
+                || crate::ast::bind_decl::declaration(stmt).is_some() =>
         {
             let statement =
                 convert_stmt(stmt)?.ok_or_else(|| unsupported("declaration term"))?;
