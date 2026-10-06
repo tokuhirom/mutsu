@@ -1009,6 +1009,60 @@ Enumeration methods), [#12090](https://github.com/tokuhirom/mutsu/issues/12090) 
 and `0.asech`), [#12091](https://github.com/tokuhirom/mutsu/issues/12091) (the native integer
 coercions of a `List`).
 
+### 9.18 Slice 3D: instance classes (2026-10-06)
+
+Branch `refactor/11276-3d-instance-classes`. Owners: `Date`, `DateTime`, `Instant`, `Duration` (the
+report's *time* group), `Match`, and the *objects* group (`Mu`, `Code`, `Backtrace`,
+`Backtrace::Frame`, `Exception`, `Failure`, `Signature`, `X::AdHoc`, `X::TypeCheck::Assignment`,
+`CX::Warn`, ...). This is the first commit's inventory, taken with
+`scripts/method-rows-report.py --inventory time,match,objects`; later commits tick families off and
+the closing paragraph records what was deferred.
+
+**Inventory (unregistered recognition rows, 2026-10-06; 676 rows registered).** 209 declared rows
+over 161 method names, plus 82 *inherited-only* rows (a pair Rakudo does not declare on the owner,
+so it is served by the ancestor's row once the receiver's shape inherits it). The plan's "346"
+counted the inherited-only rows and the 47 `RakuAST::*` rows, which the oracle snapshot
+(`rakudo_method_tables.txt`) does not list as owners, so they wait for the snapshot extension
+(§10.6).
+
+| owner | declared | Pure | Interp | inherited-only |
+|---|---:|---:|---:|---:|
+| Date | 29 | 25 | 4 | 1 |
+| DateTime | 41 | 33 | 8 | 0 |
+| Instant | 24 | 23 | 1 | 0 |
+| Duration | 20 | 19 | 1 | 0 |
+| Match | 24 | 24 | 0 | 48 |
+| Mu | 21 | 10 | 11 | 0 |
+| Code | 11 | 3 | 8 | 3 |
+| Backtrace | 11 | 11 | 0 | 2 |
+| Backtrace::Frame | 8 | 8 | 0 | 0 |
+| Exception | 6 | 6 | 0 | 2 |
+| Failure | 3 | 3 | 0 | 5 |
+| Signature | 6 | 2 | 4 | 2 |
+| X::AdHoc, X::TypeCheck::Assignment, CX::Warn, Supply | 5 | 5 | 0 | 17 |
+| **total** | **209** | **148** | **37** | **82** |
+
+**Families (one commit each, with its focused test).**
+
+1. *Calendar rows of `Date` and `DateTime`* (`day-of-week`, `day-of-year`, `daycount`,
+   `days-in-month`, `days-in-year`, `is-leap-year`, `week`, `week-number`, `week-year`,
+   `weekday-of-month`, `day-of-month`, `yyyy-mm-dd` and the other two orderings, `mm-dd`, `yyyy-mm`,
+   `formatter`, `succ`, `pred`, `first-date-in-month`, `last-date-in-month`): one handler per name
+   for both owners.
+2. *`DateTime`'s own rows* (`second`, `timezone`, `offset*`, `whole-second`, `hh-mm-ss`, `posix`,
+   `julian-date`, `modified-julian-date`, `day-fraction`, `Date`, `DateTime`, `Instant`, `Numeric`,
+   `Real`, `WHICH`, `raku`, `Str`/`gist`) and `Date`'s (`Date`, `DateTime`, `Int`, `Numeric`,
+   `Real`, `WHICH`, `raku`, `Str`/`gist`).
+3. *`Instant` and `Duration`*: two instance-class shapes (an `Instance` of the built-in class, like
+   `Date`), the `Real`-role methods that both declare, `to-posix`, `tai`, `Bool` and the
+   rendering names.
+4. *`Match`*: the shape, whose guard is that a lazy `Match` is not forced by a tag probe, and the
+   accessors Rakudo declares on it.
+5. *Backtraces* (`Backtrace`, `Backtrace::Frame`) and the exception accessors.
+
+The audit of the ancestor rows (`Any`, `Cool`, `Mu`) for each shape (a closed shape is opened by
+the slice that owns it, §9.15) is part of its family.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
