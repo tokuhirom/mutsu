@@ -1108,6 +1108,20 @@ impl Interpreter {
         // type lives in its class name; neither reduces to the `&'static`
         // `value_type_name` ("Array" / the class name) the generic tail compares.
         if constraint == "CArray" {
+            // The upstream NativeCall module spells it `my constant CArray =
+            // NativeCall::Types::CArray`: an imported alias of a namespaced
+            // class. "CArray" is a known type name, so the alias walk skips it
+            // (`type_alias_target`) and the name checks below would compare the
+            // instance's `UNC::Types::CArray[uint8]` against the bare spelling.
+            // Follow the alias first, as for any other constant type alias --
+            // this is the path a `CArray:D` parameter reaches once its smiley
+            // is stripped.
+            if let Some(bound) = self.type_name_binding(constraint)
+                && let ValueView::Package(target) = bound.view()
+                && target != *constraint
+            {
+                return self.type_matches_value_why(&target.resolve(), value, why);
+            }
             if let ValueView::Instance { class_name, .. } = value.view() {
                 let cn = class_name.resolve();
                 return cn == "CArray" || cn.starts_with("CArray[");
