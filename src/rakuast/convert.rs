@@ -1762,11 +1762,7 @@ fn var_decl_statement(
         custom_traits,
         where_constraint,
     } = parts;
-    // `where` constraints, parameterised/definite/coercion types, and real
-    // `is`/`does` traits carry richer shape, deferred.
-    if where_constraint {
-        return Err(unsupported("where-constrained declaration"));
-    }
+    // Real `is`/`does` traits carry richer shape, deferred.
     // `constant X = 5` is a distinct raku node, not a scoped `my`.
     // mutsu marks it with a `__constant` pseudo-trait (plus a
     // `__constant_sigil` recording the declared sigil) and sets
@@ -1858,6 +1854,11 @@ fn var_decl_statement(
         traits.push(decl_traits::dynamic_trait());
     }
     decl_traits::insert(&mut decl, traits);
+    // `where` is the declaration's last field, after the initializer.
+    if let Some(constraint) = where_constraint {
+        decl.fields
+            .push(node_field(Some("where"), convert_expr(constraint)?));
+    }
     Ok(Some(statement_expression(decl)))
 }
 
@@ -1872,7 +1873,8 @@ struct VarDeclParts<'a> {
     is_our: bool,
     is_dynamic: bool,
     custom_traits: &'a [(String, Option<Expr>)],
-    where_constraint: bool,
+    /// The declaration's `where` expression.
+    where_constraint: Option<&'a Expr>,
 }
 
 fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
@@ -1898,7 +1900,7 @@ fn var_decl_parts(stmt: &Stmt) -> Result<VarDeclParts<'_>, RuntimeError> {
         is_our: *is_our,
         is_dynamic: *is_dynamic,
         custom_traits,
-        where_constraint: where_constraint.is_some(),
+        where_constraint: where_constraint.as_deref(),
     })
 }
 
@@ -4028,7 +4030,8 @@ fn pointy_block_from_lambda(
 /// no `scope`, and `my constant Y = 7` emits `scope => "my"`.
 ///
 /// A sigilled constant (`constant @a = 1, 2`) keeps its sigil in `name`. A
-/// typed one carries shape this does not model yet, so it stays a boundary.
+/// typed one (`our Mu constant X = 1`) has the `type` between `scope` and
+/// `name`.
 fn constant_declaration(
     name: &str,
     expr: &Expr,
@@ -4036,9 +4039,6 @@ fn constant_declaration(
     type_constraint: &Option<String>,
     is_our: bool,
 ) -> Result<Option<RakuAstNode>, RuntimeError> {
-    if type_constraint.is_some() {
-        return Err(unsupported("typed constant"));
-    }
     // `__constant_sigil` carries the declared sigil; only the sigilless form
     // (a plain `constant X`) maps onto the measured node shape.
     let sigil = custom_traits.iter().find_map(|(n, arg)| {
@@ -4072,6 +4072,9 @@ fn constant_declaration(
     // does. mutsu records the default as `is_our`.
     if !is_our {
         fields.push(leaf_field(Some("scope"), Value::str_from("my")));
+    }
+    if let Some(type_name) = type_constraint {
+        fields.push(node_field(Some("type"), build_type_node(type_name)?));
     }
     fields.push(leaf_field(Some("name"), Value::str(name)));
     fields.push(node_field(

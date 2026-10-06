@@ -917,10 +917,14 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return Err(unsupported(node));
     }
     let expr = lower_expr(named_child_or_positional(init)?)?;
+    let type_constraint = match node.fields.iter().find(|f| f.name == Some("type")) {
+        Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
+        None => None,
+    };
     Ok(Stmt::VarDecl {
         name,
         expr,
-        type_constraint: None,
+        type_constraint,
         is_state: false,
         is_our,
         is_dynamic: false,
@@ -2388,6 +2392,14 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             false,
         ),
     };
+    // `my Int $x where * > 0`: the `where` field, the declaration's last.
+    let where_constraint = match node.fields.iter().find(|f| f.name == Some("where")) {
+        None => None,
+        Some(f) => Some(Box::new(lower_expr(child_node(&f.value)?)?)),
+    };
+    if where_constraint.is_some() && (is_binding || call_assign.is_some()) {
+        return Err(unsupported(node));
+    }
     // A shaped array: the parser's `Array.new(shape => ..., data => ...)`.
     let shape_dims = super::keyed_hash::lower_dimensions(node, &sigil)?;
     if shape_dims.is_some() && (is_binding || call_assign.is_some()) {
@@ -2460,7 +2472,7 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_export: false,
         export_tags: Vec::new(),
         custom_traits,
-        where_constraint: None,
+        where_constraint,
     })
 }
 
