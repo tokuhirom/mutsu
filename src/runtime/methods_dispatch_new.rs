@@ -1306,9 +1306,19 @@ impl Interpreter {
         let mi = (day_secs % 3600) / 60;
         let s = (day_secs % 60) as f64 + frac;
         let dt = temporal::make_datetime(y, m, d, h, mi, s, timezone);
+        let formatter_arg = formatter.clone();
         let dt = temporal::with_formatter(dt, formatter);
         if class_name.resolve() != "DateTime" {
-            return Some(self.dispatch_new(target.clone(), vec![dt]));
+            // Like Rakudo's `self.new(now, :$timezone, :&formatter)`: a subclass's
+            // own `new` sees an Instant plus the named arguments.
+            let mut new_args = vec![
+                Value::make_instant_now(),
+                Value::pair("timezone".to_string(), Value::int(timezone)),
+            ];
+            if let Some(f) = formatter_arg {
+                new_args.push(Value::pair("formatter".to_string(), f));
+            }
+            return Some(self.call_method_with_values(target.clone(), "new", new_args));
         }
         Some(Ok(dt))
     }
