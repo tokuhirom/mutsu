@@ -108,6 +108,50 @@ fn chain_operands<'a>(expr: &'a Expr, meta: &str, op: &str) -> Vec<&'a Expr> {
     operands
 }
 
+/// The base operator of a meta-assignment `op` (`+` of `X+=`): the parser spells
+/// `@a X+= @b` as a [`Expr::MetaOp`] whose `op` keeps the trailing `=`. An
+/// operator that itself ends in `=` (`==`, `<=`, `>=`, `!=`, `===`, `=:=`, `=~=`)
+/// is not one.
+// Cost: O(1).
+fn assign_base(op: &str) -> Option<&str> {
+    const COMPARISONS: [&str; 7] = ["==", "<=", ">=", "!=", "===", "=:=", "=~="];
+    if COMPARISONS.contains(&op) {
+        return None;
+    }
+    op.strip_suffix('=').filter(|base| !base.is_empty())
+}
+
+/// `@a X+= @b` -> `ApplyInfix(left, MetaInfix::Assign(MetaInfix::Cross(Infix("+"))), right)`.
+// Cost: O(n), n = nodes of the operands.
+fn convert_assign(
+    meta: &str,
+    base: &str,
+    left: &Expr,
+    right: &Expr,
+    whole: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
+    let class = match meta {
+        "X" | "Z" => meta_class(meta).ok_or_else(|| unsupported_expr(&format!("{whole:?}")))?,
+        _ => return Err(unsupported_expr(&format!("{whole:?}"))),
+    };
+    let inner = RakuAstNode {
+        class,
+        fields: vec![node_field(None, plain_infix(base))],
+    };
+    let assign = RakuAstNode {
+        class: RakuAstClass::MetaInfixAssign,
+        fields: vec![node_field(None, inner)],
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyInfix,
+        fields: vec![
+            node_field(Some("left"), convert_expr(left)?),
+            node_field(Some("infix"), assign),
+            node_field(Some("right"), convert_expr(right)?),
+        ],
+    })
+}
+
 /// An [`Expr::MetaOp`] as its `ApplyListInfix` / `ApplyInfix`.
 // Cost: O(n), n = nodes of the operands.
 pub(super) fn convert(
@@ -120,12 +164,8 @@ pub(super) fn convert(
     let Some(class) = meta_class(meta) else {
         return Err(unsupported_expr(&format!("{whole:?}")));
     };
-    // A compound-assignment base (`X+=`) is its own node, deferred.
-    if op.ends_with('=')
-        && !op.is_empty()
-        && crate::compiler::helpers_ops::op_name_to_token_kind(op).is_none()
-    {
-        return Err(unsupported_expr(&format!("{whole:?}")));
+    if let Some(base) = assign_base(op) {
+        return convert_assign(meta, base, left, right, whole);
     }
     let infix = if op.is_empty() {
         // The bare `Z` / `X` operator.
@@ -205,12 +245,32 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
         _ => return None,
     }
     let infix = named_child(node, "infix").ok()?;
+    if infix.class == RakuAstClass::MetaInfixAssign && node.class == RakuAstClass::ApplyInfix {
+        return lower_assign(node, infix);
+    }
     let (meta, op) = match spelling(infix) {
         Ok(Some(found)) => found,
         Ok(None) => return None,
         Err(e) => return Some(Err(e)),
     };
     Some(fold(node, meta, op))
+}
+
+/// `ApplyInfix(left, MetaInfix::Assign(MetaInfix::Cross|Zip(Infix(OP))), right)`
+/// as the parser's `MetaOp` over `OP=`, or `None` for a plain `OP=`.
+// Cost: O(n), n = nodes of the operands.
+fn lower_assign(node: &RakuAstNode, assign: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+    let inner = super::lower::named_child_or_positional(assign).ok()?;
+    let meta = meta_of(inner.class).filter(|m| *m != "R")?;
+    Some((|| {
+        let (_, base) = spelling(inner)?.ok_or_else(|| unsupported(node))?;
+        Ok(Expr::MetaOp {
+            meta: meta.to_string(),
+            op: format!("{base}="),
+            left: Box::new(lower_expr(named_child(node, "left")?)?),
+            right: Box::new(lower_expr(named_child(node, "right")?)?),
+        })
+    })())
 }
 
 fn fold(node: &RakuAstNode, meta: &str, op: String) -> Result<Expr, RuntimeError> {
@@ -247,5 +307,9 @@ fn fold(node: &RakuAstNode, meta: &str, op: String) -> Result<Expr, RuntimeError
             right: Box::new(right),
         };
     }
-    Ok(acc)
+    // A standalone `*` operand of `X` / `Z` makes the whole a WhateverCode: the
+    // parser's own decision.
+    Ok(crate::parser::primary::container::maybe_curry_xz_metaop(
+        acc,
+    ))
 }

@@ -160,7 +160,8 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         if meta == "reduce"
             && let Some(compound_op) = CompoundAssignOp::from_op_name(&op)
         {
-            let expr = compound_assigned_value_expr(var_expr, compound_op, rhs);
+            // The same marker as the spelled `+=`: `$x [+]= 6` is `$x += 6`.
+            let expr = preserve_compound_assign(var_expr, compound_op, rhs)?;
             let stmt = Stmt::Assign {
                 name,
                 expr,
@@ -197,7 +198,8 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             && sigil == b'$'
             && let Some(compound_op) = CompoundAssignOp::from_op_name(&op)
         {
-            let expr = compound_assigned_value_expr(var_expr, compound_op, rhs);
+            // The same marker as the spelled `+=`.
+            let expr = preserve_compound_assign(var_expr, compound_op, rhs)?;
             let stmt = Stmt::Assign {
                 name,
                 expr,

@@ -735,7 +735,7 @@ pub(crate) fn build_meta_assign_expr(
     if meta == "reduce"
         && let Some(compound_op) = CompoundAssignOp::from_op_name(&op)
     {
-        return build_compound_assign_expr(lhs, compound_op, rhs);
+        return preserve_compound_assign(lhs, compound_op, rhs);
     }
     // `@a Z= rhs` (zip metaoperator on `=`) is element-wise assignment, NOT
     // `@a = (@a Z rhs)`: each `@a[i]` gets `rhs[i]`, trailing `@a` elements keep

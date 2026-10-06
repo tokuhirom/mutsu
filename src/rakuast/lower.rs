@@ -2240,8 +2240,14 @@ fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 
 /// Whether an `ApplyInfix` uses Raku's compound-assignment metaoperator.
 pub(super) fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
+    // `X+=` / `Z+=` hold a metaoperator, not a plain infix: `meta_infix` lowers them.
     named_child(node, "infix")
-        .map(|child| child.class == RakuAstClass::MetaInfixAssign)
+        .map(|child| {
+            child.class == RakuAstClass::MetaInfixAssign
+                && named_child_or_positional(child)
+                    .map(|inner| inner.class == RakuAstClass::Infix)
+                    .unwrap_or(true)
+        })
         .unwrap_or(false)
 }
 

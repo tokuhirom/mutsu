@@ -1933,6 +1933,15 @@ fn var_decl_statement(
         Some((_, Some(data))) => data,
         _ => expr,
     };
+    // `my @a <== EXPR` is a declaration whose initializer is the parser's
+    // feed helper call; without the `__has_initializer` mark it would read as
+    // none and the feed would be dropped.
+    if let Expr::Call { name: callee, .. } = expr
+        && is_desugar_marker(callee.as_str())
+        && !custom_traits.iter().any(|(n, _)| n == "__has_initializer")
+    {
+        return Err(desugared(callee.as_str()));
+    }
     let init = if is_binding {
         Some(Initializer::Bind(expr))
     } else if shaped.as_ref().is_some_and(|(_, data)| data.is_none()) {
