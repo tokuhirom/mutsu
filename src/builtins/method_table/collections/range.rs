@@ -7,7 +7,7 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
 macro_rules! row {
-    ($name:literal, $handler:ident) => {
+    ($name:literal, $handler:expr) => {
         MethodRow {
             owner: "Range",
             name: $name,
@@ -17,7 +17,7 @@ macro_rules! row {
             named: &[],
         }
     };
-    ($name:literal, $arity:literal, $handler:ident, $flags:expr) => {
+    ($name:literal, $arity:literal, $handler:expr, $flags:expr) => {
         MethodRow {
             owner: "Range",
             name: $name,
@@ -41,6 +41,32 @@ pub(super) static ROWS: &[MethodRow] = &[
     // the range can be compared with, so any plain argument is admitted.
     row!("in-range", 1, in_range_value, RowFlags::ANY_ARGS),
     row!("in-range", 2, in_range_what, RowFlags::ANY_ARGS),
+    row!("elems", elems),
+    row!("min", min),
+    row!("max", max),
+    row!("minmax", minmax),
+    row!("Numeric", numeric),
+    row!("list", list),
+    // `sum` and `reverse` are the one implementation every list-like shares.
+    row!("sum", super::list_aggregate::sum),
+    row!("reverse", super::list::reverse),
+    // `contains` and `index` stringify the range, as every `Cool` does.
+    MethodRow {
+        owner: "Range",
+        name: "contains",
+        arity: 1,
+        handler: Handler::Pure(crate::builtins::method_table::str_search::contains),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Range",
+        name: "index",
+        arity: 1,
+        handler: Handler::Pure(crate::builtins::method_table::str_search::index),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
 ];
 
 /// `Range.excludes-min`: whether the lower endpoint is excluded (`^..`).
@@ -282,4 +308,212 @@ fn range_contains_value(range: &Value, val: &Value) -> bool {
         if excl_end { v < vmax } else { v <= vmax }
     };
     min_ok && max_ok
+}
+
+/// `Range.elems`: the number of elements; an unbounded range is lazy and
+/// answers a `X::Cannot::Lazy` failure.
+// Cost: O(1) for an Int range or one with Int/BigInt endpoints, O(e)
+// otherwise, e = elements (a range of other endpoints is expanded to count).
+pub(crate) fn elems(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let lazy = || Some(Ok(crate::runtime::utils::cannot_lazy_failure("elems")));
+    let count = match target.view() {
+        ValueView::Range(start, end) if start == i64::MIN || end == i64::MAX => return lazy(),
+        ValueView::Range(start, end) => (end - start + 1).max(0),
+        ValueView::RangeExcl(start, end) | ValueView::RangeExclStart(start, end)
+            if start == i64::MIN || end == i64::MAX =>
+        {
+            return lazy();
+        }
+        ValueView::RangeExcl(start, end) | ValueView::RangeExclStart(start, end) => {
+            (end - start).max(0)
+        }
+        ValueView::RangeExclBoth(start, end) if start == i64::MIN || end == i64::MAX => {
+            return lazy();
+        }
+        ValueView::RangeExclBoth(start, end) => (end - start - 1).max(0),
+        ValueView::GenericRange { .. }
+            if crate::builtins::methods_0arg::is_infinite_range(target) =>
+        {
+            return lazy();
+        }
+        // An Int/BigInt-ended range counts from its endpoints (the same
+        // exact count `.Numeric` uses); expanding it would stop at
+        // `MAX_RANGE_EXPAND`.
+        ValueView::GenericRange { start, end, .. }
+            if matches!(start.view(), ValueView::Int(_) | ValueView::BigInt(_))
+                && matches!(end.view(), ValueView::Int(_) | ValueView::BigInt(_)) =>
+        {
+            return Some(Ok(crate::value::radix_numeric::coerce_to_numeric(
+                target.clone(),
+            )));
+        }
+        ValueView::GenericRange { .. } => crate::runtime::utils::value_to_list(target).len() as i64,
+        _ => return None,
+    };
+    Some(Ok(Value::int(count)))
+}
+
+/// `Range.min`: the lower endpoint as written (`-Inf` for an open start).
+// Cost: O(1).
+pub(crate) fn min(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Range(a, _)
+        | ValueView::RangeExcl(a, _)
+        | ValueView::RangeExclStart(a, _)
+        | ValueView::RangeExclBoth(a, _) => Some(Ok(if a == i64::MIN {
+            Value::num(f64::NEG_INFINITY)
+        } else {
+            Value::int(a)
+        })),
+        ValueView::GenericRange { start, .. } => {
+            let s = start.as_ref();
+            Some(Ok(match s.view() {
+                ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::NEG_INFINITY),
+                _ => s.clone(),
+            }))
+        }
+        _ => None,
+    }
+}
+
+/// `Range.max`: the upper endpoint as written (`Inf` for an open end).
+// Cost: O(1).
+pub(crate) fn max(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Range(_, b)
+        | ValueView::RangeExcl(_, b)
+        | ValueView::RangeExclStart(_, b)
+        | ValueView::RangeExclBoth(_, b) => Some(Ok(if b == i64::MAX {
+            Value::num(f64::INFINITY)
+        } else {
+            Value::int(b)
+        })),
+        ValueView::GenericRange { end, .. } => {
+            let e = end.as_ref();
+            Some(Ok(match e.view() {
+                ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::INFINITY),
+                _ => e.clone(),
+            }))
+        }
+        _ => None,
+    }
+}
+
+/// `Range.minmax` folds an excluded end into the returned bound, but only
+/// when the range is `is-int` -- an excluded *non-integer* end (`1.1..^5.2`,
+/// `'a'..^'z'`, `1..^Inf`) has no nameable concrete bound, and raku fails
+/// with `X::AdHoc: Cannot return minmax on Range with excluded ends`.
+// Cost: O(1).
+pub(crate) fn minmax(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match crate::builtins::range_bounds_int::range_minmax(target)? {
+        Ok((min_val, max_val)) => Some(Ok(Value::array(vec![min_val, max_val]))),
+        Err(()) => Some(Err(RuntimeError::new(
+            "Cannot return minmax on Range with excluded ends",
+        ))),
+    }
+}
+
+/// `Range.Numeric` (and `.Int`, `.Real`, `.Num` through the cascade): the
+/// number of elements. An unbounded range yields `Inf` for the real-valued
+/// coercions and fails for `.Int`. `target` is a Range.
+// Cost: O(1) for an Int range or Int/BigInt endpoints, O(e) otherwise.
+pub(crate) fn numeric_coercion(target: &Value, method: &str) -> Result<Value, RuntimeError> {
+    if crate::builtins::methods_0arg::is_infinite_range(target) {
+        return if method == "Int" {
+            Err(RuntimeError::new("Cannot convert Inf to Int".to_string()))
+        } else {
+            Ok(Value::num(f64::INFINITY))
+        };
+    }
+    // An Int/BigInt-ended range counts from its endpoints (no expansion cap).
+    if let ValueView::GenericRange { start, end, .. } = target.view()
+        && matches!(start.view(), ValueView::Int(_) | ValueView::BigInt(_))
+        && matches!(end.view(), ValueView::Int(_) | ValueView::BigInt(_))
+    {
+        let exact = crate::value::radix_numeric::coerce_to_numeric(target.clone());
+        return Ok(if method == "Num" {
+            Value::num(exact.to_f64())
+        } else {
+            exact
+        });
+    }
+    let count = match target.view() {
+        ValueView::Range(s, e) => (e - s + 1).max(0),
+        ValueView::RangeExcl(s, e) | ValueView::RangeExclStart(s, e) => (e - s).max(0),
+        ValueView::RangeExclBoth(s, e) => (e - s - 1).max(0),
+        // GenericRange (e.g. Rat endpoints `1.5..5.5`) has no closed-form count;
+        // materialize it the same way `.elems` does.
+        _ => crate::runtime::utils::value_to_list(target).len() as i64,
+    };
+    Ok(if method == "Num" {
+        Value::num(count as f64)
+    } else {
+        Value::int(count)
+    })
+}
+
+/// `Range.Numeric`.
+// Cost: see [`numeric_coercion`].
+pub(crate) fn numeric(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    target
+        .is_range()
+        .then(|| numeric_coercion(target, "Numeric"))
+}
+
+/// `Range.list` (and `.Array`, through [`Self::listify`]'s cascade caller):
+/// the elements. An unbounded range stays lazy: a lazy List for `.list`, a
+/// lazy Array for `.Array` (Rakudo: `(1..*).list.^name` is `List`,
+/// `(1.5..*).Array.is-lazy`). `want_array` makes the result a real `@`-sigiled
+/// Array whose aggregate elements are itemized.
+// Cost: O(1) for an unbounded range; O(e) otherwise, e = elements.
+pub(crate) fn listify(target: &Value, want_array: bool) -> Option<Result<Value, RuntimeError>> {
+    // ADR-0040 slice 2: `.Array` builds a REAL Array, whose elements are
+    // `Scalar` containers, so aggregates itemize on the way in. `.list` builds
+    // a List, whose elements are not containers, so it must not.
+    let wrap = |items: Vec<Value>| {
+        if want_array {
+            crate::runtime::utils::itemize_real_array_elements(Value::real_array(items))
+        } else {
+            Value::array(items)
+        }
+    };
+    if let Some(ll) = crate::runtime::unbounded_range::lazy_list(target) {
+        let ll = if want_array {
+            ll.with_array_context()
+        } else {
+            ll.with_list_context()
+        };
+        return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
+    }
+    // An open end of an Int range (`i64::MIN`/`MAX`) becomes a lazy array
+    // (supports indexing; `.Capture` on it throws).
+    let open = |a: i64, b: i64| b == i64::MAX || a == i64::MIN;
+    match target.view() {
+        ValueView::Range(a, b) if open(a, b) => {
+            Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
+        }
+        ValueView::Range(a, b) => Some(Ok(wrap((a..=b).map(Value::int).collect()))),
+        ValueView::RangeExcl(a, b) if open(a, b) => {
+            Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
+        }
+        ValueView::RangeExcl(a, b) => Some(Ok(wrap((a..b).map(Value::int).collect()))),
+        ValueView::RangeExclStart(a, b) if open(a, b) => {
+            Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
+        }
+        ValueView::RangeExclStart(a, b) => Some(Ok(wrap((a + 1..=b).map(Value::int).collect()))),
+        ValueView::RangeExclBoth(a, b) if open(a, b) => {
+            Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
+        }
+        ValueView::RangeExclBoth(a, b) => Some(Ok(wrap((a + 1..b).map(Value::int).collect()))),
+        ValueView::GenericRange { .. } => {
+            Some(Ok(wrap(crate::runtime::utils::value_to_list(target))))
+        }
+        _ => None,
+    }
+}
+
+/// `Range.list`.
+// Cost: see [`listify`].
+pub(crate) fn list(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    listify(target, false)
 }

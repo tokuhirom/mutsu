@@ -379,33 +379,8 @@ pub(super) fn dispatch(
                     }
                 })
                 .unwrap_or(Value::num(f64::INFINITY)))),
-            ValueView::Range(a, _) => Some(Ok(if a == i64::MIN {
-                Value::num(f64::NEG_INFINITY)
-            } else {
-                Value::int(a)
-            })),
-            ValueView::RangeExcl(a, _) => Some(Ok(if a == i64::MIN {
-                Value::num(f64::NEG_INFINITY)
-            } else {
-                Value::int(a)
-            })),
-            ValueView::RangeExclStart(a, _) => Some(Ok(if a == i64::MIN {
-                Value::num(f64::NEG_INFINITY)
-            } else {
-                Value::int(a)
-            })),
-            ValueView::RangeExclBoth(a, _) => Some(Ok(if a == i64::MIN {
-                Value::num(f64::NEG_INFINITY)
-            } else {
-                Value::int(a)
-            })),
-            ValueView::GenericRange { start, .. } => {
-                let s = start.as_ref();
-                Some(Ok(match s.view() {
-                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::NEG_INFINITY),
-                    _ => s.clone(),
-                }))
-            }
+            // The `Range.min` row's implementation (`method_table::range`).
+            _ if target.is_range() => crate::builtins::method_table::range::min(target, &[]),
             ValueView::Hash(_) => None,
             ValueView::Package(_) | ValueView::Instance { .. } => None,
             // A Seq/Slip is a materialized list; defer to the interpreter,
@@ -431,25 +406,8 @@ pub(super) fn dispatch(
                     }
                 })
                 .unwrap_or(Value::num(f64::NEG_INFINITY)))),
-            ValueView::Range(_, b) => Some(Ok(if b == i64::MAX {
-                Value::num(f64::INFINITY)
-            } else {
-                Value::int(b)
-            })),
-            ValueView::RangeExcl(_, b)
-            | ValueView::RangeExclStart(_, b)
-            | ValueView::RangeExclBoth(_, b) => Some(Ok(if b == i64::MAX {
-                Value::num(f64::INFINITY)
-            } else {
-                Value::int(b)
-            })),
-            ValueView::GenericRange { end, .. } => {
-                let e = end.as_ref();
-                Some(Ok(match e.view() {
-                    ValueView::Whatever | ValueView::HyperWhatever => Value::num(f64::INFINITY),
-                    _ => e.clone(),
-                }))
-            }
+            // The `Range.max` row's implementation (`method_table::range`).
+            _ if target.is_range() => crate::builtins::method_table::range::max(target, &[]),
             ValueView::Hash(_) => None,
             ValueView::Package(_) | ValueView::Instance { .. } => None,
             // A Seq/Slip is a materialized list; defer to the interpreter,
@@ -458,19 +416,8 @@ pub(super) fn dispatch(
             ValueView::Seq(..) | ValueView::Slip(..) => None,
             _ => Some(Ok(target.clone())),
         }),
-        // `Range.minmax` folds an excluded end into the returned bound, but only
-        // when the range is `is-int` — an excluded *non-integer* end (`1.1..^5.2`,
-        // `'a'..^'z'`, `1..^Inf`) has no nameable concrete bound, and raku fails
-        // with `X::AdHoc: Cannot return minmax on Range with excluded ends`.
-        "minmax" => Some(
-            match crate::builtins::range_bounds_int::range_minmax(target) {
-                Some(Ok((min_val, max_val))) => Some(Ok(Value::array(vec![min_val, max_val]))),
-                Some(Err(())) => Some(Err(RuntimeError::new(
-                    "Cannot return minmax on Range with excluded ends",
-                ))),
-                None => None,
-            },
-        ),
+        // The `Range.minmax` row's implementation (`method_table::range`).
+        "minmax" => Some(crate::builtins::method_table::range::minmax(target, &[])),
         // Cost: O(1) (a type-name match; a Buf answers its element type).
         "of" => Some(match target.view() {
             ValueView::Hash(_) | ValueView::Array(..) => None,

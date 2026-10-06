@@ -60,7 +60,7 @@ mod table;
 // (`method_table::str::tclc`), whichever group directory holds them.
 pub(crate) use collections::{
     any_collection, capture, lazy, list, list_aggregate, list_transform, map, pair, positional,
-    quanthash, subscript,
+    quanthash, range, subscript,
 };
 pub(crate) use instances::temporal;
 pub(crate) use scalars::{

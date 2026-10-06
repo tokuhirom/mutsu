@@ -1,4 +1,4 @@
-use super::{int_lsb_value, int_msb_value, is_infinite_range, range_elems_lazy_failure};
+use super::{int_lsb_value, int_msb_value, range_elems_lazy_failure};
 use crate::builtins::rng::builtin_rand;
 /// Numeric and element methods: elems, default, abs, lsb, msb, rand,
 /// uc, lc, fc, tc, sign
@@ -150,38 +150,9 @@ pub(super) fn dispatch(
                         "Cannot call '.elems' on a Channel instance".to_string(),
                     ))));
                 }
-                ValueView::Range(start, end) if start == i64::MIN || end == i64::MAX => {
-                    return Some(range_elems_lazy_failure("elems"));
-                }
-                ValueView::Range(start, end) => Value::int((end - start + 1).max(0)),
-                ValueView::RangeExcl(start, end) if start == i64::MIN || end == i64::MAX => {
-                    return Some(range_elems_lazy_failure("elems"));
-                }
-                ValueView::RangeExcl(start, end) => Value::int((end - start).max(0)),
-                ValueView::RangeExclStart(start, end) if start == i64::MIN || end == i64::MAX => {
-                    return Some(range_elems_lazy_failure("elems"));
-                }
-                ValueView::RangeExclStart(start, end) => Value::int((end - start).max(0)),
-                ValueView::RangeExclBoth(start, end) if start == i64::MIN || end == i64::MAX => {
-                    return Some(range_elems_lazy_failure("elems"));
-                }
-                ValueView::RangeExclBoth(start, end) => Value::int((end - start - 1).max(0)),
-                ValueView::GenericRange { .. } if is_infinite_range(target) => {
-                    return Some(range_elems_lazy_failure("elems"));
-                }
-                // An Int/BigInt-ended range counts from its endpoints (the same
-                // exact count `.Numeric` uses); expanding it would stop at
-                // `MAX_RANGE_EXPAND`.
-                // Cost: O(1) for Int/BigInt endpoints, O(e) otherwise.
-                ValueView::GenericRange { start, end, .. }
-                    if matches!(start.view(), ValueView::Int(_) | ValueView::BigInt(_))
-                        && matches!(end.view(), ValueView::Int(_) | ValueView::BigInt(_)) =>
-                {
-                    crate::value::radix_numeric::coerce_to_numeric(target.clone())
-                }
-                ValueView::GenericRange { .. } => {
-                    let list = crate::runtime::utils::value_to_list(target);
-                    Value::int(list.len() as i64)
+                // The `Range.elems` row's implementation (`method_table::range`).
+                _ if target.is_range() => {
+                    return Some(crate::builtins::method_table::range::elems(target, &[]));
                 }
                 ValueView::Instance {
                     class_name,

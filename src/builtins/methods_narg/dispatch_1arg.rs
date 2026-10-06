@@ -594,30 +594,18 @@ pub(crate) fn native_method_1arg(
             crate::builtins::method_table::capture::exists_pos(target, std::slice::from_ref(arg))
         }
         "AT-POS" => {
-            // A Str or Rat index is coerced to Int, as Rakudo's `AT-POS(Any)`
-            // candidate does (`.AT-POS("1")` reads element 1). A Str that is not
-            // a number is declined to the general path, which dies on it as
-            // Rakudo does; answering Nil here made the reply depend on which
-            // path the call took (`.AT-POS("a", :zzz)` was Nil, #9905).
-            let idx = match arg.view() {
-                ValueView::Int(i) if i >= 0 => i as usize,
-                ValueView::Num(f) if f >= 0.0 => f as usize,
-                ValueView::Rat(n, d) if d > 0 && n >= 0 => (n / d) as usize,
-                ValueView::Str(s) => match s.trim().parse::<f64>() {
-                    Ok(f) if f >= 0.0 => f as usize,
-                    Ok(_) => return Some(Ok(Value::NIL)),
-                    Err(_) => return None,
-                },
-                _ => return Some(Ok(Value::NIL)),
+            // The index a Str, Rat or Num stands for (the `AT-POS` rows'
+            // implementation, `method_table::positional`).
+            let idx = match crate::builtins::method_table::positional::at_pos_index(arg) {
+                Ok(idx) => idx,
+                Err(answer) => return answer,
             };
-            // A Range is not array-backed; index its (possibly lazy) element
-            // sequence directly.
-            if crate::builtins::arith::range::range_bounds(target).is_some() {
-                return Some(Ok(range_at_pos(target, idx)));
+            // A Range or a list's element: the `AT-POS` rows' implementation.
+            if let Some(answer) = crate::builtins::method_table::positional::at_pos_of(target, idx)
+            {
+                return Some(answer);
             }
-            if let Some(items) = target.as_list_items() {
-                Some(Ok(items.get(idx).cloned().unwrap_or(Value::NIL)))
-            } else {
+            {
                 match target.view() {
                     ValueView::Str(s) => {
                         let ch = s.chars().nth(idx).map(|c| Value::str(c.to_string()));
@@ -727,45 +715,20 @@ pub(crate) fn native_method_1arg(
             }
         }
         "EXISTS-POS" => {
+            // A Range's or list's slot: the `EXISTS-POS` rows' implementation
+            // (`method_table::positional`).
+            if let Some(answer) = crate::builtins::method_table::positional::exists_pos(
+                target,
+                std::slice::from_ref(arg),
+            ) {
+                return Some(answer);
+            }
+            // (Past here the index is a non-negative number.)
             let idx = match arg.view() {
                 ValueView::Int(i) => i,
                 ValueView::Num(f) => f as i64,
                 _ => return Some(Ok(Value::FALSE)),
             };
-            if idx < 0 {
-                return Some(Ok(Value::FALSE));
-            }
-            // On a Range, an index exists when it is below the element count.
-            // A lazy (infinite) range cannot report `.elems`, so — like raku —
-            // `.EXISTS-POS` on it throws X::Cannot::Lazy.
-            if crate::builtins::arith::range::range_bounds(target).is_some() {
-                match range_elem_count(target) {
-                    None => {
-                        let mut attrs = std::collections::HashMap::new();
-                        attrs.insert(
-                            "message".to_string(),
-                            Value::str("Cannot .elems a lazy list".to_string()),
-                        );
-                        let ex = Value::make_instance(Symbol::intern("X::Cannot::Lazy"), attrs);
-                        let mut err = RuntimeError::new("Cannot .elems a lazy list");
-                        err.exception = Some(Box::new(ex));
-                        return Some(Err(err));
-                    }
-                    Some(n) => return Some(Ok(Value::truth((idx as usize) < n))),
-                }
-            }
-            // An in-range slot of a mutable array may still be a hole — a
-            // deleted element or an unassigned gap — and raku reports those as
-            // absent. A shaped array is no exception: it is fixed-size, but
-            // `my @a[3]` starts with every slot unassigned, so `@a.EXISTS-POS(0)`
-            // is False until something is written there.
-            if let ValueView::Array(data, ..) = target.view() {
-                let i = idx as usize;
-                return Some(Ok(Value::truth(i < data.len() && !data.hole_at(i))));
-            }
-            if let Some(items) = target.as_list_items() {
-                return Some(Ok(Value::truth((idx as usize) < items.len())));
-            }
             // `Any.EXISTS-POS`: a non-Positional value is a one-element list
             // holding itself under a positional subscript, so index 0 is the
             // only one that exists. The Associative containers are included —
@@ -2273,37 +2236,4 @@ pub(crate) fn native_method_1arg(
         }
         _ => None,
     }
-}
-
-/// The 0-based `n`th element of a Range, or Nil when `idx` is past the end.
-/// An infinite integer range (`a..*`) is indexed arithmetically; every other
-/// range materializes its (finite) element list.
-fn range_at_pos(range: &Value, idx: usize) -> Value {
-    if crate::value::flat::is_infinite_range(range) {
-        // Element `idx` of an unbounded range of any element type: `first +
-        // idx` for a numeric start, `idx` `.succ` steps otherwise.
-        let Some(first) = crate::runtime::unbounded_range::first(range) else {
-            return Value::NIL;
-        };
-        if let Some(v) = crate::runtime::unbounded_range::nth(&first, idx) {
-            return v;
-        }
-        let mut steps = crate::runtime::unbounded_range::Steps::new(range);
-        return steps
-            .as_mut()
-            .and_then(|s| s.take(idx + 1).pop())
-            .unwrap_or(Value::NIL);
-    }
-    crate::runtime::value_to_list(range)
-        .get(idx)
-        .cloned()
-        .unwrap_or(Value::NIL)
-}
-
-/// Number of elements in a Range, or None when the range is infinite.
-fn range_elem_count(range: &Value) -> Option<usize> {
-    if crate::value::flat::is_infinite_range(range) {
-        return None;
-    }
-    Some(crate::runtime::value_to_list(range).len())
 }

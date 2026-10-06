@@ -560,17 +560,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             };
             match target.view() {
-                // An unbounded range of any element type stays lazy: a lazy
-                // List for `.list`, a lazy Array for `.Array` (Rakudo:
-                // `(1..*).list.^name` is `List`, `(1.5..*).Array.is-lazy`).
-                // Cost: O(1).
-                _ if let Some(ll) = crate::runtime::unbounded_range::lazy_list(target) => {
-                    let ll = if want_array {
-                        ll.with_array_context()
-                    } else {
-                        ll.with_list_context()
-                    };
-                    Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))))
+                // A Range's elements: the `Range.list` row's implementation
+                // (`method_table::range`).
+                _ if target.is_range() => {
+                    crate::builtins::method_table::range::listify(target, want_array)
                 }
                 ValueView::Instance {
                     class_name,
@@ -614,39 +607,6 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         Some(ValueView::Array(items, ..)) => items.to_vec(),
                         _ => Vec::new(),
                     };
-                    Some(Ok(wrap(items)))
-                }
-                ValueView::Range(a, b) => {
-                    if b == i64::MAX || a == i64::MIN {
-                        // Infinite range → convert to lazy array (supports indexing + .Capture throws)
-                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
-                    } else {
-                        Some(Ok(wrap((a..=b).map(Value::int).collect())))
-                    }
-                }
-                ValueView::RangeExcl(a, b) => {
-                    if b == i64::MAX || a == i64::MIN {
-                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
-                    } else {
-                        Some(Ok(wrap((a..b).map(Value::int).collect())))
-                    }
-                }
-                ValueView::RangeExclStart(a, b) => {
-                    if b == i64::MAX || a == i64::MIN {
-                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
-                    } else {
-                        Some(Ok(wrap((a + 1..=b).map(Value::int).collect())))
-                    }
-                }
-                ValueView::RangeExclBoth(a, b) => {
-                    if b == i64::MAX || a == i64::MIN {
-                        Some(Ok(crate::runtime::utils::coerce_to_array(target.clone())))
-                    } else {
-                        Some(Ok(wrap((a + 1..b).map(Value::int).collect())))
-                    }
-                }
-                ValueView::GenericRange { .. } => {
-                    let items = crate::runtime::utils::value_to_list(target);
                     Some(Ok(wrap(items)))
                 }
                 ValueView::Instance {
