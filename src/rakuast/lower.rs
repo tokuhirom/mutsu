@@ -4533,13 +4533,22 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     let index_node = named_child(postfix, "index")?;
                     let is_positional =
                         matches!(postfix.class, RakuAstClass::PostcircumfixArrayIndex);
-                    // `@a[0;1]`: a `SemiList` of several statements.
+                    // `@a[]` / `%h{}`: a subscript of no dimensions.
                     if postfix.class != RakuAstClass::PostcircumfixLiteralHashIndex
-                        && index_node.fields.len() > 1
+                        && index_node.fields.is_empty()
                     {
                         if named_child(postfix, "assignee").is_ok()
                             || list_field(postfix, "colonpairs").is_ok_and(|c| !c.is_empty())
                         {
+                            return Err(unsupported(postfix));
+                        }
+                        return Ok(Expr::ZenSlice(Box::new(operand)));
+                    }
+                    // `@a[0;1]`: a `SemiList` of several statements.
+                    if postfix.class != RakuAstClass::PostcircumfixLiteralHashIndex
+                        && index_node.fields.len() > 1
+                    {
+                        if named_child(postfix, "assignee").is_ok() {
                             return Err(unsupported(postfix));
                         }
                         let mut dimensions = Vec::with_capacity(index_node.fields.len());
@@ -4550,11 +4559,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                             }
                             dimensions.push(lower_expr(named_child(statement, "expression")?)?);
                         }
-                        return Ok(Expr::MultiDimIndex {
-                            target: Box::new(operand),
-                            dimensions,
-                            is_positional,
-                        });
+                        return super::subscript_adverb::lower(
+                            Expr::MultiDimIndex {
+                                target: Box::new(operand),
+                                dimensions,
+                                is_positional,
+                            },
+                            postfix,
+                        );
                     }
                     let index = if postfix.class == RakuAstClass::PostcircumfixLiteralHashIndex {
                         lower_expr(index_node)?

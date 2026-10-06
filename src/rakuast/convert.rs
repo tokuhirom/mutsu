@@ -3249,6 +3249,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             dimensions,
             is_positional,
         } => subscript_dims_node(target, dimensions, *is_positional, None, Vec::new()),
+        // `@a[]` / `%h{}`: a subscript with no dimension at all.
+        Expr::ZenSlice(target) => subscript_dims_node(
+            target,
+            &[],
+            !matches!(&**target, Expr::HashVar(_)),
+            None,
+            Vec::new(),
+        ),
         // `@a[0;1] = 5` keeps an `Assignment` infix over the subscript.
         Expr::MultiDimIndexAssign {
             target,

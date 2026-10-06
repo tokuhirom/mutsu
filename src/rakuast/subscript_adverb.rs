@@ -17,7 +17,7 @@
 //! expansion back with `ast::subscript_adverb::adverbs`, and lowering rebuilds
 //! it with `ast::subscript_adverb::expand`.
 
-use super::convert::{colonpair_value_expr, leaf_field, subscript_node};
+use super::convert::{colonpair_value_expr, leaf_field, subscript_dims_node};
 use super::lower::{list_field, lower_expr, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
@@ -35,20 +35,27 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
         return None;
     }
     let (subscript, adverbs) = subscript_adverb::adverbs(expr)?;
-    let Expr::Index {
-        target,
-        index,
-        is_positional,
-    } = &subscript
-    else {
-        return None;
+    let (target, dims, is_positional) = match &subscript {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+        } => (target, std::slice::from_ref(&**index), *is_positional),
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => (target, dimensions.as_slice(), *is_positional),
+        _ => return None,
     };
     Some(
         adverbs
             .iter()
             .map(colonpair)
             .collect::<Result<Vec<_>, _>>()
-            .and_then(|colonpairs| subscript_node(target, index, *is_positional, None, colonpairs)),
+            .and_then(|colonpairs| {
+                subscript_dims_node(target, dims, is_positional, None, colonpairs)
+            }),
     )
 }
 

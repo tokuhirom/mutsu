@@ -9,13 +9,15 @@ use Test;
 # - `@a[0;1]` / `%h{1;2}` is the same postcircumfix as `@a[0]` with one
 #   `SemiList` statement per dimension, and an assignment to it an `ApplyInfix`
 #   over an `Assignment`;
+# - `@a[0;1]:exists` is the same postcircumfix with a `ColonPair::True` among its
+#   `colonpairs`, and a zen slice `@a[]` one with no dimension at all;
 # - `$::($n)` / `@::($n)` is a `Var::Package` over a dynamic name, and `$::($n) = 5`
 #   an `ApplyInfix` over `Assignment(:item)`.
 #
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 45;
+plan 53;
 
 sub exprs($src) { ('my ($o, $n, $c); my @a; my %h; sub f(|) { }; ' ~ $src).AST.statements.skip(4).map(*.expression) }
 sub same($src, $expected, $desc) {
@@ -57,6 +59,15 @@ sub same($src, $expected, $desc) {
     isa-ok $s.left.postfix, RakuAST::Postcircumfix::ArrayIndex, 'to the subscript';
 }
 
+# --- adverbs on a multi-dimensional subscript, zen slices
+{
+    my $e = exprs(Q[@a[0;1]:exists])[0];
+    isa-ok $e.postfix, RakuAST::Postcircumfix::ArrayIndex, 'a multi-dimensional subscript with an adverb';
+    isa-ok $e.postfix.colonpairs[0], RakuAST::ColonPair::True, 'has its colonpair';
+    is $e.postfix.colonpairs[0].key, 'exists', 'named `exists`';
+    is exprs(Q[@a[]])[0].postfix.index.statements.elems, 0, 'a zen slice has no dimension';
+}
+
 # --- symbolic dereference
 {
     my $d = exprs(Q[$::($n)])[0];
@@ -91,3 +102,7 @@ my $heredoc = ['my $x = 5;', 'my $a = qq:to/EOT/;', '  v=$x and {$x + 1}', '  EO
 same $heredoc, "v=5 and 6\n", 'an interpolating heredoc';
 my $plain = ['my $x = 5;', 'my $a = q:to/EOT/;', '  plain $x', '  EOT', '$a'].join("\n");
 same $plain, "plain \$x\n", 'a plain heredoc';
+same Q[my @a = [[1, 2], [3, 4]]; (@a[0;1]:exists, @a[5;5]:exists).join(",")], 'True,False', 'a multi-dimensional `:exists`';
+same Q[my @z = 1, 2, 3; @z[].elems], 3, 'a zen slice of an array';
+same Q[my %hz = a => 1; %hz{}.elems], 1, 'a zen slice of a hash';
+same Q[my $h = {:x}; $h<x>.Str], 'True', 'a hash literal with a value-less colonpair';

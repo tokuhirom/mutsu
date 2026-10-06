@@ -368,8 +368,13 @@ fn exists_secondary_adverb(adverb: ExistsAdverb) -> Option<Adverb> {
 /// it, and `:delete` applies to whichever read the others build.
 // Cost: O(n), n = AST nodes under `subscript` and the adverb values (cloned once).
 pub(crate) fn expand(subscript: Expr, adverbs: &[Adverb]) -> Option<Expr> {
-    if !matches!(subscript, Expr::Index { .. }) {
-        return None;
+    match &subscript {
+        Expr::Index { .. } => {}
+        // A multi-dimensional subscript takes `:exists` and the value adverbs
+        // here; its `:delete` is a by-name builtin of its own the parser
+        // builds, which is not modelled.
+        Expr::MultiDimIndex { .. } if !adverbs.iter().any(|(key, _)| key == "delete") => {}
+        _ => return None,
     }
     let mut exists = None;
     let mut delete = None;
