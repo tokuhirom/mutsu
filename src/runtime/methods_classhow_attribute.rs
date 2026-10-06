@@ -460,6 +460,11 @@ impl Interpreter {
                     .push(role);
                 continue;
             }
+            // `is box_target` is CORE's own attribute trait. The declaration
+            // site already recorded it (`runtime::box_target`); no handler runs.
+            if kind == "is" && trait_name == "box_target" {
+                continue;
+            }
             let trait_mod_name = format!("trait_mod:<{}>", kind);
             // The trait multi may be declared in an ENCLOSING package's body:
             // META6 declares `multi sub trait_mod:<is>(Attribute, Optionality

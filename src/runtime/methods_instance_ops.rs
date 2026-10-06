@@ -3080,8 +3080,19 @@ impl Interpreter {
                 // the honest name without a body would make `BODY_OF`
                 // dereference whatever `.WHERE` returned. A live handle already
                 // answers `CStruct` through `try_native_handle_repr_where`.
+                // A `NativeCall`-REPR instance (upstream's `Callsite`) is its
+                // callsite whole, so unlike a Raku-built CStruct it has no
+                // body for `.REPR` to under-report.
                 let class = match target.view() {
                     ValueView::Package(name) => Some(name.resolve()),
+                    ValueView::Instance { class_name, .. }
+                        if self
+                            .registry()
+                            .nativecall_classes
+                            .contains(class_name.as_str()) =>
+                    {
+                        Some(class_name.resolve())
+                    }
                     _ => None,
                 };
                 match class.as_deref().and_then(|c| self.declared_class_repr(c)) {
