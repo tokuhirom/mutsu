@@ -686,35 +686,43 @@ first commit's inventory, taken with
 `scripts/method-rows-report.py --inventory collections,"quant hashes"`; later commits tick
 families off and the closing paragraph records what was deferred.
 
-**Inventory (unregistered recognition rows, 2026-10-06).** 544 rows over 116 distinct names:
+**Inventory (unregistered recognition rows, 2026-10-06).** 544 recognition rows over 116
+method names, of which only **354 can be registered**: a row's owner must be the type Rakudo
+declares the method on (`rows_are_declared_by_rakudo` enforces it against
+`rakudo_method_tables.txt`). The other 190 (`Array.keys`, `Hash.Str`, `Any.say`, ...) are
+*inherited-only*: Rakudo declares the method on an ancestor, so the call is served by the
+ancestor's row once the receiver's shape inherits it, and the recognition row simply
+disappears with the table in slice 5. `--inventory` prints both counts.
 
-| owner | rows | Pure | Interp | Mut |
-|---|---:|---:|---:|---:|
-| Any | 43 | 20 | 23 | 0 |
-| List | 49 | 31 | 3 | 15 |
-| Array | 75 | 56 | 4 | 15 |
-| Hash | 43 | 39 | 2 | 2 |
-| Map | 19 | 19 | 0 | 0 |
-| Range | 40 | 40 | 0 | 0 |
-| Seq | 37 | 37 | 0 | 0 |
-| Pair | 38 | 38 | 0 | 0 |
-| Capture | 18 | 18 | 0 | 0 |
-| Junction, Nil, Iterable | 7 | 7 | 0 | 0 |
-| Set, SetHash | 53 | 53 | 0 | 0 |
-| Bag, BagHash | 62 | 59 | 1 | 2 |
-| Mix, MixHash | 60 | 59 | 1 | 0 |
-| **total** | **544** | **476** | **34** | **34** |
+| owner | declared | Pure | Interp | Mut | inherited-only |
+|---|---:|---:|---:|---:|---:|
+| Any | 21 | 7 | 14 | 0 | 22 |
+| List | 25 | 18 | 0 | 7 | 24 |
+| Array | 19 | 11 | 0 | 8 | 56 |
+| Hash | 13 | 9 | 2 | 2 | 30 |
+| Map | 19 | 19 | 0 | 0 | 0 |
+| Range | 32 | 32 | 0 | 0 | 8 |
+| Seq | 26 | 26 | 0 | 0 | 11 |
+| Pair | 17 | 17 | 0 | 0 | 21 |
+| Capture | 18 | 18 | 0 | 0 | 0 |
+| Junction, Nil, Iterable | 4 | 4 | 0 | 0 | 3 |
+| Set, SetHash | 48 | 48 | 0 | 0 | 5 |
+| Bag, BagHash | 57 | 54 | 1 | 2 | 5 |
+| Mix, MixHash | 55 | 54 | 1 | 0 | 5 |
+| **total** | **354** | **317** | **18** | **19** | **190** |
 
-The recognition table flags 34 rows `MUTATES_RECEIVER`. Twenty of them really write the
-receiver (`push`, `pop`, `shift`, `unshift`, `append`, `prepend`, `splice` and `rotate` on
-`List` and `Array`, `push` and `append` on `Hash`, `BagHash.add` and `remove`) and move in 3F
-with `Handler::Mut`. The other fourteen (`map`, `grep`, `reduce`, `produce`, `rotor`,
-`categorize` and `classify` on `List` and `Array`) call a closure and do not write the
-receiver: the flag is the 2026-08-10 planning estimate, so this slice re-classifies them as
-interpreter rows (family 9). That leaves 524 rows for 3C, cut by method name, not by owner (ADR
-§10.3 rule 3): one handler answers a name for every owner and shape that has it, and the
-cascade arms for that name go, or shrink to the other groups' receivers for a name several
-groups share (`gist`, `Str`, `Numeric`, ...).
+The recognition table flags 34 rows `MUTATES_RECEIVER`; 19 of them are declared rows. The
+rows that really write the receiver (`push`, `pop`, `shift`, `unshift`, `append`, `prepend`,
+`splice` and `rotate` on `List` and `Array`, `push` and `append` on `Hash`, `BagHash.add` and
+`remove`) move in 3F with `Handler::Mut`. The others (`map`, `grep`, `reduce`, `produce`,
+`rotor`, `categorize` and `classify` on `List` and `Array`) call a closure and do not write the
+receiver: the flag is the 2026-08-10 planning estimate, and each is inherited from `Any`'s
+interpreter row anyway. That leaves **335 declared rows for 3C** (317 Pure, 18 Interp), cut by
+method name, not by owner (ADR §10.3 rule 3): one handler answers a name for every owner and
+shape that has it, and the cascade arms for that name go, or shrink to the other groups'
+receivers for a name several groups share (`gist`, `Str`, `Numeric`, ...). `Any.say`, `put`,
+`print`, `note`, `HOW`, `WHAT`, `WHY`, `defined`, `not`, `so` and `self` are declared on `Mu`
+and belong to 3D.
 
 **Families (one commit each, with its focused test).** The by-name table is the checklist:
 
@@ -733,10 +741,9 @@ groups share (`gist`, `Str`, `Numeric`, ...).
    `minmax`, `sum`, `permutations`, `combinations`.
 7. *Laziness markers*: `hyper`, `race`, `lazy`, `eager`, `iterator`.
 8. *Range specifics*: `bounds`, `in-range`, `infinite`, `int-bounds`, `is-int`, `rand`.
-9. *Interpreter rows* (`Handler::Interp`, the closure-calling and output methods on `Any`):
+9. *Interpreter rows* (`Handler::Interp`, the closure-calling methods `Any` declares):
    `map`, `grep`, `first`, `reduce`, `produce`, `classify`, `categorize`, `rotor`, `skip`,
-   `match`, `say`, `print`, `put`, `note`, `HOW`, `WHAT`, `WHY`, `categorize-list`,
-   `classify-list`.
+   `match`, `iterator`, `eager`, `splice`, `squish`, `categorize-list`, `classify-list`.
 
 **What the slice has to decide.** The `Seq` shape (a method decides whether it consumes the
 `Seq`) is added with the first row `Seq` owns. The ancestor rows are audited, and the shape

@@ -175,35 +175,64 @@ def arm_files_by_name():
     return files_of
 
 
+def declared_by_rakudo():
+    """`owner -> {method names}` Rakudo declares in the type's own method table (the oracle snapshot)."""
+    declared = {}
+    path = os.path.join(ROOT, "src/builtins/rakudo_method_tables.txt")
+    for line in open(path, encoding="utf-8"):
+        fields = line.rstrip("\n").split("\t")
+        if fields[0] == "declared":
+            declared[fields[1]] = set(fields[2:])
+    return declared
+
+
 def report_inventory(args):
     """A slice's first commit (ADR §10.4): every recognition row of its owners that has no registered row.
 
     `--inventory` takes owner names or group names (see GROUPS), comma-separated. The rows are
     printed per owner, then per method name, which is how a slice cuts its families: one handler
     answers a name for every owner and shape that has it, and the cascade arms for that name go.
+
+    Only a pair Rakudo *declares* on the owner can be registered there (the unit test
+    `rows_are_declared_by_rakudo` enforces it). The others (`Array.keys`, declared on `List`)
+    are `inherited`: they are served by the ancestor's row once the receiver's shape inherits it.
     """
     owners = []
     for item in args.inventory.split(","):
         owners += GROUPS[item].split() if item in GROUPS else [item]
     registered, _raw = registered_rows(args)
     have = {(owner, name) for owner, name, *_ in registered}
+    declared = declared_by_rakudo()
     files_of = arm_files_by_name()
     per_owner = collections.defaultdict(list)
     per_name = collections.defaultdict(list)
     for (owner, name), (arity_bits, flag_bits) in sorted(recognition_rows().items()):
         if owner in owners and (owner, name) not in have:
             kind = kind_of(arity_bits, flag_bits)
-            per_owner[owner].append((name, kind))
-            per_name[name].append((owner, kind))
-    print("== Inventory: unregistered rows per owner ==")
+            is_declared = name in declared.get(owner, ())
+            per_owner[owner].append((name, kind, is_declared))
+            per_name[name].append((owner, kind, is_declared))
+    print("== Inventory: unregistered rows per owner (declared = Rakudo declares it there) ==")
+    total = collections.Counter()
     for owner in owners:
-        kinds = collections.Counter(kind for _name, kind in per_owner[owner])
-        print(f"{owner:10} {len(per_owner[owner]):4d}  " + " ".join(f"{k} {kinds[k]}" for k in sorted(kinds)))
-    print(f"total {sum(len(rows) for rows in per_owner.values())} rows, {len(per_name)} distinct names")
-    print("\n== Inventory: per method name (rows, kinds, owners; cascade files that hold an arm) ==")
+        kinds = collections.Counter(kind for _name, kind, is_declared in per_owner[owner] if is_declared)
+        inherited = sum(1 for _name, _kind, is_declared in per_owner[owner] if not is_declared)
+        total.update(kinds)
+        total["inherited"] += inherited
+        print(
+            f"{owner:10} declared {sum(kinds.values()):4d}  "
+            + " ".join(f"{k} {kinds[k]}" for k in sorted(kinds))
+            + f"   inherited-only {inherited}"
+        )
+    print(f"total declared {sum(v for k, v in total.items() if k != 'inherited')}, inherited-only {total['inherited']}, {len(per_name)} distinct names")
+    print("\n== Inventory: per method name (declared rows, kinds, owners; inherited-only owners in brackets; cascade files with an arm) ==")
     for name, rows in sorted(per_name.items(), key=lambda item: (-len(item[1]), item[0])):
-        kinds = "".join(sorted({kind[0] for _owner, kind in rows}))
-        print(f"{name:16} {len(rows):3d} {kinds:3} {' '.join(o for o, _k in rows)}  [{','.join(sorted(files_of.get(name, [])))}]")
+        declared_rows = [(o, k) for o, k, d in rows if d]
+        inherited_owners = [o for o, _k, d in rows if not d]
+        kinds = "".join(sorted({k[0] for _o, k in declared_rows})) or "-"
+        owners_text = " ".join(o for o, _k in declared_rows)
+        extra = f" [{' '.join(inherited_owners)}]" if inherited_owners else ""
+        print(f"{name:16} {len(declared_rows):3d} {kinds:3} {owners_text}{extra}  <{','.join(sorted(files_of.get(name, [])))}>")
 
 
 def main():
