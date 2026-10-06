@@ -539,9 +539,6 @@ pub(super) fn dispatch(
                     None
                 }
             }
-            ValueView::Bag(_, _) => Some(Ok(Value::package(Symbol::intern("UInt")))),
-            ValueView::Set(_, _) => Some(Ok(Value::package(Symbol::intern("Bool")))),
-            ValueView::Mix(_, _) => Some(Ok(Value::package(Symbol::intern("Real")))),
             _ => None,
         }),
         "keyof" => Some(match target.view() {

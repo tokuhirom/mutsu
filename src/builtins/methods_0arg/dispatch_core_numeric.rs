@@ -121,9 +121,10 @@ pub(super) fn dispatch(
             }
             let result = match target.view() {
                 ValueView::Hash(items) => Value::int(items.len() as i64),
-                ValueView::Set(items, _) => Value::int(items.len() as i64),
-                ValueView::Bag(items, _) => Value::int(items.len() as i64),
-                ValueView::Mix(items, _) => Value::int(items.len() as i64),
+                // The quant hashes' rows' implementation (`method_table::quanthash`).
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                    return Some(crate::builtins::method_table::quanthash::elems(target, &[]));
+                }
                 ValueView::Junction { values, .. } => Value::int(values.len() as i64),
                 ValueView::Instance {
                     class_name,
@@ -208,8 +209,6 @@ pub(super) fn dispatch(
                 ValueView::Array(..) | ValueView::Hash(..) => {
                     Value::package(crate::symbol::wk::any())
                 }
-                ValueView::Set(..) => Value::FALSE,
-                ValueView::Bag(..) | ValueView::Mix(..) => Value::int(0),
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))

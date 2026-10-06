@@ -725,8 +725,7 @@ impl Interpreter {
 // Cost: O(e), e = entries of a Bag/Mix (one pass summing the weights); O(1) otherwise.
 fn baggy_total(value: Value) -> Value {
     if matches!(value.view(), ValueView::Bag(..) | ValueView::Mix(..))
-        && let Some(Ok(total)) =
-            crate::builtins::methods_0arg::collection::dispatch(&value, "total")
+        && let Some(Ok(total)) = crate::builtins::method_table::quanthash::total(&value, &[])
     {
         return total;
     }

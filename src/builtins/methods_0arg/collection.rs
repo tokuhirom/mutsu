@@ -184,11 +184,11 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
     match method {
         "hash" => {
             match target.view() {
-                // One implementation with `.Hash` (and the hyper ops):
-                // `map_hash_coerce::to_hash`.
-                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => Some(
-                    crate::builtins::map_hash_coerce::to_hash(target.clone(), false),
-                ),
+                // One implementation with `.Hash` (and the hyper ops), shared
+                // with the quant hashes' rows (`method_table::quanthash`).
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                    crate::builtins::method_table::quanthash::hash(target, &[])
+                }
                 // A package stash is a Map of its symbols (`Foo::.hash`,
                 // `%(Foo::EXPORT::DEFAULT::)`); one implementation with `.Hash`.
                 ValueView::Instance { .. }
@@ -296,14 +296,8 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Array(..) => {
                     Some(crate::builtins::method_table::list::keys(target, &[]))
                 }
-                ValueView::Set(s, _) => {
-                    Some(Ok(Value::seq(s.iter().map(|k| s.typed_key(k)).collect())))
-                }
-                ValueView::Bag(b, _) => {
-                    Some(Ok(Value::seq(b.keys().map(|k| b.typed_key(k)).collect())))
-                }
-                ValueView::Mix(m, _) => {
-                    Some(Ok(Value::seq(m.keys().map(|k| m.typed_key(k)).collect())))
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                    crate::builtins::method_table::quanthash::keys(target, &[])
                 }
                 ValueView::Package(_) => None, // let runtime handle (may be enum type)
                 _ if target.is_range() => Some(Ok(Value::seq(positional_keys(
@@ -349,17 +343,9 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Array(..) => {
                     Some(crate::builtins::method_table::list::values(target, &[]))
                 }
-                ValueView::Set(s, _) => {
-                    Some(Ok(Value::seq(s.iter().map(|_| Value::TRUE).collect())))
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                    crate::builtins::method_table::quanthash::values(target, &[])
                 }
-                ValueView::Bag(b, _) => Some(Ok(Value::seq(
-                    b.values().map(|v| Value::from_bigint(v.clone())).collect(),
-                ))),
-                ValueView::Mix(m, _) => Some(Ok(Value::seq(
-                    m.values()
-                        .map(|v| crate::value::mix_weight_to_value(*v))
-                        .collect(),
-                ))),
                 ValueView::Package(_) => None, // let runtime handle (may be enum type)
                 _ if target.is_range() => {
                     Some(Ok(Value::seq(crate::runtime::utils::value_to_list(target))))
@@ -402,29 +388,8 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // Index/value pairs of the array's own elements, itemization-agnostic
                 // (an itemized `$[...]` must not collapse to one element).
                 ValueView::Array(..) => Some(crate::builtins::method_table::list::kv(target, &[])),
-                ValueView::Set(s, _) => {
-                    let mut kv = Vec::new();
-                    for k in s.iter() {
-                        kv.push(s.typed_key(k));
-                        kv.push(Value::TRUE);
-                    }
-                    Some(Ok(Value::seq(kv)))
-                }
-                ValueView::Bag(b, _) => {
-                    let mut kv = Vec::new();
-                    for (k, v) in b.iter() {
-                        kv.push(b.typed_key(k));
-                        kv.push(Value::from_bigint(v.clone()));
-                    }
-                    Some(Ok(Value::seq(kv)))
-                }
-                ValueView::Mix(m, _) => {
-                    let mut kv = Vec::new();
-                    for (k, v) in m.iter() {
-                        kv.push(m.typed_key(k));
-                        kv.push(crate::value::mix_weight_to_value(*v));
-                    }
-                    Some(Ok(Value::seq(kv)))
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                    crate::builtins::method_table::quanthash::kv(target, &[])
                 }
                 ValueView::Instance { class_name, .. }
                     if crate::value::types::is_stash_class_name(&class_name.resolve()) =>
@@ -479,33 +444,9 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
             match target.view() {
                 ValueView::Hash(_) => Some(crate::builtins::method_table::map::pairs(target, &[])),
-                ValueView::Set(s, _) => Some(Ok(Value::seq(
-                    s.iter()
-                        .map(|k| {
-                            crate::runtime::utils::quanthash_typed_pair(s.typed_key(k), Value::TRUE)
-                        })
-                        .collect(),
-                ))),
-                ValueView::Bag(b, _) => Some(Ok(Value::seq(
-                    b.iter()
-                        .map(|(k, v)| {
-                            crate::runtime::utils::quanthash_typed_pair(
-                                b.typed_key(k),
-                                Value::from_bigint(v.clone()),
-                            )
-                        })
-                        .collect(),
-                ))),
-                ValueView::Mix(m, _) => Some(Ok(Value::seq(
-                    m.iter()
-                        .map(|(k, v)| {
-                            crate::runtime::utils::quanthash_typed_pair(
-                                m.typed_key(k),
-                                crate::value::mix_weight_to_value(*v),
-                            )
-                        })
-                        .collect(),
-                ))),
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                    crate::builtins::method_table::quanthash::pairs(target, &[])
+                }
                 ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => {
                     Some(Ok(Value::seq(vec![target.clone()])))
                 }
@@ -595,31 +536,9 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ValueView::Hash(_) => {
                     Some(crate::builtins::method_table::map::antipairs(target, &[]))
                 }
-                ValueView::Bag(items, _) => Some(Ok(Value::seq(
-                    items
-                        .iter()
-                        .map(|(k, v)| {
-                            Value::value_pair(Value::from_bigint(v.clone()), items.typed_key(k))
-                        })
-                        .collect(),
-                ))),
-                ValueView::Set(items, _) => Some(Ok(Value::seq(
-                    items
-                        .iter()
-                        .map(|k| Value::value_pair(Value::TRUE, items.typed_key(k)))
-                        .collect(),
-                ))),
-                ValueView::Mix(items, _) => Some(Ok(Value::seq(
-                    items
-                        .iter()
-                        .map(|(k, v)| {
-                            Value::value_pair(
-                                crate::value::mix_weight_to_value(*v),
-                                items.typed_key(k),
-                            )
-                        })
-                        .collect(),
-                ))),
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                    crate::builtins::method_table::quanthash::antipairs(target, &[])
+                }
                 ValueView::Capture { positional, named } => {
                     let mut pairs: Vec<Value> = positional
                         .iter()
@@ -647,26 +566,6 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             }
         }
         "kxxv" => match target.view() {
-            ValueView::Bag(items, _) => {
-                let mut result = Vec::new();
-                for (k, count) in items.iter() {
-                    let count = crate::runtime::utils::bigint_to_i64_sat(count);
-                    for _ in 0..count {
-                        result.push(items.typed_key(k));
-                    }
-                }
-                Some(Ok(Value::array(result)))
-            }
-            ValueView::Mix(items, _) => {
-                let mut result = Vec::new();
-                for (k, weight) in items.iter() {
-                    let count = weight.floor() as i64;
-                    for _ in 0..count.max(0) {
-                        result.push(items.typed_key(k));
-                    }
-                }
-                Some(Ok(Value::array(result)))
-            }
             ValueView::Set(items, _) => {
                 // Set is like Bag with all counts = 1
                 Some(Ok(Value::array(
@@ -735,36 +634,6 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             }
         },
-        // `Baggy.Numeric` / `Mix.Numeric` are the total weight, i.e. `.total`.
-        // Cost: O(e), e = entries of the invocant (one pass over the weights).
-        "total" | "Numeric"
-            if matches!(method, "total")
-                || matches!(target.view(), ValueView::Bag(..) | ValueView::Mix(..)) =>
-        {
-            match target.view() {
-                ValueView::Set(s, _) => Some(Ok(Value::int(s.len() as i64))),
-                ValueView::Bag(b, _) => Some(Ok(Value::from_bigint(
-                    b.values().sum::<num_bigint::BigInt>(),
-                ))),
-                ValueView::Mix(m, _) => {
-                    // Sort values before summing to ensure deterministic results
-                    // regardless of HashMap iteration order: a weight that only
-                    // decodes to `Num` still sums non-associatively (e.g.
-                    // 1.1+1.1+3.3+3.3 vs 1.1+3.3+1.1+3.3).
-                    let mut vals: Vec<f64> = m.values().copied().collect();
-                    vals.sort_by(|a, b| a.total_cmp(b));
-                    // Sum under the numeric tower and decode the total the same way
-                    // every other weight read-out does, so `.total` is `Int` for a
-                    // whole total and an exact `Rat` for a decimal one. The old
-                    // `f64_to_rat` reconstruction snapped anything within 1e-10 of a
-                    // whole number, turning `(a => 1.00000000001).Mix.total` into 1.
-                    Some(Ok(crate::value::mix_weight_to_value(
-                        crate::builtins::mix_weight::sum(vals),
-                    )))
-                }
-                _ => None,
-            }
-        }
         // These aggregate handlers are also the Any/List method-table rows.
         // Cost: O(e), e = elements and their minimum/maximum candidates.
         "minmax" => crate::builtins::method_table::list_aggregate::minmax(target, &[]),

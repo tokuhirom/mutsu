@@ -15,6 +15,7 @@ pub(crate) mod list_transform;
 pub(crate) mod map;
 pub(crate) mod pair;
 pub(crate) mod positional;
+pub(crate) mod quanthash;
 pub(crate) mod range;
 mod truth;
 
@@ -32,6 +33,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     map::ROWS,
     positional::ROWS,
     pair::ROWS,
+    quanthash::ROWS,
     range::ROWS,
     truth::ROWS,
 ];

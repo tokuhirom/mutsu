@@ -59,7 +59,7 @@ mod table;
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
 pub(crate) use collections::{
-    any_collection, list, list_aggregate, list_transform, map, pair, positional,
+    any_collection, list, list_aggregate, list_transform, map, pair, positional, quanthash,
 };
 pub(crate) use instances::temporal;
 pub(crate) use scalars::{
