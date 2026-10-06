@@ -1319,7 +1319,9 @@ impl Interpreter {
                     }
                     if changed && let (Some(mn), Some(mx)) = (&cur_min, &cur_max) {
                         let range = match (mn.view(), mx.view()) {
-                            (ValueView::Int(a), ValueView::Int(b)) => Value::range(a, b),
+                            (ValueView::Int(a), ValueView::Int(b)) => {
+                                crate::builtins::arith::range::int_range(a, b, false, false)
+                            }
                             _ => Value::generic_range(mn.clone(), mx.clone(), false, false),
                         };
                         results.push(range);

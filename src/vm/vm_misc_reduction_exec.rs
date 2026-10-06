@@ -367,7 +367,9 @@ impl Interpreter {
                                     let (lo, hi) = minmax_bounds_of_value(&acc);
                                     acc = match (lo.view(), hi.view()) {
                                         (ValueView::Int(l), ValueView::Int(h)) => {
-                                            Value::range(l, h)
+                                            crate::builtins::arith::range::int_range(
+                                                l, h, false, false,
+                                            )
                                         }
                                         _ => Value::generic_range(lo, hi, false, false),
                                     };

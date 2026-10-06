@@ -423,7 +423,7 @@ impl Interpreter {
             runtime::coerce_to_numeric(val)
         };
         let result = if let Some(i) = numeric.as_int() {
-            Value::range_excl(0, i)
+            crate::builtins::arith::range::int_range(0, i, false, true)
         } else if matches!(
             numeric.view(),
             ValueView::Num(_)
