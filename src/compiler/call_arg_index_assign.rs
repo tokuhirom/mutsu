@@ -27,7 +27,16 @@ impl Compiler {
         else {
             return None;
         };
-        if !Self::is_repeatable_subscript_part(target) || !Self::is_repeatable_subscript_part(index)
+        // Only a plain `@`/`%` aggregate (possibly nested): a scalar-rooted
+        // chain may be a user object whose `ASSIGN-POS` / `ASSIGN-KEY` result is
+        // the expression's value, which re-reading the element would discard.
+        let mut root = target.as_ref();
+        while let Expr::Index { target, .. } = root {
+            root = target;
+        }
+        if !matches!(root, Expr::ArrayVar(_) | Expr::HashVar(_))
+            || !Self::is_repeatable_subscript_part(target)
+            || !Self::is_repeatable_subscript_part(index)
         {
             return None;
         }
