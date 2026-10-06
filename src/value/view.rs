@@ -747,6 +747,14 @@ impl Value {
         self.0.is_string_pair()
     }
 
+    /// The [`crate::value::DispatchShape`] of the built-in type this type
+    /// object stands for (`Int` for `Package("Int")`), or `None` for any other
+    /// value. See `NanBox::type_object_shape`.
+    #[inline]
+    pub(crate) fn type_object_shape(&self) -> Option<crate::value::DispatchShape> {
+        self.0.type_object_shape()
+    }
+
     /// Whether a built-in method row declared `ANY_ARGS` may be handed this
     /// value as a positional argument (see `NanBox::is_plain_argument`). A
     /// pure tag probe (see [`Self::is_junction_value`]).

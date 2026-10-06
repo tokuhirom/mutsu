@@ -57,7 +57,7 @@
 //! handler has effects, so it is answered once, by the lane, in every build.
 
 use super::*;
-use crate::builtins::method_table::{self, RowId};
+use crate::builtins::method_table::{self, Receiver, RowId};
 
 /// A lane answer: the row's result, the row it came from, and the number of
 /// arguments above the receiver on the stack.
@@ -111,8 +111,8 @@ impl Interpreter {
             return None;
         }
         let base = self.stack.len().checked_sub(arity + 1)?;
-        let shape = self.stack[base].dispatch_shape()?;
-        if !method_table::shape_has_row(shape, code.const_sym(name_idx)) {
+        let receiver = Receiver::of(&self.stack[base])?;
+        if !method_table::shape_has_row(receiver, code.const_sym(name_idx)) {
             return None;
         }
         let sites = code.constants.len();
@@ -121,7 +121,7 @@ impl Interpreter {
         let row = match code.method_sites.cached(sites, idx, generation) {
             // The memo is keyed by the method name, which sites calling it
             // with another arity share, so the arity is part of the payload.
-            Some(payload) if payload_matches(payload, shape, arity) => {
+            Some(payload) if payload_matches(payload, receiver, arity) => {
                 let row = payload_row(payload)?;
                 if Self::is_array_hash_attr_twigil(Self::const_str(code, target_name_idx)) {
                     return None;
@@ -130,7 +130,7 @@ impl Interpreter {
             }
             _ => {
                 let resolved =
-                    self.resolve_method_site_lane(code, name_idx, target_name_idx, shape, arity);
+                    self.resolve_method_site_lane(code, name_idx, target_name_idx, receiver, arity);
                 let row = match resolved {
                     Resolved::Row(row) => Some(row),
                     Resolved::Miss => None,
@@ -138,7 +138,7 @@ impl Interpreter {
                 };
                 if self.dispatch.native_base_bypass.is_none() {
                     code.method_sites
-                        .remember(sites, idx, generation, pack(shape, arity, row));
+                        .remember(sites, idx, generation, pack(receiver, arity, row));
                 }
                 row?
             }
@@ -179,7 +179,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         target_name_idx: u32,
-        shape: crate::value::DispatchShape,
+        receiver: Receiver,
         arity: usize,
     ) -> Resolved {
         // A property of this site's receiver, not of the method: the memo,
@@ -194,7 +194,7 @@ impl Interpreter {
             return Resolved::Miss;
         }
         let method_sym = code.const_sym(name_idx);
-        let Some(row) = method_table::resolve(shape, method_sym, arity) else {
+        let Some(row) = method_table::resolve(receiver, method_sym, arity) else {
             return Resolved::Miss;
         };
         let Some(base) = self.stack.len().checked_sub(arity + 1) else {
@@ -360,17 +360,17 @@ enum Resolved {
 /// The row bits a memo payload holds for a remembered miss.
 const MISS_ROW_BITS: u16 = u16::MAX;
 
-/// The memo payload: the row (or a miss) for a receiver of `shape` called
-/// with `arity` arguments.
-fn pack(shape: crate::value::DispatchShape, arity: usize, row: Option<RowId>) -> u32 {
+/// The memo payload: the row (or a miss) for a `receiver` called with `arity`
+/// arguments.
+fn pack(receiver: Receiver, arity: usize, row: Option<RowId>) -> u32 {
     let row = row.map_or(MISS_ROW_BITS, RowId::to_bits);
     // `arity` is at most `MAX_LANE_ARITY`.
-    (u32::from(arity as u8) << 24) | (u32::from(shape as u8) << 16) | u32::from(row)
+    (u32::from(arity as u8) << 24) | (u32::from(receiver.to_bits()) << 16) | u32::from(row)
 }
 
-/// Whether a memo payload was filled for `shape` and `arity`.
-fn payload_matches(payload: u32, shape: crate::value::DispatchShape, arity: usize) -> bool {
-    payload >> 16 == (u32::from(arity as u8) << 8) | u32::from(shape as u8)
+/// Whether a memo payload was filled for `receiver` and `arity`.
+fn payload_matches(payload: u32, receiver: Receiver, arity: usize) -> bool {
+    payload >> 16 == (u32::from(arity as u8) << 8) | u32::from(receiver.to_bits())
 }
 
 /// The row a memo payload remembers, `None` for a remembered miss.

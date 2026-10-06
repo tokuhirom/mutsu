@@ -1,5 +1,6 @@
 use super::*;
-use crate::value::{RuntimeError, Value};
+use crate::symbol::Symbol;
+use crate::value::{DispatchShape, RuntimeError, Value};
 
 mod collections;
 mod ctors_mop;
@@ -28,7 +29,30 @@ fn sample(shape: DispatchShape) -> Value {
         DispatchShape::Rat => crate::value::make_rat(1, 3),
         DispatchShape::FatRat => Value::fat_rat_raw(1, 3),
         DispatchShape::Complex => Value::complex(1.0, 2.0),
+        DispatchShape::Bool => Value::TRUE,
+        DispatchShape::Range => Value::range(1, 3),
+        DispatchShape::Pair => Value::pair("a".to_string(), Value::int(1)),
+        DispatchShape::Capture => {
+            Value::capture(vec![Value::int(1)], crate::value::ValueMap::default())
+        }
+        DispatchShape::Version => Value::version_from_str("1.2.3"),
+        DispatchShape::Uni => Value::uni("NFC".to_string(), "ab".to_string()),
+        DispatchShape::Set => Value::set(["a".to_string()].into_iter().collect()),
+        DispatchShape::SetHash => Value::set_hash(["a".to_string()].into_iter().collect()),
+        DispatchShape::Bag => Value::bag([("a".to_string(), 2)].into_iter().collect()),
+        DispatchShape::BagHash => Value::bag_hash([("a".to_string(), 2)].into_iter().collect()),
+        DispatchShape::Mix => Value::mix([("a".to_string(), 1.5)].into_iter().collect()),
+        DispatchShape::MixHash => Value::mix_hash([("a".to_string(), 1.5)].into_iter().collect()),
+        DispatchShape::Date => crate::builtins::methods_0arg::temporal::make_date(2024, 3, 5),
+        DispatchShape::DateTime => {
+            crate::builtins::methods_0arg::temporal::make_datetime(2024, 3, 5, 7, 8, 9.0, 0)
+        }
     }
+}
+
+/// The row an instance of `shape` dispatches `method` to.
+fn lookup(shape: DispatchShape, method: Symbol, arity: u8) -> Option<&'static MethodRow> {
+    table::lookup(Receiver::instance(shape), method, arity)
 }
 
 fn rows() -> impl Iterator<Item = &'static MethodRow> {
@@ -37,7 +61,7 @@ fn rows() -> impl Iterator<Item = &'static MethodRow> {
 
 #[test]
 fn samples_have_their_shape() {
-    for shape in SHAPES {
+    for shape in DispatchShape::ALL {
         assert_eq!(sample(shape).dispatch_shape(), Some(shape));
     }
 }
@@ -62,7 +86,7 @@ fn no_row_is_registered_twice() {
 fn every_row_is_reached_and_answers() {
     for row in rows() {
         let mut reached = false;
-        for shape in SHAPES {
+        for shape in DispatchShape::ALL {
             let Some(found) = lookup(shape, Symbol::intern(row.name), row.arity) else {
                 continue;
             };
@@ -135,17 +159,96 @@ fn a_call_with_another_arity_takes_the_cascades() {
 /// The shape probe must refuse everything the receiver-state checks exist for.
 #[test]
 fn dispatch_shape_refuses_non_plain_receivers() {
+    let user_date = Value::make_instance(Symbol::intern("MyDate"), crate::value::AttrMap::new());
     for (what, value) in [
         ("a type object", Value::package(Symbol::intern("Any"))),
         ("a Seq", Value::seq(vec![Value::int(1)])),
-        ("a Bool", Value::TRUE),
         ("Nil", Value::NIL),
+        ("a user subclass instance", user_date),
     ] {
         assert_eq!(
             value.dispatch_shape(),
             None,
             "{what} must not take the table"
         );
+    }
+}
+
+/// A built-in class's own instance has a shape; a subclass of it, with
+/// another class name, has none.
+#[test]
+fn an_instance_has_a_shape_only_for_the_built_in_class() {
+    let date = Value::make_instance(Symbol::intern("Date"), crate::value::AttrMap::new());
+    assert_eq!(date.dispatch_shape(), Some(DispatchShape::Date));
+    let sub = Value::make_instance(Symbol::intern("Date::Sub"), crate::value::AttrMap::new());
+    assert_eq!(sub.dispatch_shape(), None);
+}
+
+/// A shape added after the first nine is closed: only rows its own type owns
+/// reach it, because an ancestor's row (`Any.elems`) was written for the
+/// shapes that existed.
+#[test]
+fn a_new_shape_reaches_only_its_own_rows() {
+    let elems = Symbol::intern("elems");
+    assert!(lookup(DispatchShape::Str, elems, 0).is_some());
+    for shape in DispatchShape::ALL {
+        if shape.inherits() {
+            continue;
+        }
+        assert!(
+            lookup(shape, elems, 0).is_none(),
+            "{shape:?} is closed but reached Any.elems"
+        );
+    }
+    for row in rows() {
+        for shape in DispatchShape::ALL {
+            let Some(found) = lookup(shape, Symbol::intern(row.name), row.arity) else {
+                continue;
+            };
+            if !shape.inherits() {
+                assert_eq!(
+                    found.owner,
+                    shape.type_name(),
+                    "{shape:?} reached a row its type does not own"
+                );
+            }
+        }
+    }
+}
+
+/// A type object is answered only by a row that says so, and only for a
+/// built-in type.
+#[test]
+fn a_type_object_answers_only_flagged_rows() {
+    let int = Value::package(Symbol::intern("Int"));
+    assert_eq!(int.dispatch_shape(), None);
+    assert_eq!(int.type_object_shape(), Some(DispatchShape::Int));
+    // `Int.Bool` is `False`, answered by a TYPE_OBJECT_OK row.
+    assert!(matches!(
+        try_dispatch(&int, Symbol::intern("Bool"), &[]),
+        Some(Ok(v)) if v == Value::FALSE
+    ));
+    // `Int.abs` has a row, but not for a type object.
+    assert!(try_dispatch(&int, Symbol::intern("abs"), &[]).is_none());
+    // A user class's type object has no shape.
+    let user = Value::package(Symbol::intern("MyClass"));
+    assert_eq!(user.type_object_shape(), None);
+    assert!(try_dispatch(&user, Symbol::intern("Bool"), &[]).is_none());
+    // The receiver of a type object and of an instance differ in the memo byte.
+    let instance = Receiver::instance(DispatchShape::Int);
+    let type_object = Receiver::type_object(DispatchShape::Int);
+    assert_ne!(instance.to_bits(), type_object.to_bits());
+}
+
+/// Every receiver packs into its own byte, so the call-site memo can tell
+/// them apart.
+#[test]
+fn receivers_pack_into_distinct_bytes() {
+    let mut seen = std::collections::HashSet::new();
+    for shape in DispatchShape::ALL {
+        for receiver in [Receiver::instance(shape), Receiver::type_object(shape)] {
+            assert!(seen.insert(receiver.to_bits()), "{receiver:?} collides");
+        }
     }
 }
 
@@ -188,15 +291,18 @@ fn the_name_test_knows_the_arity() {
 #[test]
 fn the_shape_test_knows_the_receiver() {
     assert!(
-        SHAPES.len() <= 16,
-        "a shape bit must fit Table::shapes' u16"
+        DispatchShape::ALL.len() <= 64,
+        "a shape bit must fit Table::shapes' u64"
     );
     let int = Symbol::intern("Int");
-    assert!(shape_has_row(DispatchShape::Int, int));
-    assert!(shape_has_row(DispatchShape::Rat, int));
-    assert!(!shape_has_row(DispatchShape::Str, int));
+    assert!(shape_has_row(Receiver::instance(DispatchShape::Int), int));
+    assert!(shape_has_row(Receiver::instance(DispatchShape::Rat), int));
+    assert!(!shape_has_row(Receiver::instance(DispatchShape::Str), int));
     // An inherited row sets the bit of the shape that reaches it.
-    assert!(shape_has_row(DispatchShape::Array, Symbol::intern("elems")));
+    assert!(shape_has_row(
+        Receiver::instance(DispatchShape::Array),
+        Symbol::intern("elems")
+    ));
 }
 
 /// A named argument is split from the positionals and handed to the row that
@@ -276,6 +382,7 @@ fn an_interpreter_row_needs_an_interpreter() {
     assert!(names_a_row(collate, 0));
     assert!(try_dispatch(&list, collate, &[]).is_none());
     assert!(answer(&list, collate, &[]).is_none());
-    let row = resolve(DispatchShape::List, collate, 0).expect("Any.collate resolves for a List");
+    let row = resolve(Receiver::instance(DispatchShape::List), collate, 0)
+        .expect("Any.collate resolves for a List");
     assert!(!super::row(row).handler.is_pure());
 }

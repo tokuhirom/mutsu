@@ -5,7 +5,10 @@ use super::*;
 #[test]
 fn counted_head_tail_rows_resolve_for_every_plain_shape() {
     for name in ["head", "tail"] {
-        for shape in SHAPES {
+        for shape in DispatchShape::ALL
+            .into_iter()
+            .filter(|shape| shape.inherits())
+        {
             assert_eq!(
                 lookup(shape, Symbol::intern(name), 1).unwrap().owner,
                 "Any",

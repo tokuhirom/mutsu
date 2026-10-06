@@ -13,7 +13,10 @@ pub(crate) mod list;
 pub(crate) mod list_aggregate;
 pub(crate) mod list_transform;
 pub(crate) mod map;
+pub(crate) mod pair;
 pub(crate) mod positional;
+pub(crate) mod range;
+mod truth;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
@@ -28,4 +31,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     list_transform::FLAT_ROWS,
     map::ROWS,
     positional::ROWS,
+    pair::ROWS,
+    range::ROWS,
+    truth::ROWS,
 ];

@@ -5,7 +5,7 @@
 //! positional ones, once, whichever entry the call came through. The checks a
 //! row's handler used to repeat (or silently skip) live here.
 
-use super::{Handler, MethodRow, Named, RowFlags, RowId, row, table};
+use super::{Handler, MethodRow, Named, Receiver, RowFlags, RowId, row, table};
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value};
@@ -122,8 +122,8 @@ fn dispatch(
     if !table.has_name(method, arity) {
         return None;
     }
-    let shape = target.dispatch_shape()?;
-    let id = super::resolve(shape, method, arity)?;
+    let receiver = Receiver::of(target)?;
+    let id = super::resolve(receiver, method, arity)?;
     let row = row(id);
     // The caller's veto, asked once the row is known and before the handler
     // runs: an interpreter row has effects, so it must not run and then be

@@ -32,8 +32,21 @@ macro_rules! real_rows {
         rows![$owner:
             "Int" => int,
             "Num" => num,
-            "Bool" => bool,
         ]
+    };
+}
+
+/// `Bool`, which Rakudo answers on a type object too: `Int.Bool` is `False`.
+macro_rules! bool_row {
+    ($owner:literal) => {
+        &[MethodRow {
+            owner: $owner,
+            name: "Bool",
+            arity: 0,
+            handler: Handler::Pure(bool),
+            flags: RowFlags::TYPE_OBJECT_OK,
+            named: &[],
+        }]
     };
 }
 
@@ -41,7 +54,11 @@ pub(super) static INT_ROWS: &[MethodRow] = real_rows!("Int");
 pub(super) static NUM_ROWS: &[MethodRow] = real_rows!("Num");
 pub(super) static RAT_ROWS: &[MethodRow] = real_rows!("Rat");
 pub(super) static FAT_RAT_ROWS: &[MethodRow] = real_rows!("FatRat");
-pub(super) static COMPLEX_ROWS: &[MethodRow] = rows!["Complex": "Bool" => bool];
+pub(super) static INT_BOOL: &[MethodRow] = bool_row!("Int");
+pub(super) static NUM_BOOL: &[MethodRow] = bool_row!("Num");
+pub(super) static RAT_BOOL: &[MethodRow] = bool_row!("Rat");
+pub(super) static FAT_RAT_BOOL: &[MethodRow] = bool_row!("FatRat");
+pub(super) static COMPLEX_BOOL: &[MethodRow] = bool_row!("Complex");
 
 fn int(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     int_of(target).ok_or_else(|| RuntimeError::new("Int: receiver is not a number"))
@@ -51,7 +68,8 @@ fn num(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     num_of(target).ok_or_else(|| RuntimeError::new("Num: receiver is not a number"))
 }
 
-/// `.Bool` on a number: whether it is non-zero (`NaN` is true).
+/// `.Bool` on a number: whether it is non-zero (`NaN` is true); on a type
+/// object (`Int.Bool`), `False`.
 // Cost: O(1).
 fn bool(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(Value::truth(target.truthy()))

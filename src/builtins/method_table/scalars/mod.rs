@@ -17,6 +17,8 @@ pub(crate) mod str_iter;
 pub(crate) mod str_search;
 mod stringify;
 pub(crate) mod succ_pred;
+pub(crate) mod truth;
+pub(crate) mod version;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
@@ -44,11 +46,18 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     coerce::NUM_ROWS,
     coerce::RAT_ROWS,
     coerce::FAT_RAT_ROWS,
-    coerce::COMPLEX_ROWS,
+    coerce::INT_BOOL,
+    coerce::NUM_BOOL,
+    coerce::RAT_BOOL,
+    coerce::FAT_RAT_BOOL,
+    coerce::COMPLEX_BOOL,
     succ_pred::STR_ROWS,
     succ_pred::INT_ROWS,
     succ_pred::NUM_ROWS,
     succ_pred::RAT_ROWS,
     succ_pred::FAT_RAT_ROWS,
     succ_pred::COMPLEX_ROWS,
+    truth::BOOL_ROWS,
+    truth::UNI_ROWS,
+    version::ROWS,
 ];
