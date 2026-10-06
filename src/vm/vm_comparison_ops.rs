@@ -314,6 +314,18 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        // Fast path, as in `num_lt_values`: two plain Int (or two plain Num)
+        // operands need none of the junction, user-candidate, type-object,
+        // numeric-bridge or BigRat machinery below, which cost ~1.7k
+        // instructions per `==` on two `int` locals (#12151). `NaN == NaN` is
+        // False under IEEE `==`, the same answer the generic path gives.
+        if !self.user_infix_override("infix:<==>") {
+            match (left.view(), right.view()) {
+                (ValueView::Int(a), ValueView::Int(b)) => return Ok(Value::truth(a == b)),
+                (ValueView::Num(a), ValueView::Num(b)) => return Ok(Value::truth(a == b)),
+                _ => {}
+            }
+        }
         self.eval_binary_with_junctions(left, right, |vm, l, r| {
             // Numeric comparison has a user-defined candidate set too. An
             // imported `multi infix:<==>` for an object type must get first
