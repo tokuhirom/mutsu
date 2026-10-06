@@ -3975,11 +3975,16 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::CircumfixArrayComposer => {
             let semilist = named_child_or_positional(node)?;
             let inner = named_child_or_positional(semilist)?;
-            let items = match lower_expr(inner)? {
-                Expr::ArrayLiteral(items) => items,
-                other => vec![other],
+            // A one-operand comma list is `[$x,]`: the trailing comma that keeps
+            // a lone array element from flattening.
+            let (items, trailing_comma) = match lower_expr(inner)? {
+                Expr::ArrayLiteral(items) => {
+                    let single = items.len() == 1;
+                    (items, single)
+                }
+                other => (vec![other], false),
             };
-            Ok(Expr::BracketArray(items, false))
+            Ok(Expr::BracketArray(items, trailing_comma))
         }
         // A bareword naming something the unit declared, or a dynamic
         // `::(...)` name. Both are represented by RakuAST::Term::Name; the

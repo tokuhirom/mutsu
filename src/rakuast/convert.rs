@@ -1936,11 +1936,22 @@ fn var_decl_statement(
     // `my @a <== EXPR` is a declaration whose initializer is the parser's
     // feed helper call; without the `__has_initializer` mark it would read as
     // none and the feed would be dropped.
-    if let Expr::Call { name: callee, .. } = expr
+    let unmarked = !is_binding && !custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+    if unmarked
+        && let Expr::Call { name: callee, .. } = expr
         && is_desugar_marker(callee.as_str())
-        && !custom_traits.iter().any(|(n, _)| n == "__has_initializer")
     {
         return Err(desugared(callee.as_str()));
+    }
+    // The same for a closure: `my &a := { ... }` is bound, and the parser leaves
+    // no mark of it on a `&` declaration.
+    if unmarked
+        && matches!(
+            expr,
+            Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. }
+        )
+    {
+        return Err(unsupported("`&` declaration bound to a block"));
     }
     let init = if is_binding {
         Some(Initializer::Bind(expr))
@@ -3135,12 +3146,15 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         } => super::meta_infix::convert(meta, op, left, right, expr),
         // An array-composer literal `[1, 2, 3]` ->
         // `Circumfix::ArrayComposer(SemiList(Statement::Expression(comma-list)))`.
-        Expr::BracketArray(items, _) => {
+        Expr::BracketArray(items, trailing_comma) => {
             // `[EXPR for LIST]`: the parser holds the modified statement as the
             // one element; rakudo has it as the composer's statement.
             let statement = match items.as_slice() {
                 [Expr::DoStmt(stmt)] if is_modifier_statement(stmt) => convert_stmt(stmt)?
                     .ok_or_else(|| unsupported("empty statement in an array composer"))?,
+                // `[$x]` holds the element itself; `[$x,]` a one-operand comma
+                // list (which is why it does not flatten).
+                [single] if !*trailing_comma => statement_expression(convert_expr(single)?),
                 _ => statement_expression(comma_list_node(items)?),
             };
             let semilist = RakuAstNode {
