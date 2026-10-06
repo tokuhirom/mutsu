@@ -3228,6 +3228,16 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         {
             lower_method_literal(node)
         }
+        // A declaration used as a term (`push my @u, 1`, `@a[1] := my $x`,
+        // `foo(my $e = %())`): the parser carries a statement in expression
+        // position as a `DoStmt`.
+        RakuAstClass::VarDeclarationSimple
+        | RakuAstClass::TypeEnum
+        | RakuAstClass::Method
+        | RakuAstClass::Submethod => Ok(Expr::DoStmt(Box::new(lower_stmt_inner(node)?))),
+        RakuAstClass::Sub if node.fields.iter().any(|f| f.name == Some("name")) => {
+            Ok(Expr::DoStmt(Box::new(lower_stmt_inner(node)?)))
+        }
         RakuAstClass::Sub if !node.fields.iter().any(|f| f.name == Some("name")) => {
             let (params, param_defs) = signature_positional_params(node)?;
             let (return_type, custom_traits) = routine_return_type(node, None)?;

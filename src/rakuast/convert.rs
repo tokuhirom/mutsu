@@ -2086,16 +2086,22 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::BareWord(name) if bareword::convert(name).is_some() => {
             Ok(bareword::convert(name).expect("just checked"))
         }
-        // `class { }` / `role { }` / `grammar { }` in expression position: the
-        // parser wraps the declaration in a `DoStmt`, rakudo has the node itself.
+        // A declaration in expression position (`class { }`, `role { }`,
+        // `push my @u, 1`): the parser wraps the declaration in a `DoStmt`,
+        // rakudo has the node itself.
         Expr::DoStmt(stmt)
             if matches!(
                 stmt.as_ref(),
-                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. }
+                Stmt::ClassDecl { .. }
+                    | Stmt::RoleDecl { .. }
+                    | Stmt::VarDecl { .. }
+                    | Stmt::SubDecl { .. }
+                    | Stmt::MethodDecl { .. }
+                    | Stmt::EnumDecl { .. }
             ) =>
         {
             let statement =
-                convert_stmt(stmt)?.ok_or_else(|| unsupported("package declaration"))?;
+                convert_stmt(stmt)?.ok_or_else(|| unsupported("declaration term"))?;
             statement
                 .fields
                 .iter()
@@ -2107,7 +2113,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     },
                     _ => None,
                 })
-                .ok_or_else(|| unsupported("package declaration"))
+                .ok_or_else(|| unsupported("declaration term"))
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
