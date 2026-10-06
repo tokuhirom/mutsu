@@ -32,6 +32,43 @@ The REPR and FFI work behind that landed in earlier slices (#11204-#11211, #1175
   none of whose candidates applies raises `X::Multi::NoMatch` instead of the first candidate's
   own binding error.
 
+What the bundled-library suites (DBIish, NativeHelpers::Blob/CStruct, OpenSSL, NativeLibs,
+IO::Socket::SSL) then found under the real names, all fixed as general behaviour:
+
+- A constant naming a parameterization (`constant OidArray = CArray[Oid]`) constrains
+  parameters and variables as the type it names; before, `sub f(OidArray $a)` accepted any
+  `CArray` and `my OidArray $x` was "Type 'OidArray' is not declared".
+- The element of a native `CArray` answers an `IntPosRef`/`NumPosRef` container, as upstream's
+  `AT-POS ... is raw` does. A plain read (`$c[0]` in an expression, `^$c[0]`, `1..$c[0]`, a
+  built-in method argument such as `$blob.subbuf(0, $c[0])`) reads the number in it; a bind,
+  an `is rw` argument and `.VAR` keep the container.
+- A role mixin over an object keeps the class's own `Numeric`, `succ` and `pred`, so
+  `NativeHelpers::Pointer`'s `$p - $q` and `$p++` work on a typed `Pointer[T]` mixin.
+- `buf8`, `blob16`, ... report `Uninstantiable` as their `.REPR` and `utf8`/`utf16` report
+  `VMArray`, which `NativeCall::validnctype` accepts.
+- Resolving a lexical type by its source name takes its declaration, never one of its curried
+  specializations: once `TypedCArray[Str]` had been registered, a bare `TypedCArray` reached from
+  a module loaded by a `require` inside a sub named that specialization and `CArray[Str]` died
+  in `^parameterize`.
+- A parametric role's body ran its `sub` declarations in the package of the *first* method of a
+  `HashMap`, so on some runs (a synthesized `handles` delegate is declared in `GLOBAL`) an
+  `is native` routine in the body was declared where the role's own trait candidates are not in
+  scope and its second construction called the declared `{ * }` body. The package is now chosen
+  by method name, preferring one a method was actually declared in. This was a flake of ~25%
+  on `t/nativecall/require-in-method-cstruct-role-statics.t`.
+- A call through an imported multi dispatcher whose family has no matching candidate no longer
+  re-enters the dispatcher while a call through it is already running (an unknown trait with a
+  user `trait_mod:<is>` multi beside NativeCall's overflowed the stack), and `.candidates` of a
+  dispatcher counts its captured candidates once per declaration.
+- A definiteness smiley on a lexical class reached through a constant alias is kept in the name
+  (`(Bar:D).^name` is `Foo:D`).
+
+Known gap, filed as [#12161](https://github.com/tokuhirom/mutsu/issues/12161): a nested module's
+exported `proto`/`multi` (and so NativeCall's `our sub` helpers) stay visible to the using
+scope through a symbolic `::('&name')` lookup, where Rakudo hides them. The native provider
+used to hide NativeCall's five helpers; `t/modules/block-use-keeps-nested-module-imports.t`
+lost its last assertion for that.
+
 Deleted: the provider prelude (`NATIVECALL_POINTER_PRELUDE`, `NATIVECALL_SUB_PRELUDES`,
 `TRAIT_MOD_IS_NATIVECALL_PRELUDE` and their injectors), `register_nativecall_exports`, the
 `__mutsu_nativecast`/`__mutsu_nativesizeof`/`__mutsu_cglobal_fetch`/`__mutsu_explicitly_manage`

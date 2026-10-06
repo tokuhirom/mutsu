@@ -839,12 +839,26 @@ impl Interpreter {
             // by the time a later importer asks, the registry has only the
             // family's other candidates, and `&trait_mod:<is>.candidates` would
             // be missing the one the dispatcher was built around.
+            // Counted by declaration: a candidate is registered by both the
+            // hoist pass and the in-sequence pass, and a dispatcher built from
+            // an export table can carry both copies of one declaration.
             let captured_len = match data
                 .env
                 .get("__mutsu_multi_dispatch_candidates")
                 .map(Value::view)
             {
-                Some(ValueView::Array(cands, _)) => cands.len(),
+                Some(ValueView::Array(cands, _)) => cands
+                    .iter()
+                    .filter_map(|cand| match cand.view() {
+                        ValueView::Sub(d) => Some(crate::ast::function_body_fingerprint(
+                            &d.params,
+                            &d.param_defs,
+                            &d.body,
+                        )),
+                        _ => None,
+                    })
+                    .collect::<std::collections::HashSet<_>>()
+                    .len(),
                 _ => 0,
             };
             if let Some(ValueView::Str(disp_name)) =
