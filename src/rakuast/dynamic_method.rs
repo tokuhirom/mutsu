@@ -7,6 +7,7 @@
 //! $o.$n(1)     ApplyPostfix(operand, Call::TermAsMethod(callee => $n, args => ArgList(1)))
 //! $o.?$n()     … Call::TermAsMethod(callee => $n, dispatch => ".?")
 //! $o.&f(1)     ApplyPostfix(operand, Call::NameAsMethod(name => Name f, args => ArgList(1)))
+//! $o.+&f()     … Call::TermAsMethod(callee => &f, dispatch => ".+")
 //! @a>>.$n()    ApplyPostfix(operand, MetaPostfix::Hyper(Call::TermAsMethod(…)))
 //! ```
 //!
@@ -38,10 +39,9 @@ fn postfix(
     let mut fields = Vec::new();
     let class = match name_expr {
         // `.&f`: the routine named `f`, called with the invocant first.
-        Expr::CodeVar(name) => {
-            if dispatch.is_some() {
-                return Err(unsupported_expr("dispatch modifier on `.&f`"));
-            }
+        // With a dispatch modifier (`.+&f`) rakudo has the `&f` variable as the
+        // callee of a `Call::TermAsMethod` instead.
+        Expr::CodeVar(name) if dispatch.is_none() => {
             fields.push(node_field(Some("name"), name_from_identifier(name)));
             RakuAstClass::CallNameAsMethod
         }

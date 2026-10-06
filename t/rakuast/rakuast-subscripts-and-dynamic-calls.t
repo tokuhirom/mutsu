@@ -5,6 +5,7 @@ use Test;
 # - `$o.$n(1)` is an `ApplyPostfix` whose postfix is `Call::TermAsMethod(callee =>
 #   $n, args => ArgList(1))`; `.?` / `.*` is its `dispatch`;
 # - `$o.&f(1)` is a `Call::NameAsMethod(name => f, args => ...)`;
+# - `$o.+&f()` (a dispatch modifier) is a `Call::TermAsMethod` over the `&f` variable;
 # - `@a>>.$n()` wraps either in a `MetaPostfix::Hyper`;
 # - `@a[0;1]` / `%h{1;2}` is the same postcircumfix as `@a[0]` with one
 #   `SemiList` statement per dimension, and an assignment to it an `ApplyInfix`
@@ -17,7 +18,7 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 56;
+plan 59;
 
 sub exprs($src) { ('my ($o, $n, $c); my @a; my %h; sub f(|) { }; ' ~ $src).AST.statements.skip(4).map(*.expression) }
 sub same($src, $expected, $desc) {
@@ -39,6 +40,8 @@ sub same($src, $expected, $desc) {
     isa-ok $f.postfix, RakuAST::Call::NameAsMethod, '`.&f` is a name as a method';
     is $f.postfix.name.canonicalize, 'f', 'with the routine\'s name';
     is $f.postfix.args.args.elems, 1, 'and arguments';
+    isa-ok exprs(Q[$o.+&f()])[0].postfix, RakuAST::Call::TermAsMethod, 'a dispatch modifier on `.&f` is a term as a method';
+    is exprs(Q[$o.+&f()])[0].postfix.dispatch, '.+', 'with its dispatch';
     my $h = exprs(Q[@a>>.$n()])[0];
     isa-ok $h.postfix, RakuAST::MetaPostfix::Hyper, 'a hyper dynamic call';
     isa-ok $h.postfix.postfix, RakuAST::Call::TermAsMethod, 'over the same call node';
@@ -109,3 +112,4 @@ same Q[my $h = {:x}; $h<x>.Str], 'True', 'a hash literal with a value-less colon
 same Q[my @a = [[1, 2], [3, 4]]; (@a[0;1]:kv).raku], '((0, 1), 2)', 'a multi-dimensional `:kv`';
 same Q[my @a = [[1, 2], [3, 4]]; (@a[1;0]:p).raku], '(1, 0) => 3', 'a multi-dimensional `:p`';
 same Q[my @a = [[1, 2], [3, 4]]; (@a[1;1]:v).raku], '4', 'a multi-dimensional `:v`';
+same Q[sub f($x) { $x.elems }; my @b = [1, 2], [3, 4, 5]; (@b>>.+&f).raku], '[[(1,), (1,)], [(1,), (1,), (1,)]]', 'a hyper `.+&f`';
