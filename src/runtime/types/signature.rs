@@ -888,12 +888,14 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         // (`check_and_coerce_param_type`): the wrapper `ParamDef` carries the
         // caller-facing key, so its sigil never triggers that coercion.
         let seq_view;
+        let mut seq_cached = false;
         let value = if bind_name.starts_with('@')
             && let ValueView::Seq(body) = value.view()
         {
             let body = std::sync::Arc::clone(&body);
             body.mark_cache_requested();
             seq_view = Value::seq_list_view(&body);
+            seq_cached = true;
             &seq_view
         } else {
             value
@@ -959,6 +961,7 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         }
         if bind_name.starts_with('@')
             && !matches!(value.view(), ValueView::Array(..) | ValueView::Nil)
+            && !(seq_cached && interpreter.type_matches_value("Positional", value))
         {
             return Err(RuntimeError::typecheck_binding_parameter(
                 bind_name,
