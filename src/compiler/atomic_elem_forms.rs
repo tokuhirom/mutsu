@@ -28,6 +28,9 @@ impl Compiler {
             ("prefix:<++⚛>", 1) => ("add-fetch", Some(1), false),
             ("postfix:<⚛-->", 1) => ("fetch-add", Some(-1), false),
             ("prefix:<--⚛>", 1) => ("add-fetch", Some(-1), false),
+            // `@a[0] ⚛+= 5` / `⚛-= 2`: the add of the (negated) operand.
+            ("infix:<⚛+=>", 2) => ("add-fetch", None, false),
+            ("infix:<⚛-=>", 2) => ("add-fetch", None, true),
             ("atomic-dec-fetch", 1) => ("add-fetch", Some(-1), false),
             ("atomic-fetch-add", 2) => ("fetch-add", None, false),
             ("atomic-add-fetch", 2) => ("add-fetch", None, false),
