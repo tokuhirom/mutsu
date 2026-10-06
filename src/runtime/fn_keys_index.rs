@@ -44,9 +44,86 @@ pub(crate) struct FnKeysIndexState {
     /// Base names evicted since the index became complete: entries unknown.
     /// Spelled as slices of interned keys, so they are `'static`.
     dirty: rustc_hash::FxHashSet<&'static str>,
+    /// Debug-only: what [`Interpreter::audit_fn_keys_base`] has already compared
+    /// against a fresh scan, per base name — the functions-map version it was
+    /// compared under and the very index entry that was compared. Empty (and
+    /// untouched) in a release build.
+    #[cfg(debug_assertions)]
+    audited: rustc_hash::FxHashMap<Symbol, (u64, Arc<[Symbol]>)>,
+    /// Debug-only: how many full comparisons the audit has run, so a test can
+    /// pin that a repeated call does not pay for another one.
+    #[cfg(debug_assertions)]
+    audit_scans: u64,
 }
 
 impl Interpreter {
+    /// Debug-only staleness audit of one index entry: compare `keys` (what the
+    /// index answered for `base`) with a fresh scan of the functions map, and
+    /// panic on a difference — a functions-map mutation that missed its
+    /// invalidation then fails CI with a located panic instead of surfacing as
+    /// a silent wrong "Unknown function".
+    ///
+    /// The scan is O(r), r = registered functions, so it runs only when its
+    /// answer could differ from the last time it ran for this base name. That
+    /// is exactly when the functions map changed (a map version names one
+    /// content, never two — `runtime::function_table`) or the index entry was
+    /// replaced: an entry is an immutable `Arc<[Symbol]>`, so the same `Arc`
+    /// under the same version compares equal to the same scan. The memo holds a
+    /// clone of the audited `Arc`, which keeps its address from being reused by
+    /// a different entry. Auditing on every call instead made a debug-build
+    /// function call cost O(registry), which `use Test` alone puts at hundreds
+    /// of routines
+    /// ([#12119](https://github.com/tokuhirom/mutsu/issues/12119)).
+    // Cost: O(1) expected when neither the functions map nor the entry changed
+    // since the last audit of `base`; otherwise O(r), r = registered functions.
+    // Debug builds only.
+    #[cfg(debug_assertions)]
+    pub(crate) fn audit_fn_keys_base(
+        &mut self,
+        name: &str,
+        name_sym: Symbol,
+        keys: &Arc<[Symbol]>,
+    ) {
+        // The caller's symbol is the base's when the name is its own base (the
+        // ordinary unqualified case, as in `fn_keys_for_base_sym`): interning
+        // here would be one more intern per call, which
+        // `tests/named_call_intern_budget.rs` budgets.
+        let base = function_key_base_name(name);
+        let base_sym = if base.len() == name.len() {
+            name_sym
+        } else {
+            Symbol::intern(base)
+        };
+        // The version is read BEFORE the scan: a write racing in between
+        // leaves a memo under the older version, which just audits again.
+        let version = self.registry().functions_version();
+        if self
+            .dispatch
+            .fn_keys_index
+            .audited
+            .get(&base_sym)
+            .is_some_and(|(v, entry)| *v == version && Arc::ptr_eq(entry, keys))
+        {
+            return;
+        }
+        self.dispatch.fn_keys_index.audit_scans += 1;
+        let fresh = self.collect_fn_keys_for_base(base);
+        let mut a: Vec<&str> = fresh.iter().map(|k| k.as_str()).collect();
+        let mut b: Vec<&str> = keys.iter().map(|k| k.as_str()).collect();
+        a.sort_unstable();
+        b.sort_unstable();
+        assert_eq!(
+            a, b,
+            "stale fn_keys_by_base entry for {name:?} (base {base:?}): \
+             a registry functions-map mutation missed its fn_resolve_gen \
+             bump — see fn_keys_for_base in dispatch_resolve.rs"
+        );
+        self.dispatch
+            .fn_keys_index
+            .audited
+            .insert(base_sym, (version, keys.clone()));
+    }
+
     /// Drop `key`'s base-name entry from the index; on a complete index, mark
     /// the base name dirty so its next lookup refills it.
     // Cost: O(m), m = key bytes (base-name reduction, intern, two hash probes).
@@ -182,6 +259,66 @@ mod tests {
         );
         assert_eq!(&*i.fn_keys_for_base("gamma"), &*gamma);
         assert!(i.dispatch.fn_keys_index.dirty.is_empty());
+    }
+
+    /// The debug audit compares an index entry with a full scan only when the
+    /// functions map moved to a state it has not audited that base name under
+    /// ([#12119](https://github.com/tokuhirom/mutsu/issues/12119)); every other
+    /// call is a memo hit, however many routines are registered.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn the_audit_scans_once_per_functions_map_state() {
+        let mut i = Interpreter::new();
+        i.run("sub alpha() { 1 }\nsub beta() { 2 }\n")
+            .expect("setup program runs");
+
+        assert!(i.fn_base_name_registered("alpha"));
+        let first = i.dispatch.fn_keys_index.audit_scans;
+        for _ in 0..100 {
+            assert!(i.fn_base_name_registered("alpha"));
+        }
+        assert_eq!(
+            i.dispatch.fn_keys_index.audit_scans, first,
+            "an unchanged functions map and entry audit once, not per call"
+        );
+
+        // A base name nobody audited yet is audited once.
+        assert!(i.fn_base_name_registered("beta"));
+        assert!(i.fn_base_name_registered("beta"));
+        assert_eq!(i.dispatch.fn_keys_index.audit_scans, first + 1);
+
+        // A registration moves the map to a new state: the entry that
+        // survived it (`alpha`'s is not evicted) is compared again, once.
+        i.run("sub gamma() { 3 }\n").expect("second program runs");
+        let before = i.dispatch.fn_keys_index.audit_scans;
+        assert!(i.fn_base_name_registered("alpha"));
+        assert!(i.fn_base_name_registered("alpha"));
+        assert_eq!(i.dispatch.fn_keys_index.audit_scans, before + 1);
+    }
+
+    /// The audit keeps its teeth: a functions-map write that never announced
+    /// itself (no `invalidate_fn_resolution_for_keys`) leaves the index entry
+    /// stale, and the next gate call panics even though the entry was audited
+    /// under the map's previous state.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "stale fn_keys_by_base entry")]
+    fn a_functions_map_write_that_missed_its_invalidation_fails_the_audit() {
+        let mut i = Interpreter::new();
+        i.run("sub alpha() { 1 }\n").expect("setup program runs");
+        assert!(i.fn_base_name_registered("alpha"));
+
+        let existing = i.fn_keys_for_base("alpha")[0];
+        let def = i
+            .registry()
+            .functions
+            .get(&existing)
+            .cloned()
+            .expect("alpha is registered");
+        let extra = Symbol::intern("GLOBAL::alpha/9");
+        i.registry_mut().functions_mut().insert(extra, def);
+
+        i.fn_base_name_registered("alpha");
     }
 
     /// A name registered after the index became complete is found: its
