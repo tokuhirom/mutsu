@@ -304,7 +304,7 @@ impl RegexTree {
             unit_base,
             in_unit_parse,
         };
-        let body = parser.parse_alternation(&[], declaration)?;
+        let body = parser.parse_alternation(&[])?;
         parser.skip_whitespace();
         (parser.pos == parser.chars.len()).then_some(Self {
             body: sequence_for_multichar_literal(body),
@@ -319,7 +319,13 @@ impl RegexTree {
     }
 
     pub(crate) fn to_source(&self) -> String {
-        self.body.to_source()
+        let mut source = self.body.to_source();
+        // Whitespace written at the end is significant to a rule (or a `:s`
+        // regex), which then matches it after its last atom.
+        if ends_with_whitespace(&self.body) {
+            source.push(' ');
+        }
+        source
     }
 
     /// Return the scalar variables whose values are read by interpolation
@@ -1191,14 +1197,21 @@ impl RegexNode {
                     .enumerate()
                     .fold(String::new(), |mut source, (index, node)| {
                         if index > 0 {
+                            if has_whitespace_after(&nodes[index - 1]) {
+                                source.push(' ');
+                            }
                             source.push_str("||");
                         }
                         source.push_str(&node.to_source());
                         source
                     })
             }
-            Self::Group(child) => format!("[{}]", child.to_source()),
-            Self::CapturingGroup(child) => format!("({})", child.to_source()),
+            // Whitespace written before the closing bracket is significant to a
+            // rule, and the child's own source ends without it.
+            Self::Group(child) => format!("[{}{}]", child.to_source(), trailing_space(child)),
+            Self::CapturingGroup(child) => {
+                format!("({}{})", child.to_source(), trailing_space(child))
+            }
             Self::NamedCapture { name, array, regex } => {
                 let sigil = if *array { '@' } else { '$' };
                 format!("{sigil}<{name}> = {}", regex.to_source())
@@ -1617,7 +1630,7 @@ struct Parser {
 }
 
 impl Parser {
-    fn parse_alternation(&mut self, stops: &[char], top_level: bool) -> Option<RegexNode> {
+    fn parse_alternation(&mut self, stops: &[char]) -> Option<RegexNode> {
         // A leading `|` / `||` (`[ | a | b ]`, a grammar's one-alternative-
         // per-line layout) opens no empty branch; rakudo drops it.
         let before_leading = self.pos;
@@ -1634,9 +1647,6 @@ impl Parser {
             let sequential = self.consume_if('|');
             sequential_operators.push(sequential);
             branches.push(self.parse_conjunction(stops, sequential)?);
-        }
-        if top_level && let Some(last) = branches.last_mut() {
-            wrap_last_node(last);
         }
         // RakuAST represents a multi-character literal branch as a
         // `Sequence`, even when that branch contains only the literal. Apply
@@ -1861,7 +1871,7 @@ impl Parser {
             '\\' => self.parse_escape(),
             '[' => {
                 self.pos += 1;
-                let inner = self.parse_alternation(&[']'], false)?;
+                let inner = self.parse_alternation(&[']'])?;
                 if !self.consume_if(']') {
                     return None;
                 }
@@ -1871,7 +1881,7 @@ impl Parser {
             }
             '(' => {
                 self.pos += 1;
-                let inner = self.parse_alternation(&[')'], false)?;
+                let inner = self.parse_alternation(&[')'])?;
                 if !self.consume_if(')') {
                     return None;
                 }
@@ -3649,6 +3659,28 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
     }
 }
 
+/// The space [`ends_with_whitespace`] says `node` was followed by.
+// Cost: O(d), d = depth of the last branch.
+fn trailing_space(node: &RegexNode) -> &'static str {
+    if ends_with_whitespace(node) { " " } else { "" }
+}
+
+/// Whether whitespace was written after the last term of `node`.
+// Cost: O(d), d = depth of the last branch.
+fn ends_with_whitespace(node: &RegexNode) -> bool {
+    match node {
+        RegexNode::WithWhitespace(_) => true,
+        RegexNode::Sequence(nodes) => nodes.last().is_some_and(ends_with_whitespace),
+        RegexNode::Alternation(branches) | RegexNode::SequentialAlternation(branches) => {
+            branches.last().is_some_and(ends_with_whitespace)
+        }
+        RegexNode::Extension(
+            RegexExtension::Conjunction(operands) | RegexExtension::SequentialConjunction(operands),
+        ) => operands.last().is_some_and(ends_with_whitespace),
+        _ => false,
+    }
+}
+
 fn wrap_last_with_whitespace(nodes: &mut [RegexNode]) {
     // The space after `A ~ B C` is `C`'s: rakudo's tree wraps it inside the
     // `Nested`, not around it.
@@ -3666,21 +3698,6 @@ fn wrap_last_with_whitespace(nodes: &mut [RegexNode]) {
     {
         let node = std::mem::replace(last, RegexNode::Sequence(Vec::new()));
         *last = RegexNode::WithWhitespace(Box::new(node));
-    }
-}
-
-fn wrap_last_node(node: &mut RegexNode) {
-    match node {
-        RegexNode::Sequence(nodes) => wrap_last_with_whitespace(nodes),
-        // The space after `a & b` is `b`'s, as it is for `a | b`.
-        RegexNode::Extension(
-            RegexExtension::Conjunction(operands) | RegexExtension::SequentialConjunction(operands),
-        ) => {
-            if let Some(last) = operands.last_mut() {
-                wrap_last_node(last);
-            }
-        }
-        other => wrap_node_with_whitespace(other),
     }
 }
 
