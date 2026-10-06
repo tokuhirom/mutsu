@@ -266,3 +266,18 @@ before the flip, not after.
   expansion's shape to recognise the construct (`sink_warn::is_destructure_block`, the "all
   `VarDecl`" group-declaration checks) reads `ast::is_group_declaration` or skips the record.
 
+- **Source positions (the §4 question, decided for lines).** A statement node carries the line it
+  began on as a hidden `origin` field (`src/rakuast/origin.rs`): `convert` takes it from the
+  `Stmt::SetLine` marker in front of the statement, `lower` puts the marker back, and the
+  renderer, like Rakudo's `.raku`, shows no origin. A hand-built node has none and lowers
+  without markers, as before. Before it, every line an error, a `warn` or a backtrace reported
+  came out wrong under `MUTSU_RAKUAST=1`. Columns, and an origin on nodes below the statement
+  level, wait for the first parser-emits-RakuAST slice; the representation (a field on the
+  existing node, not a new struct member) keeps those two open.
+- **A parser-side instrumentation the node cannot carry** is restored in `lower` by the parser's
+  own function, never copied: the call-site markers the parser stamps on calls
+  (`parser::callsite_line_arg`, `parser::stamp_call_site_markers`) come back from the statement's
+  origin, and a routine the unit declares itself (`rakuast::declared_routines`) wins over the
+  builtin statement of the same name (`sub take`, `sub say`, …) as the parser's scope made it
+  win at parse time. A zero-argument call without the marker took a call path the parser's trees
+  never reach — `EVAL 'return 5'` in such a sub escaped it.

@@ -188,6 +188,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
     // `{ ~($ ~= $_) }`.)
     let var = if sigil == b'$'
         && var == "__ANON_STATE__"
+        && !crate::parser::primary::var::starts_named_placeholder(r)
         && !matches!(
             r.trim_start().as_bytes().first(),
             Some(b'.') | Some(b'[') | Some(b'{') | Some(b'<')

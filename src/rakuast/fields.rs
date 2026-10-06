@@ -172,7 +172,9 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("body", Absent::TypeObject("RakuAST::Blockoid")),
         ],
         Blockoid => &[("statement-list", Absent::Required)],
-        VarDeclarationPlaceholderPositional => &[("lexical-name", Absent::Required)],
+        VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => {
+            &[("lexical-name", Absent::Required)]
+        }
         VarDeclarationPlaceholderSlurpyArray => &[],
         VarDeclarationPlaceholderSlurpyHash => &[],
         StubFail | StubDie | StubWarn => &[("args", Absent::EmptyNode(ArgList))],
@@ -338,7 +340,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         TermName | TermNamed | ParameterTargetTerm => "name",
         TermTopicCall => "call",
         Blockoid => "statement-list",
-        VarDeclarationPlaceholderPositional => "lexical-name",
+        VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => "lexical-name",
         InitializerAssign | InitializerBind => "expression",
         MetaInfixAssign => "infix",
         TypeSimple | TypeSetting | TypeCapture => "name",

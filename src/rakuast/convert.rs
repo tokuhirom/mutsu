@@ -8,6 +8,8 @@
 
 use super::bareword::simple_type_node;
 use super::method_assign_decl::call_method;
+use super::origin;
+use super::placeholder::{is_placeholder_name, is_placeholder_param, placeholder_node};
 use super::{
     RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, bareword, decl_traits,
     hash_literal, name_parts, routine_traits, subscript_adverb,
@@ -48,8 +50,18 @@ pub(super) fn statement_list(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError
 
 fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::new();
+    // The line of the statement about to be converted: the `SetLine` marker
+    // in front of it becomes the node's hidden origin (see `origin`).
+    let mut line = None;
     for stmt in stmts {
-        if let Some(node) = convert_stmt(stmt)? {
+        if let Stmt::SetLine(n) = stmt {
+            line = Some(*n);
+            continue;
+        }
+        if let Some(mut node) = convert_stmt(stmt)? {
+            if let Some(n) = line.take() {
+                node.fields.push(origin::field(n));
+            }
             fields.push(node_field(None, node));
         }
     }
@@ -1846,12 +1858,22 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 return Err(desugared(name));
             }
             if let Some(name) = name.strip_prefix('^')
-                && !name.is_empty()
-                && name
-                    .chars()
-                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '\''))
+                && is_placeholder_name(name)
             {
-                return Ok(placeholder_positional_node(name));
+                return Ok(placeholder_node(
+                    RakuAstClass::VarDeclarationPlaceholderPositional,
+                    "$",
+                    name,
+                ));
+            }
+            if let Some(name) = name.strip_prefix(':')
+                && is_placeholder_name(name)
+            {
+                return Ok(placeholder_node(
+                    RakuAstClass::VarDeclarationPlaceholderNamed,
+                    "$",
+                    name,
+                ));
             }
             Ok(var_lexical("$", name))
         }
@@ -2097,6 +2119,15 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     fields: Vec::new(),
                 });
             }
+            if let Some(name) = name.strip_prefix('^')
+                && is_placeholder_name(name)
+            {
+                return Ok(placeholder_node(
+                    RakuAstClass::VarDeclarationPlaceholderPositional,
+                    "@",
+                    name,
+                ));
+            }
             Ok(var_lexical("@", name))
         }
         Expr::HashVar(name) => {
@@ -2109,9 +2140,29 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     fields: Vec::new(),
                 });
             }
+            if let Some(name) = name.strip_prefix('^')
+                && is_placeholder_name(name)
+            {
+                return Ok(placeholder_node(
+                    RakuAstClass::VarDeclarationPlaceholderPositional,
+                    "%",
+                    name,
+                ));
+            }
             Ok(var_lexical("%", name))
         }
-        Expr::CodeVar(name) => Ok(var_lexical("&", name)),
+        Expr::CodeVar(name) => {
+            if let Some(name) = name.strip_prefix('^')
+                && is_placeholder_name(name)
+            {
+                return Ok(placeholder_node(
+                    RakuAstClass::VarDeclarationPlaceholderPositional,
+                    "&",
+                    name,
+                ));
+            }
+            Ok(var_lexical("&", name))
+        }
         // `todo/tickets/chained-compare-ast-node.md`: rakudo has no AST-level
         // `&&` for a chained comparison — `Q[1 < 2 < 3].AST` is a left-nested
         // `ApplyInfix(ApplyInfix(1, "<", 2), "<", 3)` with no wrapper, the
@@ -2542,16 +2593,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // placeholder subset handled by this regex boundary.
             if *declarator == crate::ast::RoutineDeclarator::Block
                 && !params.is_empty()
-                && (params.iter().all(|param| {
-                    let Some(name) = param.strip_prefix("$^").or_else(|| param.strip_prefix('^'))
-                    else {
-                        return false;
-                    };
-                    !name.is_empty()
-                        && name
-                            .chars()
-                            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '\''))
-                }) || crate::regex_tree::is_array_slurpy_placeholder_block(expr)
+                && (params.iter().all(|param| is_placeholder_param(param))
+                    || crate::regex_tree::is_array_slurpy_placeholder_block(expr)
                     || crate::regex_tree::is_hash_slurpy_placeholder_block(expr))
             {
                 return block_node(body);
@@ -4306,15 +4349,6 @@ fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
     RakuAstNode {
         class: RakuAstClass::VarLexical,
         fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
-    }
-}
-
-/// `$^name` in a placeholder block is a declaration node in RakuAST even
-/// though the execution AST keeps it as a caret-prefixed lexical name.
-fn placeholder_positional_node(name: &str) -> RakuAstNode {
-    RakuAstNode {
-        class: RakuAstClass::VarDeclarationPlaceholderPositional,
-        fields: vec![leaf_field(None, Value::str(format!("${name}")))],
     }
 }
 
