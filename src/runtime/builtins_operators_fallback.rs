@@ -1251,35 +1251,6 @@ impl Interpreter {
             return Err(self.no_such_qualified_symbol(package.as_str(), short_name.as_str()));
         }
 
-        // The three `__mutsu_`-prefixed NativeCall helpers the VM's call
-        // opcode resolves through its own fallback chain
-        // (`dispatch_func_call_inner`). They are reachable here too, because
-        // `call_function` is what every by-name caller that is not a `CallFunc`
-        // opcode goes through — a TRIR body's generic call among them, which
-        // is how `nativecast()` started reporting "Unknown function:
-        // __mutsu_nativecast". The names are reserved (the user-visible
-        // `nativecast`/`nativesizeof`/`cglobal` are `our sub`s in the
-        // NativeCall prelude that forward to these), so no user routine can
-        // be shadowed by matching them.
-        if let Some(result) = self.try_nativecast(name, args) {
-            return result;
-        }
-        if let Some(result) = self.try_nativesizeof(name, args) {
-            return result;
-        }
-        if let Some(result) = self.try_cglobal_fetch(name, args) {
-            return result;
-        }
-
-        // NativeCall's `explicitly-manage($str)` marks a value's C-side buffer
-        // as caller-managed so the GC will not free it while a native call holds
-        // the pointer. mutsu copies each `Str` argument into an owned `CString`
-        // that lives for the duration of the call, so there is nothing to pin —
-        // treat it as an identity no-op returning its argument.
-        if name == "explicitly-manage" {
-            return Ok(args.first().cloned().unwrap_or(Value::NIL));
-        }
-
         // A sub declared lexically in a block, called from a closure that
         // escaped it: block exit restored the routine registry, so nothing
         // above could resolve the name, but the closure's captured env still

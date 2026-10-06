@@ -1154,14 +1154,12 @@ fn marshal_arg(
             // corrupted the heap: OpenSSL's `ERR_error_string($e, Nil)` — where
             // NULL means "use your own static buffer" — writes up to 256 bytes
             // and aborted mutsu with "realloc(): invalid next size".
-            if let Some(addr) = crate::runtime::nativecall_manage::explicitly_managed_address(v)
-                .or_else(|| crate::runtime::cstr_repr::cstr_repr_address(v))
-            {
-                // An `explicitly-manage`d string -- the provider's `CStr`, or a
+            if let Some(addr) = crate::runtime::cstr_repr::cstr_repr_address(v) {
+                // An `explicitly-manage`d string -- a `CStr`-REPR object, or a
                 // `Str` that did upstream's `ExplicitlyManagedString` (its
-                // `cstr` is a `CStr`-REPR object): hand C the leaked buffer
-                // itself, so a callee that RETAINS the pointer keeps seeing
-                // live memory after the call returns.
+                // `cstr` is one): hand C the leaked buffer itself, so a callee
+                // that RETAINS the pointer keeps seeing live memory after the
+                // call returns.
                 (
                     Type::pointer(),
                     ArgOwner::Ptr(addr as *const std::ffi::c_void),

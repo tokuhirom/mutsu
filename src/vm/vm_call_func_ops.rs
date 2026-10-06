@@ -2509,20 +2509,6 @@ impl Interpreter {
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, !returns_container))
-                } else if let Some(result) = self.try_nativecast(name, &args) {
-                    // NativeCall's `nativecast($target-type, $source)` helper.
-                    result
-                } else if let Some(result) = self.try_nativesizeof(name, &args) {
-                    // NativeCall's `nativesizeof($obj-or-type)` helper.
-                    result
-                } else if let Some(result) = self.try_cglobal_fetch(name, &args) {
-                    // One fetch behind the `Proxy` NativeCall's `cglobal`
-                    // returns (see runtime::nativecall_global).
-                    result
-                } else if let Some(result) = self.try_explicitly_manage(name, &args) {
-                    // The leak behind NativeCall's `explicitly-manage`
-                    // (see runtime::nativecall_manage).
-                    result
                 } else if let Some(result) = self.try_trait_mod_does_apply(name, &args) {
                     // The mixin + writeback behind the `trait_mod:<does>`
                     // prelude candidates (see vm::vm_trait_mod_does_ops).
@@ -3180,7 +3166,7 @@ impl Interpreter {
     /// marshalling) is allowed too (ADR-0019 C6e-3c): it is inert on both
     /// dispatch arms — nothing reads the trait for marshalling, since actual
     /// string encoding for a native call happens explicitly via `.encode(...)`
-    /// in the prelude (`nativecall_manage.rs`), and the shared compiled binder
+    /// in the prelude, and the shared compiled binder
     /// (`bind_function_args_values`) only branches on `rw`/`raw`/`copy`/
     /// `invocant`. A genuine `is native(...)` sub never reaches this gate at
     /// all — `native_call_specs` is checked by name before body dispatch.

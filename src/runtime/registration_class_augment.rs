@@ -469,17 +469,6 @@ impl Interpreter {
                             tags,
                         );
                     }
-                    // ADR-0019 D3-6: an `is native(...)` augmented method
-                    // routes through NativeCall, matching the class walker.
-                    if false && decl.custom_traits.iter().any(|(t, _)| t == "native") {
-                        self.register_native_call_method(
-                            name,
-                            &resolved_method_name,
-                            &decl.param_defs,
-                            decl.return_type.as_ref(),
-                            &crate::opcode::decl_traits_from_ast(&decl.custom_traits),
-                        )?;
-                    }
                     // ADR-0019 D3-6: apply user-defined `trait_mod:<is>`
                     // traits on an augmented method, matching the class
                     // walker (confirmed against `raku`).

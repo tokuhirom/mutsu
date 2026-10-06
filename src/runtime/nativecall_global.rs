@@ -7,8 +7,8 @@
 //! Raku's `cglobal` returns a `Proxy` that "redirects all its accesses" to the
 //! named symbol (`Language/nativecall.rakudoc`), so it re-reads on every fetch —
 //! which is the whole point for a variable C keeps changing underneath you. That
-//! `Proxy` is built in the NativeCall prelude; this module is the primitive
-//! behind its `FETCH`, `__mutsu_cglobal_fetch($libname, $symbol, $target-type)`.
+//! `Proxy` is upstream NativeCall's; this module is the primitive behind its
+//! `FETCH`, `nqp::nativecallglobal($libname, $symbol, $target-type)`.
 //!
 //! **It dereferences.** The symbol's address is where the variable *lives*, and
 //! the value is read from it — `cglobal('libc.so.6', 'optind', int32)` is `1`,
@@ -30,45 +30,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 use super::Interpreter;
 
-/// The name a `Proxy` in the NativeCall prelude calls to perform one fetch.
-pub(crate) const CGLOBAL_FETCH: &str = "__mutsu_cglobal_fetch";
-
 impl Interpreter {
-    /// `__mutsu_cglobal_fetch($libname, $symbol, $target-type)` — one read of a
-    /// C global. `None` for any other function name, so the caller falls
-    /// through to its remaining dispatch.
-    pub(crate) fn try_cglobal_fetch(
-        &mut self,
-        name: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if name != CGLOBAL_FETCH {
-            return None;
-        }
-        let args: Vec<Value> = args
-            .iter()
-            .cloned()
-            .map(crate::runtime::types::unwrap_varref_value)
-            .collect();
-        if args.len() != 3 {
-            return Some(Err(RuntimeError::new(format!(
-                "cglobal() expects 3 arguments, got {}",
-                args.len()
-            ))));
-        }
-        let symbol = args[1].to_string_value();
-        let target = match args[2].view() {
-            ValueView::Package(n) => n.resolve().to_string(),
-            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
-            _ => {
-                return Some(Err(RuntimeError::new(
-                    "cglobal() expects a type object as its third argument",
-                )));
-            }
-        };
-        Some(self.cglobal_fetch(&args[0], &symbol, &target))
-    }
-
     #[cfg(feature = "libffi")]
     pub(crate) fn cglobal_fetch(
         &mut self,

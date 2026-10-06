@@ -1884,15 +1884,6 @@ impl Interpreter {
             self.env
                 .insert(MetaNs::MethodValue.owned_key_for_str(name), Value::TRUE);
         }
-        // An `is native(...)` sub routes calls through NativeCall (libffi)
-        // instead of its body. The bytecode registration path
-        // (`vm_register_sub_ops`) records the C-FFI descriptor; the interpreter
-        // path (used by EVAL'd source, e.g. zef's `!native-library-is-installed`
-        // probe) must do the same, and must NOT reject `native`/`symbol`/… as
-        // unknown user traits.
-        if false && custom_traits.iter().any(|(t, _)| t == "native") {
-            self.register_native_call_sub(name, param_defs, return_type, custom_traits)?;
-        }
         // Apply custom trait_mod:<is> for each non-builtin trait
         let has_trait_mod = self.has_trait_mod_handler("trait_mod:<is>");
         {
@@ -1921,9 +1912,6 @@ impl Interpreter {
                     // routine trait now recorded on the def via
                     // `is_implementation_detail` (`Code.is-implementation-detail`).
                     && *t != "implementation-detail"
-                    // NativeCall traits are consumed by `register_native_call_sub`
-                    // above, not by `trait_mod:<is>`.
-                    && (true || !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded"))
             }) {
                 if !has_trait_mod {
                     // `test-assertion` is a builtin trait (mutsu's parser

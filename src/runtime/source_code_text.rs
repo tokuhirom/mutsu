@@ -61,40 +61,6 @@ impl<'a> CodeText<'a> {
                 .is_some_and(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\'' | ':'))
         })
     }
-
-    /// Whether the code mentions the module name `needle` as a name of its
-    /// own, not as part of a longer identifier: `NativeCall` matches in
-    /// `use NativeCall;`, `NativeCall::Types::Pointer` and
-    /// `require ::('NativeCall')`, but not in `NativeCallSymbol` or
-    /// `MyNativeCall` (#11310: upstream `NativeCall.rakumod`'s own
-    /// `role NativeCallSymbol` switched the native provider's preludes on).
-    /// Unlike [`Self::contains_name`], a following `::` still counts, since a
-    /// sub-package of the module is a mention of it.
-    // Cost: O(n), n = code length.
-    pub(crate) fn mentions_module(&self, needle: &str) -> bool {
-        let text = self.0.as_ref();
-        // An identifier continues with an alphanumeric or `_`, or with `-`/`'`
-        // directly followed by a letter (`foo-bar`, `don't`).
-        let continues = |rest: &str| {
-            let mut chars = rest.chars();
-            match chars.next() {
-                Some(c) if c.is_alphanumeric() || c == '_' => true,
-                Some('-' | '\'') => chars.next().is_some_and(char::is_alphabetic),
-                _ => false,
-            }
-        };
-        text.match_indices(needle).any(|(at, _)| {
-            let before = text[..at].chars().next_back();
-            let starts_word = !before.is_some_and(|c| c.is_alphanumeric() || c == '_')
-                && !(matches!(before, Some('-' | '\''))
-                    && text[..at]
-                        .chars()
-                        .rev()
-                        .nth(1)
-                        .is_some_and(char::is_alphabetic));
-            starts_word && !continues(&text[at + needle.len()..])
-        })
-    }
 }
 
 /// Cheap pre-check: a source with no `#` and no line starting with `=` has no
@@ -248,22 +214,6 @@ mod tests {
     fn an_apostrophe_in_an_identifier_does_not_open_a_string() {
         // `don't` is one identifier; the `#` after it still starts a comment.
         assert!(!CodeText::from_source("don't-do(); # use NativeCall\n").contains("NativeCall"));
-    }
-
-    #[test]
-    fn mentions_module_needs_the_whole_name() {
-        let mentions = |src: &str| CodeText::from_source(src).mentions_module("NativeCall");
-        assert!(mentions("use NativeCall;\n"));
-        assert!(mentions("use NativeCall :types;\n"));
-        assert!(mentions("my $p = NativeCall::Types::Pointer;\n"));
-        assert!(mentions("require ::('NativeCall');\n"));
-        assert!(mentions("class C is repr<NativeCall> { }\n"));
-        assert!(!mentions("my role NativeCallSymbol[Str $name] { }\n"));
-        assert!(!mentions("$r does NativeCallEncoded[$e];\n"));
-        assert!(!mentions("use MyNativeCall;\n"));
-        assert!(!mentions("use Foo-NativeCall;\n"));
-        assert!(!mentions("use NativeCall-ish;\n"));
-        assert!(mentions("say 'NativeCall';\n"));
     }
 
     #[test]

@@ -305,23 +305,6 @@ impl Interpreter {
                 tags,
             );
         }
-        // An `is native(...)` method routes calls through NativeCall
-        // instead of its `{ * }` body, exactly as an `is native` sub
-        // does — with the invocant as the first C argument. This is
-        // how a whole C API is usually bound (`DBDish::mysql::Native`
-        // declares every one of its ~40 entry points this way).
-        if false && decl.custom_traits.iter().any(|(t, _)| t == "native") {
-            // Class/role method declarations still register from the
-            // source declaration (ADR-0019 phase D), so their trait
-            // arguments arrive as expressions.
-            self.register_native_call_method(
-                cx.name,
-                &resolved_method_name,
-                &decl.param_defs,
-                decl.return_type.as_ref(),
-                &crate::opcode::decl_traits_from_ast(&decl.custom_traits),
-            )?;
-        }
         // Apply custom trait_mod:<is> for each non-builtin trait on methods.
         // `__`-prefixed entries are internal parser markers (the
         // `__return_via_trait` / `__return_via_of` return-type spelling the

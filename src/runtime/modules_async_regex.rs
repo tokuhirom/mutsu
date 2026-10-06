@@ -6,7 +6,6 @@ pub(crate) mod nativecall_callback;
 pub(crate) mod nativecall_cast;
 pub(crate) mod nativecall_global;
 pub(crate) mod nativecall_info;
-pub(crate) mod nativecall_manage;
 pub(crate) mod nativecall_nqp;
 pub(crate) mod nqp_stat;
 mod nqp_uniprop_data;

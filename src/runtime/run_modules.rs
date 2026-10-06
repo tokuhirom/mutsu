@@ -627,16 +627,9 @@ impl Interpreter {
             );
             err
         })?;
-        // A module that uses NativeCall and references `Pointer` needs the
-        // builtin `Pointer` prelude class too — the main-program injection only
-        // sees the main source, so a NativeCall binding distributed as a module
-        // would otherwise hit an undeclared `Pointer`.
         let code = crate::runtime::source_code_text::CodeText::from_source(&preprocessed);
-        Self::inject_nativecall_prelude(&code, &mut stmts);
-        Self::inject_nativecall_subs_prelude(&code, &mut stmts);
         Self::inject_iosocket_prelude(&code, &mut stmts);
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
-        Self::inject_trait_mod_is_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_export_prelude(&code, &mut stmts);
         Self::inject_enumeration_prelude(&code, &mut stmts);
