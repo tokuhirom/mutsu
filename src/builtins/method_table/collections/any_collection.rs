@@ -106,24 +106,47 @@ pub(crate) fn end(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError
 
 // Cost: O(1), the single scalar index is produced eagerly.
 pub(crate) fn keys(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    if matches!(target.view(), ValueView::Bool(_)) {
+        return Ok(Value::seq(vec![
+            Value::str("True".to_string()),
+            Value::str("False".to_string()),
+        ]));
+    }
     debug_assert!(scalar_like(target));
     Ok(Value::seq(vec![Value::int(0)]))
 }
 
 // Cost: O(1), the single scalar value is copied into the result Seq.
 pub(crate) fn values(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    if matches!(target.view(), ValueView::Bool(_)) {
+        return Ok(Value::seq(vec![Value::int(1), Value::int(0)]));
+    }
     debug_assert!(scalar_like(target));
     Ok(Value::seq(vec![target.clone()]))
 }
 
 // Cost: O(1), one index/value pair is produced.
 pub(crate) fn kv(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    if matches!(target.view(), ValueView::Bool(_)) {
+        return Ok(Value::seq(vec![
+            Value::str("True".to_string()),
+            Value::int(1),
+            Value::str("False".to_string()),
+            Value::int(0),
+        ]));
+    }
     debug_assert!(scalar_like(target));
     Ok(Value::seq(vec![Value::int(0), target.clone()]))
 }
 
 // Cost: O(1), one index/value Pair is produced.
 pub(crate) fn pairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    if matches!(target.view(), ValueView::Bool(_)) {
+        return Ok(Value::seq(vec![
+            Value::pair("True".to_string(), Value::int(1)),
+            Value::pair("False".to_string(), Value::int(0)),
+        ]));
+    }
     debug_assert!(scalar_like(target));
     Ok(Value::seq(vec![Value::value_pair(
         Value::int(0),
@@ -133,6 +156,12 @@ pub(crate) fn pairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErr
 
 // Cost: O(1), one value/index Pair is produced.
 pub(crate) fn antipairs(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    if matches!(target.view(), ValueView::Bool(_)) {
+        return Ok(Value::seq(vec![
+            Value::value_pair(Value::int(1), Value::str("True".to_string())),
+            Value::value_pair(Value::int(0), Value::str("False".to_string())),
+        ]));
+    }
     debug_assert!(scalar_like(target));
     Ok(Value::seq(vec![Value::value_pair(
         target.clone(),
