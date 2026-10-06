@@ -1,8 +1,7 @@
 /// Unicode and character methods: bytes, decode, chars, ord, ords, uniprop, uniname,
 /// uninames, uniparse, uniprops, unival, univals, chr, chrs
+use crate::builtins::method_table::unicode;
 use crate::value::{RuntimeError, Value, ValueView};
-
-use super::make_no_match_error;
 
 pub(super) fn dispatch(
     target: &Value,
@@ -66,142 +65,25 @@ pub(super) fn dispatch(
             target,
             &[],
         ))),
-        "uniprop" => {
-            match target.view() {
-                ValueView::Package(_) => {
-                    return Some(Some(Err(make_no_match_error("uniprop"))));
-                }
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    return Some(Some(Ok(
-                        crate::builtins::uniprop::unicode_property_value_for_codepoint(cp, None),
-                    )));
-                }
-                _ => {}
-            }
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Some(Ok(Value::NIL)));
-            }
-            let ch = s.chars().next().unwrap();
-            Some(Some(Ok(Value::str_from(
-                crate::builtins::unicode::unicode_general_category(ch),
-            ))))
-        }
-        "uniname" => match target.view() {
-            ValueView::Int(i) => match crate::builtins::unicode::uniname_from_int(i) {
-                Ok(name) => Some(Some(Ok(Value::str(name)))),
-                Err(e) => Some(Some(Err(e))),
-            },
-            ValueView::Package(_) => Some(Some(Err(make_no_match_error("uniname")))),
-            _ => {
-                let s = target.to_string_value();
-                if s.is_empty() {
-                    return Some(Some(Ok(Value::NIL)));
-                }
-                let ch = s.chars().next().unwrap();
-                Some(Some(Ok(Value::str(
-                    crate::builtins::unicode::unicode_char_name(ch),
-                ))))
-            }
-        },
-        "uninames" => {
-            let s = target.to_string_value();
-            let names: Vec<Value> = s
-                .chars()
-                .map(|ch| Value::str(crate::builtins::unicode::unicode_char_name(ch)))
-                .collect();
-            // `.uninames` returns a Seq in raku (matters for `.raku`/`.WHAT`).
-            Some(Some(Ok(Value::seq(names))))
-        }
+        // The Unicode methods of `Cool` are rows (`method_table::unicode`); these
+        // arms keep the `Cool` receivers with no table shape (a `Match`, a
+        // `Range`, a `Seq`, an instance of a `Cool` subclass), which the rows'
+        // handlers answer through the receiver's string form.
+        // Cost: O(1), a table lookup.
+        "uniname" => unicode::uniname(target, &[]).map(Some),
+        // Cost: O(n), n = chars of the invocant.
+        "uninames" => unicode::uninames(target, &[]).map(Some),
+        // Cost: O(1), a table lookup.
+        "uniprop" => unicode::uniprop(target, &[]).map(Some),
+        // Cost: O(n), n = chars of the invocant.
+        "uniprops" => unicode::uniprops(target, &[]).map(Some),
+        // Cost: O(1), a table lookup.
+        "unival" => unicode::unival(target, &[]).map(Some),
+        // Cost: O(n), n = chars of the invocant.
+        "univals" => unicode::univals(target, &[]).map(Some),
         // Cost: O(n), n = chars of the invocant; a name no table knows also walks
         // the CLDR emoji list (O(E) per such name, E = emoji count).
-        "uniparse" | "parse-names" => {
-            let s = target.to_string_value();
-            Some(Some(crate::builtins::functions::uniparse_impl(&s)))
-        }
-        "uniprops" => {
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Some(Ok(Value::seq(vec![]))));
-            }
-            let props: Vec<Value> = s
-                .chars()
-                .map(|ch| Value::str_from(crate::builtins::unicode::unicode_general_category(ch)))
-                .collect();
-            // `.uniprops` returns a Seq in raku.
-            Some(Some(Ok(Value::seq(props))))
-        }
-        // Cost: O(1): a Str payload is borrowed to read its first codepoint.
-        "unival" => {
-            // Type objects should throw an error
-            if matches!(
-                target.view(),
-                ValueView::Package(_) | ValueView::CustomType { .. }
-            ) {
-                return Some(Some(Err(RuntimeError::new(
-                    "Invocant of method 'unival' must be an object instance, not a type object"
-                        .to_string(),
-                ))));
-            }
-            let ch = match target.view() {
-                ValueView::Int(i) => char::from_u32(i as u32),
-                _ => crate::builtins::grapheme_index::with_str(target, |s| s.chars().next()),
-            };
-            let Some(ch) = ch else {
-                return Some(Some(Ok(Value::NIL)));
-            };
-            if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
-                return Some(Some(Ok(crate::value::make_rat(n, d))));
-            }
-            if let Some(n) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
-                return Some(Some(Ok(Value::int(n))));
-            }
-            if let Some(n) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
-                return Some(Some(Ok(Value::int(n as i64))));
-            }
-            Some(Some(Ok(Value::num(f64::NAN))))
-        }
-        // Cost: O(n), n = codepoints of the invocant.
-        "univals" => {
-            // Type objects should throw an error
-            if matches!(
-                target.view(),
-                ValueView::Package(_) | ValueView::CustomType { .. }
-            ) {
-                return Some(Some(Err(RuntimeError::new(
-                    "Invocant of method 'univals' must be an object instance, not a type object"
-                        .to_string(),
-                ))));
-            }
-            let s = match target.view() {
-                ValueView::Int(i) => {
-                    if let Some(ch) = char::from_u32(i as u32) {
-                        ch.to_string()
-                    } else {
-                        return Some(Some(Ok(Value::seq(Vec::new()))));
-                    }
-                }
-                _ => target.to_string_value(),
-            };
-            if s.is_empty() {
-                return Some(Some(Ok(Value::seq(Vec::new()))));
-            }
-            let mut result = Vec::new();
-            for ch in s.chars() {
-                if let Some((n, d)) = crate::builtins::unicode::unicode_rat_value(ch) {
-                    result.push(crate::value::make_rat(n, d));
-                } else if let Some(n) = crate::builtins::unicode::unicode_numeric_int_value(ch) {
-                    result.push(Value::int(n));
-                } else if let Some(n) = crate::builtins::unicode::unicode_decimal_digit_value(ch) {
-                    result.push(Value::int(n as i64));
-                } else {
-                    result.push(Value::num(f64::NAN));
-                }
-            }
-            // `.univals` returns a Seq in raku.
-            Some(Some(Ok(Value::seq(result))))
-        }
+        "uniparse" | "parse-names" => unicode::uniparse(target, &[]).map(Some),
         // Cost: O(e), e = elements of the invocant list.
         "chrs" => {
             // .chrs on a list/array of ints or a range

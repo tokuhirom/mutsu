@@ -2,7 +2,6 @@ use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, EnumValue, RuntimeError, Value, ValueView};
 use num_traits::{Signed, ToPrimitive};
-use unicode_normalization::UnicodeNormalization;
 
 use super::rng::builtin_rand;
 
@@ -24,7 +23,7 @@ pub(crate) mod temporal_dispatch;
 use crate::value::ValueMap;
 
 /// Create an X::Multi::NoMatch error for a method called on a type object.
-fn make_no_match_error(method_name: &str) -> RuntimeError {
+pub(crate) fn make_no_match_error(method_name: &str) -> RuntimeError {
     let msg = format!("Cannot resolve caller {}", method_name);
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(msg.clone()));
@@ -827,16 +826,6 @@ pub(crate) fn native_method_0arg_cascade(
                     form,
                     codepoints.join(" ")
                 ))));
-            }
-            // Cost: O(n), n = codepoints of the Uni.
-            "NFC" | "NFD" | "NFKC" | "NFKD" => {
-                let normalized: String = match method {
-                    "NFC" => text.nfc().collect(),
-                    "NFD" => text.nfd().collect(),
-                    "NFKC" => text.nfkc().collect(),
-                    _ => text.nfkd().collect(),
-                };
-                return Some(Ok(Value::uni(method.to_string(), normalized)));
             }
             _ => {}
         }

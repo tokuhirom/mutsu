@@ -23,6 +23,7 @@ pub(crate) mod str_search;
 mod stringify;
 pub(crate) mod succ_pred;
 pub(crate) mod truth;
+pub(crate) mod unicode;
 pub(crate) mod version;
 
 /// Every family of this group.
@@ -80,4 +81,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     real_misc::INT_NATIVE_INT_ROWS,
     cool_real::COOL_ROWS,
     cool_real::BOOL_ROWS,
+    unicode::STR_ROWS,
+    unicode::COOL_ROWS,
+    unicode::INT_ROWS,
+    unicode::UNI_ROWS,
 ];

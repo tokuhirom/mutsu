@@ -140,25 +140,6 @@ pub(super) fn cool_instance_numeric(target: &Value) -> Option<f64> {
     }
 }
 
-/// Convert a Value to a string for Unicode normalization.
-/// If the value is an Array of Int (Uni-like), convert codepoints to a string.
-fn uni_or_str(target: &Value) -> String {
-    match target.view() {
-        ValueView::Array(items, ..)
-            if items.iter().all(|v| matches!(v.view(), ValueView::Int(_))) =>
-        {
-            items
-                .iter()
-                .filter_map(|v| match v.view() {
-                    ValueView::Int(cp) => char::from_u32(cp as u32),
-                    _ => None,
-                })
-                .collect()
-        }
-        _ => target.to_string_value(),
-    }
-}
-
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
@@ -467,13 +448,16 @@ pub(super) fn dispatch(
         // The `race`/`hyper` rows' implementation (`method_table::lazy`).
         "race" => Some(crate::builtins::method_table::lazy::race(target, &[])),
         "hyper" => Some(crate::builtins::method_table::lazy::hyper(target, &[])),
+        // The normalization forms are rows (`method_table::unicode`); these arms
+        // keep the `Cool` receivers with no table shape (a `Match`, a `Range`, ...).
         // Cost: O(n), n = codepoints of the invocant.
-        "NFC" | "NFD" | "NFKC" | "NFKD" => {
-            let s = uni_or_str(target);
-            let form = crate::builtins::str_prim::Normal::from_name(method)?;
-            let normalized = crate::builtins::str_prim::normalize(&s, form).into_owned();
-            Some(Some(Ok(Value::uni(method.to_string(), normalized))))
-        }
+        "NFC" => crate::builtins::method_table::unicode::nfc(target, &[]).map(Some),
+        // Cost: O(n), n = codepoints of the invocant.
+        "NFD" => crate::builtins::method_table::unicode::nfd(target, &[]).map(Some),
+        // Cost: O(n), n = codepoints of the invocant.
+        "NFKC" => crate::builtins::method_table::unicode::nfkc(target, &[]).map(Some),
+        // Cost: O(n), n = codepoints of the invocant.
+        "NFKD" => crate::builtins::method_table::unicode::nfkd(target, &[]).map(Some),
         _ => None,
     }
 }

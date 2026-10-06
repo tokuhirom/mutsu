@@ -76,6 +76,12 @@ impl RowFlags {
     /// differ by design. The handler is still pure.
     pub(crate) const RANDOM: RowFlags = RowFlags(1 << 2);
 
+    /// The flags of both.
+    // Cost: O(1).
+    pub(crate) const fn or(self, other: RowFlags) -> RowFlags {
+        RowFlags(self.0 | other.0)
+    }
+
     /// Whether every bit of `flag` is set.
     // Cost: O(1).
     pub(crate) const fn contains(self, flag: RowFlags) -> bool {

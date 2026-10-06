@@ -352,88 +352,20 @@ pub(crate) fn native_method_1arg(
             let result: String = s.chars().take(keep).collect();
             Some(Ok(Value::str(result)))
         }
+        // The argument forms of the Unicode methods are rows
+        // (`method_table::unicode`); these arms keep the `Cool` receivers with no
+        // table shape (a `Match`, a `Range`, ...).
+        // Cost: O(1), a table lookup.
         "uniprop" => {
-            let prop_name = arg.to_string_value();
-            match target.view() {
-                ValueView::Package(_) => {
-                    let msg = "Cannot resolve caller uniprop".to_string();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Some(Err(err));
-                }
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    return Some(Ok(
-                        crate::builtins::uniprop::unicode_property_value_for_codepoint(
-                            cp,
-                            Some(&prop_name),
-                        ),
-                    ));
-                }
-                _ => {}
-            }
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Ok(Value::NIL));
-            }
-            let ch = s.chars().next().unwrap();
-            Some(Ok(crate::builtins::uniprop::unicode_property_value(
-                ch, &prop_name,
-            )))
+            crate::builtins::method_table::unicode::uniprop_of(target, std::slice::from_ref(arg))
         }
+        // Cost: O(1), a table lookup.
         "unimatch" => {
-            let prop_value = arg.to_string_value();
-            match target.view() {
-                ValueView::Package(_) => {
-                    let msg = "Cannot resolve caller unimatch".to_string();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Some(Err(err));
-                }
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    return Some(Ok(crate::builtins::uniprop::unimatch_for_codepoint(
-                        cp,
-                        &prop_value,
-                        None,
-                    )));
-                }
-                _ => {}
-            }
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Ok(Value::NIL));
-            }
-            let ch = s.chars().next().unwrap();
-            Some(Ok(Value::truth(crate::builtins::uniprop::unimatch(
-                ch,
-                &prop_value,
-                None,
-            ))))
+            crate::builtins::method_table::unicode::unimatch(target, std::slice::from_ref(arg))
         }
+        // Cost: O(n), n = chars of the invocant.
         "uniprops" => {
-            let prop_name = arg.to_string_value();
-            let s = target.to_string_value();
-            if s.is_empty() {
-                return Some(Ok(Value::array(vec![])));
-            }
-            let props: Vec<Value> = s
-                .chars()
-                .map(|ch| crate::builtins::uniprop::unicode_property_value(ch, &prop_name))
-                .collect();
-            Some(Ok(Value::array(props)))
+            crate::builtins::method_table::unicode::uniprops_of(target, std::slice::from_ref(arg))
         }
         // Cost: O(p + m), p = match position, m = chars of the needle (the
         // invocant is borrowed).
