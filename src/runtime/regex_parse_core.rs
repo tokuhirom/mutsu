@@ -2478,6 +2478,35 @@ impl Interpreter {
                         continue 'atoms;
                     }
                 }
+                // A leading `^` pushes no token (it sets `anchor_start`), so the
+                // same whitespace-separated quantifier has no token to attach to
+                // (`^ ** 2 a`, #12039). It repeats a zero-width assertion, so a
+                // minimum of 1 or more is still start-of-string, and a minimum of
+                // 0 (`^ ?`, `^ ** 0..2`) makes the assertion optional.
+                if prev_was_ws && tokens.is_empty() && anchor_start {
+                    let rest: String = std::iter::once(c).chain(chars.clone()).collect();
+                    let mut probe = rest.chars().peekable();
+                    if let Some((quant, _frugal)) = try_consume_quantifier(&mut probe) {
+                        let optional = match quant {
+                            RegexQuant::ZeroOrMore
+                            | RegexQuant::ZeroOrOne
+                            | RegexQuant::Repeat(0, _) => Some(true),
+                            RegexQuant::OneOrMore | RegexQuant::Repeat(..) => Some(false),
+                            // A runtime count is neither: leave it NonQuantifiable.
+                            RegexQuant::One | RegexQuant::RepeatCode(_) => None,
+                        };
+                        if let Some(optional) = optional {
+                            let consumed = rest.chars().count() - probe.count() - 1;
+                            for _ in 0..consumed {
+                                chars.next();
+                            }
+                            if optional {
+                                anchor_start = false;
+                            }
+                            continue 'atoms;
+                        }
+                    }
+                }
 
                 }
                 // Validate mode: a quantifier metacharacter (`*`, `+`, `?`) reaching

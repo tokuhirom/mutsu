@@ -29,14 +29,23 @@ static ANON_STATE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// by the assignment-statement parser for a bare-`$` assignment target, which
 /// otherwise collapsed every occurrence onto one shared `__ANON_STATE__` name.
 pub(in crate::parser) fn mint_anon_state_name() -> String {
+    let name = fresh_anon_state_name(crate::parser::stmt::simple::anon_state_is_per_call());
+    crate::parser::stmt::simple::record_anon_state_name(&name);
+    name
+}
+
+/// A fresh anonymous-state variable name that no scope records: the name the
+/// RakuAST lowering gives a `VarDeclaration::Anonymous`, which declares it
+/// itself. `per_call` names the variant of a block nested below a routine
+/// body (see [`mint_anon_state_name`]).
+// Cost: O(1).
+pub(crate) fn fresh_anon_state_name(per_call: bool) -> String {
     let id = ANON_STATE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let name = if crate::parser::stmt::simple::anon_state_is_per_call() {
+    if per_call {
         format!("__ANON_STATE_PC_{id}__")
     } else {
         format!("__ANON_STATE_{id}__")
-    };
-    crate::parser::stmt::simple::record_anon_state_name(&name);
-    name
+    }
 }
 
 /// Whether `rest`, the text after a bare `$`, starts a named placeholder

@@ -3533,7 +3533,9 @@ impl Interpreter {
                         .map(|d| !d.is_empty())
                         .unwrap_or(false)
                     {
-                        let mut call_args = match Interpreter::cursor_call_position(&target) {
+                        let mut call_args = match Interpreter::cursor_call_position(&target)
+                            .or_else(|| Interpreter::subrule_invocant_position(&target))
+                        {
                             Some((orig, pos, anchored)) => vec![
                                 Value::str(orig),
                                 Value::pair(

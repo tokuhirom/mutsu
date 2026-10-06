@@ -45,9 +45,27 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     Ok(stmts)
 }
 
+/// The statements of a block body. Each body is a frame for the anonymous
+/// variables written in it (see `anon_state`); the unit's own list is not,
+/// as the parser declares none at the top level either.
 pub(super) fn lower_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     match node.class {
-        RakuAstClass::CompUnit => lower_stmts(named_child(node, "statement-list")?),
+        RakuAstClass::CompUnit => lower_stmt_list(named_child(node, "statement-list")?),
+        _ => super::anon_state::with_frame(|| lower_stmt_list(node)),
+    }
+}
+
+/// [`lower_stmts`] for a routine body (a `sub`, a method, a `proto`): a bare
+/// `$` directly in it persists across calls, one in a block below it is per
+/// call.
+// Cost: O(n), n = size of the body.
+pub(super) fn lower_routine_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    super::anon_state::next_body_is_routine();
+    lower_stmts(node)
+}
+
+fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    match node.class {
         RakuAstClass::StatementList => {
             let mut stmts = Vec::with_capacity(node.fields.len());
             for f in &node.fields {
@@ -201,9 +219,16 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         {
             Ok(Stmt::Expr(Expr::BareWord("done".to_string())))
         }
+        // `temp` / `let` over an lvalue, with or without an assignment.
+        RakuAstClass::ApplyPrefix | RakuAstClass::ApplyInfix | RakuAstClass::ApplyDottyInfix
+            if super::temporize::is_temporized(node) =>
+        {
+            super::temporize::lower(node)
+        }
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::VarDeclarationTerm => lower_term_declaration(node),
+        RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_statement(node),
         RakuAstClass::ApplyDottyInfix => Ok(Stmt::Expr(lower_dotty_assign(node, true)?)),
         RakuAstClass::StatementIf => lower_if(node),
         // `with X { … }` / `without X { … }`. Both rebuild the conditional the
@@ -633,7 +658,7 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         },
     }
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
-    let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     // A sub with no signature of its own takes its placeholder variables.
     let (params, param_defs) =
         crate::ast::implicit_placeholder_signature(params, param_defs, &body);
@@ -783,7 +808,10 @@ fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// parser's `.=` expansion. As a statement, `$_ .= meth` is the topic form that
 /// can write through a read-only whole-container topic.
 // Cost: O(n), n = size of the target and the arguments.
-fn lower_dotty_assign(node: &RakuAstNode, as_statement: bool) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_dotty_assign(
+    node: &RakuAstNode,
+    as_statement: bool,
+) -> Result<Expr, RuntimeError> {
     let target = lower_expr(named_child(node, "left")?)?;
     let call = named_child(node, "right")?;
     if call.class != RakuAstClass::CallMethod {
@@ -1339,7 +1367,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if super::routine_traits::has_generic_traits(&custom_traits) {
         return Err(unsupported(node));
     }
-    let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::MethodDecl {
         name: crate::symbol::Symbol::intern(&name),
         name_expr: None,
@@ -1834,7 +1862,7 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if !custom_traits.is_empty() {
         return Err(unsupported(node));
     }
-    let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     let declarator = if node.class == RakuAstClass::Submethod {
         crate::ast::RoutineDeclarator::Submethod
     } else {
@@ -1849,7 +1877,7 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 }
 
 /// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`).
-fn infix_is_assignment(node: &RakuAstNode) -> bool {
+pub(super) fn infix_is_assignment(node: &RakuAstNode) -> bool {
     named_child(node, "infix")
         .map(|c| c.class == RakuAstClass::Assignment)
         .unwrap_or(false)
@@ -1909,7 +1937,7 @@ fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 }
 
 /// Whether an `ApplyInfix` uses Raku's compound-assignment metaoperator.
-fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
+pub(super) fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
     named_child(node, "infix")
         .map(|child| child.class == RakuAstClass::MetaInfixAssign)
         .unwrap_or(false)
@@ -1917,7 +1945,7 @@ fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
 
 /// Lower `ApplyInfix(MetaInfix::Assign(Infix(OP)))` to the parser's existing
 /// compound-assignment execution shape while retaining the source marker.
-fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let target = lower_expr(named_child(node, "left")?)?;
     let meta = named_child(node, "infix")?;
     let op = match positional_leaf(named_child_or_positional(meta)?)?.view() {
@@ -1939,7 +1967,13 @@ fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> 
 /// (`$` sigil stripped to match the parser's naming; `@`/`%`/`&` kept) and the
 /// lowered right-hand side.
 fn lower_assign_parts(node: &RakuAstNode) -> Result<(String, Expr), RuntimeError> {
-    let raw = variable_spelling(named_child(node, "left")?).map_err(|_| unsupported(node))?;
+    let left = named_child(node, "left")?;
+    // `($ = 1)`: an assignment to an anonymous scalar.
+    if super::anon_state::is_anonymous(left) {
+        let name = super::anon_state::assign_target(left)?;
+        return Ok((name, lower_expr(named_child(node, "right")?)?));
+    }
+    let raw = variable_spelling(left).map_err(|_| unsupported(node))?;
     let name = match raw.strip_prefix('$') {
         Some(bare) => bare.to_string(),
         None => raw,
@@ -2028,6 +2062,15 @@ fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `v = …` where `v` is a sigilless term (`my \v = @a`) assigns into what
     // the term is bound to.
     let left = named_child(node, "left")?;
+    // `$ = EXPR`: an assignment to an anonymous scalar.
+    if super::anon_state::is_anonymous(left) {
+        return Ok(Stmt::Assign {
+            name: super::anon_state::assign_target(left)?,
+            expr: lower_expr(named_child(node, "right")?)?,
+            op: crate::ast::AssignOp::Assign,
+            target_is_sigilless: false,
+        });
+    }
     if left.class == RakuAstClass::TermName
         && let Some(NameShape::Identifier(name)) =
             name_parts::name_shape(named_child_or_positional(left)?)
@@ -2135,7 +2178,7 @@ fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
 /// Lower a plain `my $x = EXPR` declaration to `Stmt::VarDecl`. Scoped/typed/
 /// attribute forms (which carry `scope`/`type`/`twigil`/`traits` fields) are the
 /// coverage boundary.
-fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `scope => "has"` is an attribute declaration, not a variable one; it is
     // the only scope that lowers (the converter renders no other).
     if matches!(leaf_str(node, "scope").as_deref(), Ok("has")) {
@@ -3251,8 +3294,19 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 }
 
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    // `⚛$x`, `$x ⚛= 5`, `$x⚛++`, ...: plain operator nodes, the parser's calls.
+    if let Some(call) = super::atomic_op::lower(node) {
+        return call;
+    }
     match node.class {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
+        RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_term(node),
+        // `(temp $x)` / `(let $x = 1)`: the parser's save, wrapped in a `DoStmt`.
+        RakuAstClass::ApplyPrefix | RakuAstClass::ApplyInfix | RakuAstClass::ApplyDottyInfix
+            if super::temporize::is_temporized(node) =>
+        {
+            Ok(Expr::DoStmt(Box::new(super::temporize::lower(node)?)))
+        }
         RakuAstClass::StatementPrefixSupply => super::react::lower_supply(node),
         // A signature declaration in expression position (`if my ($a, $b) = …`)
         // is the parser's expansion wrapped in a `DoStmt`.
@@ -3410,7 +3464,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Err(unsupported(node));
             }
             // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
-            let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+            let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
             if params.is_empty() && return_type.is_none() {
                 return Ok(Expr::AnonSub {
                     body,

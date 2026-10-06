@@ -232,6 +232,12 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("traits", Absent::EmptyList),
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
         ],
+        VarDeclarationAnonymous => &[
+            ("type", Absent::TypeObject("RakuAST::Type")),
+            ("scope", Absent::Required),
+            ("sigil", Absent::Required),
+            ("initializer", Absent::TypeObject("RakuAST::Initializer")),
+        ],
         InitializerAssign | InitializerBind => &[("expression", Absent::Required)],
         VarDeclarationSignature => &[
             ("signature", Absent::Required),

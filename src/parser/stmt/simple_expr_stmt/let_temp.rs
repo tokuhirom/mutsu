@@ -128,6 +128,18 @@ fn let_subscript_stmt<'a>(
     })())
 }
 
+/// The value of `let @a = 1, 2` / `temp %h = a => 1, b => 2`: a container is
+/// list-assigned, so the right side is the whole comma list, not its first
+/// item (which left `temp @a = 3, 4` assigning `3` and running `4` as a
+/// statement of its own).
+fn assigned_value(sigil: char, input: &str) -> PResult<'_, Expr> {
+    if sigil == '$' {
+        expression(input)
+    } else {
+        crate::parser::stmt::parse_comma_or_expr(input)
+    }
+}
+
 /// Parse `let` statement: `let $var = expr`, `let $var`, `let @arr[idx] = expr`.
 pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("let", input).ok_or_else(|| PError::expected("let statement"))?;
@@ -174,7 +186,7 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
     if rest.starts_with('=') && !rest.starts_with("==") {
         let val_rest = &rest[1..];
         let (val_rest, _) = ws(val_rest)?;
-        let (val_rest, val_expr) = expression(val_rest)?;
+        let (val_rest, val_expr) = assigned_value(sigil, val_rest)?;
         return parse_statement_modifier(
             val_rest,
             Stmt::Let {
@@ -200,24 +212,6 @@ pub(crate) fn let_stmt(input: &str) -> PResult<'_, Stmt> {
             nested_lvalue: false,
         },
     )
-}
-
-/// Walk an indexed lvalue chain down to its base variable and return the env
-/// key used by `LetSave` for that variable (scalars drop their `$` sigil;
-/// arrays/hashes keep their `@`/`%`). Returns `None` for non-variable bases
-/// (e.g. a method call), which the multi-level `temp` lowering cannot save.
-///
-/// Parentheses are transparent here: `temp (@a)[0]` and `temp ((@a)[0])[1]`
-/// name elements of `@a` exactly as `temp @a[0]` does (#10581).
-// Cost: O(d + |name|), d = subscript and paren depth.
-fn lvalue_base_name(expr: &Expr) -> Option<String> {
-    let mut expr = expr;
-    loop {
-        match expr {
-            Expr::Index { target, .. } | Expr::Grouped(target) => expr = target,
-            other => return other.container_var_key(),
-        }
-    }
 }
 
 /// Whether an element lvalue's container is anything other than a plain
@@ -321,7 +315,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         // compiler temporizes the element that assignment's target names.
         if let Expr::IndexAssign { target, .. } = &expr
             && is_compound_elem_container(target)
-            && let Some(save_name) = lvalue_base_name(target)
+            && let Some(save_name) = crate::ast::temporize::base_name(target)
         {
             return parse_statement_modifier(
                 expr_rest,
@@ -340,7 +334,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         // element expression itself and the compiler saves that element.
         if let Expr::Index { target, .. } = &expr
             && is_compound_elem_container(target)
-            && let Some(save_name) = lvalue_base_name(target)
+            && let Some(save_name) = crate::ast::temporize::base_name(target)
         {
             return parse_statement_modifier(
                 expr_rest,
@@ -604,7 +598,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
     if rest.starts_with('=') && !rest.starts_with("==") {
         let val_rest = &rest[1..];
         let (val_rest, _) = ws(val_rest)?;
-        let (val_rest, val_expr) = expression(val_rest)?;
+        let (val_rest, val_expr) = assigned_value(sigil, val_rest)?;
         return parse_statement_modifier(
             val_rest,
             Stmt::Let {

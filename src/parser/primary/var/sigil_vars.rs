@@ -19,6 +19,13 @@ use super::self_call::contextualized_self_call;
 
 static ANON_ARRAY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// A fresh name for a bare `@` (each occurrence is its own anonymous array).
+// Cost: O(1).
+pub(crate) fn fresh_anon_array_name() -> String {
+    let id = ANON_ARRAY_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("__ANON_ARRAY_{id}__")
+}
+
 /// Find the `]` that closes the outer `[` of an `&[op]` operator reference,
 /// balancing nested brackets. `input` starts just past the outer `[`. This lets
 /// a metaop whose operand is itself bracketed parse correctly: `&[R[~~]]` has
@@ -359,8 +366,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
     let next_is_ident =
         !rest.is_empty() && rest.chars().next().is_some_and(is_raku_identifier_start);
     if !next_is_ident && twigil.is_empty() {
-        let id = ANON_ARRAY_COUNTER.fetch_add(1, Ordering::Relaxed);
-        return Ok((rest, Expr::ArrayVar(format!("__ANON_ARRAY_{id}__"))));
+        return Ok((rest, Expr::ArrayVar(fresh_anon_array_name())));
     }
     let (rest, name) = super::ident::parse_var_longname_with_hyphens(rest)?;
     let (rest, name) = parse_var_name_adverb_suffixes(rest, name);

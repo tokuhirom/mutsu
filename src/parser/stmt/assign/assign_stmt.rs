@@ -38,10 +38,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     bare_name.clone()
                 };
                 if is_atomic {
-                    let stmt = Stmt::Expr(Expr::Call {
-                        name: Symbol::intern("__mutsu_atomic_store_var"),
-                        args: vec![Expr::Literal(Value::str(storage_name)), expr],
-                    });
+                    let stmt = Stmt::Expr(crate::ast::atomic_op::store_var(storage_name, expr));
                     return parse_statement_modifier(rest, stmt);
                 }
                 let stmt = Stmt::Assign {
@@ -665,10 +662,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 exception: None,
             })?;
         if is_atomic {
-            let stmt = Stmt::Expr(Expr::Call {
-                name: Symbol::intern("__mutsu_atomic_store_var"),
-                args: vec![Expr::Literal(Value::str(name)), expr],
-            });
+            let stmt = Stmt::Expr(crate::ast::atomic_op::store_var(name, expr));
             return parse_statement_modifier(rest, stmt);
         }
         let stmt = Stmt::Assign {

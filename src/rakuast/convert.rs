@@ -69,6 +69,11 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
             }
             break;
         }
+        // The `state` declaration the parser puts at the top of a block for
+        // each bare `$` it contains: rakudo's node is the `$` itself.
+        if crate::ast::anon_state::is_implicit_decl(stmt) {
+            continue;
+        }
         if let Some(mut node) = convert_stmt(stmt)? {
             if let Some(n) = line.take() {
                 node.fields.push(origin::field(n));
@@ -322,6 +327,15 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 &expression,
                 &header,
             )?)))
+        }
+        // `temp` / `let` over a variable, an element or a declaration.
+        Stmt::Let { .. } => match super::temporize::convert(stmt) {
+            Some(node) => Ok(Some(statement_expression(node?))),
+            None => Err(unsupported("`temp`/`let` of this form")),
+        },
+        Stmt::SyntheticBlock(_) if crate::ast::temporize::recognize(stmt).is_some() => {
+            let node = super::temporize::convert(stmt).expect("just checked")?;
+            Ok(Some(statement_expression(node)))
         }
         // A sigilless declaration (`my \x = 5`, `my Int \x := $s`).
         Stmt::SyntheticBlock(_) if crate::ast::sigilless_decl::declaration(stmt).is_some() => {
@@ -1323,9 +1337,19 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
 /// (`@`/`%`) has no adverb.
 fn assignment_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
+    assignment_around(var_lexical(sigil, desigil), sigil == "$", rhs)
+}
+
+/// `LEFT = EXPR` over an already converted left side; `is_item` marks the
+/// `Assignment` node `:item`, which rakudo does for a scalar target.
+pub(super) fn assignment_around(
+    left: RakuAstNode,
+    is_item: bool,
+    rhs: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     let assignment = RakuAstNode {
         class: RakuAstClass::Assignment,
-        fields: if sigil == "$" {
+        fields: if is_item {
             vec![RakuAstField {
                 name: None,
                 value: RakuAstFieldValue::Adverb("item"),
@@ -1337,7 +1361,7 @@ fn assignment_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError>
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), var_lexical(sigil, desigil)),
+            node_field(Some("left"), left),
             node_field(Some("infix"), assignment),
             node_field(Some("right"), convert_expr(rhs)?),
         ],
@@ -1558,6 +1582,15 @@ fn compound_assignment_infix(
     op: &str,
     rhs: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
+    compound_assignment_with_left(convert_expr(target)?, op, rhs)
+}
+
+/// [`compound_assignment_infix`] over an already converted left side.
+pub(super) fn compound_assignment_with_left(
+    left: RakuAstNode,
+    op: &str,
+    rhs: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     let base_op = op.strip_suffix('=').unwrap_or(op);
     let meta_assign = RakuAstNode {
         class: RakuAstClass::MetaInfixAssign,
@@ -1566,7 +1599,7 @@ fn compound_assignment_infix(
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(target)?),
+            node_field(Some("left"), left),
             node_field(Some("infix"), meta_assign),
             node_field(Some("right"), convert_expr(rhs)?),
         ],
@@ -1578,6 +1611,15 @@ fn compound_assignment_infix(
 /// only its name, arguments and dispatch modifier are rendered.
 // Cost: O(n), n = size of the target and the arguments.
 fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    dotty_assignment_with_left(convert_expr(target)?, call)
+}
+
+/// [`dotty_assignment`] over an already converted left side.
+// Cost: O(n), n = size of the arguments.
+pub(super) fn dotty_assignment_with_left(
+    left: RakuAstNode,
+    call: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     let Some(crate::ast::dotty_assign::DottyCall {
         name,
         args,
@@ -1590,7 +1632,7 @@ fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeEr
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyDottyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(target)?),
+            node_field(Some("left"), left),
             node_field(
                 Some("infix"),
                 RakuAstNode {
@@ -1771,6 +1813,25 @@ pub(super) fn var_declaration(
     will_build: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
+    // `state $ = 0`: the parser names the anonymous scalar `__ANON_STATE__`;
+    // rakudo has no name.
+    if sigil == "$"
+        && (desigil == "__ANON_STATE__" || crate::ast::anon_state::is_scalar(desigil))
+        && scope == Some("state")
+        && type_name.is_none()
+        && twigil.is_none()
+        && will_build.is_none()
+    {
+        let initializer = match init {
+            None => None,
+            Some(Initializer::Assign(e)) => Some(RakuAstNode {
+                class: RakuAstClass::InitializerAssign,
+                fields: vec![node_field(None, convert_expr(e)?)],
+            }),
+            Some(_) => return Err(unsupported("anonymous state variable binding")),
+        };
+        return Ok(anonymous_declaration("$", initializer));
+    }
     // Field order matches raku: scope, type, sigil, twigil, desigilname, traits,
     // initializer — each omitted when absent (scope defaults to `my`; twigil and
     // traits appear only on attributes).
@@ -2107,6 +2168,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if let Some(stub) = stub_node(name.as_str(), args) {
                 return stub;
             }
+            if let Some(atomic) = super::atomic_op::convert(name.as_str(), args) {
+                return atomic;
+            }
             if is_desugar_marker(name.as_str()) {
                 if let Some((call, value)) = method_lvalue_parts(name.as_str(), args)
                     .or_else(|| call_lvalue_parts(name.as_str(), args))
@@ -2121,7 +2185,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Ok(call_name(name.as_str(), args, false)?)
         }
         Expr::Var(name) => {
-            if is_desugar_marker(name) {
+            if is_desugar_marker(name) && !crate::ast::anon_state::is_scalar(name) {
                 return Err(desugared(name));
             }
             if let Some(name) = name.strip_prefix('^')
@@ -2344,6 +2408,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 })
                 .ok_or_else(|| unsupported("declaration term"))
         }
+        // `(temp $x)` / `(let $x = 1)` in expression position.
+        Expr::DoStmt(stmt) if super::temporize::convert(stmt).is_some() => {
+            super::temporize::convert(stmt).expect("just checked")
+        }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => {
@@ -2398,7 +2466,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             compound_assignment_infix(target, op, rhs)
         }
         Expr::ArrayVar(name) => {
-            if is_desugar_marker(name) {
+            if is_desugar_marker(name) && !crate::ast::anon_state::is_array(name) {
                 return Err(desugared(name));
             }
             if name == "_" {
@@ -2428,7 +2496,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Ok(var_lexical("@", name))
         }
         Expr::HashVar(name) => {
-            if is_desugar_marker(name) {
+            if is_desugar_marker(name) && !crate::ast::anon_state::is_hash(name) {
                 return Err(desugared(name));
             }
             if name == "_" {
@@ -4673,6 +4741,23 @@ fn desugared(name: &str) -> RuntimeError {
     unsupported(&format!("desugared construct (internal name `{name}`)"))
 }
 
+/// `VarDeclaration::Anonymous(scope => "state", sigil, initializer?)`: a bare
+/// `$` / `@` / `%`, which is a `state` variable of its block. Rakudo gives it
+/// no name.
+fn anonymous_declaration(sigil: &str, initializer: Option<RakuAstNode>) -> RakuAstNode {
+    let mut fields = vec![
+        leaf_field(Some("scope"), Value::str_from("state")),
+        leaf_field(Some("sigil"), Value::str(sigil.to_string())),
+    ];
+    if let Some(initializer) = initializer {
+        fields.push(node_field(Some("initializer"), initializer));
+    }
+    RakuAstNode {
+        class: RakuAstClass::VarDeclarationAnonymous,
+        fields,
+    }
+}
+
 /// `$x` / `@a` / `%h` / `&f` usage -> `Var::Lexical("<sigil><name>")`.
 /// A variable reference. A package-qualified one (`$Foo::v`, `@A::B::c`) is a
 /// `Var::Package` carrying the segmented `Name` and the sigil, as Rakudo
@@ -4680,6 +4765,13 @@ fn desugared(name: &str) -> RuntimeError {
 /// `Var::Dynamic` of the whole spelling; anything else is a `Var::Lexical` of
 /// the whole spelling.
 fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
+    // A bare `$` / `@` / `%` is the anonymous declaration itself.
+    if (sigil == "$" && crate::ast::anon_state::is_scalar(name))
+        || (sigil == "@" && crate::ast::anon_state::is_array(name))
+        || (sigil == "%" && crate::ast::anon_state::is_hash(name))
+    {
+        return anonymous_declaration(sigil, None);
+    }
     if name.len() > 1 && name.starts_with('*') {
         return RakuAstNode {
             class: RakuAstClass::VarDynamic,
