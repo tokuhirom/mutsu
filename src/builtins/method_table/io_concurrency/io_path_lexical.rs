@@ -10,10 +10,11 @@
 //! subclass of `IO::Path` has no shape and reaches the same handlers through
 //! the owner lookup of the slow path (`method_table::invoke_owner`).
 
+use super::io_path_ctx::PathCtx;
 use crate::builtins::method_table::{Handler, MethodRow, Named, RowFlags};
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
-use crate::value::{AttrMap, RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value, ValueView};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -84,46 +85,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         named: &["parts", "joiner"],
     },
 ];
-
-/// What a path method reads of its receiver: the concrete class (the result
-/// round-trips it), the attributes and the path string.
-struct PathCtx {
-    class: Symbol,
-    attributes: AttrMap,
-    path: String,
-}
-
-impl PathCtx {
-    /// The context of an `IO::Path` instance, `None` for any other value.
-    // Cost: O(a), a = attributes of the instance (one copy of the map).
-    fn of(target: &Value) -> Option<PathCtx> {
-        match target.view() {
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } => {
-                let attributes = AttrMap::clone(&attributes.as_map());
-                let path = attributes
-                    .get("path")
-                    .map(Value::to_string_value)
-                    .unwrap_or_default();
-                Some(PathCtx {
-                    class: class_name,
-                    attributes,
-                    path,
-                })
-            }
-            _ => None,
-        }
-    }
-
-    /// The same path value with another `path` attribute.
-    // Cost: O(a + p), a = attributes of the instance, p = chars of the path.
-    fn with_path(&self, path: String) -> Value {
-        Interpreter::clone_io_path_with_path(&self.attributes, self.class, path)
-    }
-}
 
 /// `IO::Path.Str`: the path as given.
 // Cost: O(p), p = chars of the path.
@@ -307,10 +268,7 @@ fn parent_row(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeErr
 // Cost: O(p + n), p = chars of the path, n = chars of the name.
 fn sibling_row(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let ctx = PathCtx::of(target)?;
-    let sibling_name = args
-        .first()
-        .map(Value::to_string_value)
-        .unwrap_or_default();
+    let sibling_name = args.first().map(Value::to_string_value).unwrap_or_default();
     let (volume, dirname, _) = Interpreter::io_path_parts(&ctx.path);
     let dir_with_volume = format!("{}{}", volume, dirname);
     let sibling_path = if dir_with_volume == "/" || dir_with_volume == "\\" {
@@ -338,14 +296,6 @@ fn add_row(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>
         &ctx,
         children.iter().map(Value::to_string_value),
     ))
-}
-
-/// `IO::Path.child($name)` without `:secure`: a lexical join of one child
-/// (`:secure` resolves against the filesystem and is the interpreter row).
-// Cost: O(p + n), p = chars of the path, n = chars of the name.
-pub(crate) fn child_lexical(target: &Value, name: String) -> Option<Result<Value, RuntimeError>> {
-    let ctx = PathCtx::of(target)?;
-    Some(join_children(&ctx, std::iter::once(name)))
 }
 
 fn join_children(

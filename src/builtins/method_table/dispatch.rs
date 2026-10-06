@@ -75,6 +75,7 @@ pub(crate) fn invoke_in(
 // Cost: O(1) to find the row, plus O(a) to split a arguments, plus the
 // handler's own cost.
 pub(crate) fn invoke_owner(
+    interp: &mut Interpreter,
     owner: Symbol,
     method: &str,
     args: &[Value],
@@ -86,13 +87,13 @@ pub(crate) fn invoke_owner(
     let row = row(id);
     let target = target();
     if named_count == 0 {
-        return call(row, None, &target, args, Named::NONE).map(|(result, _)| result);
+        return call(row, Some(interp), &target, args, Named::NONE).map(|(result, _)| result);
     }
     let (named, positional): (Vec<Value>, Vec<Value>) = args
         .iter()
         .cloned()
         .partition(|arg| arg.is_string_pair_value());
-    call(row, None, &target, &positional, Named::new(&named)).map(|(result, _)| result)
+    call(row, Some(interp), &target, &positional, Named::new(&named)).map(|(result, _)| result)
 }
 
 /// Whether `arg` is a plain scalar a row may be handed by default: a `Str`

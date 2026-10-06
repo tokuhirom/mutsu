@@ -124,6 +124,13 @@ impl<'a> Named<'a> {
         Named(pairs)
     }
 
+    /// The named arguments as the string-keyed `Pair`s the call passed them
+    /// as, for a primitive that reads its arguments as one list.
+    // Cost: O(1).
+    pub(crate) fn pairs(&self) -> &'a [Value] {
+        self.0
+    }
+
     /// The value of the named argument `name`, if the call passed it.
     // Cost: O(n), n = named arguments of the call.
     pub(crate) fn get(&self, name: &str) -> Option<&'a Value> {

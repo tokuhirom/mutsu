@@ -168,8 +168,8 @@ impl Interpreter {
         ]
     }
 
-    /// The VM's native instance lane for this family: `IO::Path.watch` and
-    /// the `IO::Notification::Change` methods.
+    /// The VM's native instance lane for `IO::Notification::Change`'s methods
+    /// (`IO::Path.watch` is a row of the method table).
     pub(crate) fn try_io_notification_instance_method(
         &self,
         target: &Value,
@@ -185,36 +185,25 @@ impl Interpreter {
         };
         let class = class_name.resolve();
         let attributes = attributes.as_map();
-        if Self::is_io_path_lexical_class(&class) {
-            self.try_io_path_watch(&attributes, method)
-        } else {
-            self.try_io_notification_change_method(&class, &attributes, method)
-        }
+        self.try_io_notification_change_method(&class, &attributes, method)
     }
 
     /// `IO::Path.watch`: the method form of `IO::Notification.watch-path`,
     /// reporting paths under the receiver's absolute path (as rakudo does).
-    /// Shared by the VM's native IO::Path dispatch and `native_io_path`.
+    /// Shared by the `watch` row and `IO::Notification.watch-path`.
     // Cost: O(1) here; the watcher thread pays O(n) per poll, n = entries of
     // the watched directory (1 for a file).
-    pub(crate) fn try_io_path_watch(
-        &self,
-        attributes: &AttrMap,
-        method: &str,
-    ) -> Option<Result<Value, RuntimeError>> {
-        if method != "watch" {
-            return None;
-        }
+    pub(crate) fn io_path_watch(&self, attributes: &AttrMap) -> Result<Value, RuntimeError> {
         let p = attributes
             .get("path")
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         let watched = self.resolve_io_path_buf(attributes, &p);
-        let display = match self.try_io_path_cwd_method(attributes, "absolute", &[]) {
-            Some(Ok(abs)) => abs.to_string_value(),
-            _ => Self::stringify_path(&watched),
+        let display = match self.io_path_absolute(attributes, &[]) {
+            Ok(abs) => abs.to_string_value(),
+            Err(_) => Self::stringify_path(&watched),
         };
-        Some(Self::watch_path_supply(watched, display))
+        Self::watch_path_supply(watched, display)
     }
 
     /// Type-object methods of `IO::Notification`: `watch-path(Str() $path)`.
@@ -245,7 +234,7 @@ impl Interpreter {
         if let ValueView::Instance { attributes, .. } = path.view()
             && Self::is_io_path_value(path)
         {
-            return self.try_io_path_watch(&attributes.as_map(), "watch");
+            return Some(self.io_path_watch(&attributes.as_map()));
         }
         let p = path.to_string_value();
         let watched = self.resolve_path(&p);

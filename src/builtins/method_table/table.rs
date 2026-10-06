@@ -271,7 +271,10 @@ pub(crate) fn owner_row(owner: Symbol, method: Symbol, arity: usize) -> Option<R
     if !table.has_name(method, arity) {
         return None;
     }
-    table.owners.get(&(owner, method, u8::try_from(arity).ok()?)).copied()
+    table
+        .owners
+        .get(&(owner, method, u8::try_from(arity).ok()?))
+        .copied()
 }
 
 /// The row `id` names.

@@ -6,13 +6,13 @@ impl Interpreter {
     /// like `slurp` does, so an `IO::Path` argument must open and read the file
     /// rather than being stringified into a one-element list
     /// (raku: `lines($path)` is `$path.lines`). Delegating to
-    /// `try_io_path_content_read` — the single implementation the `.lines`/`.words`
-    /// *method* forms already use — keeps the two spellings in agreement instead
-    /// of growing a second read+split path here.
+    /// `io_path_lines`/`io_path_words` — the single implementation the
+    /// `.lines`/`.words` *method* rows use — keeps the two spellings in agreement
+    /// instead of growing a second read+split path here.
     fn try_io_path_content_sub(
         &mut self,
         args: &[Value],
-        method: &str,
+        words: bool,
     ) -> Option<Result<Value, RuntimeError>> {
         let first = args
             .iter()
@@ -33,7 +33,12 @@ impl Interpreter {
             .filter(|a| !std::ptr::eq(*a, first))
             .cloned()
             .collect();
-        self.try_io_path_content_read(&attributes.to_map(), method, &rest)
+        let attributes = attributes.to_map();
+        Some(if words {
+            self.io_path_words(&attributes, &rest)
+        } else {
+            self.io_path_lines(&attributes, &rest)
+        })
     }
 
     /// The routine form of `say`/`put`/`print`/`note` (`&say(...)`, an alias
@@ -112,7 +117,7 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_lines(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if let Some(result) = self.try_io_path_content_sub(args, "lines") {
+        if let Some(result) = self.try_io_path_content_sub(args, false) {
             return result;
         }
         // Named args (`:chomp`, `:count`) may appear before or after the string
@@ -199,7 +204,7 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_words(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if let Some(result) = self.try_io_path_content_sub(args, "words") {
+        if let Some(result) = self.try_io_path_content_sub(args, true) {
             return result;
         }
         let handle = if args.is_empty() {
