@@ -296,6 +296,15 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 crate::ast::decl_modifier::modified_declaration(stmt).expect("just checked");
             convert_stmt(&modified)
         }
+        // `temp` / `let` over a variable, an element or a declaration.
+        Stmt::Let { .. } => match super::temporize::convert(stmt) {
+            Some(node) => Ok(Some(statement_expression(node?))),
+            None => Err(unsupported("`temp`/`let` of this form")),
+        },
+        Stmt::SyntheticBlock(_) if crate::ast::temporize::recognize(stmt).is_some() => {
+            let node = super::temporize::convert(stmt).expect("just checked")?;
+            Ok(Some(statement_expression(node)))
+        }
         // A sigilless declaration (`my \x = 5`, `my Int \x := $s`).
         Stmt::SyntheticBlock(_) if crate::ast::sigilless_decl::declaration(stmt).is_some() => {
             let decl = crate::ast::sigilless_decl::declaration(stmt).expect("just checked");
@@ -1221,9 +1230,19 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
 /// (`@`/`%`) has no adverb.
 fn assignment_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
+    assignment_around(var_lexical(sigil, desigil), sigil == "$", rhs)
+}
+
+/// `LEFT = EXPR` over an already converted left side; `is_item` marks the
+/// `Assignment` node `:item`, which rakudo does for a scalar target.
+pub(super) fn assignment_around(
+    left: RakuAstNode,
+    is_item: bool,
+    rhs: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     let assignment = RakuAstNode {
         class: RakuAstClass::Assignment,
-        fields: if sigil == "$" {
+        fields: if is_item {
             vec![RakuAstField {
                 name: None,
                 value: RakuAstFieldValue::Adverb("item"),
@@ -1235,7 +1254,7 @@ fn assignment_infix(name: &str, rhs: &Expr) -> Result<RakuAstNode, RuntimeError>
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), var_lexical(sigil, desigil)),
+            node_field(Some("left"), left),
             node_field(Some("infix"), assignment),
             node_field(Some("right"), convert_expr(rhs)?),
         ],
@@ -1456,6 +1475,15 @@ fn compound_assignment_infix(
     op: &str,
     rhs: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
+    compound_assignment_with_left(convert_expr(target)?, op, rhs)
+}
+
+/// [`compound_assignment_infix`] over an already converted left side.
+pub(super) fn compound_assignment_with_left(
+    left: RakuAstNode,
+    op: &str,
+    rhs: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     let base_op = op.strip_suffix('=').unwrap_or(op);
     let meta_assign = RakuAstNode {
         class: RakuAstClass::MetaInfixAssign,
@@ -1464,7 +1492,7 @@ fn compound_assignment_infix(
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(target)?),
+            node_field(Some("left"), left),
             node_field(Some("infix"), meta_assign),
             node_field(Some("right"), convert_expr(rhs)?),
         ],
@@ -1476,6 +1504,15 @@ fn compound_assignment_infix(
 /// only its name, arguments and dispatch modifier are rendered.
 // Cost: O(n), n = size of the target and the arguments.
 fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    dotty_assignment_with_left(convert_expr(target)?, call)
+}
+
+/// [`dotty_assignment`] over an already converted left side.
+// Cost: O(n), n = size of the arguments.
+pub(super) fn dotty_assignment_with_left(
+    left: RakuAstNode,
+    call: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     let Some(crate::ast::dotty_assign::DottyCall {
         name,
         args,
@@ -1488,7 +1525,7 @@ fn dotty_assignment(target: &Expr, call: &Expr) -> Result<RakuAstNode, RuntimeEr
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyDottyInfix,
         fields: vec![
-            node_field(Some("left"), convert_expr(target)?),
+            node_field(Some("left"), left),
             node_field(
                 Some("infix"),
                 RakuAstNode {
@@ -2222,6 +2259,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     _ => None,
                 })
                 .ok_or_else(|| unsupported("declaration term"))
+        }
+        // `(temp $x)` / `(let $x = 1)` in expression position.
+        Expr::DoStmt(stmt) if super::temporize::convert(stmt).is_some() => {
+            super::temporize::convert(stmt).expect("just checked")
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {

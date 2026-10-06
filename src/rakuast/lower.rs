@@ -196,6 +196,12 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         {
             Ok(Stmt::Expr(Expr::BareWord("done".to_string())))
         }
+        // `temp` / `let` over an lvalue, with or without an assignment.
+        RakuAstClass::ApplyPrefix | RakuAstClass::ApplyInfix | RakuAstClass::ApplyDottyInfix
+            if super::temporize::is_temporized(node) =>
+        {
+            super::temporize::lower(node)
+        }
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::VarDeclarationTerm => lower_term_declaration(node),
@@ -730,7 +736,10 @@ fn lower_term_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// parser's `.=` expansion. As a statement, `$_ .= meth` is the topic form that
 /// can write through a read-only whole-container topic.
 // Cost: O(n), n = size of the target and the arguments.
-fn lower_dotty_assign(node: &RakuAstNode, as_statement: bool) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_dotty_assign(
+    node: &RakuAstNode,
+    as_statement: bool,
+) -> Result<Expr, RuntimeError> {
     let target = lower_expr(named_child(node, "left")?)?;
     let call = named_child(node, "right")?;
     if call.class != RakuAstClass::CallMethod {
@@ -1772,7 +1781,7 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 }
 
 /// Whether an `ApplyInfix`'s `infix` child is an `Assignment` node (`$x = …`).
-fn infix_is_assignment(node: &RakuAstNode) -> bool {
+pub(super) fn infix_is_assignment(node: &RakuAstNode) -> bool {
     named_child(node, "infix")
         .map(|c| c.class == RakuAstClass::Assignment)
         .unwrap_or(false)
@@ -1832,7 +1841,7 @@ fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 }
 
 /// Whether an `ApplyInfix` uses Raku's compound-assignment metaoperator.
-fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
+pub(super) fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
     named_child(node, "infix")
         .map(|child| child.class == RakuAstClass::MetaInfixAssign)
         .unwrap_or(false)
@@ -1840,7 +1849,7 @@ fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
 
 /// Lower `ApplyInfix(MetaInfix::Assign(Infix(OP)))` to the parser's existing
 /// compound-assignment execution shape while retaining the source marker.
-fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let target = lower_expr(named_child(node, "left")?)?;
     let meta = named_child(node, "infix")?;
     let op = match positional_leaf(named_child_or_positional(meta)?)?.view() {
@@ -2058,7 +2067,7 @@ fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
 /// Lower a plain `my $x = EXPR` declaration to `Stmt::VarDecl`. Scoped/typed/
 /// attribute forms (which carry `scope`/`type`/`twigil`/`traits` fields) are the
 /// coverage boundary.
-fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `scope => "has"` is an attribute declaration, not a variable one; it is
     // the only scope that lowers (the converter renders no other).
     if matches!(leaf_str(node, "scope").as_deref(), Ok("has")) {
@@ -3176,6 +3185,12 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match node.class {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
+        // `(temp $x)` / `(let $x = 1)`: the parser's save, wrapped in a `DoStmt`.
+        RakuAstClass::ApplyPrefix | RakuAstClass::ApplyInfix | RakuAstClass::ApplyDottyInfix
+            if super::temporize::is_temporized(node) =>
+        {
+            Ok(Expr::DoStmt(Box::new(super::temporize::lower(node)?)))
+        }
         RakuAstClass::StatementPrefixSupply => super::react::lower_supply(node),
         // A signature declaration in expression position (`if my ($a, $b) = …`)
         // is the parser's expansion wrapped in a `DoStmt`.

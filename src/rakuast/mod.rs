@@ -41,6 +41,7 @@ mod routine_traits;
 mod shadowed_terms;
 mod signature_decl;
 mod subscript_adverb;
+mod temporize;
 mod type_args;
 mod type_lower;
 mod use_stmt;
