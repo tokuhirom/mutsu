@@ -309,7 +309,5 @@ fn fold(node: &RakuAstNode, meta: &str, op: String) -> Result<Expr, RuntimeError
     }
     // A standalone `*` operand of `X` / `Z` makes the whole a WhateverCode: the
     // parser's own decision.
-    Ok(crate::parser::primary::container::maybe_curry_xz_metaop(
-        acc,
-    ))
+    Ok(crate::parser::maybe_curry_xz_metaop(acc))
 }
