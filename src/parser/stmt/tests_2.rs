@@ -110,6 +110,14 @@ fn parse_for_expression_in_parens() {
     assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
 }
 
+/// The expansion under a statement's source-level `.=` marker.
+fn dotty_expansion(stmt: &Stmt) -> Option<&Expr> {
+    match stmt {
+        Stmt::Expr(Expr::CompoundAssign { op, expanded, .. }) if op == ".=" => Some(expanded),
+        _ => None,
+    }
+}
+
 #[test]
 fn parse_topic_mutating_method_stmt() {
     let (rest, stmts) = program(".=fmt('%03b');").unwrap();
@@ -118,9 +126,11 @@ fn parse_topic_mutating_method_stmt() {
     // `.=method` on the topic is the `.=` metaop (`$_ = $_.method`), routed through
     // the `__mutsu_topic_dotassign` marker so it can reassign a read-only whole-
     // container topic while a plain `$_ = ...` still throws X::Assignment::RO.
+    // The expansion carries the source-level `.=` marker the RakuAST conversion
+    // reads.
     assert!(matches!(
-        &stmts[0],
-        Stmt::Expr(Expr::Call { name, .. }) if name.resolve() == "__mutsu_topic_dotassign"
+        dotty_expansion(&stmts[0]),
+        Some(Expr::Call { name, .. }) if name.resolve() == "__mutsu_topic_dotassign"
     ));
 }
 
@@ -130,8 +140,8 @@ fn parse_topic_mutating_method_stmt_with_colon_args() {
     let (rest, stmts) = program(src).unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
-    match &stmts[0] {
-        Stmt::Expr(Expr::Call { name, args }) => {
+    match dotty_expansion(&stmts[0]) {
+        Some(Expr::Call { name, args }) => {
             assert_eq!(name.resolve(), "__mutsu_topic_dotassign");
             assert_eq!(args.len(), 1);
             assert!(
@@ -153,7 +163,10 @@ fn parse_paren_expr_mutating_method_stmt() {
     // block that, at runtime, invokes `$t.STORE($t.foo)` when the (evaluated-once)
     // target provides a `STORE` method (custom container) and otherwise yields the
     // plain `$t.foo` method result.
-    assert!(matches!(&stmts[0], Stmt::Expr(Expr::DoBlock { .. })));
+    assert!(matches!(
+        dotty_expansion(&stmts[0]),
+        Some(Expr::DoBlock { .. })
+    ));
 }
 
 #[test]
