@@ -331,9 +331,15 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         Stmt::Redo(None) => Ok(Some(statement_expression(control_call("redo", &[])?))),
         // `last FOO` / `next FOO` / `redo FOO`: the label is a `Term::Name`
         // argument of the call.
-        Stmt::Last(Some(label)) => Ok(Some(statement_expression(labelled_control_call("last", label)))),
-        Stmt::Next(Some(label)) => Ok(Some(statement_expression(labelled_control_call("next", label)))),
-        Stmt::Redo(Some(label)) => Ok(Some(statement_expression(labelled_control_call("redo", label)))),
+        Stmt::Last(Some(label)) => Ok(Some(statement_expression(labelled_control_call(
+            "last", label,
+        )))),
+        Stmt::Next(Some(label)) => Ok(Some(statement_expression(labelled_control_call(
+            "next", label,
+        )))),
+        Stmt::Redo(Some(label)) => Ok(Some(statement_expression(labelled_control_call(
+            "redo", label,
+        )))),
         // `die`/`fail EXPR` are also modelled as bare calls.
         Stmt::Die(expr) => Ok(Some(statement_expression(control_call(
             "die",
@@ -2595,8 +2601,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `my $x = BEGIN { 1 }`: the phaser block as an expression is the same
         // `StatementPrefix::Phaser::*` node a phaser statement wraps.
         Expr::PhaserExpr { kind, body } => {
-            let class = phaser_class(kind)
-                .ok_or_else(|| unsupported("PRE/POST phaser expression"))?;
+            let class =
+                phaser_class(kind).ok_or_else(|| unsupported("PRE/POST phaser expression"))?;
             Ok(RakuAstNode {
                 class,
                 fields: vec![node_field(None, block_node(body)?)],
@@ -2639,8 +2645,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `do for ... { }` / `do if ... { }` / `do given ... { }`: the loop or
         // conditional statement under `StatementPrefix::Do`.
         Expr::DoStmt(stmt) if is_do_statement(stmt) => {
-            let statement = convert_stmt(stmt)?
-                .ok_or_else(|| unsupported("empty `do` statement"))?;
+            let statement =
+                convert_stmt(stmt)?.ok_or_else(|| unsupported("empty `do` statement"))?;
             // `hyper for` / `race for` / `lazy for` are expressions of their own:
             // the loop, with no `do` prefix.
             if matches!(
@@ -3603,12 +3609,12 @@ fn clause_block_node(
 ) -> Result<RakuAstNode, RuntimeError> {
     match binding_var {
         None => block_node(then_branch),
-        Some(name) if is_plain_scalar_name(name) => pointy_block(
-            &[super::lower::positional_param(name)],
-            then_branch,
-            None,
-        ),
-        Some(_) => Err(unsupported("`if EXPR -> $var` topic binding of another form")),
+        Some(name) if is_plain_scalar_name(name) => {
+            pointy_block(&[super::lower::positional_param(name)], then_branch, None)
+        }
+        Some(_) => Err(unsupported(
+            "`if EXPR -> $var` topic binding of another form",
+        )),
     }
 }
 
@@ -4090,7 +4096,11 @@ fn exception_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
 /// of its target: what `<->` makes of them (measured on rakudo 2026.09).
 // Cost: O(p), p = parameters.
 fn mark_default_rw(block: &mut RakuAstNode) -> Result<(), RuntimeError> {
-    let Some(field) = block.fields.iter_mut().find(|f| f.name == Some("signature")) else {
+    let Some(field) = block
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("signature"))
+    else {
         return Ok(());
     };
     let RakuAstFieldValue::Node(signature) = &field.value else {
