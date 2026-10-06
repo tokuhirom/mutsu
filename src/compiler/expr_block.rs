@@ -1337,10 +1337,17 @@ impl Compiler {
         // raku refuses to assign to (`{ $_ = 5 }(7)`). Decided here, from the
         // call site's own syntax, because the block is compiled elsewhere and
         // the same block is writable when called with an lvalue.
+        // The sources the VM binds `is rw` parameters from describe what is
+        // passed, i.e. the element of an assignment argument (see
+        // `assign_arg_element`), not the assignment.
+        let source_args: Vec<Expr> = args
+            .iter()
+            .map(|a| Self::assign_arg_element(a).unwrap_or_else(|| a.clone()))
+            .collect();
         let bare_args = !args.is_empty() && args.iter().all(Self::expr_yields_container_less_value);
         if let Expr::CodeVar(name) = target {
             self.fold_lexical_sub_free_vars_for_code_var(name);
-            let arg_sources_idx = self.add_arg_sources_constant(args);
+            let arg_sources_idx = self.add_arg_sources_constant(&source_args);
             // ADR-0067's argument producer: `&g($c.v)` has no callee on the
             // stack, but the code variable's NAME is a compile-time constant,
             // so the VM resolves it exactly as `CallOnCodeVar` does.
@@ -1356,6 +1363,17 @@ impl Compiler {
                 {
                     self.mint_named_pair = true;
                 }
+                // `&g(@a[1] = v)`: assign first, then pass the element itself
+                // (see `index_assign_arg_element`).
+                let split = Self::assign_arg_element(arg);
+                let arg = match &split {
+                    Some(element) => {
+                        self.compile_expr(arg);
+                        self.code.emit(OpCode::Pop);
+                        element
+                    }
+                    None => arg,
+                };
                 self.compile_expr(arg);
                 self.maybe_promote_attr_arg_read(arg);
                 self.mark_arg_as_rw_container_candidate_callee(
@@ -1388,13 +1406,24 @@ impl Compiler {
             });
         } else {
             self.compile_expr(target);
-            let arg_sources_idx = self.add_arg_sources_constant(args);
+            let arg_sources_idx = self.add_arg_sources_constant(&source_args);
             let positional_indices = Self::arg_positional_indices(args);
             for (i, arg) in args.iter().enumerate() {
                 if matches!(arg, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow)
                 {
                     self.mint_named_pair = true;
                 }
+                // `&g(@a[1] = v)`: assign first, then pass the element itself
+                // (see `index_assign_arg_element`).
+                let split = Self::assign_arg_element(arg);
+                let arg = match &split {
+                    Some(element) => {
+                        self.compile_expr(arg);
+                        self.code.emit(OpCode::Pop);
+                        element
+                    }
+                    None => arg,
+                };
                 self.compile_expr(arg);
                 self.maybe_promote_attr_arg_read(arg);
                 // ADR-0067's argument producer: the callee code object is the

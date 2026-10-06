@@ -600,6 +600,15 @@ impl Compiler {
             self.code.patch_jump(jump_end);
             return;
         }
+        // `f(@a[1] = v)`: perform the assignment, then pass the element itself
+        // so an `is rw` parameter binds its container (see
+        // `index_assign_arg_element`).
+        if let Some(element) = Self::index_assign_arg_element(arg) {
+            self.compile_expr(arg);
+            self.code.emit(OpCode::Pop);
+            self.compile_call_arg_with_escape(&element, escaping);
+            return;
+        }
         // Read-and-clear immediately: this call is the *direct* bind-target
         // compile iff the caller just set the flag for us. Clearing it up
         // front (before any nested `compile_expr`/`compile_call_arg`
@@ -987,6 +996,14 @@ impl Compiler {
         arg: &Expr,
         escaping: bool,
     ) {
+        // `f(@a[1] = v)`: assign first, then treat the element as the argument
+        // so the container-candidate marking below sees an `Expr::Index`.
+        if let Some(element) = Self::index_assign_arg_element(arg) {
+            self.compile_expr(arg);
+            self.code.emit(OpCode::Pop);
+            self.compile_named_callee_arg(callee, positional, &element, escaping);
+            return;
+        }
         let callee = callee.filter(|callee| {
             matches!(arg, Expr::Index { .. })
                 && !Self::index_arg_is_static_slice(arg)
