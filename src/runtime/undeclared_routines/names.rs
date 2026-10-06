@@ -40,6 +40,16 @@ pub(super) const NATIVE_TYPE_NAMES: &[&str] = &[
     "ulong",
     "longlong",
     "ulonglong",
+    "buf8",
+    "buf16",
+    "buf32",
+    "buf64",
+    "blob8",
+    "blob16",
+    "blob32",
+    "blob64",
+    "utf8",
+    "array",
 ];
 
 /// Callables the compiler special-cases into dedicated opcodes, so they never

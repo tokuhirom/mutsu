@@ -181,6 +181,7 @@ impl<'ast> Visit<'ast> for Scan {
         // statement form above; rakudo rejects it at CHECK time too.
         if let Expr::BareWord(name) = expr
             && name != "self"
+            && !name.starts_with(|c: char| c.is_ascii_uppercase())
         {
             self.record_call(name);
         }
