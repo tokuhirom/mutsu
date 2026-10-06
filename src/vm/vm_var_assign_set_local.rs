@@ -2852,13 +2852,14 @@ impl Interpreter {
                 // source (`$src := ...` re-seats the binding cell's content)
                 // leaves it alone (#11797). The source itself keeps the binding
                 // cell wherever it is recorded below.
-                let source_binding_cell = Self::binding_cell_of(&Value::container_ref(cell.clone()))
-                    .map(|_| Value::container_ref(cell.clone()));
-                let cell = match Self::innermost_container(Value::container_ref(cell.clone())).view()
-                {
-                    ValueView::ContainerRef(inner) => inner.clone(),
-                    _ => cell,
-                };
+                let source_binding_cell =
+                    Self::binding_cell_of(&Value::container_ref(cell.clone()))
+                        .map(|_| Value::container_ref(cell.clone()));
+                let cell =
+                    match Self::innermost_container(Value::container_ref(cell.clone())).view() {
+                        ValueView::ContainerRef(inner) => inner.clone(),
+                        _ => cell,
+                    };
                 // A bound `@`/`%` variable adopts the *source* container's
                 // declared element/key type, not its own (`my Int %a; my Cool
                 // %b := %a` ⇒ `%b.of` is `Int`). Propagate the inner container's
