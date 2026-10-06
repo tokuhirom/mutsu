@@ -91,8 +91,10 @@ fn encoded_bytes(v: &Value) -> Option<Vec<u8>> {
 }
 
 /// Copy `bytes` plus a terminating NUL into an allocation that is intentionally
-/// never freed, and return its address.
-fn leak_c_string(bytes: &[u8]) -> usize {
+/// never freed, and return its address. Shared with the `CStr` REPR
+/// (`runtime::cstr_repr`), which leaks the same way.
+// Cost: O(n), n = bytes.
+pub(crate) fn leak_c_string(bytes: &[u8]) -> usize {
     let mut owned = Vec::with_capacity(bytes.len() + 1);
     owned.extend_from_slice(bytes);
     owned.push(0);
