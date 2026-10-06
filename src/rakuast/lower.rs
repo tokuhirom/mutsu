@@ -100,8 +100,29 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementAlso => super::role::lower_also(node),
         RakuAstClass::StatementWhenever => super::react::lower_whenever(node),
         RakuAstClass::StatementExpression => {
-            let statement = lower_stmt_inner(named_child(node, "expression")?)?;
-            if let Some(modifier) = node.fields.iter().find(|f| f.name == Some("loop-modifier")) {
+            let mut statement = lower_stmt_inner(named_child(node, "expression")?)?;
+            let loop_modifier = node.fields.iter().find(|f| f.name == Some("loop-modifier"));
+            // A bare block modified by a `for` is the parser's block statement
+            // (not the closure value a block with placeholders is elsewhere),
+            // and gives the loop its placeholders.
+            if let Some(modifier) = loop_modifier
+                && child_node(&modifier.value)?.class == RakuAstClass::StatementModifierFor
+            {
+                let inner = named_child(node, "expression")?;
+                if inner.class == RakuAstClass::Block {
+                    statement = Stmt::Block(lower_block(inner)?);
+                }
+            }
+            // The condition modifier binds tighter than the loop one: in
+            // `X if C for L` the loop runs `X if C`.
+            if let Some(modifier) = node
+                .fields
+                .iter()
+                .find(|f| f.name == Some("condition-modifier"))
+            {
+                statement = lower_condition_modifier(child_node(&modifier.value)?, statement)?;
+            }
+            if let Some(modifier) = loop_modifier {
                 let modifier = child_node(&modifier.value)?;
                 if modifier.class == RakuAstClass::StatementModifierGiven {
                     return Ok(Stmt::Given {
@@ -113,20 +134,6 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 }
                 // `STMT for LIST`: the parser's `Stmt::For` holding the statement.
                 if modifier.class == RakuAstClass::StatementModifierFor {
-                    if matches!(statement, Stmt::VarDecl { .. }) {
-                        // The parser hoists a declaration out of the loop; that
-                        // split is not rebuilt here.
-                        return Err(unsupported(modifier));
-                    }
-                    // A bare block is the parser's block statement (not the closure
-                    // value a block with placeholders is elsewhere), and gives the
-                    // loop its placeholders.
-                    let inner = named_child(node, "expression")?;
-                    let statement = if inner.class == RakuAstClass::Block {
-                        Stmt::Block(lower_block(inner)?)
-                    } else {
-                        statement
-                    };
                     let (param, params) = crate::parser::for_modifier_loop_params(&statement);
                     return Ok(Stmt::For {
                         iterable: lower_expr(named_child_or_positional(modifier)?)?,
@@ -145,59 +152,52 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 }
                 return Err(unsupported(modifier));
             }
-            // A postfix `if`/`unless`: raku hangs the condition off the modified
-            // statement rather than wrapping it in a `Statement::If`. mutsu
-            // models it as an `If` whose `is_statement_modifier` is set (so its
-            // branch is not a block literal) — and, for `unless`, whose
-            // condition carries the parser's `!`.
-            if let Some(modifier) = node
-                .fields
-                .iter()
-                .find(|f| f.name == Some("condition-modifier"))
-            {
-                let modifier = child_node(&modifier.value)?;
-                // `with`/`without` are condition modifiers too, but they
-                // topicalize: mutsu spells them as the `given` desugar the
-                // parser builds, tagged with `with_kind` so the converter can
-                // read the keyword back out.
-                if let Some(kind) = match modifier.class {
-                    RakuAstClass::StatementModifierWith => Some(GivenWithKind::With),
-                    RakuAstClass::StatementModifierWithout => Some(GivenWithKind::Without),
-                    _ => None,
-                } {
-                    return Ok(lower_with_modifier(
-                        kind,
-                        lower_expr(named_child_or_positional(modifier)?)?,
-                        statement,
-                    ));
-                }
-                let is_unless = match modifier.class {
-                    RakuAstClass::StatementModifierIf => false,
-                    RakuAstClass::StatementModifierUnless => true,
-                    _ => return Err(unsupported(modifier)),
-                };
-                let cond = negate_if(lower_expr(named_child_or_positional(modifier)?)?, is_unless);
-                // A declaration is split from its gated initializer, as the
-                // parser does.
-                if let Some(split) =
-                    crate::parser::try_split_decl_modifier(&statement, &cond, is_unless)
-                {
-                    return Ok(split);
-                }
-                return Ok(Stmt::If {
-                    cond,
-                    then_branch: vec![statement],
-                    else_branch: Vec::new(),
-                    binding_var: None,
-                    is_statement_modifier: true,
-                    is_unless,
-                    with_kind: None,
-                });
-            }
             Ok(statement)
         }
         _ => lower_stmt_inner(node),
     }
+}
+
+/// A postfix `if`/`unless`/`with`/`without` over the lowered statement: raku
+/// hangs the condition off the modified statement rather than wrapping it in a
+/// `Statement::If`. mutsu models it as an `If` whose `is_statement_modifier` is
+/// set (so its branch is not a block literal) — and, for `unless`, whose
+/// condition carries the parser's `!`.
+// Cost: O(c), c = size of the condition.
+fn lower_condition_modifier(modifier: &RakuAstNode, statement: Stmt) -> Result<Stmt, RuntimeError> {
+    // `with`/`without` are condition modifiers too, but they topicalize: mutsu
+    // spells them as the `given` desugar the parser builds, tagged with
+    // `with_kind` so the converter can read the keyword back out.
+    if let Some(kind) = match modifier.class {
+        RakuAstClass::StatementModifierWith => Some(GivenWithKind::With),
+        RakuAstClass::StatementModifierWithout => Some(GivenWithKind::Without),
+        _ => None,
+    } {
+        return Ok(lower_with_modifier(
+            kind,
+            lower_expr(named_child_or_positional(modifier)?)?,
+            statement,
+        ));
+    }
+    let is_unless = match modifier.class {
+        RakuAstClass::StatementModifierIf => false,
+        RakuAstClass::StatementModifierUnless => true,
+        _ => return Err(unsupported(modifier)),
+    };
+    let cond = negate_if(lower_expr(named_child_or_positional(modifier)?)?, is_unless);
+    // A declaration is split from its gated initializer, as the parser does.
+    if let Some(split) = crate::parser::try_split_decl_modifier(&statement, &cond, is_unless) {
+        return Ok(split);
+    }
+    Ok(Stmt::If {
+        cond,
+        then_branch: vec![statement],
+        else_branch: Vec::new(),
+        binding_var: None,
+        is_statement_modifier: true,
+        is_unless,
+        with_kind: None,
+    })
 }
 
 /// Rebuild the `given TOPIC { if $_.defined { STMT } }` shape that mutsu's
