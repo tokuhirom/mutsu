@@ -549,6 +549,32 @@ impl Interpreter {
                     } else {
                         continue;
                     };
+                    // A name this sub rebinds with `:=` needs a binding cell, as
+                    // a mainline named sub's capture gets one (#9416): the rebind
+                    // seats the new binding INSIDE it and the declaring frame,
+                    // sharing it, sees the rebind (#12130).
+                    let rebinds = primary_compiled
+                        .into_iter()
+                        .chain((0..signature_alternates.len()).filter_map(|i| plan_compiled(i + 1)))
+                        .any(|c| c.code.free_var_rebinds.iter().any(|s| s.resolve() == name));
+                    let cell = if rebinds && Self::binding_cell_of(&cell).is_none() {
+                        let slot = free_var_decl_slots
+                            .iter()
+                            .find(|(s, _)| s.resolve() == name)
+                            .map(|(_, slot)| *slot as usize)
+                            .filter(|slot| code.locals.get(*slot).is_some_and(|n| *n == name));
+                        match slot {
+                            Some(slot) => {
+                                let wrapped = Self::wrap_in_binding_cell(cell);
+                                self.locals[slot] = wrapped.clone();
+                                self.env_mut().insert(name.clone(), wrapped.clone());
+                                wrapped
+                            }
+                            None => cell,
+                        }
+                    } else {
+                        cell
+                    };
                     self.lexicals.escaped_our_lexical_cells.insert(name, cell);
                 }
             }
