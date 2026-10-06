@@ -15,7 +15,7 @@
 //! and declines anything else (a negative or `WhateverCode` position, a
 //! `Range`, an out-of-range start that must answer a `Failure`).
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::grapheme_index::{find_graphemes, with_str_index};
 use crate::builtins::str_prim::{self, Fold};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -29,36 +29,48 @@ macro_rules! search_rows {
                 name: "contains",
                 arity: 1,
                 handler: Handler::Pure(contains),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "starts-with",
                 arity: 1,
                 handler: Handler::Pure(starts_with),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "ends-with",
                 arity: 1,
                 handler: Handler::Pure(ends_with),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "index",
                 arity: 1,
                 handler: Handler::Pure(index),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "rindex",
                 arity: 1,
                 handler: Handler::Pure(rindex),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "substr",
                 arity: 1,
                 handler: Handler::Narrow(substr),
+                flags: RowFlags::NONE,
+                named: &[],
             },
         ]
     };
@@ -74,12 +86,16 @@ pub(super) static STR_SUBSTR_2: &[MethodRow] = &[MethodRow {
     name: "substr",
     arity: 2,
     handler: Handler::Narrow(substr),
+    flags: RowFlags::NONE,
+    named: &[],
 }];
 pub(super) static COOL_SUBSTR_2: &[MethodRow] = &[MethodRow {
     owner: "Cool",
     name: "substr",
     arity: 2,
     handler: Handler::Narrow(substr),
+    flags: RowFlags::NONE,
+    named: &[],
 }];
 
 /// The one-needle `contains` candidate shared by Str, Cool and Map.

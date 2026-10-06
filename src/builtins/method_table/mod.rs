@@ -40,9 +40,11 @@
 
 mod collections;
 mod ctors_mop;
+mod dispatch;
 mod instances;
 mod io_concurrency;
 mod mutating;
+mod row;
 mod scalars;
 
 // The family modules keep their historical paths
@@ -52,40 +54,15 @@ pub(crate) use collections::{
 };
 pub(crate) use scalars::{coerce, complex, real, str, str_iter, str_search, succ_pred};
 
+#[cfg(test)]
+pub(crate) use dispatch::try_dispatch;
+pub(crate) use dispatch::{admits, answer, invoke, invoke_in, try_dispatch_in};
+pub(crate) use row::{Handler, MethodRow, Named, RowFlags};
+
 use crate::symbol::Symbol;
-use crate::value::{DispatchShape, RuntimeError, Value};
+use crate::value::DispatchShape;
 use rustc_hash::FxHashMap;
 use std::sync::OnceLock;
-
-/// A [`Handler::Narrow`] implementation.
-pub(crate) type NarrowFn = fn(&Value, &[Value]) -> Option<Result<Value, RuntimeError>>;
-
-/// A built-in method's implementation.
-///
-/// Only the kind the rows so far need exists yet. ADR-11276 §2 adds an
-/// interpreter-taking kind and a receiver-writing kind with the first rows
-/// that need them.
-#[derive(Clone, Copy)]
-pub(crate) enum Handler {
-    /// Needs no interpreter. `args` are the positional arguments, exactly
-    /// [`MethodRow::arity`] of them, each a plain scalar ([`answer`]).
-    Pure(fn(&Value, &[Value]) -> Result<Value, RuntimeError>),
-    /// A [`Self::Pure`] handler whose row binds only some argument values:
-    /// `None` means these arguments are outside the row's signature, and the
-    /// call takes the cascades (the way a multi candidate fails to bind).
-    Narrow(NarrowFn),
-}
-
-/// One built-in method: see the module docs.
-#[derive(Clone, Copy)]
-pub(crate) struct MethodRow {
-    /// The type Rakudo declares the method on (a key of its `^method_table`).
-    pub(crate) owner: &'static str,
-    pub(crate) name: &'static str,
-    /// The number of positional arguments the row takes.
-    pub(crate) arity: u8,
-    pub(crate) handler: Handler,
-}
 
 /// Every group's families. A group is one slice of ADR-11276 §10 and owns a
 /// directory of its own, so a slice adds its rows to its group's
@@ -277,45 +254,6 @@ pub(crate) fn row(id: RowId) -> &'static MethodRow {
     table().all[usize::from(id.0)]
 }
 
-/// Run row `id`'s handler, or `None` when a [`Handler::Narrow`] row does not
-/// bind these arguments. `args` must have the row's arity and be plain
-/// scalars ([`plain_args`]), and `target` must have the shape the row was
-/// resolved for.
-// Cost: O(1) plus the handler's own cost.
-#[inline]
-pub(crate) fn invoke(
-    id: RowId,
-    target: &Value,
-    args: &[Value],
-) -> Option<Result<Value, RuntimeError>> {
-    match row(id).handler {
-        Handler::Pure(f) => Some(f(target, args)),
-        Handler::Narrow(f) => f(target, args),
-    }
-}
-
-/// Whether every argument is a plain scalar a row may be handed: a `Str` or
-/// a number. Named arguments arrive as `Pair`s, and a `Junction` (which must
-/// autothread), a `Failure`, a lazy `Seq`, a `Regex`, a list or a type object
-/// each needs a probe the table skips, so a call carrying any of them takes
-/// the cascades.
-// Cost: O(a), a = arguments (one tag probe each).
-#[inline]
-pub(crate) fn plain_args(args: &[Value]) -> bool {
-    args.iter().all(|arg| {
-        matches!(
-            arg.dispatch_shape(),
-            Some(
-                DispatchShape::Str
-                    | DispatchShape::Int
-                    | DispatchShape::Num
-                    | DispatchShape::Rat
-                    | DispatchShape::FatRat
-            )
-        )
-    })
-}
-
 /// The row a plain receiver of `shape` dispatches `method` to, if any (the
 /// lookup [`try_dispatch`] makes, for tests).
 #[cfg(test)]
@@ -325,91 +263,6 @@ fn lookup(shape: DispatchShape, method: Symbol, arity: u8) -> Option<&'static Me
         return None;
     }
     table.rows.get(&(shape, method, arity)).map(|id| row(*id))
-}
-
-/// Answer a built-in method call from its row, or `None` to take the cascades.
-///
-/// `None` is always safe: the call then walks the cascades exactly as it did
-/// before the table existed.
-// Cost: O(1) to find the row (a bit test, a tag probe and one hash lookup),
-// plus the handler's own cost.
-#[inline]
-pub(crate) fn try_dispatch(
-    target: &Value,
-    method: Symbol,
-    args: &[Value],
-) -> Option<Result<Value, RuntimeError>> {
-    let result = answer(target, method, args)?;
-    debug_assert_matches_full_path(target, method, args, &result);
-    Some(result)
-}
-
-/// [`try_dispatch`] without the debug cross-check: what the cascades' own
-/// entry (`native_method_0arg`) asks first.
-// Cost: O(1) to find the row (a bit test, a tag probe and one hash lookup),
-// plus the handler's own cost.
-#[inline]
-pub(crate) fn answer(
-    target: &Value,
-    method: Symbol,
-    args: &[Value],
-) -> Option<Result<Value, RuntimeError>> {
-    if !table().has_name(method, args.len()) {
-        return None;
-    }
-    let shape = target.dispatch_shape()?;
-    let id = resolve(shape, method, args.len())?;
-    // After the lookup: a call that misses never pays for the argument scan.
-    if !plain_args(args) {
-        return None;
-    }
-    invoke(id, target, args)
-}
-
-/// In debug builds, re-answer a table hit through the cascades and assert
-/// the two agree.
-///
-/// This is the maintenance net for the table. A row is admitted by an argument
-/// about which skipped probes could claim the call, and a later commit adding
-/// a probe has no way of knowing it invalidated one; running both paths over
-/// the whole TAP suite turns that silent divergence into a failing assertion.
-/// A cascade that declines agrees: a migrated method has no arm left there.
-/// Sound to run twice only because every pure row is side-effect free.
-fn debug_assert_matches_full_path(
-    target: &Value,
-    method: Symbol,
-    args: &[Value],
-    fast: &Result<Value, RuntimeError>,
-) {
-    #[cfg(debug_assertions)]
-    {
-        let slow = match args {
-            [] => super::methods_0arg::native_method_0arg_cascade(target, method),
-            [a] => super::native_method_1arg(target, method, a),
-            [a, b] => super::native_method_2arg(target, method, a, b),
-            _ => return,
-        };
-        let render = |r: Option<&Result<Value, RuntimeError>>| match r {
-            None => "<declined>".to_string(),
-            Some(Ok(v)) => format!("ok:{}", crate::runtime::gist_value(v)),
-            Some(Err(e)) => format!("err:{}", e.message),
-        };
-        let Some(slow) = slow else {
-            return;
-        };
-        debug_assert_eq!(
-            render(Some(fast)),
-            render(Some(&slow)),
-            "method_table row disagrees with the full path for .{} on a {:?} \
-             receiver -- a probe the table skips now claims this call",
-            method.as_str(),
-            target.dispatch_shape(),
-        );
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        let _ = (target, method, args, fast);
-    }
 }
 
 #[cfg(test)]

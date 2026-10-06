@@ -349,6 +349,10 @@ impl Interpreter {
             "set" | "primary" | "secondary" | "tertiary" | "quaternary" | "gist" | "raku" if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Collation") => {
                 Some(self.dispatch_collation_method(target, method, &args))
             }
+            // `Any.collate` for the receivers the method table has no shape
+            // for; a plain one is answered by the `Any.collate` row
+            // (`method_table::collections::any_interp`), which calls the same
+            // `dispatch_collate`.
             "collate" if args.is_empty() => Some(self.dispatch_collate(target)),
             "take" if args.is_empty() => {
                 match self.take_value(target.clone()) {

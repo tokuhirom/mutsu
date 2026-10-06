@@ -1,7 +1,8 @@
 //! Zero-argument collection transformations shared by the method table and
 //! the native cascade for receiver shapes the table does not cover.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::Named;
 use crate::value::{RuntimeError, Value, ValueView};
 
 macro_rules! rows {
@@ -11,25 +12,60 @@ macro_rules! rows {
             name: $name,
             arity: 0,
             handler: Handler::Narrow($handler),
+            flags: RowFlags::NONE,
+            named: &[],
         }),*]
     };
 }
 
 pub(super) static ANY_ROWS: &[MethodRow] = rows!["Any":
-    "flat" => flat,
     "sort" => sort,
     "unique" => unique,
     "repeated" => repeated,
 ];
 
 pub(super) static LIST_ROWS: &[MethodRow] = rows!["List":
-    "flat" => flat,
     "sort" => sort,
 ];
 
-pub(super) static ARRAY_ROWS: &[MethodRow] = rows!["Array":
-    "flat" => flat,
-];
+/// `flat` (and `flat(:hammer)`) on each owner Rakudo declares it on: the
+/// first rows to bind a named argument.
+pub(super) static FLAT_ROWS: &[MethodRow] = &[flat_row("Any"), flat_row("List"), flat_row("Array")];
+
+const fn flat_row(owner: &'static str) -> MethodRow {
+    MethodRow {
+        owner,
+        name: "flat",
+        arity: 0,
+        handler: Handler::Named(flat_named),
+        flags: RowFlags::NONE,
+        named: &["hammer"],
+    }
+}
+
+/// `flat` and `flat(:hammer)`. A false `:hammer` is outside the row's
+/// signature (it binds the adverb only when set), so it takes the cascades.
+// Cost: O(1) for `flat` itself (see [`flat`]); O(t) for `:hammer`, t = leaves
+// of the receiver, which `flatten_target` walks eagerly.
+fn flat_named(
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    match named.get("hammer") {
+        None => flat(target, args),
+        Some(hammer) if hammer.truthy() => Some(Ok(flat_hammer(target))),
+        Some(_) => None,
+    }
+}
+
+/// `flat(:hammer)`: flatten every level, arrays included. The native
+/// cascade's one-argument `flat` arm calls this for receivers the table does
+/// not cover.
+// Cost: O(t), t = leaves of the receiver.
+pub(crate) fn flat_hammer(target: &Value) -> Value {
+    crate::builtins::methods_narg::flatten::flatten_target(target, None, true)
+}
 
 /// Flatten a collection one level, preserving the existing lazy and shaped
 /// Array cases.

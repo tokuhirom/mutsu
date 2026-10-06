@@ -5,9 +5,10 @@
 //! adds a family module here and lists it in [`FAMILIES`]; no other file names
 //! it.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 
 pub(crate) mod any_collection;
+mod any_interp;
 pub(crate) mod list;
 pub(crate) mod list_aggregate;
 pub(crate) mod list_transform;
@@ -17,12 +18,14 @@ pub(crate) mod positional;
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     any_collection::ROWS,
+    any_interp::ROWS,
     list::ROWS,
     list_aggregate::ANY_ROWS,
     list_aggregate::LIST_ROWS,
+    list_aggregate::LIST_COMBINATIONS_OF,
     list_transform::ANY_ROWS,
     list_transform::LIST_ROWS,
-    list_transform::ARRAY_ROWS,
+    list_transform::FLAT_ROWS,
     map::ROWS,
     positional::ROWS,
 ];

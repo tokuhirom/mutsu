@@ -45,9 +45,13 @@ impl Interpreter {
         // `augment`ed the receiver's builtin type with a method of this name,
         // which is a property of the registry rather than of the call: that
         // stays the same memoized gate the general path applies.
-        if let Some(result) = crate::builtins::method_table::try_dispatch(target, method_sym, args)
-            && !self.native_lever_a_user_override_sym(target, method_sym)
-        {
+        if let Some(result) = crate::builtins::method_table::try_dispatch_in(
+            self,
+            |vm| !vm.native_lever_a_user_override_sym(target, method_sym),
+            target,
+            method_sym,
+            args,
+        ) {
             self.record_native_row_coverage(
                 "vm_native_dispatch::method_table",
                 target,

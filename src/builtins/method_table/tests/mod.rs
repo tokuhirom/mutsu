@@ -1,4 +1,5 @@
 use super::*;
+use crate::value::{RuntimeError, Value};
 
 mod collections;
 mod ctors_mop;
@@ -78,6 +79,18 @@ fn every_row_is_reached_and_answers() {
                 sample(shape)
             };
             let result = try_dispatch(&target, Symbol::intern(row.name), &args);
+            if !row.handler.is_pure() {
+                // An interpreter row is answered by the entries that have an
+                // interpreter (`t/oo/method/method-table-guard-rows.t`); the
+                // pure entry must decline it.
+                assert!(
+                    result.is_none(),
+                    "{}.{} needs the interpreter but a pure entry answered it",
+                    row.owner,
+                    row.name
+                );
+                continue;
+            }
             assert!(
                 result.is_some(),
                 "{}.{} on a {shape:?} did not answer",
@@ -184,4 +197,85 @@ fn the_shape_test_knows_the_receiver() {
     assert!(!shape_has_row(DispatchShape::Str, int));
     // An inherited row sets the bit of the shape that reaches it.
     assert!(shape_has_row(DispatchShape::Array, Symbol::intern("elems")));
+}
+
+/// A named argument is split from the positionals and handed to the row that
+/// declares it. A name no row binds takes the cascades, and so does a false
+/// `:hammer`, which the row's signature does not bind.
+#[test]
+fn a_named_argument_reaches_only_the_row_that_declares_it() {
+    let flat = Symbol::intern("flat");
+    let nested = Value::array(vec![
+        Value::int(1),
+        Value::array(vec![Value::int(2), Value::array(vec![Value::int(3)])]),
+    ]);
+    let hammer = Value::pair("hammer".to_string(), Value::TRUE);
+    let result = try_dispatch(&nested, flat, &[hammer]);
+    assert!(
+        matches!(result, Some(Ok(_))),
+        "flat(:hammer) is a Named row"
+    );
+    for pair in [
+        Value::pair("zzz".to_string(), Value::TRUE),
+        Value::pair("hammer".to_string(), Value::FALSE),
+    ] {
+        assert!(
+            try_dispatch(&nested, flat, &[pair]).is_none(),
+            "an undeclared named argument must take the cascades"
+        );
+    }
+    // A row that declares no named argument refuses every one: `elems` has
+    // no `:hammer`.
+    let hammer = Value::pair("hammer".to_string(), Value::TRUE);
+    assert!(try_dispatch(&nested, Symbol::intern("elems"), &[hammer]).is_none());
+}
+
+/// A positional `Pair` (`ValuePair`) is not a named argument: ADR-0021.
+#[test]
+fn a_positional_pair_is_not_split_off() {
+    let positional = Value::value_pair(Value::str_from("hammer"), Value::TRUE);
+    let list = sample(DispatchShape::List);
+    // `flat` takes no positional argument, so the call has no row.
+    assert!(try_dispatch(&list, Symbol::intern("flat"), &[positional]).is_none());
+}
+
+/// By default a row is handed plain scalars only; `ANY_ARGS` opens it to any
+/// plain argument, but never to what needs a probe the table skips.
+#[test]
+fn argument_admission_follows_the_row_flags() {
+    use crate::value::JunctionKind;
+    let list = sample(DispatchShape::List);
+    let combinations = Symbol::intern("combinations");
+    // `combinations($of)` is flagged ANY_ARGS: an Int and a Range both bind.
+    for arg in [Value::int(2), Value::range(1, 2)] {
+        assert!(
+            matches!(try_dispatch(&list, combinations, &[arg]), Some(Ok(_))),
+            "combinations binds an Int and a Range"
+        );
+    }
+    // But a Junction must autothread, and a deferred Seq must be reified.
+    let junction = Value::junction(JunctionKind::Any, vec![Value::int(1), Value::int(2)]);
+    assert!(try_dispatch(&list, combinations, &[junction]).is_none());
+    let seq = Value::seq(vec![Value::int(1)]);
+    assert!(try_dispatch(&list, combinations, &[seq]).is_none());
+    // `Str.index` has no ANY_ARGS: a Range is not a plain scalar.
+    let text = sample(DispatchShape::Str);
+    assert!(try_dispatch(&text, Symbol::intern("index"), &[Value::range(1, 2)]).is_none());
+    assert!(matches!(
+        try_dispatch(&text, Symbol::intern("index"), &[Value::str_from("b")]),
+        Some(Ok(_))
+    ));
+}
+
+/// An interpreter row is skipped by the pure entries: only a caller that has
+/// the interpreter reaches it.
+#[test]
+fn an_interpreter_row_needs_an_interpreter() {
+    let list = sample(DispatchShape::List);
+    let collate = Symbol::intern("collate");
+    assert!(names_a_row(collate, 0));
+    assert!(try_dispatch(&list, collate, &[]).is_none());
+    assert!(answer(&list, collate, &[]).is_none());
+    let row = resolve(DispatchShape::List, collate, 0).expect("Any.collate resolves for a List");
+    assert!(!super::row(row).handler.is_pure());
 }

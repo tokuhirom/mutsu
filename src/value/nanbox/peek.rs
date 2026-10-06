@@ -462,6 +462,66 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::Pair))
     }
 
+    /// Whether a built-in method row may be handed this word as a positional
+    /// argument without the call first needing a probe the method table skips
+    /// (ADR-11276 §10.5) — a pure tag probe.
+    ///
+    /// An allowlist, so a kind added later is refused until someone decides.
+    /// Refused: a `Junction` (the call must autothread), a `Seq`/`LazyList`/
+    /// `Slip` or a thunk (deferred: the call must reify it), a `Proxy`, a
+    /// container or a variable reference (the call must read through it), a
+    /// `Mixin` or an `Instance` (their `Str`/`ACCEPTS` may be user code), a
+    /// shaped or lazy array, an itemized hash, a lazily materialized `Match`
+    /// and a string-keyed `Pair` (a named argument, split off before the
+    /// handler sees the arguments).
+    #[inline]
+    pub(in crate::value) fn is_plain_argument(&self) -> bool {
+        match classify(self.0.get()) {
+            Classified::Int(_) | Classified::Num(_) => true,
+            Classified::Kind(kind) => matches!(
+                kind,
+                Kind::Str
+                    | Kind::Regex
+                    | Kind::RegexWithAdverbs
+                    | Kind::RegexCaptured
+                    | Kind::BigInt
+                    | Kind::IntBoxed
+                    | Kind::Rat
+                    | Kind::FatRat
+                    | Kind::BigRat
+                    | Kind::Complex
+                    | Kind::ValuePair
+                    | Kind::Enum
+                    | Kind::Range
+                    | Kind::RangeExcl
+                    | Kind::RangeExclStart
+                    | Kind::RangeExclBoth
+                    | Kind::GenericRange
+                    | Kind::Version
+                    | Kind::Capture
+                    | Kind::Uni
+                    | Kind::Sub
+                    | Kind::Routine
+                    | Kind::ArrayList
+                    | Kind::ArrayArray
+                    | Kind::ArrayItemList
+                    | Kind::ArrayItemArray
+                    | Kind::HashPlain
+                    | Kind::SetImm
+                    | Kind::SetMut
+                    | Kind::BagImm
+                    | Kind::BagMut
+                    | Kind::MixImm
+                    | Kind::MixMut
+                    | Kind::Nil
+                    | Kind::Whatever
+                    | Kind::HyperWhatever
+                    | Kind::Bool
+                    | Kind::Package
+            ),
+        }
+    }
+
     /// Whether this word is a `Pair` OR `ValuePair` — a pure tag probe.
     #[inline]
     pub(in crate::value) fn is_any_pair(&self) -> bool {

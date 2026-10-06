@@ -1,7 +1,7 @@
 //! Zero-argument successor and predecessor rows. The same arithmetic helpers
 //! answer the cascade and increment/decrement operators (ADR-0118).
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value};
 
 macro_rules! rows {
@@ -12,12 +12,16 @@ macro_rules! rows {
                 name: "succ",
                 arity: 0,
                 handler: Handler::Pure(succ),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "pred",
                 arity: 0,
                 handler: Handler::Pure(pred),
+                flags: RowFlags::NONE,
+                named: &[],
             },
         ]
     };

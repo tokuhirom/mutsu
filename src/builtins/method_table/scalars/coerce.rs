@@ -8,7 +8,7 @@
 //! implementation; the cascade's `.Int`/`.Num` arms and `Str.Int`'s
 //! numify-then-truncate path call the same functions.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::Zero;
 
@@ -20,6 +20,8 @@ macro_rules! rows {
             name: $name,
             arity: 0,
             handler: Handler::Pure($handler),
+            flags: RowFlags::NONE,
+            named: &[],
         }),*]
     };
 }

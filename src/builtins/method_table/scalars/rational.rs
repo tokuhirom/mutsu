@@ -10,7 +10,7 @@
 //! `Int` has none of these but `isNaN` (`5.numerator` is "No such method" in
 //! Rakudo), so `Int` receivers get no row here.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat, make_rat};
 
 /// The five `Rational` rows for one owner.
@@ -22,30 +22,40 @@ macro_rules! rational_rows {
                 name: "numerator",
                 arity: 0,
                 handler: Handler::Pure(numerator),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "denominator",
                 arity: 0,
                 handler: Handler::Pure(denominator),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "nude",
                 arity: 0,
                 handler: Handler::Pure(nude),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "norm",
                 arity: 0,
                 handler: Handler::Pure(norm),
+                flags: RowFlags::NONE,
+                named: &[],
             },
             MethodRow {
                 owner: $owner,
                 name: "isNaN",
                 arity: 0,
                 handler: Handler::Pure(is_nan),
+                flags: RowFlags::NONE,
+                named: &[],
             },
         ]
     };

@@ -53,6 +53,8 @@
 //! and its answer must agree with the lane's (`check_method_site_lane`), so
 //! CI's `debug-tap` job checks every lane hit over the whole TAP suite. A probe
 //! added to the full path later that claims one of these calls fails there.
+//! A row that needs the interpreter (`Handler::Interp`) is the exception: its
+//! handler has effects, so it is answered once, by the lane, in every build.
 
 use super::*;
 use crate::builtins::method_table::{self, RowId};
@@ -63,6 +65,10 @@ pub(super) struct SiteLaneAnswer {
     result: Result<Value, RuntimeError>,
     row: RowId,
     arity: usize,
+    /// Whether the handler is pure, so the debug cross-check may re-run the
+    /// call through the full path. An interpreter row has effects and was
+    /// answered once, here.
+    pub(super) pure: bool,
 }
 
 impl Interpreter {
@@ -140,16 +146,27 @@ impl Interpreter {
         // After the row is known: a call that misses (a remembered miss
         // above) never pays for the argument checks.
         if arity > 0
-            && (!method_table::plain_args(&self.stack[base + 1..])
+            && (!method_table::admits(row, &self.stack[base + 1..])
                 || arg_sources_idx.is_some_and(|idx| !site_args_are_positional(code, idx)))
         {
             return None;
         }
-        let (target, args) = self.stack[base..].split_first()?;
+        let pure = method_table::row(row).handler.is_pure();
+        let result = if pure {
+            let (target, args) = self.stack[base..].split_first()?;
+            method_table::invoke(row, target, args)?
+        } else {
+            // An interpreter row may call back into the VM, which owns the
+            // stack the receiver and arguments sit on: it gets copies.
+            let target = self.stack[base].clone();
+            let args = self.stack[base + 1..].to_vec();
+            self.in_method_call(|vm| method_table::invoke_in(row, vm, &target, &args))?
+        };
         Some(SiteLaneAnswer {
-            result: method_table::invoke(row, target, args)?,
+            result,
             row,
             arity,
+            pure,
         })
     }
 
@@ -195,8 +212,8 @@ impl Interpreter {
     /// with no argument sources left pending, then the result in place of the
     /// receiver and its arguments.
     // Cost: O(1).
-    // Debug builds keep the full path's answer instead (see the module docs).
-    #[cfg_attr(debug_assertions, allow(dead_code))]
+    // Debug builds keep the full path's answer for a pure row instead (see
+    // the module docs).
     pub(super) fn finish_method_site_lane(
         &mut self,
         code: &CompiledCode,

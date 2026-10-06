@@ -747,6 +747,14 @@ impl Value {
         self.0.is_string_pair()
     }
 
+    /// Whether a built-in method row declared `ANY_ARGS` may be handed this
+    /// value as a positional argument (see `NanBox::is_plain_argument`). A
+    /// pure tag probe (see [`Self::is_junction_value`]).
+    #[inline]
+    pub(crate) fn is_plain_argument(&self) -> bool {
+        self.0.is_plain_argument()
+    }
+
     /// Whether this is a lazily materialized `Match` (`ValueRepr::Match`). A
     /// pure tag probe: type-check fast paths use it to answer the ubiquitous
     /// constraints (`Match`/`Any`/`Mu`) without materializing.

@@ -93,7 +93,7 @@ impl Interpreter {
         }
     }
 
-    pub(in crate::runtime) fn dispatch_collate(
+    pub(crate) fn dispatch_collate(
         &mut self,
         target: Value,
     ) -> Result<Value, RuntimeError> {

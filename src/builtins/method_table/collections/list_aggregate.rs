@@ -1,6 +1,6 @@
 //! Aggregate and combinator methods shared by the method table and cascade.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt as NumBigInt;
@@ -12,6 +12,8 @@ macro_rules! rows {
             name: $name,
             arity: 0,
             handler: Handler::Narrow($handler),
+            flags: RowFlags::NONE,
+            named: &[],
         }),*]
     };
 }
@@ -29,6 +31,17 @@ pub(super) static LIST_ROWS: &[MethodRow] = rows!["List":
     "permutations" => permutations,
     "combinations" => combinations,
 ];
+
+/// `combinations($of)`: the first row to take a `Range` argument, so it opts
+/// in to every plain argument.
+pub(super) static LIST_COMBINATIONS_OF: &[MethodRow] = &[MethodRow {
+    owner: "List",
+    name: "combinations",
+    arity: 1,
+    handler: Handler::Narrow(combinations_of),
+    flags: RowFlags::ANY_ARGS,
+    named: &[],
+}];
 
 fn plain_extrema_items(target: &Value) -> Option<Vec<Value>> {
     let items = match target.view() {
@@ -486,6 +499,55 @@ pub(crate) fn combinations(target: &Value, args: &[Value]) -> Option<Result<Valu
     Some(Ok(
         crate::builtins::methods_0arg::collection::combinations_seq(items, 0, n),
     ))
+}
+
+/// `combinations($of)`: the subsets of a size, or of every size in a `Range`.
+/// A negative size has no subsets. The row admits any plain argument
+/// (`RowFlags::ANY_ARGS`), so a `Range` reaches it; this is also the native
+/// cascade's one-argument `combinations`.
+// Cost: O(e) per call to snapshot the receiver; O(k) per combination pulled.
+pub(crate) fn combinations_of(
+    target: &Value,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    use crate::builtins::methods_0arg::collection::combinations_seq;
+    let [arg] = args else {
+        return None;
+    };
+    let items = target
+        .as_list_items()
+        .map(|items| items.to_vec())
+        .unwrap_or_else(|| runtime::value_to_list_for_receiver(target));
+    match arg.view() {
+        ValueView::Range(a, b) => Some(Ok(combinations_seq(items, a, b))),
+        ValueView::RangeExcl(a, b) => Some(Ok(combinations_seq(items, a, b - 1))),
+        ValueView::RangeExclStart(a, b) => Some(Ok(combinations_seq(items, a + 1, b))),
+        ValueView::RangeExclBoth(a, b) => Some(Ok(combinations_seq(items, a + 1, b - 1))),
+        ValueView::GenericRange {
+            start,
+            end,
+            excl_start,
+            excl_end,
+        } => {
+            let mut lo = runtime::to_int(start);
+            let mut hi = runtime::to_int(end);
+            if excl_start {
+                lo += 1;
+            }
+            if excl_end {
+                hi -= 1;
+            }
+            Some(Ok(combinations_seq(items, lo, hi)))
+        }
+        _ => {
+            let k = runtime::to_int(arg);
+            if k < 0 {
+                Some(Ok(Value::seq(Vec::new())))
+            } else {
+                Some(Ok(combinations_seq(items, k, k)))
+            }
+        }
+    }
 }
 
 /// If a value represents an integer, return it as BigInt.

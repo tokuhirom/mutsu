@@ -10,7 +10,7 @@ mod base;
 mod buf;
 mod dispatch_1arg;
 mod dispatch_2arg;
-mod flatten;
+pub(crate) mod flatten;
 mod fmt_contains;
 mod head_tail;
 mod indent;

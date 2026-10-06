@@ -4,7 +4,7 @@
 //! `Uni`, `Blob`, `Version`. A slice adds a family module here and lists it in
 //! [`FAMILIES`]; no other file names it.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 
 pub(crate) mod coerce;
 pub(crate) mod complex;

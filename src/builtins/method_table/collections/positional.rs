@@ -1,6 +1,6 @@
 //! Plain `List`/`Array` representation conversions.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
 
 pub(super) static ROWS: &[MethodRow] = &[
@@ -9,18 +9,24 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "list",
         arity: 0,
         handler: Handler::Narrow(list),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "List",
         name: "List",
         arity: 0,
         handler: Handler::Narrow(list_type),
+        flags: RowFlags::NONE,
+        named: &[],
     },
     MethodRow {
         owner: "List",
         name: "Array",
         arity: 0,
         handler: Handler::Narrow(array),
+        flags: RowFlags::NONE,
+        named: &[],
     },
 ];
 

@@ -7,7 +7,7 @@
 //! cannot be rendered: its `.Str` throws `X::Numeric::DivideByZero` with the
 //! interpreter's context, so that row declines it.
 
-use super::{Handler, MethodRow};
+use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// One `Str` row per owner.
@@ -18,6 +18,8 @@ macro_rules! str_rows {
             name: "Str",
             arity: 0,
             handler: Handler::Narrow(str),
+            flags: RowFlags::NONE,
+            named: &[],
         }),*]
     };
 }

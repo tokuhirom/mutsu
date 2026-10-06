@@ -1033,7 +1033,9 @@ pub(crate) fn native_method_1arg(
         }
         "flat" => {
             if is_hammer_pair(arg) {
-                return Some(Ok(flatten_target(target, None, true)));
+                return Some(Ok(
+                    crate::builtins::method_table::list_transform::flat_hammer(target),
+                ));
             }
             if let Some(depth) = parse_flat_depth(arg) {
                 return Some(Ok(flatten_target(target, Some(depth), false)));
@@ -1045,43 +1047,12 @@ pub(crate) fn native_method_1arg(
         "head" | "tail" => super::head_tail::dispatch(target, method, arg),
         // Cost: O(e) per call, e = elements of the invocant (snapshotted), then O(k)
         // per combination of size k pulled (`ListGen::Combinations`).
-        "combinations" => {
-            use crate::builtins::methods_0arg::collection::combinations_seq;
-            let items = target
-                .as_list_items()
-                .map(|items| items.to_vec())
-                .unwrap_or_else(|| runtime::value_to_list_for_receiver(target));
-            match arg.view() {
-                ValueView::Range(a, b) => Some(Ok(combinations_seq(items, a, b))),
-                ValueView::RangeExcl(a, b) => Some(Ok(combinations_seq(items, a, b - 1))),
-                ValueView::RangeExclStart(a, b) => Some(Ok(combinations_seq(items, a + 1, b))),
-                ValueView::RangeExclBoth(a, b) => Some(Ok(combinations_seq(items, a + 1, b - 1))),
-                ValueView::GenericRange {
-                    start,
-                    end,
-                    excl_start,
-                    excl_end,
-                } => {
-                    let mut lo = runtime::to_int(start);
-                    let mut hi = runtime::to_int(end);
-                    if excl_start {
-                        lo += 1;
-                    }
-                    if excl_end {
-                        hi -= 1;
-                    }
-                    Some(Ok(combinations_seq(items, lo, hi)))
-                }
-                _ => {
-                    let k = runtime::to_int(arg);
-                    if k < 0 {
-                        Some(Ok(Value::seq(Vec::new())))
-                    } else {
-                        Some(Ok(combinations_seq(items, k, k)))
-                    }
-                }
-            }
-        }
+        // The `List.combinations` row's handler (ADR-11276): the cascade
+        // answers the receivers the table has no shape for.
+        "combinations" => crate::builtins::method_table::list_aggregate::combinations_of(
+            target,
+            std::slice::from_ref(arg),
+        ),
         // Cost: O(1) per call on an Array (lazy, `ListGen::Batch`), O(n) per batch
         // pulled; O(e) on any other invocant, e = elements (decomposed, then chunked
         // eagerly; a lazy invocant throws X::Cannot::Lazy before reaching here).
