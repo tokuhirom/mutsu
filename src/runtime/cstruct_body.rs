@@ -274,6 +274,7 @@ impl Interpreter {
     /// out), and no C pointer handed it back. Passing one to C would be passing
     /// NULL.
     // Cost: O(n), n = chars of the class name (a registry probe).
+    #[cfg(feature = "libffi")]
     pub(crate) fn is_bodyless_struct(&self, value: &Value) -> bool {
         let ValueView::Instance {
             class_name,
