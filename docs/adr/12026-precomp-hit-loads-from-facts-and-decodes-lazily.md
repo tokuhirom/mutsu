@@ -240,4 +240,18 @@ The steps:
 
 ## 6. Implementation status
 
-Nothing landed yet.
+- **Steps 0 and 1** (§2.1). Step 0 measured at ~0.3M on `use Test` (the
+  duplicated source reads and scans), so it rode with step 1.
+  - `src/runtime/module_load_facts.rs` holds `ModuleLoadFacts` and the lazily
+    decoded `ModuleAst`.
+  - `precomp::bytecode` makes the entry self-contained: metadata, parse effects,
+    facts, AST, then payload.
+  - `undeclared_routines::RecordedCalls` is the recorded half of the check. The
+    parser's import table and the registry are re-asked on every load.
+  - The cache key's `ast_fingerprint` became `guards_fingerprint`.
+  - The AST is decoded on demand for declarator docs, a `state` sub, a
+    module-level block phaser, a compile the cache cannot serve, and verify
+    mode, which also recomputes the facts.
+  - `use Test` load: **43.6M → 35.1M** Ir (AST read, `order_unit`, scans and
+    `stable_hash` gone from a hit).
+  - The verify sweeps over `t/` (6626 files) and the roast whitelist pass.
