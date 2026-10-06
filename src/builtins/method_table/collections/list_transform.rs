@@ -259,6 +259,9 @@ pub(crate) fn unique(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
                 Some(Ok(unique_seq(items.iter())))
             }
         }
+        ValueView::Pair(..) | ValueView::ValuePair(..) => {
+            Some(Ok(Value::seq(vec![target.clone()])))
+        }
         ValueView::LazyList(_) => None,
         ValueView::Instance { class_name, .. } if class_name == "Supply" => None,
         _ => Some(Ok(target.clone())),
