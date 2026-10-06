@@ -845,6 +845,70 @@ What the work taught, which the remaining families follow:
 The report (`scripts/method-rows-report.py --inventory collections,"quant hashes"`) lists the 180;
 it is the checklist for whoever takes the deferred families.
 
+### 9.17 Slice 3B: numbers and text (2026-10-06)
+
+Branch `refactor/11276-3b-numbers-text`. Owners: `Int`, `Num`, `Rat`, `FatRat`, `Complex`, `Bool`
+(the report's *numbers* group) and `Str`, `Cool`, `Uni`, `Blob`, `Buf`, `Version` (*text*). This is
+the first commit's inventory, taken with `scripts/method-rows-report.py --inventory numbers,text`;
+later commits tick families off and the closing paragraph records what was deferred.
+
+**Inventory (unregistered recognition rows, 2026-10-06).** 467 recognition rows over 163 method
+names, of which only **354 can be registered**: as in 3C, a row's owner must be the type Rakudo
+declares the method on (`rows_are_declared_by_rakudo`), and the other 113 (`Bool.isNaN`,
+`Int.uc`, `Blob.push`, ...) are *inherited-only*, served by the ancestor's row once the receiver's
+shape inherits it. The issue's "465 rows" is this 467 less two; the registrable count is the
+354. `FatRat` has no declared row of its own (Rakudo composes its methods from `Rational`, which
+the rows already register on `Rat`), and `Blob`/`Buf` have none because the oracle snapshot
+(`rakudo_method_tables.txt`) does not list those two owners yet: their rows come with the
+snapshot extension (the last family below).
+
+| owner | declared | Pure | Interp | Mut | inherited-only |
+|---|---:|---:|---:|---:|---:|
+| Int | 68 | 67 | 1 | 0 | 17 |
+| Num | 49 | 48 | 1 | 0 | 2 |
+| Rat | 49 | 48 | 1 | 0 | 2 |
+| Complex | 43 | 38 | 5 | 0 | 6 |
+| Bool | 10 | 10 | 0 | 0 | 32 |
+| Str | 38 | 31 | 6 | 1 | 16 |
+| Cool | 75 | 69 | 6 | 0 | 6 |
+| Uni | 15 | 15 | 0 | 0 | 0 |
+| Version | 7 | 7 | 0 | 0 | 0 |
+| FatRat, Blob, Buf | 0 | 0 | 0 | 0 | 32 |
+| **total** | **354** | **333** | **20** | **1** | **113** |
+
+`Str.subst-mutate` and `Str.substr-rw` write the receiver and move in 3F.
+
+**Families (one commit each, with its focused test).** The by-name table
+(`--inventory`'s second half) is the checklist; the counts are declared rows:
+
+1. *Transcendental math* (159): `sin`, `cos`, `tan`, `sec`, `cosec`, `cotan` and their hyperbolic,
+   inverse and inverse-hyperbolic forms, `atan2`, `exp`, `log`, `log2`, `log10`, `sqrt`, `expmod`,
+   `cis`, `unpolar`, `polar`, `roots`, on `Int`, `Num`, `Rat`, `Complex` and the `Cool` that
+   numifies a `Str`.
+2. *Integer and real numerics* (60): `is-prime`, `narrow`, `conj`, `rand`, `base`,
+   `base-repeating`, `polymod`, `Bridge`, `lsb`, `msb`, `chr`, `byte`, `int`..`uint64`,
+   `abs`/`sign`/`floor`/`ceiling`/`round`/`truncate` on `Cool`, `succ`/`pred`/`pick`/`roll` on
+   `Bool`.
+3. *Coercions* (45): `Numeric`, `Real`, `Int`, `Num`, `Rat`, `FatRat`, `Complex`, `UInt`,
+   `Capture`, `Version`, `Stringy`, `Str` on the scalars.
+4. *Rendering and identity* (22): `gist`, `raku`, `WHICH`. These are the names §9.16 left for "the
+   slice that owns the arm first": one `match` over every receiver kind
+   (`dispatch_core_repr`, the `Str` arm of `dispatch_core_coerce`, the `WHICH` arm).
+5. *Unicode* (35): `NFC`, `NFD`, `NFKC`, `NFKD`, `encode`, `uniname`, `uniprop`, `unival`,
+   `unimatch`, `uniprops`, `univals`, `uninames`, `uniparse`, `parse-names`.
+6. *`Uni`* (5): `elems`, `list`, `codes`, `AT-POS`, `EXISTS-POS`, and the audit that opens the
+   `Uni` shape to its ancestors' rows.
+7. *Text with arguments* (15): `indent`, `samecase`, `samemark`, `split`, `substr-eq`,
+   `parse-base`, `naive-word-wrapper`, `fmt`, `ACCEPTS`, the `Str.Date` and `Str.DateTime`
+   coercions.
+8. *Interpreter rows* (13): `match`, `subst`, `trans`, `sprintf`, `printf`, `indices`, `IO`,
+   `subst-mutate`, `substr-rw` (the last two are 3F's).
+9. *`Blob` and `Buf`*: the two shapes, the snapshot extension for both owners, and their
+   rows.
+
+The audit of the ancestor rows for `Bool`, `Uni`, `Version` and `Blob`/`Buf` (a closed shape is
+opened by the slice that owns it, §9.15) is part of each shape's family.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
