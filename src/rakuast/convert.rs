@@ -112,6 +112,28 @@ const OP_PREC_TRAIT: &str = "__prec";
 /// (`my role R { }`).
 pub(super) const MY_SCOPED: &str = "__my_scoped";
 
+/// Whether `stmt` is a block-form loop or conditional the parser carries in an
+/// expression (`do for ...`) as a `DoStmt`.
+// Cost: O(1).
+fn is_do_statement(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::For {
+            is_statement_modifier,
+            ..
+        }
+        | Stmt::If {
+            is_statement_modifier,
+            ..
+        }
+        | Stmt::Given {
+            is_statement_modifier,
+            ..
+        } => !*is_statement_modifier,
+        Stmt::While { .. } | Stmt::Loop { .. } => true,
+        _ => false,
+    }
+}
+
 /// Whether `stmt` is a statement carrying a statement modifier (`EXPR for LIST`,
 /// `EXPR if COND`, `EXPR given TOPIC`), which a SemiList holds as a statement.
 // Cost: O(1).
@@ -603,16 +625,19 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // the loop's own signature stays the block form below.
             if *is_statement_modifier
                 && label.is_none()
-                && param.is_none()
                 && (**param_def).is_none()
-                && params.is_empty()
                 && params_def.is_empty()
                 && !*rw_block
                 && !*explicit_zero_params
                 && matches!(mode, ForMode::Normal)
             {
                 let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
-                if let (Some(modified), None) = (real.next(), real.next()) {
+                if let (Some(modified), None) = (real.next(), real.next())
+                    // The loop has no signature of its own beyond a bare
+                    // block's placeholders (`parser::for_modifier_loop_params`).
+                    && (param.clone(), params.clone())
+                        == crate::parser::for_modifier_loop_params(modified)
+                {
                     let mut statement = convert_stmt(modified)?
                         .ok_or_else(|| unsupported("empty for modifier body"))?;
                     statement.fields.push(node_field(
@@ -2610,6 +2635,16 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     _ => None,
                 })
                 .ok_or_else(|| unsupported("declaration term"))
+        }
+        // `do for ... { }` / `do if ... { }` / `do given ... { }`: the loop or
+        // conditional statement under `StatementPrefix::Do`.
+        Expr::DoStmt(stmt) if is_do_statement(stmt) => {
+            let statement = convert_stmt(stmt)?
+                .ok_or_else(|| unsupported("empty `do` statement"))?;
+            Ok(RakuAstNode {
+                class: RakuAstClass::StatementPrefixDo,
+                fields: vec![node_field(None, statement)],
+            })
         }
         // `(temp $x)` / `(let $x = 1)` in expression position.
         Expr::DoStmt(stmt) if super::temporize::convert(stmt).is_some() => {

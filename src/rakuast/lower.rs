@@ -113,16 +113,18 @@ fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 }
                 // `STMT for LIST`: the parser's `Stmt::For` holding the statement.
                 if modifier.class == RakuAstClass::StatementModifierFor {
-                    if matches!(statement, Stmt::VarDecl { .. } | Stmt::Block(_)) {
-                        // The parser hoists a declaration out of the loop, and gives
-                        // a block its placeholder signature; neither is rebuilt here.
+                    if matches!(statement, Stmt::VarDecl { .. }) {
+                        // The parser hoists a declaration out of the loop; that
+                        // split is not rebuilt here.
                         return Err(unsupported(modifier));
                     }
+                    // A bare block gives the loop its placeholders.
+                    let (param, params) = crate::parser::for_modifier_loop_params(&statement);
                     return Ok(Stmt::For {
                         iterable: lower_expr(named_child_or_positional(modifier)?)?,
-                        param: None,
+                        param,
                         param_def: Box::new(None),
-                        params: Vec::new(),
+                        params,
                         params_def: Vec::new(),
                         body: vec![statement],
                         label: None,
@@ -4004,6 +4006,19 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // `do { … }` -> a do-block expression over the lowered block body.
         RakuAstClass::StatementPrefixDo => {
             let block = named_child_or_positional(node)?;
+            // `do for ... { }` / `do if ... { }` / `do given ... { }`: the
+            // statement itself, which the parser carries as a `DoStmt`.
+            if matches!(
+                block.class,
+                RakuAstClass::StatementFor
+                    | RakuAstClass::StatementGiven
+                    | RakuAstClass::StatementIf
+                    | RakuAstClass::StatementLoopWhile
+                    | RakuAstClass::StatementLoopUntil
+                    | RakuAstClass::StatementLoop
+            ) {
+                return Ok(Expr::DoStmt(Box::new(lower_stmt(block)?)));
+            }
             Ok(Expr::DoBlock {
                 body: lower_block(block)?,
                 label: None,
