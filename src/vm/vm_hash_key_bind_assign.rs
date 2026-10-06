@@ -67,6 +67,72 @@ impl Interpreter {
         cell
     }
 
+    /// The shared cell that `@name[idx]` / `%name{idx}` was `:=`-bound to, when
+    /// it carries its own `of` constraint or `is default` (a promoted typed or
+    /// defaulted source variable, see [`Self::promote_bind_source_cell`]).
+    /// `None` for a slice, a plain element or a cell without such metadata.
+    ///
+    // Cost: O(1) (one flag load in the common program; else one env probe and
+    // one element read).
+    pub(crate) fn bound_element_cell_with_metadata(
+        &self,
+        var_name: &str,
+        idx: &Value,
+    ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
+        if !crate::value::cell_metadata_possible() {
+            return None;
+        }
+        let positional = var_name.starts_with('@');
+        if !positional && !var_name.starts_with('%') {
+            return None;
+        }
+        let container = self.env().get(var_name).map(Value::deref_container)?;
+        let idx = match idx.view() {
+            ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+            ValueView::Array(..) => return None,
+            _ => idx.clone(),
+        };
+        let slot = match container.view() {
+            ValueView::Array(items, _) if positional => {
+                items.get(Self::index_to_usize(&idx)?).cloned()
+            }
+            ValueView::Hash(map) if !positional => {
+                let key = if map.key_type.is_some() {
+                    crate::runtime::utils::value_which_key(&idx)
+                } else {
+                    idx.to_string_value()
+                };
+                map.map.get(&key).cloned()
+            }
+            _ => None,
+        }?;
+        let ValueView::ContainerRef(cell) = slot.view() else {
+            return None;
+        };
+        (crate::value::lookup_cell_constraint(&cell).is_some() || cell.default_value().is_some())
+            .then(|| cell.clone())
+    }
+
+    /// The value a plain element assignment of `val` through `cell` stores. An
+    /// element `:=`-bound to a variable IS that variable's container, so the
+    /// container's own `is default` and `of` constraint decide it, not the
+    /// aggregate's: `Nil` resets to the cell's default (or its type object) and
+    /// anything else is type-checked against the cell (#11810).
+    ///
+    // Cost: O(1) plus the type check of `val` against the cell's constraint.
+    pub(crate) fn element_store_through_cell(
+        &mut self,
+        cell: &crate::gc::Gc<crate::value::ContainerCell>,
+        val: Value,
+    ) -> Result<Value, RuntimeError> {
+        let val = if val.is_nil() {
+            self.cell_nil_reset_value(cell)
+        } else {
+            val
+        };
+        self.coerce_container_cell_store(cell, val)
+    }
+
     /// Refuse `ASSIGN-KEY` on a key whose entry was bound to a bare value.
     ///
     // Cost: O(1) (one hash probe).
