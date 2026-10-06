@@ -33,9 +33,10 @@ use std::cell::RefCell;
 pub(crate) use compiled::diff::first_difference;
 pub(crate) use compiled::{decode_compiled, encode_compiled};
 
-/// What the decoder carries: the entry's symbol table, already interned.
+/// What the decoder carries: the entry's symbol table, already interned, and
+/// shared with every nested decode of the same entry.
 pub(crate) struct DecodeCtx {
-    symbols: Vec<Symbol>,
+    symbols: std::rc::Rc<[Symbol]>,
 }
 
 /// The string table an [`encode`] call is building.
@@ -50,7 +51,7 @@ thread_local! {
     /// The symbols of the entry being decoded, for a value that reaches the
     /// codec through a serde impl and so cannot see the decoder's context
     /// (see [`decode_nested`]).
-    static DECODE_SYMBOLS: RefCell<Option<std::rc::Rc<Vec<Symbol>>>> = const { RefCell::new(None) };
+    static DECODE_SYMBOLS: RefCell<Option<std::rc::Rc<[Symbol]>>> = const { RefCell::new(None) };
 }
 
 /// Whether an [`encode`] call is running on this thread.
@@ -72,9 +73,7 @@ pub(crate) fn encode_nested<T: Encode>(value: &T) -> Result<Vec<u8>, EncodeError
 // Cost: O(n), n = size of the value.
 pub(crate) fn decode_nested<T: Decode<DecodeCtx>>(bytes: &[u8]) -> Option<T> {
     let symbols = DECODE_SYMBOLS.with(|s| s.borrow().clone())?;
-    let ctx = DecodeCtx {
-        symbols: symbols.as_ref().clone(),
-    };
+    let ctx = DecodeCtx { symbols };
     bincode::decode_from_slice_with_context(bytes, config(), ctx)
         .ok()
         .map(|(value, _)| value)
@@ -119,20 +118,60 @@ pub(crate) fn encode<T: Encode>(value: &T) -> Result<Vec<u8>, EncodeError> {
 // Cost: O(n + s), n = size of the payload, s = symbols in the table (each
 // interned once).
 pub(crate) fn decode<T: Decode<DecodeCtx>>(bytes: &[u8]) -> Result<T, DecodeError> {
-    let (strings, used): (Vec<String>, usize) = bincode::decode_from_slice(bytes, config())?;
-    let symbols: Vec<Symbol> = strings.iter().map(|s| Symbol::intern(s)).collect();
-    struct Restore(Option<std::rc::Rc<Vec<Symbol>>>);
+    let (strings, used): (Vec<&str>, usize) = bincode::borrow_decode_from_slice(bytes, config())?;
+    let symbols: std::rc::Rc<[Symbol]> = strings.iter().map(|s| Symbol::intern(s)).collect();
+    struct Restore(Option<std::rc::Rc<[Symbol]>>);
     impl Drop for Restore {
         fn drop(&mut self) {
             let outer = self.0.take();
             DECODE_SYMBOLS.with(|s| *s.borrow_mut() = outer);
         }
     }
-    let outer = DECODE_SYMBOLS.with(|s| s.borrow_mut().replace(std::rc::Rc::new(symbols.clone())));
+    let outer = DECODE_SYMBOLS.with(|s| s.borrow_mut().replace(symbols.clone()));
     let _restore = Restore(outer);
     let ctx = DecodeCtx { symbols };
     let (value, _) = bincode::decode_from_slice_with_context(&bytes[used..], config(), ctx)?;
     Ok(value)
+}
+
+/// The table index of `sym` in the entry an [`encode`] call is building, or
+/// `None` outside one. A `Symbol` that reaches the codec through a serde impl
+/// (an AST fragment inside compiled code) serializes as this index instead of
+/// its text, the way a natively encoded one does, so decoding it costs a table
+/// lookup instead of an intern (see `Symbol`'s serde impls).
+// Cost: O(1) amortized (one hash probe into the entry's table).
+pub(crate) fn serde_symbol_index(sym: Symbol) -> Option<u32> {
+    ENCODE_TABLE.with(|t| {
+        let mut t = t.borrow_mut();
+        let t = t.as_mut()?;
+        Some(t.index_of(sym))
+    })
+}
+
+/// Whether a [`decode`] call is running on this thread, so a serde-decoded
+/// `Symbol` is a [`serde_symbol_index`] index rather than text.
+// Cost: O(1).
+pub(crate) fn serde_symbols_active() -> bool {
+    DECODE_SYMBOLS.with(|s| s.borrow().is_some())
+}
+
+/// The symbol at `idx` of the entry a [`decode`] call is reading.
+// Cost: O(1).
+pub(crate) fn serde_symbol_at(idx: u32) -> Option<Symbol> {
+    DECODE_SYMBOLS.with(|s| s.borrow().as_ref()?.get(idx as usize).copied())
+}
+
+impl EncodeTable {
+    /// The index of `sym`, adding it to the table on first use.
+    // Cost: O(1) amortized.
+    fn index_of(&mut self, sym: Symbol) -> u32 {
+        let next = self.strings.len() as u32;
+        let idx = *self.index.entry(sym).or_insert(next);
+        if idx == next {
+            self.strings.push(sym.as_str());
+        }
+        idx
+    }
 }
 
 impl Encode for Symbol {
@@ -143,12 +182,7 @@ impl Encode for Symbol {
             let t = t.as_mut().ok_or(EncodeError::Other(
                 "Symbol encoded outside precomp_codec::encode",
             ))?;
-            let next = t.strings.len() as u32;
-            let idx = *t.index.entry(*self).or_insert(next);
-            if idx == next {
-                t.strings.push(self.as_str());
-            }
-            Ok::<u32, EncodeError>(idx)
+            Ok::<u32, EncodeError>(t.index_of(*self))
         })?;
         idx.encode(encoder)
     }
