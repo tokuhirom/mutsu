@@ -1055,8 +1055,10 @@ impl Interpreter {
             if self.stack.len() > saved_stack_depth {
                 self.stack.pop().unwrap_or(Value::NIL)
             } else {
-                // Implicit return from env "_"
-                self.env().get("_").cloned().unwrap_or(Value::NIL)
+                // A body that leaves no value (an empty body) returns Nil, as the
+                // fast path does; `$_` is always `Any` on method entry, so reading
+                // it here made `method m(D:D:) {}` answer `Any`.
+                Value::NIL
             }
         } else {
             Value::NIL
