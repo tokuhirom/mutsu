@@ -101,11 +101,18 @@ impl Interpreter {
                 self.cglobal_fetch(&library, &symbol, &target)
             }
             // nqp::nativecallrefresh($obj): MoarVM drops the child objects a
-            // CArray/CStruct caches for its elements, so that the next read
-            // sees what C wrote. mutsu caches none -- a CStruct field and a
-            // CArray element are decoded from the C memory on every read
-            // (`cstruct_field_value`, ADR-0015's native-backed storage) -- so
-            // there is nothing to drop. Returns its argument, as MoarVM does.
+            // CArray/CStruct caches for its reference members, so that the next
+            // read sees what C wrote. mutsu keeps such children too -- a
+            // CStruct's `__mutsu_cstruct_child_*` attributes, a reference-
+            // element CArray's child table -- but they are handles onto C
+            // memory, and a read answers one only while its slot still holds
+            // that child's address (a slot C rewrote builds a fresh object from
+            // the address). Scalar members and `Str` fields are decoded from
+            // the memory on every read (`cstruct_field_value`). So a read never
+            // sees stale contents, and there is nothing a refresh must drop:
+            // doing so would only change the identity of a child, and would
+            // free what a Raku-allocated parent's pointer still points at.
+            // Returns its argument, as MoarVM does.
             // Cost: O(1).
             "nativecallrefresh" => Ok(operand(args, 0)),
             _ => return self.call_nqp_op_sys(op, args),
@@ -273,9 +280,15 @@ impl Interpreter {
             return self.native_callable_from_signature(id, source);
         }
         let addr = self.carray_element_address(source);
-        // Upstream's `Pointer[T]` / `CArray[T]` are mixin type objects; a
-        // NULL cast answers the type object, as MoarVM does.
-        if matches!(target.view(), ValueView::Mixin(..)) {
+        // Upstream's `Pointer[T]` / `CArray[T]` are mixin type objects, and a
+        // class declared `is repr('CArray')` boxes a CArray over the address
+        // by its REPR; a NULL cast answers the type object, as MoarVM does.
+        let boxes_by_repr = match target.view() {
+            ValueView::Mixin(..) => true,
+            ValueView::Package(class) => self.is_carray_repr_class(class.as_str()),
+            _ => false,
+        };
+        if boxes_by_repr {
             if addr == 0 {
                 return Ok(target.clone());
             }

@@ -230,6 +230,17 @@ pub(crate) fn short_base_name(type_name: &str) -> &str {
     &type_name[base_end - short.as_str().len()..]
 }
 
+/// Whether `set` of registered class names holds the class a type was spelled
+/// as: by the full spelling, or by the last `::` component of `base` -- the
+/// same "one class, several spellings" matching `cstruct_class_name` does.
+// Cost: O(c), c = classes in the set.
+fn set_holds_class(set: &rustc_hash::FxHashSet<String>, name: &str, base: &str) -> bool {
+    set.contains(name)
+        || set.iter().any(|c| {
+            crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str() == base
+        })
+}
+
 /// The element type of a parameterised `Pointer[T]` spelling, or `None` for a
 /// plain `Pointer`. The base may be qualified (`NativeCall::Types::Pointer[T]`);
 /// the parameter is returned exactly as written, since every consumer resolves
@@ -406,23 +417,36 @@ impl crate::runtime::Interpreter {
 
     /// Whether a *field* of type `name` occupies one pointer inside an
     /// enclosing CStruct: any class NativeCall holds by reference, i.e. one
-    /// declared `is repr('CStruct')`, `'CPointer'` or `'CUnion'`.
+    /// declared `is repr('CStruct')`, `'CPointer'`, `'CUnion'` or `'CArray'`.
+    /// A parameterised spelling (`Pointer[T]`, `CArray[T]`: a mixin of the
+    /// class that holds the REPR) is judged by its base.
+    // Cost: O(c), c = classes registered with a by-reference REPR.
     pub(crate) fn is_native_handle_class(&self, name: &str) -> bool {
-        let short = crate::qualified::last_segment(crate::symbol::Symbol::intern(name)).as_str();
+        let short = short_base_name(name);
+        let base = short.split_once('[').map_or(short, |(base, _)| base);
         let reg = self.registry();
         [
             &reg.cstruct_classes,
             &reg.cpointer_classes,
             &reg.cunion_classes,
+            &reg.carray_classes,
         ]
         .iter()
-        .any(|set| {
-            set.contains(name)
-                || set.iter().any(|c| {
-                    crate::qualified::last_segment(crate::symbol::Symbol::intern(c)).as_str()
-                        == short
-                })
-        })
+        .any(|set| set_holds_class(set, name, base))
+    }
+
+    /// Whether `spelling` -- a field's declared type, possibly `C[T]` -- names a
+    /// class declared `is repr('CArray')`, so that the field reads back as a
+    /// `CArray` over the C memory it points at.
+    // Cost: O(c), c = classes declared `is repr('CArray')`.
+    fn is_carray_repr_spelling(&self, spelling: &str) -> bool {
+        let reg = self.registry();
+        if reg.carray_classes.is_empty() {
+            return false;
+        }
+        let short = short_base_name(spelling);
+        let base = short.split_once('[').map_or(short, |(base, _)| base);
+        set_holds_class(&reg.carray_classes, spelling, base)
     }
 
     /// Follow a `constant` type alias a field's declared type is spelled with.
@@ -639,7 +663,29 @@ impl crate::runtime::Interpreter {
         if matches!(field.ty, FieldType::Embedded { .. })
             && let Some(tag) = self.embedded_array_tag(&registered, name)
         {
+            // With upstream NativeCall loaded, `CArray[T]` is its own mixin
+            // type and the member reads back as an unmanaged CArray of
+            // exactly that type over the inline bytes (#11209).
+            if self.is_carray_repr_spelling(&tag)
+                && let Some(built) = self.native_pointer_of_declared(&tag, addr, false)
+            {
+                return built.ok();
+            }
             return Some(crate::runtime::nativecall::make_native_handle(&tag, addr));
+        }
+        // A `CArray`-typed field whose class was declared `is repr('CArray')`
+        // (upstream's `CArray[T]`, or any other class with that REPR) reads
+        // back as that type over the memory it points at; a NULL pointer is
+        // the type object, as in rakudo. The name-keyed handle below serves
+        // the native provider's own `CArray`.
+        // The layout resolves the declared name the same way, so a `my class`
+        // (registered under its declaration-site storage name) is the class
+        // the field was laid out as.
+        let carray_class = self.resolve_field_type_alias(&declared, &registered);
+        if self.is_carray_repr_spelling(&carray_class)
+            && let Some(built) = self.native_pointer_of_declared(&carray_class, addr, true)
+        {
+            return built.ok();
         }
         // A `CArray`-typed field is a `CArray` handle, not a bare `Pointer`:
         // being able to index it is the whole reason a binding declares the
@@ -956,7 +1002,11 @@ impl crate::runtime::Interpreter {
             "CUnion"
         } else if self.is_cstruct_class(&name) {
             "CStruct"
-        } else if short == "CArray" || short.starts_with("CArray[") {
+        } else if self.is_carray_repr_class(&name)
+            // The native provider's own `CArray[T]` handle is named, not declared.
+            || short == "CArray"
+            || short.starts_with("CArray[")
+        {
             "CArray"
         } else {
             return None;
