@@ -160,7 +160,7 @@ impl Interpreter {
         if honor_user_override
             && (self.has_user_method(&cn, method)
                 || (self.registry().role_associative_base(&cn).is_some()
-                && self.has_user_method_including_role(&cn, method)))
+                    && self.has_user_method_including_role(&cn, method)))
         {
             return None;
         }

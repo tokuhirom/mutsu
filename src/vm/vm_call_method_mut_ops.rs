@@ -1545,7 +1545,10 @@ impl Interpreter {
         if !skip_native
             && let inner = Self::hash_pun_inner(&target).unwrap_or_else(|| target.clone())
             && let ValueView::Instance { class_name, .. } = inner.view()
-            && self.registry().role_associative_base(&class_name.resolve()).is_some()
+            && self
+                .registry()
+                .role_associative_base(&class_name.resolve())
+                .is_some()
             && self.has_user_method_including_role(&class_name.resolve(), method)
         {
             skip_native = true;
