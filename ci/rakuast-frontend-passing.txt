@@ -1111,7 +1111,6 @@ t/control/block-newline-ends-junction-statement.t
 t/control/block-restore-slot-authoritative.t
 t/control/block-scope-code-vars.t
 t/control/block-scope-recursion-decl-leak.t
-t/control/block-self-ref-in-map.t
 t/control/block-valued-sigilless-declaration-boundary.t
 t/control/block-vs-sub-what.t
 t/control/check-phaser-sees-earlier-constants.t
