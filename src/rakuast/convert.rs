@@ -936,7 +936,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             if let Some(r) = repr {
                 fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
             }
-            let traits = class_traits(
+            let mut traits = class_traits(
                 parents,
                 does_parents,
                 parent_args,
@@ -944,6 +944,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 *is_hidden,
                 hidden_parents,
             )?;
+            traits.extend(decl_traits::class_custom_traits(custom_traits)?);
             if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
@@ -985,17 +986,33 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             body,
             does_roles,
             is_role: false,
-        } if does_roles.is_empty() => Ok(Some(statement_expression(RakuAstNode {
-            class: RakuAstClass::Class,
-            fields: vec![
+        } => {
+            let mut fields = vec![
                 leaf_field(Some("scope"), Value::str_from("augment")),
                 node_field(Some("name"), name_from_identifier(&name.resolve())),
-                node_field(
-                    Some("body"),
-                    block_node(&crate::parser::unhoist_nested_methods(body))?,
-                ),
-            ],
-        }))),
+            ];
+            if !does_roles.is_empty() {
+                let mut traits = Vec::new();
+                for role in does_roles {
+                    traits.push(Value::rakuast(Box::new(RakuAstNode {
+                        class: RakuAstClass::TraitDoes,
+                        fields: vec![node_field(None, build_type_node(&role.resolve())?)],
+                    })));
+                }
+                fields.push(RakuAstField {
+                    name: Some("traits"),
+                    value: RakuAstFieldValue::List(traits),
+                });
+            }
+            fields.push(node_field(
+                Some("body"),
+                block_node(&crate::parser::unhoist_nested_methods(body))?,
+            ));
+            Ok(Some(statement_expression(RakuAstNode {
+                class: RakuAstClass::Class,
+                fields,
+            })))
+        }
         // `enum NAME <A B>` / `enum NAME <<A B>>` / `enum NAME (A => 1)`
         // -> `Type::Enum(name => Name, term => ...)`. The runtime only needs
         // normalized variants, but Rakudo preserves the source-level quoting
@@ -1012,7 +1029,6 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             ..
         } => {
             if base_type.is_some()
-                || !roles.is_empty()
                 || matches!(variant_form, EnumVariantForm::Computed)
                 || variants.is_empty()
             {
@@ -1035,13 +1051,21 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 Some("name"),
                 name_from_identifier(&name.resolve()),
             ));
-            if let Some(export) = super::package_header::export_trait_value(
+            let mut traits = Vec::new();
+            for role in roles {
+                traits.push(Value::rakuast(Box::new(RakuAstNode {
+                    class: RakuAstClass::TraitDoes,
+                    fields: vec![node_field(None, build_type_node(role)?)],
+                })));
+            }
+            traits.extend(super::package_header::export_trait_value(
                 *is_export || !export_tags.is_empty(),
                 export_tags,
-            ) {
+            ));
+            if !traits.is_empty() {
                 fields.push(RakuAstField {
                     name: Some("traits"),
-                    value: RakuAstFieldValue::List(vec![export]),
+                    value: RakuAstFieldValue::List(traits),
                 });
             }
             fields.push(node_field(Some("term"), term));
@@ -2106,7 +2130,9 @@ pub(super) fn package_header_fields(
 /// node expresses itself.
 pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
     custom_traits.iter().any(|(t, _)| {
-        t != crate::parser::ANON_COLONS_TRAIT && t != crate::parser::EXPORT_TYPE_MARKER
+        t != crate::parser::ANON_COLONS_TRAIT
+            && t != crate::parser::EXPORT_TYPE_MARKER
+            && !decl_traits::is_class_trait(t)
     })
 }
 
@@ -4065,12 +4091,20 @@ fn class_traits(
         if does_parents.iter().any(|r| r == parent) || hidden_parents.iter().any(|h| h == parent) {
             continue;
         }
+        // `is NAME` names a parent only when NAME is a type; the parser keeps
+        // any other name (a `trait_mod:<is>` of the program's own) in
+        // `parents` too, and rakudo renders it by name.
+        let is_parent_type = parent_args.iter().any(|(p, _)| p == parent)
+            || super::bareword::names_type(parent)
+            || parent.contains(['[', ':']);
+        let field = if is_parent_type {
+            node_field(Some("type"), parent_type_node(parent, parent_args)?)
+        } else {
+            node_field(Some("name"), name_from_identifier(parent))
+        };
         traits.push(Value::rakuast(Box::new(RakuAstNode {
             class: RakuAstClass::TraitIs,
-            fields: vec![node_field(
-                Some("type"),
-                parent_type_node(parent, parent_args)?,
-            )],
+            fields: vec![field],
         })));
     }
     for role in does_parents {

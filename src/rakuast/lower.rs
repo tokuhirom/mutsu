@@ -300,10 +300,14 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }),
         // `augment class C { ... }`.
         RakuAstClass::Class if leaf_str(node, "scope").is_ok_and(|s| s == "augment") => {
+            let (node, roles) = take_does_roles(node)?;
             Ok(Stmt::AugmentClass {
-                name: crate::symbol::Symbol::intern(&call_name_str(node)?),
-                body: lower_package_body(lower_block(named_child(node, "body")?)?),
-                does_roles: Vec::new(),
+                name: crate::symbol::Symbol::intern(&call_name_str(&node)?),
+                body: lower_package_body(lower_block(named_child(&node, "body")?)?),
+                does_roles: roles
+                    .iter()
+                    .map(|role| crate::symbol::Symbol::intern(role))
+                    .collect(),
                 is_role: false,
             })
         }
@@ -702,6 +706,8 @@ struct ClassTraits {
     is_rw: bool,
     is_hidden: bool,
     hidden_parents: Vec<String>,
+    /// `is NAME` / `is NAME(ARGS)`: a trait of the program's own.
+    custom_traits: Vec<(String, Option<Expr>)>,
 }
 
 fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
@@ -713,6 +719,7 @@ fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
             is_rw: false,
             is_hidden: false,
             hidden_parents: Vec::new(),
+            custom_traits: Vec::new(),
         });
     };
     let RakuAstFieldValue::List(items) = &f.value else {
@@ -724,6 +731,7 @@ fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
     let mut is_rw = false;
     let mut is_hidden = false;
     let mut hidden_parents = Vec::new();
+    let mut custom_traits = Vec::new();
     for item in items {
         let ValueView::RakuAst(t) = item.view() else {
             return Err(unsupported(node));
@@ -740,6 +748,29 @@ fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
                     match positional_leaf(name_node)?.view() {
                         ValueView::Str(s) if s.as_str() == "rw" => is_rw = true,
                         ValueView::Str(s) if s.as_str() == "hidden" => is_hidden = true,
+                        // `is NAME` with no argument: the parser lists it with
+                        // the parents, whatever NAME is.
+                        ValueView::Str(s)
+                            if super::decl_traits::is_class_trait(&s)
+                                && named_child(t, "argument").is_err() =>
+                        {
+                            parents.push(s.to_string());
+                        }
+                        ValueView::Str(s) if super::decl_traits::is_class_trait(&s) => {
+                            let argument = match named_child(t, "argument") {
+                                Ok(argument) => {
+                                    let value =
+                                        super::attribute::lower_paren_argument(t, argument)?;
+                                    // A list `(a, b)` is the parser's grouped array literal.
+                                    Some(match value {
+                                        Expr::ArrayLiteral(_) => Expr::Grouped(Box::new(value)),
+                                        other => other,
+                                    })
+                                }
+                                Err(_) => None,
+                            };
+                            custom_traits.push((s.to_string(), argument));
+                        }
                         _ => return Err(unsupported(node)),
                     }
                 } else {
@@ -773,6 +804,7 @@ fn class_traits(node: &RakuAstNode) -> Result<ClassTraits, RuntimeError> {
         is_rw,
         is_hidden,
         hidden_parents,
+        custom_traits,
     })
 }
 
@@ -959,6 +991,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_rw: class_is_rw,
         is_hidden,
         hidden_parents,
+        custom_traits: written_traits,
     } = class_traits(node)?;
     let repr = match node.fields.iter().find(|f| f.name == Some("repr")) {
         Some(_) => Some(leaf_str(node, "repr")?),
@@ -976,7 +1009,11 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         repr,
         body,
         language_version: crate::parser::current_language_version(),
-        custom_traits: head.custom_traits(),
+        custom_traits: {
+            let mut custom = head.custom_traits();
+            custom.extend(written_traits);
+            custom
+        },
         is_unit: head.is_unit,
         implicit_grammar_parent: false,
         is_grammar: false,
@@ -1057,8 +1094,9 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         is_rw,
         is_hidden,
         hidden_parents,
+        custom_traits: written_traits,
     } = class_traits(node)?;
-    if is_rw || is_hidden || !hidden_parents.is_empty() {
+    if is_rw || is_hidden || !hidden_parents.is_empty() || !written_traits.is_empty() {
         return Err(unsupported(node));
     }
     // With no written parent a grammar inherits `Grammar`, which the parser
@@ -1205,6 +1243,7 @@ fn lower_package(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn lower_enum(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let (node, is_my, is_export, export_tags) =
         super::package_header::strip_scope_and_export(node)?;
+    let (node, roles) = take_does_roles(&node)?;
     let node = &node;
     let name = call_name_str(node)?;
     let term = named_child(node, "term")?;
@@ -1221,7 +1260,7 @@ fn lower_enum(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         export_tags,
         is_my,
         base_type: None,
-        roles: Vec::new(),
+        roles,
         language_version: crate::parser::current_language_version(),
     })
 }
@@ -4310,4 +4349,28 @@ fn take_unit_package_body(stmt: &mut Stmt) -> Vec<Stmt> {
         Stmt::SyntheticBlock(parts) => parts.iter_mut().flat_map(take_unit_package_body).collect(),
         _ => Vec::new(),
     }
+}
+
+/// The roles a declaration's `traits` compose (`Trait::Does`), and the node
+/// without them. Any other trait stays the boundary.
+// Cost: O(t), t = traits of the node.
+fn take_does_roles(node: &RakuAstNode) -> Result<(RakuAstNode, Vec<String>), RuntimeError> {
+    let mut stripped = node.clone();
+    let mut roles = Vec::new();
+    if let Some(field) = stripped.fields.iter_mut().find(|f| f.name == Some("traits")) {
+        let RakuAstFieldValue::List(items) = &field.value else {
+            return Err(unsupported(node));
+        };
+        for item in items {
+            let ValueView::RakuAst(t) = item.view() else {
+                return Err(unsupported(node));
+            };
+            if t.class != RakuAstClass::TraitDoes {
+                return Err(unsupported(node));
+            }
+            roles.push(simple_type_name(node, named_child_or_positional(t)?)?);
+        }
+        stripped.fields.retain(|f| f.name != Some("traits"));
+    }
+    Ok((stripped, roles))
 }
