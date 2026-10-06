@@ -71,6 +71,54 @@ pub(crate) fn feed_leftmost_operand_mut(feed: &mut Expr) -> &mut Expr {
     }
 }
 
+/// Give a feed operator its real precedence: looser than the comma. The
+/// per-element parse leaves `1, 2 ==> f()` as `[1, Feed(2 ==> f())]`; this folds
+/// the comma-list neighbours into the feed's source, giving `Feed((1, 2) ==> f())`.
+/// For `==>` the elements *before* the feed join its leftmost operand; for `<==`
+/// (`f() <== 1, 2`) the elements *after* it join its source. Only a feed whose
+/// source is not itself a feed is lifted; every other list is returned untouched.
+// Cost: O(n), n = number of list items.
+pub(crate) fn lift_feed_in_list(items: Vec<Expr>) -> Vec<Expr> {
+    let liftable = |idx: usize, e: &Expr| match e {
+        Expr::Feed {
+            source,
+            left_is_source,
+            ..
+        } if !matches!(source.as_ref(), Expr::Feed { .. }) => {
+            if *left_is_source {
+                idx > 0
+            } else {
+                idx + 1 < items.len()
+            }
+        }
+        _ => false,
+    };
+    let Some(idx) = items.iter().enumerate().position(|(i, e)| liftable(i, e)) else {
+        return items;
+    };
+    let mut items = items;
+    let mut tail = items.split_off(idx + 1);
+    let mut feed = items.pop().expect("feed item at idx");
+    let mut head = items;
+    if let Expr::Feed {
+        source,
+        left_is_source,
+        ..
+    } = &mut feed
+    {
+        let own = std::mem::replace(source.as_mut(), Expr::ArrayLiteral(Vec::new()));
+        let parts = if *left_is_source {
+            head.drain(..).chain(std::iter::once(own)).collect()
+        } else {
+            std::iter::once(own).chain(tail.drain(..)).collect()
+        };
+        **source = Expr::ArrayLiteral(parts);
+    }
+    head.push(feed);
+    head.append(&mut tail);
+    head
+}
+
 pub(crate) fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
     match sink {
         // Feeding into a scalar collects the feed into an Array, like an array

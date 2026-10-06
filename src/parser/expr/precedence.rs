@@ -52,7 +52,7 @@ pub(super) use ternary::reject_diffy_assign_meta;
 
 pub(in crate::parser) use ternary::call_arg_expr;
 
-pub(crate) use feed::{feed_leftmost_operand_mut, lower_feed_node};
+pub(crate) use feed::{feed_leftmost_operand_mut, lift_feed_in_list, lower_feed_node};
 
 // ---- Internal cross-submodule helper re-exports (so `use super::*` reaches them) ----
 pub(crate) use assign::{

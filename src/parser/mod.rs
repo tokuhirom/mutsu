@@ -200,7 +200,7 @@ pub(crate) use stmt::sub::is_builtin_param_trait;
 
 /// Descend a feed chain to its textually-leftmost operand slot — for splitting a
 /// declaration/assignment that binds tighter than the feed.
-pub(crate) use expr::precedence::feed_leftmost_operand_mut;
+pub(crate) use expr::precedence::{feed_leftmost_operand_mut, lift_feed_in_list};
 
 pub(crate) fn current_language_version() -> String {
     stmt::simple::current_language_version()
