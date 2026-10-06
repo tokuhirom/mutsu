@@ -304,6 +304,17 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 }
                 return Err(desugared(name.as_str()));
             }
+            // `foo $obj: 1` is the method call `$obj.foo(1)`.
+            if let Some(crate::ast::CallArg::Invocant(invocant)) = args.first() {
+                let method = Expr::MethodCall {
+                    target: Box::new(invocant.clone()),
+                    name: *name,
+                    args: call_args_as_exprs(&args[1..])?,
+                    modifier: None,
+                    quoted: false,
+                };
+                return Ok(Some(statement_expression(convert_expr(&method)?)));
+            }
             let args = call_args_as_exprs(args)?;
             Ok(Some(statement_expression(call_name(
                 name.as_str(),
@@ -6118,9 +6129,14 @@ fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, Runtime
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value.clone().unwrap_or(Expr::Literal(Value::TRUE))),
             }),
-            CallArg::Slip(_) | CallArg::Invocant(_) => Err(unsupported(
-                "statement call with a slip or invocant argument",
-            )),
+            // `foo |@a`: the slip is the tight prefix `|` over the term.
+            CallArg::Slip(expr) => Ok(Expr::Unary {
+                op: crate::token_kind::TokenKind::Pipe,
+                expr: Box::new(expr.clone()),
+            }),
+            CallArg::Invocant(_) => {
+                Err(unsupported("statement call with a later invocant argument"))
+            }
         })
         .collect()
 }
