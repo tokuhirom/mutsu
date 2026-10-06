@@ -9,6 +9,7 @@ use super::{Handler, MethodRow, RowFlags};
 pub(crate) mod coerce;
 pub(crate) mod complex;
 pub(crate) mod complex_math;
+pub(crate) mod cool_real;
 mod int;
 pub(crate) mod math;
 mod num;
@@ -77,4 +78,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     real_misc::COOL_ROWS,
     real_misc::COOL_NATIVE_INT_ROWS,
     real_misc::INT_NATIVE_INT_ROWS,
+    cool_real::COOL_ROWS,
+    cool_real::BOOL_ROWS,
 ];

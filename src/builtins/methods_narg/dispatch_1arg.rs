@@ -232,45 +232,22 @@ pub(crate) fn native_method_1arg(
             ))));
         }
     }
-    // Cool numeric coercion: when a Str calls a numeric 1-arg method, coerce to numeric first.
-    // Also coerce the arg if it's a Str for numeric methods.
+    // A `Str` argument of `base` and `polymod` numifies first (`10.base("2")`).
+    // The other numeric methods are rows of `builtins::method_table`, which
+    // numify their receiver and argument themselves (`Cool.round`, the math
+    // rows).
+    if matches!(method, "base" | "polymod")
+        && let ValueView::Str(s) = arg.view()
     {
-        // The transcendental methods (`log`, `exp`, `atan2`, `roots`, `unpolar`) are
-        // `Cool` rows of `builtins::method_table` (ADR-11276).
-        let numeric_1arg_methods: &[&str] = &["round", "base", "polymod"];
-        if numeric_1arg_methods.contains(&method) {
-            let coerced_target = if let ValueView::Str(s) = target.view() {
-                if let Ok(i) = s.parse::<i64>() {
-                    Some(Value::int(i))
-                } else if let Ok(f) = s.parse::<f64>() {
-                    Some(Value::num(f))
-                } else {
-                    return None;
-                }
-            } else if method == "round" {
-                // A Cool aggregate numifies to its element count
-                // (`{a => 1}.round(0.5)`); see `cool_aggregate_elems`.
-                crate::builtins::methods_0arg::cool_aggregate::cool_aggregate_elems(target)
-                    .map(Value::int)
-            } else {
-                None
-            };
-            let coerced_arg = if let ValueView::Str(s) = arg.view() {
-                if let Ok(i) = s.parse::<i64>() {
-                    Some(Value::int(i))
-                } else if let Ok(f) = s.parse::<f64>() {
-                    Some(Value::num(f))
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            if coerced_target.is_some() || coerced_arg.is_some() {
-                let t = coerced_target.as_ref().unwrap_or(target);
-                let a = coerced_arg.as_ref().unwrap_or(arg);
-                return native_method_1arg(t, method_sym, a);
-            }
+        let coerced = if let Ok(i) = s.parse::<i64>() {
+            Some(Value::int(i))
+        } else if let Ok(f) = s.parse::<f64>() {
+            Some(Value::num(f))
+        } else {
+            None
+        };
+        if let Some(coerced) = coerced {
+            return native_method_1arg(target, method_sym, &coerced);
         }
     }
     match method {
@@ -1321,121 +1298,11 @@ pub(crate) fn native_method_1arg(
                 ArrayKind::List,
             )))
         }
+        // `round($scale)` is the `Cool.round` row's handler; this arm keeps the
+        // receivers the table has no shape for (an allomorph: `<1.5>.round(0.5)`).
+        // Cost: see `cool_real::round_to`.
         "round" => {
-            // Unwrap allomorphic types (IntStr, NumStr, RatStr, ComplexStr)
-            // to get the underlying numeric value for the scale
-            let unwrapped_arg = if let ValueView::Mixin(inner, _) = arg.view() {
-                inner.as_ref()
-            } else {
-                arg
-            };
-            // Unwrap target allomorphic types for the exact fast path.
-            let exact_target = if let ValueView::Mixin(inner, _) = target.view() {
-                inner.as_ref()
-            } else {
-                target
-            };
-            // Keep integer/rational rounding exact (Rakudo's Real.round(Real)):
-            // avoids f64 precision loss for large Ints and Rat scales such as
-            // `round(1000, 23.01)` (== 989.43, not 989.4300000000001).
-            if let Some(exact) =
-                crate::builtins::arith::exact_round_scaled(exact_target, unwrapped_arg)
-            {
-                return Some(Ok(exact));
-            }
-            // Determine the scale type category for return type selection
-            // Int/IntStr -> Int, Num/NumStr/Complex/ComplexStr -> Num,
-            // Rat/RatStr -> Rat
-            #[derive(Clone, Copy)]
-            enum RoundResult {
-                Int,
-                Num,
-                Rat,
-            }
-            let scale_type = match unwrapped_arg.view() {
-                ValueView::Int(_) | ValueView::BigInt(_) => RoundResult::Int,
-                ValueView::Num(_) => RoundResult::Num,
-                ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
-                    RoundResult::Rat
-                }
-                ValueView::Complex(_, _) => RoundResult::Num,
-                _ => return None,
-            };
-            let scale = match unwrapped_arg.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    crate::builtins::arith::bigint_ratio_to_f64(n, d)
-                }
-                ValueView::Complex(re, _) => re,
-                _ => return None,
-            };
-            fn raku_round(v: f64) -> f64 {
-                (v + 0.5).floor()
-            }
-            fn round_real(x: f64, scale: f64, scale_val: &Value) -> f64 {
-                if scale == 0.0 {
-                    raku_round(x)
-                } else {
-                    let k = raku_round(x / scale);
-                    // Multiply back by the scale, but when the scale is an exact
-                    // rational do the final step as `k * num / den` so a scale
-                    // like 0.1 (== 1/10) yields `k / 10` (the exact nearest
-                    // double) instead of `k * 0.1`, which carries float noise
-                    // (e.g. -39 * 0.1 == -3.9000000000000004).
-                    match scale_val.view() {
-                        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => {
-                            k * n as f64 / d as f64
-                        }
-                        ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                            k * crate::builtins::arith::bigint_ratio_to_f64(n, d)
-                        }
-                        _ => k * scale,
-                    }
-                }
-            }
-            // Unwrap target allomorphic types too
-            let unwrapped_target = if let ValueView::Mixin(inner, _) = target.view() {
-                inner.as_ref()
-            } else {
-                target
-            };
-            // Handle Complex target separately — always returns Complex
-            if let ValueView::Complex(re, im) = unwrapped_target.view() {
-                let rr = round_real(re, scale, unwrapped_arg);
-                let ri = round_real(im, scale, unwrapped_arg);
-                return Some(Ok(Value::complex(rr, ri)));
-            }
-            let x = match unwrapped_target.view() {
-                ValueView::Int(i) => i as f64,
-                ValueView::BigInt(bi) => bi.to_f64().unwrap_or(0.0),
-                ValueView::Num(f) => f,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::FatRat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
-                ValueView::BigRat(n, d) if *d != num_bigint::BigInt::from(0) => {
-                    crate::builtins::arith::bigint_ratio_to_f64(n, d)
-                }
-                _ => return None,
-            };
-            let result = round_real(x, scale, unwrapped_arg);
-            // Return type depends on the scale type
-            match scale_type {
-                RoundResult::Int => {
-                    let r = result.floor();
-                    if r >= i64::MIN as f64 && r <= i64::MAX as f64 {
-                        Some(Ok(Value::int(r as i64)))
-                    } else {
-                        Some(Ok(Value::num(r)))
-                    }
-                }
-                RoundResult::Num => Some(Ok(Value::num(result))),
-                RoundResult::Rat => {
-                    let (n, d) = f64_to_rat(result);
-                    Some(Ok(Value::rat_raw(n, d)))
-                }
-            }
+            crate::builtins::method_table::cool_real::round_to(target, std::slice::from_ref(arg))
         }
         // Cost: O(e + k) on a list/array, e = elements of the invocant (copied),
         // k = elements picked (each an O(1) swap_remove); `.pick(*)` is an O(e)

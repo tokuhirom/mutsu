@@ -84,17 +84,6 @@ pub(super) fn dispatch(
             target,
             &[],
         )),
-        // The numeric types' rows' implementations (ADR-11276,
-        // `method_table::real`); the cascade still reaches them for receivers
-        // the table has no shape for.
-        // Cost: O(1) for word-sized values; O(b) for big ones, b = size in bits.
-        "floor" => Some(crate::builtins::method_table::real::floor_of(target)),
-        // Cost: as `floor`.
-        "ceiling" | "ceil" => Some(crate::builtins::method_table::real::ceiling_of(target)),
-        // Cost: as `floor`.
-        "round" => Some(crate::builtins::method_table::real::round_of(target)),
-        // Cost: as `floor`.
-        "truncate" => Some(crate::builtins::method_table::real::truncate_of(target)),
         // `narrow` of a numeric receiver is a row (`method_table::real_misc`); an
         // `Instant` (no table shape yet) is its own narrowest form.
         // Cost: O(1).

@@ -17,7 +17,7 @@ mod indent;
 mod numeric;
 mod str_match;
 
-pub(crate) use base::native_base_with_options;
+pub(crate) use base::{f64_to_rat, native_base_with_options};
 pub(crate) use buf::{
     buf_get_int_items, is_buf_like, read_f32_endian, read_f64_endian, read_int_value,
     resolve_buf_index,

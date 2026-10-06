@@ -8,8 +8,6 @@ use super::rng::builtin_rand;
 
 pub(crate) mod coercion;
 pub(crate) mod collection;
-pub(crate) mod cool_aggregate;
-use cool_aggregate::cool_aggregate_elems;
 mod dispatch_core_coerce;
 mod dispatch_core_list;
 pub(crate) mod dispatch_core_math;
@@ -779,35 +777,6 @@ pub(crate) fn native_method_0arg_cascade(
             return Some(Ok(Value::seq(result)));
         }
         return native_method_0arg(inner, method_sym);
-    }
-    // Cool numeric coercion: when a Str calls a numeric method, coerce to numeric first.
-    // In Raku, Cool types (including Str) coerce to Numeric for numeric operations.
-    // The transcendental methods (`sin`, `log`, `sqrt`, ...) are `Cool` rows of
-    // `builtins::method_table` (ADR-11276), which numify through
-    // `method_table::numify`; this list is what is left.
-    if let ValueView::Str(s) = target.view() {
-        match method {
-            "abs" | "sign" | "ceiling" | "floor" | "truncate" | "round" | "polymod" | "base"
-            | "is-int" => {
-                // A Str numifies the way `.Numeric` does before the numeric
-                // method runs (`method_table::numify::numify_str`).
-                let coerced = crate::builtins::method_table::numify::numify_str(&s)?;
-                return native_method_0arg(&coerced, method_sym);
-            }
-            _ => {}
-        }
-    }
-    // The Cool aggregates (List/Array, Map/Hash) numify to their element
-    // count for Cool's numeric methods: `{a => 1, b => 2}.round` is 2 and
-    // `[1, 2, 3].floor` is 3, as in raku. `nodemap` relies on it -- it does
-    // not descend into a nested Hash, so `%h.nodemap(*.round)` rounds each
-    // inner Hash as a number.
-    if matches!(
-        method,
-        "abs" | "sign" | "ceiling" | "floor" | "truncate" | "round" | "is-int"
-    ) && let Some(count) = cool_aggregate_elems(target)
-    {
-        return native_method_0arg(&Value::int(count), method_sym);
     }
     // Any.nl-out returns the default newline separator "\n"
     if method == "nl-out" {
