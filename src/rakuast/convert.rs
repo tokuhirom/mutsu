@@ -790,21 +790,27 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             // "not inherited" flag, not because the source said `my` — so for a
             // submethod that flag carries no RakuAST shape of its own.
             let declared_my = *is_my && !*is_submethod;
-            if name_expr.is_some()
-                || *is_export != !export_tags.is_empty()
-                || *is_our
-                || declared_my
-                || *our_variable_form
-                || *is_default_candidate
-                || deprecated_message.is_some()
-                || !handles.is_empty()
-                || custom_traits
-                    .iter()
-                    .any(|(t, _)| !is_return_spelling_marker(t))
-            {
-                return Err(unsupported(
-                    "method with traits / private / multi / delegation",
-                ));
+            let deferred = [
+                (name_expr.is_some(), "method with a computed name"),
+                (
+                    *is_export != !export_tags.is_empty(),
+                    "method with a bare `is export`",
+                ),
+                (*is_our, "`our` method"),
+                (declared_my, "`my` method"),
+                (*our_variable_form, "`our &m = method` form"),
+                (*is_default_candidate, "method with `is default`"),
+                (deprecated_message.is_some(), "method with `is DEPRECATED`"),
+                (!handles.is_empty(), "method with `handles`"),
+                (
+                    custom_traits
+                        .iter()
+                        .any(|(t, _)| !is_return_spelling_marker(t)),
+                    "method with a custom trait",
+                ),
+            ];
+            if let Some((_, what)) = deferred.iter().find(|(hit, _)| *hit) {
+                return Err(unsupported(what));
             }
             if return_type.is_none() && spelling != ReturnSpelling::Arrow {
                 // A `__return_via_*` marker without a return type would be a
