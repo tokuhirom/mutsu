@@ -560,6 +560,14 @@ impl Interpreter {
         if code.const_sym(name_idx).flags() & crate::symbol::flags::NQP_OP != 0 {
             return self.exec_nqp_call_op(code, name_idx, arity, arg_sources_idx);
         }
+        // A native atomic helper (`⚛`-operators, `cas`) is the same kind of
+        // compiler-emitted primitive in a reserved namespace: it goes to its
+        // handler directly (see `exec_atomic_helper_call_op`).
+        if arg_sources_idx.is_none()
+            && code.const_sym(name_idx).flags() & crate::symbol::flags::NATIVE_ATOMIC_HELPER != 0
+        {
+            return self.exec_atomic_helper_call_op(code, name_idx, arity);
+        }
         // #7797: same package-qualification gate as `exec_get_bare_word_op`
         // (see its comment), applied to a qualified sub CALL (`Pkg::sub(...)`)
         // rather than a bareword term -- a call name never reaches that

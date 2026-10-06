@@ -334,8 +334,7 @@ impl Interpreter {
     /// `my atomicint $y` from the outer `$y` it shadows (#12006).
     // Cost: O(|name|).
     fn is_atomic_var_helper(name: &str) -> bool {
-        name.ends_with("_var")
-            && (name.starts_with("__mutsu_atomic_") || name.starts_with("__mutsu_cas_"))
+        crate::symbol::is_atomic_var_helper_name(name)
     }
 
     pub(super) fn normalize_call_args_for_target(
