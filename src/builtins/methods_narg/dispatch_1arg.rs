@@ -40,8 +40,12 @@ fn is_real_epsilon(arg: &Value) -> bool {
         | ValueView::Enum { .. } => true,
         ValueView::Mixin(inner, _) => is_real_epsilon(inner),
         ValueView::Scalar(inner) => is_real_epsilon(inner),
-        ValueView::Instance { .. } => {
-            !arg.is_match_instance() && crate::runtime::to_float_value(arg).is_some()
+        // `Duration` and `Instant` keep their number in `value`; an instance of
+        // a user subclass of `Int` / `Num` / `Rat` keeps it in a payload.
+        ValueView::Instance { class_name, .. } => {
+            class_name == "Duration"
+                || class_name == "Instant"
+                || crate::value::numeric_payload::numeric_subclass_payload(arg).is_some()
         }
         _ => false,
     }
@@ -66,9 +70,12 @@ fn rat_epsilon_arg(arg: &Value, param: &str) -> Result<f64, RuntimeError> {
             None,
         ));
     }
-    Ok(crate::runtime::to_float_value(arg)
-        .filter(|f| f.is_finite())
-        .unwrap_or(1e-6))
+    let value = match arg.view() {
+        // `Value::to_f64` reads the `Duration` / `Instant` / payload instances.
+        ValueView::Instance { .. } => Some(arg.to_f64()),
+        _ => crate::runtime::to_float_value(arg),
+    };
+    Ok(value.filter(|f| f.is_finite()).unwrap_or(1e-6))
 }
 
 /// `f.Rat(epsilon)`: the simplest rational within `epsilon` of `f` (a continued

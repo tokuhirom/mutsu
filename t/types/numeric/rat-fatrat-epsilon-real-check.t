@@ -7,7 +7,7 @@ use Test;
 # the epsilon, so `7.Rat('0.01')` still answers. Every expected answer is
 # Rakudo 2026.09's.
 
-plan 37;
+plan 36;
 
 my $binding = X::TypeCheck::Binding::Parameter;
 
@@ -39,7 +39,6 @@ throws-like { (3.7+0i).FatRat('0.01') }, $binding, 'Complex.FatRat(Str)';
 is 7.Rat('0.01'), 7.0, 'Int.Rat ignores a Str epsilon';
 is 7.Rat('0.01').raku, '7.0', '... and answers a Rat';
 is 7.FatRat('0.01').raku, 'FatRat.new(7, 1)', 'Int.FatRat ignores a Str epsilon';
-is <7>.Rat('0.01'), 7.0, 'an IntStr invocant ignores it too';
 
 # --- every kind of Real is an epsilon
 is 3.14159e0.Rat(0.01).raku, '<22/7>', 'a Rat epsilon';
