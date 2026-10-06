@@ -19,7 +19,7 @@ use Test;
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
-plan 52;
+plan 54;
 
 sub stmts($src) { $src.AST.statements }
 sub same($src, $expected, $desc) {
@@ -88,6 +88,8 @@ same Q[my @a; push @a, $_ * 2 for 1..3; @a.join(",")], '2,4,6', 'a for modifier'
 same Q[my @r = [$_ * 2 for 1..3]; @r.join(",")], '2,4,6', 'in an array composer';
 same Q[ [5 if 1].elems ~ "," ~ [5 if 0].elems], '1,0', 'an if modifier in a composer';
 same Q[my @r = ($_ * 2 for 1..3); @r.join(",")], '2,4,6', 'in a parenthesis';
+same Q[my @s; @s.push($_) if $_ > 1 for 1, 2, 3; @s.join(",")], '2,3', 'an if modifier under a for modifier';
+same Q[my @s; @s.push($_) unless $_ == 2 for 1, 2, 3; @s.join(",")], '1,3', 'an unless modifier under a for modifier';
 same Q[my $s = 0; { $s += $^a * $^b } for (1, 2), (3, 4); $s], 4, 'a placeholder block keeps its arity';
 same Q[my $s = 0; { $s += $_ } for 1, 2, 3; $s], 6, 'a plain block';
 same Q[my @a = 1, 2, 3; for @a <-> $x { $x *= 2 }; @a.join(",")], '2,4,6', 'a `<->` loop writes back';
