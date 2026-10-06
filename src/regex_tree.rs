@@ -12,7 +12,9 @@ mod extension;
 mod quantifier;
 
 pub(crate) use char_class::{BackslashClass, CharClassAtom};
-pub(crate) use enumeration::{CharClassElement, EnumerationElement};
+pub(crate) use enumeration::{
+    CharClassElement, EnumerationElement, PropertyPredicate, is_class_name,
+};
 pub(crate) use extension::RegexExtension;
 pub(crate) use quantifier::{QuantifierKind, RegexBacktrack, RegexQuantifier, RegexSeparator};
 
@@ -870,7 +872,7 @@ impl RegexTree {
                         QuantifierKind::ZeroOrMore => crate::runtime::RegexQuant::ZeroOrMore,
                         QuantifierKind::OneOrMore => crate::runtime::RegexQuant::OneOrMore,
                         QuantifierKind::ZeroOrOne => crate::runtime::RegexQuant::ZeroOrOne,
-                        QuantifierKind::Range { .. } => return None,
+                        QuantifierKind::Range { .. } | QuantifierKind::Block { .. } => return None,
                     };
                     let mut tokens = lower_node(
                         atom,
@@ -1753,6 +1755,12 @@ impl Parser {
                     spaced_separator,
                 );
             }
+            if let Some(backtrack) = self.parse_atom_backtrack(&atom) {
+                atom = RegexNode::Extension(RegexExtension::BacktrackModified {
+                    atom: Box::new(atom),
+                    backtrack,
+                });
+            }
             self.push_term(&mut nodes, atom, saw_whitespace);
         }
 
@@ -2438,7 +2446,22 @@ impl Parser {
         }
         let body: String = self.chars.get(start..end)?.iter().collect();
         let text = if qq {
-            crate::parser::decode_qq_regex_quote(&body)?
+            match crate::parser::decode_qq_regex_quote(&body) {
+                Some(text) => text,
+                // A body that interpolates keeps what the `qq` parser makes of it.
+                None if quote == '"' => {
+                    let expr = crate::parser::interpolate_qq_content(&body);
+                    if matches!(expr, crate::ast::Expr::Literal(_)) {
+                        return None;
+                    }
+                    self.pos = end + 1;
+                    return Some(RegexNode::Extension(RegexExtension::InterpolatedQuote {
+                        source: body,
+                        expr: Box::new(expr),
+                    }));
+                }
+                None => return None,
+            }
         } else if escapes {
             crate::parser::decode_q_regex_quote(&body, close)
         } else {
@@ -2686,6 +2709,31 @@ impl Parser {
             capturing,
             args,
         })
+    }
+
+    /// `:`, `:!` or `:?` written right after `atom`: its own backtracking
+    /// control. A modifier that could instead start something else (`a:i`, the
+    /// cut `a::`) is not taken.
+    // Cost: O(1).
+    fn parse_atom_backtrack(&mut self, atom: &RegexNode) -> Option<RegexBacktrack> {
+        if self.chars.get(self.pos) != Some(&':') {
+            return None;
+        }
+        // A literal of several characters is split before its last one when a
+        // quantifier follows; the same split is not modelled here.
+        if matches!(atom, RegexNode::Literal(text) if text.chars().count() > 1) {
+            return None;
+        }
+        let (backtrack, width) = match self.chars.get(self.pos + 1) {
+            Some('!') => (RegexBacktrack::Greedy, 2),
+            Some('?') => (RegexBacktrack::Frugal, 2),
+            Some(next) if next.is_alphanumeric() || matches!(next, ':' | '_' | '<' | '[') => {
+                return None;
+            }
+            _ => (RegexBacktrack::Ratchet, 1),
+        };
+        self.pos += width;
+        Some(backtrack)
     }
 
     /// `$<name>` that is not an alias: match what the capture matched.

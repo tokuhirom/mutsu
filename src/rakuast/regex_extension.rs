@@ -6,7 +6,7 @@
 //! deparser to turn the statement back into the text the matcher reads.
 
 use super::convert::{
-    block_statements, leaf_field, node_field, quoted_string, regex_node, unsupported,
+    block_statements, convert_expr, leaf_field, node_field, quoted_string, regex_node, unsupported,
 };
 use super::lower::{lower_regex_node, lower_stmt, positional_leaf, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -74,6 +74,23 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
             class: RakuAstClass::RegexAssertionRecurse,
             fields: Vec::new(),
         },
+        RegexExtension::BacktrackModified { atom, backtrack } => RakuAstNode {
+            class: RakuAstClass::RegexBacktrackModifiedAtom,
+            fields: vec![
+                node_field(Some("atom"), regex_node(atom)?),
+                leaf_field(
+                    Some("backtrack"),
+                    super::regex_quantifier::backtrack_value(*backtrack),
+                ),
+            ],
+        },
+        RegexExtension::InterpolatedQuote { source, expr } => RakuAstNode {
+            class: RakuAstClass::RegexQuote,
+            fields: vec![
+                node_field(None, convert_expr(expr)?),
+                super::regex_code::source_field(source),
+            ],
+        },
     })
 }
 
@@ -83,7 +100,7 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
 pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
     let extension = match node.class {
         RakuAstClass::RegexAssertionLookahead => return lower_lookahead(node),
-        RakuAstClass::RegexQuote => return lower_words(node),
+        RakuAstClass::RegexQuote => return lower_quote(node),
         RakuAstClass::RegexNested => lower_tilde(node),
         RakuAstClass::RegexStatement => lower_statement(node),
         RakuAstClass::RegexBackReferenceNamed => {
@@ -101,9 +118,43 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
             })
         }
         RakuAstClass::RegexAssertionRecurse => Ok(RegexExtension::Recurse),
+        RakuAstClass::RegexBacktrackModifiedAtom => lower_backtrack_modified(node),
         _ => return None,
     };
     Some(extension.map(RegexNode::Extension))
+}
+
+/// A `Regex::Quote`: a word list, or an interpolating quote converted from the
+/// parser's (which keeps its spelling); any other is a plain quote.
+fn lower_quote(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+    let source = super::regex_code::source_of(node);
+    if source.is_empty() {
+        return lower_words(node);
+    }
+    let expr = crate::parser::interpolate_qq_content(&source);
+    Some(Ok(RegexNode::Extension(
+        RegexExtension::InterpolatedQuote {
+            source,
+            expr: Box::new(expr),
+        },
+    )))
+}
+
+fn lower_backtrack_modified(node: &RakuAstNode) -> Result<RegexExtension, RuntimeError> {
+    let atom = super::lower::named_child(node, "atom")?;
+    let backtrack = node
+        .fields
+        .iter()
+        .find(|f| f.name == Some("backtrack"))
+        .and_then(|f| match &f.value {
+            RakuAstFieldValue::Node(value) => super::regex_quantifier::backtrack(value),
+            _ => None,
+        })
+        .ok_or_else(|| super::lower::unsupported(node))?;
+    Ok(RegexExtension::BacktrackModified {
+        atom: Box::new(lower_regex_node(atom)?),
+        backtrack,
+    })
 }
 
 /// `< a b >`: a quote with the `words` processor.

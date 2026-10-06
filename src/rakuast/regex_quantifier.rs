@@ -30,12 +30,12 @@ pub(super) fn convert(
     atom: RakuAstNode,
     quantifier: &RegexQuantifier,
     separator: Option<RakuAstNode>,
-) -> RakuAstNode {
+) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = vec![
         field("atom", Value::rakuast(Box::new(atom))),
         field(
             "quantifier",
-            Value::rakuast(Box::new(quantifier_node(quantifier))),
+            Value::rakuast(Box::new(quantifier_node(quantifier)?)),
         ),
     ];
     if let Some(separator) = separator {
@@ -44,16 +44,16 @@ pub(super) fn convert(
             fields.push(field("trailing-separator", Value::truth(true)));
         }
     }
-    RakuAstNode {
+    Ok(RakuAstNode {
         class: RakuAstClass::RegexQuantifiedAtom,
         fields,
-    }
+    })
 }
 
-// Cost: O(1).
-fn quantifier_node(quantifier: &RegexQuantifier) -> RakuAstNode {
+// Cost: O(n), n = size of a block.
+fn quantifier_node(quantifier: &RegexQuantifier) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::new();
-    let class = match quantifier.kind {
+    let class = match &quantifier.kind {
         QuantifierKind::ZeroOrMore => RakuAstClass::RegexQuantifierZeroOrMore,
         QuantifierKind::OneOrMore => RakuAstClass::RegexQuantifierOneOrMore,
         QuantifierKind::ZeroOrOne => RakuAstClass::RegexQuantifierZeroOrOne,
@@ -64,29 +64,37 @@ fn quantifier_node(quantifier: &RegexQuantifier) -> RakuAstNode {
             excludes_max,
         } => {
             if let Some(min) = min {
-                fields.push(field("min", Value::int(min as i64)));
+                fields.push(field("min", Value::int(*min as i64)));
             }
-            if excludes_min {
+            if *excludes_min {
                 fields.push(field("excludes-min", Value::truth(true)));
             }
             if let Some(max) = max {
-                fields.push(field("max", Value::int(max as i64)));
+                fields.push(field("max", Value::int(*max as i64)));
             }
-            if excludes_max {
+            if *excludes_max {
                 fields.push(field("excludes-max", Value::truth(true)));
             }
             RakuAstClass::RegexQuantifierRange
+        }
+        QuantifierKind::Block { code, body } => {
+            fields.push(field(
+                "block",
+                Value::rakuast(Box::new(super::convert::block_node(body)?)),
+            ));
+            fields.push(super::regex_code::source_field(code));
+            RakuAstClass::RegexQuantifierBlockRange
         }
     };
     if let Some(backtrack) = quantifier.backtrack {
         fields.push(field("backtrack", backtrack_value(backtrack)));
     }
-    RakuAstNode { class, fields }
+    Ok(RakuAstNode { class, fields })
 }
 
 /// The `Backtrack::*` type object for a modifier.
 // Cost: O(1).
-fn backtrack_value(backtrack: RegexBacktrack) -> Value {
+pub(super) fn backtrack_value(backtrack: RegexBacktrack) -> Value {
     super::slurpy_marker_value(match backtrack {
         RegexBacktrack::Frugal => RakuAstClass::RegexBacktrackFrugal,
         RegexBacktrack::Greedy => RakuAstClass::RegexBacktrackGreedy,
@@ -118,7 +126,7 @@ fn count(node: &RakuAstNode, name: &str) -> Result<Option<u64>, ()> {
 
 /// The backtracking modifier a field names, by type object or by node.
 // Cost: O(1).
-fn backtrack(value: &Value) -> Option<RegexBacktrack> {
+pub(super) fn backtrack(value: &Value) -> Option<RegexBacktrack> {
     let class = match value.view() {
         ValueView::RakuAst(node) => node.class,
         ValueView::Package(name) => super::class_from_name(&name.resolve())?,
@@ -152,6 +160,16 @@ pub(super) fn lower_quantifier(node: &RakuAstNode) -> Option<RegexQuantifier> {
                 excludes_max,
             }
         }
+        RakuAstClass::RegexQuantifierBlockRange => {
+            let block = match field_value(node, "block")?.view() {
+                ValueView::RakuAst(block) => block,
+                _ => return None,
+            };
+            QuantifierKind::Block {
+                code: super::regex_code::source_of(node),
+                body: super::lower::lower_block(block).ok()?,
+            }
+        }
         _ => return None,
     };
     let backtrack = match field_value(node, "backtrack") {
@@ -181,6 +199,7 @@ fn is_quantifier(value: &Value) -> bool {
             | RakuAstClass::RegexQuantifierOneOrMore
             | RakuAstClass::RegexQuantifierZeroOrOne
             | RakuAstClass::RegexQuantifierRange
+            | RakuAstClass::RegexQuantifierBlockRange
     ))
 }
 
@@ -212,6 +231,7 @@ pub(super) fn construct(
         "RakuAST::Regex::Quantifier::OneOrMore" => RakuAstClass::RegexQuantifierOneOrMore,
         "RakuAST::Regex::Quantifier::ZeroOrOne" => RakuAstClass::RegexQuantifierZeroOrOne,
         "RakuAST::Regex::Quantifier::Range" => RakuAstClass::RegexQuantifierRange,
+        "RakuAST::Regex::Quantifier::BlockRange" => RakuAstClass::RegexQuantifierBlockRange,
         "RakuAST::Regex::QuantifiedAtom" => RakuAstClass::RegexQuantifiedAtom,
         _ => return None,
     };
@@ -232,6 +252,7 @@ fn construct_class(
         RakuAstClass::RegexQuantifierRange => {
             &["min", "excludes-min", "max", "excludes-max", "backtrack"]
         }
+        RakuAstClass::RegexQuantifierBlockRange => &["block", "backtrack"],
         _ => &["backtrack"],
     };
     let mut fields = Vec::new();

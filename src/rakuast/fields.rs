@@ -119,6 +119,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         RegexQuantifierZeroOrMore | RegexQuantifierOneOrMore | RegexQuantifierZeroOrOne => {
             &[("backtrack", BACKTRACK)]
         }
+        RegexBacktrackModifiedAtom => &[("atom", Absent::Required), ("backtrack", BACKTRACK)],
+        RegexQuantifierBlockRange => &[("block", Absent::Required), ("backtrack", BACKTRACK)],
         RegexQuantifierRange => &[
             ("min", Absent::TypeObject("Int")),
             ("max", Absent::TypeObject("Int")),

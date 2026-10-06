@@ -4072,11 +4072,7 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
                 .as_ref()
                 .map(|separator| regex_node(&separator.node))
                 .transpose()?;
-            return Ok(super::regex_quantifier::convert(
-                regex_node(atom)?,
-                quantifier,
-                separator,
-            ));
+            return super::regex_quantifier::convert(regex_node(atom)?, quantifier, separator);
         }
         RegexNode::AnchorBeginningOfString => {
             (RakuAstClass::RegexAnchorBeginningOfString, Vec::new())
@@ -4096,7 +4092,7 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
         }
         RegexNode::CharClass(atom) => return Ok(super::regex_char_class::convert(atom)),
         RegexNode::CharClassAssertion(elements) => {
-            return Ok(super::regex_enumeration::convert(elements));
+            return super::regex_enumeration::convert(elements);
         }
         RegexNode::InternalModifier {
             kind,

@@ -205,6 +205,8 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     MetaInfixAssign,
+    RegexBacktrackModifiedAtom,
+    RegexQuantifierBlockRange,
     RegexAssertionRecurse,
     RegexBackReferencePositional,
     RegexBackReferenceNamed,
@@ -535,6 +537,8 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
+            RegexBacktrackModifiedAtom => "RakuAST::Regex::BacktrackModifiedAtom",
+            RegexQuantifierBlockRange => "RakuAST::Regex::Quantifier::BlockRange",
             RegexAssertionRecurse => "RakuAST::Regex::Assertion::Recurse",
             RegexBackReferencePositional => "RakuAST::Regex::BackReference::Positional",
             RegexBackReferenceNamed => "RakuAST::Regex::BackReference::Named",
@@ -720,6 +724,7 @@ impl RakuAstClass {
                 | RakuAstClass::RegexMatchTo
                 | RakuAstClass::OnlyStar
                 | RakuAstClass::RegexQuantifierRange
+                | RakuAstClass::RegexQuantifierBlockRange
                 | RakuAstClass::RegexCharClass(_)
                 | RakuAstClass::RegexAssertionCharClass
                 | RakuAstClass::RegexCharClassElementEnumeration
@@ -855,7 +860,9 @@ impl RakuAstClass {
             RegexSequence | RegexAlternation | RegexSequentialAlternation => {
                 &["RakuAST::Regex"]
             }
-            RegexQuantifiedAtom => &["RakuAST::Regex::Term", "RakuAST::Regex"],
+            RegexQuantifiedAtom | RegexBacktrackModifiedAtom => {
+                &["RakuAST::Regex::Term", "RakuAST::Regex"]
+            }
             OnlyStar => &[
                 "RakuAST::Blockoid",
                 "RakuAST::Term",
@@ -945,7 +952,8 @@ impl RakuAstClass {
             RegexQuantifierZeroOrMore
             | RegexQuantifierOneOrMore
             | RegexQuantifierZeroOrOne
-            | RegexQuantifierRange => &["RakuAST::Regex::Quantifier"],
+            | RegexQuantifierRange
+            | RegexQuantifierBlockRange => &["RakuAST::Regex::Quantifier"],
             RegexBacktrackFrugal | RegexBacktrackGreedy | RegexBacktrackRatchet => {
                 &["RakuAST::Regex::Backtrack"]
             }
@@ -1121,7 +1129,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Regex::SequentialAlternation" => {
             &["RakuAST::Regex"]
         },
-        "RakuAST::Regex::QuantifiedAtom" =>
+        "RakuAST::Regex::QuantifiedAtom" | "RakuAST::Regex::BacktrackModifiedAtom" =>
             &["RakuAST::Regex::Term", "RakuAST::Regex"],
         "RakuAST::Regex::InternalModifier" => &[
             "RakuAST::Regex::Atom",
@@ -1317,6 +1325,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
+    RakuAstClass::RegexBacktrackModifiedAtom,
+    RakuAstClass::RegexQuantifierBlockRange,
     RakuAstClass::RegexAssertionRecurse,
     RakuAstClass::RegexBackReferencePositional,
     RakuAstClass::RegexBackReferenceNamed,
@@ -2834,6 +2844,7 @@ fn require_regex_node(value: &Value, constructor: &str) -> Result<(), RuntimeErr
                     | RakuAstClass::RegexAlternation
                     | RakuAstClass::RegexSequentialAlternation
                     | RakuAstClass::RegexQuantifiedAtom
+                    | RakuAstClass::RegexBacktrackModifiedAtom
                     | RakuAstClass::RegexAnchorBeginningOfString
                     | RakuAstClass::RegexAnchorBeginningOfLine
                     | RakuAstClass::RegexAnchorEndOfString
@@ -2956,6 +2967,12 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
+        ("RakuAST::Regex::BacktrackModifiedAtom", "new") => {
+            RakuAstClass::RegexBacktrackModifiedAtom
+        }
+        ("RakuAST::Regex::Quantifier::BlockRange", "new") => {
+            RakuAstClass::RegexQuantifierBlockRange
+        }
         ("RakuAST::Regex::Assertion::Recurse", "new") => RakuAstClass::RegexAssertionRecurse,
         ("RakuAST::Regex::BackReference::Positional", "new") => {
             RakuAstClass::RegexBackReferencePositional
@@ -3332,6 +3349,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
+            | RakuAstClass::RegexBacktrackModifiedAtom
+            | RakuAstClass::RegexQuantifierBlockRange
             | RakuAstClass::RegexAssertionRecurse
             | RakuAstClass::RegexBackReferencePositional
             | RakuAstClass::RegexBackReferenceNamed

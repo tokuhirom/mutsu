@@ -229,6 +229,9 @@ pub(crate) fn walk_regex_node_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Re
         } => v.visit_stmts_mut(body),
         RegexNode::Quantified { atom, quantifier } => {
             v.visit_regex_node_mut(atom);
+            if let crate::regex_tree::QuantifierKind::Block { body, .. } = &mut quantifier.kind {
+                v.visit_stmts_mut(body);
+            }
             if let Some(separator) = &mut quantifier.separator {
                 v.visit_regex_node_mut(&mut separator.node);
             }
@@ -252,6 +255,9 @@ pub(crate) fn walk_regex_node_mut<V: VisitMut + ?Sized>(v: &mut V, node: &mut Re
             }
             if let Some((_, body)) = extension.code_mut() {
                 v.visit_stmts_mut(body);
+            }
+            if let Some(expr) = extension.interpolation_mut() {
+                v.visit_expr_mut(expr);
             }
         }
     }

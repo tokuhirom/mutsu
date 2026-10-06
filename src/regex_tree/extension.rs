@@ -20,10 +20,12 @@
 //! $<name>    Regex::BackReference::Named("name")
 //! $0         Regex::BackReference::Positional(0)
 //! <~~>       Assertion::Recurse
+//! a:!        BacktrackModifiedAtom(atom => ..., backtrack => Backtrack::Greedy)
+//! "x $y z"   Regex::Quote(QuotedString(segments => (StrLiteral, Var::Lexical, StrLiteral)))
 //! ```
 
-use super::RegexNode;
-use crate::ast::Stmt;
+use super::{RegexBacktrack, RegexNode};
+use crate::ast::{Expr, Stmt};
 
 /// See the module documentation.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -51,6 +53,14 @@ pub(crate) enum RegexExtension {
     BackReferencePositional(u32),
     /// `<~~>`: match the enclosing regex again.
     Recurse,
+    /// `a:`, `a:!`, `a:?`: an atom with its own backtracking control.
+    BacktrackModified {
+        atom: Box<RegexNode>,
+        backtrack: RegexBacktrack,
+    },
+    /// `"x $y z"`: a double-quoted term that interpolates. `source` is the body
+    /// as written; `expr` is what the `qq` parser makes of it.
+    InterpolatedQuote { source: String, expr: Box<Expr> },
 }
 
 impl RegexExtension {
@@ -59,12 +69,14 @@ impl RegexExtension {
     pub(crate) fn children(&self) -> Vec<&RegexNode> {
         match self {
             Self::Lookahead { assertion, .. } => vec![assertion],
+            Self::BacktrackModified { atom, .. } => vec![atom],
             Self::Tilde { goal, expr } => vec![goal, expr],
             Self::Words(_)
             | Self::Statement { .. }
             | Self::BackReferenceNamed(_)
             | Self::BackReferencePositional(_)
-            | Self::Recurse => Vec::new(),
+            | Self::Recurse
+            | Self::InterpolatedQuote { .. } => Vec::new(),
         }
     }
 
@@ -73,12 +85,32 @@ impl RegexExtension {
     pub(crate) fn children_mut(&mut self) -> Vec<&mut RegexNode> {
         match self {
             Self::Lookahead { assertion, .. } => vec![assertion],
+            Self::BacktrackModified { atom, .. } => vec![atom],
             Self::Tilde { goal, expr } => vec![goal, expr],
             Self::Words(_)
             | Self::Statement { .. }
             | Self::BackReferenceNamed(_)
             | Self::BackReferencePositional(_)
-            | Self::Recurse => Vec::new(),
+            | Self::Recurse
+            | Self::InterpolatedQuote { .. } => Vec::new(),
+        }
+    }
+
+    /// The expression the construct interpolates.
+    // Cost: O(1).
+    pub(crate) fn interpolation(&self) -> Option<(&str, &Expr)> {
+        match self {
+            Self::InterpolatedQuote { source, expr } => Some((source, expr)),
+            _ => None,
+        }
+    }
+
+    /// [`Self::interpolation`], with the expression mutable.
+    // Cost: O(1).
+    pub(crate) fn interpolation_mut(&mut self) -> Option<&mut Expr> {
+        match self {
+            Self::InterpolatedQuote { expr, .. } => Some(expr),
+            _ => None,
         }
     }
 
@@ -133,6 +165,10 @@ impl RegexExtension {
             Self::BackReferenceNamed(name) => format!("$<{name}>"),
             Self::BackReferencePositional(index) => format!("${index}"),
             Self::Recurse => "<~~>".to_string(),
+            Self::BacktrackModified { atom, backtrack } => {
+                format!("{}:{}", atom.to_source(), backtrack.modifier_suffix())
+            }
+            Self::InterpolatedQuote { source, .. } => format!("\"{source}\""),
         }
     }
 }

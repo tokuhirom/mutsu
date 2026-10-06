@@ -15,7 +15,7 @@
 use super::{Parser, RegexNode};
 
 /// How many times a quantified atom matches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum QuantifierKind {
     ZeroOrMore,
     OneOrMore,
@@ -26,6 +26,11 @@ pub(crate) enum QuantifierKind {
         max: Option<u64>,
         excludes_min: bool,
         excludes_max: bool,
+    },
+    /// `** { EXPR }`: the count is the value of a block, as written.
+    Block {
+        code: String,
+        body: Vec<crate::ast::Stmt>,
     },
 }
 
@@ -41,6 +46,16 @@ pub(crate) enum RegexBacktrack {
 }
 
 impl RegexBacktrack {
+    /// What follows the `:` of an atom's own modifier (`a:`, `a:!`, `a:?`).
+    // Cost: O(1).
+    pub(crate) fn modifier_suffix(self) -> &'static str {
+        match self {
+            Self::Frugal => "?",
+            Self::Greedy => "!",
+            Self::Ratchet => "",
+        }
+    }
+
     // Cost: O(1).
     pub(crate) fn symbol(self) -> char {
         match self {
@@ -72,10 +87,11 @@ impl RegexQuantifier {
     /// Regex source for the quantifier written after an atom.
     // Cost: O(s), s = size of the separator.
     pub(crate) fn to_source(&self) -> String {
-        let mut source = match self.kind {
+        let mut source = match &self.kind {
             QuantifierKind::ZeroOrMore => "*".to_string(),
             QuantifierKind::OneOrMore => "+".to_string(),
             QuantifierKind::ZeroOrOne => "?".to_string(),
+            QuantifierKind::Block { code, .. } => format!("**{{{code}}}"),
             QuantifierKind::Range {
                 min,
                 max,
@@ -86,14 +102,17 @@ impl RegexQuantifier {
                 let max = max.map_or_else(|| "*".to_string(), |max| max.to_string());
                 format!(
                     "**{min}{}..{}{max}",
-                    if excludes_min { "^" } else { "" },
-                    if excludes_max { "^" } else { "" }
+                    if *excludes_min { "^" } else { "" },
+                    if *excludes_max { "^" } else { "" }
                 )
             }
         };
         if let Some(backtrack) = self.backtrack {
             // A range takes its modifier right after the `**`.
-            let at = if matches!(self.kind, QuantifierKind::Range { .. }) {
+            let at = if matches!(
+                self.kind,
+                QuantifierKind::Range { .. } | QuantifierKind::Block { .. }
+            ) {
                 2
             } else {
                 source.len()
@@ -143,7 +162,10 @@ impl Parser {
             }
             _ => return None,
         };
-        let backtrack = if matches!(kind, QuantifierKind::Range { .. }) {
+        let backtrack = if matches!(
+            kind,
+            QuantifierKind::Range { .. } | QuantifierKind::Block { .. }
+        ) {
             range_backtrack
         } else {
             self.parse_backtrack()
@@ -180,10 +202,14 @@ impl Parser {
         Some(backtrack)
     }
 
-    /// The range after `**`: `3`, `2..5`, `2..*`, `^3`, `0^..^5`. A block
-    /// range (`**{...}`) is not modelled.
+    /// The range after `**`: `3`, `2..5`, `2..*`, `^3`, `0^..^5`, or a block
+    /// (`**{...}`).
     // Cost: O(k), k = length of the range.
     fn parse_range(&mut self) -> Option<QuantifierKind> {
+        if self.chars.get(self.pos) == Some(&'{') {
+            let (code, body) = self.parse_code_body()?;
+            return Some(QuantifierKind::Block { code, body });
+        }
         if self.consume_if('^') {
             let max = self.parse_count()?;
             return Some(QuantifierKind::Range {
