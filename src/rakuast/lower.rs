@@ -3696,6 +3696,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     }
     match node.class {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
+        // `$<name>` / `@<name>`.
+        RakuAstClass::VarNamedCapture => super::match_vars::lower(node),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_term(node),
         // `(temp $x)` / `(let $x = 1)`: the parser's save, wrapped in a `DoStmt`.
         RakuAstClass::ApplyPrefix | RakuAstClass::ApplyInfix | RakuAstClass::ApplyDottyInfix

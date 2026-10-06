@@ -31,6 +31,7 @@ mod hash_literal;
 mod infix_func;
 mod keyed_hash;
 mod lower;
+mod match_vars;
 mod meta_infix;
 mod method_assign_decl;
 mod name_parts;
@@ -202,6 +203,7 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     MetaInfixAssign,
+    VarNamedCapture,
     CallNameAsMethod,
     CallTermAsMethod,
     FlipFlop,
@@ -522,6 +524,7 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
+            VarNamedCapture => "RakuAST::Var::NamedCapture",
             CallNameAsMethod => "RakuAST::Call::NameAsMethod",
             CallTermAsMethod => "RakuAST::Call::TermAsMethod",
             FlipFlop => "RakuAST::FlipFlop",
@@ -1260,6 +1263,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
+    RakuAstClass::VarNamedCapture,
     RakuAstClass::CallNameAsMethod,
     RakuAstClass::CallTermAsMethod,
     RakuAstClass::FlipFlop,
@@ -2884,6 +2888,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
+        ("RakuAST::Var::NamedCapture", "new") => RakuAstClass::VarNamedCapture,
         ("RakuAST::Call::NameAsMethod", "new") => RakuAstClass::CallNameAsMethod,
         ("RakuAST::Call::TermAsMethod", "new") => RakuAstClass::CallTermAsMethod,
         ("RakuAST::FlipFlop", "new") => RakuAstClass::FlipFlop,
@@ -3245,6 +3250,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
+            | RakuAstClass::VarNamedCapture
             | RakuAstClass::CallNameAsMethod
             | RakuAstClass::CallTermAsMethod
             | RakuAstClass::FlipFlop

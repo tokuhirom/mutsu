@@ -2414,6 +2414,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         return super::react::convert_supply(body);
     }
     match expr {
+        // `$<name>`: the named capture of the last match.
+        Expr::CaptureVar(name) => super::match_vars::convert(name),
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
         // for a statement-level literal, or from the exact constant otherwise.
@@ -5813,7 +5815,7 @@ fn allomorph_word(v: &Value) -> Option<&str> {
 }
 
 /// `<word>` -> `QuotedString(processors => <words val>, segments => (word,))`.
-fn word_quote(word: &str) -> RakuAstNode {
+pub(super) fn word_quote(word: &str) -> RakuAstNode {
     RakuAstNode {
         class: RakuAstClass::QuotedString,
         fields: vec![
