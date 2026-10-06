@@ -1,7 +1,8 @@
 # ADR-11276: Built-in methods are handler rows in the one method table
 
 - **Status**: Accepted (user decision 2026-10-03). Slices 1 and 2 done, slice 3 under way; see
-  §9. Supersedes
+  §9. Amended 2026-10-06: slice 3 is re-cut into macro-slices (§10); the "one PR per family"
+  plan of §6 item 3 is withdrawn. Supersedes
   [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) design decision 1 of its E2
   design ("rows are recognition metadata, not function pointers; invocation stays in the arity
   cascades").
@@ -164,7 +165,9 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
 2. **Migrate one family end to end**, for example `Num`/`Rat`/`Int` numeric accessors. Move the
    arms, delete them from the cascades, and bring the family's receiver guards to the guard step.
    This slice proves the pattern and the perf gate.
-3. **Remaining families**, one PR each. Each one lowers the ratchet.
+3. **Remaining families.** Withdrawn as written ("one PR each"): it produced more than twenty
+   PRs for 11% of the rows. §10 re-cuts the remaining work into macro-slices 3A-3G and states the
+   rules that decide where a PR boundary may fall.
 4. **Resolver cutover.** `Native` candidates in `resolve_sequence` become invocable; delete the
    `native_*_next_candidate` fallbacks; pin `nextsame`, `wrap` and `augment` on built-ins.
 5. **Deletion.** The cascades, `try_native_method_raw`'s name checks,
@@ -592,3 +595,197 @@ pairs. The focused collection aggregate test covers scalar, List, Array and
 Hash results, eager identity, empty and fallback behavior. The method-table
 unit suite verifies owner declarations and that every row answers its resolved
 plain shape.
+
+## 10. Slice plan for the remaining migration (amendment 2026-10-06)
+
+This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
+stand, and §9.7 (no per-family performance measurement) stands.
+
+### 10.1 Why one PR per family stopped being workable
+
+- **Pace.** From 2026-10-03 to 2026-10-05 more than twenty PRs landed (slice 1a through §9.14).
+  They moved 186 `(owner, name)` pairs, 169 of them rows of the recognition table, which has 1,648
+  unique rows: about 8 rows per PR and 11% of the table. 1,479 rows remain, which is about 180
+  more PRs at that pace.
+- **CI cost follows the PR count, not the diff.** A PR that touches code builds the release binary
+  and runs the whole TAP and roast suites: five runner-occupying jobs, about 22 runner-minutes, 14-19
+  minutes of wall clock ([ADR-11581](11581-ci-runner-budget.md)). That cost is the same for a
+  10-row PR and a 500-row one; only a docs-only PR skips it. 180 PRs are about 4,000 runner-minutes,
+  drawn from the 20 concurrent runners that about 100 merges a day already share.
+- **Every PR repeats fixed costs**: a claim round-trip, a gate run, an ADR §9 paragraph, a `news/`
+  file, and rebases against shared files. Of the 20 commits that touched `method_table/` in those
+  three days, 15 edited this ADR's §9, 10 edited `method_table/mod.rs` (the `FAMILIES` list),
+  6 edited `method_table/tests.rs` and 7 edited `methods_0arg/collection.rs`, whose arms
+  interleave several owners.
+- **The rows are not 1,479 independent problems.** By the recognition table's own flags, 1,257 of
+  the remaining rows (85%) are served by the pure arity cascades, 179 by the interpreter slow path
+  and 43 mutate their receiver. Most of the work is one mechanism applied to many receiver kinds,
+  and a mechanism is validated once.
+
+### 10.2 What remains
+
+Counted on 2026-10-06 from `native_method_row_table.rs` minus the pairs that already have a
+method-table row. A row is *Pure* when its arity mask has `A0`-`A2` and neither `MUTATES_RECEIVER`
+nor `SPECIAL`, *Mut* when it has `MUTATES_RECEIVER`, and *Interp* otherwise (the slow path or a
+named interceptor). Those flags were baked on 2026-08-10, so the kind column is a planning
+estimate: a slice's inventory commit re-classifies its own arms.
+
+| owner group | owners | rows | Pure | Interp | Mut |
+|---|---|---:|---:|---:|---:|
+| numbers | Int, Num, Rat, Complex, Bool | 281 | 277 | 4 | 0 |
+| text | Str, Cool, Uni, Blob, Version | 193 | 169 | 15 | 9 |
+| collections | Any, List, Array, Hash, Map, Range, Seq, Pair, Capture, Junction, Nil, Iterable | 376 | 312 | 32 | 32 |
+| quant hashes | Set, SetHash, Bag, BagHash, Mix, MixHash | 181 | 177 | 2 | 2 |
+| time | Date, DateTime, Instant, Duration | 123 | 109 | 14 | 0 |
+| match | Match | 72 | 72 | 0 | 0 |
+| I/O | IO::Path, IO::Handle, IO::Path::Parts | 102 | 15 | 87 | 0 |
+| objects | Mu, Code, Backtrace, Exception, Failure, Signature, ... | 104 | 79 | 25 | 0 |
+| RakuAST | `RakuAST::*` | 47 | 47 | 0 | 0 |
+| **total** | | **1,479** | **1,257** | **179** | **43** |
+
+The cascades hold about 1,260 quoted-name arms over 748 distinct names (`builtins/methods_0arg/`
+and `methods_narg/`: ~480, `runtime/methods*.rs`: ~740, the VM's mutation helpers: ~40). 412 of
+those names are in no recognition row at all: the `new` dispatch per built-in type, the
+metaobject protocol, the subscript protocol, concurrency and distribution classes, internal
+`__mutsu_*` names. Those are real built-in methods whose owners the recognition table never
+modelled, so they are counted in names, not rows.
+
+### 10.3 The rules that place a PR boundary
+
+1. **A PR is justified by a mechanism or by a deletion unit, never by a family.** A mechanism is
+   something CI must validate that the previous PR did not exercise: a handler kind, a receiver
+   guard, a resolver change. A deletion unit is a group of owners whose cascade arms all go.
+   Moving more rows through a mechanism that already merged adds no new risk class, so those
+   rows ride in the slice of their owner group.
+2. **Budget: nine PRs for the rest of the campaign** (§10.4). A PR for this campaign that moves
+   fewer than 100 rows and introduces no mechanism is not accepted, except a fix-forward of a
+   regression. A slice may split only at a commit boundary where the first half is green on its
+   own *and* the second half has a different mechanism or a different owner group.
+3. **The unit of validation is the receiver kind.** The risk §3 names (a moved arm loses the checks
+   that ran earlier in the cascade) is a property of what the receiver is, not of the method. So
+   the guard for every built-in receiver kind is built once, in 3A, and the owner-group slices
+   contain only handlers and rows.
+4. **Build once, publish once.** A slice is one branch of many commits, one commit per family,
+   each with its focused test and never squashed (AGENTS.md). Pushing a branch with no PR starts
+   no CI (`ci.yml` runs on pull requests, the hourly schedule and dispatch), so the branch is
+   pushed after every commit, since the container is disposable. The PR is opened when the
+   pre-publication gate passes (`scripts/dev gate`, `--full` where the box allows) and the debug
+   cross-check has run over the whole TAP suite. `debug-tap` is post-merge only (ADR-11581), and
+   that cross-check is this ADR's soundness net, so a slice dispatches `ci.yml` on its branch
+   before merging, or runs `prove t/` on the debug binary itself. One validated push replaces
+   many speculative ones.
+5. **Disjoint write sets.** Slices that can run in parallel must not edit the same line. Each
+   owns its group directory under `method_table/`, its test file and the cascade arms of its
+   owners. The shared files named in §10.1 (`method_table/mod.rs`, `method_table/tests.rs`, the
+   interleaved cascade functions) are restructured once, in 3A, so that no later slice touches
+   them (§10.5). The §9 subsection a slice appends is the one remaining collision, and it is a
+   rebase of one paragraph.
+6. **A slice ends at zero.** Its exit is a report, not a feeling: no quoted-name arm of its
+   owners is left in any cascade, except receivers that have no shape and are named in the
+   slice's §9 subsection with the reason (user instances of an `is Array` subclass, for
+   example). Those leftovers are what slice 5 deletes. A name that several groups share
+   (`elems`, `gist`) keeps its arm, reduced to the other groups' receivers, until the last of
+   them moves. A family that cannot be made green inside its slice is deferred whole with its
+   reason, never half-migrated, and is picked up by the next slice that owns the same owner or
+   by slice 4.
+7. **Behaviour changes toward Rakudo are allowed and pinned.** Earlier slices fixed wrong answers
+   on the way (the numeric and stringification slices in §9), and a macro-slice will find many
+   more. Each one is pinned in the slice's test file and listed in the PR body. A change to a
+   currently whitelisted roast result is a regression, not a behaviour change.
+
+### 10.4 The slices
+
+| slice | scope | new mechanism | rows | needs |
+|---|---|---|---:|---|
+| **3A** | every receiver kind and every handler kind reaches the table (§10.5) | shapes for all built-in value kinds, `Handler::Interp`, named-argument slot, guard flags, type-object flag, group scaffold | proof rows only | - |
+| **3B** | numbers and text: Int, Num, Rat, Complex, Bool, Str, Cool, Uni, Blob, Version | - | 465 | 3A |
+| **3C** | collections and quant hashes: Any, List, Array, Hash, Map, Range, Seq, Pair, Capture, Set/Bag/Mix and their mutable forms | - | 523 | 3A |
+| **3D** | instance classes: Date, DateTime, Instant, Duration, Match, Mu, Code, Backtrace, Exception, Failure, Signature, `RakuAST::*` | - | 346 | 3A |
+| **3E** | I/O and concurrency: IO::Path, IO::Handle, IO::Spec, sockets, Proc::Async, Promise, Channel, Supply, schedulers, Lock | oracle snapshot gains owners it lacks | 102 + names outside the table | 3A |
+| **3F** | receiver-mutating methods: `push`, `pop`, `shift`, `unshift`, `append`, `prepend`, `splice`, hash and quant-hash mutators, `subst-mutate`, `substr-rw` | `Handler::Mut`, `ReceiverPlace` | 43 + the four mutation paths | 3A |
+| **3G** | constructors and the metaobject protocol: `new` per built-in type, `Metamodel::*`, subscript protocol, internal names | owner rows for classes the recognition table lacks | names outside the table | 3A |
+| **4** | resolver cutover (§6 item 4) | native candidates invocable in `resolve_sequence` | - | 3B-3G |
+| **5** | deletion (§6 item 5) | - | - | 4 |
+
+The 465 and 523 exclude the Mut rows of their owners, which move in 3F; 465 + 523 + 346 + 102 + 43
+is the 1,479 of §10.2. The partition is by owner group, not by cascade file, because the arms of
+one cascade file belong to many owners (`runtime/methods_dispatch_match*.rs` mixes `Str`, `Mu`
+and `Cool` methods). Each slice's first commit is an inventory: the report's list of arms per
+owner, which becomes the slice's checklist in §9.
+
+**Order.** 3A first and alone. 3B-3G need only 3A and touch disjoint owners, so they can run in
+any order and in parallel, capped by the agent limit (three building agents on the 12-core box,
+one in a remote container). 4 follows once the owners it needs have moved, and 5 follows 4. The
+critical path is five PR cycles (3A, two waves of the six, 4, 5), not one hundred and eighty.
+
+**Cost.** Nine PRs are about 200 runner-minutes of PR CI. Allowing two re-pushes each for real
+failures, under 600, against about 4,000. The Bench deterministic series on `main` is the watch
+for a dispatch regression, as in §9.7.
+
+### 10.5 3A in detail
+
+3A is the one slice that changes how a call reaches a row, so it is the one that may regress
+dispatch for every method. Its deliverables:
+
+1. **Shapes.** `DispatchShape` grows to every built-in value kind that has a remaining Pure or
+   Interp row (Bool, Range, Seq, Pair, Capture, Set/Bag/Mix and their mutable forms, Buf/Blob,
+   Uni, Version, Date, DateTime, Instant, Duration, Match, Code, ...). One decode, in one place,
+   refuses what `try_native_method_raw` refuses today: user subclasses and instances with
+   overrides, type objects unless the row is `TYPE_OBJECT_OK`, `Proxy`, mixins, containers, lazy
+   and shaped values, itemized hashes. This is §2.4.
+2. **`Handler::Interp`**, reachable from the call-site lane and from `call_method_with_values`.
+   The pre-dispatch fast lanes of §4 stay where they are and become rows of this kind in the
+   slice that owns their receiver.
+3. **Arguments.** Named arguments get their own slot instead of arriving as `Pair`s, which
+   removes the `plain_args` refusal. Junction autothreading, `use fatal` Failures and lazy-Seq
+   reification become flags the guard step applies once. The first commit amends §8's second
+   question with the decision.
+4. **Type objects.** The row carries `TYPE_OBJECT_OK`, so `Str.gist` and `Int.Str` on a type
+   object resolve through the table.
+5. **Shared files are edited once.** One module directory per slice group under `method_table/`,
+   with `FAMILIES` concatenating the groups (empty ones included), so no later slice edits it.
+   `tests.rs` becomes one test module per group, with a sample value for every shape written
+   in 3A. Arms still inline in `dispatch_core`, `native_method_0arg_cascade` and the
+   1/2-argument cascades move, with no behaviour change, into one sub-dispatcher file per owner
+   group, so a group slice deletes whole files instead of editing lines its neighbours also
+   edit. `native_method_row_table.rs` is not a conflict point (a migrated pair already has its
+   recognition row) and is left alone until slice 5.
+6. **`scripts/method-rows-report.sh`**: arms left per cascade layer, file and owner group, rows
+   per owner and kind. It is a report, not a gate (§9: a shared counter coupled every parallel
+   PR and was dropped). If it can be made diff-based, comparing a PR's added lines against its
+   merge base so that it couples nothing, a check that a PR adds no new quoted-name cascade arm
+   enforces AGENTS.md's slow-path rule; otherwise that rule stays a review rule.
+7. **Proof rows**: at least one row per new shape and per handler kind, each covered by the debug
+   cross-check and the method-table unit tests.
+
+### 10.6 What stays open, and where it is decided
+
+- `ReceiverPlace`'s shape (§8.1): the first commit of 3F, after surveying the four paths the
+  2026-10-04 investigation found (named array, scalar-held array, VM direct mutation, `is Array`
+  storage). ADR-0097's binding descriptor is the first candidate.
+- How a row declares named arguments (§8.2): the first commit of 3A.
+- Owners the oracle snapshot (`rakudo_method_tables.txt`, generated by
+  `scripts/gen-rakudo-method-tables.raku`) lacks: 3E and 3G extend the snapshot before they add
+  rows for those classes.
+- Folded owners (§8.3): decided by the first slice that meets one (3B for `Buf`/`Blob`/`utf8`).
+- Resolver cutover details (`wrap`, `augment`, `nextsame` on built-ins): slice 4's first commit.
+
+### 10.7 Rejected ways of cutting
+
+- **One PR per family** (§6 item 3 as first written): §10.1.
+- **One PR for everything**: about 1,260 arms in one diff repeats the 2026-08-04 handler-ID attempt
+  (§7), cannot be bisected by CI, and a single regression holds all of it.
+- **By cascade file**: arms of one file belong to many owners, so a file slice needs every owner's
+  shape at once, and the rows of one owner are spread over several slices.
+- **By handler kind across all owners** (all Pure, then all Interp, then all Mut): the Pure slice
+  would be 1,257 rows, which is the previous point, and nothing could run in parallel. Handler
+  kinds are a mechanism, so they are slices only where the mechanism is the risk (3A, 3F).
+
+### 10.8 Interim rule
+
+Until 3A merges, no PR migrates a family for this campaign; the permitted work is 3A itself and
+fixes to rows already merged. A session that wants to continue the migration takes the next
+unchecked slice in the issue body ([#11276](https://github.com/tokuhirom/mutsu/issues/11276)),
+claims it with that slice's id in the branch name (`refactor/11276-3b-numbers-text`), and
+records progress as one §9 subsection per slice. Live status (which slices are open, merged or
+deferred) is kept in the issue body, not here, so this section does not drift.

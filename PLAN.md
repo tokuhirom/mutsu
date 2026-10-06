@@ -78,8 +78,10 @@ and its deletion criterion.
       and the call-site cache. This replaces the name-matching `match` cascades
       (`builtins/methods_0arg/`, `builtins/methods_narg/`, the slow-path arms in
       `runtime/methods*.rs`). Slices 1a/1b (the table, the `CallMethodMut` lane and its per-site
-      memo) have landed. Families migrate one PR at a time and delete their arms as they move
-      (ADR §6). The completion criterion is ADR §6 slice 5: the cascades,
+      memo) have landed, and about 190 of the 1,648 recognition rows have moved. The rest is cut
+      into nine PRs, not one per family: a mechanism slice (3A), six owner-group slices
+      (3B-3G), the resolver cutover and the deletion (ADR §10; live status in the issue body).
+      Each slice deletes the arms it moves. The completion criterion is ADR §6 slice 5: the cascades,
       `try_native_method_raw`'s name checks, `should_bypass_native_fastpath`,
       `native_method_row_table.rs` and the `native_call_unmodeled` counter are deleted, so rows are
       the only source of truth for both dispatch and `.^can`/`.^methods`. Progress is recorded in
