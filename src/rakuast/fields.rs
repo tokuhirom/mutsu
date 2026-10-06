@@ -193,6 +193,10 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("is-array", Absent::False),
         ],
         MetaInfixAssign => &[("infix", Absent::Required)],
+        TermCapture => &[("source", Absent::Required)],
+        MetaInfixReverse => &[("infix", Absent::Required)],
+        MetaInfixCross => &[("infix", Absent::Required)],
+        MetaInfixZip => &[("infix", Absent::Required)],
         MetaInfixHyper => &[
             ("dwim-left", Absent::False),
             ("infix", Absent::Required),
@@ -368,7 +372,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
             "value"
         }
         FunctionInfix => "function",
-        Infix | Prefix => "operator",
+        Infix | Prefix | Feed | FlipFlop => "operator",
         VarLexical | VarDynamic => "name",
         NamePartSimple => "name",
         NamePartExpression => "expr",
@@ -378,6 +382,10 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => "lexical-name",
         InitializerAssign | InitializerBind => "expression",
         MetaInfixAssign => "infix",
+        TermCapture => "source",
+        MetaInfixReverse => "infix",
+        MetaInfixCross => "infix",
+        MetaInfixZip => "infix",
         TypeSimple | TypeSetting | TypeCapture => "name",
         TraitReturns | TraitOf | TraitDoes | TraitHides => "type",
         TraitHandles => "term",
@@ -406,6 +414,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         StatementPrefixDo
         | StatementPrefixTry
         | StatementPrefixGather
+        | StatementPrefixEager
         | StatementPrefixOnce
         | StatementPrefixPhaserBegin
         | StatementPrefixPhaserCheck

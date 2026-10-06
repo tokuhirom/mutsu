@@ -4,10 +4,10 @@ use crate::value::ValueView;
 impl Compiler {
     fn topic_subst_pattern_from_index_with_groups(expr: &Expr, top_level: bool) -> Option<String> {
         match expr {
-            Expr::CaptureLiteral(items) => {
+            Expr::CaptureLiteral(items, _) => {
                 if top_level
                     && items.len() == 1
-                    && matches!(items.first(), Some(Expr::CaptureLiteral(_)))
+                    && matches!(items.first(), Some(Expr::CaptureLiteral(..)))
                 {
                     return Self::topic_subst_pattern_from_index_with_groups(&items[0], true);
                 }

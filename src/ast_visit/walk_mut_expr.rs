@@ -36,7 +36,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
         Expr::StringInterpolation(parts)
         | Expr::ArrayLiteral(parts)
         | Expr::BracketArray(parts, _)
-        | Expr::CaptureLiteral(parts) => exprs_mut(v, parts),
+        | Expr::CaptureLiteral(parts, _) => exprs_mut(v, parts),
         Expr::HeredocInterpolation(_source, _) => {}
         Expr::Var(_name)
         | Expr::CaptureVar(_name)

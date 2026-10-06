@@ -249,10 +249,13 @@ pub(crate) fn destructure_binds(
                 }),
                 is_positional: true,
             };
-            let capture_expr = Expr::CaptureLiteral(vec![Expr::Unary {
-                op: crate::token_kind::TokenKind::Pipe,
-                expr: Box::new(slice_expr),
-            }]);
+            let capture_expr = Expr::CaptureLiteral(
+                vec![Expr::Unary {
+                    op: crate::token_kind::TokenKind::Pipe,
+                    expr: Box::new(slice_expr),
+                }],
+                true,
+            );
             bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));
             // No need to increment positional_index; capture consumes all remaining
         } else if sub.is_variadic() && sub.name.starts_with('%') {

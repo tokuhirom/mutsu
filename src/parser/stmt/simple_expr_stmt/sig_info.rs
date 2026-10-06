@@ -81,7 +81,7 @@ pub(super) fn extract_static_named_map(
 ) -> Option<std::collections::HashMap<String, Expr>> {
     use std::collections::HashMap;
     let items: &[Expr] = match rhs {
-        Expr::CaptureLiteral(items) => items,
+        Expr::CaptureLiteral(items, _) => items,
         Expr::ArrayLiteral(items) => items,
         _ => return None,
     };

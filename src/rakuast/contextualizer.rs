@@ -73,6 +73,19 @@ pub(super) fn lower(node: &RakuAstNode, kind: ContextKind) -> Result<Expr, Runti
         RakuAstClass::ContextualizerItem => lower(target, ContextKind::Item)?,
         RakuAstClass::ContextualizerList => lower(target, ContextKind::List)?,
         RakuAstClass::ContextualizerHash => lower(target, ContextKind::Hash)?,
+        // `$@a` / `$%h` / `$[1, 2]`: the item contextualizer over the term.
+        RakuAstClass::VarLexical | RakuAstClass::CircumfixArrayComposer
+            if kind == ContextKind::Item =>
+        {
+            let term = lower_expr(target)?;
+            if !matches!(
+                term,
+                Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BracketArray(..)
+            ) {
+                return Err(unsupported(node));
+            }
+            return Ok(Expr::Itemize(Box::new(term)));
+        }
         RakuAstClass::StatementSequence => match target.fields.as_slice() {
             [] => Expr::Grouped(Box::new(Expr::ArrayLiteral(Vec::new()))),
             [_] => {
@@ -90,5 +103,21 @@ pub(super) fn lower(node: &RakuAstNode, kind: ContextKind) -> Result<Expr, Runti
     Ok(Expr::Contextualizer {
         kind,
         inner: Box::new(inner),
+    })
+}
+
+/// An [`Expr::Itemize`] (`$@a`, `$%h`, `$[1, 2]`) as `Contextualizer::Item`
+/// over the term itself, which holds no `StatementSequence`.
+// Cost: O(n), n = nodes of the term.
+pub(super) fn convert_itemize(inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    if !matches!(
+        inner,
+        Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::BracketArray(..)
+    ) {
+        return Err(super::convert::unsupported(&format!("Itemize({inner:?})")));
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::ContextualizerItem,
+        fields: vec![node_field(None, convert_expr(inner)?)],
     })
 }

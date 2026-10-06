@@ -823,7 +823,7 @@ mod tests {
         let (rest, expr) = primary("\\(   )").unwrap();
         assert_eq!(rest, "");
         match expr {
-            Expr::CaptureLiteral(items) => assert!(items.is_empty()),
+            Expr::CaptureLiteral(items, true) => assert!(items.is_empty()),
             _ => panic!("expected capture literal"),
         }
     }
