@@ -58,20 +58,34 @@ impl Compiler {
 
     // Cost: O(d), d = expression depth.
     fn is_repeatable_subscript_part(expr: &Expr) -> bool {
+        let mut check = RepeatableSubscript { repeatable: true };
+        crate::ast_visit::Visit::visit_expr(&mut check, expr);
+        check.repeatable
+    }
+}
+
+/// Whether evaluating a subscript chain twice is indistinguishable from once:
+/// it contains only variables, literals, `self`, subscripts and zero-argument
+/// method calls (accessors).
+struct RepeatableSubscript {
+    repeatable: bool,
+}
+
+impl<'ast> crate::ast_visit::Visit<'ast> for RepeatableSubscript {
+    fn visit_expr(&mut self, expr: &'ast Expr) {
         match expr {
-            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Literal(_) => true,
-            Expr::BareWord(name) => name == "self",
-            Expr::Index { target, index, .. } => {
-                Self::is_repeatable_subscript_part(target)
-                    && Self::is_repeatable_subscript_part(index)
-            }
+            Expr::Var(_)
+            | Expr::ArrayVar(_)
+            | Expr::HashVar(_)
+            | Expr::Literal(_)
+            | Expr::Index { .. } => crate::ast_visit::walk_expr(self, expr),
+            Expr::BareWord(name) if name == "self" => {}
             Expr::MethodCall {
-                target,
                 args,
                 modifier: None,
                 ..
-            } => args.is_empty() && Self::is_repeatable_subscript_part(target),
-            _ => false,
+            } if args.is_empty() => crate::ast_visit::walk_expr(self, expr),
+            _ => self.repeatable = false,
         }
     }
 }

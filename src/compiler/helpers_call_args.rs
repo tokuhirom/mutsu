@@ -998,12 +998,15 @@ impl Compiler {
     ) {
         // `f(@a[1] = v)`: assign first, then treat the element as the argument
         // so the container-candidate marking below sees an `Expr::Index`.
-        if let Some(element) = Self::index_assign_arg_element(arg) {
-            self.compile_expr(arg);
-            self.code.emit(OpCode::Pop);
-            self.compile_named_callee_arg(callee, positional, &element, escaping);
-            return;
-        }
+        let split = Self::index_assign_arg_element(arg);
+        let arg = match &split {
+            Some(element) => {
+                self.compile_expr(arg);
+                self.code.emit(OpCode::Pop);
+                element
+            }
+            None => arg,
+        };
         let callee = callee.filter(|callee| {
             matches!(arg, Expr::Index { .. })
                 && !Self::index_arg_is_static_slice(arg)
