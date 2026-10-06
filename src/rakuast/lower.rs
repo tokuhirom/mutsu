@@ -1444,13 +1444,14 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let (return_type, mut custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
     // The parser keeps a method's `is default` and `is DEPRECATED` in fields of
     // their own, not among its custom traits.
-    let is_default_candidate = custom_traits.iter().any(|(t, a)| t == "default" && a.is_none());
+    let is_default_candidate = custom_traits
+        .iter()
+        .any(|(t, a)| t == "default" && a.is_none());
     let deprecated_message = custom_traits
         .iter()
         .find_map(|(t, _)| super::routine_traits::deprecated_message(t).map(str::to_string));
-    custom_traits.retain(|(t, _)| {
-        t != "default" && super::routine_traits::deprecated_message(t).is_none()
-    });
+    custom_traits
+        .retain(|(t, _)| t != "default" && super::routine_traits::deprecated_message(t).is_none());
     if is_traits.assoc.is_some() || is_traits.precedence.is_some() {
         return Err(unsupported(node));
     }
@@ -1558,7 +1559,10 @@ pub(super) fn routine_return_type(
 
 /// The parser's type-constraint spelling of a type node (`Int`, `Str:D`,
 /// `Int()`, `Array[Int]`) -- see `type_lower`.
-pub(super) fn simple_type_name(node: &RakuAstNode, type_node: &RakuAstNode) -> Result<String, RuntimeError> {
+pub(super) fn simple_type_name(
+    node: &RakuAstNode,
+    type_node: &RakuAstNode,
+) -> Result<String, RuntimeError> {
     super::type_lower::type_constraint(node, type_node)
 }
 
@@ -1878,6 +1882,12 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         }
         def.literal_value = Some(value.clone());
         def.required = false;
+        // A pointy block's literal parameter keeps no type of its own (the
+        // parser leaves it to the value); a routine's has the inferred one.
+        if owner.class == RakuAstClass::PointyBlock {
+            def.type_constraint = None;
+            def.block_param = true;
+        }
     }
     match names {
         Some(names) => super::named_param::wrap_aliases(def, &names, owner),
@@ -1985,13 +1995,28 @@ pub(super) fn lower_block(block: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError
 /// parser, so a signature naming one stays the boundary.
 // Cost: O(n), n = size of the node.
 fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
-    let (_, param_defs) = signature_positional_params(node)?;
+    let (_, mut param_defs) = signature_positional_params(node)?;
+    // A leading `invocant` parameter is the declared invocant, which the parser
+    // folds into the receiver (`parser::anon_method_expr_declared`).
+    let declared = if param_defs.first().is_some_and(|p| p.is_invocant) {
+        let first = param_defs.remove(0);
+        let implicit = first
+            .traits
+            .iter()
+            .any(|t| t == crate::ast::IMPLICIT_INVOCANT_TRAIT);
+        let alias = (!implicit).then(|| (first.name.clone(), first.sigilless));
+        Some((first.type_constraint, alias))
+    } else {
+        None
+    };
     if param_defs.iter().any(|p| p.is_invocant) {
         return Err(unsupported(node));
     }
     let mut flags = super::routine_traits::IsTraits::default();
     let (return_type, custom_traits) = routine_return_type(node, Some(&mut flags))?;
-    if !custom_traits.is_empty() || !flags.export_tags.is_empty() || flags.assoc.is_some()
+    if !custom_traits.is_empty()
+        || !flags.export_tags.is_empty()
+        || flags.assoc.is_some()
         || flags.precedence.is_some()
     {
         return Err(unsupported(node));
@@ -2002,7 +2027,17 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     } else {
         crate::ast::RoutineDeclarator::Method
     };
-    let mut literal = crate::parser::anon_method_expr(param_defs, return_type, body, declarator);
+    let mut literal = match declared {
+        Some((type_constraint, alias)) => crate::parser::anon_method_expr_declared(
+            type_constraint,
+            alias,
+            param_defs,
+            return_type,
+            body,
+            declarator,
+        ),
+        None => crate::parser::anon_method_expr(param_defs, return_type, body, declarator),
+    };
     if let Expr::AnonSubParams { is_rw, is_raw, .. } = &mut literal {
         *is_rw = flags.is_rw;
         *is_raw = flags.is_raw;
@@ -3638,7 +3673,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let (params, param_defs) = signature_positional_params(node)?;
             let mut flags = super::routine_traits::IsTraits::default();
             let (return_type, custom_traits) = routine_return_type(node, Some(&mut flags))?;
-            if !custom_traits.is_empty() || !flags.export_tags.is_empty() || flags.assoc.is_some()
+            if !custom_traits.is_empty()
+                || !flags.export_tags.is_empty()
+                || flags.assoc.is_some()
                 || flags.precedence.is_some()
             {
                 // Only the `-->` spelling survives an anonymous sub's internal

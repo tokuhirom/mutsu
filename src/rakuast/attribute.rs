@@ -136,11 +136,15 @@ impl AttributeTraits {
                 AttrTrait::Deprecated => match self.deprecated_message.as_deref() {
                     Some(DEPRECATED_DEFAULT) | None => trait_is("DEPRECATED", None),
                     Some("") => {
-                        return Err(unsupported("attribute `is DEPRECATED` with a computed message"));
+                        return Err(unsupported(
+                            "attribute `is DEPRECATED` with a computed message",
+                        ));
                     }
                     Some(message) => trait_is(
                         "DEPRECATED",
-                        Some(paren_argument(&Expr::Literal(Value::str(message.to_string())))?),
+                        Some(paren_argument(&Expr::Literal(Value::str(
+                            message.to_string(),
+                        )))?),
                     ),
                 },
                 AttrTrait::Type => {
@@ -149,7 +153,9 @@ impl AttributeTraits {
                         .as_deref()
                         .ok_or_else(|| unsupported("attribute `is TYPE` without a type"))?;
                     if !super::convert::is_simple_type(name) {
-                        return Err(unsupported("attribute with a parameterised `is TYPE` trait"));
+                        return Err(unsupported(
+                            "attribute with a parameterised `is TYPE` trait",
+                        ));
                     }
                     trait_is_name_or_type(name)
                 }
@@ -395,7 +401,9 @@ fn lower_trait_is(
             traits.order.push(AttrTrait::Type);
         }
         (_, argument) => {
-            traits.unknown_traits.push(("is".to_string(), name, argument));
+            traits
+                .unknown_traits
+                .push(("is".to_string(), name, argument));
             traits.order.push(AttrTrait::Custom);
         }
     }

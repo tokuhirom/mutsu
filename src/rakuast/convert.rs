@@ -3959,9 +3959,11 @@ fn method_literal_class(declarator: crate::ast::RoutineDeclarator) -> Option<Rak
 
 /// `method ($a) { … }` -> a nameless `Method` (or `Submethod`) over the
 /// written parameters. The parser prepends a synthetic receiver
-/// (`parser::anon_method_expr`); only that exact receiver drops out. A
-/// declared invocant (`method (Foo:D: $a)`, `method ($self: )`) is folded
-/// into it with a type or a body alias, so it stays the boundary.
+/// (`parser::anon_method_expr`); it drops out unless the invocant was declared
+/// (`method (Foo:D: $a)`, `method ($self: )`): the parser then folds the
+/// declaration into the receiver's type and a `my $self := self` binding in the
+/// body, which come back as rakudo's leading `invocant` parameter
+/// (`parser::folded_invocant`).
 // Cost: O(n), n = size of the literal.
 fn method_literal_node(
     class: RakuAstClass,
@@ -3972,22 +3974,92 @@ fn method_literal_node(
     let [receiver, rest @ ..] = param_defs else {
         return Err(unsupported("method literal without a receiver"));
     };
-    if !crate::parser::is_synthetic_invocant(receiver) || binds_invocant_alias(body) {
-        return Err(unsupported("method literal with a declared invocant"));
-    }
-    let mut node = anon_routine_node(rest, body, returns)?;
+    let Some(folded) = crate::parser::folded_invocant(receiver, body) else {
+        return Err(unsupported("method literal with an unrecognized receiver"));
+    };
+    let mut node = anon_routine_node(rest, folded.body, returns)?;
     node.class = class;
+    if folded.type_constraint.is_some() || folded.alias.is_some() {
+        let invocant = declared_invocant_parameter(folded.type_constraint, folded.alias.as_ref())?;
+        add_leading_parameter(&mut node, invocant);
+    }
     Ok(node)
 }
 
-/// Whether a method literal's body opens with the `my $x := self` alias the
-/// parser writes for a declared invocant name.
-fn binds_invocant_alias(body: &[Stmt]) -> bool {
-    let stmt = match body.iter().find(|s| !matches!(s, Stmt::SetLine(_))) {
-        Some(Stmt::SyntheticBlock(inner)) => inner.first(),
-        other => other,
+/// `Parameter(type, invocant => True[, target], optional => False)`: the
+/// invocant a method literal declared (measured on rakudo 2026.09). Without a
+/// written type it is the `Any` of every routine parameter; without a name it
+/// has no target (`method (Mu:D:)`).
+// Cost: O(1).
+fn declared_invocant_parameter(
+    type_constraint: Option<&str>,
+    alias: Option<&(String, bool)>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let type_node = match type_constraint {
+        Some(t) => build_type_node(t)?,
+        None => type_setting_any(),
     };
-    matches!(stmt, Some(Stmt::VarDecl { expr: Expr::BareWord(n), .. }) if n == "self")
+    let mut fields = vec![
+        node_field(Some("type"), type_node),
+        RakuAstField {
+            name: Some("invocant"),
+            value: RakuAstFieldValue::Node(Value::truth(true)),
+        },
+    ];
+    if let Some((name, sigilless)) = alias {
+        let target = if *sigilless {
+            RakuAstNode {
+                class: RakuAstClass::ParameterTargetTerm,
+                fields: vec![node_field(None, name_from_identifier(name))],
+            }
+        } else {
+            RakuAstNode {
+                class: RakuAstClass::ParameterTargetVar,
+                fields: vec![leaf_field(Some("name"), Value::str(format!("${name}")))],
+            }
+        };
+        fields.push(node_field(Some("target"), target));
+    }
+    fields.push(RakuAstField {
+        name: Some("optional"),
+        value: RakuAstFieldValue::Node(Value::truth(false)),
+    });
+    Ok(RakuAstNode {
+        class: RakuAstClass::Parameter,
+        fields,
+    })
+}
+
+/// `parameter` first among the parameters of `node`'s signature, creating the
+/// signature when the routine had none.
+// Cost: O(f), f = fields of `node`.
+fn add_leading_parameter(node: &mut RakuAstNode, parameter: RakuAstNode) {
+    let parameter = Value::rakuast(Box::new(parameter));
+    if let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("signature"))
+        && let RakuAstFieldValue::Node(signature) = &field.value
+        && let ValueView::RakuAst(signature) = signature.view()
+    {
+        let mut signature = signature.clone();
+        if let Some(parameters) = signature
+            .fields
+            .iter_mut()
+            .find(|f| f.name == Some("parameters"))
+            && let RakuAstFieldValue::List(items) = &mut parameters.value
+        {
+            items.insert(0, parameter);
+        }
+        *field = node_field(Some("signature"), signature);
+        return;
+    }
+    let signature = RakuAstNode {
+        class: RakuAstClass::Signature,
+        fields: vec![RakuAstField {
+            name: Some("parameters"),
+            value: RakuAstFieldValue::List(vec![parameter]),
+        }],
+    };
+    node.fields
+        .insert(0, node_field(Some("signature"), signature));
 }
 
 /// A single-parameter pointy block (`-> $x { }`). mutsu's `Lambda` node strips
@@ -4345,8 +4417,7 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         .filter(|t| !matches!(*t, "invocant" | IMPLICIT_INVOCANT_TRAIT))
         .collect();
     let refusal = if pd.literal_value.is_some()
-        && (pd.type_constraint.is_none()
-            || pd.named
+        && (pd.named
             || pd.slurpy
             || pd.onearg
             || pd.default.is_some()
@@ -4354,16 +4425,13 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             || !user_traits.is_empty())
     {
         Some("literal-value parameter with more than a value")
-    } else if user_traits
-        .iter()
-        .any(|t| !is_parameter_trait_name(t))
-    {
+    } else if user_traits.iter().any(|t| !is_parameter_trait_name(t)) {
         Some("parameter with a trait the converter does not render")
     } else if pd.is_invocant != pd.traits.iter().any(|t| t == "invocant")
         || (implicit_invocant && !pd.is_invocant)
     {
         Some("invocant marker without an invocant")
-    } else if pd.is_invocant && (pd.named || pd.slurpy || pd.double_slurpy || pd.sigilless) {
+    } else if pd.is_invocant && (pd.named || pd.slurpy || pd.double_slurpy) {
         Some("non-scalar invocant parameter")
     } else if pd.shape_constraints.is_some() {
         Some("shaped array parameter")
@@ -4485,7 +4553,8 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             },
         )?;
         if let Some(w) = pd.where_constraint.as_deref() {
-            node.fields.push(node_field(Some("where"), convert_expr(w)?));
+            node.fields
+                .push(node_field(Some("where"), convert_expr(w)?));
         }
         node
     } else if pd.onearg {
@@ -4506,14 +4575,17 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
                 type_setting,
                 pd.where_constraint.as_deref(),
             )?;
-            node.fields
-                .push(leaf_field(Some("slurpy"), super::slurpy_marker_value(marker)));
+            node.fields.push(leaf_field(
+                Some("slurpy"),
+                super::slurpy_marker_value(marker),
+            ));
             node
         };
         if sigil == "@"
             && let Some(w) = pd.where_constraint.as_deref()
         {
-            node.fields.push(node_field(Some("where"), convert_expr(w)?));
+            node.fields
+                .push(node_field(Some("where"), convert_expr(w)?));
         }
         node
     } else if pd.named {
@@ -4594,7 +4666,10 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             .map(|t| {
                 let mut fields = vec![node_field(Some("name"), name_from_identifier(t))];
                 if let Some((_, argument)) = pd.trait_args.iter().find(|(name, _)| name == t) {
-                    fields.push(node_field(Some("argument"), parameter_trait_argument(argument)?));
+                    fields.push(node_field(
+                        Some("argument"),
+                        parameter_trait_argument(argument)?,
+                    ));
                 }
                 Ok(Value::rakuast(Box::new(RakuAstNode {
                     class: RakuAstClass::TraitIs,
@@ -4757,10 +4832,15 @@ fn literal_parameter(pd: &ParamDef, value: &Value) -> Result<RakuAstNode, Runtim
     {
         return Err(unsupported("literal-value parameter of another kind"));
     }
-    let type_name = pd
-        .type_constraint
-        .as_deref()
-        .ok_or_else(|| unsupported("literal-value parameter without a type"))?;
+    // A sub's literal parameter carries its type (written or inferred); a pointy
+    // block's does not, and rakudo infers it from the value.
+    let inferred = match value.view() {
+        ValueView::Int(_) | ValueView::BigInt(_) => "Int",
+        ValueView::Num(_) => "Num",
+        ValueView::Rat(..) => "Rat",
+        _ => "Str",
+    };
+    let type_name = pd.type_constraint.as_deref().unwrap_or(inferred);
     Ok(RakuAstNode {
         class: RakuAstClass::Parameter,
         fields: vec![

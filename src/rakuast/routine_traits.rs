@@ -117,7 +117,10 @@ impl IsTraits {
             nodes.push(trait_is("export", export_argument(&self.export_tags)));
         }
         if let Some(value) = &self.assoc {
-            nodes.push(trait_is("assoc", Some(super::package_header::words_value(value))));
+            nodes.push(trait_is(
+                "assoc",
+                Some(super::package_header::words_value(value)),
+            ));
         }
         if let Some((kind, reference)) = &self.precedence {
             let variable = RakuAstNode {
@@ -155,7 +158,9 @@ impl IsTraits {
         if let Some((_, reference)) = &self.precedence
             && !is_operator_reference(reference)
         {
-            return Err(unsupported("precedence trait with a reference that is not `&category:<op>`"));
+            return Err(unsupported(
+                "precedence trait with a reference that is not `&category:<op>`",
+            ));
         }
         Ok(self)
     }
@@ -168,14 +173,13 @@ fn is_precedence_kind(name: &str) -> bool {
 /// Whether `reference` is the `&infix:<+>` spelling of an operator sub.
 fn is_operator_reference(reference: &str) -> bool {
     reference.strip_prefix('&').is_some_and(|rest| {
-        rest.split_once(":<")
-            .is_some_and(|(category, op)| {
-                !category.is_empty()
-                    && category.chars().all(|c| c.is_ascii_alphabetic())
-                    && op.ends_with('>')
-                    && !op[..op.len() - 1].is_empty()
-                    && !op[..op.len() - 1].contains(['<', '>', ' '])
-            })
+        rest.split_once(":<").is_some_and(|(category, op)| {
+            !category.is_empty()
+                && category.chars().all(|c| c.is_ascii_alphabetic())
+                && op.ends_with('>')
+                && !op[..op.len() - 1].is_empty()
+                && !op[..op.len() - 1].contains(['<', '>', ' '])
+        })
     })
 }
 
@@ -419,7 +423,9 @@ fn is_renderable_trait_name(name: &str) -> bool {
 /// Whether `custom_traits` holds a trait that renders as a plain `Trait::Is`.
 // Cost: O(t), t = custom traits.
 pub(super) fn has_generic_traits(custom_traits: &[(String, Option<Expr>)]) -> bool {
-    custom_traits.iter().any(|(t, _)| is_renderable_trait_name(t))
+    custom_traits
+        .iter()
+        .any(|(t, _)| is_renderable_trait_name(t))
 }
 
 /// A method's custom traits with its `is default` and `is DEPRECATED`, which
@@ -499,9 +505,9 @@ pub(super) fn add_custom(
             let argument = if message.is_empty() {
                 None
             } else {
-                Some(super::attribute::paren_argument(&Expr::Literal(Value::str(
-                    message.to_string(),
-                )))?)
+                Some(super::attribute::paren_argument(&Expr::Literal(
+                    Value::str(message.to_string()),
+                ))?)
             };
             Value::rakuast(Box::new(trait_is("DEPRECATED", argument)))
         } else {
