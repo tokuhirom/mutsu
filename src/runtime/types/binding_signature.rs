@@ -2538,16 +2538,22 @@ impl Interpreter {
                                 bound_value = match existing {
                                     Some(cell) => cell,
                                     None => {
-                                        let cell = if matches!(
+                                        let fresh = !matches!(
                                             bound_value.view(),
                                             ValueView::ContainerRef(_)
-                                        ) {
-                                            bound_value
-                                        } else {
+                                        );
+                                        let cell = if fresh {
                                             Value::container_ref(crate::gc::Gc::new(
                                                 crate::value::ContainerCell::new(bound_value),
                                             ))
+                                        } else {
+                                            bound_value
                                         };
+                                        // As in the positional arm (#12007).
+                                        if fresh {
+                                            let root = self.resolve_alias_root(&src);
+                                            self.mark_fresh_cell_declared_untyped(&cell, &root);
+                                        }
                                         self.env.insert(src, cell.clone());
                                         cell
                                     }
@@ -3633,14 +3639,23 @@ impl Interpreter {
                                 value = match existing {
                                     Some(cell) => cell,
                                     None => {
-                                        let cell =
-                                            if matches!(value.view(), ValueView::ContainerRef(_)) {
-                                                value
-                                            } else {
-                                                Value::container_ref(crate::gc::Gc::new(
-                                                    crate::value::ContainerCell::new(value),
-                                                ))
-                                            };
+                                        let fresh = !matches!(value.view(), ValueView::ContainerRef(_));
+                                        let cell = if fresh {
+                                            Value::container_ref(crate::gc::Gc::new(
+                                                crate::value::ContainerCell::new(value),
+                                            ))
+                                        } else {
+                                            value
+                                        };
+                                        // A cell minted here for a caller variable
+                                        // that never had one (a free variable a
+                                        // closure only reads, an unpromoted local)
+                                        // tells an integer atomic that the variable
+                                        // was untyped (#12007).
+                                        if fresh {
+                                            let root = self.resolve_alias_root(&cell_key);
+                                            self.mark_fresh_cell_declared_untyped(&cell, &root);
+                                        }
                                         self.env.insert(cell_key, cell.clone());
                                         cell
                                     }

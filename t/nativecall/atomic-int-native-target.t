@@ -197,9 +197,9 @@ my $nomatch = /'Cannot resolve caller ' .* '; the following candidates' \s+
     # state variable keep running through an `is rw` parameter.
     sub bump-rw($p is rw) { $p⚛++ }
     sub counter { my atomicint $c = 0; return { bump-rw($c); $c } }
-    my &next = counter();
-    next();
-    is next(), 2, 'a native captured by a returned closure, through an is rw parameter';
+    my &step = counter();
+    step();
+    is step(), 2, 'a native captured by a returned closure, through an is rw parameter';
 
     sub tick { state atomicint $s = 0; bump-rw($s); $s }
     tick();
