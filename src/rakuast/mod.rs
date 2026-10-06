@@ -22,11 +22,12 @@ mod core_term_names;
 mod core_type_names;
 mod decl_traits;
 mod declared_routines;
+mod feed_op;
 mod fields;
 mod formatter;
 pub(crate) mod frontend;
-mod feed_op;
 mod hash_literal;
+mod infix_func;
 mod keyed_hash;
 mod lower;
 mod meta_infix;
@@ -198,6 +199,7 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     MetaInfixAssign,
+    FlipFlop,
     Feed,
     StatementPrefixEager,
     TermCapture,
@@ -515,6 +517,7 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
+            FlipFlop => "RakuAST::FlipFlop",
             Feed => "RakuAST::Feed",
             StatementPrefixEager => "RakuAST::StatementPrefix::Eager",
             TermCapture => "RakuAST::Term::Capture",
@@ -1250,6 +1253,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
+    RakuAstClass::FlipFlop,
     RakuAstClass::Feed,
     RakuAstClass::StatementPrefixEager,
     RakuAstClass::TermCapture,
@@ -2871,6 +2875,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
+        ("RakuAST::FlipFlop", "new") => RakuAstClass::FlipFlop,
         ("RakuAST::Feed", "new") => RakuAstClass::Feed,
         ("RakuAST::StatementPrefix::Eager", "new") => RakuAstClass::StatementPrefixEager,
         ("RakuAST::Term::Capture", "new") => RakuAstClass::TermCapture,
@@ -3229,6 +3234,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
+            | RakuAstClass::FlipFlop
             | RakuAstClass::Feed
             | RakuAstClass::StatementPrefixEager
             | RakuAstClass::TermCapture

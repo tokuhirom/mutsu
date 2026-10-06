@@ -29,11 +29,10 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// `andthen` `orelse` `notandthen` `|` `&` `^` `^^` `xor` `...` and the set
 /// operators; `and`, `or`, `//`, `~` and the like are ordinary infixes).
 // Cost: O(1).
-fn is_list_assoc(op: &str) -> bool {
+pub(super) fn is_list_assoc(op: &str) -> bool {
     matches!(
         op,
-        ","
-            | "min"
+        "," | "min"
             | "max"
             | "minmax"
             | "andthen"
@@ -122,7 +121,10 @@ pub(super) fn convert(
         return Err(unsupported_expr(&format!("{whole:?}")));
     };
     // A compound-assignment base (`X+=`) is its own node, deferred.
-    if op.ends_with('=') && !op.is_empty() && crate::compiler::helpers_ops::op_name_to_token_kind(op).is_none() {
+    if op.ends_with('=')
+        && !op.is_empty()
+        && crate::compiler::helpers_ops::op_name_to_token_kind(op).is_none()
+    {
         return Err(unsupported_expr(&format!("{whole:?}")));
     }
     let infix = if op.is_empty() {

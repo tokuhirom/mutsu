@@ -11,14 +11,21 @@ use Test;
 # - `$@a` / `$%h` / `$[1, 2]` is a `Contextualizer::Item` over the term;
 # - `eager EXPR` is a `StatementPrefix::Eager` over a `Statement::Expression`;
 # - `1 ==> f() ==> g()` is one flat `ApplyListInfix` over `Feed("==>")`, the
-#   operands in written order (`f() <== g() <== 1` lists `f()` first).
+#   operands in written order (`f() <== g() <== 1` lists `f()` first);
+# - a declared operator (`$a foo $b`) is an `ApplyInfix` over `Infix("foo")`,
+#   nested to the left or right by its associativity, an `ApplyListInfix` for
+#   `is assoc<list>` chains and for `minmax`; `ff` has a `FlipFlop` infix.
 #
 # The round trip is the parsed program. The tree part of this file also passes
 # under `raku`; the round trip part is mutsu's.
 
 plan 51;
 
-sub exprs($src) { ('my ($a, $b, $c); my (@a, %h); sub foo(|) { }; ' ~ $src).AST.statements.skip(3).map(*.expression) }
+sub exprs($src) {
+    ('my ($a, $b, $c); my (@a, %h); sub foo(|) { }; sub infix:<foo>($x, $y) { }; '
+        ~ 'sub infix:<cat3>(*@a) is assoc<list> { }; sub infix:<pw>($x, $y) is assoc<right> { }; ' ~ $src)
+        .AST.statements.skip(6).map(*.expression)
+}
 sub same($src, $expected, $desc) {
     my $parsed = do { my @*LOG; EVAL($src) };
     my $round = do { my @*LOG; EVAL($src.AST) };
@@ -68,6 +75,18 @@ sub same($src, $expected, $desc) {
     isa-ok exprs(Q[foo() <== $a])[0].operands[0], RakuAST::Call::Name, 'a leftwards feed lists the sink first';
 }
 
+# --- declared and named infixes
+{
+    my $f = exprs(Q[$a foo $b])[0];
+    isa-ok $f, RakuAST::ApplyInfix, 'a declared operator is an infix application';
+    is $f.infix.operator, 'foo', 'over its own infix';
+    isa-ok exprs(Q[$a foo $b foo $c])[0].left, RakuAST::ApplyInfix, 'a left-associative chain nests to the left';
+    isa-ok exprs(Q[$a pw $b pw $c])[0].right, RakuAST::ApplyInfix, 'a right-associative one to the right';
+    is exprs(Q[$a cat3 $b cat3 $c])[0].operands.elems, 3, 'a list-associative chain is flat';
+    isa-ok exprs(Q[$a minmax $b])[0], RakuAST::ApplyListInfix, '`minmax` is a list infix';
+    isa-ok exprs(Q[$a ff $b])[0].infix, RakuAST::FlipFlop, '`ff` is a flip-flop';
+}
+
 # --- the round trip is the parsed program
 my $v = 'my @a = 1, 2; my @b = 3, 4; my @c = 5, 6; ';
 same $v ~ Q[(@a Z @b).join(",")], '1 3,2 4', 'a zip';
@@ -94,3 +113,10 @@ same Q[sub dbl(*@x) { @x.map(* * 2).join(",") }; (1, 2, 3) ==> dbl()], '2,4,6', 
 same Q[sub dbl(*@x) { @x.map(* * 2).join(",") }; dbl() <== (1, 2, 3)], '2,4,6', 'a leftwards feed';
 same Q[sub dbl(*@x) { @x.map(* * 2).join(",") }; sub inc(*@x) { @x.map(* + 1) }; (1, 2) ==> inc() ==> dbl()], '4,6', 'a feed chain';
 same Q[sub dbl(*@x) { @x.map(* * 2).join(",") }; sub inc(*@x) { @x.map(* + 1) }; dbl() <== inc() <== (1, 2)], '4,6', 'a leftwards feed chain';
+same Q[sub infix:<foo>($a, $b) { $a + $b }; 1 foo 2], 3, 'a declared operator';
+same Q[(3 minmax 1).raku], '1..3', '`minmax`';
+same Q[sub infix:<cat3>(*@a) is assoc<list> { @a.join("-") }; 1 cat3 2 cat3 3], '1-2-3', 'a list-associative operator';
+same Q[sub infix:<pw>($a, $b) is assoc<right> { $a ** $b }; 2 pw 3 pw 2], 512, 'a right-associative operator';
+same Q[sub infix:<sb>($a, $b) { $a - $b }; 10 sb 3 sb 2], 5, 'a left-associative operator';
+same Q[sub infix:<⊕>($a, $b) { $a + $b + 100 }; 1 ⊕ 2], 103, 'a symbolic operator';
+same Q[my @r; for 1..6 { @r.push($_) if $_ == 2 ff $_ == 4 }; @r.join(",")], '2,3,4', 'a flip-flop';

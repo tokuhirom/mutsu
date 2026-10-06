@@ -372,7 +372,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
             "value"
         }
         FunctionInfix => "function",
-        Infix | Prefix | Feed => "operator",
+        Infix | Prefix | Feed | FlipFlop => "operator",
         VarLexical | VarDynamic => "name",
         NamePartSimple => "name",
         NamePartExpression => "expr",

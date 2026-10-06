@@ -3093,6 +3093,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Hash(pairs, spelling) => hash_literal::convert(pairs, *spelling),
         // `$(...)`, `@(...)`, `%(...)` -> `Contextualizer::Item/List/Hash`.
         Expr::Contextualizer { kind, inner } => super::contextualizer::convert(*kind, inner),
+        // `$a minmax $b`, `$a foo $b` (a declared `infix:<foo>`), `$a ff $b`:
+        // an ordinary application of an `Infix`.
+        Expr::InfixFunc {
+            name,
+            left,
+            right,
+            modifier,
+        } => super::infix_func::convert(name, left, right, modifier, expr),
         // `\(1, :a)` / `\$x` -> `Term::Capture`.
         Expr::CaptureLiteral(items, parenthesized) => {
             super::capture_term::convert(items, *parenthesized)
