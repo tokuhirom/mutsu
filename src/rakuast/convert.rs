@@ -2336,9 +2336,32 @@ pub(super) fn subscript_node(
     assignee: Option<&Expr>,
     colonpairs: Vec<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    subscript_dims_node(
+        target,
+        std::slice::from_ref(index),
+        is_positional,
+        assignee,
+        colonpairs,
+    )
+}
+
+/// [`subscript_node`] over the dimensions of `@a[0;1]`: one statement of the
+/// `SemiList` per dimension.
+// Cost: O(n), n = nodes of the target and dimensions.
+pub(super) fn subscript_dims_node(
+    target: &Expr,
+    dims: &[Expr],
+    is_positional: bool,
+    assignee: Option<&Expr>,
+    colonpairs: Vec<Value>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut statements = Vec::with_capacity(dims.len());
+    for dim in dims {
+        statements.push(node_field(None, statement_expression(convert_expr(dim)?)));
+    }
     let semilist = RakuAstNode {
         class: RakuAstClass::SemiList,
-        fields: vec![node_field(None, statement_expression(convert_expr(index)?))],
+        fields: statements,
     };
     let mut index_node = RakuAstNode {
         class: if is_positional {
@@ -2457,6 +2480,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ));
             }
             Ok(var_lexical("$", name))
+        }
+        // `$::($n)` / `@::($n)` -> `Var::Package` over a dynamic name.
+        Expr::SymbolicDeref { sigil, expr } => super::symbolic_deref::convert(sigil, expr),
+        Expr::SymbolicDerefAssign { sigil, expr, value } => {
+            super::symbolic_deref::convert_assign(sigil, expr, value)
+        }
+        Expr::IndirectTypeLookupAssign { expr, value } => {
+            super::symbolic_deref::convert_type_assign(expr, value)
         }
         // `::("x")` / `::($name)` ->
         // `Term::Name(Name(Part::Empty.new, Part::Expression(EXPR)))`, the
@@ -3095,6 +3126,20 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ),
             ],
         }),
+        // `$o.$name(1)` / `$o.&f(1)` -> `Call::TermAsMethod` / `Call::NameAsMethod`.
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+            modifier,
+            quoted: false,
+        } => super::dynamic_method::convert(target, name_expr, args, *modifier),
+        Expr::HyperMethodCallDynamic {
+            target,
+            name_expr,
+            args,
+            modifier,
+        } => super::dynamic_method::convert_hyper(target, name_expr, args, *modifier),
         // Hyper method call `@a>>.abs` -> ApplyPostfix(operand,
         // postfix => MetaPostfix::Hyper(Call::Method(...))).
         Expr::HyperMethodCall {
@@ -3198,6 +3243,43 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             index,
             is_positional,
         } => subscript_node(target, index, *is_positional, None, Vec::new()),
+        // `@a[0;1]` / `%h{1;2}`: one `SemiList` statement per dimension.
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => subscript_dims_node(target, dimensions, *is_positional, None, Vec::new()),
+        // `@a[]` / `%h{}`: a subscript with no dimension at all.
+        Expr::ZenSlice(target) => subscript_dims_node(
+            target,
+            &[],
+            !matches!(&**target, Expr::HashVar(_)),
+            None,
+            Vec::new(),
+        ),
+        // `@a[0;1] = 5` keeps an `Assignment` infix over the subscript.
+        Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value,
+            is_positional,
+        } => Ok(RakuAstNode {
+            class: RakuAstClass::ApplyInfix,
+            fields: vec![
+                node_field(
+                    Some("left"),
+                    subscript_dims_node(target, dimensions, *is_positional, None, Vec::new())?,
+                ),
+                node_field(
+                    Some("infix"),
+                    RakuAstNode {
+                        class: RakuAstClass::Assignment,
+                        fields: Vec::new(),
+                    },
+                ),
+                node_field(Some("right"), convert_expr(value)?),
+            ],
+        }),
         // Measured on 2026.09: rakudo folds an assignment to `@a[…]` or
         // `%h<…>` into the postcircumfix as its `assignee`, but keeps an
         // `Assignment` infix over a `%h{…}` subscript. mutsu does not tell
@@ -3370,6 +3452,18 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // An interpolated string `"a $x b"` -> QuotedString with a segment per
         // part (a literal run is a `StrLiteral`, an interpolated term keeps its
         // own node).
+        // A `qq:to/END/` body: the parser keeps the raw text for the compiler to
+        // interpolate where the heredoc sits; the tree is that interpolation.
+        // The terminator (rakudo's `Heredoc(stop => ...)`) is not kept, so it
+        // renders as the quoted string it evaluates to. One that closes an
+        // enclosing block on its own line is a scope diagnostic the
+        // interpolation would lose.
+        Expr::HeredocInterpolation(content, closes_block_same_line) => {
+            if *closes_block_same_line {
+                return Err(unsupported("heredoc closing an enclosing block"));
+            }
+            convert_expr(&crate::parser::interpolate_heredoc_content(content))
+        }
         Expr::StringInterpolation(parts) => {
             let mut segments = Vec::with_capacity(parts.len());
             for p in parts {
