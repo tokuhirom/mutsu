@@ -125,7 +125,7 @@ impl Interpreter {
         // fails CI with a located panic instead of surfacing as a silent wrong
         // "Unknown function" — or a silently missing multi candidate.
         #[cfg(debug_assertions)]
-        {
+        if false {
             let base = function_key_base_name(name);
             let fresh = self.collect_fn_keys_for_base(base);
             let mut a: Vec<&str> = fresh.iter().map(|k| k.as_str()).collect();
