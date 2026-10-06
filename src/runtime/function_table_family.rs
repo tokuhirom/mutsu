@@ -31,8 +31,7 @@ impl FunctionTable {
                 .strip_prefix(family)
                 .is_some_and(|rest| rest.starts_with('/'))
         };
-        if crate::str_scan::has_double_colon(family) && !family.starts_with(['$', '@', '%', '&'])
-        {
+        if crate::qualified::is_qualified_str(family) && !family.starts_with(['$', '@', '%', '&']) {
             let mut keys = crate::qualified_tail_index::names_in_family(family);
             keys.retain(|key| in_family(key) && self.contains_key(key));
             keys

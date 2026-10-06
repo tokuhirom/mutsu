@@ -1362,7 +1362,6 @@ impl Interpreter {
             new_def.compiled = Some(Self::adapt_compiled_to_def(compiled, &new_def));
         }
         let single_key = self.current_package_qualified(name).to_string();
-        let multi_family = format!("{}::{}", self.current_package(), name);
         let single_key_sym = Symbol::intern(&single_key);
         let has_single = self.registry().functions.contains_key(&single_key_sym);
         // `method foo is export` installs a synthetic, arity-qualified
@@ -1373,7 +1372,7 @@ impl Interpreter {
         // real multi candidates remain part of the check.
         let has_multi = {
             let functions = &self.registry().functions;
-            functions.family_keys(&multi_family).iter().any(|k| {
+            functions.family_keys(single_key_sym.as_str()).iter().any(|k| {
                 functions
                     .get(k)
                     .is_some_and(|def| def.declarator != crate::ast::RoutineDeclarator::Method)
@@ -1514,7 +1513,7 @@ impl Interpreter {
             && self
                 .registry()
                 .functions
-                .family_keys(&multi_family)
+                .family_keys(single_key_sym.as_str())
                 .into_iter()
                 .all(is_outer_routine_key);
         if multi {
