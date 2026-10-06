@@ -2,6 +2,7 @@
 /// Num, Real, Numeric, Bridge
 use crate::runtime;
 use crate::symbol::Symbol;
+use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::value_buf::{buf_len_or_zero, buf_storage, set_buf_storage};
 use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::{ToPrimitive, Zero};
@@ -872,6 +873,10 @@ pub(super) fn dispatch(
                         Value::int(0)
                     } else if let Some(v) = parse_raku_int_from_str(&s) {
                         v
+                    } else if str_numifies_to_complex(&s).is_some() {
+                        // `"1+2i".Int` is `Complex.Int`: the runtime tests the
+                        // imaginary part (`Interpreter::dispatch_complex_to_real`).
+                        return Some(None);
                     } else if let Some(v) =
                         runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
                             .as_ref()
@@ -931,6 +936,9 @@ pub(super) fn dispatch(
                 ValueView::Str(s) => {
                     if let Some(v) = parse_raku_int_from_str(&s) {
                         Some(v)
+                    } else if str_numifies_to_complex(&s).is_some() {
+                        // As `.Int`: coerced as the `Complex` it numifies to.
+                        return Some(None);
                     } else if let Some(v) =
                         runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
                             .as_ref()
@@ -1053,6 +1061,10 @@ pub(super) fn dispatch(
                         // underscores, rationals, strict Inf/NaN) so `.Num` agrees
                         // with `.Numeric`/`.Int`/prefix `+`. `.Num` always yields a Num.
                         let normalized = trimmed.replace('\u{2212}', "-");
+                        if str_numifies_to_complex(&normalized).is_some() {
+                            // As `.Int`: coerced as the `Complex` it numifies to.
+                            return Some(None);
+                        }
                         if let Some(v) =
                             crate::runtime::str_numeric::parse_raku_str_to_numeric(&normalized)
                         {
@@ -1122,6 +1134,10 @@ pub(super) fn dispatch(
                     // `.Real` yields the natural numeric type (Int/Rat/Num); use the
                     // canonical parser so radix prefixes and underscores work and the
                     // result agrees with `.Numeric`.
+                    if str_numifies_to_complex(&s).is_some() {
+                        // As `.Int`: coerced as the `Complex` it numifies to.
+                        return Some(None);
+                    }
                     if let Some(v) =
                         crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
                     {

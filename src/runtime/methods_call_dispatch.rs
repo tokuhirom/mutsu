@@ -4363,9 +4363,25 @@ impl Interpreter {
         // imaginary part is negligible)
         if matches!(method, "Int" | "UInt" | "Num" | "Rat" | "FatRat" | "Real")
             && (args.is_empty() || (args.len() == 1 && matches!(method, "Rat" | "FatRat")))
-            && let ValueView::Complex(r, im) = target.view()
         {
-            return self.dispatch_complex_to_real(method, r, im, &target, &args);
+            if let ValueView::Complex(r, im) = target.view() {
+                return self.dispatch_complex_to_real(method, r, im, &target, &args);
+            }
+            // A string that numifies to a `Complex` (`"1+2i"`) is coerced as
+            // that `Complex` (`Str.Int` is `self.Numeric.Int`), and an error
+            // names the number, not the string it was spelled in.
+            if args.is_empty()
+                && let ValueView::Str(s) = target.view()
+                && let Some((r, im)) = crate::value::str_numeric::str_numifies_to_complex(&s)
+            {
+                return self.dispatch_complex_to_real(
+                    method,
+                    r,
+                    im,
+                    &Value::complex(r, im),
+                    &args,
+                );
+            }
         }
 
         // Zero-denominator Rat/FatRat .Str
