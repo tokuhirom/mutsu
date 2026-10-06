@@ -18,7 +18,7 @@ pub(crate) use primary::ident::{
 };
 pub(crate) use primary::ident::{anon_method_expr, is_synthetic_invocant};
 pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
-pub(crate) use primary::var::is_pseudo_package;
+pub(crate) use primary::var::{fresh_anon_array_name, fresh_anon_state_name, is_pseudo_package};
 pub(crate) use primary::{
     ANON_COLONS_TRAIT, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
     prepend_does_header,

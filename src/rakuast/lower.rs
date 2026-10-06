@@ -45,9 +45,27 @@ pub fn lower(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     Ok(stmts)
 }
 
+/// The statements of a block body. Each body is a frame for the anonymous
+/// variables written in it (see `anon_state`); the unit's own list is not,
+/// as the parser declares none at the top level either.
 pub(super) fn lower_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     match node.class {
-        RakuAstClass::CompUnit => lower_stmts(named_child(node, "statement-list")?),
+        RakuAstClass::CompUnit => lower_stmt_list(named_child(node, "statement-list")?),
+        _ => super::anon_state::with_frame(|| lower_stmt_list(node)),
+    }
+}
+
+/// [`lower_stmts`] for a routine body (a `sub`, a method, a `proto`): a bare
+/// `$` directly in it persists across calls, one in a block below it is per
+/// call.
+// Cost: O(n), n = size of the body.
+pub(super) fn lower_routine_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    super::anon_state::next_body_is_routine();
+    lower_stmts(node)
+}
+
+fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    match node.class {
         RakuAstClass::StatementList => {
             let mut stmts = Vec::with_capacity(node.fields.len());
             for f in &node.fields {
@@ -205,6 +223,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::VarDeclarationTerm => lower_term_declaration(node),
+        RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_statement(node),
         RakuAstClass::ApplyDottyInfix => Ok(Stmt::Expr(lower_dotty_assign(node, true)?)),
         RakuAstClass::StatementIf => lower_if(node),
         // `with X { … }` / `without X { … }`. Both rebuild the conditional the
@@ -617,7 +636,7 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         },
     }
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
-    let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     // A sub with no signature of its own takes its placeholder variables.
     let (params, param_defs) =
         crate::ast::implicit_placeholder_signature(params, param_defs, &body);
@@ -1271,7 +1290,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if super::routine_traits::has_generic_traits(&custom_traits) {
         return Err(unsupported(node));
     }
-    let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::MethodDecl {
         name: crate::symbol::Symbol::intern(&name),
         name_expr: None,
@@ -1766,7 +1785,7 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if !custom_traits.is_empty() {
         return Err(unsupported(node));
     }
-    let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     let declarator = if node.class == RakuAstClass::Submethod {
         crate::ast::RoutineDeclarator::Submethod
     } else {
@@ -1960,6 +1979,15 @@ fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `v = …` where `v` is a sigilless term (`my \v = @a`) assigns into what
     // the term is bound to.
     let left = named_child(node, "left")?;
+    // `$ = EXPR`: an assignment to an anonymous scalar.
+    if super::anon_state::is_anonymous(left) {
+        return Ok(Stmt::Assign {
+            name: super::anon_state::assign_target(left)?,
+            expr: lower_expr(named_child(node, "right")?)?,
+            op: crate::ast::AssignOp::Assign,
+            target_is_sigilless: false,
+        });
+    }
     if left.class == RakuAstClass::TermName
         && let Some(NameShape::Identifier(name)) =
             name_parts::name_shape(named_child_or_positional(left)?)
@@ -3185,6 +3213,7 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match node.class {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
+        RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_term(node),
         // `(temp $x)` / `(let $x = 1)`: the parser's save, wrapped in a `DoStmt`.
         RakuAstClass::ApplyPrefix | RakuAstClass::ApplyInfix | RakuAstClass::ApplyDottyInfix
             if super::temporize::is_temporized(node) =>
@@ -3348,7 +3377,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Err(unsupported(node));
             }
             // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
-            let body = lower_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+            let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
             if params.is_empty() && return_type.is_none() {
                 return Ok(Expr::AnonSub {
                     body,

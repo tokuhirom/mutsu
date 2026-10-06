@@ -10,6 +10,7 @@
 //! maps to/from the internal AST. See docs/adr/0011 for the full design and
 //! phasing (construction, EVAL, macros are later phases).
 
+mod anon_state;
 mod attribute;
 mod bareword;
 mod chain;
@@ -321,6 +322,8 @@ pub enum RakuAstClass {
     VarDeclarationConstant,
     // `my \x = 5` / `my \x := $s`.
     VarDeclarationTerm,
+    // A bare `$` / `@` / `%`: an anonymous `state` variable.
+    VarDeclarationAnonymous,
     // A bareword naming something the unit declared that is not a type — a
     // `constant`, in practice.
     TermName,
@@ -580,6 +583,7 @@ impl RakuAstClass {
             CallTerm => "RakuAST::Call::Term",
             VarDeclarationConstant => "RakuAST::VarDeclaration::Constant",
             VarDeclarationTerm => "RakuAST::VarDeclaration::Term",
+            VarDeclarationAnonymous => "RakuAST::VarDeclaration::Anonymous",
             TermName => "RakuAST::Term::Name",
             TermNamed => "RakuAST::Term::Named",
             TermTopicCall => "RakuAST::Term::TopicCall",
@@ -1296,6 +1300,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CallTerm,
     RakuAstClass::VarDeclarationConstant,
     RakuAstClass::VarDeclarationTerm,
+    RakuAstClass::VarDeclarationAnonymous,
     RakuAstClass::TermName,
     RakuAstClass::TermNamed,
     RakuAstClass::TermTopicCall,

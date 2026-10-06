@@ -9,8 +9,8 @@
 
 use super::convert::{leaf_field, routine_node, unsupported};
 use super::lower::{
-    call_name_str, lower_stmts, named_child, named_child_or_positional, routine_return_type,
-    signature_positional_params,
+    call_name_str, lower_routine_stmts, named_child, named_child_or_positional,
+    routine_return_type, signature_positional_params,
 };
 use super::routine_traits::{IsTraits, add_flags};
 use super::{RakuAstClass, RakuAstNode};
@@ -108,7 +108,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let body = if body_node.class == RakuAstClass::OnlyStar {
         vec![Stmt::Expr(Expr::Whatever)]
     } else {
-        lower_stmts(named_child_or_positional(body_node)?)?
+        lower_routine_stmts(named_child_or_positional(body_node)?)?
     };
     Ok(Stmt::ProtoDecl {
         name: Symbol::intern(&name),

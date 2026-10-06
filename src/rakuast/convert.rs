@@ -58,6 +58,11 @@ fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
             line = Some(*n);
             continue;
         }
+        // The `state` declaration the parser puts at the top of a block for
+        // each bare `$` it contains: rakudo's node is the `$` itself.
+        if crate::ast::anon_state::is_implicit_decl(stmt) {
+            continue;
+        }
         if let Some(mut node) = convert_stmt(stmt)? {
             if let Some(n) = line.take() {
                 node.fields.push(origin::field(n));
@@ -1706,6 +1711,25 @@ pub(super) fn var_declaration(
     will_build: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
+    // `state $ = 0`: the parser names the anonymous scalar `__ANON_STATE__`;
+    // rakudo has no name.
+    if sigil == "$"
+        && (desigil == "__ANON_STATE__" || crate::ast::anon_state::is_scalar(desigil))
+        && scope == Some("state")
+        && type_name.is_none()
+        && twigil.is_none()
+        && will_build.is_none()
+    {
+        let initializer = match init {
+            None => None,
+            Some(Initializer::Assign(e)) => Some(RakuAstNode {
+                class: RakuAstClass::InitializerAssign,
+                fields: vec![node_field(None, convert_expr(e)?)],
+            }),
+            Some(_) => return Err(unsupported("anonymous state variable binding")),
+        };
+        return Ok(anonymous_declaration("$", initializer));
+    }
     // Field order matches raku: scope, type, sigil, twigil, desigilname, traits,
     // initializer — each omitted when absent (scope defaults to `my`; twigil and
     // traits appear only on attributes).
@@ -2037,7 +2061,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Ok(call_name(name.as_str(), args, false)?)
         }
         Expr::Var(name) => {
-            if is_desugar_marker(name) {
+            if is_desugar_marker(name) && !crate::ast::anon_state::is_scalar(name) {
                 return Err(desugared(name));
             }
             if let Some(name) = name.strip_prefix('^')
@@ -2318,7 +2342,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             compound_assignment_infix(target, op, rhs)
         }
         Expr::ArrayVar(name) => {
-            if is_desugar_marker(name) {
+            if is_desugar_marker(name) && !crate::ast::anon_state::is_array(name) {
                 return Err(desugared(name));
             }
             if name == "_" {
@@ -2348,7 +2372,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Ok(var_lexical("@", name))
         }
         Expr::HashVar(name) => {
-            if is_desugar_marker(name) {
+            if is_desugar_marker(name) && !crate::ast::anon_state::is_hash(name) {
                 return Err(desugared(name));
             }
             if name == "_" {
@@ -4578,6 +4602,23 @@ fn desugared(name: &str) -> RuntimeError {
     unsupported(&format!("desugared construct (internal name `{name}`)"))
 }
 
+/// `VarDeclaration::Anonymous(scope => "state", sigil, initializer?)`: a bare
+/// `$` / `@` / `%`, which is a `state` variable of its block. Rakudo gives it
+/// no name.
+fn anonymous_declaration(sigil: &str, initializer: Option<RakuAstNode>) -> RakuAstNode {
+    let mut fields = vec![
+        leaf_field(Some("scope"), Value::str_from("state")),
+        leaf_field(Some("sigil"), Value::str(sigil.to_string())),
+    ];
+    if let Some(initializer) = initializer {
+        fields.push(node_field(Some("initializer"), initializer));
+    }
+    RakuAstNode {
+        class: RakuAstClass::VarDeclarationAnonymous,
+        fields,
+    }
+}
+
 /// `$x` / `@a` / `%h` / `&f` usage -> `Var::Lexical("<sigil><name>")`.
 /// A variable reference. A package-qualified one (`$Foo::v`, `@A::B::c`) is a
 /// `Var::Package` carrying the segmented `Name` and the sigil, as Rakudo
@@ -4585,6 +4626,13 @@ fn desugared(name: &str) -> RuntimeError {
 /// `Var::Dynamic` of the whole spelling; anything else is a `Var::Lexical` of
 /// the whole spelling.
 fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
+    // A bare `$` / `@` / `%` is the anonymous declaration itself.
+    if (sigil == "$" && crate::ast::anon_state::is_scalar(name))
+        || (sigil == "@" && crate::ast::anon_state::is_array(name))
+        || (sigil == "%" && crate::ast::anon_state::is_hash(name))
+    {
+        return anonymous_declaration(sigil, None);
+    }
     if name.len() > 1 && name.starts_with('*') {
         return RakuAstNode {
             class: RakuAstClass::VarDynamic,
