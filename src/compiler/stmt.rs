@@ -812,6 +812,35 @@ impl Compiler {
         }
     }
 
+    /// A native-typed pointy `if`/`with` (`if $c -> str $t { $seq := ... }`)
+    /// lowers to a call of an anonymous block. When that block's tail is an
+    /// assignment/bind, the call statement is that bind: its value is wanted
+    /// by the bound variable, so the statement must not sink (consume) it.
+    fn stmt_is_pointy_bind_call(expr: &Expr) -> bool {
+        // The tail is a plain assignment/bind, also behind a trailing
+        // statement modifier (`$seq := $seq.reverse if $r`).
+        fn tail_binds_or_assigns(stmts: &[Stmt]) -> bool {
+            crate::ast::last_value_stmt(stmts, crate::ast::TailSkip::Markers).is_some_and(|s| {
+                match s {
+                    Stmt::Assign { .. } => true,
+                    Stmt::Expr(e) => Compiler::stmt_value_is_assignment(e),
+                    Stmt::If {
+                        then_branch,
+                        else_branch,
+                        is_statement_modifier: true,
+                        ..
+                    } => else_branch.is_empty() && tail_binds_or_assigns(then_branch),
+                    _ => false,
+                }
+            })
+        }
+        matches!(
+            expr,
+            Expr::CallOn { target, .. }
+                if matches!(target.as_ref(), Expr::AnonSubParams { body, .. } if tail_binds_or_assigns(body))
+        )
+    }
+
     /// Whether a statement-expression's value can only be the value of an
     /// element assignment — directly (`%h{$k} = ...;`) or behind an
     /// `if`/`unless` statement modifier. Deliberately does NOT descend into a
@@ -951,7 +980,9 @@ impl Compiler {
                 // it — except under `use fatal`, which the opcode handles.
                 // Scalar `$x = ...` takes the Stmt::Assign path and already
                 // behaves this way.
-                if Self::stmt_value_is_assignment(expr) {
+                if Self::stmt_is_pointy_bind_call(expr) {
+                    self.code.emit(OpCode::Pop);
+                } else if Self::stmt_value_is_assignment(expr) {
                     self.code.emit(OpCode::SinkPopAssign);
                 } else {
                     self.code.emit(OpCode::SinkPop(

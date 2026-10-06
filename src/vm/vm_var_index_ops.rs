@@ -837,6 +837,23 @@ impl Interpreter {
         {
             index = inner.as_ref().clone();
         }
+        // Any other `Int`-valued mixin (`1 but R`) addresses its slot by the
+        // integer it wraps, exactly as the allomorph above does.
+        if is_positional
+            && let ValueView::Mixin(inner, _) = index.view()
+            && inner.as_int().is_some()
+        {
+            index = inner.as_ref().clone();
+        }
+        // An instance of a user `is Int` subclass (`class NotFound is Int`,
+        // `nqp::box_i($i, NotFound)`) addresses its slot by its Int payload,
+        // whatever its own `.defined` says.
+        if is_positional
+            && let Some(payload) = crate::value::numeric_payload::numeric_subclass_payload(&index)
+            && payload.as_int().is_some()
+        {
+            index = payload;
+        }
         // ADR-0058: a slice index can be a not-yet-run `.map`/`.grep` Seq
         // (`@f[(^$n).grep({...})]`, Text::CSV's fragment selector), and every
         // reader below takes its elements through pure code -- so the slice

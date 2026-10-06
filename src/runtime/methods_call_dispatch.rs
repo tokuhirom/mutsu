@@ -757,6 +757,32 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::array(vec![]));
             return self.call_method_with_values(frames, method, args);
         }
+        // An `IterationBuffer` is an `Any`: the list-shaped `Any` methods run on
+        // its elements as a List, not on the buffer as one opaque item
+        // (`$buf.head(2)`, `$buf.first(...)`), unless the class overrides them.
+        if matches!(
+            method,
+            "head" | "tail" | "first" | "skip" | "grep" | "map" | "sort" | "min" | "max"
+        ) && crate::runtime::nqp_ops_list::is_iteration_buffer(&target)
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && !self.has_user_method(class_name.as_str(), method)
+        {
+            let items = match attributes
+                .as_map()
+                .get("__mutsu_iterationbuffer_items")
+                .map(Value::view)
+            {
+                Some(ValueView::Array(values, ..)) => values.to_vec(),
+                Some(ValueView::Seq(values)) => values.to_vec(),
+                Some(ValueView::Slip(values)) => values.to_vec(),
+                _ => Vec::new(),
+            };
+            return self.call_method_with_values(Value::array(items), method, args);
+        }
         // A `Match` answers `Any`'s list methods from its positional captures
         // (see `is_capture_list_method`), unless the grammar defines the method.
         if crate::value::match_view::is_capture_list_method(method)
