@@ -49,7 +49,11 @@ pub(crate) fn capture_raku(positional: &[Value], named: &ValueMap) -> String {
         } else if let ValueView::Bool(false) = v.view() {
             parts.push(format!(":!{}", k));
         } else {
-            parts.push(format!(":{}({})", k, crate::value::raku_repr::raku_value(v)));
+            parts.push(format!(
+                ":{}({})",
+                k,
+                crate::value::raku_repr::raku_value(v)
+            ));
         }
     }
     format!("\\({})", parts.join(", "))
