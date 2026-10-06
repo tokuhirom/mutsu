@@ -41,6 +41,11 @@ fn postfix(
         // `.&f`: the routine named `f`, called with the invocant first.
         // With a dispatch modifier (`.+&f`) rakudo has the `&f` variable as the
         // callee of a `Call::TermAsMethod` instead.
+        // `.&?BLOCK` / `.&*f` name a compile-time or dynamic routine, not an
+        // identifier `Name.from-identifier` spells.
+        Expr::CodeVar(name) if !name.starts_with(|c: char| c.is_alphabetic() || c == '_') => {
+            return Err(unsupported_expr("dynamic call by a special `&` variable"));
+        }
         Expr::CodeVar(name) if dispatch.is_none() => {
             fields.push(node_field(Some("name"), name_from_identifier(name)));
             RakuAstClass::CallNameAsMethod
