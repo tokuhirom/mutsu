@@ -22,6 +22,7 @@ mod core_term_names;
 mod core_type_names;
 mod decl_traits;
 mod declared_routines;
+mod dynamic_method;
 mod feed_op;
 mod fields;
 mod formatter;
@@ -199,6 +200,8 @@ pub enum RakuAstClass {
     Postfix,
     Assignment,
     MetaInfixAssign,
+    CallNameAsMethod,
+    CallTermAsMethod,
     FlipFlop,
     Feed,
     StatementPrefixEager,
@@ -517,6 +520,8 @@ impl RakuAstClass {
             Postfix => "RakuAST::Postfix",
             Assignment => "RakuAST::Assignment",
             MetaInfixAssign => "RakuAST::MetaInfix::Assign",
+            CallNameAsMethod => "RakuAST::Call::NameAsMethod",
+            CallTermAsMethod => "RakuAST::Call::TermAsMethod",
             FlipFlop => "RakuAST::FlipFlop",
             Feed => "RakuAST::Feed",
             StatementPrefixEager => "RakuAST::StatementPrefix::Eager",
@@ -1253,6 +1258,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Postfix,
     RakuAstClass::Assignment,
     RakuAstClass::MetaInfixAssign,
+    RakuAstClass::CallNameAsMethod,
+    RakuAstClass::CallTermAsMethod,
     RakuAstClass::FlipFlop,
     RakuAstClass::Feed,
     RakuAstClass::StatementPrefixEager,
@@ -2875,6 +2882,8 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Infix", "new") => RakuAstClass::Infix,
         ("RakuAST::FunctionInfix", "new") => RakuAstClass::FunctionInfix,
         ("RakuAST::MetaInfix::Assign", "new") => RakuAstClass::MetaInfixAssign,
+        ("RakuAST::Call::NameAsMethod", "new") => RakuAstClass::CallNameAsMethod,
+        ("RakuAST::Call::TermAsMethod", "new") => RakuAstClass::CallTermAsMethod,
         ("RakuAST::FlipFlop", "new") => RakuAstClass::FlipFlop,
         ("RakuAST::Feed", "new") => RakuAstClass::Feed,
         ("RakuAST::StatementPrefix::Eager", "new") => RakuAstClass::StatementPrefixEager,
@@ -3234,6 +3243,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::FunctionInfix
             | RakuAstClass::Postfix
             | RakuAstClass::MetaInfixAssign
+            | RakuAstClass::CallNameAsMethod
+            | RakuAstClass::CallTermAsMethod
             | RakuAstClass::FlipFlop
             | RakuAstClass::Feed
             | RakuAstClass::StatementPrefixEager

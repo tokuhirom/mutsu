@@ -151,8 +151,12 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         TermName => &[("name", Absent::Required)],
         TermNamed => &[("name", Absent::Required)],
         TermTopicCall => &[("call", Absent::Required)],
-        CallName | CallNameWithoutParentheses | CallMethod => &[
+        CallName | CallNameWithoutParentheses | CallMethod | CallNameAsMethod => &[
             ("name", Absent::Required),
+            ("args", Absent::EmptyNode(ArgList)),
+        ],
+        CallTermAsMethod => &[
+            ("callee", Absent::Required),
             ("args", Absent::EmptyNode(ArgList)),
         ],
         ApplyInfix => &[

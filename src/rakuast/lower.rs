@@ -2303,11 +2303,26 @@ fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     if left.class != RakuAstClass::ApplyPostfix {
         return Ok(None);
     }
+    let lowered = lower_expr(left)?;
+    // `@a[0;1] = v`.
+    if let Expr::MultiDimIndex {
+        target,
+        dimensions,
+        is_positional,
+    } = lowered
+    {
+        return Ok(Some(Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value: Box::new(lower_expr(named_child(node, "right")?)?),
+            is_positional,
+        }));
+    }
     let Expr::Index {
         target,
         index,
         is_positional,
-    } = lower_expr(left)?
+    } = lowered
     else {
         return Ok(None);
     };
@@ -4458,10 +4473,17 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     modifier: Some('^'),
                     quoted: false,
                 }),
+                // `$o.$name(1)` / `$o.&f(1)`.
+                RakuAstClass::CallTermAsMethod | RakuAstClass::CallNameAsMethod => {
+                    super::dynamic_method::lower(operand, postfix)
+                }
                 // `@a>>.abs` -> MetaPostfix::Hyper wrapping the ordinary
                 // method-call postfix.
                 RakuAstClass::MetaPostfixHyper => {
                     let inner = named_child_or_positional(postfix)?;
+                    if super::dynamic_method::is_dynamic(inner) {
+                        return super::dynamic_method::lower_hyper(operand, inner);
+                    }
                     let (name, quoted) = match inner.class {
                         RakuAstClass::CallMethod => (call_name_str(inner)?, false),
                         RakuAstClass::CallQuotedMethod => (quoted_method_name(inner)?, true),
@@ -4504,13 +4526,36 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 | RakuAstClass::PostcircumfixHashIndex
                 | RakuAstClass::PostcircumfixLiteralHashIndex => {
                     let index_node = named_child(postfix, "index")?;
+                    let is_positional =
+                        matches!(postfix.class, RakuAstClass::PostcircumfixArrayIndex);
+                    // `@a[0;1]`: a `SemiList` of several statements.
+                    if postfix.class != RakuAstClass::PostcircumfixLiteralHashIndex
+                        && index_node.fields.len() > 1
+                    {
+                        if named_child(postfix, "assignee").is_ok()
+                            || list_field(postfix, "colonpairs").is_ok_and(|c| !c.is_empty())
+                        {
+                            return Err(unsupported(postfix));
+                        }
+                        let mut dimensions = Vec::with_capacity(index_node.fields.len());
+                        for field in &index_node.fields {
+                            let statement = child_node(&field.value)?;
+                            if statement.class != RakuAstClass::StatementExpression {
+                                return Err(unsupported(postfix));
+                            }
+                            dimensions.push(lower_expr(named_child(statement, "expression")?)?);
+                        }
+                        return Ok(Expr::MultiDimIndex {
+                            target: Box::new(operand),
+                            dimensions,
+                            is_positional,
+                        });
+                    }
                     let index = if postfix.class == RakuAstClass::PostcircumfixLiteralHashIndex {
                         lower_expr(index_node)?
                     } else {
                         lower_expr(named_child_or_positional(index_node)?)?
                     };
-                    let is_positional =
-                        matches!(postfix.class, RakuAstClass::PostcircumfixArrayIndex);
                     // `@a[0] = 1`: rakudo folds an assignment to a subscript
                     // into the postcircumfix's `assignee`; the parser keeps it
                     // as `IndexAssign`.
