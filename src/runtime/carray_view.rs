@@ -118,7 +118,11 @@ impl Interpreter {
             },
             _ => return None,
         };
-        let is_carray = mixins.is_some() && self.is_carray_repr_class(class.as_str());
+        // A mixin (`CArray[T]`) or the class itself: any class declared
+        // `is repr('CArray')` boxes an unmanaged CArray, its element type
+        // coming from `.^array_type` (a CStruct field of such a class reads
+        // back this way, `cstruct_layout`).
+        let is_carray = self.is_carray_repr_class(class.as_str());
         if !is_carray && !self.registry().cpointer_classes.contains(class.as_str()) {
             return None;
         }
