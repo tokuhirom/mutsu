@@ -104,14 +104,10 @@ pub(crate) fn str_numeric_failure(s: &str) -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
-/// Render a Complex's literal form (`1+2i`, `1-2i`) for an `X::Numeric::Real`
-/// message, matching how raku prints the source value.
+/// Render a Complex's literal form (`1+2i`, `1-2i`, `3.7+1e-20i`) for an
+/// `X::Numeric::Real` message: its `.Str`, as raku prints the source value.
 fn render_complex_literal(re: f64, im: f64) -> String {
-    if im >= 0.0 {
-        format!("{re}+{im}i")
-    } else {
-        format!("{re}{im}i")
-    }
+    crate::value::format_complex(re, im)
 }
 
 /// Build the `X::Numeric::Real` exception raised when a Complex with a
@@ -892,16 +888,12 @@ pub(super) fn dispatch(
                     }
                 }
                 ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
-                // A Complex coerces to Int via its real part; a non-zero
-                // imaginary part is not Real and throws X::Numeric::Real
-                // (raku: `(1+2i).Int` → "Cannot convert 1+2i to Int:
-                // imaginary part not zero").
-                ValueView::Complex(re, im) => {
-                    if im != 0.0 {
-                        return Some(Some(Err(complex_not_real_error(re, im, "Int", target))));
-                    }
-                    crate::builtins::method_table::coerce::int_of(target)?
-                }
+                // A Complex coerces to Int via its real part when its imaginary
+                // part is `≅ 0` (`$*TOLERANCE`); otherwise it is not Real and
+                // throws X::Numeric::Real. Reading the dynamic variable needs the
+                // interpreter, so this falls through to
+                // `Interpreter::dispatch_complex_to_real`.
+                ValueView::Complex(..) => return Some(None),
                 ValueView::Hash(h) => Value::int(h.len() as i64),
                 ValueView::Array(items, ..) => Value::int(items.len() as i64),
                 ValueView::Instance {
@@ -930,19 +922,9 @@ pub(super) fn dispatch(
                 ValueView::BigInt(_) => Some(target.clone()),
                 ValueView::Num(f) if f.is_finite() => Some(Value::int(f.trunc() as i64)),
                 ValueView::Rat(n, d) if d != 0 => Some(Value::int(n / d)),
-                // A Complex coerces to UInt via its real part (`(5+0i).UInt` is 5);
-                // a non-zero imaginary part is not Real and throws X::Numeric::Real
-                // (mirroring the `.Int` Complex coercion).
-                ValueView::Complex(re, im) => {
-                    if im != 0.0 {
-                        return Some(Some(Err(complex_not_real_error(re, im, "UInt", target))));
-                    }
-                    if re.is_finite() {
-                        Some(Value::int(re.trunc() as i64))
-                    } else {
-                        None
-                    }
-                }
+                // A Complex coerces to UInt like `.Int` (`(5+0i).UInt` is 5): the
+                // runtime checks its imaginary part against `$*TOLERANCE`.
+                ValueView::Complex(..) => return Some(None),
                 ValueView::Bool(b) => Some(Value::int(if b { 1 } else { 0 })),
                 ValueView::Str(s) if s.trim().is_empty() => Some(Value::int(0)),
                 // Cost: O(d^2), d = digits (num-bigint radix parse; a few O(n) copies first).
@@ -1098,7 +1080,9 @@ pub(super) fn dispatch(
                     }
                 }
                 ValueView::Bool(b) => Value::num(if b { 1.0 } else { 0.0 }),
-                ValueView::Complex(_, _) => return Some(None), // fall through to runtime for $*TOLERANCE check
+                // The runtime checks the imaginary part against `$*TOLERANCE`
+                // (`Interpreter::dispatch_complex_to_real`).
+                ValueView::Complex(..) => return Some(None),
                 ValueView::Array(items, ..) => Value::num(items.len() as f64),
                 ValueView::Seq(items) => Value::num(items.len() as f64),
                 ValueView::Slip(items) => Value::num(items.len() as f64),
@@ -1130,19 +1114,9 @@ pub(super) fn dispatch(
                 ValueView::FatRat(n, d) => Value::fat_rat_raw(n, d),
                 ValueView::BigRat(n, d) => Value::bigrat(n.clone(), d.clone()),
                 ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
-                ValueView::Complex(r, im) => {
-                    if im.abs() <= 1e-15 {
-                        Value::num(r)
-                    } else {
-                        let ex = complex_not_real_exception(r, im, "Real", target);
-                        let mut failure_attrs = std::collections::HashMap::new();
-                        failure_attrs.insert("exception".to_string(), ex);
-                        return Some(Some(Ok(Value::make_instance(
-                            Symbol::intern("Failure"),
-                            failure_attrs,
-                        ))));
-                    }
-                }
+                // A Complex is Real when its imaginary part is `≅ 0`; the runtime
+                // reads `$*TOLERANCE` (`Interpreter::dispatch_complex_to_real`).
+                ValueView::Complex(..) => return Some(None),
                 // Cost: O(d^2) for a d-digit integer string, O(n) otherwise (as `.Numeric`).
                 ValueView::Str(s) => {
                     // `.Real` yields the natural numeric type (Int/Rat/Num); use the

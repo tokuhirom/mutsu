@@ -58,7 +58,9 @@ fn bool(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 /// `.Int` on a numeric view: truncation towards zero, `None` for anything
 /// else. A non-finite `Num` or a zero-denominator rational answers the lazy
 /// `Failure` Rakudo does. A `Complex` answers its real part's truncation; the
-/// caller decides first whether its imaginary part lets it be a `Real`.
+/// caller decides first whether its imaginary part lets it be a `Real`
+/// (`Complex.Int` itself does, against `$*TOLERANCE`, in
+/// `Interpreter::dispatch_complex_to_real`).
 // Cost: O(1) for word-sized values; O(b) for big ones (O(b^2) for a big
 // rational's division), b = size in bits.
 pub(crate) fn int_of(target: &Value) -> Option<Value> {

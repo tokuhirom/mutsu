@@ -387,17 +387,9 @@ pub(super) fn dispatch(
             }
             // Cost: O(d^2), d = digits (parsed twice: the guard above and `str_to_rat`).
             ValueView::Str(s) => Some(Ok(str_to_rat(&s))),
-            ValueView::Complex(r, im) => {
-                if im.abs() <= 1e-15 {
-                    Some(Ok(crate::builtins::num_to_rat_with_epsilon(r, 1e-6)))
-                } else {
-                    Some(Err(
-                        crate::builtins::methods_0arg::dispatch_core_coerce::complex_not_real_error(
-                            r, im, "Rat", target,
-                        ),
-                    ))
-                }
-            }
+            // A Complex is Real when its imaginary part is `≅ 0`; the runtime
+            // reads `$*TOLERANCE` (`Interpreter::dispatch_complex_to_real`).
+            ValueView::Complex(..) => None,
             ValueView::Array(items, ..) => Some(Ok(make_rat(items.len() as i64, 1))),
             ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                 Some(Ok(make_rat(items.len() as i64, 1)))
@@ -515,21 +507,8 @@ pub(super) fn dispatch(
                     _ => Some(Ok(Value::fat_rat_raw(0, 1))),
                 }
             }
-            ValueView::Complex(r, im) => {
-                if im.abs() <= 1e-15 {
-                    let rat = crate::builtins::num_to_rat_with_epsilon(r, 1e-6);
-                    match rat.view() {
-                        ValueView::Rat(n, d) => Some(Ok(Value::fat_rat_raw(n, d))),
-                        _ => Some(Ok(Value::fat_rat_raw(0, 1))),
-                    }
-                } else {
-                    Some(Err(
-                        crate::builtins::methods_0arg::dispatch_core_coerce::complex_not_real_error(
-                            r, im, "FatRat", target,
-                        ),
-                    ))
-                }
-            }
+            // As `.Rat`: the runtime checks `$*TOLERANCE`.
+            ValueView::Complex(..) => None,
             ValueView::Array(items, ..) => Some(Ok(Value::fat_rat_raw(items.len() as i64, 1))),
             ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
                 Some(Ok(Value::fat_rat_raw(items.len() as i64, 1)))

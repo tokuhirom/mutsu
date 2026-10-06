@@ -1292,6 +1292,7 @@ pub(crate) use complex_math::complex_trig;
 
 /// Re-export the X::Str::Numeric Failure builder for the VM's prefix-`+` op.
 pub(crate) use dispatch_core_coerce::str_numeric_failure;
+pub(crate) use dispatch_core_coerce::{complex_not_real_error, complex_not_real_exception};
 
 /// Unicode case folding for `.fc` and `fc()`.
 pub(crate) fn unicode_foldcase(s: &str) -> String {

@@ -705,42 +705,11 @@ impl Interpreter {
         right: Value,
     ) -> Result<Value, RuntimeError> {
         let (left, right) = self.coerce_numeric_bridge_pair(left, right)?;
-        let tolerance = loan_env!(self, get_dynamic_var("*TOLERANCE"))
-            .ok()
-            .and_then(|v| match v.view() {
-                ValueView::Num(n) => Some(n),
-                ValueView::Rat(n, d) => Some(crate::value::rat_to_f64(n, d)),
-                ValueView::Int(n) => Some(n as f64),
-                _ => None,
-            })
-            .unwrap_or(crate::runtime::DEFAULT_TOLERANCE);
+        let tolerance = loan_env!(self, current_tolerance());
         // Extract Complex components, treating Real as Complex with im=0
         let (lr, li) = complex_parts(&left);
         let (rr, ri) = complex_parts(&right);
-        let approx_f64 = |a: f64, b: f64| -> bool {
-            // Two identical infinities (Inf == Inf, -Inf == -Inf) are approximately
-            // equal regardless of tolerance — the relative-difference formula below
-            // would compute Inf/Inf = NaN. Finite equal values are NOT short-circuited:
-            // with `$*TOLERANCE = 0` even `1 ≅ 1` must be False (per the spec, a zero
-            // tolerance makes every comparison fail), so they fall through to the
-            // strict `<` test below.
-            if a == b && a.is_infinite() {
-                return true;
-            }
-            // NaN is never approximately equal to anything
-            if a.is_nan() || b.is_nan() {
-                return false;
-            }
-            let diff = (a - b).abs();
-            // Per Raku spec: the difference must be strictly LESS than the tolerance
-            // (`$*TOLERANCE = 0` fails all comparisons). If either side is zero, use
-            // the absolute difference; otherwise the relative percentage difference.
-            if a == 0.0 || b == 0.0 {
-                return diff < tolerance;
-            }
-            let max_abs = a.abs().max(b.abs());
-            diff < tolerance * max_abs
-        };
+        let approx_f64 = |a: f64, b: f64| crate::runtime::approx_eq_f64(a, b, tolerance);
         // For two pure reals the imaginary parts are both exactly 0 and must not be
         // subjected to the tolerance test (`$*TOLERANCE = 0` would otherwise make
         // `0 < 0` false and wrongly reject every real comparison); only compare the
