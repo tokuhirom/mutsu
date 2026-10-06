@@ -1389,6 +1389,7 @@ t/io/open-failure-print-nomatch.t
 t/io/open-io-special.t
 t/io/platform-library-name-path.t
 t/io/platform-library-name-version.t
+t/io/pointy-onearg-slurpy.t
 t/io/proc-env-hash-is-child-environment.t
 t/io/proc-gist-not-exitcode.t
 t/io/proc-run-merge-captures-output.t
@@ -2048,6 +2049,8 @@ t/nativecall/carray-base-type-match.t
 t/nativecall/carray-native-storage.t
 t/nativecall/carray-new-flattens-list.t
 t/nativecall/carray-repr-bind-before-start.t
+t/nativecall/carray-repr-nqp-create.t
+t/nativecall/carray-repr-ref-elems.t
 t/nativecall/classhow-native-method-signature-default.t
 t/nativecall/closure-lexical-self-native-dispatch.t
 t/nativecall/coercion-native-method-param.t
@@ -2071,6 +2074,7 @@ t/nativecall/io-handle-getc-readchars-native.t
 t/nativecall/io-handle-slurp-read-native.t
 t/nativecall/io-handle-stdout-stderr-native.t
 t/nativecall/io-socket-async-native-descriptor.t
+t/nativecall/is-repr-angle-bracket-trait.t
 t/nativecall/issue-7754-native-integer-wrap.t
 t/nativecall/map-native-multiarity.t
 t/nativecall/map-native-pairs.t
@@ -2208,6 +2212,7 @@ t/nativecall/nativecall-types-module.t
 t/nativecall/nativecall-types-tag.t
 t/nativecall/nativecallcast-uninstantiable-target.t
 t/nativecall/nativecast-blob-address.t
+t/nativecall/nativecast-mixin-type.t
 t/nativecall/nested-leaf-repr-residues.t
 t/nativecall/nested-module-native-prelude-not-visible-to-user.t
 t/nativecall/new-callsame-native-mu-fallback.t
@@ -2299,7 +2304,9 @@ t/oo/attribute/attribute-sigil-collision.t
 t/oo/attribute/attribute-table.t
 t/oo/attribute/attribute-trait-adds-method.t
 t/oo/attribute/attribute-trait-any-order.t
+t/oo/attribute/attribute-trait-compose-sees-later-methods.t
 t/oo/attribute/attribute-trait-core-candidate-redispatch.t
+t/oo/attribute/attribute-trait-mixin-visible-to-compose-hook.t
 t/oo/attribute/attribute-trait-mod.t
 t/oo/attribute/attribute-type-lexical-class-introspection.t
 t/oo/attribute/attribute-undeclared.t
@@ -2350,6 +2357,7 @@ t/oo/attribute/placeholder-attribute.t
 t/oo/attribute/prefix-incdec-on-an-rw-accessor.t
 t/oo/attribute/quanthash-attribute-assign-in-place.t
 t/oo/attribute/quoted-method-name-reaches-accessor.t
+t/oo/attribute/rw-accessor-container-through-rw-routine-and-wrap.t
 t/oo/attribute/rw-accessor-element-vivify.t
 t/oo/attribute/rw-arg-attribute-source-writeback.t
 t/oo/attribute/rw-method-trailing-attribute-lvalue.t
@@ -2417,6 +2425,7 @@ t/oo/class/class-too-late-for-repr.t
 t/oo/class/class-type-object-coercion-call.t
 t/oo/class/class-var-namespace-separation.t
 t/oo/class/class-version-meta-and-default.t
+t/oo/class/class-vmarray-immutable-positional.t
 t/oo/class/class.t
 t/oo/class/classhow-lookup-mro.t
 t/oo/class/classify-bucket-itemized.t
@@ -2521,7 +2530,9 @@ t/oo/junction-nqp-getattr-mixin-base.t
 t/oo/loop-body-my-does-not-outlive-the-block.t
 t/oo/method/add-method-declared-routine-invocant.t
 t/oo/method/add-method-named-routine.t
+t/oo/method/add-method-nested-mixin-capture.t
 t/oo/method/add-method-pointy-invocant.t
+t/oo/method/add-method-qualified-and-invocant.t
 t/oo/method/add-method-sub-can-signature.t
 t/oo/method/addmethod-multi-alias.t
 t/oo/method/any-collection-method-rows.t
@@ -2603,6 +2614,7 @@ t/oo/method/list-join-str-method-rows.t
 t/oo/method/list-map-count-method-rows.t
 t/oo/method/list-reverse-method-row.t
 t/oo/method/list-view-method-rows.t
+t/oo/method/lvalue-invocant-user-raw-method.t
 t/oo/method/lvalue-method-writeback-coherence.t
 t/oo/method/map-view-method-rows.t
 t/oo/method/math-method-rows.t
@@ -2665,6 +2677,7 @@ t/oo/method/method-self-sigil-context.t
 t/oo/method/method-seq-arg-positional-over-coercion.t
 t/oo/method/method-set-name.t
 t/oo/method/method-subset-param-predicate-runs-once.t
+t/oo/method/method-table-compose-timing.t
 t/oo/method/method-table-core-types.t
 t/oo/method/method-table-site-lane.t
 t/oo/method/method-table.t
@@ -2856,6 +2869,7 @@ t/oo/role/class-does-self-named-role.t
 t/oo/role/classhow-can-mixin-role.t
 t/oo/role/classhow-methods-mixin-role.t
 t/oo/role/classhow-parents-exclude-roles.t
+t/oo/role/classhow-roles-to-compose.t
 t/oo/role/coerce-into-role-inheriting-builtin.t
 t/oo/role/concrete-role-how-compose.t
 t/oo/role/curried-role-name-is-argument-types.t
@@ -2974,6 +2988,7 @@ t/oo/role/role-initialization.t
 t/oo/role/role-instantiation.t
 t/oo/role/role-is-rw.t
 t/oo/role/role-lexical-class.t
+t/oo/role/role-method-class-in-mixin.t
 t/oo/role/role-method-param-compound-subset.t
 t/oo/role/role-method-param-enclosing-qualified-type.t
 t/oo/role/role-method-param-known-compound-core-type.t
@@ -3081,9 +3096,12 @@ t/oo/trait/anon-sub-return-trait.t
 t/oo/trait/augment-method-custom-trait-typed-method-param.t
 t/oo/trait/cached-trait.t
 t/oo/trait/class-body-trait-multi.t
+t/oo/trait/class-is-array-type-trait.t
 t/oo/trait/class-trait-how-mixin-compose.t
 t/oo/trait/custom-parameter-trait-argument-dispatch.t
+t/oo/trait/custom-parameter-trait.t
 t/oo/trait/custom-var-trait-store-initializer.t
+t/oo/trait/decl-trait-arg-expression.t
 t/oo/trait/default-trait-before-initializer.t
 t/oo/trait/default-trait-expression-decl.t
 t/oo/trait/do-block-tail-declaration-trait.t
@@ -3283,6 +3301,7 @@ t/rakuast/rakuast-role.t
 t/rakuast/rakuast-semantic-hierarchy.t
 t/rakuast/rakuast-sigilled-constant.t
 t/rakuast/rakuast-signature-decl.t
+t/rakuast/rakuast-signature-members.t
 t/rakuast/rakuast-slurpy-marker-type-object.t
 t/rakuast/rakuast-smartmatch.t
 t/rakuast/rakuast-statement-origin.t
@@ -3984,6 +4003,7 @@ t/routines/signature/is-raw-param-container-identity.t
 t/routines/signature/is-rw-traits.t
 t/routines/signature/lazy-array-param-pull.t
 t/routines/signature/list-destructuring-param-traits.t
+t/routines/signature/literal-param-enforced-at-call.t
 t/routines/signature/literal-param-return-arrow.t
 t/routines/signature/lol-param-is-raw-binds-list.t
 t/routines/signature/map-array-optional-trailing-param.t
@@ -4065,6 +4085,7 @@ t/routines/signature/pointy-param-constraint-no-leak-to-caller.t
 t/routines/signature/pointy-param-typed-sigilless.t
 t/routines/signature/pointy-sigilless-param-traits.t
 t/routines/signature/pointy-signature-trailing-comma.t
+t/routines/signature/pointy-string-literal-param.t
 t/routines/signature/positional-light-call-rw-param-alias.t
 t/routines/signature/positional-param-copy-and-alias.t
 t/routines/signature/positional-param-deitemizes.t
@@ -4248,6 +4269,7 @@ t/types/coercion/coerce-nonnumeric-str-failure.t
 t/types/coercion/coerce-real-numeric.t
 t/types/coercion/coercion-already-target-type.t
 t/types/coercion/coercion-fallback-new-context-type.t
+t/types/coercion/coercion-type-regressions.t
 t/types/coercion/coercion-type-str-numeric-failure.t
 t/types/coercion/coercion-typed-attr-ctor.t
 t/types/coercion/coercion-types.t
@@ -4675,6 +4697,7 @@ t/vm/binding/rw-alias-of-an-aggregate-has-no-scalar.t
 t/vm/binding/rw-arg-index-assign.t
 t/vm/binding/rw-arg-nameless-callee.t
 t/vm/binding/rw-arg-residue.t
+t/vm/binding/rw-result-container-consumers.t
 t/vm/binding/rw-return-from-the-end-index.t
 t/vm/binding/rw-returned-callback-container.t
 t/vm/binding/rw-shared-cell.t
@@ -5005,6 +5028,7 @@ t/vm/writeback/proxy-fetch-returns-rw-container.t
 t/vm/writeback/proxy-list-transparency.t
 t/vm/writeback/proxy-renders-through-fetch.t
 t/vm/writeback/proxy-what-fetch.t
+t/vm/writeback/raw-invocant-immutable-write.t
 t/vm/writeback/raw-sub-lvalue-refuses-value-result.t
 t/vm/writeback/rmw-slot-writeback.t
 t/vm/writeback/rw-sub-lvalue-writeback-coherence.t
