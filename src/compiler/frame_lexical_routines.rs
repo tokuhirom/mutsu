@@ -353,8 +353,9 @@ impl Compiler {
             .collect();
         for key in owned_callers {
             if let Some(cf) = self.compiled_functions.make_mut(&key) {
-                visit_code_mut(&mut cf.code, &wants, &mut equip);
-                super::frame_lexical_inherit::mark_lexical_subtree(&mut cf.code);
+                let code = std::sync::Arc::make_mut(&mut cf.code);
+                visit_code_mut(code, &wants, &mut equip);
+                super::frame_lexical_inherit::mark_lexical_subtree(code);
             }
         }
     }

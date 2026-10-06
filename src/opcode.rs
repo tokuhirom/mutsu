@@ -12431,7 +12431,7 @@ impl CompiledFns {
             }
             let function = Arc::make_mut(value);
             let file = function.source_file_sym().unwrap_or(file);
-            changed |= function.code.stamp_source_file(file);
+            changed |= Arc::make_mut(&mut function.code).stamp_source_file(file);
             if let Some(nested) = &mut function.compiled_fns {
                 Arc::make_mut(nested).stamp_code_source_file(file);
             }
@@ -12815,7 +12815,7 @@ impl FastParamCheck {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledFunction {
-    pub(crate) code: CompiledCode,
+    pub(crate) code: Arc<CompiledCode>,
     /// Source file the routine was declared in (None = main script); flows
     /// from `FunctionDef::source_file` for backtrace frame attribution.
     pub(crate) source_file: Option<String>,
@@ -13043,8 +13043,10 @@ impl CompiledFunction {
         // The bytecode half (ADR-0106 Slice 0): a nested body compiled as part
         // of its parent is built before the parent's file is known, so the
         // ambient stamp `CompiledCode::new()` applies can be `None` here.
-        if let Some(file) = self.source_file_sym() {
-            let _ = self.code.stamp_source_file(file);
+        if let Some(file) = self.source_file_sym()
+            && self.code.source_file.is_none()
+        {
+            let _ = Arc::make_mut(&mut self.code).stamp_source_file(file);
         }
         if let Some(nested) = &mut self.compiled_fns {
             Arc::make_mut(nested).stamp_source_file(source_file);
@@ -13547,7 +13549,7 @@ mod compiled_fns_identity {
 
     fn dummy() -> CompiledFunction {
         CompiledFunction {
-            code: CompiledCode::new(),
+            code: Arc::new(CompiledCode::new()),
             source_file: None,
             params: Vec::new(),
             param_defs: Vec::new(),

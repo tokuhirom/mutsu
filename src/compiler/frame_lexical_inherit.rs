@@ -80,8 +80,9 @@ pub(crate) fn inherit_frame_lexical_routines(
         .collect();
     for key in keys {
         if let Some(cf) = fns.make_mut(&key) {
-            visit_code_mut(&mut cf.code, &wants, &mut equip);
-            mark_lexical_subtree(&mut cf.code);
+            let code = std::sync::Arc::make_mut(&mut cf.code);
+            visit_code_mut(code, &wants, &mut equip);
+            mark_lexical_subtree(code);
         }
     }
 }

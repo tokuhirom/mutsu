@@ -298,7 +298,7 @@ impl Compiler {
             let (code, param_defs) = match method.compiled_routine_key {
                 Some(key) => {
                     let cf = self.compiled_functions.get(&key)?;
-                    (&cf.code, &cf.param_defs)
+                    (&*cf.code, &cf.param_defs)
                 }
                 None => {
                     let params: Vec<String> =

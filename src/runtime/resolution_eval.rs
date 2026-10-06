@@ -1010,7 +1010,7 @@ impl Interpreter {
                     // Its own nested-sub table (if any) travels with it rather
                     // than substituting an empty one (ADR-0019 C6e-3c).
                     (
-                        std::sync::Arc::new(cf.code.clone()),
+                        cf.code.clone(),
                         cf.compiled_fns.clone().unwrap_or_else(|| {
                             std::sync::Arc::new(crate::opcode::CompiledFns::default())
                         }),
