@@ -3,7 +3,7 @@ use super::super::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws1
 use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 use crate::token_kind::{TokenKind, lookup_unicode_char_by_name};
 
-use crate::ast::{Expr, ParamDef, Stmt, collect_placeholders_shallow};
+use crate::ast::{Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
 

@@ -2662,7 +2662,7 @@ pub(crate) use lvalue::{LvaluePeel, LvalueRoot};
 pub(crate) use placeholder_kind::ArgSupply;
 pub(crate) use placeholders::{
     collect_placeholders, collect_placeholders_shallow, collect_unattached_placeholders,
-    collect_where_assign_placeholders,
+    collect_where_assign_placeholders, implicit_placeholder_signature,
 };
 pub(crate) use scope_members::{scope_members, scope_members_mut};
 pub(crate) use tail::{

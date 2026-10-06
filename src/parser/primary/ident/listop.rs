@@ -10,6 +10,21 @@ use crate::value::Value;
 pub(crate) const TEST_CALLSITE_LINE_KEY: &str = "__mutsu_test_callsite_line";
 pub(crate) const CALLFRAME_LINE_KEY: &str = "__callframe_line";
 
+/// The call-site marker `__mutsu_test_callsite_line => LINE` the parser stamps
+/// onto a call so the callee can report the caller's line. One builder for the
+/// parser's call forms and for `rakuast::lower`, which puts the marker back on
+/// a call whose RakuAST node never carried it.
+// Cost: O(1).
+pub(crate) fn callsite_line_arg(line: i64) -> Expr {
+    Expr::Binary {
+        left: Box::new(Expr::Literal(Value::str(
+            TEST_CALLSITE_LINE_KEY.to_string(),
+        ))),
+        op: crate::token_kind::TokenKind::FatArrow,
+        right: Box::new(Expr::Literal(Value::int(line))),
+    }
+}
+
 /// A categorical operator name in term position is a routine call. Its
 /// unparenthesized arguments follow the same listop grammar as a named sub;
 /// with no following argument it is a zero-argument call, not a code value.
@@ -29,14 +44,18 @@ pub(crate) fn operator_term_call<'a>(
 }
 
 pub(crate) fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<Expr>) -> Vec<Expr> {
+    stamp_call_site_markers(name, current_line_number(input), &mut args);
+    args
+}
+
+/// Stamp onto a call of `name` at `line` the internal arguments that tell the
+/// callee where it was called from: the call-site line of a `Test` assertion
+/// and the frame line of `callframe` / `caller`. One rule for the parser and
+/// for `rakuast::lower`, which restores them on a tree that never carried any.
+// Cost: O(1) amortized.
+pub(crate) fn stamp_call_site_markers(name: &str, line: i64, args: &mut Vec<Expr>) {
     if crate::parser::stmt::simple::is_test_assertion_callable(name) {
-        args.push(Expr::Binary {
-            left: Box::new(Expr::Literal(Value::str(
-                TEST_CALLSITE_LINE_KEY.to_string(),
-            ))),
-            op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::int(current_line_number(input)))),
-        });
+        args.push(callsite_line_arg(line));
     }
     // `caller` is not a Raku core routine (mutsu's native one is an
     // extension), so a user-declared or imported `caller` (P5caller) takes
@@ -48,10 +67,9 @@ pub(crate) fn attach_test_callsite_line(name: &str, input: &str, mut args: Vec<E
         args.push(Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(CALLFRAME_LINE_KEY.to_string()))),
             op: crate::token_kind::TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::int(current_line_number(input)))),
+            right: Box::new(Expr::Literal(Value::int(line))),
         });
     }
-    args
 }
 
 pub(crate) fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {

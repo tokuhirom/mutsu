@@ -4506,8 +4506,14 @@ impl Compiler {
         } else if self.is_routine && Self::has_block_enter_leave_phasers(stmts) {
             self.compile_phaser_block_scope(stmts, PhaserBlockResult::ReturnViaTopic);
         } else {
+            // The statement whose value the unit evaluates to. Not simply the
+            // last one: reordering hoists a declaration (`constant X = 5`)
+            // ahead of the `SetLine` marker that preceded it, which then
+            // trails it and would take the tail's value with it.
+            let tail_index =
+                crate::ast::last_value_stmt_index(stmts, crate::ast::TailSkip::Markers);
             for (i, stmt) in stmts.iter().enumerate() {
-                let is_last = i == stmts.len() - 1;
+                let is_last = Some(i) == tail_index;
                 // A sunk tail expression or call compiles exactly as any other
                 // statement, `SinkPop` included (`unit_tail_sinks`).
                 let sunk_tail =

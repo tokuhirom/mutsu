@@ -12,8 +12,10 @@ pub(crate) use expr::{
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
 pub(crate) use primary::decimal_literal_value;
-pub(crate) use primary::ident::TEST_CALLSITE_LINE_KEY;
 pub(crate) use primary::ident::supply_block;
+pub(crate) use primary::ident::{
+    TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
+};
 pub(crate) use primary::ident::{anon_method_expr, is_synthetic_invocant};
 pub(crate) use primary::next_anon_role_name;
 pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
