@@ -60,11 +60,13 @@ pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
         {
             return Err(PError::expected("declared term symbol"));
         }
+        // A parenthesised `name(...)` was deferred above, so this bare name is
+        // always the listop spelling.
         let expr = if callable {
             Expr::Call {
                 name: Symbol::intern(&name),
                 args: vec![],
-                listop: false,
+                listop: true,
             }
         } else {
             Expr::BareWord(name)
