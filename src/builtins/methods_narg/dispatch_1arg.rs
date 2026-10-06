@@ -509,6 +509,14 @@ pub(crate) fn native_method_1arg(
         }
         // A Capture's positional part: the `Capture` row's implementation
         // (`method_table::capture`).
+        // A `Uni`'s positional subscript: the `Uni` rows' implementation
+        // (`method_table::uni`).
+        "AT-POS" if matches!(target.view(), ValueView::Uni(..)) => {
+            crate::builtins::method_table::uni::at_pos(target, std::slice::from_ref(arg))
+        }
+        "EXISTS-POS" if matches!(target.view(), ValueView::Uni(..)) => {
+            crate::builtins::method_table::uni::exists_pos(target, std::slice::from_ref(arg))
+        }
         "AT-POS" if matches!(target.view(), ValueView::Capture { .. }) => {
             crate::builtins::method_table::capture::at_pos(target, std::slice::from_ref(arg))
         }

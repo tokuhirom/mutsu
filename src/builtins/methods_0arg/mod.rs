@@ -790,42 +790,30 @@ pub(crate) fn native_method_0arg_cascade(
     if runtime::native_types::is_native_int_coerce_method(method) && target.isa_check("Cool") {
         return Some(raku_repr::native_int_coerce_method(target, method));
     }
-    // Uni types: override .chars, .codes, .comb to work on codepoints
+    // Uni types: the rows of `builtins::method_table::uni` answer `elems`, `codes`,
+    // `Int`, `Numeric`, `Str`, `list`, `gist`, `raku` and the positional
+    // subscript, and the table is asked first; the cascade reaches a `Uni` only
+    // when called without it (the debug cross-check), and then calls the rows'
+    // handlers. `.comb` and `.perl` (the deprecated alias of `.raku`) have no
+    // row.
     if let ValueView::Uni(u) = target.view() {
-        // Cost: O(1) (the codepoint array's length; no text is built).
-        if matches!(method, "chars" | "codes" | "Int" | "Numeric" | "elems") {
-            return Some(Ok(Value::int(u.len() as i64)));
-        }
-        let text = &u.text();
+        use crate::builtins::method_table::uni;
         match method {
+            "elems" | "codes" | "Int" | "Numeric" => return Some(uni::elems(target, &[])),
+            "Str" => return Some(uni::str(target, &[])),
+            "list" => return Some(uni::list(target, &[])),
+            "gist" => return Some(uni::gist(target, &[])),
+            "raku" => return Some(uni::raku(target, &[])),
+            "perl" => {
+                return Some(Ok(Value::str(raku_repr::uni_raku_repr(&u.text(), &u.form))));
+            }
             "comb" => {
-                let parts: Vec<Value> = text.chars().map(|c| Value::str(c.to_string())).collect();
+                let parts: Vec<Value> = u
+                    .text()
+                    .chars()
+                    .map(|c| Value::str(c.to_string()))
+                    .collect();
                 return Some(Ok(Value::seq(parts)));
-            }
-            "Str" => {
-                use unicode_normalization::UnicodeNormalization;
-                return Some(Ok(Value::str(text.nfc().collect::<String>())));
-            }
-            "list" => {
-                let codepoints: Vec<Value> = text.chars().map(|c| Value::int(c as i64)).collect();
-                return Some(Ok(Value::array(codepoints)));
-            }
-            "raku" | "perl" => {
-                return Some(Ok(Value::str(raku_repr::uni_raku_repr(text, &u.form))));
-            }
-            "gist" => {
-                let codepoints: Vec<String> =
-                    text.chars().map(|c| format!("{:04X}", c as u32)).collect();
-                let form = if u.form.is_empty() {
-                    "Uni"
-                } else {
-                    u.form.as_str()
-                };
-                return Some(Ok(Value::str(format!(
-                    "{}:0x<{}>",
-                    form,
-                    codepoints.join(" ")
-                ))));
             }
             _ => {}
         }
