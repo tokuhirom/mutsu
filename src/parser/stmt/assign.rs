@@ -52,11 +52,7 @@ pub(crate) fn strip_atomic_compound_assign(rest: &str) -> Option<(&str, bool)> {
 /// one of a narrow native-int array (#12008) -- is refused like any other
 /// atomic. `None` for a target that is not an `@`/`%` element.
 pub(crate) fn atomic_elem_store_call(target: &Expr, rhs: Expr) -> Option<Expr> {
-    // TODO: share this predicate with `expr::postfix::is_atomic_elem_target`
-    // (not reachable from here while it is private to the postfix module).
-    let is_elem = matches!(target, Expr::Index { target: base, .. }
-        if base.container_var_key().is_some_and(|k| k.starts_with(['@', '%'])));
-    is_elem.then(|| Expr::Call {
+    crate::parser::expr::is_atomic_elem_target(target).then(|| Expr::Call {
         name: Symbol::intern("atomic-assign"),
         args: vec![target.clone(), rhs],
     })

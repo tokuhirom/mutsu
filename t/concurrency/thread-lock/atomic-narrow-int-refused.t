@@ -93,6 +93,8 @@ my $attribute = /'Can only do an atomic integer operation on an atomicint attrib
 {
     my int32 @a = 1, 2;
     throws-like { @a[0]⚛++ }, X::AdHoc, message => $element, 'postfix ⚛++ on an element';
+    throws-like { @a[1] ⚛+= 3 }, X::AdHoc, message => $element, '⚛+= on an element';
+    throws-like { @a[1] ⚛-= 3 }, X::AdHoc, message => $element, '⚛-= on an element';
     throws-like { atomic-add-fetch(@a[1], 3) }, X::AdHoc, message => $element, 'atomic-add-fetch on an element';
     throws-like { atomic-fetch-add(@a[0], 2) }, X::AdHoc, message => $element, 'atomic-fetch-add on an element';
     throws-like { ⚛@a[0] }, X::AdHoc, message => $element, 'prefix ⚛ on an element';
