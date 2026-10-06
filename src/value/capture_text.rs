@@ -1,39 +1,12 @@
 //! The text of a `Capture`: its `.gist` and its `.Str`.
 //!
-//! The two differ. `.gist` shows the call shape (`\(1, "x y", :a(3))`);
+//! The two differ. `.gist` is the `.raku` call shape (`\(1, "x y", :a(3))`);
 //! `.Str` is Rakudo's `(positional.map(~*), named.pairs.map(~*)).join(' ')`,
 //! each positional argument's `.Str` and then each named `Pair`'s `.Str`
 //! (`key<TAB>value`), joined with a space. Stringification (`~$c`, `"$c"`)
 //! is the `.Str` form.
 
 use crate::value::{Value, ValueMap, ValueView};
-
-/// A named value as it reads inside a Capture gist: a `Str` is quoted, an
-/// allomorph shows its constructor, anything else is its text.
-// Cost: O(len of the rendered string).
-fn gist_member(v: &Value) -> String {
-    match v.view() {
-        ValueView::Str(s) => format!("\"{}\"", *s),
-        ValueView::Mixin(inner, mixins) => {
-            if let Some(str_val) = mixins.get("Str") {
-                let type_name = match inner.view() {
-                    ValueView::Int(_) | ValueView::BigInt(_) => "IntStr",
-                    ValueView::Num(_) => "NumStr",
-                    _ => "Allomorph",
-                };
-                format!(
-                    "{}.new({}, \"{}\")",
-                    type_name,
-                    inner.to_string_value(),
-                    str_val.to_string_value()
-                )
-            } else {
-                v.to_string_value()
-            }
-        }
-        _ => v.to_string_value(),
-    }
-}
 
 /// The named arguments by name, so the text does not depend on the map's
 /// internal order.
@@ -44,24 +17,52 @@ fn sorted_named(named: &ValueMap) -> Vec<(&String, &Value)> {
     entries
 }
 
-/// `Capture.gist`: `\(1, "x y", :a(3))`.
+/// `Capture.raku`: `\(1, "x y", :a(3))`.
 // Cost: O(p + n log n + t), p / n = positional / named arguments, t = rendered size.
-pub(crate) fn capture_gist(positional: &[Value], named: &ValueMap) -> String {
-    let mut parts = Vec::with_capacity(positional.len() + named.len());
+pub(crate) fn capture_raku(positional: &[Value], named: &ValueMap) -> String {
+    let mut parts = Vec::new();
     for v in positional {
         match v.view() {
-            ValueView::Str(s) => parts.push(format!("\"{}\"", *s)),
-            _ => parts.push(v.to_string_value()),
+            ValueView::Pair(k, val) => {
+                parts.push(format!(
+                    "{} => {}",
+                    crate::value::raku_repr::raku_value(&Value::str(k.clone())),
+                    crate::value::raku_repr::raku_value(val)
+                ));
+            }
+            ValueView::ValuePair(k, val) => {
+                parts.push(format!(
+                    "{} => {}",
+                    crate::value::raku_repr::raku_value(k),
+                    crate::value::raku_repr::raku_value(val)
+                ));
+            }
+            _ => parts.push(crate::value::raku_repr::raku_value(v)),
         }
     }
-    for (k, v) in sorted_named(named) {
-        match v.view() {
-            ValueView::Bool(true) => parts.push(format!(":{k}(Bool::True)")),
-            ValueView::Bool(false) => parts.push(format!(":{k}(Bool::False)")),
-            _ => parts.push(format!(":{k}({})", gist_member(v))),
+    let mut named_keys: Vec<&String> = named.keys().collect();
+    named_keys.sort();
+    for k in named_keys {
+        let v = &named[k];
+        if let ValueView::Bool(true) = v.view() {
+            parts.push(format!(":{}", k));
+        } else if let ValueView::Bool(false) = v.view() {
+            parts.push(format!(":!{}", k));
+        } else {
+            parts.push(format!(
+                ":{}({})",
+                k,
+                crate::value::raku_repr::raku_value(v)
+            ));
         }
     }
     format!("\\({})", parts.join(", "))
+}
+
+/// `Capture.gist` is exactly its `.raku` form.
+// Cost: O(p + n log n + t), p / n = positional / named arguments, t = rendered size.
+pub(crate) fn capture_gist(positional: &[Value], named: &ValueMap) -> String {
+    capture_raku(positional, named)
 }
 
 /// `Capture.Str`: the positional arguments' `.Str`, then each named pair as

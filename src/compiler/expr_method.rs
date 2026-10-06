@@ -939,7 +939,14 @@ impl Compiler {
             });
             return;
         }
-        let target_var_name = target.container_var_key();
+        // `self."$name"(...)` mutates through `self` exactly as `self.name(...)`
+        // does (a literal name compiles on the BareWord `self` as a variable
+        // target), so a mutator on a `Hash`/`Array` subclass's storage reaches
+        // its writeback.
+        let target_var_name = match target {
+            Expr::BareWord(n) if n == "self" => Some(self.sigilless_storage_key(n)),
+            other => other.container_var_key(),
+        };
         self.compile_expr(target);
         // The subscript-receiver producer applies to the dynamic spelling too:
         // the method name is a runtime value, so rawness is even less knowable

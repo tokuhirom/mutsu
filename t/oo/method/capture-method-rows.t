@@ -4,7 +4,7 @@ use Test;
 # handler rows owned by Capture, and every collection's `.Capture` is one row
 # per owner. Every answer below was checked against Rakudo.
 
-plan 6;
+plan 7;
 
 my $capture = \(1, 2, a => 3);
 
@@ -76,4 +76,15 @@ subtest 'Str joins the positional and the named part', {
     is \(1, "x y", :a(3), :b(<p q>)).Str.words.sort.join(' '),
         '1 3 a b p q x y', 'every positional and named part is present';
     is (\(1, 2), \(:a(1))).gist, '(\(1, 2) \(:a(1)))', 'a Capture inside a list still gists as its call shape';
+}
+
+subtest 'gist is exactly the raku form', {
+    my @caps = \(1, 2, "a" => 3), \(1, (2, 3), [4, 5]), \(:a), \(:!a), \(:a(Nil)),
+        \(<1 2>), \(1.5, 2e0, "x"), \(:x(<1 2>));
+    plan 2 * @caps + 1;
+    for @caps -> $c {
+        is $c.gist, $c.raku, "gist eq raku: " ~ $c.raku;
+        is $c.gist, $c.raku, "gist stays equal on a second call";
+    }
+    is \(1, 2, "a" => 3).gist, '\(1, 2, "a" => 3)', 'a Pair argument';
 }

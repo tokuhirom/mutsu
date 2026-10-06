@@ -740,6 +740,24 @@ impl Interpreter {
         name == "Hash" || name == "Map"
     }
 
+    /// A `role R is Hash` pun instance is a `Mixin` wrapped around the
+    /// storage-carrying `Instance` (the pun class itself is withdrawn after
+    /// construction). Delegation works on the inner instance; the storage node
+    /// is shared, so in-place mutation is seen through the wrapper.
+    pub(crate) fn hash_pun_inner(target: &Value) -> Option<Value> {
+        let ValueView::Mixin(inner, _) = target.view() else {
+            return None;
+        };
+        match inner.view() {
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_hash_storage") =>
+            {
+                Some((**inner).clone())
+            }
+            _ => None,
+        }
+    }
+
     /// The backing store a fresh `is Hash`/`is Map` subclass instance gets,
     /// seeded from constructor arguments that do not name a declared
     /// attribute. Named `Pair` arguments are already key/value entries; bare

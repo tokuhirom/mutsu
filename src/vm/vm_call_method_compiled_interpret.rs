@@ -258,6 +258,14 @@ impl Interpreter {
             self.dispatch.method_dispatch_pure = true;
             return result;
         }
+        // A `role R is Hash` pun is a Mixin around its storage-carrying
+        // instance; the Associative delegation unwraps it itself.
+        if matches!(target.view(), ValueView::Mixin(..))
+            && let Some(result) = self.try_hash_storage_delegate(&target, method_sym, &args)
+        {
+            self.dispatch.method_dispatch_pure = true;
+            return result;
+        }
         if let ValueView::Instance { class_name, .. } = target.view() {
             let class = class_name.as_str();
             // Interpreter-native pure-handle IO dispatch (PLAN.md ③ native IO PR-C/PR-D):
