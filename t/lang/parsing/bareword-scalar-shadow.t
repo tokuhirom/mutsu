@@ -6,7 +6,7 @@ use Test;
 # bare-word read that the same-named local is a `$`-scalar, and the read must
 # neither answer that scalar nor, with nothing else to claim it, a string.
 
-plan 26;
+plan 30;
 
 # -- the bare word is not the scalar ---------------------------------------
 
@@ -31,6 +31,13 @@ throws-like { EVAL 'my $bar; bar' }, X::Undeclared::Symbols,
 
 is EVAL('my $bar = 3; $bar'), 3, 'the scalar itself is untouched';
 
+# The scalar belongs to an enclosing frame.
+throws-like { EVAL 'my $bar = 3; sub f { bar }; f()' }, X::Undeclared::Symbols,
+    'a bare word in a sub does not read the enclosing scope\'s $-scalar';
+
+throws-like { EVAL 'my $bar = 3; my &c = { bar }; c()' }, X::Undeclared::Symbols,
+    'nor in a closure';
+
 # -- anything else of that name still wins -----------------------------------
 
 my $baz = 3;
@@ -38,10 +45,24 @@ sub baz { 7 }
 is baz, 7, 'a sub of the name is the bare word';
 is $baz, 3, 'beside the scalar';
 
+{
+    sub nested-baz { baz }
+    is nested-baz, 7, 'a sub of the name is the bare word from a nested sub too';
+}
+
 my $Bar = 5;
 class Bar { }
 is Bar.^name, 'Bar', 'a class of the name is the bare word';
 is $Bar, 5, 'beside the scalar';
+
+{
+    # A lexical class is bound in `env` under the very key its same-named
+    # scalar uses: it must stay reachable after the scalar is assigned.
+    my class lexfoo { has $.x = 1 }
+    my $lexfoo = lexfoo.new;
+    my $other = lexfoo.new(x => 2);
+    is $other.x, 2, 'a lexical class of the name is the bare word beside the scalar';
+}
 
 my $green = 5;
 enum Col <red green>;

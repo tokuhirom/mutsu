@@ -435,6 +435,13 @@ impl Compiler {
                     // term first, so `-> \i` read back the imaginary unit `i`.
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetGlobal(name_idx));
+                } else if self.enclosing_local_names.contains(name.as_str()) {
+                    // No sigilless binding of the name is in scope (checked above),
+                    // so the same-named local of an ENCLOSING frame is a
+                    // `$`-sigiled variable: the bare word is not that variable
+                    // (`my $bar = 3; sub f { bar }`).
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::GetBareWordOverScalar(name_idx));
                 } else {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     self.code.emit(OpCode::GetBareWord(name_idx));
