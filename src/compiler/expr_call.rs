@@ -507,6 +507,16 @@ impl Compiler {
                 self.note_atomic_env_sync_target(&vn, true);
             }
         });
+        // `⚛$x` and `$x ⚛= v` are the lenient atomics: any scalar, but not a
+        // narrow native integer (#12008). Their `atomic-fetch($x)` /
+        // `atomic-assign($x, v)` spellings are guarded by their own branches below.
+        if (name == "__mutsu_atomic_fetch_var" || name == "__mutsu_atomic_store_var")
+            && let Some(Expr::Literal(lit)) = args.first()
+            && let crate::value::ValueView::Str(vn) = lit.view()
+        {
+            let vn = String::clone(&vn);
+            self.emit_lenient_atomic_guard(&vn, false);
+        }
         // (state $x) = expr  /  (state @x) = expr  /  (state %x) = expr
         // The parser emits __mutsu_assign_callable_lvalue(DoStmt(VarDecl{..}), [], rhs).
         // We compile this as: declare the state var, then unconditionally assign the RHS.
@@ -1068,7 +1078,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_fetch_var"));
-            self.emit_nqp_int_only_guard(var_name, false);
+            self.emit_lenient_atomic_guard(var_name, false);
             self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
@@ -1087,7 +1097,7 @@ impl Compiler {
             let call_name_idx = self
                 .code
                 .add_constant(Value::str_from("__mutsu_atomic_store_var"));
-            self.emit_nqp_int_only_guard(var_name, false);
+            self.emit_lenient_atomic_guard(var_name, false);
             self.note_atomic_env_sync_target(var_name, true);
             let arg_idx = self.code.add_constant(Value::str(var_name.clone()));
             self.code.emit(OpCode::LoadConst(arg_idx));
@@ -1116,7 +1126,7 @@ impl Compiler {
             && let Some(var_name) = Self::atomic_target_name(&args[0])
         {
             // `cas` takes any `$target is rw`; `nqp::cas_i` wants a native int.
-            self.emit_nqp_int_only_guard(&var_name, false);
+            self.emit_lenient_atomic_guard(&var_name, false);
             // ADR-0033 Phase 1: `cas($var, * + delta)` is still an un-expanded
             // `WhateverCurry` at this point rather than the built `Lambda`
             // the parser used to produce eagerly — its single placeholder
@@ -1687,7 +1697,7 @@ impl Compiler {
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
                 // `cas` takes any element; `nqp::cas_i` wants a native integer.
-                self.emit_nqp_int_only_guard(&arr_name, true);
+                self.emit_lenient_atomic_guard(&arr_name, true);
                 let call_name_idx = self
                     .code
                     .add_constant(Value::str_from("__mutsu_cas_array_elem"));

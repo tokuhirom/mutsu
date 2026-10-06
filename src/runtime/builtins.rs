@@ -1367,6 +1367,7 @@ impl Interpreter {
             "__mutsu_atomic_fetch_var" => self.builtin_atomic_fetch_var(&args),
             "__mutsu_atomic_store_var" => self.builtin_atomic_store_var(&args),
             "__mutsu_atomic_int_target" => self.builtin_atomic_int_target(&args),
+            "__mutsu_atomic_narrow_target" => self.builtin_atomic_narrow_target(&args),
             "__mutsu_atomic_add_var" => self.builtin_atomic_add_var(&args),
             "__mutsu_cas_add_var" => self.builtin_atomic_add_var(&args),
             "__mutsu_atomic_fetch_add_var" => self.builtin_atomic_fetch_add_var(&args),

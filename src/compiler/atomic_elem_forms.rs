@@ -65,6 +65,11 @@ impl Compiler {
             // a statement. With one, the guard below passes it through.
             self.emit_int_atomic_guard(&container, display, None, true);
         }
+        if guard_display.is_none() && spelling.is_none() {
+            // A lenient routine (`atomic-fetch`, `atomic-assign`, `⚛@a[0]`) takes
+            // any element, but not one of a narrow native-int array (#12008).
+            self.emit_narrow_atomic_guard(&container, true);
+        }
         let container_idx = self.code.add_constant(Value::str(container.clone()));
         self.code.emit(OpCode::LoadConst(container_idx));
         self.compile_expr(index);
