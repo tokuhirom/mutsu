@@ -105,6 +105,23 @@ pub(crate) fn str_numeric_failure(s: &str) -> Value {
     Value::make_instance(Symbol::intern("Failure"), failure_attrs)
 }
 
+/// The thrown `X::Str::Numeric` for a string that cannot be numified, for a
+/// caller that coerces its argument itself (`(1..3).EXISTS-POS("a")`).
+// Cost: O(d), d = chars of `s`.
+pub(crate) fn str_numeric_error(s: &str) -> RuntimeError {
+    let attrs = str_numeric_exception_attrs(s);
+    let message = attrs
+        .get("message")
+        .map(|m| m.to_string_value())
+        .unwrap_or_default();
+    let mut err = RuntimeError::new(message);
+    err.exception = Some(Box::new(Value::make_instance(
+        Symbol::intern("X::Str::Numeric"),
+        attrs,
+    )));
+    err
+}
+
 /// Render a Complex's literal form (`1+2i`, `1-2i`, `3.7+1e-20i`) for an
 /// `X::Numeric::Real` message: its `.Str`, as raku prints the source value.
 fn render_complex_literal(re: f64, im: f64) -> String {
