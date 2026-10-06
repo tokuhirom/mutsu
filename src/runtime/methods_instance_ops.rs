@@ -715,6 +715,7 @@ impl Interpreter {
                         | "FatRat"
                         | "Real"
                         | "sqrt"
+                        | "Bool"
                 )
             {
                 let num = crate::runtime::utils::coerce_to_numeric(target.clone());
