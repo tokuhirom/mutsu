@@ -140,15 +140,24 @@ my $nomatch = /'Cannot resolve caller ' .* '; the following candidates' \s+
     sub bump-rw($p is rw) { $p⚛++ }
     sub bump-ro($p) { $p⚛++ }
     sub bump-typed(atomicint $p is rw) { $p⚛++ }
-    my $plain = 1;
+    my Int $boxed = 1;
     my atomicint $native = 1;
-    throws-like { bump-rw($plain) }, X::Multi::NoMatch, message => $nomatch, 'an is rw parameter bound to a plain scalar';
-    is $plain, 1, '... leaves it alone';
+    throws-like { bump-rw($boxed) }, X::Multi::NoMatch, message => $nomatch, 'an is rw parameter bound to an Int scalar';
+    is $boxed, 1, '... leaves it alone';
     is bump-rw($native), 1, 'an is rw parameter bound to an atomicint';
     is $native, 2, '... incremented the caller\'s variable';
     is bump-typed($native), 2, 'an atomicint is rw parameter';
     is $native, 3, '... incremented the caller\'s variable';
     throws-like { bump-ro($native) }, X::Multi::NoMatch, message => $nomatch, 'a read-only parameter is not an atomicint container';
+}
+
+# ---- an alias is the container it was bound to --------------------------
+
+{
+    my atomicint $native = 1;
+    my $alias := $native;
+    is $alias⚛++, 1, 'an alias of an atomicint';
+    is $native, 2, '... increments the atomicint';
 }
 
 # ---- array and hash elements ---------------------------------------------

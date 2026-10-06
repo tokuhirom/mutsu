@@ -137,15 +137,19 @@ impl Interpreter {
     /// A scalar the compiler did not see declared (a parameter bound to a
     /// caller's container, a `:=` alias, an outer name): the type travels with
     /// the container, in its cell when it has one.
+    ///
+    /// Only a *recorded* type refuses. A cell with no constraint is not proof
+    /// of an untyped variable: a cell is made at many sites (a closure's
+    /// capture, a `:=` alias, an `is rw` argument) and not every one of them
+    /// copies the declaring variable's type onto it, so `my atomicint $x; my
+    /// $y := $x; $y⚛++` reaches a constraint-less cell and must run.
     fn lexical_target_verdict(&self, name: &str) -> Verdict {
         if let Some(ty) = self.var_type_constraint(name) {
             return verdict_for_type(&ty);
         }
-        match self.scalar_cell_target(name) {
-            Some(cell) => crate::value::lookup_container_constraint(&cell)
-                .map_or(Verdict::Boxed, |ty| verdict_for_type(&ty)),
-            None => Verdict::Unknown,
-        }
+        self.scalar_cell_target(name)
+            .and_then(|cell| crate::value::lookup_container_constraint(&cell))
+            .map_or(Verdict::Unknown, |ty| verdict_for_type(&ty))
     }
 
     /// The error Rakudo raises for an integer atomic on a non-native target.
