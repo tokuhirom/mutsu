@@ -84,6 +84,14 @@ impl Interpreter {
                 let f = runtime::to_float_value(idx)?;
                 (f >= 0.0 && f.is_finite()).then_some(f as usize)
             }
+            // A list or range is a slice selector, never a position: `(1,)` and
+            // `1..1` stringify to "1" and would otherwise collapse `@a[1,]` into `@a[1]`.
+            ValueView::Array(..)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => None,
             _ => idx.to_string_value().parse::<usize>().ok(),
         }
     }
