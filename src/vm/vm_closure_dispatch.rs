@@ -784,6 +784,11 @@ impl Interpreter {
                 call_file,
                 def_file,
             );
+            // An anonymous `sub` has no registry entry to resolve its id
+            // from, so stamp it on the frame: `return_target_is_live` must be
+            // able to tell that a `return` aimed at it (e.g. from an inline
+            // CATCH handler) still has its routine on the stack.
+            self.set_top_routine_callable_id(data.id);
         } else {
             self.push_block_routine_with_location(
                 data.package,

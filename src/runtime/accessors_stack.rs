@@ -241,6 +241,18 @@ impl Interpreter {
         })
     }
 
+    /// Stamp `id` on the innermost routine frame, for a routine that has no
+    /// registry entry to resolve its id from (an anonymous `sub`).
+    // Cost: O(1).
+    pub(crate) fn set_top_routine_callable_id(&mut self, id: u64) {
+        // A pushed frame is never modified in place (the stack caches
+        // snapshot nodes over it), so replace it.
+        if let Some(mut frame) = self.routine_stack.pop() {
+            frame.callable_id = id;
+            self.routine_stack.push(frame);
+        }
+    }
+
     /// Push a new routine frame. `line` and `file` record the call-site
     /// in the *caller* (the line/file where this function was called from);
     /// `def_file` is the file the routine's body lives in (None = main
