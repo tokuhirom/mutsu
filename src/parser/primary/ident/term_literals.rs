@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Stmt};
+use crate::ast::{Expr, Stmt, spelled::Spelling};
 use crate::parser::expr::{expression, expression_no_sequence};
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult, parse_char, parse_tag};
@@ -728,10 +728,13 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
                 let (r, expr) = expression_no_sequence(r)?;
                 return Ok((
                     r,
-                    Expr::PhaserExpr {
-                        kind: phaser_kind,
-                        body: vec![Stmt::Expr(expr)],
-                    },
+                    Expr::spelled(
+                        Expr::PhaserExpr {
+                            kind: phaser_kind,
+                            body: vec![Stmt::Expr(expr)],
+                        },
+                        || Spelling::BareStatement,
+                    ),
                 ));
             }
         }
@@ -748,9 +751,12 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             let (r, expr) = expression_no_sequence(r)?;
             return Ok((
                 r,
-                Expr::Once {
-                    body: vec![Stmt::Expr(expr)],
-                },
+                Expr::spelled(
+                    Expr::Once {
+                        body: vec![Stmt::Expr(expr)],
+                    },
+                    || Spelling::BareStatement,
+                ),
             ));
         }
     }

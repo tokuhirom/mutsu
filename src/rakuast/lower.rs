@@ -4234,7 +4234,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::StatementPrefixRace => super::prefix_call::lower_method(node),
         // `once { … }` -> a once expression over the lowered block body.
         RakuAstClass::StatementPrefixOnce => Ok(Expr::Once {
-            body: lower_block(named_child_or_positional(node)?)?,
+            body: super::bare_prefix::lower_body(named_child_or_positional(node)?)?,
         }),
         // A phaser block in expression position (`my $x = BEGIN { 1 }`).
         RakuAstClass::StatementPrefixPhaserBegin
@@ -4251,25 +4251,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::StatementPrefixPhaserQuit
         | RakuAstClass::StatementPrefixPhaserClose => Ok(Expr::PhaserExpr {
             kind: phaser_kind(node)?,
-            body: lower_block(named_child_or_positional(node)?)?,
+            body: super::bare_prefix::lower_body(named_child_or_positional(node)?)?,
         }),
         // `do { … }` -> a do-block expression over the lowered block body.
         RakuAstClass::StatementPrefixDo => {
             let block = named_child_or_positional(node)?;
-            // `do for ... { }` / `do if ... { }` / `do given ... { }`: the
+            // `do STATEMENT` (`do for ... { }`, `do say 1`): the
             // statement itself, which the parser carries as a `DoStmt`.
-            if matches!(
-                block.class,
-                RakuAstClass::StatementFor
-                    | RakuAstClass::StatementGiven
-                    | RakuAstClass::StatementIf
-                    | RakuAstClass::StatementLoopWhile
-                    | RakuAstClass::StatementLoopUntil
-                    | RakuAstClass::StatementLoop
-                    | RakuAstClass::StatementWhenever
-                    | RakuAstClass::StatementWhen
-                    | RakuAstClass::StatementDefault
-            ) {
+            if block.class != RakuAstClass::Block {
                 return Ok(Expr::DoStmt(Box::new(lower_stmt(block)?)));
             }
             Ok(Expr::DoBlock {
@@ -4284,7 +4273,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::StatementPrefixTry => {
             let block = named_child_or_positional(node)?;
             Ok(Expr::Try {
-                body: lower_block(block)?,
+                body: super::bare_prefix::lower_body(block)?,
                 catch: None,
             })
         }
@@ -4302,7 +4291,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // `gather { … }` -> a gather expression over the lowered block body.
         RakuAstClass::StatementPrefixGather => {
             let block = named_child_or_positional(node)?;
-            Ok(Expr::Gather(lower_block(block)?))
+            Ok(Expr::Gather(super::bare_prefix::lower_body(block)?))
         }
         // A `FatArrow` is raku's node for a BAREWORD key (`a => 1`), which is a
         // *named* argument -- mutsu spells that as a bare `Binary{FatArrow}`.

@@ -1,4 +1,4 @@
-use crate::ast::{Expr, RoutineDeclarator, Stmt, make_anon_sub};
+use crate::ast::{Expr, RoutineDeclarator, Stmt, make_anon_sub, spelled::Spelling};
 use crate::parser::expr::{
     expression, expression_no_sequence, parse_fat_arrow_value, should_wrap_whatevercode, term_expr,
 };
@@ -769,10 +769,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             {
                 return Ok((
                     r,
-                    Expr::Try {
-                        body: vec![stmt],
-                        catch: None,
-                    },
+                    Expr::spelled(
+                        Expr::Try {
+                            body: vec![stmt],
+                            catch: None,
+                        },
+                        || Spelling::BareStatement,
+                    ),
                 ));
             }
             // Statement modifiers (for, if, etc.) bind outside try,
@@ -789,10 +792,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             };
             return Ok((
                 r,
-                Expr::Try {
-                    body: vec![Stmt::Expr(expr)],
-                    catch: None,
-                },
+                Expr::spelled(
+                    Expr::Try {
+                        body: vec![Stmt::Expr(expr)],
+                        catch: None,
+                    },
+                    || Spelling::BareStatement,
+                ),
             ));
         }
         "do" => {
@@ -846,13 +852,19 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     && let Ok((r_after, stmt)) = crate::parser::stmt::statement_pub(r)
                 {
                     let r_after = restore_do_stmt_terminator(r, r_after);
-                    return Ok((r_after, Expr::DoStmt(Box::new(stmt))));
+                    return Ok((
+                        r_after,
+                        Expr::spelled(Expr::DoStmt(Box::new(stmt)), || Spelling::BareStatement),
+                    ));
                 }
             }
             // do STMT — wrap an assignment or other statement
             if let Ok((r_after, stmt)) = crate::parser::stmt::statement_pub(r) {
                 let r_after = restore_do_stmt_terminator(r, r_after);
-                return Ok((r_after, Expr::DoStmt(Box::new(stmt))));
+                return Ok((
+                    r_after,
+                    Expr::spelled(Expr::DoStmt(Box::new(stmt)), || Spelling::BareStatement),
+                ));
             }
             // do EXPR — just evaluate the expression
             let (r, expr) = expression(r)?;
@@ -1445,7 +1457,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 {
                     return Ok((r_after, Expr::Gather(body.clone())));
                 }
-                return Ok((r_after, Expr::Gather(vec![stmt])));
+                return Ok((
+                    r_after,
+                    Expr::spelled(Expr::Gather(vec![stmt]), || Spelling::BareStatement),
+                ));
             }
         }
         "die" | "fail" => {
@@ -1550,11 +1565,14 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let r_after = restore_do_stmt_terminator(r, r_after);
                 return Ok((
                     r_after,
-                    Expr::Call {
-                        name: Symbol::intern("start"),
-                        args: vec![make_anon_sub(vec![stmt])],
-                        listop: true,
-                    },
+                    Expr::spelled(
+                        Expr::Call {
+                            name: Symbol::intern("start"),
+                            args: vec![make_anon_sub(vec![stmt])],
+                            listop: true,
+                        },
+                        || Spelling::BareStatement,
+                    ),
                 ));
             }
         }

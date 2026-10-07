@@ -34,6 +34,10 @@ RULES = [
     ("words-quote", lambda a, b: "words val" in a and "colonpairs" not in a),
     ("attribute-var", lambda a, b: "Var::Attribute" in a),
     ("topic-call", lambda a, b: "TopicCall" in a),
+    # A prefix over a bare statement (`gather say 1`): rakudo's text holds a
+    # `Statement::` where mutsu's holds the block `gather { ... }` makes.
+    ("bare-prefix", lambda a, b: re.search(
+        r"StatementPrefix::[A-Za-z:]+\.new\(\s*RakuAST::Statement::", a) is not None),
     ("statement-prefix", lambda a, b: "StatementPrefix" in a),
     ("mixin", lambda a, b: "Mixin" in a),
     ("heredoc", lambda a, b: "Heredoc" in a),
