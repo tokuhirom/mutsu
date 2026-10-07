@@ -184,6 +184,17 @@ fn gist_route(v: &Value) -> GistRoute {
     walk(v, &mut Vec::new(), &mut std::collections::HashSet::new(), 0).unwrap_or(GistRoute::Native)
 }
 
+/// The scalar rendering rows' handlers: `gist` for `gist`, `raku` for
+/// `raku`/`perl`. The table and this cascade share them.
+fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+    use crate::builtins::method_table::scalars::render;
+    if method == "gist" {
+        render::gist(target, &[])
+    } else {
+        render::raku(target, &[])
+    }
+}
+
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
@@ -232,15 +243,7 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(name)))
             }
         }
-        ValueView::Bool(b) => {
-            if method == "gist" {
-                Some(Ok(Value::str(if b { "True" } else { "False" }.to_string())))
-            } else {
-                Some(Ok(Value::str(
-                    if b { "Bool::True" } else { "Bool::False" }.to_string(),
-                )))
-            }
-        }
+        ValueView::Bool(_) => render(target, method),
         // raku/perl and gist of the Nil value are all "Nil". (Uninitialized
         // variables hold the Any type object since PLAN 8.5, so a runtime
         // Nil here is a genuine Nil, not an uninit placeholder.)
@@ -270,43 +273,16 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(raku_value(target))))
             }
         }
-        ValueView::Rat(n, d) => {
-            if d == 0 {
-                if method == "raku" || method == "perl" {
-                    Some(Ok(Value::str(format!("<{}/0>", n))))
-                } else {
-                    Some(Err(RuntimeError::rational_to_str_divide_by_zero(
-                        Value::int(n),
-                    )))
-                }
-            } else if n % d == 0 {
-                if method == "raku" || method == "perl" {
-                    // .raku on Rat always shows decimal: 27.0, not 27
-                    Some(Ok(Value::str(format!("{}.0", n / d))))
-                } else {
-                    Some(Ok(Value::str(format!("{}", n / d))))
-                }
+        ValueView::Rat(n, 0) => {
+            if method == "raku" || method == "perl" {
+                Some(Ok(Value::str(format!("<{}/0>", n))))
             } else {
-                if method == "gist" {
-                    return Some(Some(Ok(Value::str(target.to_string_value()))));
-                }
-                let mut dd = d;
-                while dd % 2 == 0 {
-                    dd /= 2;
-                }
-                while dd % 5 == 0 {
-                    dd /= 5;
-                }
-                if dd == 1 {
-                    // The exact decimal, spelled by the one renderer `.raku`
-                    // reaches inside a collection or a type-check message (an
-                    // `f64` quotient rounds past 15 significant digits).
-                    Some(Ok(Value::str(raku_value(target))))
-                } else {
-                    Some(Ok(Value::str(format!("<{}/{}>", n, d))))
-                }
+                Some(Err(RuntimeError::rational_to_str_divide_by_zero(
+                    Value::int(n),
+                )))
             }
         }
+        ValueView::Rat(..) => render(target, method),
         ValueView::Instance {
             class_name,
             attributes,
@@ -542,14 +518,7 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(super::raku_repr::version_raku_repr(&full))))
             }
         }
-        ValueView::Str(s) => {
-            if method == "raku" || method == "perl" {
-                // .raku wraps strings in quotes and escapes special chars
-                Some(Ok(Value::str(super::raku_repr::escape_raku_str(&s))))
-            } else {
-                Some(Ok(Value::str_arc(s.clone())))
-            }
-        }
+        ValueView::Str(_) => render(target, method),
         ValueView::Array(_, kind) if method == "raku" || method == "perl" => {
             if kind == crate::value::ArrayKind::Lazy {
                 Some(Ok(Value::str_from("[...]")))
