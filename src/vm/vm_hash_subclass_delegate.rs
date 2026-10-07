@@ -258,6 +258,15 @@ impl Interpreter {
             }
             return Some(Ok(args[1].clone()));
         }
+        // The renderings mutate nothing, and the read-only twin already names
+        // an `is Map` subclass in them.
+        if matches!(method, "raku" | "perl" | "gist") && honor_user_override {
+            return self.try_hash_storage_delegate(
+                target,
+                crate::symbol::Symbol::intern(method),
+                args,
+            );
+        }
         // Seed a synthetic binding so the native xxKEY fast paths (which
         // write back into `self.env` by NAME — see `vm_call_method_mut_ops.rs`)
         // have somewhere to write the mutated hash.
@@ -371,7 +380,20 @@ impl Interpreter {
             .get("__mutsu_hash_storage")
             .cloned()
             .unwrap_or_else(|| Value::hash(ValueMap::default()));
-        self.try_native_method(&storage, method_sym, args)
+        let result = self.try_native_method(&storage, method_sym, args);
+        // An `is Map` subclass names itself in its `.raku`/`.gist`.
+        if matches!(method, "raku" | "perl" | "gist")
+            && let Some(Ok(text)) = &result
+        {
+            return Some(Ok(Value::str(
+                crate::value::raku_repr::rename_map_subclass_repr(
+                    &cn,
+                    &storage,
+                    text.to_string_value(),
+                ),
+            )));
+        }
+        result
     }
 
     /// Rebuild an `is Hash`/`is Map`-backed instance with its

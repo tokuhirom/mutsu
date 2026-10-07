@@ -385,6 +385,25 @@ pub(crate) fn raku_map_new(parts: &[String]) -> String {
     }
 }
 
+/// Rename the `Map.new...` text an `is Map` subclass instance's backing
+/// storage renders to, so the instance names its own class as rakudo does
+/// (`V3.new((:a(1)))`). `storage` is the instance's `__mutsu_hash_storage`:
+/// only a `Map`-tagged one (an `is Hash` subclass's is not) is renamed.
+// Cost: O(n), n = length of `rendered` (one copy).
+pub(crate) fn rename_map_subclass_repr(
+    class_name: &str,
+    storage: &Value,
+    rendered: String,
+) -> String {
+    let is_map = matches!(storage.view(), ValueView::Hash(h) if h.declared_type.as_deref() == Some("Map"));
+    match rendered.strip_prefix("Map.new") {
+        Some(rest) if is_map => {
+            format!("{}.new{rest}", crate::value::user_facing_type_name(class_name))
+        }
+        _ => rendered,
+    }
+}
+
 /// Render a Hash/Map value in a colon-pair position.
 ///
 /// A raw Boolean is the shorthand Pair form (`:a`/`:!a`), while a Boolean
