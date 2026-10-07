@@ -326,7 +326,11 @@ impl Interpreter {
         // the wrong value and breaking the class declaration.
         let metamodel_base_override = self.is_metamodel_how_class(receiver_class)
             && self.has_user_method(receiver_class, method_name);
+        // A method the user `augment`ed onto a core type: the builtin of the
+        // receiver's type is the last candidate (`DeferralEntry::Native`).
+        let core_type_override = self.core_type_receiver_has_user_override(&invocant, method_name);
         let native_base_override = grammar_parse_override
+            || core_type_override
             || metamodel_base_override
             || mu_base_override
             || new_base_override
@@ -437,6 +441,11 @@ impl Interpreter {
                     owner,
                     name: method_name.to_string(),
                     want_container: false,
+                });
+            }
+            if core_type_override {
+                remaining.push(super::DeferralEntry::Native {
+                    name: method_name.to_string(),
                 });
             }
             super::MethodDispatchFrame {

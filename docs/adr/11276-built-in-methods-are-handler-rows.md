@@ -1755,3 +1755,13 @@ What is left of slice 4: a `DeferralEntry::Native { owner }` produced from `reso
 candidates and invoked through `invoke_owner`, so the bridges that only call a builtin on the receiver
 (`CoreType`, `AnyBase`, `MixinBase`, the storage three) become entries of the sequence instead of probes at
 exhaustion. `augment` and the single-method fast path (no frame is pushed) are the part to design first.
+
+### 9.26 Slice 4, second step: `DeferralEntry::Native` for an augmented core type (2026-10-07)
+
+Branch `refactor/11276-4-native-deferral-entry`. The `CoreType` bridge (the builtin behind a method
+`augment`ed onto a core type) is no longer a probe at exhaustion: `build_method_dispatch_frame` appends a
+`DeferralEntry::Native { name }` to the frame when the receiver is a native value on which the user declared the
+method (`core_type_receiver_has_user_override`), and `dispatch_next_candidate` runs it through
+`run_core_type_builtin` (the builtin with the augmentation hidden from the override gate). Such a call now always
+has a frame, so the bridge is gone from all three `NATIVE_BASE_*` orders. `callwith` replacement arguments are
+honoured as for the other entries. Left: `AnyBase`, `MixinBase` and the three storage bridges.
