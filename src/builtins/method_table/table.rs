@@ -138,8 +138,7 @@ fn name_index(method: Symbol) -> Option<usize> {
 // Cost: O(1), a memo read and a bit test.
 #[inline]
 pub(crate) fn names_a_row(method: Symbol, arity: usize) -> bool {
-    arity < 8
-        && name_index(method).is_some_and(|name| ARITIES[name] & (1 << arity) != 0)
+    arity < 8 && name_index(method).is_some_and(|name| ARITIES[name] & (1 << arity) != 0)
 }
 
 /// Whether a receiver of `receiver` may have a row for `method`: the second
@@ -165,10 +164,7 @@ pub(crate) fn shape_has_row(receiver: Receiver, method: Symbol) -> bool {
 #[inline]
 pub(crate) fn resolve(receiver: Receiver, method: Symbol, arity: usize) -> Option<RowId> {
     let name = name_index(method)?;
-    if arity >= 8
-        || ARITIES[name] & (1 << arity) == 0
-        || !shape_has_row(receiver, method)
-    {
+    if arity >= 8 || ARITIES[name] & (1 << arity) == 0 || !shape_has_row(receiver, method) {
         return None;
     }
     let key = u16::from(receiver.to_bits()) << 8 | arity as u16;

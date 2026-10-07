@@ -103,7 +103,9 @@ fn const_index_matches_the_runtime_builder() {
                 } else {
                     &old.shapes
                 };
-                let want = masks.get(&sym).is_some_and(|m| m & (1 << (shape as u64)) != 0);
+                let want = masks
+                    .get(&sym)
+                    .is_some_and(|m| m & (1 << (shape as u64)) != 0);
                 assert_eq!(shape_has_row(receiver, sym), want, "{name} {shape:?} shape");
                 for arity in 0..10usize {
                     let legacy_id = u8::try_from(arity).ok().and_then(|a| {

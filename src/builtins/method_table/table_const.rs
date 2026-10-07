@@ -135,7 +135,11 @@ macro_rules! const_sort {
             let mut lo = 0;
             while lo < n {
                 let mid = if lo + width < n { lo + width } else { n };
-                let hi = if lo + 2 * width < n { lo + 2 * width } else { n };
+                let hi = if lo + 2 * width < n {
+                    lo + 2 * width
+                } else {
+                    n
+                };
                 let (mut i, mut j, mut k) = (lo, mid, lo);
                 while i < mid && j < hi {
                     if $less($arr[j], $arr[i]) {
@@ -343,7 +347,8 @@ macro_rules! for_each_registration {
         let mut s = 0;
         while s < DispatchShape::ALL.len() {
             let $shape = DispatchShape::ALL[s];
-            if let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_strs($shape.type_name())
+            if let Some(mro) =
+                crate::builtin_types::catalog::builtin_type_mro_strs($shape.type_name())
             {
                 let mut m = 0;
                 while m < mro.len() {
