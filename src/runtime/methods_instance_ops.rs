@@ -232,7 +232,20 @@ impl Interpreter {
             return Some(self.call_method_with_values(storage, method, vec![]));
         }
         if let Some(storage) = attributes.as_map().get("__mutsu_hash_storage").cloned() {
-            return Some(self.call_method_with_values(storage, method, vec![]));
+            let rendered = self.call_method_with_values(storage.clone(), method, vec![]);
+            // An `is Map` subclass names itself in its `.raku`/`.gist`.
+            if matches!(method, "raku" | "perl" | "gist")
+                && let Ok(text) = &rendered
+            {
+                return Some(Ok(Value::str(
+                    crate::value::raku_repr::rename_map_subclass_repr(
+                        &class_name.resolve(),
+                        &storage,
+                        text.to_string_value(),
+                    ),
+                )));
+            }
+            return Some(rendered);
         }
         // An `IterationBuffer` (or an `is IterationBuffer` subclass, which
         // renders through the same method and so under the base type's name)
