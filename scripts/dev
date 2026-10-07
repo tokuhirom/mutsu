@@ -577,11 +577,35 @@ def git_lines(root: str, *argv: str) -> list[str] | None:
     return out.stdout.splitlines() if out.returncode == 0 else None
 
 
+# Source areas whose change reaches far past the tests that name them: a built-in
+# method's implementation is called by every `.gist`, `.raku`, `.WHICH` and
+# `.Str` the suites make. ADR-11276's rows regressed `t/oo/nested-instance-raku.t`
+# and `t/types/buf-and-list-mutators.t` twice -- tests the branch did not touch,
+# outside a narrow `--focus`, which only CI caught. A change under these prefixes
+# adds the directories to the focus on its own.
+WIDE_FOCUS_SOURCES = (
+    "src/builtins/method_table/",
+    "src/builtins/methods_0arg/",
+    "src/builtins/methods_narg/",
+    "src/builtins/native_method_row_table.rs",
+)
+WIDE_FOCUS_DIRS = ("t/oo", "t/types", "t/collections")
+
+
+def wide_focus(changed: list[str]) -> list[str]:
+    """The directories a change to a built-in method's implementation adds to the
+    focus: [] unless one of `changed` is under a WIDE_FOCUS_SOURCES prefix."""
+    if any(path.startswith(WIDE_FOCUS_SOURCES) for path in changed):
+        return list(WIDE_FOCUS_DIRS)
+    return []
+
+
 def focus_files(root: str, extra: list[str]) -> tuple[list[str], list[str]]:
     """The t/ and roast files a quick gate runs: every `.t` under t/ or roast/
     that differs from the merge base with origin/main (committed, staged,
-    unstaged or untracked), every file added to roast-whitelist.txt, and every
-    `--focus` path (a file, or a directory searched for `.t` files)."""
+    unstaged or untracked), every file added to roast-whitelist.txt, every
+    `--focus` path (a file, or a directory searched for `.t` files), and the
+    directories `wide_focus` adds for a change to a built-in method."""
     # A remote container's clone can carry an origin/main far behind the
     # branch, whose merge base would put every file main changed since in
     # focus; refresh it first (best effort -- offline, the stale ref stands).
@@ -604,6 +628,7 @@ def focus_files(root: str, extra: list[str]) -> tuple[list[str], list[str]]:
             if line.startswith("+") and not line.startswith("+++"):
                 paths.append(line[1:].strip())
     paths += git_lines(root, "ls-files", "--others", "--exclude-standard", "t") or []
+    extra = list(extra) + wide_focus(paths)
     for item in extra:
         full = os.path.join(root, item)
         if os.path.isdir(full):
@@ -879,6 +904,12 @@ def self_test(root: str) -> int:
     check("quick gate: focus runs prove on the debug binary",
           "MUTSU_BIN=target/debug/mutsu" in cmds["t-focus"] and cmds["t-focus"][-1] == "t/a/x.t")
     check("quick gate: an empty focus is a passing no-op", cmds["roast-focus"] == ["true"])
+    check("quick gate: a built-in method change widens the focus",
+          wide_focus(["src/builtins/method_table/scalars/render.rs"]) == list(WIDE_FOCUS_DIRS)
+          and wide_focus(["src/builtins/methods_0arg/mod.rs"]) == list(WIDE_FOCUS_DIRS)
+          and wide_focus(["src/builtins/native_method_row_table.rs"]) == list(WIDE_FOCUS_DIRS))
+    check("quick gate: another change keeps the focus narrow",
+          wide_focus(["src/parser/mod.rs", "t/oo/x.t", "docs/adr/0126.md"]) == [])
     check("ranges", compress_ranges([1, 2, 3, 5, 7, 8]) == "1-3, 5, 7-8")
 
     real_known = load_known_failures(root)

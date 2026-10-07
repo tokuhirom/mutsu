@@ -271,3 +271,21 @@ pushed commit, so **the formatter's changes must be committed**. When `cargo fmt
 file that does not parse, `rustfmt` missing) the gate exits non-zero before starting a job, since
 no later stage could pass either. CI keeps its own `cargo fmt --all -- --check`; the lefthook
 pre-commit hook still formats on commit.
+
+### Amendment (2026-10-07): a change to a built-in method widens the quick focus
+
+The quick profile runs the `t/` and roast files the branch touches plus `--focus` (§ the 2026-10-02
+amendment). That is blind to a change whose callers are everywhere: a built-in method's
+implementation is reached by every `.gist`, `.raku`, `.WHICH` and `.Str` in the suites. ADR-11276's
+row migration hit it twice in one PR (#12297): a `Set` of user-class instances
+(`t/oo/nested-instance-raku.t`) and a `MixHash` with a type-object key
+(`t/types/buf-and-list-mutators.t`) regressed in files the branch did not touch, outside the `--focus`
+it had been given, and only CI found them, one push per find.
+
+So `scripts/dev gate` now adds `t/oo`, `t/types` and `t/collections` to the focus on its own when the
+branch changes a file under `src/builtins/method_table/`, `src/builtins/methods_0arg/`,
+`src/builtins/methods_narg/` or `src/builtins/native_method_row_table.rs` (`WIDE_FOCUS_SOURCES`
+and `WIDE_FOCUS_DIRS` in `scripts/dev`; `scripts/dev self-test` pins both directions). Any other
+change keeps the narrow focus, so a parser or docs change pays nothing. The directories run on the debug
+binary like the rest of the focus; `--full` is unchanged. Add a prefix to the list when another area
+shows the same shape.
