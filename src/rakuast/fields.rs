@@ -147,7 +147,10 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         }
         VarLexical | VarDynamic => &[("name", Absent::Required)],
         VarPackage => &[("name", Absent::Required), ("sigil", Absent::Required)],
-        Name => &[("parts", Absent::EmptyList)],
+        Name => &[
+            ("parts", Absent::EmptyList),
+            ("colonpairs", Absent::EmptyList),
+        ],
         NamePartSimple => &[("name", Absent::Required)],
         NamePartExpression => &[("expr", Absent::Required)],
         TermName => &[("name", Absent::Required)],

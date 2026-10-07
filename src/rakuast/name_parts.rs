@@ -256,8 +256,122 @@ pub(super) enum NameShape<'a> {
     },
 }
 
+/// The operator categories whose declared name carries its symbol as an
+/// adverb: `infix:<foo>` is `Name.from-identifier("infix", colonpairs =>
+/// (QuotedString<words val>("foo"),))`, measured on 2026.09.
+const OPERATOR_CATEGORIES: [&str; 7] = [
+    "prefix",
+    "infix",
+    "postfix",
+    "circumfix",
+    "postcircumfix",
+    "term",
+    "trait_mod",
+];
+
+/// A declared operator name in its `category:<symbol>` spelling (optionally
+/// package-qualified, `Ops::infix:<pk>`) as a `Name` whose adverb is the
+/// symbol's word-list `QuotedString`. `None` for any other spelling
+/// (`infix:["x"]`, `infix:sym<x>`, a symbol containing `<`/`>`), which stays
+/// one identifier string.
+// Cost: O(n), n = length of the name.
+pub(super) fn operator_name(name: &str) -> Option<RakuAstNode> {
+    let (head, rest) = name.split_once(":<")?;
+    let symbol = rest.strip_suffix('>')?;
+    if symbol.is_empty() || symbol.chars().any(|c| matches!(c, '<' | '>' | '\\')) {
+        return None;
+    }
+    let segments: Vec<&str> = identifier_segments(head).collect();
+    let (category, qualifiers) = segments.split_last()?;
+    if !OPERATOR_CATEGORIES.contains(category) || qualifiers.iter().any(|q| q.is_empty()) {
+        return None;
+    }
+    let mut fields = if qualifiers.is_empty() {
+        vec![super::convert::leaf_field(
+            None,
+            Value::str((*category).to_string()),
+        )]
+    } else {
+        let parts = segments.iter().map(|seg| simple_part(seg)).collect();
+        return Some(RakuAstNode {
+            class: RakuAstClass::Name,
+            fields: vec![
+                RakuAstField {
+                    name: Some("parts"),
+                    value: RakuAstFieldValue::List(parts),
+                },
+                operator_colonpairs(symbol),
+            ],
+        });
+    };
+    fields.push(operator_colonpairs(symbol));
+    Some(RakuAstNode {
+        class: RakuAstClass::Name,
+        fields,
+    })
+}
+
+fn operator_colonpairs(symbol: &str) -> RakuAstField {
+    RakuAstField {
+        name: Some("colonpairs"),
+        value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(
+            super::convert::word_quote(symbol),
+        ))]),
+    }
+}
+
+/// The symbol of a name's single operator adverb (the inverse of
+/// [`operator_name`]), or `None` when the name has no such adverb.
+// Cost: O(1).
+fn operator_symbol(node: &RakuAstNode) -> Option<String> {
+    let field = node.fields.iter().find(|f| f.name == Some("colonpairs"))?;
+    let RakuAstFieldValue::List(pairs) = &field.value else {
+        return None;
+    };
+    let [pair] = pairs.as_slice() else {
+        return None;
+    };
+    let ValueView::RakuAst(quoted) = pair.view() else {
+        return None;
+    };
+    if quoted.class != RakuAstClass::QuotedString {
+        return None;
+    }
+    let RakuAstFieldValue::List(segments) = &quoted
+        .fields
+        .iter()
+        .find(|f| f.name == Some("segments"))?
+        .value
+    else {
+        return None;
+    };
+    let [segment] = segments.as_slice() else {
+        return None;
+    };
+    let ValueView::RakuAst(segment) = segment.view() else {
+        return None;
+    };
+    let RakuAstFieldValue::Node(text) = &segment.fields.first()?.value else {
+        return None;
+    };
+    match text.view() {
+        ValueView::Str(s) => Some(s.to_string()),
+        _ => None,
+    }
+}
+
 /// Classify a `RakuAST::Name` node, or `None` for a shape mutsu cannot lower.
 pub(super) fn name_shape(node: &RakuAstNode) -> Option<NameShape<'_>> {
+    let shape = base_name_shape(node)?;
+    match (shape, operator_symbol(node)) {
+        (NameShape::Identifier(name), Some(symbol)) => {
+            Some(NameShape::Identifier(format!("{name}:<{symbol}>")))
+        }
+        (shape, _) => Some(shape),
+    }
+}
+
+fn base_name_shape(node: &RakuAstNode) -> Option<NameShape<'_>> {
     if node.class != RakuAstClass::Name {
         return None;
     }
