@@ -2398,7 +2398,24 @@ impl Interpreter {
                     // source wrote; only a missing or synthesized one seeds.
                     let seeds = seeds && build_override.is_none();
                     let val = if let Some(build_override) = build_override {
-                        let val = self.call_sub_value(build_override, Vec::new(), false)?;
+                        // Rakudo calls the closure as `(object, type)`: the
+                        // instance built so far and the attribute's type object.
+                        inv_cell.commit_attrs(attrs.clone());
+                        let attr_type = self
+                            .class_attribute_default(class_key, &attr_name)
+                            .unwrap_or_else(|| {
+                                self.seed_attr_value(
+                                    class_key,
+                                    &attr_name,
+                                    sigil,
+                                    &attr_type_constraints,
+                                )
+                            });
+                        let val =
+                            self.call_sub_value(build_override, vec![inv.clone(), attr_type], false)?;
+                // A `.map`/`.grep` result is still deferred; the attribute
+                // owns its elements, so pull them now (ADR-0058).
+                self.reify_map_grep_seq(&val)?;
                         Self::coerce_attr_value_by_sigil(val, sigil)
                     } else if let Some(arg) = default {
                         // Fast path: simple literal defaults (e.g. from native types

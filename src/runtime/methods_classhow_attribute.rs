@@ -474,7 +474,13 @@ impl Interpreter {
             // probes current_package + GLOBAL only, so walk up the package
             // chain to the nearest package that has a handler and dispatch as
             // that package.
-            let dispatch_pkgs = self.trait_handler_packages(&trait_mod_name);
+            let mut dispatch_pkgs = self.trait_handler_packages(&trait_mod_name);
+            let registry_handler = !dispatch_pkgs.is_empty();
+            // A `&trait_mod:<is>` a custom `sub EXPORT` installed (Trait::Env)
+            // is a handler too, though no registry row names it.
+            if !registry_handler && self.imported_trait_dispatcher(&trait_mod_name).is_some() {
+                dispatch_pkgs.push(self.current_package());
+            }
             let has_handler = !dispatch_pkgs.is_empty();
             if has_handler {
                 // Reuse the Attribute meta-object across every trait applied to
@@ -573,7 +579,15 @@ impl Interpreter {
                     if *pkg != saved_pkg {
                         self.set_current_package(pkg.clone());
                     }
-                    call_result = self.call_function(&trait_mod_name, args.clone());
+                    call_result = match self.try_imported_trait_mod(&trait_mod_name, &args) {
+                        Some(result) => result,
+                        None if registry_handler => {
+                            self.call_function(&trait_mod_name, args.clone())
+                        }
+                        None => Err(RuntimeError::new(format!(
+                            "Cannot resolve caller {trait_mod_name}"
+                        ))),
+                    };
                     self.set_current_package(saved_pkg.clone());
                     if !matches!(&call_result, Err(err) if Self::is_trait_mod_no_candidate(err)) {
                         break;

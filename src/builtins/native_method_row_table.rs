@@ -2240,6 +2240,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Metamodel::CoercionHOW", "coerce", 8, 57),
     ("Metamodel::CoercionHOW", "nominalize", 8, 57),
     ("Metamodel::CurriedRoleHOW", "curried_role", 8, 57),
+    ("Metamodel::CurriedRoleHOW", "role_arguments", 8, 57),
     ("Metamodel::NativeHOW", "nativesize", 8, 57),
     ("Metamodel::NativeHOW", "unsigned", 8, 57),
     ("Metamodel::ParametricRoleGroupHOW", "candidates", 8, 57),

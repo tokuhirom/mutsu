@@ -388,6 +388,13 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!(
         "Metamodel::CurriedRoleHOW",
+        "role_arguments",
+        1,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_role_arguments(args.to_vec()))
+    ),
+    row!(
+        "Metamodel::CurriedRoleHOW",
         "curried_role",
         1,
         true,

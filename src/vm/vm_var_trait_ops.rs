@@ -889,7 +889,7 @@ impl Interpreter {
             )))
         }
 
-        if !(self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>")) {
+        if !self.has_trait_mod_handler("trait_mod:<is>") {
             match unknown_variable_trait(&trait_name) {
                 Some(err) => return Err(err),
                 None => {
@@ -951,7 +951,12 @@ impl Interpreter {
         // where the relay actually gets armed-into).
         let saved_writeback_key = self.trait_mod_writeback_key.take();
         self.trait_mod_writeback_key = Some(name.to_string());
-        let call_result = self.vm_call_function("trait_mod:<is>", vec![var_obj, named_arg]);
+        let call_result = match self
+            .try_imported_trait_mod("trait_mod:<is>", &[var_obj.clone(), named_arg.clone()])
+        {
+            Some(result) => result,
+            None => self.vm_call_function("trait_mod:<is>", vec![var_obj, named_arg]),
+        };
         self.trait_mod_writeback_key = saved_writeback_key;
         let mixin_writeback = self.trait_mod_writeback_value.take();
         match call_result {
