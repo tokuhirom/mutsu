@@ -57,7 +57,6 @@ enum NativeBase {
     ArrayStorage,
     HashStorage,
     BaggyStorage,
-    AnyBase,
     MixinBase,
     Metamodel,
 }
@@ -70,7 +69,6 @@ const NATIVE_BASE_EXHAUSTED: &[NativeBase] = &[
     NativeBase::ArrayStorage,
     NativeBase::HashStorage,
     NativeBase::BaggyStorage,
-    NativeBase::AnyBase,
     NativeBase::MixinBase,
     NativeBase::Metamodel,
 ];
@@ -87,7 +85,6 @@ const NATIVE_BASE_MULTI: &[NativeBase] = &[
 const NATIVE_BASE_NO_FRAME: &[NativeBase] = &[
     NativeBase::ArrayStorage,
     NativeBase::HashStorage,
-    NativeBase::AnyBase,
     NativeBase::MixinBase,
 ];
 
@@ -143,7 +140,6 @@ impl Interpreter {
                 NativeBase::ArrayStorage => self.native_array_storage_next_candidate(override_args),
                 NativeBase::HashStorage => self.native_hash_storage_next_candidate(override_args),
                 NativeBase::BaggyStorage => self.native_baggy_storage_next_candidate(override_args),
-                NativeBase::AnyBase => self.native_any_base_next_candidate(override_args),
                 NativeBase::MixinBase => self.native_mixin_base_next_candidate(override_args),
                 NativeBase::Metamodel => self.native_metamodel_next_candidate(override_args),
             };
@@ -817,50 +813,19 @@ impl Interpreter {
         self.try_native_method(inner, Symbol::intern(&method_name), &args)
     }
 
-    /// When a user `gist`/`Str`/`raku` override calls `nextsame`/`callsame`
-    /// and the user MRO is exhausted, Mu's native default implementation is
-    /// the final base candidate — it is not a `MethodDef`, so the regular MRO
-    /// chain never reaches it (mirrors `native_array_storage_next_candidate`).
-    /// Reads invocant/args off `method_dispatch_stack` when a frame exists
-    /// (a multi/wrapped override), falling back to the samewith context and
-    /// `self` for a plain single-candidate compiled method, which pushes no
-    /// `method_dispatch_stack` frame at all.
-    ///
-    /// `gist`/`raku` route through `default_instance_repr` (the
-    /// `ClassName.new(...)` rendering); a plain instance has no comparable
-    /// default `Str` method to defer to (Rakudo's own default is an
-    /// identity-ish `ClassName<objectid>`, not reproducible here), so `Str`
-    /// uses the same generic `ClassName()` fallback `Value`'s `Display`
-    /// impl already renders for an instance with no better answer.
-    fn native_any_base_next_candidate(
+    /// The default `gist`/`raku`/`Str` of an instance, the last candidate of a
+    /// user override's deferral chain (`DeferralEntry::Native`).
+    fn any_base_native_entry(
         &mut self,
-        override_args: Option<&[Value]>,
-    ) -> Option<Result<Value, RuntimeError>> {
-        let ctx = self.dispatch.samewith_context_stack.last().cloned()?;
-        if !matches!(ctx.name.as_str(), "gist" | "Str" | "raku") {
-            return None;
+        invocant: &Value,
+        name: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if name == "Str" {
+            return Ok(Value::str(invocant.to_string_value()));
         }
-        let invocant = self
-            .dispatch
-            .method_dispatch_stack
-            .last()
-            .map(|f| f.invocant.clone())
-            .or_else(|| ctx.invocant.clone())
-            .or_else(|| self.env.get("self").cloned())?;
-        if ctx.name == "Str" {
-            return Some(Ok(Value::str(invocant.to_string_value())));
-        }
-        let args: Vec<Value> = match override_args {
-            Some(a) => a.to_vec(),
-            None => self
-                .dispatch
-                .method_dispatch_stack
-                .last()
-                .map(|f| f.args.clone())
-                .or_else(|| ctx.args.clone())
-                .unwrap_or_default(),
-        };
-        self.default_instance_repr(&invocant, &ctx.name, &args)
+        self.default_instance_repr(invocant, name, args)
+            .unwrap_or_else(|| Ok(Value::NIL))
     }
 
     /// A user class that inherits from a *builtin* type (`class LoggedVersion
@@ -1311,7 +1276,11 @@ impl Interpreter {
                         frame.in_wrapper = false;
                         (frame.invocant.clone(), frame.args.clone())
                     };
-                    let result = self.run_core_type_builtin(invocant, &name, args)?;
+                    let result = if matches!(invocant.view(), ValueView::Instance { .. }) {
+                        self.any_base_native_entry(&invocant, &name, &args)?
+                    } else {
+                        self.run_core_type_builtin(invocant, &name, args)?
+                    };
                     if tail_call {
                         return Err(RuntimeError::return_signal(result));
                     }

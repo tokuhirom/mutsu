@@ -1765,3 +1765,13 @@ method (`core_type_receiver_has_user_override`), and `dispatch_next_candidate` r
 `run_core_type_builtin` (the builtin with the augmentation hidden from the override gate). Such a call now always
 has a frame, so the bridge is gone from all three `NATIVE_BASE_*` orders. `callwith` replacement arguments are
 honoured as for the other entries. Left: `AnyBase`, `MixinBase` and the three storage bridges.
+
+### 9.27 Slice 4, third step: the default rendering behind a user `gist`/`Str`/`raku` (2026-10-07)
+
+Branch `refactor/11276-4-any-mixin-entries`. The `AnyBase` bridge is a `DeferralEntry::Native` too:
+`build_method_dispatch_frame` appends it when a user `gist`/`Str`/`raku` is declared on an `Instance`, and the
+entry's arm runs `any_base_native_entry` (the shared default rendering) for an `Instance` receiver and the core-type
+builtin otherwise. `native_any_base_next_candidate` keeps one job, resolving the receiver for the frame-less lanes
+(and is dropped from the three `NATIVE_BASE_*` orders). `MixinBase` is not moved: its frames are built by
+`dispatch_mixin_method_call` (`methods_mixin_dispatch.rs`), a second builder, and the storage bridges depend on
+`is_container_protocol_method` frames; both need one shared frame builder first.
