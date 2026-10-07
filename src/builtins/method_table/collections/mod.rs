@@ -19,12 +19,17 @@ pub(crate) mod pair;
 pub(crate) mod positional;
 pub(crate) mod quanthash;
 pub(crate) mod range;
+mod render;
 pub(crate) mod subscript;
 mod truth;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     any_collection::ROWS,
+    render::WHICH_ROWS,
+    render::QUANT_GIST_ROWS,
+    render::QUANT_RAKU_ROWS,
+    render::RANGE_ROWS,
     capture::ROWS,
     any_interp::ROWS,
     lazy::ROWS,
