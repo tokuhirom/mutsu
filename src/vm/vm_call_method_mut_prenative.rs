@@ -112,13 +112,16 @@ impl Interpreter {
                 .builtin_method_wrap_chain("IO::Handle", method)
                 .is_none()
         {
-            let result = crate::builtins::method_table::invoke_owner(
-                self,
-                &["IO::Handle"],
-                method,
-                args,
-                || target.clone(),
-            )?;
+            // The row by shape, with the call's interned name: no interning
+            // per call (`named_call_intern_budget`).
+            let receiver = crate::builtins::method_table::Receiver::of(target)?;
+            let id = crate::builtins::method_table::resolve(receiver, method_sym, args.len())?;
+            if args.iter().any(Value::is_string_pair_value)
+                || !crate::builtins::method_table::admits(id, args)
+            {
+                return None;
+            }
+            let result = crate::builtins::method_table::invoke_in(id, self, target, args)?;
             // Same bookkeeping as the general path's user-dispatch completion
             // this used to reach: the rendering may run user `gist` code, so
             // the dispatch is not assumed env-pure.
