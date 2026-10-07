@@ -328,6 +328,13 @@ pub(crate) struct Registry {
     /// the next scope the outward walk visits after it (skipping the
     /// intermediate segments the compound name merely spells).
     pub(crate) compound_declared_types: HashMap<String, Symbol>,
+    /// A compound-named class declared inside a package while that very name
+    /// already denotes a class (`unit class Foo::Bar; class Foo::Bar { }`).
+    /// Rakudo installs the nested class into the existing `Foo` stash, so the
+    /// written name `Foo::Bar` then names the nested class (whose own name is
+    /// the package-qualified `Foo::Bar::Foo::Bar`) and the outer class is no
+    /// longer reachable by it. Maps the written name to that qualified name.
+    pub(crate) compound_name_overrides: HashMap<String, String>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).
     pub(crate) class_stubs: HashSet<String>,
     /// Forward-declared package stubs.

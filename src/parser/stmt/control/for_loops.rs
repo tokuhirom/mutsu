@@ -272,9 +272,7 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     // The single-param form stores a sigilless `\name` without the leading `\`
     // (multi-param form keeps it), so consult the ParamDef sigilless flags too.
     for pd in param_def.iter().chain(params_def.iter()) {
-        if pd.sigilless && !sigilless_param_names.contains(&pd.name) {
-            sigilless_param_names.push(pd.name.clone());
-        }
+        collect_sigilless_param_names(pd, &mut sigilless_param_names);
     }
     let block_input = rest;
     let (rest, body) = if !code_param_names.is_empty() || !sigilless_param_names.is_empty() {
@@ -329,6 +327,22 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
             uses_block_magic,
         },
     ))
+}
+
+/// Collect sigilless terms throughout a destructuring loop signature.
+///
+/// A destructured for parameter stores its nested parameters on the synthetic
+/// unpack parameter's sub_signature, rather than in params_def.
+// Cost: O(p), p = parameters and nested destructuring parameters.
+fn collect_sigilless_param_names(param: &ParamDef, names: &mut Vec<String>) {
+    if param.sigilless && !names.contains(&param.name) {
+        names.push(param.name.clone());
+    }
+    if let Some(nested) = &param.sub_signature {
+        for param in nested {
+            collect_sigilless_param_names(param, names);
+        }
+    }
 }
 
 /// Derive a `for` loop's implicit signature from the placeholder variables

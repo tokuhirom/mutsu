@@ -180,7 +180,11 @@ impl Interpreter {
         let Some(tree) = regex.regex_source_tree() else {
             return self.regex_match_with_captures(&pattern, text);
         };
-        if Self::parse_anchored_single_subrule(&pattern).is_some()
+        // A tree holding a construct execution never reads (`:constant $x = 1;`,
+        // `<?alpha>`, ...) is the tree the pattern had before it was modelled:
+        // none. It keeps that path whole, declarative prefix included.
+        if tree.holds_extension()
+            || Self::parse_anchored_single_subrule(&pattern).is_some()
             || (!Self::parse_regex_declarative_prefix(&pattern).0.is_empty()
                 && tree.declaration_kind.is_none())
         {

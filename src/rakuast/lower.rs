@@ -13,8 +13,7 @@ use crate::ast::{
 };
 use crate::regex_tree::{RegexNode, RegexTree};
 use crate::symbol::Symbol;
-use crate::value::{RegexAdverbs, RuntimeError, Value, ValueView};
-use std::sync::Arc;
+use crate::value::{RuntimeError, Value, ValueView};
 
 type LoweredEnumVariants = (Vec<(String, Option<Expr>)>, EnumVariantForm);
 
@@ -97,7 +96,7 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     }
 }
 
-fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
         // A declaration wrapped in Statement::Expression lowers to its own
         // statement (a `my $x = …` is a `Stmt::VarDecl`, not a `Stmt::Expr`).
@@ -1282,6 +1281,19 @@ fn lower_grammar(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
+/// `(my, our)` of a regex declaration's `scope`.
+fn regex_declaration_scope(node: &RakuAstNode) -> Result<(bool, bool), RuntimeError> {
+    Ok(match node.fields.iter().find(|f| f.name == Some("scope")) {
+        None => (false, false),
+        Some(_) => match leaf_str(node, "scope")?.as_str() {
+            "my" => (true, false),
+            "our" => (false, true),
+            "has" => (false, false),
+            _ => return Err(unsupported(node)),
+        },
+    })
+}
+
 fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let body = named_child(node, "body")?;
@@ -1291,6 +1303,27 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::RuleDeclaration => crate::regex_tree::RegexDeclKind::Rule,
         _ => return Err(unsupported(node)),
     };
+    let multiness = match node.fields.iter().find(|f| f.name == Some("multiness")) {
+        None => String::new(),
+        Some(_) => leaf_str(node, "multiness")?,
+    };
+    if !matches!(multiness.as_str(), "" | "multi" | "proto") {
+        return Err(unsupported(node));
+    }
+    // `proto token t {*}`: only the dispatcher, whose body is `{*}`.
+    if multiness == "proto" {
+        if body.class != RakuAstClass::OnlyStar {
+            return Err(unsupported(node));
+        }
+        let (is_my, is_our) = regex_declaration_scope(node)?;
+        return Ok(Stmt::ProtoToken {
+            name: crate::symbol::Symbol::intern(&name),
+            param_defs: signature_positional_params(node)?.1,
+            regex_kind: declaration_kind,
+            is_my,
+            is_our,
+        });
+    }
     let tree = RegexTree {
         body: lower_regex_node(body)?,
         match_immediately: false,
@@ -1312,15 +1345,8 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let body = vec![Stmt::Expr(Expr::Literal(value))];
     let source_regex = Some(tree);
     let (params, param_defs) = signature_positional_params(node)?;
-    let (is_my, is_our) = match node.fields.iter().find(|f| f.name == Some("scope")) {
-        None => (false, false),
-        Some(_) => match leaf_str(node, "scope")?.as_str() {
-            "my" => (true, false),
-            "our" => (false, true),
-            "has" => (false, false),
-            _ => return Err(unsupported(node)),
-        },
-    };
+    let (is_my, is_our) = regex_declaration_scope(node)?;
+    let multi = multiness == "multi";
     if (is_my || is_our) && node.class == RakuAstClass::RuleDeclaration {
         // `Stmt::RuleDecl` has no scope; the converter never renders one.
         return Err(unsupported(node));
@@ -1337,7 +1363,7 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             } else {
                 crate::regex_tree::RegexDeclKind::Token
             },
-            multi: false,
+            multi,
             is_my,
             is_our,
             is_export: false,
@@ -1349,7 +1375,7 @@ fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             param_defs,
             body,
             source_regex,
-            multi: false,
+            multi,
             is_export: false,
             export_tags: Vec::new(),
         }),
@@ -3256,7 +3282,10 @@ fn hash_composer_source(pairs: &[(String, Option<Expr>)]) -> Option<String> {
     Some(format!("{{ {} }}", entries.join(", ")))
 }
 
-fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
+pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
+    if let Some(extension) = super::regex_extension::lower(node) {
+        return extension;
+    }
     match node.class {
         RakuAstClass::RegexLiteral => match positional_leaf(node)?.view() {
             ValueView::Str(text) => Ok(RegexNode::Literal(text.to_string())),
@@ -3452,16 +3481,16 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
             })
         }
         RakuAstClass::RegexAssertionPredicateBlock => Ok(RegexNode::CodeAssertion {
-            code: String::new(),
+            code: super::regex_code::source_of(node),
             negated: bool_field(node, "negated")?,
             body: lower_block(named_child(node, "block")?)?,
         }),
         RakuAstClass::RegexBlock => Ok(RegexNode::CodeBlock {
-            code: String::new(),
+            code: super::regex_code::source_of(node),
             body: lower_block(named_child_or_positional(node)?)?,
         }),
         RakuAstClass::RegexAssertionInterpolatedBlock => Ok(RegexNode::InterpolatedBlock {
-            code: String::new(),
+            code: super::regex_code::source_of(node),
             body: lower_block(named_child(node, "block")?)?,
             sequential: bool_field(node, "sequential")?,
         }),
@@ -3587,90 +3616,15 @@ fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeError> {
     }
 }
 
-fn lower_regex_adverb(node: &RakuAstNode) -> Result<crate::regex_tree::RegexAdverb, RuntimeError> {
-    if node.class != RakuAstClass::ColonPairTrue {
-        return Err(unsupported(node));
-    }
-    let value = positional_leaf(node)?;
-    let ValueView::Str(name) = value.view() else {
-        return Err(unsupported(node));
-    };
-    Ok(crate::regex_tree::RegexAdverb {
-        name: name.to_string(),
-        argument: None,
-    })
-}
-
-/// Build the legacy execution value from source-level adverbs. This is a
-/// compatibility bridge; the shared tree remains the source of truth for
-/// RakuAST and the compiler still emits the existing match opcode.
+/// The execution value of a regex literal: what the parser builds from the
+/// same written adverbs (`rx:i/a/`, `m:g:x(2)/a/`), with the tree beside it.
+// Cost: O(n), n = size of the pattern and adverbs.
 fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
-    if tree.adverbs.is_empty() {
-        return Ok(Value::regex(tree.to_source()).with_regex_source_tree(tree.clone()));
-    }
-    let mut pattern = tree.to_source();
-    let mut value = RegexAdverbs {
-        pattern: Arc::new(String::new()),
-        global: false,
-        exhaustive: false,
-        overlap: false,
-        repeat: None,
-        nth: None,
-        pos: false,
-        pos_value: None,
-        continue_: false,
-        continue_value: None,
-        ignore_case: false,
-        sigspace: false,
-        samecase: false,
-        samespace: false,
-        source_adverbs: None,
-        captured: None,
-        topic: None,
-        source_tree: None,
-        id: Default::default(),
-        name: Default::default(),
-    };
-    for adverb in &tree.adverbs {
-        if adverb.argument.is_some() {
-            return Err(RuntimeError::new(format!(
-                "RakuAST: EVAL does not yet support regex adverb argument `{}`",
-                adverb.name
-            )));
-        }
-        match adverb.name.as_str() {
-            "g" | "global" => value.global = true,
-            "ex" | "exhaustive" => value.exhaustive = true,
-            "ov" | "overlap" => value.overlap = true,
-            "i" | "ignorecase" => {
-                value.ignore_case = true;
-                pattern = format!(":i {pattern}");
-            }
-            "ii" | "samecase" => {
-                value.samecase = true;
-                value.ignore_case = true;
-                pattern = format!(":i {pattern}");
-            }
-            "s" | "sigspace" => {
-                value.sigspace = true;
-                pattern = format!(":s {pattern}");
-            }
-            "ss" | "samespace" => {
-                value.samespace = true;
-                value.sigspace = true;
-                pattern = format!(":s {pattern}");
-            }
-            "r" | "ratchet" => pattern = format!(":ratchet {pattern}"),
-            "m" | "ignoremark" => pattern = format!(":m {pattern}"),
-            other => {
-                return Err(RuntimeError::new(format!(
-                    "RakuAST: EVAL does not yet support regex adverb `{other}`"
-                )));
-            }
-        }
-    }
-    value.pattern = Arc::new(pattern);
-    Ok(Value::regex_with_adverbs(value).with_regex_source_tree(tree.clone()))
+    crate::parser::regex_execution_value(tree.to_source(), &tree.adverbs)
+        .map(|value| value.with_regex_source_tree(tree.clone()))
+        .ok_or_else(|| {
+            RuntimeError::new("RakuAST: EVAL does not yet support this regex adverb".to_string())
+        })
 }
 
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
@@ -3696,6 +3650,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     }
     match node.class {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
+        // `$<name>` / `@<name>`.
+        RakuAstClass::VarNamedCapture => super::match_vars::lower(node),
+        RakuAstClass::VarPositionalCapture => super::match_vars::lower_positional(node),
         RakuAstClass::VarDeclarationAnonymous => super::anon_state::lower_term(node),
         // `(temp $x)` / `(let $x = 1)`: the parser's save, wrapped in a `DoStmt`.
         RakuAstClass::ApplyPrefix | RakuAstClass::ApplyInfix | RakuAstClass::ApplyDottyInfix
@@ -3748,6 +3705,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
             Ok(Expr::StringInterpolation(parts))
         }
+        RakuAstClass::Substitution => super::substitution::lower_substitution(node),
+        RakuAstClass::Transliteration => super::substitution::lower_transliteration(node),
         RakuAstClass::QuotedRegex => {
             let body = named_child(node, "body")?;
             let match_immediately = bool_field(node, "match-immediately")?;
@@ -3763,7 +3722,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                             let ValueView::RakuAst(adverb) = item.view() else {
                                 return Err(unsupported(node));
                             };
-                            lower_regex_adverb(adverb)
+                            super::substitution::lower_adverb(adverb)
                         })
                         .collect::<Result<Vec<_>, _>>()?,
                     _ => return Err(unsupported(node)),
@@ -4690,7 +4649,7 @@ pub(super) fn prefix_token(
 
 /// An optional boolean-valued named field (an omitted field is `False`, which
 /// is exactly how raku's gist elides a false `dwim-left` / `dwim-right`).
-fn bool_field(node: &RakuAstNode, name: &str) -> Result<bool, RuntimeError> {
+pub(super) fn bool_field(node: &RakuAstNode, name: &str) -> Result<bool, RuntimeError> {
     match node.fields.iter().find(|f| f.name == Some(name)) {
         None => Ok(false),
         Some(f) => match &f.value {

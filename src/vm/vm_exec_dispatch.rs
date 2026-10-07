@@ -156,6 +156,13 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let result = self.exec_one_dispatch(code, ip, compiled_fns);
+        // `finish_op_result` returns an `Ok` unchanged unless a `where`
+        // exception is pending, and moving the (large) `Result` through its
+        // by-value parameter and back was ~36 instructions per executed op
+        // (#12151). The success path decides it here and moves nothing.
+        if result.is_ok() && self.pending_where_exception.is_none() {
+            return Ok(());
+        }
         self.finish_op_result(code, *ip, result)
     }
 

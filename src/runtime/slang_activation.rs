@@ -187,6 +187,28 @@ pub(crate) fn run_slang_activation(
 }
 
 impl Interpreter {
+    /// `Str.AST`: parse source using this interpreter's module search paths.
+    ///
+    /// Module exports must be scanned while parsing the source, just as they
+    /// are for a program being run by this interpreter. The pure builtin path
+    /// has no access to those paths, so `.AST` is dispatched through this
+    /// interpreter carrier.
+    pub(crate) fn str_ast_with_paths(
+        &mut self,
+        source: &str,
+        compunit: bool,
+    ) -> Result<Value, RuntimeError> {
+        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_program_path(self.io.program_path.clone());
+        let result = if compunit {
+            crate::rakuast::str_dot_ast_compunit(source)
+        } else {
+            crate::rakuast::str_dot_ast(source)
+        };
+        crate::parser::clear_parser_lib_paths();
+        result
+    }
+
     /// `Str.AST($slang)`: parse `source` under the localized surface syntax of
     /// the `L10N::<$slang>` distribution.
     ///

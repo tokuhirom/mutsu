@@ -583,11 +583,12 @@ pub(crate) fn package_decl_with_scope(input: &str, is_my: bool) -> PResult<'_, S
 
 /// Parse `proto` declaration.
 pub(crate) fn proto_decl(input: &str) -> PResult<'_, Stmt> {
-    proto_decl_scoped(input, false)
+    proto_decl_scoped(input, false, false)
 }
 
-/// `proto` declaration, `is_our` set for the `our proto ...` spelling.
-pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> {
+/// `proto` declaration, `is_my` / `is_our` set for the `my proto ...` /
+/// `our proto ...` spellings.
+pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResult<'_, Stmt> {
     let rest = keyword("proto", input).ok_or_else(|| PError::expected("proto declaration"))?;
     let (rest, _) = ws1(rest)?;
     // proto token | proto rule | proto regex | proto sub | proto method
@@ -596,6 +597,13 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
     // `rule`/`regex` used to fall through to `ProtoDecl`, which registered a
     // package-level proto sub, so a second instantiation of a role carrying
     // one (a pun, then a composition) died with X::Redeclaration (#9337).
+    let regex_kind = if keyword("rule", rest).is_some() {
+        crate::regex_tree::RegexDeclKind::Rule
+    } else if keyword("regex", rest).is_some() {
+        crate::regex_tree::RegexDeclKind::Regex
+    } else {
+        crate::regex_tree::RegexDeclKind::Token
+    };
     let is_regex_proto = keyword("token", rest).is_some()
         || keyword("rule", rest).is_some()
         || keyword("regex", rest).is_some();
@@ -662,6 +670,9 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
                 Stmt::ProtoToken {
                     name: Symbol::intern(&name),
                     param_defs,
+                    regex_kind,
+                    is_my,
+                    is_our,
                 },
             ));
         }
@@ -693,6 +704,9 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
             Stmt::ProtoToken {
                 name: Symbol::intern(&name),
                 param_defs,
+                regex_kind,
+                is_my,
+                is_our,
             },
         ));
     }

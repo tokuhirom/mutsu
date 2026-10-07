@@ -567,6 +567,14 @@ impl Interpreter {
     /// chain-walk-plus-`canonical_builtin_owner`-fold traversal as
     /// [`Self::record_native_row_coverage`] via [`chain_owner_probe`].
     pub(crate) fn e2_native_method_exists(&mut self, target: &Value, name: &'static str) -> bool {
+        // A RakuAST node answers the accessor of each field its class declares
+        // (`Substitution.samespace`), which have no row of their own: without
+        // this a name only some `Cool` subtypes declare would be refused on it.
+        if let ValueView::RakuAst(node) = target.view()
+            && crate::rakuast::node_accessor(node, name).is_some()
+        {
+            return true;
+        }
         let chain = self.dispatch_owner_chain(target);
         chain_owner_probe(&chain, |owner| {
             crate::builtins::native_method_row::native_method_row_exists(owner, name)

@@ -1122,6 +1122,9 @@ pub(crate) struct NativeCtorPlan {
     pub(crate) has_build: bool,
     pub(crate) has_tweak: bool,
     pub(crate) has_smiley: bool,
+    /// True when some attribute is typed with a user `subset`, whose predicate
+    /// is checked at construction (defaults included) like a `where` clause.
+    pub(crate) has_subset_attr: bool,
     /// True when this class's attribute set is FULLY known to the registry:
     /// the class is user-declared and every type in its MRO other than the
     /// universal roots (`Any`/`Mu`/`Cool`) is user-declared too.

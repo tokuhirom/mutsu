@@ -241,6 +241,17 @@ impl Interpreter {
             };
             let qualified_sym = Symbol::intern(&qualified_name);
             let resolved_is_qualified = crate::qualified::is_qualified(resolved_sym);
+            // `unit class Foo::Bar; class Foo::Bar { }`: the written name
+            // already denotes a class, and the nested one takes it over.
+            if !*is_lexical
+                && resolved_is_qualified
+                && qualified_name != resolved_name
+                && self.has_class(&resolved_name)
+            {
+                self.registry_mut()
+                    .compound_name_overrides
+                    .insert(resolved_name.clone(), qualified_name.clone());
+            }
             let qualified_parent = crate::qualified::package_parent(qualified_sym);
             // A lexical (`my`) class is stored in the registry under a *storage
             // name* distinct from its source `qualified_name` (ADR-0047 D1/P1):

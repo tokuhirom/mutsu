@@ -224,6 +224,15 @@ impl Interpreter {
                 name,
             )));
         }
+        // A nested class declared under a name that already denoted a class
+        // (`unit class Foo::Bar; class Foo::Bar { }`) took that name over.
+        let name_override = name_is_qualified
+            .then(|| self.registry().compound_name_overrides.get(name).cloned())
+            .flatten();
+        if let Some(target) = name_override {
+            self.stack.push(Value::package(Symbol::intern(&target)));
+            return Ok(());
+        }
         // A leading constant that names a package is a valid qualifier
         // (`constant E = A::B; E::Status::Started`): resolve the rest under
         // the package it stands for, as a qualified call or `&E::f` already do.

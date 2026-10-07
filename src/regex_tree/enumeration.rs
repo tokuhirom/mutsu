@@ -32,7 +32,19 @@ pub(crate) enum CharClassElement {
         name: String,
         negated: bool,
         inverted: bool,
+        /// The value it must have (`<:Script<Latin>>`, `<:Nv(1)>`).
+        #[serde(default)]
+        predicate: Option<PropertyPredicate>,
     },
+}
+
+/// The value a property must have, as written after its name.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum PropertyPredicate {
+    /// `<Latin>`: the text between the angle brackets.
+    Words(String),
+    /// `(1)`: the text between the parentheses.
+    Args(String),
 }
 
 /// One entry of an enumerated `[...]` class.
@@ -79,9 +91,18 @@ impl CharClassElement {
                 name,
                 negated,
                 inverted,
+                predicate,
             } => (
                 *negated,
-                format!(":{}{name}", if *inverted { "!" } else { "" }),
+                format!(
+                    ":{}{name}{}",
+                    if *inverted { "!" } else { "" },
+                    match predicate {
+                        None => String::new(),
+                        Some(PropertyPredicate::Words(text)) => format!("<{text}>"),
+                        Some(PropertyPredicate::Args(text)) => format!("({text})"),
+                    }
+                ),
             ),
         };
         // A leading positive rule needs its `+`: `<alpha>` is a subrule.
@@ -151,14 +172,12 @@ impl Parser {
             } else if self.consume_if(':') {
                 let inverted = self.consume_if('!');
                 let name = self.parse_class_name()?;
-                // A predicate (`<:Nv(1)>`, `<:Script<Latin>>`) is not modelled.
-                if matches!(self.chars.get(self.pos), Some('(' | '<' | '[')) {
-                    return None;
-                }
+                let predicate = self.parse_property_predicate()?;
                 elements.push(CharClassElement::Property {
                     name,
                     negated,
                     inverted,
+                    predicate,
                 });
             } else {
                 let name = self.parse_class_name()?;
@@ -168,15 +187,57 @@ impl Parser {
         (!elements.is_empty()).then_some(elements)
     }
 
-    /// The identifier naming a rule or property term.
+    /// The `<Latin>` or `(1)` after a property's name, if any. `None` (not an
+    /// absent predicate) for a form the tree does not model.
+    // Cost: O(k), k = length of the predicate.
+    fn parse_property_predicate(&mut self) -> Option<Option<PropertyPredicate>> {
+        let (open, close) = match self.chars.get(self.pos) {
+            Some('<') => ('<', '>'),
+            Some('(') => ('(', ')'),
+            Some('[') => return None,
+            _ => return Some(None),
+        };
+        let start = self.pos + 1;
+        let mut depth = 1usize;
+        let mut end = start;
+        while let Some(&c) = self.chars.get(end) {
+            if c == open {
+                depth += 1;
+            } else if c == close {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            end += 1;
+        }
+        if depth != 0 {
+            return None;
+        }
+        let text: String = self.chars[start..end].iter().collect();
+        self.pos = end + 1;
+        Some(Some(if open == '<' {
+            PropertyPredicate::Words(text)
+        } else {
+            PropertyPredicate::Args(text)
+        }))
+    }
+
+    /// The identifier naming a rule or property term. A hyphen followed by a
+    /// letter continues the name (`+name-sep`); any other `-` is the operator.
     // Cost: O(k), k = length of the name.
     fn parse_class_name(&mut self) -> Option<String> {
         let name_start = self.pos;
-        while self
-            .chars
-            .get(self.pos)
-            .is_some_and(|c| c.is_alphanumeric() || *c == '_')
-        {
+        while let Some(&c) = self.chars.get(self.pos) {
+            let hyphen = c == '-'
+                && self.pos != name_start
+                && self
+                    .chars
+                    .get(self.pos + 1)
+                    .is_some_and(|next| next.is_alphabetic() || *next == '_');
+            if !(c.is_alphanumeric() || c == '_' || hyphen) {
+                break;
+            }
             self.pos += 1;
         }
         (self.pos != name_start).then(|| self.chars[name_start..self.pos].iter().collect())
@@ -279,4 +340,21 @@ fn single_char(element: &EnumerationElement) -> Option<char> {
         }
         _ => None,
     }
+}
+
+/// Whether `name` is the identifier of a rule or property term: word
+/// characters, with a hyphen allowed before a letter (`name-sep`).
+// Cost: O(|name|).
+pub(crate) fn is_class_name(name: &str) -> bool {
+    let chars: Vec<char> = name.chars().collect();
+    !chars.is_empty()
+        && chars.iter().enumerate().all(|(at, &c)| {
+            c.is_alphanumeric()
+                || c == '_'
+                || (c == '-'
+                    && at > 0
+                    && chars
+                        .get(at + 1)
+                        .is_some_and(|next| next.is_alphabetic() || *next == '_'))
+        })
 }

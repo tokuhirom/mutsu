@@ -17,6 +17,9 @@ pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
 };
 pub(crate) use primary::ident::{anon_method_expr, anon_method_expr_declared, folded_invocant};
+pub(crate) use primary::regex::{
+    SubstFlags, parse_adverb_argument, regex_execution_value, subst_pattern_source,
+};
 pub(crate) use primary::string::{decode_q_regex_quote, decode_qq_regex_quote};
 pub(crate) use primary::var::{fresh_anon_array_name, fresh_anon_state_name, is_pseudo_package};
 pub(crate) use primary::{
@@ -200,7 +203,7 @@ pub(crate) use stmt::sub::is_builtin_param_trait;
 
 /// Descend a feed chain to its textually-leftmost operand slot — for splitting a
 /// declaration/assignment that binds tighter than the feed.
-pub(crate) use expr::precedence::feed_leftmost_operand_mut;
+pub(crate) use expr::precedence::{feed_leftmost_operand_mut, lift_feed_in_list};
 
 pub(crate) fn current_language_version() -> String {
     stmt::simple::current_language_version()
@@ -345,9 +348,17 @@ pub(crate) fn parse_fragment(input: &str) -> Result<(Vec<Stmt>, Option<String>),
     // A fragment is not a compilation unit: it must not replace the
     // declarator docs the enclosing unit's parse published.
     let saved_unit_docs = decl_doc::take_unit_docs();
+    // `parse_program` starts by clearing "an import could not be scanned", which
+    // would make the enclosing unit's type index look exhaustive again: a
+    // regex code block parsed in the middle of a module with an unresolved
+    // `use` then turned every later undeclared type name into a gobbled block.
+    let type_index_was_incomplete = !stmt::simple::type_index_is_complete();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
     let result = parse_program(input);
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
+    if type_index_was_incomplete {
+        stmt::simple::note_type_index_incomplete();
+    }
     decl_doc::set_unit_docs(saved_unit_docs);
     PARSE_WARNINGS.with(|w| *w.borrow_mut() = saved_warnings);
     VCS_CONFLICT_MARKERS.with(|m| *m.borrow_mut() = saved_markers);

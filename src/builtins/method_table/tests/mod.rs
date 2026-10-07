@@ -80,6 +80,11 @@ fn sample(shape: DispatchShape) -> Value {
         DispatchShape::IoSpecWin32 => type_sample("IO::Spec::Win32"),
         DispatchShape::IoSpecCygwin => type_sample("IO::Spec::Cygwin"),
         DispatchShape::IoSpecQnx => type_sample("IO::Spec::QNX"),
+        DispatchShape::IoHandle => {
+            let mut attributes = crate::value::AttrMap::new();
+            attributes.insert("handle".to_string(), Value::int(-1));
+            Value::make_instance_without_destroy(Symbol::intern("IO::Handle"), attributes)
+        }
         DispatchShape::IoPath => {
             let mut attributes = crate::value::AttrMap::new();
             attributes.insert("path".to_string(), Value::str_from("foo/bar"));
@@ -133,6 +138,9 @@ fn no_row_is_registered_twice() {
 #[test]
 fn every_row_is_reached_and_answers() {
     for row in rows() {
+        if row.flags.contains(RowFlags::OWNER_ONLY) {
+            continue;
+        }
         let mut reached = false;
         for shape in DispatchShape::ALL {
             let Some(found) = table::lookup(
@@ -303,19 +311,23 @@ fn receivers_pack_into_distinct_bytes() {
 /// `Rat`, ADR-11276 §8), so a row is checked under its folded owner.
 #[test]
 fn rows_are_declared_by_rakudo() {
-    for row in rows() {
-        let owner = match crate::builtins::builtin_type_methods::canonical_builtin_owner(row.owner)
-        {
-            "" => row.owner,
-            folded => folded,
-        };
-        assert!(
-            crate::builtins::native_method_row::native_method_declared(owner, row.name),
-            "{}.{} has a row, but the catalog does not record Rakudo declaring it there",
-            row.owner,
-            row.name
-        );
-    }
+    let undeclared: Vec<String> = rows()
+        // `DESTROY` is a submethod: Rakudo's `.^method_table` does not list it.
+        .filter(|row| row.name != "DESTROY")
+        .filter(|row| {
+            let owner =
+                match crate::builtins::builtin_type_methods::canonical_builtin_owner(row.owner) {
+                    "" => row.owner,
+                    folded => folded,
+                };
+            !crate::builtins::native_method_row::native_method_declared(owner, row.name)
+        })
+        .map(|row| format!("{}.{}", row.owner, row.name))
+        .collect();
+    assert!(
+        undeclared.is_empty(),
+        "rows the catalog does not record Rakudo declaring: {undeclared:?}"
+    );
 }
 
 /// The name test carries the arity: a call with an argument count no row of

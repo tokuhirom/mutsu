@@ -77,6 +77,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             nth: _,
             x: _,
             replacement_thunk,
+            tree: _,
         }
         | Expr::NonDestructiveSubst {
             pattern,
@@ -89,6 +90,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             nth: _,
             x: _,
             replacement_thunk,
+            tree: _,
         } => {
             v.visit_name(pattern, NameKind::Source);
             v.visit_name(replacement, NameKind::Source);
@@ -104,6 +106,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             complement: _,
             squash: _,
             non_destructive: _,
+            adverbs: _,
         } => {}
         Expr::Contextualizer { kind: _, inner } => v.visit_expr(inner),
         Expr::MethodCall {

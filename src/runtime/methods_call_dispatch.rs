@@ -3379,6 +3379,23 @@ impl Interpreter {
         {
             return self.str_ast_with_slang(&source, slang);
         }
+        // Plain `Str.AST` must scan `use`d modules with this interpreter's
+        // module paths before converting exported names.
+        if method == "AST"
+            && !bypass_native_fastpath
+            && let ValueView::Str(source) = target.view()
+            && (args.is_empty()
+                || (args.len() == 1
+                    && matches!(args[0].view(), ValueView::Pair(key, _)
+                        if key.as_str() == "compunit")))
+        {
+            let compunit = matches!(
+                args.first().map(Value::view),
+                Some(ValueView::Pair(key, value))
+                    if key.as_str() == "compunit" && value.truthy()
+            );
+            return self.str_ast_with_paths(&source, compunit);
+        }
         if method == "AT-POS"
             && !bypass_native_fastpath
             && let Some(result) = self.builtin_at_pos(&target, &args)
