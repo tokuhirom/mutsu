@@ -26,7 +26,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 use super::Interpreter;
 use super::cstruct_layout::{
-    FieldLayout, FieldType, pointer_parameter, read_field, short_base_name,
+    FieldLayout, FieldType, read_field, short_base_name,
 };
 
 /// The C field type a cast target reads **through** the address, or `None` for
@@ -68,9 +68,6 @@ impl Interpreter {
         // "Pointer[T]" — every `Pointer` method (`.Int`, `.gist`, the
         // marshalling layer's `address` read) keeps working unchanged, and
         // `.of` / `.deref` read the parameter from there.
-        if let Some(of) = pointer_parameter(short) {
-            return crate::runtime::nativecall::make_typed_pointer(addr, of);
-        }
         if addr != 0
             && !self.is_native_handle_class(target)
             && let Some(ty) = read_through_field_type(short)

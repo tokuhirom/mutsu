@@ -372,17 +372,6 @@ impl Interpreter {
                         _ => String::new(),
                     })
                     .unwrap_or_default();
-                let short = crate::runtime::cstruct_layout::short_base_name(&target);
-                if short == "Pointer" || short.starts_with("Pointer[") {
-                    let of = short
-                        .strip_prefix("Pointer[")
-                        .and_then(|s| s.strip_suffix(']'));
-                    let addr = n.max(0) as usize;
-                    return Some(Ok(match of {
-                        Some(of) => crate::runtime::nativecall::make_typed_pointer(addr, of),
-                        None => crate::runtime::nativecall::make_pointer_object(addr),
-                    }));
-                }
                 if !target.is_empty()
                     && target != "Int"
                     && self.class_mro(&target).iter().any(|name| name == "Int")
