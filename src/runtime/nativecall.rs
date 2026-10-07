@@ -742,17 +742,6 @@ pub(crate) fn pointer_display_suffix(target: &Value) -> Option<String> {
     Some(format!("[{}]", crate::value::user_facing_type_name(&of)))
 }
 
-/// A plain `Pointer` holding `addr`, **defined even at 0** — `Pointer.new(0)` is
-/// a legitimate value in Rakudo, unlike the NULL *return* of a native call,
-/// which is the declared class's type object so the caller's `unless defined`
-/// guard fires ([`make_native_handle`]).
-#[cfg(feature = "libffi")]
-pub(crate) fn make_pointer_object(addr: usize) -> Value {
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("address".to_string(), Value::int(addr as i64));
-    Value::make_instance(crate::symbol::Symbol::intern("Pointer"), attrs)
-}
-
 pub(crate) fn make_native_handle(class: &str, addr: usize) -> Value {
     if addr == 0 {
         return Value::package(crate::symbol::Symbol::intern(class));
