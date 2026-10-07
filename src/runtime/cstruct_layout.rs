@@ -1063,7 +1063,13 @@ impl crate::runtime::Interpreter {
             Some("CStr")
         } else {
             drop(reg);
-            self.is_carray_repr_class(name).then_some("CArray")
+            // A parameterised spelling (`CArray[T]`, `CArray[CArray[uint8]]`) is
+            // a mixin of the class that holds the REPR, so it is judged by its
+            // base, as `is_native_handle_class` does for a struct field. A
+            // signature's nested parameterisation reaches here as the bare
+            // spelling, and upstream's `validnctype` reads its `.REPR`.
+            let base = name.split_once('[').map_or(name, |(base, _)| base);
+            self.is_carray_repr_class(base).then_some("CArray")
         }
     }
 }

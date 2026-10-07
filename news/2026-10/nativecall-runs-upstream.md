@@ -90,6 +90,18 @@ convertible before because it was hard-wired as a core type name. A plain `Str.A
 that `use`s a bundled module still cannot see that module's exports
 ([#12185](https://github.com/tokuhirom/mutsu/issues/12185)).
 
+Loading the rest of the bundled libraries over the real NativeCall found three more general
+bugs, all in `Cro::HTTP`'s suite: a `multi trait_mod:<is>` in a module several `use` levels above
+the one that loads NativeCall died with "Redeclaration of routine" (a dispatcher of the very family
+a `multi` joins is not a plain `sub` to redeclare); a nested `CArray[CArray[uint8]]` signature
+parameter read `.REPR` as `P6opaque`, so every load of OpenSSL warned "Not an accepted NativeCall
+type" (a parameterised spelling is judged by its base); and a worker thread running upstream's typed
+locals (`my int $n`, `my int $i`) pinned the awaiting thread's own `$n` / `$i` to a stale value
+after a `Cro::HTTP::Client` round trip, through three publishing paths of the bare-name shared
+store (a hoisted typed seed, an unchanged scalar write, the frame-teardown mirror of an ambient
+scalar). The store being keyed by bare name stays the root of that class of bug
+([#12204](https://github.com/tokuhirom/mutsu/issues/12204)).
+
 Still open: [#12144](https://github.com/tokuhirom/mutsu/issues/12144), a pre-existing flake in
 `t/nativecall/nativecall-mvp.t` (an `is native('m', v6)` trait argument occasionally evaluates to
 the previous routine's `('c', v6)`; the pre-switch binary reproduces it), and the
