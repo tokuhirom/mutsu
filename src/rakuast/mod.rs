@@ -281,6 +281,7 @@ pub enum RakuAstClass {
     TypeEnum,
     // Phase 2 slice 20: definite types (`Int:D` / `Int:U`).
     TypeDefinedness,
+    TypeAnyDefinedness,
     // Phase 2 slice 27: attribute build-time defaults.
     TraitWillBuild,
     // Routine return types written as a trait (`sub f() returns Int` / `of Int`).
@@ -623,6 +624,7 @@ impl RakuAstClass {
             TypeSimple => "RakuAST::Type::Simple",
             TypeEnum => "RakuAST::Type::Enum",
             TypeDefinedness => "RakuAST::Type::Definedness",
+            TypeAnyDefinedness => "RakuAST::Type::AnyDefinedness",
             TraitWillBuild => "RakuAST::Trait::WillBuild",
             TraitReturns => "RakuAST::Trait::Returns",
             TraitOf => "RakuAST::Trait::Of",
@@ -1468,6 +1470,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TypeSimple,
     RakuAstClass::TypeEnum,
     RakuAstClass::TypeDefinedness,
+    RakuAstClass::TypeAnyDefinedness,
     RakuAstClass::TraitWillBuild,
     RakuAstClass::TraitReturns,
     RakuAstClass::TraitOf,
@@ -3014,6 +3017,7 @@ fn require_rakuast_type(value: &Value, constructor: &str) -> Result<(), RuntimeE
                     | RakuAstClass::TypeEnum
                     | RakuAstClass::TypeSetting
                     | RakuAstClass::TypeDefinedness
+                    | RakuAstClass::TypeAnyDefinedness
                     | RakuAstClass::TypeParameterized
                     | RakuAstClass::TypeCoercion
             ) =>

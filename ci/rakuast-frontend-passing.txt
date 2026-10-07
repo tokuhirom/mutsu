@@ -2592,8 +2592,10 @@ t/nativecall/native-socket-inet-ctor.t
 t/nativecall/native-sprintf.t
 t/nativecall/native-tweak-construct.t
 t/nativecall/native-type-class-perf.t
+t/nativecall/native-type-smiley-and-element-checks.t
 t/nativecall/native-type-smiley.t
 t/nativecall/native-typed-attr-ctor.t
+t/nativecall/native-value-smartmatch.t
 t/nativecall/native-where-construct.t
 t/nativecall/nativecall-bare-carray-param.t
 t/nativecall/nativecall-box-into-box-target-class.t
@@ -2630,6 +2632,7 @@ t/nativecall/nativecall-repr-body.t
 t/nativecall/nativecall-return-constant-aliased-cstruct.t
 t/nativecall/nativecall-rw-numeric-out-param.t
 t/nativecall/nativecall-sizeof-pointer-where.t
+t/nativecall/nativecall-smiley-type-name.t
 t/nativecall/nativecall-sqlite.t
 t/nativecall/nativecall-statement-level-sunk-call.t
 t/nativecall/nativecall-symbol-angle.t
@@ -3641,6 +3644,7 @@ t/rakuast/rakuast-anon-sub.t
 t/rakuast/rakuast-anonymous-packages.t
 t/rakuast/rakuast-anonymous-subsignature.t
 t/rakuast/rakuast-anonymous-variables.t
+t/rakuast/rakuast-any-definedness.t
 t/rakuast/rakuast-ast.t
 t/rakuast/rakuast-atomic-operators.t
 t/rakuast/rakuast-attribute-default.t
@@ -5181,6 +5185,7 @@ t/types/enum-subset/bool-enumeration-collection-methods.t
 t/types/enum-subset/builtin-enum-base-tier.t
 t/types/enum-subset/definite-return-core-term-not-imported-type.t
 t/types/enum-subset/definite-scalar-nil-reassignment.t
+t/types/enum-subset/definite-type-object.t
 t/types/enum-subset/enum-bare-key-sub-scope.t
 t/types/enum-subset/enum-coerce-from-str-value.t
 t/types/enum-subset/enum-decl-statement-value.t

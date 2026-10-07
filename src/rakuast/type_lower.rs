@@ -37,6 +37,11 @@ pub(super) fn type_constraint(
             };
             Ok(format!("{base}{}", if definite { ":D" } else { ":U" }))
         }
+        // `Int:_`.
+        RakuAstClass::TypeAnyDefinedness => {
+            let base = simple_base(owner, type_node)?;
+            Ok(format!("{base}:_"))
+        }
         // `Int()` / `Int(Cool)`, spelled the way the parser records them.
         RakuAstClass::TypeCoercion => {
             let base = simple_base(owner, type_node)?;
@@ -77,6 +82,7 @@ pub(super) fn type_constraint(
                 parts.push(match arg.class {
                     RakuAstClass::TypeSimple
                     | RakuAstClass::TypeDefinedness
+                    | RakuAstClass::TypeAnyDefinedness
                     | RakuAstClass::TypeCoercion
                     | RakuAstClass::TypeParameterized => type_constraint(owner, arg)?,
                     _ => regex_subrule_argument_source(arg)?,

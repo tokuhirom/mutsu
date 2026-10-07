@@ -2306,9 +2306,18 @@ pub(super) fn is_simple_type(t: &str) -> bool {
 
 /// Build the `type => ...` RakuAST node for a mutsu type-constraint string.
 /// A plain identifier -> `Type::Simple`; a `:D`/`:U` definiteness smiley ->
-/// `Type::Definedness`; a `Base[Arg, ...]` -> `Type::Parameterized`. Coercion
-/// (`Str()`) and `:_` types defer.
+/// `Type::Definedness`, `:_` -> `Type::AnyDefinedness`; a `Base[Arg, ...]` ->
+/// `Type::Parameterized`; `Str()` -> `Type::Coercion`.
 pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
+    if let Some(base) = t.strip_suffix(":_") {
+        if !is_simple_type(base) {
+            return Err(unsupported("`:_` type over a non-simple base"));
+        }
+        return Ok(RakuAstNode {
+            class: RakuAstClass::TypeAnyDefinedness,
+            fields: vec![node_field(Some("base-type"), simple_type_node(base))],
+        });
+    }
     if let Some(base) = t.strip_suffix(":D").or_else(|| t.strip_suffix(":U")) {
         if !is_simple_type(base) {
             return Err(unsupported("definite type over a non-simple base"));
