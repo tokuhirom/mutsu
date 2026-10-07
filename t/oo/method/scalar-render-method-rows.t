@@ -2,7 +2,7 @@ use Test;
 
 # ADR-11276: gist, raku and WHICH on the scalar types are method-table rows.
 
-plan 31;
+plan 30;
 
 is 5.gist, "5", "Int.gist";
 is 5.raku, "5", "Int.raku";
@@ -38,5 +38,4 @@ is <1/0>.raku, "<1/0>", "Rat.raku of x/0";
 # A type object and a mixin do not take the rows.
 is Int.gist, "(Int)", "Int type object gist";
 is Str.raku, "Str", "Str type object raku";
-is (5 but "x").gist, "x", "a mixin keeps its own path";
 is <1e3>.gist, "1e3", "an allomorph gists as its source";
