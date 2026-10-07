@@ -19,7 +19,7 @@ pub(crate) mod pair;
 pub(crate) mod positional;
 pub(crate) mod quanthash;
 pub(crate) mod range;
-mod render;
+pub(crate) mod render;
 pub(crate) mod subscript;
 mod truth;
 
