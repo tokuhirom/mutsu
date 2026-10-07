@@ -792,8 +792,19 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Some(call) => call,
                 None => (r, expr),
             };
-            let (r, stmt) =
-                crate::parser::stmt::modifier::parse_statement_modifier(r, Stmt::Expr(expr))?;
+            // Only a same-line modifier: `try f;` then `if ...` on the next
+            // line is two statements.
+            let same_line = ws(r)
+                .map(|(r_ws, _)| {
+                    !r[..r.len() - r_ws.len()].contains(['\n', '\r'])
+                        && crate::parser::stmt::modifier::leading_modifier_keyword(r_ws).is_some()
+                })
+                .unwrap_or(false);
+            let (r, stmt) = if same_line {
+                crate::parser::stmt::modifier::parse_statement_modifier(r, Stmt::Expr(expr))?
+            } else {
+                (r, Stmt::Expr(expr))
+            };
             return Ok((
                 r,
                 Expr::spelled(
