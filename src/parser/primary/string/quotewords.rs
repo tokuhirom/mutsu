@@ -160,3 +160,48 @@ pub(crate) fn parse_quotewords_quote_span<'a>(
     }
     None
 }
+
+/// One piece of an interpolating `quotewords` text, as RakuAST segments it.
+pub(crate) enum QuoteWordsPart {
+    /// An unquoted run (words and the whitespace between them), interpolated
+    /// as one `qq` string.
+    Text(Expr),
+    /// A quoted word (`"b c"`), a `QuoteWordsAtom` over its own string.
+    Atom(Expr),
+}
+
+/// Split the raw text of an interpolating `quotewords` quote into the pieces
+/// rakudo makes segments of: each quoted word on its own, every run between
+/// them interpolated as one string.
+// Cost: O(n), n = length of `content`.
+pub(crate) fn quotewords_spelled_parts(content: &str) -> Option<Vec<QuoteWordsPart>> {
+    let mut parts = Vec::new();
+    let mut run_start = 0;
+    let mut pos = 0;
+    let flush = |parts: &mut Vec<QuoteWordsPart>, from: usize, to: usize| {
+        if from < to {
+            parts.push(QuoteWordsPart::Text(crate::parser::interpolate_qq_content(
+                &content[from..to],
+            )));
+        }
+    };
+    while pos < content.len() {
+        let rest = &content[pos..];
+        if let Some((next, quoted)) = parse_quotewords_quoted_atom(rest).ok()? {
+            flush(&mut parts, run_start, pos);
+            parts.push(QuoteWordsPart::Atom(quoted));
+            pos = content.len() - next.len();
+            run_start = pos;
+            continue;
+        }
+        let atom_len = find_quotewords_atom_end(rest);
+        // Whitespace, or a quote character that opens no quoted word.
+        let step = match atom_len {
+            0 => rest.chars().next().map_or(1, char::len_utf8),
+            n => n,
+        };
+        pos += step;
+    }
+    flush(&mut parts, run_start, content.len());
+    Some(parts)
+}

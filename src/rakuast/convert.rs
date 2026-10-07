@@ -2647,6 +2647,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 val,
                 text,
             } => Ok(word_quote_with(*quotewords, *val, text)),
+            Spelling::InterpolatingWords { val, text } => super::word_quote::convert(*val, text),
             Spelling::BareStatement => super::bare_prefix::bare_statement_node(&spelled.expr),
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
@@ -3897,7 +3898,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 /// One segment of an interpolated string. A literal-string part is a bare
 /// `StrLiteral` (not a nested `QuotedString`); any other part keeps its normal
 /// converted node.
-fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) if matches!(v.view(), ValueView::Str(_)) => {
             Ok(RakuAstNode {

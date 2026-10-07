@@ -109,18 +109,24 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
 /// `expr`, a word quote written with `flags` over the plain text `text`,
 /// remembering that spelling when the parse keeps them (ADR-12199): rakudo
 /// renders it as one `QuotedString` with `words` / `quotewords` processors. A
-/// quote that interpolates or quotes a word, or takes `:v`, stays plain.
+/// quote that interpolates keeps its segments (`InterpolatingWords`).
 fn spell_word_quote(
     flags: &crate::parser::primary::quote_adverbs::QuoteFlags,
     text: &str,
     expr: Expr,
 ) -> Expr {
-    if flags.val || !super::word_quote_text_is_plain(text) {
+    if !super::word_quote_text_is_plain(text) {
+        if flags.quotewords && flags.has_interpolation() {
+            return Expr::spelled(expr, || Spelling::InterpolatingWords {
+                val: flags.val,
+                text: text.into(),
+            });
+        }
         return expr;
     }
     Expr::spelled(expr, || Spelling::WordQuote {
         quotewords: flags.quotewords,
-        val: false,
+        val: flags.val,
         text: text.into(),
     })
 }

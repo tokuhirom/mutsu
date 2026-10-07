@@ -119,6 +119,25 @@ pub(crate) fn word_quote_expr(quotewords: bool, val: bool, text: &str) -> Expr {
     }
 }
 
+/// The `quotewords` list of `words`, each `(was quoted, its expression)`: a
+/// quoted word is the string itself, an unquoted one an allomorph candidate.
+/// The one lowering the quote parsers and the RakuAST segments share.
+// Cost: O(w), w = words.
+pub(crate) fn quotewords_from_words(val: bool, words: Vec<(bool, Expr)>) -> Expr {
+    make_word_result_expr(
+        words
+            .into_iter()
+            .map(|(quoted, expr)| {
+                if quoted {
+                    expr
+                } else {
+                    quotewords_atom_expr_allomorphic(expr, val)
+                }
+            })
+            .collect(),
+    )
+}
+
 pub(crate) fn quotewords_literal_marker(s: String) -> Expr {
     Expr::Literal(Value::scalar(Value::pair(
         "__mutsu_qw_literal".to_string(),
