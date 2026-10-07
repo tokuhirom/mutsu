@@ -170,8 +170,9 @@ impl Interpreter {
                 let Some(restricted) =
                     Self::select_matches_by_repeat_bounds(selected, min_required, max_to_return)
                 else {
+                    // Rakudo answers an empty list when `:x` is not satisfied.
                     self.env.insert("/".to_string(), Value::NIL);
-                    return Ok(Value::NIL);
+                    return Ok(Value::array(Vec::new()));
                 };
                 selected = restricted;
             }
