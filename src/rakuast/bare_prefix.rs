@@ -81,3 +81,68 @@ pub(super) fn lower_body(child: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError>
         Ok(vec![lower_stmt(child)?])
     }
 }
+
+/// A phaser statement (`Stmt::Phaser`) with its block replaced by the bare
+/// statement it was written over (`LEAVE say 1`).
+// Cost: O(1) beyond the conversion of the phaser, the nodes are moved.
+pub(super) fn bare_phaser_statement(phaser: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
+    // `FIRST`/`NEXT`/`LAST` keep a bare statement scope-less in a synthetic block.
+    let unwrapped;
+    let phaser = match phaser {
+        Stmt::Phaser {
+            kind,
+            body,
+            condition,
+            end_index,
+        } if matches!(
+            kind,
+            crate::ast::PhaserKind::First
+                | crate::ast::PhaserKind::Next
+                | crate::ast::PhaserKind::Last
+        ) && matches!(body.as_slice(), [Stmt::SyntheticBlock(_)]) =>
+        {
+            let Some(Stmt::SyntheticBlock(inner)) = body.first() else {
+                unreachable!("just matched");
+            };
+            unwrapped = Stmt::Phaser {
+                kind: kind.clone(),
+                body: inner.clone(),
+                condition: *condition,
+                end_index: *end_index,
+            };
+            &unwrapped
+        }
+        _ => phaser,
+    };
+    let Some(mut statement) = super::convert::convert_stmt(phaser)? else {
+        return Ok(None);
+    };
+    // `Statement::Expression(expression => Phaser::Kind(Block))`.
+    if let Some(RakuAstFieldValue::Node(value)) = statement.fields.first_mut().map(|f| &mut f.value)
+        && let ValueView::RakuAst(prefix) = value.view()
+    {
+        let mut prefix = prefix.clone();
+        if let Some(field) = prefix.fields.first_mut()
+            && let Some(inner) = sole_statement(&field.value)
+        {
+            field.value = RakuAstFieldValue::Node(inner);
+        }
+        *value = Value::rakuast(Box::new(prefix));
+    }
+    Ok(Some(statement))
+}
+
+/// The body of a phaser: the block's statements, or the bare statement
+/// (`FIRST`/`NEXT`/`LAST` keep a bare statement scope-less as the parser does).
+// Cost: O(n), n = size of the child.
+pub(super) fn lower_phaser_body(
+    kind: &crate::ast::PhaserKind,
+    child: &RakuAstNode,
+) -> Result<Vec<Stmt>, RuntimeError> {
+    use crate::ast::PhaserKind::{First, Last, Next};
+    let body = lower_body(child)?;
+    if child.class != RakuAstClass::Block && matches!(kind, First | Next | Last) {
+        return Ok(vec![Stmt::SyntheticBlock(body)]);
+    }
+    Ok(body)
+}

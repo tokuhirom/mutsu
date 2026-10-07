@@ -78,6 +78,12 @@ pub(crate) fn keep_spelling(keep: bool) -> KeepGuard {
     KeepGuard(KEEPING.with(|keeping| keeping.replace(keep)))
 }
 
+/// Whether the running parse keeps spellings.
+// Cost: O(1).
+pub(crate) fn keeping() -> bool {
+    KEEPING.with(Cell::get)
+}
+
 impl Expr {
     /// `expr`, wrapped to remember its `spelling` when the running parse keeps
     /// spellings; `expr` itself otherwise. `spelling` is only built then.

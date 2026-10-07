@@ -341,6 +341,13 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => Ok(Some(statement_expression(
                 super::method_assign_decl::convert(decl)?,
             ))),
+            // `BEGIN say 1`: the phaser (second statement) over its bare statement.
+            Some(crate::ast::SourceForm::BarePhaser) => match stmt {
+                Stmt::SyntheticBlock(stmts) if stmts.len() == 2 => {
+                    super::bare_prefix::bare_phaser_statement(&stmts[1])
+                }
+                _ => Err(unsupported("source form")),
+            },
             // Only the on-demand lambda opens with a supply record.
             Some(crate::ast::SourceForm::SupplyBlock(_)) | None => Err(unsupported("source form")),
         },
@@ -3060,7 +3067,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 super::method_assign_decl::convert(decl)
             }
             // Only the on-demand lambda opens with a supply record.
-            Some(crate::ast::SourceForm::SupplyBlock(_)) | None => Err(unsupported("source form")),
+            Some(crate::ast::SourceForm::SupplyBlock(_) | crate::ast::SourceForm::BarePhaser)
+            | None => Err(unsupported("source form")),
         },
         // `()` -> `Circumfix::Parentheses(SemiList.new)`: no statement inside.
         Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty()) => {

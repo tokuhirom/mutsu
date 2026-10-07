@@ -1116,9 +1116,10 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// other kind.
 fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let kind = phaser_kind(node)?;
+    let body = super::bare_prefix::lower_phaser_body(&kind, named_child_or_positional(node)?)?;
     Ok(Stmt::Phaser {
         kind,
-        body: lower_block(named_child_or_positional(node)?)?,
+        body,
         condition: None,
         // A RakuAST tree is lowered and run at run time, like an `EVAL`, so
         // its ENDs install where execution reaches them rather than at a
