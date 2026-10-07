@@ -1631,6 +1631,15 @@ pub struct SubData {
     /// because loop captures may be concurrently mutated (shared cells) and must
     /// NOT be propagated as authoritative — only these never-written names are.
     pub(crate) authoritative_captures: Vec<Symbol>,
+    /// Free variables this closure captures as a LIVE shared `ContainerRef`
+    /// cell that a lexically enclosing routine (or a block inside it) owns: the
+    /// nearest binding, though not a never-written one. The running frame
+    /// vouches for them (`Interpreter::frame_authoritative`) only so a bare
+    /// package/class-body `my` of the same name does not shadow them
+    /// (`package_scope_lexical`, #11718). Unlike `authoritative_captures` they are
+    /// never installed with overwrite and never suppress a write-back: the
+    /// binding is written, and the cell carries the write.
+    pub(crate) own_cell_captures: Vec<Symbol>,
     /// Captured upvalue array, aligned with `compiled_code.upvalue_syms`. Built at
     /// closure-creation time (after `box_captured_lexicals`). An entry is
     /// `Some(cell)` only when the captured lexical is a shared `ContainerRef` cell

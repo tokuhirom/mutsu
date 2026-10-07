@@ -31,9 +31,13 @@ fn writeback_current_match_locals(vm: &mut Interpreter) {
 pub(crate) fn frame_authoritative_set(
     cc: &CompiledCode,
     authoritative_captures: &[crate::symbol::Symbol],
+    own_cell_captures: &[crate::symbol::Symbol],
 ) -> Vec<crate::symbol::Symbol> {
     let mut fa = cc.authoritative_free_vars.clone();
     fa.extend(authoritative_captures.iter().copied());
+    // Live cells owned by an enclosing routine: vouched only against the
+    // package-body `my` store, see `SubData::own_cell_captures`.
+    fa.extend(own_cell_captures.iter().copied());
     fa
 }
 

@@ -1150,6 +1150,7 @@ impl Interpreter {
         self.frame_authoritative = crate::runtime::resolution_map_grep::frame_authoritative_set(
             cc,
             &data.authoritative_captures,
+            &data.own_cell_captures,
         );
         // ADR-0027: record this closure's own owned (loop-frozen)
         // captures — force-installed just above from `data.env` — so a

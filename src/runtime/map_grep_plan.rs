@@ -298,6 +298,7 @@ impl Interpreter {
                     super::resolution_map_grep::frame_authoritative_set(
                         cc,
                         &data.authoritative_captures,
+                        &data.own_cell_captures,
                     )
                 })
                 .unwrap_or_default(),

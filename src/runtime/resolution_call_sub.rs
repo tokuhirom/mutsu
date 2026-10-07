@@ -925,6 +925,7 @@ impl Interpreter {
                 source_file: data.source_file.clone(),
                 owned_captures: data.owned_captures.clone(),
                 authoritative_captures: data.authoritative_captures.clone(),
+                own_cell_captures: data.own_cell_captures.clone(),
                 upvalues: data.upvalues.clone(),
                 captured_fatal_mode: data.captured_fatal_mode,
                 param_name_syms_cache: std::sync::OnceLock::new(),
@@ -1024,6 +1025,7 @@ impl Interpreter {
                         super::resolution_map_grep::frame_authoritative_set(
                             cc,
                             &data.authoritative_captures,
+                            &data.own_cell_captures,
                         )
                     })
                     .unwrap_or_default(),
