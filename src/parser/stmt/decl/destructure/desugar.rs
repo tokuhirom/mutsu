@@ -110,6 +110,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             args: vec![],
             modifier: None,
             quoted: false,
+            on_topic: false,
         }
     } else {
         Expr::Call {
@@ -220,6 +221,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                 target: Box::new(Expr::ArrayVar(array_bare.clone())),
                 index: Box::new(Expr::Literal(Value::int(i as i64))),
                 is_positional: true,
+                spelling: Default::default(),
             };
             stmts.push(Stmt::VarDecl {
                 name: format!("__destructure_lit_{i}"),
@@ -262,14 +264,17 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                     left: Box::new(Expr::Literal(Value::int(i as i64))),
                     op: TokenKind::DotDot,
                     right: Box::new(Expr::Whatever),
+                    form: Default::default(),
                 }),
                 is_positional: true,
+                spelling: Default::default(),
             }
         } else {
             let read = Expr::Index {
                 target: Box::new(Expr::ArrayVar(array_bare.clone())),
                 index: Box::new(Expr::Literal(Value::int(i as i64))),
                 is_positional: true,
+                spelling: Default::default(),
             };
             // A *typed* element whose RHS ran out of values gets the type's
             // DEFAULT, not the `Any` an out-of-range Array read now yields
@@ -281,6 +286,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                     left: Box::new(read),
                     op: TokenKind::SlashSlash,
                     right: Box::new(native_type_default(&effective_tc)),
+                    form: Default::default(),
                 }
             } else {
                 read
@@ -415,6 +421,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                             target: Box::new(Expr::ArrayVar(array_bare.clone())),
                             index: Box::new(Expr::Literal(Value::int(i as i64))),
                             is_positional: true,
+                            spelling: Default::default(),
                         }
                     } else if dvar.sigilless {
                         Expr::BareWord(dvar.name.clone())

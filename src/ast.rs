@@ -990,6 +990,38 @@ pub(crate) enum HashSpelling {
     Contextualizer,
 }
 
+/// The source form of an [`Expr::Binary`] (see its `form` field).
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub(crate) enum BinaryForm {
+    /// An ordinary infix: `a OP b`, `a => b`.
+    #[default]
+    Infix,
+    /// `:a(EXPR)`, `:a<x>`, `:a[1]`: raku's `ColonPair::Value`.
+    ColonPairValue,
+    /// `:a`: raku's `ColonPair::True`.
+    ColonPairTrue,
+    /// `:!a`: raku's `ColonPair::False`.
+    ColonPairFalse,
+    /// `:$a` / `:@a` / `:%a` / `:&a`: raku's `ColonPair::Variable`.
+    ColonPairVariable,
+    /// `^EXPR`, the prefix spelling of the range `0 ..^ EXPR`.
+    CaretPrefix,
+}
+
+/// The brackets of an associative [`Expr::Index`] (see its `spelling` field).
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub(crate) enum IndexSpelling {
+    /// `{...}`, or `[...]` for a positional index.
+    #[default]
+    Subscript,
+    /// `<...>`: a literal word-list key.
+    Angle,
+}
+
 /// Which contextualizer an [`Expr::Contextualizer`] spells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ContextKind {
@@ -1012,6 +1044,7 @@ impl Expr {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             },
             other => other,
         }
@@ -1224,6 +1257,9 @@ pub(crate) enum Expr {
         /// True when the method name was quoted (e.g. `."DEFINITE"()`),
         /// which bypasses pseudo-method macros like .DEFINITE, .WHAT, etc.
         quoted: bool,
+        /// True for a method call on the topic written without an invocant
+        /// (`.say`, raku's `Term::TopicCall`), whose `target` is then `$_`.
+        on_topic: bool,
     },
     DynamicMethodCall {
         target: Box<Expr>,
@@ -1352,6 +1388,9 @@ pub(crate) enum Expr {
         /// true when this index was written with `[...]` (positional subscript);
         /// false when written with `{...}` or `<...>` (associative subscript).
         is_positional: bool,
+        /// Which brackets wrote an associative subscript: `%h<a>` is raku's
+        /// `Postcircumfix::LiteralHashIndex`, `%h{'a'}` its `HashIndex`.
+        spelling: IndexSpelling,
     },
     /// Multi-dimensional indexing with semicolons: @a[$x;$y;$z]
     MultiDimIndex {
@@ -1424,6 +1463,11 @@ pub(crate) enum Expr {
         left: Box<Expr>,
         op: TokenKind,
         right: Box<Expr>,
+        /// The source form of a binary the compiler treats as the plain infix
+        /// `left OP right`: a colonpair (`:a(1)`) is the same `=>` pair as
+        /// `a => 1`, and `^N` is `0 ..^ N`. [`BinaryForm::Infix`] for every
+        /// other binary, and for one the parser or compiler synthesizes.
+        form: BinaryForm,
     },
     /// A chained comparison `a OP1 b OP2 c ...` (e.g. `1 < 2 < 3`,
     /// `a !before b before c`). `operands.len() == ops.len() + 1`; `ops[i]`

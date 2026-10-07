@@ -387,6 +387,7 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
             ))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(Expr::Literal(Value::str(dist_selectors))),
+            form: Default::default(),
         });
     }
 
@@ -426,6 +427,7 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
             ))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(file_expr),
+            form: Default::default(),
         });
         rest = r;
     }
@@ -471,6 +473,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             left: Box::new(Expr::Literal(Value::str(format!("{head}::")))),
             op: crate::token_kind::TokenKind::Tilde,
             right: Box::new(key_expr),
+            form: Default::default(),
         };
         let (rest, combined) =
             crate::parser::primary::var::parse_symbolic_deref_segments(rest, combined)?;
@@ -577,6 +580,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         left: Box::new(Expr::BareWord(name)),
                         op: crate::token_kind::TokenKind::FatArrow,
                         right: Box::new(value),
+                        form: Default::default(),
                     })),
                 ));
             }
@@ -586,6 +590,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     left: Box::new(Expr::Literal(Value::str(name))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(value),
+                    form: Default::default(),
                 },
             ));
         }
@@ -1660,6 +1665,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         target: Box::new(Expr::PseudoStash(stash_name)),
                         index: Box::new(key_expr),
                         is_positional: false,
+                        spelling: Default::default(),
                     },
                 ));
             }
@@ -1677,6 +1683,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             target: Box::new(Expr::PseudoStash(stash_name)),
                             index: Box::new(stash_angle_index(symbol)),
                             is_positional: false,
+                            spelling: Default::default(),
                         },
                     ));
                 }
@@ -1693,6 +1700,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             target: Box::new(Expr::PseudoStash(stash_name)),
                             index: Box::new(stash_angle_index(symbol)),
                             is_positional: false,
+                            spelling: Default::default(),
                         },
                     ));
                 }
@@ -1725,6 +1733,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             target: Box::new(Expr::PseudoStash(stash_name)),
                             index: Box::new(Expr::Literal(Value::str(symbol))),
                             is_positional: false,
+                            spelling: Default::default(),
                         },
                     ));
                 }
@@ -1853,6 +1862,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             args: vec![],
                             modifier: None,
                             quoted: false,
+                            on_topic: false,
                         },
                     ));
                 }
@@ -1871,6 +1881,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             args: method_args,
                             modifier: None,
                             quoted: false,
+                            on_topic: false,
                         },
                     ));
                 }
@@ -1886,6 +1897,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         args: method_args,
                         modifier: None,
                         quoted: false,
+                        on_topic: false,
                     },
                 ));
             }
@@ -1965,6 +1977,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
+                form: Default::default(),
             },
         ));
     }
@@ -2044,6 +2057,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         args: method_args,
                         modifier: None,
                         quoted: false,
+                        on_topic: false,
                     },
                 ));
             }
@@ -2672,6 +2686,7 @@ fn slip_arg_count(slip: Expr) -> Expr {
         args: Vec::new(),
         modifier: None,
         quoted: false,
+        on_topic: false,
     }
 }
 

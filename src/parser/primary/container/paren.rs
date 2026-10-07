@@ -166,6 +166,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
                             left: Box::new(lhs_expr),
                             op: op.token_kind(),
                             right: Box::new(rhs),
+                            form: Default::default(),
                         }),
                         is_bind: false,
                     },
@@ -185,6 +186,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
                         left: Box::new(var_expr),
                         op: op.token_kind(),
                         right: Box::new(rhs),
+                        form: Default::default(),
                     },
                 )
             } else {

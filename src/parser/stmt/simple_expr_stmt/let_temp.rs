@@ -435,6 +435,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                 args,
                 modifier: _,
                 quoted: _,
+                ..
             } = expr
             && let Expr::Var(var_name) = target.as_ref()
         {

@@ -156,6 +156,7 @@ pub(crate) fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
             target,
             index,
             is_positional,
+            ..
         } => Expr::IndexAssign {
             target,
             index,
@@ -289,6 +290,7 @@ pub(crate) fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                 target: target.clone(),
                 index: index.clone(),
                 is_positional,
+                spelling: Default::default(),
             };
             Expr::IndexAssign {
                 target,

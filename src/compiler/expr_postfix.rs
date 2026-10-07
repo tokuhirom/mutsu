@@ -222,6 +222,7 @@ impl Compiler {
             args,
             modifier: _,
             quoted: _,
+            ..
         } = expr
         {
             // Extract the invocant target from Var/ArrayVar/HashVar/BareWord
@@ -349,6 +350,7 @@ impl Compiler {
             args,
             modifier: _,
             quoted: _,
+            ..
         } = expr
         {
             // Extract the invocant target from Var/ArrayVar/HashVar/BareWord
@@ -447,6 +449,7 @@ impl Compiler {
                     target: target.clone(),
                     index: Box::new(Expr::Var(tmp_key)),
                     is_positional: *is_positional,
+                    spelling: Default::default(),
                 };
                 return self.compile_nested_postfix_incdec_hoisted(&hoisted, increment);
             }

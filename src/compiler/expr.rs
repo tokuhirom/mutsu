@@ -32,6 +32,7 @@ impl Compiler {
                 target,
                 index,
                 is_positional,
+                ..
             } => Expr::IndexAssign {
                 target,
                 index,
@@ -457,7 +458,9 @@ impl Compiler {
             Expr::Unary { op, expr } => {
                 self.compile_expr_unary(op, expr);
             }
-            Expr::Binary { left, op, right } => {
+            Expr::Binary {
+                left, op, right, ..
+            } => {
                 self.compile_expr_binary(expr, left, op, right);
             }
             Expr::Ternary {
@@ -570,7 +573,7 @@ impl Compiler {
                         // captures the variable's container too, so `$c<a>` aliases
                         // `$a`. Compile key + value, tag the value with WrapVarRef,
                         // then MakePair; MakeCapture boxes the named local.
-                        if let Expr::Binary { op, left, right } = item
+                        if let Expr::Binary { op, left, right, .. } = item
                             && *op == crate::token_kind::TokenKind::FatArrow
                             && let Expr::Var(name) = right.as_ref()
                             && !name.contains("::")
@@ -661,6 +664,7 @@ impl Compiler {
                     args: args.clone(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 });
             }
             Expr::Call { name, args, .. } => {
@@ -688,6 +692,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 });
             }
             // `(EXPR).method` is exactly `EXPR.method`. Parentheses in Raku are
@@ -704,6 +709,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if matches!(target.as_ref(), Expr::Grouped(_)) => {
                 let Expr::Grouped(inner) = target.as_ref() else {
                     unreachable!()
@@ -714,6 +720,7 @@ impl Compiler {
                     args: args.clone(),
                     modifier: *modifier,
                     quoted: *quoted,
+                    on_topic: false,
                 };
                 self.compile_expr(&peeled);
             }
@@ -724,6 +731,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if name == "VAR"
                 && args.is_empty()
                 && modifier.is_none()
@@ -754,6 +762,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if name == "return-rw" && args.is_empty() && modifier.is_none() && !quoted => {
                 let call = Expr::Call {
                     name: *name,
@@ -768,6 +777,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if name == "VAR"
                 && args.is_empty()
                 && modifier.is_none()
@@ -797,6 +807,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if matches!(
                 target.as_ref(),
                 Expr::Var(_)
@@ -815,6 +826,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if self.is_mutating_method_on_index(target, name) => {
                 self.compile_expr_method_on_index(target, name, args, modifier, *quoted);
             }
@@ -857,6 +869,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if Self::is_nested_mutating_method_on_index(target, name) => {
                 self.compile_expr_nested_method_on_index(target, name, args, modifier, *quoted);
             }
@@ -885,6 +898,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } => {
                 self.compile_expr_method_generic(target, name, args, modifier, *quoted);
             }
@@ -1118,6 +1132,7 @@ impl Compiler {
                             left: Box::new(pair[0].clone()),
                             op: TokenKind::Ident("=:=".to_string()),
                             right: Box::new(pair[1].clone()),
+                            form: Default::default(),
                         };
                         if negate {
                             cmp = Expr::Unary {
@@ -1131,6 +1146,7 @@ impl Compiler {
                                 left: Box::new(prev),
                                 op: TokenKind::AndAnd,
                                 right: Box::new(cmp),
+                                form: Default::default(),
                             },
                         });
                     }

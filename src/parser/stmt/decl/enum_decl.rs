@@ -295,6 +295,7 @@ fn enum_variant_from_expr(expr: Expr) -> Option<(String, Option<Expr>)> {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
             right,
+            ..
         } => match *left {
             Expr::Literal(lit) if lit.as_str().is_some() => {
                 let name = lit.as_str().unwrap().to_string();

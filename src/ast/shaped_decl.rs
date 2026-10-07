@@ -21,6 +21,7 @@ fn pair(key: &str, value: Expr) -> Expr {
         left: Box::new(Expr::Literal(Value::str_from(key))),
         op: TokenKind::FatArrow,
         right: Box::new(value),
+        form: Default::default(),
     }
 }
 
@@ -41,6 +42,7 @@ fn array_new(args: Vec<Expr>) -> Expr {
         args,
         modifier: None,
         quoted: false,
+        on_topic: false,
     }
 }
 
@@ -66,6 +68,7 @@ pub(crate) fn split(expr: &Expr) -> Option<(Vec<Expr>, Option<&Expr>)> {
         args,
         modifier: None,
         quoted: false,
+        ..
     } = expr
     else {
         return None;
@@ -78,6 +81,7 @@ pub(crate) fn split(expr: &Expr) -> Option<(Vec<Expr>, Option<&Expr>)> {
             left,
             op: TokenKind::FatArrow,
             right,
+            ..
         }) if matches!(left.as_ref(), Expr::Literal(v) if v.as_str() == Some(key)) => {
             Some(right.as_ref())
         }

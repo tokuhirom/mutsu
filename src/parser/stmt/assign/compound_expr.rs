@@ -32,6 +32,7 @@ where
         target: Box::new(target.clone()),
         index: Box::new(tmp_idx_expr.clone()),
         is_positional: compound_read_is_positional(&target, is_positional),
+        spelling: Default::default(),
     };
     let mut body = vec![Stmt::VarDecl {
         name: tmp_idx,
@@ -95,6 +96,7 @@ fn compound_index_assign_op_expr(
         target: Box::new(target.clone()),
         index: Box::new(tmp_idx_expr.clone()),
         is_positional: compound_read_is_positional(&target, is_positional),
+        spelling: Default::default(),
     };
     let store = move |value: Expr| Expr::IndexAssign {
         target: Box::new(target),
@@ -231,6 +233,7 @@ pub(crate) fn build_compound_assign_expr(
             target,
             index,
             is_positional,
+            ..
         } => {
             return Ok(compound_index_assign_op_expr(
                 *target,
@@ -305,6 +308,7 @@ pub(crate) fn build_compound_assign_expr(
             args,
             modifier: _,
             quoted: _,
+            ..
         } if name == "AT-POS" && args.len() == 1 => {
             let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL));
             return Ok(compound_index_assign_expr(
@@ -320,6 +324,7 @@ pub(crate) fn build_compound_assign_expr(
             args,
             modifier: _,
             quoted: _,
+            ..
         } => {
             let target_var_name =
                 crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
@@ -329,6 +334,7 @@ pub(crate) fn build_compound_assign_expr(
                 args: args.clone(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             };
             let assigned_value = compound_assigned_value_expr(current_value, op, rhs);
             method_lvalue_roundtrip_assign_expr(
@@ -390,6 +396,7 @@ pub(crate) fn build_compound_assign_expr(
                     left: Box::new(read_back),
                     op: op.token_kind(),
                     right: Box::new(assign_through(rhs)),
+                    form: Default::default(),
                 }
             } else {
                 assign_through(compound_assigned_value_expr(read_back, op, rhs))
@@ -399,6 +406,7 @@ pub(crate) fn build_compound_assign_expr(
             left: Box::new(Expr::BracketArray(items, tc)),
             op: op.token_kind(),
             right: Box::new(rhs),
+            form: Default::default(),
         },
         // `(EXPR if COND) op= rhs`: a statement-modifier conditional whose body is
         // an lvalue (`($s = $x.chop if $s) ~= $y`, from P5reset). Push the compound
@@ -514,6 +522,7 @@ pub(crate) fn build_compound_assign_expr(
                     left: Box::new(lhs.clone()),
                     op: op.token_kind(),
                     right: Box::new(assign_through(rhs)),
+                    form: Default::default(),
                 }
             } else {
                 assign_through(compound_assigned_value_expr(lhs.clone(), op, rhs))
@@ -546,6 +555,7 @@ pub(crate) fn build_compound_assign_expr(
                             listop: false,
                         }),
                     ])),
+                    form: Default::default(),
                 }
             } else {
                 Expr::desugar_block(vec![
@@ -674,6 +684,7 @@ pub(crate) fn build_custom_compound_assign_expr(
             target,
             index,
             is_positional,
+            ..
         } => {
             return Ok(compound_index_assign_expr(
                 *target,
@@ -696,6 +707,7 @@ pub(crate) fn build_custom_compound_assign_expr(
             args,
             modifier: None,
             quoted: _,
+            ..
         } if name != "AT-POS" => {
             let target_var_name =
                 crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
@@ -705,6 +717,7 @@ pub(crate) fn build_custom_compound_assign_expr(
                 args: args.clone(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             };
             let assigned_value = Expr::InfixFunc {
                 name: op_name,
@@ -805,6 +818,7 @@ pub(crate) fn build_meta_assign_expr(
                 target: target.clone(),
                 index: index.clone(),
                 is_positional,
+                spelling: Default::default(),
             };
             Expr::IndexAssign {
                 target,

@@ -22,6 +22,7 @@ pub(crate) fn callsite_line_arg(line: i64) -> Expr {
         ))),
         op: crate::token_kind::TokenKind::FatArrow,
         right: Box::new(Expr::Literal(Value::int(line))),
+        form: Default::default(),
     }
 }
 
@@ -75,6 +76,7 @@ pub(crate) fn stamp_call_site_markers(name: &str, line: i64, args: &mut Vec<Expr
             left: Box::new(Expr::Literal(Value::str(CALLFRAME_LINE_KEY.to_string()))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(Expr::Literal(Value::int(line))),
+            form: Default::default(),
         });
     }
 }
@@ -372,6 +374,7 @@ pub(crate) fn try_parse_no_paren_invocant_colon_call<'a>(
             args,
             modifier: None,
             quoted: false,
+            on_topic: false,
         }),
     ))
 }

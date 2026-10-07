@@ -184,6 +184,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
             target: idx_target,
             index,
             is_positional,
+            ..
         } => {
             use std::sync::atomic::Ordering;
             let tmp_idx = format!(
@@ -195,6 +196,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 target: idx_target.clone(),
                 index: Box::new(tmp_idx_expr.clone()),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             };
             let assigned_value = method_call_fn(lhs_expr);
             Expr::desugar_block(vec![
@@ -263,6 +265,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 target: idx_target.clone(),
                 index: index.clone(),
                 is_positional,
+                spelling: Default::default(),
             };
             let new_value = method_call_fn(read_expr);
             let mut new_body = body.clone();
@@ -323,6 +326,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
             args: acc_args,
             modifier: None,
             quoted,
+            ..
         } if acc_args.is_empty() => {
             use std::sync::atomic::Ordering;
             let n = crate::parser::stmt::simple::TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -339,6 +343,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 args: Vec::new(),
                 modifier: None,
                 quoted,
+                on_topic: false,
             };
             // `$cur.meth(margs)` — the mutating method applied to the current value.
             let meth_result = method_call_fn(cur_var.clone());
@@ -349,6 +354,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 args: vec![meth_result.clone()],
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             };
             let then_expr =
                 Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(cur_var.clone())]);
@@ -366,6 +372,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 args: vec![Expr::Literal(Value::str("STORE".to_string()))],
                 modifier: Some('^'),
                 quoted: false,
+                on_topic: false,
             };
             let ternary = Expr::Ternary {
                 cond: Box::new(can_store),
@@ -428,6 +435,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 args: vec![Expr::Literal(Value::str("STORE".to_string()))],
                 modifier: Some('^'),
                 quoted: false,
+                on_topic: false,
             };
             let store_call = Expr::MethodCall {
                 target: Box::new(tmp_var.clone()),
@@ -435,6 +443,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 args: vec![meth_result.clone()],
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             };
             let then_expr = Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(tmp_var)]);
             let ternary = Expr::Ternary {
@@ -510,6 +519,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
                     args: args.clone(),
                     modifier: None,
                     quoted: true,
+                    on_topic: false,
                 })
             }
             QuotedMethodName::Dynamic(name_expr) => {
@@ -631,6 +641,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
         args: args.clone(),
         modifier: None,
         quoted: false,
+        on_topic: false,
     });
     Ok((r_final, result))
 }

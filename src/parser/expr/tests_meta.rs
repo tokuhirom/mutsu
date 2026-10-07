@@ -265,7 +265,7 @@ fn parse_whatever_with_unicode_set_union_infix() {
         Expr::WhateverCurry(body)
             if matches!(
                 body.as_ref(),
-                Expr::Binary { op: TokenKind::SetUnion, left, right }
+                Expr::Binary { op: TokenKind::SetUnion, left, right, .. }
                     if matches!(left.as_ref(), Expr::Whatever)
                         && matches!(right.as_ref(), Expr::Whatever)
             )

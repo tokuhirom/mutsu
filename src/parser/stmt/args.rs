@@ -843,6 +843,7 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
             left: Box::new(expr),
             op: op.token_kind(),
             right: Box::new(rhs),
+            form: Default::default(),
         };
         // Apply WhateverCode wrapping (e.g., `* *= 2` → WhateverCode lambda)
         if crate::parser::expr::should_wrap_whatevercode(&compound_expr) {

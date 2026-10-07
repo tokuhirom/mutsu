@@ -12,6 +12,7 @@ pub(super) fn wrap_left_exclusive_sequence(op_str: &str, expr: Expr) -> Expr {
             args: vec![Expr::Literal(crate::value::Value::int(1))],
             modifier: None,
             quoted: false,
+            on_topic: false,
         }
     } else {
         expr
@@ -75,6 +76,7 @@ pub(super) fn attach_trailing_adverbs<'a>(
                     left: bl,
                     op,
                     right,
+                    ..
                 } = std::mem::replace(left, Expr::Literal(crate::value::Value::NIL))
                 else {
                     unreachable!()
@@ -132,6 +134,7 @@ pub(crate) fn sequence_only_expr(input: &str) -> PResult<'_, Expr> {
                     left: Box::new(left),
                     op,
                     right: Box::new(right),
+                    form: Default::default(),
                 },
             );
             current_assoc_key = Some(op_str.to_string());
@@ -190,6 +193,7 @@ pub(crate) fn sequence_expr(input: &str) -> PResult<'_, Expr> {
                     left: Box::new(left),
                     op,
                     right: Box::new(right),
+                    form: Default::default(),
                 },
             );
             current_assoc_key = Some(op_str.to_string());

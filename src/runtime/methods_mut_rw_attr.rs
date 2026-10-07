@@ -349,7 +349,7 @@ impl Interpreter {
         if let Expr::Index {
             target,
             index,
-            is_positional,
+            is_positional, ..
         } = expr
             && let Expr::Var(param) = index.as_ref()
         {
@@ -384,7 +384,7 @@ impl Interpreter {
         if let Expr::Index {
             target,
             index,
-            is_positional,
+            is_positional, ..
         } = expr
             && matches!(target.as_ref(), Expr::BareWord(w) | Expr::Var(w) if w == "self")
         {

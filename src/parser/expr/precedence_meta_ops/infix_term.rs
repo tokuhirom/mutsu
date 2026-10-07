@@ -62,6 +62,7 @@ pub(crate) fn infix_term_call(op: InfixTermOp, left: Expr, right: Vec<Expr>) -> 
                     left: Box::new(Expr::Literal(crate::value::Value::str_from("with"))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(op.callable),
+                    form: Default::default(),
                 },
             ];
             Expr::Call {

@@ -168,15 +168,16 @@ fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
 /// the sequence to merge into is one level down, under the feed's source.
 fn merge_seeds_into_sequence(last: &Expr, seeds: &[Expr]) -> Option<Expr> {
     match last {
-        Expr::Binary { left, op, right }
-            if matches!(op, TokenKind::DotDotDot | TokenKind::DotDotDotCaret) =>
-        {
+        Expr::Binary {
+            left, op, right, ..
+        } if matches!(op, TokenKind::DotDotDot | TokenKind::DotDotDotCaret) => {
             let mut merged_seeds: Vec<Expr> = seeds.to_vec();
             merged_seeds.push(*left.clone());
             Some(Expr::Binary {
                 left: Box::new(Expr::ArrayLiteral(merged_seeds)),
                 op: op.clone(),
                 right: right.clone(),
+                form: Default::default(),
             })
         }
         Expr::Feed {

@@ -187,6 +187,7 @@ pub(crate) fn try_embedded_qw(rest: &str) -> Option<(&str, Expr)> {
             args: vec![],
             modifier: None,
             quoted: false,
+            on_topic: false,
         };
         return Some((after, words));
     }

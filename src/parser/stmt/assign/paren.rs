@@ -190,6 +190,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 target,
                 index,
                 is_positional,
+                ..
             } => Expr::IndexAssign {
                 target,
                 index,
@@ -311,6 +312,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             target,
             index,
             is_positional,
+            ..
         } => Expr::IndexAssign {
             target,
             index,
@@ -333,6 +335,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             args,
             modifier,
             quoted: _,
+            ..
         } => {
             if name == "AT-POS"
                 && args.len() == 1

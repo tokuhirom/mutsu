@@ -92,6 +92,7 @@ pub(super) fn extract_static_named_map(
                 left,
                 op: crate::token_kind::TokenKind::FatArrow,
                 right,
+                ..
             } => {
                 let key = match left.as_ref() {
                     Expr::Literal(lit) => match lit.view() {

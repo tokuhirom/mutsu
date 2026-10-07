@@ -24,6 +24,7 @@ pub(super) fn parse_named_destructuring(
         args: Vec::new(),
         modifier: None,
         quoted: false,
+        on_topic: false,
     };
     let mut stmts = vec![Stmt::VarDecl {
         name: tmp_name,
@@ -50,6 +51,7 @@ pub(super) fn parse_named_destructuring(
             target: Box::new(Expr::HashVar(hash_bare.clone())),
             index: Box::new(Expr::Literal(Value::str(bare_name.to_string()))),
             is_positional: false,
+            spelling: Default::default(),
         };
         // A named `@`-sigil destructure target binds (`:=`) the hash value, which
         // spreads an itemized array (e.g. a `.classify` bucket `$[2,4]`) into the
@@ -78,6 +80,7 @@ pub(super) fn parse_named_destructuring(
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 }),
                 else_expr: Box::new(Expr::ArrayLiteral(Vec::new())),
             }

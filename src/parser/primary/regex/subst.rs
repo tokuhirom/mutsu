@@ -104,6 +104,7 @@ pub(super) fn build_topic_subst_compound_expr(
             left: Box::new(match_var),
             op: op_token,
             right: Box::new(rhs),
+            form: Default::default(),
         }
     } else {
         // User-defined infix operator: call infix:<op>($/, rhs)
@@ -138,6 +139,7 @@ pub(super) fn build_topic_subst_compound_expr(
             args,
             modifier: None,
             quoted: false,
+            on_topic: false,
         }),
         is_bind: false,
     })

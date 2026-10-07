@@ -173,6 +173,7 @@ impl Compiler {
                 target,
                 index,
                 is_positional,
+                ..
             } => Some(Expr::IndexAssign {
                 target: target.clone(),
                 index: index.clone(),
@@ -348,6 +349,7 @@ impl Compiler {
             target: inner_target,
             index: inner_index,
             is_positional: inner_is_positional,
+            ..
         } = target
             && let Some(name) = self.index_assign_target_name(inner_target)
         {

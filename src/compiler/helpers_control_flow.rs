@@ -36,6 +36,7 @@ impl Compiler {
                 left: args(),
                 op: crate::token_kind::TokenKind::SmartMatch,
                 right: Box::new(Expr::BareWord("Positional".to_string())),
+                form: Default::default(),
             }),
             then_expr: args(),
             else_expr: Box::new(Expr::BracketArray(Vec::new(), false)),
@@ -369,6 +370,7 @@ impl Compiler {
                     left: Box::new(source.clone()),
                     op: crate::token_kind::TokenKind::SmartMatch,
                     right: Box::new(Expr::BareWord("Seq".to_string())),
+                    form: Default::default(),
                 }),
                 then_expr: Box::new(Expr::MethodCall {
                     target: Box::new(source.clone()),
@@ -376,6 +378,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 }),
                 else_expr: Box::new(source.clone()),
             }

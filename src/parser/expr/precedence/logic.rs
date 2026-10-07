@@ -27,6 +27,7 @@ pub(crate) fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -56,6 +57,7 @@ pub(crate) fn or_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_,
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -111,6 +113,7 @@ fn and_chain_seeded(input: &str, seed: Expr) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -138,6 +141,7 @@ fn or_chain_continue(input: &str, left0: Expr) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -178,6 +182,7 @@ pub(crate) fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -204,6 +209,7 @@ pub(crate) fn and_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -370,6 +376,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     target,
                     index,
                     is_positional,
+                    ..
                 } if matches!(
                     target.as_ref(),
                     // A pseudo-stash target is the `Pkg::<@a> := v` spelling
@@ -514,6 +521,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             target,
             index,
             is_positional,
+            ..
         } => Ok((
             r,
             Expr::IndexAssign {

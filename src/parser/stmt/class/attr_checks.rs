@@ -115,7 +115,9 @@ pub(crate) fn stmt_is_also_is_rw(stmt: &Stmt) -> bool {
                 && right.len() == 1
                 && expr_is_bare_ident(&right[0], "rw")
         }
-        Stmt::Expr(Expr::Binary { left, op, right }) => {
+        Stmt::Expr(Expr::Binary {
+            left, op, right, ..
+        }) => {
             matches!(op, TokenKind::Ident(name) if name == "is")
                 && expr_is_bare_ident(left, "also")
                 && expr_is_bare_ident(right, "rw")
@@ -138,7 +140,9 @@ pub(crate) fn stmt_also_is_parent(stmt: &Stmt) -> Option<String> {
             }
             None
         }
-        Stmt::Expr(Expr::Binary { left, op, right }) => {
+        Stmt::Expr(Expr::Binary {
+            left, op, right, ..
+        }) => {
             if matches!(op, TokenKind::Ident(name) if name == "is")
                 && expr_is_bare_ident(left, "also")
                 && let Expr::BareWord(parent) = right.as_ref()

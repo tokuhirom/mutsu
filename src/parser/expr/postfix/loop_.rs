@@ -503,6 +503,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 args: vec![],
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             },
         ));
     }
@@ -526,6 +527,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             },
         ));
     }
@@ -549,6 +551,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             },
         ));
     }
@@ -576,6 +579,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::int(0))),
                 op: TokenKind::DotDotCaret,
                 right: Box::new(expr.clone()),
+                form: crate::ast::BinaryForm::CaretPrefix,
             };
             // ^* is WhateverCode: given N, returns ^N (unlike 0..^* which is a Range)
             if crate::parser::expr::contains_whatever(&expr)
@@ -823,6 +827,7 @@ fn parse_zen_angle(expr: Expr, rest: &str) -> (Expr, &str) {
             args: Vec::new(),
             modifier: None,
             quoted: false,
+            on_topic: false,
         },
     };
     let zen_adverb = [
@@ -843,6 +848,7 @@ fn parse_zen_angle(expr: Expr, rest: &str) -> (Expr, &str) {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             },
             &rest[adv.len()..],
         );
@@ -963,6 +969,7 @@ fn postfix_expr_loop_from(
                 target: Box::new(Expr::Var("/".to_string())),
                 index: Box::new(Expr::Literal(Value::str(name.clone()))),
                 is_positional: false,
+                spelling: Default::default(),
             };
             if let Some((r, exists_expr)) = try_parse_exists_adverb(rest, target) {
                 expr = exists_expr;
@@ -981,6 +988,7 @@ fn postfix_expr_loop_from(
                 left: Box::new(expr),
                 op: crate::token_kind::TokenKind::StarStar,
                 right: Box::new(Expr::Literal(Value::int(exp))),
+                form: Default::default(),
             };
             continue;
         }
@@ -1275,6 +1283,7 @@ fn postfix_expr_loop_from(
                             args,
                             modifier,
                             quoted: false,
+                            on_topic: false,
                         };
                         rest = r3;
                         continue;
@@ -1286,6 +1295,7 @@ fn postfix_expr_loop_from(
                         args: Vec::new(),
                         modifier,
                         quoted: false,
+                        on_topic: false,
                     };
                     rest = r2;
                     continue;
@@ -1371,6 +1381,7 @@ fn postfix_expr_loop_from(
                         args,
                         modifier,
                         quoted: false,
+                        on_topic: false,
                     };
                     rest = r;
                     continue;
@@ -1399,6 +1410,7 @@ fn postfix_expr_loop_from(
                                 args: vec![seq],
                                 modifier,
                                 quoted: false,
+                                on_topic: false,
                             };
                             rest = r_seq;
                             continue;
@@ -1494,6 +1506,7 @@ fn postfix_expr_loop_from(
                         args: crate::parser::primary::lift_list_infix_in_arg_list(args),
                         modifier,
                         quoted: false,
+                        on_topic: false,
                     };
                     rest = r_inner;
                     continue;
@@ -1505,6 +1518,7 @@ fn postfix_expr_loop_from(
                     args: Vec::new(),
                     modifier,
                     quoted: false,
+                    on_topic: false,
                 };
                 if let Some(op) = trailing_postfix {
                     method_expr = Expr::PostfixOp {
@@ -1538,6 +1552,7 @@ fn postfix_expr_loop_from(
                             args,
                             modifier,
                             quoted: true,
+                            on_topic: false,
                         };
                     }
                     QuotedMethodName::Dynamic(name_expr) => {
@@ -1667,6 +1682,7 @@ fn postfix_expr_loop_from(
                         args,
                         modifier: Some('!'),
                         quoted: false,
+                        on_topic: false,
                     };
                     rest = r;
                     continue;
@@ -1713,6 +1729,7 @@ fn postfix_expr_loop_from(
                         args: crate::parser::primary::lift_list_infix_in_arg_list(args),
                         modifier: Some('!'),
                         quoted: false,
+                        on_topic: false,
                     };
                     rest = r_inner;
                     continue;
@@ -1723,6 +1740,7 @@ fn postfix_expr_loop_from(
                     args: Vec::new(),
                     modifier: Some('!'),
                     quoted: false,
+                    on_topic: false,
                 };
                 rest = r;
                 continue;
@@ -1744,6 +1762,7 @@ fn postfix_expr_loop_from(
                             args,
                             modifier: Some('!'),
                             quoted: true,
+                            on_topic: false,
                         };
                     }
                     QuotedMethodName::Dynamic(name_expr) => {
@@ -1773,11 +1792,13 @@ fn postfix_expr_loop_from(
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             };
             expr = Expr::Index {
                 target: Box::new(who),
                 index: Box::new(key_expr),
                 is_positional: false,
+                spelling: Default::default(),
             };
             rest = r;
             continue;
@@ -1897,6 +1918,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr),
                         index: Box::new(Expr::Literal(Value::WHATEVER)),
                         is_positional: true,
+                        spelling: Default::default(),
                     };
                     rest = after;
                     continue;
@@ -1964,6 +1986,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr),
                         index: Box::new(index),
                         is_positional: true,
+                        spelling: Default::default(),
                     };
                 }
                 ParsedBracketIndex::MultiDim(dimensions) => {
@@ -2045,6 +2068,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr),
                         index: Box::new(index_expr),
                         is_positional: false,
+                        spelling: crate::ast::IndexSpelling::Angle,
                     },
                     r,
                 )
@@ -2077,6 +2101,7 @@ fn postfix_expr_loop_from(
                                 crate::parser::primary::angle_words_subscript_index_expr(content),
                             ),
                             is_positional: false,
+                            spelling: Default::default(),
                         },
                         r,
                     )
@@ -2113,6 +2138,7 @@ fn postfix_expr_loop_from(
                                 crate::parser::primary::angle_words_subscript_index_expr(content),
                             ),
                             is_positional: false,
+                            spelling: Default::default(),
                         },
                         r,
                     )
@@ -2161,6 +2187,7 @@ fn postfix_expr_loop_from(
                 args,
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             };
             rest = r;
             continue;
@@ -2280,6 +2307,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr),
                         index: Box::new(Expr::Whatever),
                         is_positional: false,
+                        spelling: Default::default(),
                     };
                     rest = r;
                     continue;
@@ -2312,6 +2340,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr.clone()),
                         index: Box::new(index.clone()),
                         is_positional: false,
+                        spelling: Default::default(),
                     };
                     if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv, indexed) {
                         expr = exists_expr;
@@ -2324,6 +2353,7 @@ fn postfix_expr_loop_from(
                             target: Box::new(expr.clone()),
                             index: Box::new(index.clone()),
                             is_positional: false,
+                            spelling: Default::default(),
                         };
                         if let Some((r_after, exists_expr)) =
                             try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
@@ -2344,6 +2374,7 @@ fn postfix_expr_loop_from(
                                     args: vec![],
                                     modifier: None,
                                     quoted: false,
+                                    on_topic: false,
                                 };
                             }
                             DeleteAdverb::Delete(Some(cond)) => {
@@ -2353,6 +2384,7 @@ fn postfix_expr_loop_from(
                                     args: vec![],
                                     modifier: None,
                                     quoted: false,
+                                    on_topic: false,
                                 };
                                 expr = Expr::Ternary {
                                     cond: Box::new(cond),
@@ -2367,6 +2399,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr),
                         index: Box::new(index),
                         is_positional: false,
+                        spelling: Default::default(),
                     };
                 }
             }
@@ -2799,6 +2832,7 @@ fn postfix_expr_loop_from(
                         args: vec![],
                         modifier: None,
                         quoted: false,
+                        on_topic: false,
                     };
                 }
                 DeleteAdverb::Delete(Some(cond)) => {
@@ -2808,6 +2842,7 @@ fn postfix_expr_loop_from(
                         args: vec![],
                         modifier: None,
                         quoted: false,
+                        on_topic: false,
                     };
                     expr = Expr::Ternary {
                         cond: Box::new(cond),
@@ -3572,6 +3607,7 @@ fn postfix_expr_loop_from(
                 left: Box::new(expr),
                 op: crate::token_kind::TokenKind::StarStar,
                 right: Box::new(Expr::Literal(Value::int(exp))),
+                form: Default::default(),
             };
             continue;
         }

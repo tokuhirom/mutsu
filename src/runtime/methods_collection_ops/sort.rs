@@ -122,7 +122,7 @@ fn detect_method_cmp_block(data: &crate::value::SubData) -> Option<(String, bool
         _ => None,
     })?;
     match expr {
-        Expr::Binary { left, op, right } => {
+        Expr::Binary { left, op, right, .. } => {
             let is_string_cmp = matches!(op, TokenKind::Ident(s) if s == "cmp");
             let is_numeric_cmp = matches!(op, TokenKind::LtEqGt);
             if !is_string_cmp && !is_numeric_cmp {
@@ -605,7 +605,7 @@ pub(crate) fn detect_simple_cmp_block(data: &crate::value::SubData) -> Option<(b
         _ => None,
     })?;
     match expr {
-        Expr::Binary { left, op, right } => {
+        Expr::Binary { left, op, right, .. } => {
             let is_string_cmp = matches!(op, TokenKind::Ident(s) if s == "cmp");
             let is_numeric_cmp = matches!(op, TokenKind::LtEqGt);
             if !is_string_cmp && !is_numeric_cmp {

@@ -126,6 +126,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             };
             let marker_rhs = rhs.clone();
             let updated_value = compound_assigned_value_expr(source_target.clone(), op, rhs);
@@ -312,6 +313,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             )),
             op: set_tok,
             right: Box::new(rhs),
+            form: Default::default(),
         };
         let stmt = Stmt::Assign {
             name,
@@ -435,6 +437,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     args,
                     modifier: None,
                     quoted: true,
+                    on_topic: false,
                 },
                 QuotedMethodName::Dynamic(name_expr) => Expr::DynamicMethodCall {
                     target: Box::new(var_expr),
@@ -515,6 +518,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
             args,
             modifier: None,
             quoted: false,
+            on_topic: false,
         };
         // The statement-level shortcut parses `.=method` directly so the
         // lvalue writeback stays visible to the compiler. Continue the method

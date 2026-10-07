@@ -1705,7 +1705,7 @@ impl Interpreter {
             name: Symbol::intern("__mutsu_interval_tick"),
             args: Vec::new(),
             modifier: None,
-            quoted: false,
+            quoted: false, on_topic: false,
         })];
         let tick = Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
             package: Symbol::intern("GLOBAL"),

@@ -1105,7 +1105,7 @@ impl Compiler {
                 name,
                 args,
                 modifier: None,
-                quoted: false,
+                quoted: false, ..
             } if args.len() == 1
                 && matches!(**target, Expr::ArrayVar(_))
                 && name.with_str(|n| n == "AT-POS")
@@ -1121,6 +1121,7 @@ impl Compiler {
                     target: target.clone(),
                     index: Box::new(args[0].clone()),
                     is_positional: true,
+                    spelling: Default::default(),
                 }
             }
             other => other.clone(),

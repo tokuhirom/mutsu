@@ -44,6 +44,7 @@ impl Compiler {
             target: target.clone(),
             index: index.clone(),
             is_positional: *is_positional,
+            spelling: Default::default(),
         })
     }
 

@@ -178,6 +178,7 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
         target: Box::new(rhs.clone()),
         index: Box::new(Expr::Literal(Value::int(pos as i64))),
         is_positional: true,
+        spelling: Default::default(),
     };
     Some(match target {
         Expr::Var(name) => Stmt::Assign {
@@ -199,6 +200,7 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
                     args: vec![Expr::Literal(Value::int(pos as i64))],
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 }
             } else {
                 rhs
@@ -224,6 +226,7 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
             target,
             index,
             is_positional,
+            ..
         } => Stmt::Expr(Expr::IndexAssign {
             target,
             index,

@@ -303,6 +303,7 @@ impl Compiler {
                     target,
                     index,
                     is_positional,
+                    ..
                 } => {
                     // For slice hyper-assign like @a[0..2] >>~=>> "x",
                     // compile an IndexAssign to write the hyper result back.
@@ -587,6 +588,7 @@ impl Compiler {
                     left: Box::new(eval_left.clone()),
                     op: op_tok,
                     right: Box::new(eval_right.clone()),
+                    form: Default::default(),
                 };
                 self.compile_expr(&rewritten);
                 return;

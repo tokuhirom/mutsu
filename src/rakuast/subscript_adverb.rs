@@ -39,7 +39,24 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
         Expr::Index {
             target,
             index,
+            is_positional: false,
+            spelling: crate::ast::IndexSpelling::Angle,
+        } if super::convert::angle_key_text(index).is_some() => {
+            return Some(
+                adverbs
+                    .iter()
+                    .map(colonpair)
+                    .collect::<Result<Vec<_>, _>>()
+                    .and_then(|colonpairs| {
+                        super::convert::angle_subscript_node(target, index, colonpairs)
+                    }),
+            );
+        }
+        Expr::Index {
+            target,
+            index,
             is_positional,
+            ..
         } => (target, std::slice::from_ref(&**index), *is_positional),
         Expr::MultiDimIndex {
             target,
@@ -78,6 +95,7 @@ fn colonpair((key, value): &Adverb) -> Result<Value, RuntimeError> {
             left: Box::new(Expr::Literal(Value::str(key.clone()))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(value.clone()),
+            form: Default::default(),
         })?,
     };
     Ok(Value::rakuast(Box::new(node)))
@@ -113,6 +131,7 @@ pub(super) fn lower(subscript: Expr, postfix: &RakuAstNode) -> Result<Expr, Runt
                     left,
                     op: crate::token_kind::TokenKind::FatArrow,
                     right,
+                    ..
                 } => match left.as_ref() {
                     Expr::Literal(key) => match key.view() {
                         ValueView::Str(key) => Ok((key.to_string(), *right)),

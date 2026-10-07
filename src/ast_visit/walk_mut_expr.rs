@@ -100,6 +100,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             args,
             modifier: _,
             quoted: _,
+            ..
         }
         | Expr::HyperMethodCall {
             target,
@@ -180,6 +181,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             target,
             index,
             is_positional: _,
+            ..
         } => {
             v.visit_expr_mut(target);
             v.visit_expr_mut(index);
@@ -237,7 +239,9 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             v.visit_expr_mut(expanded);
         }
         Expr::Unary { op: _, expr } | Expr::PostfixOp { op: _, expr } => v.visit_expr_mut(expr),
-        Expr::Binary { left, op: _, right } => {
+        Expr::Binary {
+            left, op: _, right, ..
+        } => {
             v.visit_expr_mut(left);
             v.visit_expr_mut(right);
         }

@@ -249,7 +249,9 @@ impl Compiler {
             Expr::RegexLiteral { value, .. } => const_scalar(value).then(|| value.clone()),
             Expr::Grouped(inner) => self.const_operand_mode(inner, begin_time),
             Expr::Unary { op, expr } => self.fold_unary_mode(op, expr, begin_time),
-            Expr::Binary { left, op, right } => {
+            Expr::Binary {
+                left, op, right, ..
+            } => {
                 let l = self.const_operand_mode(left, begin_time)?;
                 let r = self.const_operand_mode(right, begin_time)?;
                 fold_values(op, l, r)
@@ -505,6 +507,7 @@ mod tests {
             left: Box::new(l),
             op,
             right: Box::new(r),
+            form: Default::default(),
         }
     }
 

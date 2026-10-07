@@ -278,7 +278,7 @@ impl Interpreter {
         let body = vec![Stmt::Expr(Expr::Binary {
             left: Box::new(Expr::Literal(left)),
             op: TokenKind::Ident("x".to_string()),
-            right: Box::new(Expr::Var(param.clone())),
+            right: Box::new(Expr::Var(param.clone())), form: Default::default(),
         })];
         Value::make_sub(
             Symbol::intern(&self.current_package()),

@@ -96,10 +96,12 @@ fn force_positional_pairs(expr: Expr) -> Expr {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
             right,
+            ..
         } => Expr::PositionalPair(Box::new(Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
             right,
+            form: Default::default(),
         })),
         Expr::ArrayLiteral(items) => {
             Expr::ArrayLiteral(items.into_iter().map(force_positional_pairs).collect())
@@ -139,6 +141,7 @@ pub(crate) fn dynamic_method_lvalue_assign_expr(
             left: Box::new(Expr::Literal(Value::str_from("!"))),
             op: crate::token_kind::TokenKind::Tilde,
             right: Box::new(name_expr),
+            form: Default::default(),
         }
     } else {
         name_expr
@@ -259,6 +262,7 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
             args,
             modifier: _,
             quoted: _,
+            ..
         } if name == "value" && args.is_empty() => {
             if let Some((base_target, base_index, mode)) = subscript_parts(target.as_ref())
                 && (mode == "p" || mode == "not-p")
@@ -307,6 +311,7 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
         target: Box::new(rhs.clone()),
         index: Box::new(Expr::Literal(Value::int(pos as i64))),
         is_positional: true,
+        spelling: Default::default(),
     };
     match target {
         Expr::Var(name) => Some(Expr::AssignExpr {
@@ -323,6 +328,7 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
                     args: vec![Expr::Literal(Value::int(pos as i64))],
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 }
             } else {
                 rhs
@@ -342,6 +348,7 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
             target,
             index,
             is_positional,
+            ..
         } => Some(Expr::IndexAssign {
             target,
             index,

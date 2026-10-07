@@ -56,7 +56,7 @@ pub(in crate::runtime) fn native_method_shim(
         name: Symbol::intern(method_name),
         args: call_args,
         modifier: None,
-        quoted: false,
+        quoted: false, on_topic: false,
     })];
     Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
         package: Symbol::intern("GLOBAL"),

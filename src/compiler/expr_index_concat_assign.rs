@@ -24,6 +24,7 @@ impl Compiler {
             left: seeded,
             op: TokenKind::Tilde,
             right: rhs,
+            ..
         } = value
         else {
             return None;

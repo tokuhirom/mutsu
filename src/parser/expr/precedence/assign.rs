@@ -45,6 +45,7 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             target,
             index,
             is_positional,
+            ..
         } => Expr::IndexAssign {
             target,
             index,
@@ -72,6 +73,7 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             args,
             modifier,
             quoted: _,
+            ..
         } => {
             if name == "AT-POS"
                 && args.len() == 1
@@ -257,6 +259,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
                 target: target.clone(),
                 index: index.clone(),
                 is_positional,
+                spelling: Default::default(),
             };
             Expr::IndexAssign {
                 target,
@@ -324,6 +327,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
             args,
             modifier: _,
             quoted: _,
+            ..
         } if name == "AT-POS" && args.len() == 1 => {
             let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL));
             build_compound_assign_target_expr(
@@ -331,6 +335,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
                     target,
                     index: Box::new(index),
                     is_positional: true,
+                    spelling: Default::default(),
                 },
                 op_name,
                 value,
@@ -391,6 +396,7 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
             target,
             index,
             is_positional,
+            ..
         } => Some(Expr::IndexAssign {
             target,
             index,
@@ -433,6 +439,7 @@ pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Opt
         target: Box::new(rhs.clone()),
         index: Box::new(Expr::Literal(Value::int(pos as i64))),
         is_positional: true,
+        spelling: Default::default(),
     };
     Some(match target {
         Expr::Var(name) => Expr::AssignExpr {
@@ -448,6 +455,7 @@ pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Opt
                     args: vec![Expr::Literal(Value::int(pos as i64))],
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 }
             } else {
                 rhs
@@ -471,6 +479,7 @@ pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Opt
             target,
             index,
             is_positional,
+            ..
         } => Expr::IndexAssign {
             target,
             index,

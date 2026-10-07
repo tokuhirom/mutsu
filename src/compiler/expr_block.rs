@@ -23,6 +23,7 @@ impl Compiler {
                     args: vec![Expr::Literal(Value::str(name.resolve()))],
                     modifier: Some('^'),
                     quoted: false,
+                    on_topic: false,
                 };
                 self.compile_expr(&lookup);
             }
@@ -82,6 +83,7 @@ impl Compiler {
                         target,
                         index,
                         is_positional,
+                        ..
                     } => Self::container_var_name(target)
                         .filter(|c| {
                             let after_sigil = c.strip_prefix(['$', '@', '%']).unwrap_or(c);

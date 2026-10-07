@@ -179,6 +179,7 @@ pub(crate) fn additive_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -234,6 +235,7 @@ pub(crate) fn additive_expr(input: &str) -> PResult<'_, Expr> {
                         left: Box::new(left),
                         op: tk,
                         right: Box::new(right),
+                        form: Default::default(),
                     };
                 }
             } else {
@@ -338,6 +340,7 @@ pub(crate) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -406,6 +409,7 @@ pub(crate) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
                         left: Box::new(left),
                         op: tk,
                         right: Box::new(right),
+                        form: Default::default(),
                     };
                 }
             } else {
@@ -583,6 +587,7 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
                     left,
                     op: TokenKind::StarStar,
                     right,
+                    ..
                 } if base_is_own_chain => Expr::Binary {
                     left,
                     op: TokenKind::StarStar,
@@ -590,12 +595,15 @@ fn power_expr_inner(input: &str, base_parser: fn(&str) -> PResult<'_, Expr>) -> 
                         left: right,
                         op: TokenKind::StarStar,
                         right: Box::new(exp),
+                        form: Default::default(),
                     }),
+                    form: Default::default(),
                 },
                 other => Expr::Binary {
                     left: Box::new(other),
                     op: TokenKind::StarStar,
                     right: Box::new(exp),
+                    form: Default::default(),
                 },
             };
             base_is_own_chain = true;

@@ -56,7 +56,7 @@ pub(super) fn if_condition_check(condition: Expr, slot: &str) -> Vec<Stmt> {
                     name: crate::symbol::Symbol::intern("defined"),
                     args: vec![],
                     modifier: None,
-                    quoted: false,
+                    quoted: false, on_topic: false,
                 }),
             },
             then_branch: vec![Stmt::Die(Expr::Literal(crate::value::Value::str(

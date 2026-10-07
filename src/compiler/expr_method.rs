@@ -115,6 +115,7 @@ impl Compiler {
                 target: index_target,
                 index,
                 is_positional,
+                ..
             } = target
             {
                 self.compile_expr(index_target);
@@ -152,6 +153,7 @@ impl Compiler {
             target: index_target,
             index,
             is_positional,
+            ..
         } = target
         {
             self.compile_expr(index_target);
@@ -221,11 +223,13 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 }),
                 name: *name,
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             };
             self.compile_expr(&via_var);
             return;
@@ -423,6 +427,7 @@ impl Compiler {
             target: idx_target,
             index: idx_key,
             is_positional,
+            ..
         } = target
         {
             let var_name = self.postfix_index_name(idx_target).unwrap_or_default();
@@ -516,6 +521,7 @@ impl Compiler {
             target: inner,
             index,
             is_positional,
+            ..
         } = base
         {
             chain.push((index.as_ref(), *is_positional));
@@ -576,6 +582,7 @@ impl Compiler {
             target: Box::new(Expr::Var(cur_name)),
             index: Box::new(last_key.clone()),
             is_positional: last_positional,
+            spelling: Default::default(),
         };
         self.compile_expr_method_on_index(&final_target, name, args, modifier, quoted);
     }
@@ -638,11 +645,13 @@ impl Compiler {
                 target: Box::new(Expr::Var(tmp)),
                 index: Box::new(delete_index.clone()),
                 is_positional,
+                spelling: Default::default(),
             }),
             name: Symbol::intern("DELETE-KEY"),
             args: Vec::new(),
             modifier: None,
             quoted: false,
+            on_topic: false,
         };
         self.compile_expr(&Expr::desugar_block(vec![
             Stmt::MarkBind,
@@ -751,6 +760,7 @@ impl Compiler {
                 left: Box::new(Expr::Literal(Value::str_from("delete"))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(Expr::Literal(Value::TRUE)),
+                form: Default::default(),
             });
             self.compile_expr(&Expr::Call {
                 name: *sub_name,
@@ -776,6 +786,7 @@ impl Compiler {
                 left,
                 op: crate::token_kind::TokenKind::FatArrow,
                 right,
+                ..
             } = &args[0]
             && let Expr::Literal(mode_lit) = left.as_ref()
             && let ValueView::Str(mode) = mode_lit.view()
@@ -798,6 +809,7 @@ impl Compiler {
                     left: Box::new(Expr::Literal(Value::str_from("delete"))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(Expr::Literal(Value::TRUE)),
+                    form: Default::default(),
                 },
             ];
             self.compile_expr(&Expr::Call {
@@ -838,6 +850,7 @@ impl Compiler {
                 target: index_target,
                 index,
                 is_positional: false,
+                ..
             } if let Expr::ArrayLiteral(dimensions) = index.as_ref()
                 && dimensions
                     .iter()

@@ -464,7 +464,9 @@ fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
         return items;
     }
     let last = items.last().unwrap();
-    if let Expr::Binary { left, op, right } = last
+    if let Expr::Binary {
+        left, op, right, ..
+    } = last
         && matches!(
             op,
             crate::token_kind::TokenKind::DotDotDot | crate::token_kind::TokenKind::DotDotDotCaret
@@ -476,6 +478,7 @@ fn merge_sequence_seeds(items: Vec<Expr>) -> Vec<Expr> {
             left: Box::new(Expr::ArrayLiteral(seeds)),
             op: op.clone(),
             right: right.clone(),
+            form: Default::default(),
         };
         vec![merged]
     } else {

@@ -169,6 +169,7 @@ pub(crate) fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> 
             left: Box::new(left),
             op: op.token_kind(),
             right: Box::new(right),
+            form: Default::default(),
         };
         left = if negated {
             Expr::Unary {
@@ -252,6 +253,7 @@ pub(crate) fn and_and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr
             left: Box::new(left),
             op: op.token_kind(),
             right: Box::new(right),
+            form: Default::default(),
         };
         left = if negated {
             Expr::Unary {
@@ -347,6 +349,7 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -390,6 +393,7 @@ pub(crate) fn junctive_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Exp
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             last_junction = Some(op);
             rest = r;

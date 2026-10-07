@@ -76,7 +76,9 @@ fn mark_expr_after_plant(expr: &mut Expr) {
                 mark_value_leaf(item);
             }
         }
-        Expr::Binary { left, op, right } => match op {
+        Expr::Binary {
+            left, op, right, ..
+        } => match op {
             // Range/series endpoints: `1..*` / `1..*-1`, `1,2...*`.
             TokenKind::DotDot
             | TokenKind::DotDotCaret

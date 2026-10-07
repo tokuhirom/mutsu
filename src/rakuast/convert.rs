@@ -362,6 +362,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     args: call_args_as_exprs(&args[1..])?,
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 };
                 return Ok(Some(statement_expression(convert_expr(&method)?)));
             }
@@ -1735,6 +1736,7 @@ fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Ex
         args: method_args.clone(),
         modifier,
         quoted: false,
+        on_topic: false,
     };
     Some((call, value))
 }
@@ -2437,6 +2439,53 @@ pub(super) fn subscript_node(
     )
 }
 
+/// The raw text of the keys of a `%h<a b>` subscript: the words joined by a
+/// space, or `None` when the index is not a list of word literals.
+// Cost: O(n), n = length of the keys.
+pub(super) fn angle_key_text(index: &Expr) -> Option<String> {
+    let word = |expr: &Expr| match expr {
+        Expr::Literal(v) => Some(v.to_string_value()),
+        _ => None,
+    };
+    match index {
+        Expr::ArrayLiteral(items) => {
+            let words = items.iter().map(word).collect::<Option<Vec<_>>>()?;
+            Some(words.join(" "))
+        }
+        other => word(other),
+    }
+}
+
+/// `%h<a b>` as `ApplyPostfix(operand, Postcircumfix::LiteralHashIndex(index =>
+/// QuotedString(processors => <words val>, segments => ("a b",))))`: rakudo
+/// keeps the raw text of an angle subscript as one word-quote (measured on
+/// 2026.09), where a `{...}` subscript is a `HashIndex` over a `SemiList`.
+// Cost: O(n), n = nodes of the target plus the length of the keys.
+pub(super) fn angle_subscript_node(
+    target: &Expr,
+    index: &Expr,
+    colonpairs: Vec<Value>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let text = angle_key_text(index).ok_or_else(|| unsupported("angle subscript key"))?;
+    let mut index_node = RakuAstNode {
+        class: RakuAstClass::PostcircumfixLiteralHashIndex,
+        fields: vec![node_field(Some("index"), word_quote(&text))],
+    };
+    if !colonpairs.is_empty() {
+        index_node.fields.push(RakuAstField {
+            name: Some("colonpairs"),
+            value: RakuAstFieldValue::List(colonpairs),
+        });
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyPostfix,
+        fields: vec![
+            node_field(Some("operand"), postfix_operand(target)?),
+            node_field(Some("postfix"), index_node),
+        ],
+    })
+}
+
 /// [`subscript_node`] over the dimensions of `@a[0;1]`: one statement of the
 /// `SemiList` per dimension.
 // Cost: O(n), n = nodes of the target and dimensions.
@@ -2819,6 +2868,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 left,
                 op: op @ crate::token_kind::TokenKind::FatArrow,
                 right,
+                ..
             } => Ok(RakuAstNode {
                 class: RakuAstClass::ApplyInfix,
                 fields: vec![
@@ -3091,9 +3141,15 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
             right,
+            form,
         } if matches!(&**left,
             Expr::Literal(v) | Expr::LiteralSrc(v, _) if matches!(v.view(), ValueView::Str(_))) =>
         {
+            // A colonpair (`:a(1)`, `:a`, `:!a`, `:$a`) is its own node class;
+            // one the helpers cannot render keeps the `=>` form below.
+            if let Some(pair) = colonpair_spelling(expr, *form) {
+                return Ok(pair);
+            }
             let (Expr::Literal(v) | Expr::LiteralSrc(v, _)) = &**left else {
                 unreachable!("guarded above")
             };
@@ -3111,7 +3167,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // List-associative infixes (`andthen`/`orelse`/`notandthen`) render as a
         // single flat `ApplyListInfix` in raku; mutsu nests them left-associatively,
         // so flatten a same-operator left chain into one operand list.
-        Expr::Binary { left, op, right } if is_list_infix(op) => {
+        Expr::Binary {
+            left, op, right, ..
+        } if is_list_infix(op) => {
             let mut operands = left.flatten_binary_chain(op);
             operands.push(right);
             let mut nodes = Vec::with_capacity(operands.len());
@@ -3129,7 +3187,27 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ],
             })
         }
-        Expr::Binary { left, op, right } => Ok(RakuAstNode {
+        // `^N` is the prefix spelling of `0 ..^ N`.
+        Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::DotDotCaret,
+            right,
+            form: crate::ast::BinaryForm::CaretPrefix,
+        } if matches!(&**left, Expr::Literal(v) if matches!(v.view(), ValueView::Int(0))) => {
+            Ok(RakuAstNode {
+                class: RakuAstClass::ApplyPrefix,
+                fields: vec![
+                    node_field(
+                        Some("prefix"),
+                        operator_node(RakuAstClass::Prefix, &crate::token_kind::TokenKind::Caret),
+                    ),
+                    node_field(Some("operand"), convert_expr(right)?),
+                ],
+            })
+        }
+        Expr::Binary {
+            left, op, right, ..
+        } => Ok(RakuAstNode {
             class: RakuAstClass::ApplyInfix,
             fields: vec![
                 node_field(Some("left"), convert_expr(left)?),
@@ -3278,8 +3356,17 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             args,
             modifier,
             quoted,
+            on_topic,
         } => {
             let postfix = method_call_postfix(name.as_str(), args, *modifier, *quoted)?;
+            // `.say` / `.foo(1)`: a call on the topic written without an
+            // invocant is `Term::TopicCall` over the bare call.
+            if *on_topic && matches!(&**target, Expr::Var(topic) if topic == "_") {
+                return Ok(RakuAstNode {
+                    class: RakuAstClass::TermTopicCall,
+                    fields: vec![node_field(None, postfix)],
+                });
+            }
             Ok(RakuAstNode {
                 class: RakuAstClass::ApplyPostfix,
                 fields: vec![
@@ -3423,7 +3510,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Index {
             target,
             index,
+            is_positional: false,
+            spelling: crate::ast::IndexSpelling::Angle,
+        } if angle_key_text(index).is_some() => angle_subscript_node(target, index, Vec::new()),
+        Expr::Index {
+            target,
+            index,
             is_positional,
+            ..
         } => subscript_node(target, index, *is_positional, None, Vec::new()),
         // `@a[0;1]` / `%h{1;2}`: one `SemiList` statement per dimension.
         Expr::MultiDimIndex {
@@ -6321,11 +6415,27 @@ fn regex_arg_list(args: &crate::regex_tree::SubruleArgs) -> Result<RakuAstNode, 
 /// Convert the execution-level `key => True` shape back to Rakudo's
 /// source-level `RakuAST::ColonPair::True` node. The ordinary expression AST
 /// intentionally does not retain the leading colon.
+/// The colonpair node `form` says `expr` was written as, or `None` for a pair
+/// the dedicated helpers cannot render (the `=>` rendering then applies).
+// Cost: O(n), n = size of the pair.
+fn colonpair_spelling(expr: &Expr, form: crate::ast::BinaryForm) -> Option<RakuAstNode> {
+    use crate::ast::BinaryForm;
+    match form {
+        BinaryForm::ColonPairTrue => colonpair_true_expr(expr),
+        BinaryForm::ColonPairFalse => colonpair_false_expr(expr),
+        BinaryForm::ColonPairVariable => colonpair_variable_expr(expr),
+        BinaryForm::ColonPairValue => colonpair_value_expr(expr),
+        BinaryForm::Infix | BinaryForm::CaretPrefix => return None,
+    }
+    .ok()
+}
+
 fn colonpair_true_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     let Expr::Binary {
         left,
         op: crate::token_kind::TokenKind::FatArrow,
         right,
+        ..
     } = expr
     else {
         return Err(unsupported("colonpair true provenance"));
@@ -6354,6 +6464,7 @@ fn colonpair_false_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         left,
         op: crate::token_kind::TokenKind::FatArrow,
         right,
+        ..
     } = expr
     else {
         return Err(unsupported("colonpair false provenance"));
@@ -6383,6 +6494,7 @@ fn colonpair_variable_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         left,
         op: crate::token_kind::TokenKind::FatArrow,
         right,
+        ..
     } = expr
     else {
         return Err(unsupported("colonpair variable provenance"));
@@ -6416,6 +6528,7 @@ pub(super) fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         left,
         op: crate::token_kind::TokenKind::FatArrow,
         right,
+        ..
     } = expr
     else {
         return Err(unsupported("colonpair value provenance"));
@@ -6466,6 +6579,7 @@ fn literal_hash_index_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         target,
         index,
         is_positional: false,
+        ..
     } = expr
     else {
         return Err(unsupported("literal hash index provenance"));
@@ -6499,6 +6613,7 @@ fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, Runtime
                 left: Box::new(Expr::Literal(Value::str(name.clone()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value.clone().unwrap_or(Expr::Literal(Value::TRUE))),
+                form: Default::default(),
             }),
             // `foo |@a`: the slip is the tight prefix `|` over the term.
             CallArg::Slip(expr) => Ok(Expr::Unary {

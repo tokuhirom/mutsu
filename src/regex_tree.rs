@@ -1442,7 +1442,9 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             crate::compiler::helpers_ops::token_kind_to_op_name(op),
             expression_source(expr)?
         )),
-        crate::ast::Expr::Binary { left, op, right } => Some(format!(
+        crate::ast::Expr::Binary {
+            left, op, right, ..
+        } => Some(format!(
             "{} {} {}",
             expression_source(left)?,
             crate::compiler::helpers_ops::token_kind_to_op_name(op),
@@ -1491,6 +1493,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             args,
             modifier: None,
             quoted: false,
+            ..
         } => Some(format!(
             "{}.{}({})",
             expression_source(target)?,
@@ -1524,6 +1527,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             args,
             modifier: Some(modifier @ ('?' | '+' | '*')),
             quoted: false,
+            ..
         } => Some(format!(
             "{}.{}{}({})",
             expression_source(target)?,
@@ -1541,6 +1545,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             args,
             modifier: None,
             quoted: true,
+            ..
         } => Some(format!(
             "{}.\"{}\"({})",
             expression_source(target)?,
@@ -1555,6 +1560,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             target,
             index,
             is_positional,
+            ..
         } => Some(format!(
             "{}{}{}{}",
             expression_source(target)?,
@@ -3247,7 +3253,7 @@ fn literal_hash_index_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<
                 crate::ast::Expr::Index {
                     target,
                     index,
-                    is_positional: false,
+                    is_positional: false, ..
                 } if matches!(target.as_ref(), crate::ast::Expr::HashVar(_))
                     && matches!(index.as_ref(), crate::ast::Expr::Literal(value)
                         if matches!(value.view(), crate::value::ValueView::Str(_)))
@@ -3274,7 +3280,7 @@ fn colonpair_value_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<boo
                 crate::ast::Expr::Binary {
                     left,
                     op: crate::token_kind::TokenKind::FatArrow,
-                    right: _,
+                    right: _, ..
                 } if matches!(left.as_ref(), crate::ast::Expr::Literal(value)
                     if matches!(value.view(), crate::value::ValueView::Str(_)))
             );
@@ -3414,7 +3420,7 @@ fn colonpair_variable_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<
                 crate::ast::Expr::Binary {
                     left,
                     op: crate::token_kind::TokenKind::FatArrow,
-                    right,
+                    right, ..
                 } if matches!(left.as_ref(), crate::ast::Expr::Literal(value)
                     if matches!(value.view(), crate::value::ValueView::Str(_)))
                     && matches!(
@@ -3461,7 +3467,7 @@ fn colonpair_true_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<bool
                 crate::ast::Expr::Binary {
                     left,
                     op: crate::token_kind::TokenKind::FatArrow,
-                    right,
+                    right, ..
                 } if matches!(left.as_ref(), crate::ast::Expr::Literal(value)
                     if matches!(value.view(), crate::value::ValueView::Str(_)))
                     && matches!(
@@ -3498,7 +3504,7 @@ fn colonpair_false_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<boo
                 crate::ast::Expr::Binary {
                     left,
                     op: crate::token_kind::TokenKind::FatArrow,
-                    right,
+                    right, ..
                 } if matches!(left.as_ref(), crate::ast::Expr::Literal(value)
                     if matches!(value.view(), crate::value::ValueView::Str(_)))
                     && matches!(

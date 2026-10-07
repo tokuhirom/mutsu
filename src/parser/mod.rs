@@ -1271,7 +1271,9 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
         let (stmts, _) = parse_program(src).unwrap();
         let stmts = filter_setline(stmts);
         match &stmts[1] {
-            Stmt::Expr(Expr::Binary { left, op, right }) => {
+            Stmt::Expr(Expr::Binary {
+                left, op, right, ..
+            }) => {
                 assert_eq!(*op, crate::token_kind::TokenKind::AndWord);
                 match left.as_ref() {
                     Expr::Call { name, args, .. } => {
@@ -1355,7 +1357,9 @@ is (1 + 2 § 3), 1, "x";
             Stmt::Expr(Expr::Call { name, args, .. }) => {
                 assert_eq!(name.resolve(), "is");
                 match args[0].peel_parens() {
-                    Expr::Binary { left, op, right } => {
+                    Expr::Binary {
+                        left, op, right, ..
+                    } => {
                         assert!(
                             matches!(left.as_ref(), Expr::Literal(v) if matches!(v.view(), ValueView::Int(1)))
                         );

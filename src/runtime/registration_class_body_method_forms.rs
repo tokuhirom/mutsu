@@ -136,7 +136,7 @@ impl Interpreter {
             name: Symbol::intern(op_name),
             args: forward_args,
             modifier: None,
-            quoted: true,
+            quoted: true, on_topic: false,
         })];
         let params: Vec<String> = sub_param_defs.iter().map(|p| p.name.clone()).collect();
         let def = FunctionDef {

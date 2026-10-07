@@ -88,6 +88,7 @@ impl Expr {
             target,
             index,
             is_positional,
+            ..
         } = expr
         {
             path.push((index, *is_positional));
@@ -267,6 +268,7 @@ mod tests {
             target: Box::new(target),
             index: Box::new(Expr::Literal(crate::value::Value::int(i))),
             is_positional: pos,
+            spelling: Default::default(),
         };
         let e = idx(idx(arr("a"), 0, true), 1, false);
         let mut path = Vec::new();

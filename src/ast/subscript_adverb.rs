@@ -62,6 +62,7 @@ pub(crate) fn delete_key(target: Expr) -> Expr {
         args: vec![],
         modifier: None,
         quoted: false,
+        on_topic: false,
     }
 }
 
@@ -253,6 +254,7 @@ pub(crate) fn subscript_adverb_expr_with_cond(
         target,
         index,
         is_positional,
+        ..
     } = expr
     else {
         return expr;
@@ -530,6 +532,7 @@ fn read_back_read(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
                 target: Box::new(target.clone()),
                 index: Box::new(index.clone()),
                 is_positional,
+                spelling: Default::default(),
             };
             Some((subscript, adverbs))
         }
@@ -614,6 +617,7 @@ mod tests {
             }),
             index: Box::new(Expr::Literal(Value::int(0))),
             is_positional: positional,
+            spelling: Default::default(),
         }
     }
 

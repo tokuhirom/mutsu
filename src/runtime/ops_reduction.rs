@@ -737,7 +737,7 @@ impl Interpreter {
                     let body = vec![Stmt::Expr(Expr::Binary {
                         left: Box::new(Expr::Literal(left.clone())),
                         op: crate::token_kind::TokenKind::Ident("x".to_string()),
-                        right: Box::new(Expr::Var(param.clone())),
+                        right: Box::new(Expr::Var(param.clone())), form: Default::default(),
                     })];
                     return Ok(Value::make_sub(
                         Symbol::intern("GLOBAL"),

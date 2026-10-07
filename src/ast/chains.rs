@@ -22,6 +22,7 @@ impl Expr {
             left,
             op: cur_op,
             right,
+            ..
         } = cur
             && cur_op == op
         {
@@ -74,6 +75,7 @@ mod tests {
             left: Box::new(left),
             op,
             right: Box::new(right),
+            form: Default::default(),
         }
     }
 

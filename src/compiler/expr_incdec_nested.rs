@@ -39,6 +39,7 @@ fn with_elem_chain_root(expr: &Expr, root: &Expr) -> Expr {
                 target,
                 index,
                 is_positional,
+                ..
             } => {
                 subscripts.push((index, *is_positional));
                 expr = target;
@@ -54,6 +55,7 @@ fn with_elem_chain_root(expr: &Expr, root: &Expr) -> Expr {
             target: Box::new(target),
             index: index.clone(),
             is_positional,
+            spelling: Default::default(),
         })
 }
 
@@ -160,6 +162,7 @@ impl Compiler {
                     target: target.clone(),
                     index: Box::new(Expr::Var(tmp_key)),
                     is_positional: *is_positional,
+                    spelling: Default::default(),
                 };
                 return self.compile_nested_prefix_incdec_hoisted(&hoisted, increment);
             }

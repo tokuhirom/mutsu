@@ -284,6 +284,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                     left: Box::new(Expr::Var(s.name.clone())),
                     op: crate::token_kind::TokenKind::Ident(op.to_string()),
                     right: Box::new(role_operand),
+                    form: Default::default(),
                 };
                 let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
                 // Assign the initializer BEFORE mixing the role in: the `does`
@@ -774,6 +775,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             args,
             modifier: None,
             quoted: false,
+            on_topic: false,
         },
     };
     // A postfix chain after the call (`my $x .= $m.actions.new`,

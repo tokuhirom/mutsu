@@ -1103,6 +1103,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 left: Box::new(Expr::Var("_".to_string())),
                 op: TokenKind::StarStar,
                 right: Box::new(Expr::Literal(Value::int(exp))),
+                form: Default::default(),
             },
         ));
     }
@@ -1177,6 +1178,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 args,
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             };
             // NOTE: a leading-dot `.=meth` in *expression* position (e.g. the RHS
             // of an `andthen`/`orelse` chain) keeps the plain `AssignExpr` form so
@@ -1277,6 +1279,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                         target: Box::new(Expr::Var("_".to_string())),
                         index: Box::new(index_expr),
                         is_positional: false,
+                        spelling: Default::default(),
                     },
                 ));
             }
@@ -1312,6 +1315,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 target: topic,
                 index: Box::new(index),
                 is_positional: true,
+                spelling: Default::default(),
             },
             crate::parser::expr::ParsedBracketIndex::MultiDim(dimensions) => Expr::MultiDimIndex {
                 target: topic,
@@ -1345,6 +1349,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 target: Box::new(Expr::Var("_".to_string())),
                 index: Box::new(index),
                 is_positional: false,
+                spelling: Default::default(),
             },
         ));
     }
@@ -1433,6 +1438,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                     args,
                     modifier: quoted_modifier,
                     quoted: true,
+                    on_topic: false,
                 },
                 crate::parser::expr::QuotedMethodName::Dynamic(name_expr) => {
                     Expr::DynamicMethodCall {
@@ -1536,6 +1542,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 args,
                 modifier,
                 quoted: false,
+                on_topic: true,
             },
         ));
     }
@@ -1554,6 +1561,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 args,
                 modifier,
                 quoted: false,
+                on_topic: true,
             },
         ));
     }
@@ -1565,6 +1573,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
             args: Vec::new(),
             modifier,
             quoted: false,
+            on_topic: true,
         },
     ))
 }

@@ -248,7 +248,7 @@ impl Interpreter {
                 expr: Box::new(Expr::ArrayVar("__walk_args".to_string())),
             }],
             modifier: None,
-            quoted: false,
+            quoted: false, on_topic: false,
         })];
         let inst_param = walk_param("__walk_inst", false);
         let slurpy_param = walk_param("@__walk_args", true);

@@ -16,6 +16,7 @@ pub(super) fn staged_elems(array_bare: &str) -> Expr {
         args: Vec::new(),
         modifier: None,
         quoted: false,
+        on_topic: false,
     }
 }
 
@@ -28,6 +29,7 @@ pub(super) fn staged_exists(array_bare: &str, i: usize) -> Expr {
         args: vec![Expr::Literal(Value::int(i as i64))],
         modifier: None,
         quoted: false,
+        on_topic: false,
     }
 }
 
@@ -104,6 +106,7 @@ pub(super) fn push_bind_arity_check(
                 left: Box::new(Expr::Literal(Value::str(msg))),
                 op: TokenKind::Tilde,
                 right: Box::new(staged_elems(array_bare)),
+                form: Default::default(),
             })],
             else_branch: Vec::new(),
             binding_var: None,

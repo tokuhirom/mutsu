@@ -848,6 +848,7 @@ impl Compiler {
             target: source_target.clone(),
             index: source_index.clone(),
             is_positional: *source_positional,
+            spelling: Default::default(),
         };
         let temp_name = format!(
             "__mutsu_bind_index_assign_src_{}",
@@ -907,6 +908,7 @@ impl Compiler {
             target: inner,
             index,
             is_positional,
+            ..
         } = cur
         {
             levels.push((index.as_ref(), *is_positional));
@@ -996,6 +998,7 @@ impl Compiler {
                 target: Box::new(rebuilt),
                 index: Box::new(index.clone()),
                 is_positional,
+                spelling: Default::default(),
             };
         }
         rebuilt
@@ -1082,6 +1085,7 @@ impl Compiler {
                             left: Box::new(Expr::Literal(Value::str("type".to_string()))),
                             op: TokenKind::FatArrow,
                             right: Box::new(Expr::BareWord("Array".to_string())),
+                            form: Default::default(),
                         },
                         Expr::Binary {
                             left: Box::new(Expr::Literal(Value::str("message".to_string()))),
@@ -1089,10 +1093,12 @@ impl Compiler {
                             right: Box::new(Expr::Literal(Value::str(
                                 "Cannot bind to Array slice".to_string(),
                             ))),
+                            form: Default::default(),
                         },
                     ],
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 }],
                 listop: false,
             });
@@ -1119,6 +1125,7 @@ impl Compiler {
                     ],
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 }),
                 is_bind: false,
             };
@@ -1604,6 +1611,7 @@ impl<'ast> crate::ast_visit::Visit<'ast> for TopicMutationScan {
                 op: TokenKind::Ident(name),
                 left,
                 right,
+                ..
             } if name == "=:=" => expr_refs_topic(left) || expr_refs_topic(right),
             // `*.=foo` — mutating method-assign on the placeholder.
             Expr::MethodCall {

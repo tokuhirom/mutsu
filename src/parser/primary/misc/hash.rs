@@ -176,6 +176,7 @@ fn hash_args_from_pairs(pairs: Vec<(String, Option<Expr>)>) -> Vec<Expr> {
             left: Box::new(Expr::Literal(Value::str(key))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(val_opt.unwrap_or(Expr::Literal(Value::NIL))),
+            form: Default::default(),
         })
         .collect()
 }
@@ -219,6 +220,7 @@ fn hash_pair_from_expr(expr: &Expr) -> Result<Option<(String, Expr)>, PError> {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
             right,
+            ..
         } => match hash_key_from_expr((**left).clone()) {
             Ok(key) => Ok(Some((key, (**right).clone()))),
             // A key that is not a compile-time literal (e.g. an interpolated

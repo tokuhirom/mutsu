@@ -232,6 +232,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 };
                 self.compile_expr(&call);
                 true
@@ -251,6 +252,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 };
                 self.try_compile_nqp_value_op(name, std::slice::from_ref(&var))
             }

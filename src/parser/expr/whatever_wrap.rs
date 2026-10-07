@@ -10,7 +10,9 @@ use crate::whatever_curry::make_wc_param;
 
 pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
     match expr {
-        Expr::Binary { left, op, right } => {
+        Expr::Binary {
+            left, op, right, ..
+        } => {
             let left = wrap_composition_operands(*left);
             let right = wrap_composition_operands(*right);
             if matches!(&op, TokenKind::Ident(name) if name == "o") {
@@ -48,6 +50,7 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                         left: Box::new(left_expr),
                         op,
                         right: Box::new(right_expr),
+                        form: Default::default(),
                     };
                     if params.len() == 1 {
                         return Expr::Lambda {
@@ -83,12 +86,14 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                     left: Box::new(left_wrapped),
                     op,
                     right: Box::new(right_wrapped),
+                    form: Default::default(),
                 }
             } else {
                 Expr::Binary {
                     left: Box::new(left),
                     op,
                     right: Box::new(right),
+                    form: Default::default(),
                 }
             }
         }
@@ -102,12 +107,14 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
             args,
             modifier,
             quoted,
+            ..
         } => Expr::MethodCall {
             target: Box::new(wrap_composition_operands(*target)),
             name,
             args: args.into_iter().map(wrap_composition_operands).collect(),
             modifier,
             quoted,
+            on_topic: false,
         },
         Expr::CallOn { target, args } => Expr::CallOn {
             target: Box::new(wrap_composition_operands(*target)),
@@ -122,6 +129,7 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
             target: Box::new(wrap_composition_operands(*target)),
             index: Box::new(wrap_composition_operands(*index)),
             is_positional,
+            spelling: Default::default(),
         },
         other => other,
     }
@@ -142,6 +150,7 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
             args,
             modifier,
             quoted,
+            ..
         } if !args.iter().any(contains_whatever) => {
             match target.as_ref() {
                 // Direct: MethodCall -> CallOn -> Whatever-containing target
@@ -162,6 +171,7 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
                         args: args.clone(),
                         modifier: *modifier,
                         quoted: *quoted,
+                        on_topic: false,
                     })
                 }
                 // Recursive: MethodCall -> MethodCall -> ... -> CallOn
@@ -173,6 +183,7 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
                         args: args.clone(),
                         modifier: *modifier,
                         quoted: *quoted,
+                        on_topic: false,
                     })
                 }
                 _ => None,

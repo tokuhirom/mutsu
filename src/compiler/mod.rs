@@ -2184,7 +2184,7 @@ impl Compiler {
                 Expr::Literal(v) => matches!(v.view(), crate::value::ValueView::Int(_)),
                 Expr::WhateverCurry(inner) => matches!(
                     inner.as_ref(),
-                    Expr::Binary { left, op: crate::token_kind::TokenKind::Minus, right }
+                    Expr::Binary { left, op: crate::token_kind::TokenKind::Minus, right, .. }
                         if matches!(left.as_ref(), Expr::WhateverArg)
                             && matches!(right.as_ref(), Expr::Literal(v)
                                 if matches!(v.view(), crate::value::ValueView::Int(_)))
@@ -3243,6 +3243,7 @@ impl Compiler {
                 left,
                 op: crate::token_kind::TokenKind::FatArrow,
                 right,
+                ..
             } => {
                 let key = match left.as_ref() {
                     Expr::Literal(lit) => lit.as_str(),
@@ -3584,6 +3585,7 @@ impl Compiler {
             args: Vec::new(),
             modifier: None,
             quoted: false,
+            on_topic: false,
         };
         // Multi-param pointy blocks (`-> $a, $b = 7`) carry a full ParamDef per
         // param. A param is *required* when it has neither an optional marker
@@ -3636,12 +3638,14 @@ impl Compiler {
                     )))),
                     op: crate::token_kind::TokenKind::Tilde,
                     right: Box::new(chunk_elems()),
+                    form: Default::default(),
                 };
                 bind_stmts.push(Stmt::If {
                     cond: Expr::Binary {
                         left: Box::new(chunk_elems()),
                         op: crate::token_kind::TokenKind::Lt,
                         right: Box::new(Expr::Literal(Value::int(required_arity as i64))),
+                        form: Default::default(),
                     },
                     then_branch: vec![Stmt::Die(msg)],
                     else_branch: Vec::new(),
@@ -3681,11 +3685,13 @@ impl Compiler {
                             args: vec![Expr::Literal(Value::int(positional_slot as i64))],
                             modifier: None,
                             quoted: false,
+                            on_topic: false,
                         }),
                         name: Symbol::intern("Array"),
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
+                        on_topic: false,
                     }
                 } else {
                     Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer)
@@ -3703,6 +3709,7 @@ impl Compiler {
                 target: Box::new(chunk_var()),
                 index: Box::new(Expr::Literal(Value::int(slot as i64))),
                 is_positional: false,
+                spelling: Default::default(),
             };
             // An optional param without a default (`-> $a, $b? {}`) seeds its
             // type object (Mu for untyped block params) when the chunk is
@@ -3721,6 +3728,7 @@ impl Compiler {
                         left: Box::new(chunk_elems()),
                         op: crate::token_kind::TokenKind::Gt,
                         right: Box::new(Expr::Literal(Value::int(slot as i64))),
+                        form: Default::default(),
                     }),
                     then_expr: Box::new(element_expr),
                     else_expr: Box::new(fallback),
@@ -3754,6 +3762,7 @@ impl Compiler {
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
+                        on_topic: false,
                     }
                 } else {
                     Expr::DeitemizeForBind(Box::new(value_expr))
@@ -3843,6 +3852,7 @@ impl Compiler {
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
+                        on_topic: false,
                     },
                     type_constraint: None,
                     is_state: false,
@@ -4093,7 +4103,9 @@ impl Compiler {
                     && Self::expr_yields_container_less_value(expr)
             }
             // An arithmetic/string operator always mints a fresh value.
-            Expr::Binary { left, op, right } => {
+            Expr::Binary {
+                left, op, right, ..
+            } => {
                 matches!(
                     op,
                     TokenKind::Plus

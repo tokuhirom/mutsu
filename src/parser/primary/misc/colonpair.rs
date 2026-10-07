@@ -214,6 +214,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                     left: left.clone(),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(value_expr),
+                    form: Default::default(),
                 };
                 let (after_eq, _) = ws(after_eq)?;
                 r_next = after_eq;
@@ -380,6 +381,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                         left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                         op: crate::token_kind::TokenKind::FatArrow,
                         right: Box::new(Expr::Literal(val)),
+                        form: Default::default(),
                     },
                 ));
             }
@@ -404,6 +406,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(Expr::Literal(Value::FALSE)),
+                form: crate::ast::BinaryForm::ColonPairFalse,
             },
         ));
     }
@@ -425,6 +428,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                     left: Box::new(Expr::Literal(Value::str(name.to_string()))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(var_expr),
+                    form: crate::ast::BinaryForm::ColonPairVariable,
                 },
             ));
         }
@@ -467,6 +471,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::str(key))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(var_expr),
+                form: crate::ast::BinaryForm::ColonPairVariable,
             },
         ));
     }
@@ -506,6 +511,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                     left: Box::new(Expr::Literal(Value::str(name))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(Expr::ArrayLiteral(Vec::new())),
+                    form: crate::ast::BinaryForm::ColonPairValue,
                 },
             ));
         }
@@ -537,6 +543,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                     left: Box::new(Expr::Literal(Value::str(name))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(value),
+                    form: crate::ast::BinaryForm::ColonPairValue,
                 },
             ));
         }
@@ -548,6 +555,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
+                form: crate::ast::BinaryForm::ColonPairValue,
             },
         ));
     }
@@ -584,6 +592,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(Expr::BracketArray(items, trailing_comma)),
+                form: crate::ast::BinaryForm::ColonPairValue,
             },
         ));
     }
@@ -596,6 +605,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(block_or_hash),
+                form: crate::ast::BinaryForm::ColonPairValue,
             },
         ));
     }
@@ -629,6 +639,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                         left: Box::new(Expr::Literal(Value::str(name))),
                         op: crate::token_kind::TokenKind::FatArrow,
                         right: Box::new(Expr::ArrayLiteral(Vec::new())),
+                        form: crate::ast::BinaryForm::ColonPairValue,
                     },
                 ));
             }
@@ -655,6 +666,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                         left: Box::new(Expr::Literal(Value::str(name))),
                         op: crate::token_kind::TokenKind::FatArrow,
                         right: Box::new(val_expr),
+                        form: crate::ast::BinaryForm::ColonPairValue,
                     },
                 ));
             }
@@ -669,6 +681,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(val_expr),
+                form: crate::ast::BinaryForm::ColonPairValue,
             },
         ));
     }
@@ -681,6 +694,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(val_expr),
+                form: crate::ast::BinaryForm::ColonPairValue,
             },
         ));
     }
@@ -691,6 +705,7 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             left: Box::new(Expr::Literal(Value::str(name))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(Expr::Literal(Value::TRUE)),
+            form: crate::ast::BinaryForm::ColonPairTrue,
         },
     ))
 }
@@ -715,7 +730,9 @@ pub(crate) fn wrap_colonpair_sink_source(expr: Expr, source: &str) -> Expr {
     if !trimmed.starts_with(':') || trimmed.starts_with("::") {
         return expr;
     }
-    if let Expr::Binary { left, op, right } = &expr
+    if let Expr::Binary {
+        left, op, right, ..
+    } = &expr
         && *op == crate::token_kind::TokenKind::FatArrow
         && let Expr::Literal(lit) = left.as_ref()
         && let ValueView::Str(key) = lit.view()
@@ -739,7 +756,9 @@ fn render_signature_item(expr: &Expr) -> String {
         Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => {
             expr.sigiled_var_name().unwrap_or_default()
         }
-        Expr::Binary { left, op, right } if *op == crate::token_kind::TokenKind::FatArrow => {
+        Expr::Binary {
+            left, op, right, ..
+        } if *op == crate::token_kind::TokenKind::FatArrow => {
             if let Expr::Literal(lit) = left.as_ref()
                 && let ValueView::Str(name) = lit.view()
             {

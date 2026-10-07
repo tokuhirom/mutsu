@@ -72,6 +72,7 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Stmt {
             args: form.args.clone(),
             modifier: None,
             quoted: false,
+            on_topic: false,
         },
         type_constraint: form.type_constraint.clone(),
         is_state: form.is_state,

@@ -337,6 +337,7 @@ impl Compiler {
             target,
             index,
             is_positional: true,
+            ..
         } = expr
         else {
             return false;
@@ -486,6 +487,7 @@ impl Compiler {
                 left: Box::new(Expr::Literal(Value::str("__callframe_blocks".to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(Expr::Literal(Value::int(self.callframe_block_depth as i64))),
+                form: Default::default(),
             });
             self.compile_expr_call_inner(name, &new_args, suppress_listop_rewrite);
             return;
@@ -664,7 +666,9 @@ impl Compiler {
             return;
         } else if name == "__mutsu_assign_callable_lvalue"
             && args.len() == 3
-            && let Expr::Binary { left, op, right } = &args[0]
+            && let Expr::Binary {
+                left, op, right, ..
+            } = &args[0]
             && matches!(
                 op,
                 crate::token_kind::TokenKind::SlashSlash
@@ -785,6 +789,7 @@ impl Compiler {
                             .collect(),
                     )),
                     is_positional: true,
+                    spelling: Default::default(),
                 };
                 self.compile_expr(&slice);
                 self.code.emit(OpCode::DecontListElems);
@@ -852,6 +857,7 @@ impl Compiler {
                                 args: vec![Expr::Literal(Value::int(offset as i64))],
                                 modifier: None,
                                 quoted: false,
+                                on_topic: false,
                             }
                         } else {
                             Expr::Var(tmp_name.clone())
@@ -872,6 +878,7 @@ impl Compiler {
                                 args: vec![Expr::Literal(Value::int(offset as i64))],
                                 modifier: None,
                                 quoted: false,
+                                on_topic: false,
                             }
                         } else {
                             Expr::Var(tmp_name.clone())
@@ -885,6 +892,7 @@ impl Compiler {
                         target,
                         index,
                         is_positional,
+                        ..
                     } => {
                         // A positional slice (`@a[1,2]`) is a multi-item target:
                         // it consumes `width` RHS items and receives them as a
@@ -914,12 +922,14 @@ impl Compiler {
                                         .collect(),
                                 )),
                                 is_positional: true,
+                                spelling: Default::default(),
                             }
                         } else {
                             Expr::Index {
                                 target: Box::new(Expr::Var(src_name.clone())),
                                 index: Box::new(Expr::Literal(Value::int(offset as i64))),
                                 is_positional: true,
+                                spelling: Default::default(),
                             }
                         };
                         self.compile_expr(&Expr::IndexAssign {
@@ -951,6 +961,7 @@ impl Compiler {
                             target: Box::new(Expr::Var(src_name)),
                             index: Box::new(Expr::Literal(Value::int(offset as i64))),
                             is_positional: true,
+                            spelling: Default::default(),
                         };
                         self.compile_expr(&Expr::MultiDimIndexAssign {
                             target: target.clone(),
@@ -974,6 +985,7 @@ impl Compiler {
                                 target: Box::new(Expr::Var(snap_name.clone())),
                                 index: Box::new(Expr::Literal(Value::int(offset as i64))),
                                 is_positional: true,
+                                spelling: Default::default(),
                             }
                         };
                         self.compile_expr(&crate::parser::assign_to_target_expr(
@@ -1155,7 +1167,9 @@ impl Compiler {
             // without needing a name to match against.
             if args.len() == 2
                 && let Expr::WhateverCurry(body) = &args[1]
-                && let Expr::Binary { left, op, right } = body.as_ref()
+                && let Expr::Binary {
+                    left, op, right, ..
+                } = body.as_ref()
                 && *op == TokenKind::Plus
                 && let delta = match (left.as_ref(), right.as_ref()) {
                     (lhs, rhs) if crate::parser::is_whatever(lhs) => Some(rhs.clone()),
@@ -1192,7 +1206,9 @@ impl Compiler {
                     .filter(|s| !matches!(s, Stmt::SetLine(_)))
                     .collect();
                 if effective_body.len() == 1
-                    && let Stmt::Expr(Expr::Binary { left, op, right }) = effective_body[0]
+                    && let Stmt::Expr(Expr::Binary {
+                        left, op, right, ..
+                    }) = effective_body[0]
                     && *op == TokenKind::Plus
                 {
                     let delta = match (left.as_ref(), right.as_ref()) {
@@ -1347,6 +1363,7 @@ impl Compiler {
                     target,
                     index,
                     is_positional: _,
+                    ..
                 } = &args[0]
                 {
                     let assign_expr = Expr::IndexAssign {
@@ -1386,6 +1403,7 @@ impl Compiler {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             };
             self.compile_expr(&method_call);
         }
@@ -1479,6 +1497,7 @@ impl Compiler {
                     args: args[1..].to_vec(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 };
                 self.compile_expr(&method_call);
             }
@@ -1512,6 +1531,7 @@ impl Compiler {
                     value: Box::new(Expr::BracketArray(Vec::new(), false)),
                     is_positional: *is_positional,
                 }),
+                form: Default::default(),
             };
             let mut new_args = args.to_vec();
             new_args[0] = viv;
@@ -1555,6 +1575,7 @@ impl Compiler {
                         left: Box::new(slot.clone()),
                         op: TokenKind::SlashSlash,
                         right: Box::new(Expr::BracketArray(Vec::new(), false)),
+                        form: Default::default(),
                     }),
                     is_positional: match &slot {
                         Expr::Index { is_positional, .. } => *is_positional,
@@ -1567,6 +1588,7 @@ impl Compiler {
                     args: args[1..].to_vec(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 };
                 // Write the method call result back to the slot so that
                 // nested hash mutations (e.g. `push %h<a><b>, 1, 2`)
@@ -1596,6 +1618,7 @@ impl Compiler {
                     args: args[1..].to_vec(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 };
                 self.compile_expr(&method_call);
             }
@@ -1714,6 +1737,7 @@ impl Compiler {
                 target,
                 index,
                 is_positional: _,
+                ..
             } = &args[0]
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
@@ -1743,6 +1767,7 @@ impl Compiler {
                 args: method_args,
                 modifier: None,
                 quoted: false,
+                ..
             } = &args[0]
                 && method_args.is_empty()
             {
@@ -1799,6 +1824,7 @@ impl Compiler {
                         target,
                         index,
                         is_positional: _,
+                        ..
                     } => Some(Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),
                         index: index.clone(),
@@ -1827,6 +1853,7 @@ impl Compiler {
                                 left: Box::new(Expr::Var(seen_name.clone())),
                                 op: TokenKind::EqEqEq,
                                 right: Box::new(args[1].clone()),
+                                form: Default::default(),
                             },
                             then_branch: vec![assign_stmt],
                             else_branch: vec![],
@@ -1864,7 +1891,9 @@ impl Compiler {
                 // `cas($var, * + delta)` argument is still an un-expanded
                 // `WhateverCurry` here.
                 if let Expr::WhateverCurry(body) = &args[1]
-                    && let Expr::Binary { left, op, right } = body.as_ref()
+                    && let Expr::Binary {
+                        left, op, right, ..
+                    } = body.as_ref()
                     && *op == TokenKind::Plus
                     && let delta = match (left.as_ref(), right.as_ref()) {
                         (Expr::Whatever, rhs) => Some(rhs.clone()),
@@ -1882,7 +1911,11 @@ impl Compiler {
                     return;
                 }
                 if let Expr::Lambda { param, body, .. } = &args[1]
-                    && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()
+                    && let [
+                        Stmt::Expr(Expr::Binary {
+                            left, op, right, ..
+                        }),
+                    ] = body.as_slice()
                     && *op == TokenKind::Plus
                 {
                     let delta = match (left.as_ref(), right.as_ref()) {
@@ -1913,6 +1946,7 @@ impl Compiler {
                 target,
                 index,
                 is_positional: _,
+                ..
             } = &args[0]
                 && let Some(hash_name) = match target.as_ref() {
                     Expr::HashVar(n) => Some(format!("%{}", n)),
@@ -1939,6 +1973,7 @@ impl Compiler {
                 target,
                 index,
                 is_positional: _,
+                ..
             } = &args[0]
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
@@ -2011,6 +2046,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 };
                 self.compile_expr(&method_call);
                 return;
@@ -2102,6 +2138,7 @@ impl Compiler {
                         op: TokenKind::FatArrow,
                         left,
                         right,
+                        ..
                     } = arg
                         && let Expr::Literal(lit) = left.as_ref()
                         && let crate::value::ValueView::Str(key) = lit.view()

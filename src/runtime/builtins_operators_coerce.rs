@@ -140,7 +140,7 @@ impl Interpreter {
                 expr: Box::new(Expr::Binary {
                     left: Box::new(Expr::Literal(left)),
                     op: TokenKind::SetElem,
-                    right: Box::new(Expr::Literal(right)),
+                    right: Box::new(Expr::Literal(right)), form: Default::default(),
                 }),
             };
         }
@@ -150,7 +150,7 @@ impl Interpreter {
                 expr: Box::new(Expr::Binary {
                     left: Box::new(Expr::Literal(left)),
                     op: TokenKind::SetCont,
-                    right: Box::new(Expr::Literal(right)),
+                    right: Box::new(Expr::Literal(right)), form: Default::default(),
                 }),
             };
         }
@@ -197,7 +197,7 @@ impl Interpreter {
         Expr::Binary {
             left: Box::new(Expr::Literal(left)),
             op: Self::infix_token(op),
-            right: Box::new(Expr::Literal(right)),
+            right: Box::new(Expr::Literal(right)), form: Default::default(),
         }
     }
 

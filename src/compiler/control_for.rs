@@ -249,6 +249,7 @@ impl Compiler {
             target,
             index,
             is_positional: true,
+            ..
         } = &normalized_iterable
             && matches!(target.as_ref(), Expr::ArrayVar(_))
             && ((param.is_none() && params.is_empty()) || has_rw && !has_copy)

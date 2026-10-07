@@ -134,6 +134,7 @@ impl Compiler {
             args: method_args,
             modifier: None,
             quoted: false,
+            on_topic: false,
         })
     }
 
@@ -155,11 +156,13 @@ impl Compiler {
                     left: Box::new(Expr::Literal(Value::str(name.clone()))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(e.clone()),
+                    form: Default::default(),
                 },
                 crate::ast::CallArg::Named { name, value: None } => Expr::Binary {
                     left: Box::new(Expr::Literal(Value::str(name.clone()))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(Expr::Literal(Value::TRUE)),
+                    form: Default::default(),
                 },
                 crate::ast::CallArg::Slip(e) => Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,

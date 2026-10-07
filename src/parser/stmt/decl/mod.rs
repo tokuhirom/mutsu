@@ -288,9 +288,17 @@ fn is_decl_trailing_or_chain_op(op: &TokenKind) -> bool {
 fn rewrite_decl_assignment_or_chain(expr: Expr, mut decl_stmt: Stmt) -> Option<Stmt> {
     let mut init = expr;
     let mut tails: Vec<(TokenKind, Expr)> = Vec::new();
-    while let Expr::Binary { left, op, right } = init {
+    while let Expr::Binary {
+        left, op, right, ..
+    } = init
+    {
         if !is_decl_trailing_or_chain_op(&op) {
-            init = Expr::Binary { left, op, right };
+            init = Expr::Binary {
+                left,
+                op,
+                right,
+                form: Default::default(),
+            };
             break;
         }
         tails.push((op, *right));
@@ -312,6 +320,7 @@ fn rewrite_decl_assignment_or_chain(expr: Expr, mut decl_stmt: Stmt) -> Option<S
             left: Box::new(chain),
             op,
             right: Box::new(right),
+            form: Default::default(),
         };
     }
     Some(Stmt::Expr(chain))

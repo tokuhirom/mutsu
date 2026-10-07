@@ -291,6 +291,7 @@ fn percent_hash_literal_inner(input: &str) -> PResult<'_, Expr> {
                 left,
                 op: TokenKind::FatArrow,
                 right,
+                ..
             } => {
                 let key = match *left {
                     Expr::Literal(lit) => match lit.view() {

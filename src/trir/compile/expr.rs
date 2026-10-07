@@ -120,7 +120,9 @@ impl TrirCompiler<'_> {
                 Some(TrKind::Obj)
             }
             Expr::Unary { op, expr } => self.compile_unary(op, expr, false),
-            Expr::Binary { left, op, right } => self.compile_binary(left, op, right),
+            Expr::Binary {
+                left, op, right, ..
+            } => self.compile_binary(left, op, right),
             Expr::Call { name, args, .. } => self.compile_call(&name.resolve(), args),
             Expr::MethodCall {
                 target,
@@ -128,6 +130,7 @@ impl TrirCompiler<'_> {
                 args,
                 modifier: None,
                 quoted: false,
+                ..
             } => self.compile_method_call(target, &name.resolve(), args),
             Expr::AssignExpr {
                 name,

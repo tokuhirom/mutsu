@@ -182,12 +182,12 @@ fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
         } => Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(name.clone()))),
             op: TokenKind::FatArrow,
-            right: Box::new(e.clone()),
+            right: Box::new(e.clone()), form: Default::default(),
         },
         CallArg::Named { name, value: None } => Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(name.clone()))),
             op: TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::TRUE)),
+            right: Box::new(Expr::Literal(Value::TRUE)), form: Default::default(),
         },
         CallArg::Slip(e) => Expr::Unary {
             op: TokenKind::Pipe,

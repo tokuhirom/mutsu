@@ -123,6 +123,7 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
                     target: Box::new(Expr::PseudoStash("::".to_string())),
                     index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
                     is_positional: false,
+                    spelling: Default::default(),
                 },
             ));
         }
@@ -138,6 +139,7 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
                 target: Box::new(Expr::PseudoStash("::".to_string())),
                 index: Box::new(key_expr),
                 is_positional: false,
+                spelling: Default::default(),
             },
         ));
     }
@@ -230,6 +232,7 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
                     left: Box::new(prev),
                     op: crate::token_kind::TokenKind::Tilde,
                     right: Box::new(Expr::Literal(Value::str("::".to_string()))),
+                    form: Default::default(),
                 }
             } else {
                 Expr::Literal(Value::str(format!("{}::", full_name)))
@@ -238,6 +241,7 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(base),
                 op: crate::token_kind::TokenKind::Tilde,
                 right: Box::new(seg_expr),
+                form: Default::default(),
             });
             r = r3;
         } else if let Ok((r2, part)) = crate::parser::stmt::ident_pub(r2) {
@@ -248,6 +252,7 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
                     left: Box::new(old),
                     op: crate::token_kind::TokenKind::Tilde,
                     right: Box::new(Expr::Literal(Value::str(format!("::{}", part)))),
+                    form: Default::default(),
                 };
             } else {
                 full_name = format!("{}::{}", full_name, part);

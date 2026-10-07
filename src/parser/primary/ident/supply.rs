@@ -77,6 +77,7 @@ pub(crate) fn supply_method_call(body: Vec<Stmt>) -> Expr {
         }],
         modifier: None,
         quoted: false,
+        on_topic: false,
     }
 }
 
@@ -124,6 +125,7 @@ impl SupplyBody<'_> {
             args,
             modifier: None,
             quoted: false,
+            on_topic: false,
         }
     }
 }

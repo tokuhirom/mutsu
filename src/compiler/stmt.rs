@@ -366,6 +366,7 @@ impl Compiler {
             left,
             op: TokenKind::FatArrow,
             right,
+            ..
         } = expr
             && matches!(
                 left.as_ref(),
@@ -439,6 +440,7 @@ impl Compiler {
             target: container,
             index,
             is_positional,
+            ..
         } = target.as_ref()
         else {
             return None;
@@ -464,6 +466,7 @@ impl Compiler {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             },
             type_constraint: None,
             is_state: false,
@@ -489,6 +492,7 @@ impl Compiler {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             };
         }
 
@@ -503,6 +507,7 @@ impl Compiler {
                 op: crate::token_kind::TokenKind::SmartMatch,
                 left: Box::new(element),
                 right: Box::new(Expr::BareWord("Array".to_string())),
+                form: Default::default(),
             },
             then_branch: vec![Stmt::Expr(Expr::IndexAssign {
                 target: container.clone(),
@@ -601,6 +606,7 @@ impl Compiler {
             target: container,
             index,
             is_positional,
+            ..
         } = iterable
         else {
             return None;
@@ -645,6 +651,7 @@ impl Compiler {
             target: container.clone(),
             index: Box::new(idx_var.clone()),
             is_positional: *is_positional,
+            spelling: Default::default(),
         };
 
         // Preserve the subscript's existing itemization when snapshotting it.
@@ -665,6 +672,7 @@ impl Compiler {
                 op: crate::token_kind::TokenKind::SmartMatch,
                 left: Box::new(idx_var.clone()),
                 right: Box::new(Expr::BareWord("Iterable".to_string())),
+                form: Default::default(),
             }
         };
         let element_is_not_scalar = Expr::Binary {
@@ -675,8 +683,10 @@ impl Compiler {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             }),
             right: Box::new(Expr::BareWord("Scalar".to_string())),
+            form: Default::default(),
         };
         let slice_decl = Self::init_decl(
             &slice_tmp,
@@ -684,6 +694,7 @@ impl Compiler {
                 op: crate::token_kind::TokenKind::OrOr,
                 left: Box::new(index_is_iterable),
                 right: Box::new(element_is_not_scalar),
+                form: Default::default(),
             },
         );
         // A `Slip` in a scalar flattens when iterated, a plain value does not
@@ -700,6 +711,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    on_topic: false,
                 }),
                 else_expr: Box::new(element),
             },
@@ -2821,6 +2833,7 @@ impl Compiler {
                     target,
                     index,
                     is_positional: true,
+                    ..
                 } = iterable
                     && matches!(index.as_ref(), Expr::Whatever)
                     && Self::for_single_array_source(target).is_some()
@@ -2849,6 +2862,7 @@ impl Compiler {
                             args: Vec::new(),
                             modifier: None,
                             quoted: false,
+                            on_topic: false,
                         };
                     }
                     self.compile_stmt(&rewritten);
@@ -4973,6 +4987,7 @@ impl Compiler {
                             target,
                             index: key,
                             is_positional,
+                            ..
                         } => {
                             self.compile_let_save_elem(target, key, *is_positional, *is_temp, None);
                             return;

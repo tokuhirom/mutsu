@@ -431,6 +431,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
             left: Box::new(autoviv_compound_lhs(lhs, op)),
             op: op.token_kind(),
             right: Box::new(rhs),
+            form: Default::default(),
         }
     }
 }

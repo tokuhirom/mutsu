@@ -214,6 +214,7 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
         args: Vec::new(),
         modifier: None,
         quoted: false,
+        on_topic: false,
     };
     let cond = if matches!(kind, GivenWithKind::Without) {
         Expr::Unary {
@@ -1009,6 +1010,7 @@ pub(super) fn lower_dotty_assign(
         args: args.clone(),
         modifier,
         quoted: false,
+        on_topic: false,
     };
     if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
         return Ok(crate::parser::topic_dot_assign(method_call(target)));
@@ -1527,7 +1529,10 @@ fn lower_enum_pair_term(term: &RakuAstNode) -> Result<LoweredEnumVariants, Runti
     };
     let mut variants = Vec::with_capacity(body.len());
     for item in body {
-        let Expr::Binary { left, op, right } = item else {
+        let Expr::Binary {
+            left, op, right, ..
+        } = item
+        else {
             return Err(unsupported(term));
         };
         if op != crate::token_kind::TokenKind::FatArrow {
@@ -2257,6 +2262,7 @@ fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         target,
         index,
         is_positional,
+        ..
     } = lower_expr(named_child(node, "left")?)?
     else {
         return Err(unsupported(node));
@@ -2354,6 +2360,7 @@ fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
         target,
         index,
         is_positional,
+        ..
     } = lowered
     else {
         return Ok(None);
@@ -3283,6 +3290,7 @@ fn hash_composer_source(pairs: &[(String, Option<Expr>)]) -> Option<String> {
                 left: Box::new(Expr::Literal(Value::str(key.clone()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value.clone()?),
+                form: Default::default(),
             };
             crate::regex_tree::expression_source(&pair)
         })
@@ -3993,6 +4001,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 args: arg_exprs(call)?,
                 modifier: dispatch_modifier(call)?,
                 quoted: false,
+                on_topic: true,
             })
         }
         // `[+] @a` / `[\\+] @a` -> a reduction over a single argument. mutsu's
@@ -4074,6 +4083,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 target: Box::new(base),
                 index: Box::new(index),
                 is_positional: true,
+                spelling: Default::default(),
             })
         }
         // `start` / `quietly` / `sink` -> the call the parser spells them as.
@@ -4168,6 +4178,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 left: Box::new(Expr::Literal(Value::str(key.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(Expr::Literal(value)),
+                form: if node.class == RakuAstClass::ColonPairTrue {
+                    crate::ast::BinaryForm::ColonPairTrue
+                } else {
+                    crate::ast::BinaryForm::ColonPairFalse
+                },
             })
         }
         RakuAstClass::ColonPairVariable | RakuAstClass::ColonPairValue => {
@@ -4177,6 +4192,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 left: Box::new(Expr::Literal(Value::str(key))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
+                form: if node.class == RakuAstClass::ColonPairVariable {
+                    crate::ast::BinaryForm::ColonPairVariable
+                } else {
+                    crate::ast::BinaryForm::ColonPairValue
+                },
             })
         }
         RakuAstClass::FatArrow => {
@@ -4186,6 +4206,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 left: Box::new(Expr::Literal(Value::str(key))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
+                form: Default::default(),
             })
         }
         // A bare type name `Int` (a `Type::Simple`) in expression position -> a
@@ -4361,6 +4382,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 left: Box::new(left),
                 op,
                 right: Box::new(right),
+                form: Default::default(),
             };
             // `=>` as an ordinary infix is raku's node for a non-bareword key
             // (`"a" => 1`, `$k => 1`), which is a POSITIONAL pair rather than a
@@ -4385,6 +4407,19 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
             let operand = lower_expr(named_child(node, "operand")?)?;
             let op = prefix_token(named_child(node, "prefix")?)?;
+            // `^N` is the range `0 ..^ N` as the parser spells it; a Whatever
+            // operand (`^*`) is a WhateverCode and stays the unary.
+            if op == crate::token_kind::TokenKind::Caret
+                && !crate::parser::contains_whatever(&operand)
+                && !crate::parser::is_whatever(&operand)
+            {
+                return Ok(Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::int(0))),
+                    op: crate::token_kind::TokenKind::DotDotCaret,
+                    right: Box::new(operand),
+                    form: crate::ast::BinaryForm::CaretPrefix,
+                });
+            }
             Ok(Expr::Unary {
                 op,
                 expr: Box::new(operand),
@@ -4443,6 +4478,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 left: Box::new(left),
                 op: token.clone(),
                 right: Box::new(right),
+                form: Default::default(),
             }))
         }
         // A postfix method call (`$x.abs`, `$x.?abs`, `$x."abs"()`), a hyper
@@ -4461,6 +4497,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         args: arg_exprs(postfix)?,
                         modifier: dispatch_modifier(postfix)?,
                         quoted: false,
+                        on_topic: false,
                     })
                 }
                 // `$x."name"()` -> Call::QuotedMethod, whose `name` is a
@@ -4476,6 +4513,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                                 args: arg_exprs(postfix)?,
                                 modifier: None,
                                 quoted: true,
+                                on_topic: false,
                             })
                         }
                         name_expr => Ok(Expr::DynamicMethodCall {
@@ -4496,6 +4534,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     args: arg_exprs(postfix)?,
                     modifier: Some('^'),
                     quoted: false,
+                    on_topic: false,
                 }),
                 // `$o.$name(1)` / `$o.&f(1)`.
                 RakuAstClass::CallTermAsMethod | RakuAstClass::CallNameAsMethod => {
@@ -4622,6 +4661,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                             target: Box::new(operand),
                             index: Box::new(index),
                             is_positional,
+                            // `%h<a>` keeps its brackets.
+                            spelling: if postfix.class
+                                == RakuAstClass::PostcircumfixLiteralHashIndex
+                            {
+                                crate::ast::IndexSpelling::Angle
+                            } else {
+                                Default::default()
+                            },
                         },
                         postfix,
                     )

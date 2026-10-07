@@ -23,6 +23,7 @@ impl Compiler {
             args: Vec::new(),
             modifier: None,
             quoted: false,
+            on_topic: false,
         };
         let expr = match (name, args) {
             // nqp::how($obj) — the meta-object, `$obj.HOW`.

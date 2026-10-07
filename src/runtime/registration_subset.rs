@@ -25,7 +25,7 @@ impl Interpreter {
             if let Expr::Binary {
                 left,
                 op: crate::token_kind::TokenKind::SmartMatch,
-                right,
+                right, ..
             } = pred
                 && matches!(left.as_ref(), Expr::Whatever)
             {
@@ -34,7 +34,7 @@ impl Interpreter {
                     body: vec![Stmt::Expr(Expr::Binary {
                         left: Box::new(Expr::Var("_".to_string())),
                         op: crate::token_kind::TokenKind::SmartMatch,
-                        right: right.clone(),
+                        right: right.clone(), form: Default::default(),
                     })],
                     is_whatever_code: true,
                     param_sigilless: false,

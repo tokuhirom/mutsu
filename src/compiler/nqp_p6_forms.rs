@@ -82,6 +82,7 @@ impl Compiler {
                 target,
                 index,
                 is_positional,
+                ..
             } => Expr::IndexAssign {
                 target: target.clone(),
                 index: index.clone(),
@@ -94,6 +95,7 @@ impl Compiler {
                 args: vec![*value],
                 modifier: None,
                 quoted: false,
+                on_topic: false,
             },
         }
     }

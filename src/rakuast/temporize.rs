@@ -208,6 +208,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 target,
                 index,
                 is_positional,
+                ..
             },
             Some(_),
         ) => {
