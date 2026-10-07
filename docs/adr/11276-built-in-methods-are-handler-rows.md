@@ -1787,3 +1787,34 @@ mutators, then the builtin on the inner value). `MixinBase` is gone from the `NA
 an `Instance`, a `Mixin`). Left: the three storage bridges (`is Array`/`is Hash`/baggy subclasses), `MuBase`,
 `GrammarParse`, `GrammarBuiltinRule` and `Metamodel`, whose receivers are user instances whose frames come from
 `build_method_dispatch_frame`'s override flags.
+
+### 9.29 Slice 4: what was tried for the remaining bridges, and why it stops here (2026-10-07)
+
+Steps 1-4 (§9.25-§9.28) moved the bridges whose existence the frame builder can decide from the call alone:
+`CoreType` (a user method declared on a core type), `AnyBase` (a user `gist`/`Str`/`raku` on an instance) and
+`MixinBase` (a role method on a `Mixin` whose inner value is native). Those three are `DeferralEntry::Native`.
+
+Tried and dropped, on the branch `refactor/11276-4-instance-bridges` (never pushed): give the remaining bridges
+(`GrammarParse`, `MuBase`, `ArrayStorage`, `HashStorage`, `BaggyStorage`, `Metamodel`) the same treatment by
+pushing a `Native` entry from `build_method_dispatch_frame`'s override flags and emptying
+`NATIVE_BASE_EXHAUSTED`. With the `Native` arm routing `Instance`/`Package` receivers to those bridges,
+1,021 `t/` files pass except four, and the four show the real obstacle:
+
+- The flags decide *whether a frame is forced* (a cost guard), not *whether a bridge applies*. A bridge applies
+  when the receiver **value** carries the backing storage (`__mutsu_array_storage`, `__mutsu_hash_storage`,
+  `__baggy_data__`) or is a punned role's type object, and no static question about the class name answers that:
+  `role MK is Hash { method keys { callsame } }` applied with `my %h is MK` has a role as its receiver class, and a
+  `push` override on `class C is Array` is not a "container protocol" name. Widening the flags to every user method of
+  a class with a container base fixes the class case and not the role case (`t/control/proxy-topic-for-alias.t`,
+  `t/oo/method/nextsame-in-qualified-method-call.t`).
+- Pushing the entry whenever the receiver is an `Instance` would force the non-empty frame build (the MRO walk)
+  on every user-method call of a program that names a deferral builtin anywhere, which is the cost
+  `empty_method_dispatch_frame` exists to avoid.
+
+So these six bridges are the same single question asked of the receiver at exhaustion ("which native
+implementation backs this value?"), and the sound replacement is to answer it with rows, not with more frame flags:
+`Array`/`Hash`/`BagHash` rows reached by `invoke_owner` on the storage value (the 3C remainder: `is Array`/`is Hash`
+subclass receivers have no shape), `Mu`'s `new`/`BUILDALL`/`POPULATE`/`clone` rows (3G remainder: constructors), the
+`GrammarHOW`/`ClassHOW` rows (done in 3G part 1) and the grammar `parse` rows. Slice 4 is therefore finished
+when those owners have rows; the resolver then asks "is there a row for this owner on the storage value?" in
+`resolve_sequence`, and `NATIVE_BASE_EXHAUSTED` and `NATIVE_BASE_NO_FRAME` are deleted by slice 5.
