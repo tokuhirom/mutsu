@@ -10,43 +10,28 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("IO::Special"), attrs)
     }
 
-    /// Handle method dispatch on IO::Special instances.
+    /// Handle method dispatch on IO::Special instances: `new` is the
+    /// constructor; every other method `IO::Special` declares is a row of the
+    /// method table, reached through its owner (ADR-11276 §9.22).
+    // Cost: O(1) to find the row, plus the handler's own cost.
     pub(super) fn native_io_special(
         &mut self,
         attributes: &AttrMap,
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let what = attributes
-            .get("what")
-            .map(|v| v.to_string_value())
-            .unwrap_or_default();
-        // Determine which standard stream this represents
-        let is_stdin = what.contains("STDIN");
-        let is_stdout = what.contains("STDOUT");
-        let is_stderr = what.contains("STDERR");
-
+        // `Mu.perl` is `self.raku`.
+        let row_method = if method == "perl" { "raku" } else { method };
+        if let Some(result) = crate::builtins::method_table::invoke_owner(
+            self,
+            &["IO::Special", "Mu"],
+            row_method,
+            &args,
+            || Value::make_instance(Symbol::intern("IO::Special"), attributes.clone()),
+        ) {
+            return result;
+        }
         match method {
-            "Str" | "gist" | "what" => Ok(Value::str(what.clone())),
-            "IO" => {
-                // .IO returns self
-                Ok(Value::make_instance(
-                    Symbol::intern("IO::Special"),
-                    attributes.clone(),
-                ))
-            }
-            "e" => Ok(Value::TRUE),
-            "d" | "f" | "l" | "x" => Ok(Value::FALSE),
-            "s" => Ok(Value::int(0)),
-            "r" => Ok(Value::truth(is_stdin)),
-            "w" => Ok(Value::truth(is_stdout || is_stderr)),
-            "modified" | "accessed" | "changed" => {
-                // Return the Instant type object
-                Ok(Value::package(Symbol::intern("Instant")))
-            }
-            "mode" => Ok(Value::NIL),
-            "raku" | "perl" => Ok(Value::str(format!("IO::Special.new(\"{}\")", what))),
-            "WHICH" => Ok(Value::str(format!("IO::Special|{}", what))),
             "new" => {
                 // IO::Special.new("<STDOUT>")
                 if let Some(arg) = args.first() {
