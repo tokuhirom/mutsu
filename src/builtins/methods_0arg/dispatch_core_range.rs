@@ -5,86 +5,6 @@ use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
-use super::{sample_weighted_bag_key, sample_weighted_mix_key};
-
-/// Efficiently sample one random element from a Range without enumerating all elements.
-/// Uses raw u64 entropy for full bit coverage on large ranges.
-fn sample_one_from_range(target: &Value) -> Option<Value> {
-    match target.view() {
-        ValueView::Range(start, end) => {
-            if end < start {
-                Some(Value::NIL)
-            } else {
-                Some(range_pick_one_i64(start, end))
-            }
-        }
-        ValueView::RangeExcl(start, end) => {
-            let hi = end.saturating_sub(1);
-            if start > hi {
-                Some(Value::NIL)
-            } else {
-                Some(range_pick_one_i64(start, hi))
-            }
-        }
-        ValueView::RangeExclStart(start, end) => {
-            let lo = start.saturating_add(1);
-            if lo > end {
-                Some(Value::NIL)
-            } else {
-                Some(range_pick_one_i64(lo, end))
-            }
-        }
-        ValueView::RangeExclBoth(start, end) => {
-            let lo = start.saturating_add(1);
-            let hi = end.saturating_sub(1);
-            if lo > hi {
-                Some(Value::NIL)
-            } else {
-                Some(range_pick_one_i64(lo, hi))
-            }
-        }
-        ValueView::GenericRange {
-            start,
-            end,
-            excl_start,
-            excl_end,
-        } => {
-            // Try integer (Int/BigInt) endpoints first
-            if let Some(result) = generic_range_pick_one(start, end, excl_start, excl_end) {
-                return Some(result);
-            }
-            // Non-integer numeric endpoints (Rat/Num/FatRat): enumerate via
-            // `.succ` semantics so the picked element keeps its endpoint type
-            // (`(1.1..3.1).roll` yields a Rat, not a Num) — reuse value_to_list,
-            // which already expands the range preserving type, then pick one.
-            if start.is_numeric() {
-                let pool = crate::runtime::utils::value_to_list(target);
-                if pool.is_empty() {
-                    return Some(Value::NIL);
-                }
-                let idx = (crate::builtins::rng::builtin_rand() * pool.len() as f64) as usize
-                    % pool.len();
-                return Some(pool[idx].clone());
-            }
-            None
-        }
-        _ => None,
-    }
-}
-
-/// One uniformly random element of `items`, `Nil` when there is none.
-// Cost: O(1).
-fn random_item(items: &[Value]) -> Value {
-    if items.is_empty() {
-        return Value::NIL;
-    }
-    let mut idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
-    if idx >= items.len() {
-        idx = items.len() - 1;
-    }
-    items[idx].clone()
-}
-
 pub(super) fn dispatch(
     target: &Value,
     method: &str,
@@ -190,168 +110,12 @@ pub(super) fn dispatch(
                 items.last().cloned().unwrap_or(Value::NIL)
             }))),
         }),
-        // Cost: O(1) on an Array, a List, a reified Seq or an integer Range; O(e) on
-        // any other list-like, e = elements (decomposed into a Vec to index one slot).
-        "pick" => Some(match target.view() {
-            ValueView::Mix(_, _) => Some(Err(RuntimeError::new(
-                "Cannot call .pick on a Mix (immutable)",
-            ))),
-            ValueView::Bag(items, _) => {
-                Some(Ok(sample_weighted_bag_key(&items).unwrap_or(Value::NIL)))
-            }
-            ValueView::Set(items, _) => {
-                if items.is_empty() {
-                    Some(Ok(Value::NIL))
-                } else {
-                    let keys: Vec<&String> = items.iter().collect();
-                    let mut idx =
-                        (crate::builtins::rng::builtin_rand() * keys.len() as f64) as usize;
-                    if idx >= keys.len() {
-                        idx = keys.len() - 1;
-                    }
-                    Some(Ok(items.typed_key(keys[idx])))
-                }
-            }
-            ValueView::Hash(items) => {
-                if items.is_empty() {
-                    Some(Ok(Value::NIL))
-                } else {
-                    let mut idx =
-                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
-                    if idx >= items.len() {
-                        idx = items.len() - 1;
-                    }
-                    let (key, value) = items.iter().nth(idx).expect("index in range");
-                    // typed_pair reconstructs an object hash's real key object
-                    // from its `.WHICH` store key (plain hashes get the plain
-                    // `Pair(str_key, v)` as before).
-                    Some(Ok(items.typed_pair(key, value.clone())))
-                }
-            }
-            _ => {
-                // Try efficient range sampling first
-                if let Some(v) = sample_one_from_range(target) {
-                    return Some(Some(Ok(v)));
-                }
-                Some(Ok(if crate::runtime::utils::is_shaped_array(target) {
-                    random_item(&crate::runtime::utils::shaped_array_leaves(target))
-                } else {
-                    // ADR-0040: the RECEIVER's own elements, ignoring its own
-                    // itemization -- borrowed, not copied, to index one slot.
-                    runtime::with_receiver_items(target, random_item)
-                }))
-            }
-        }),
-        // Cost: O(1) on an Array, a List, a reified Seq or an integer Range; O(e) on
-        // any other list-like, e = elements (decomposed into a Vec to index one slot).
-        "roll" => {
-            if let ValueView::Mix(items, _) = target.view() {
-                return Some(Some(Ok(
-                    sample_weighted_mix_key(&items).unwrap_or(Value::NIL)
-                )));
-            }
-            if let ValueView::Bag(items, _) = target.view() {
-                return Some(Some(Ok(
-                    sample_weighted_bag_key(&items).unwrap_or(Value::NIL)
-                )));
-            }
-            if let ValueView::Set(items, _) = target.view() {
-                if items.is_empty() {
-                    return Some(Some(Ok(Value::NIL)));
-                }
-                let keys: Vec<&String> = items.iter().collect();
-                let mut idx = (crate::builtins::rng::builtin_rand() * keys.len() as f64) as usize;
-                if idx >= keys.len() {
-                    idx = keys.len() - 1;
-                }
-                return Some(Some(Ok(items.typed_key(keys[idx]))));
-            }
-            // ADR-0040: a Hash is decomposed into its OWN key-value pairs
-            // here regardless of the hash's own itemization flag -- `.roll`
-            // is called ON this hash as the receiver, not flattened as an
-            // element of some other container, so the itemization axis
-            // (which governs the latter) does not apply. Mirrors `.pick`'s
-            // own dedicated `ValueView::Hash` arm above; `value_to_list`
-            // below would otherwise treat an itemized Hash (e.g. one
-            // produced by nested autovivification, `%h<a><b>++`) as a
-            // single opaque item and "roll" the whole hash instead of one
-            // of its pairs.
-            if let ValueView::Hash(items) = target.view() {
-                if items.is_empty() {
-                    return Some(Some(Ok(Value::NIL)));
-                }
-                let mut idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
-                if idx >= items.len() {
-                    idx = items.len() - 1;
-                }
-                let (key, value) = items.iter().nth(idx).expect("index in range");
-                return Some(Some(Ok(items.typed_pair(key, value.clone()))));
-            }
-            // Try efficient range sampling first
-            if let Some(v) = sample_one_from_range(target) {
-                return Some(Some(Ok(v)));
-            }
-            Some(Some(Ok(
-                if crate::runtime::utils::is_shaped_array(target) {
-                    random_item(&crate::runtime::utils::shaped_array_leaves(target))
-                } else {
-                    // ADR-0040: the RECEIVER's own elements, ignoring its own
-                    // itemization -- borrowed, not copied, to index one slot.
-                    runtime::with_receiver_items(target, random_item)
-                },
-            )))
-        }
-        "pickpairs" => Some(match target.view() {
-            ValueView::Bag(items, _) => {
-                if items.is_empty() {
-                    Some(Ok(Value::NIL))
-                } else {
-                    let mut idx =
-                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
-                    if idx >= items.len() {
-                        idx = items.len() - 1;
-                    }
-                    let (key, count) = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(crate::runtime::utils::quanthash_typed_pair(
-                        items.typed_key(key),
-                        Value::from_bigint(count.clone()),
-                    )))
-                }
-            }
-            ValueView::Set(items, _) => {
-                if items.is_empty() {
-                    Some(Ok(Value::NIL))
-                } else {
-                    let mut idx =
-                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
-                    if idx >= items.len() {
-                        idx = items.len() - 1;
-                    }
-                    let key = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(crate::runtime::utils::quanthash_typed_pair(
-                        items.typed_key(key),
-                        Value::TRUE,
-                    )))
-                }
-            }
-            ValueView::Mix(items, _) => {
-                if items.is_empty() {
-                    Some(Ok(Value::NIL))
-                } else {
-                    let mut idx =
-                        (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
-                    if idx >= items.len() {
-                        idx = items.len() - 1;
-                    }
-                    let (key, weight) = items.iter().nth(idx).expect("index in range");
-                    Some(Ok(crate::runtime::utils::quanthash_typed_pair(
-                        items.typed_key(key),
-                        crate::value::mix_weight_to_value(*weight),
-                    )))
-                }
-            }
-            _ => None,
-        }),
+        // Cost: see `sampling::pick`.
+        "pick" => Some(crate::builtins::sampling::pick(target, &[])),
+        // Cost: see `sampling::roll`.
+        "roll" => Some(crate::builtins::sampling::roll(target, &[])),
+        // Cost: see `sampling::pickpairs`.
+        "pickpairs" => Some(crate::builtins::sampling::pickpairs(target, &[])),
         "first" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::NIL))),
             _ => None,
@@ -553,13 +317,7 @@ pub(super) fn dispatch(
     }
 }
 
-/// Pick one random element from an i64 range [start, end] (inclusive).
-/// Public alias for use from methods_narg roll.
-pub(crate) fn range_pick_one_i64_pub(start: i64, end: i64) -> Value {
-    range_pick_one_i64(start, end)
-}
-
-fn range_pick_one_i64(start: i64, end: i64) -> Value {
+pub(crate) fn range_pick_one_i64(start: i64, end: i64) -> Value {
     let range_size = (end as u128).wrapping_sub(start as u128).wrapping_add(1);
     let idx = random_u128_in_range(range_size);
     Value::int(start.wrapping_add(idx as i64))
@@ -586,19 +344,9 @@ fn random_u128_in_range(range_size: u128) -> u128 {
     combined % range_size
 }
 
-/// Public alias for generic_range_pick_one.
-pub(crate) fn generic_range_pick_one_pub(
-    start: &Value,
-    end: &Value,
-    excl_start: bool,
-    excl_end: bool,
-) -> Option<Value> {
-    generic_range_pick_one(start, end, excl_start, excl_end)
-}
-
 /// Pick one random element from a GenericRange.
 /// Returns None if the range has non-integer endpoints (fallback needed).
-fn generic_range_pick_one(
+pub(crate) fn generic_range_pick_one(
     start: &Value,
     end: &Value,
     excl_start: bool,
