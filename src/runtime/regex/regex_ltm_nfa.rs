@@ -44,7 +44,11 @@ pub(super) enum NfaNode {
     },
     /// `<.ws>`: a fate, except at the very start of the subject where a rule's
     /// leading whitespace is transparent (`ltm_leading_ws_is_transparent`).
+    /// `lead` is false when a non-literal atom came first in the pattern
+    /// (`\s* <.ws>`): that whitespace is then no longer leading, even though
+    /// the atom before it matched nothing, so it is a fate at position 0 too.
     WsLead {
+        lead: bool,
         atom: Box<RegexAtom>,
         pkg: Symbol,
         ic: bool,

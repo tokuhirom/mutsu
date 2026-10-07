@@ -491,8 +491,22 @@ impl Interpreter {
         // `sub f is rw { %h<absent><key> }`) reads as the entry's current value
         // -- `Any` while the key does not exist -- as it does on the
         // `CallMethod` path. `.VAR` is the one method that wants the token.
+        // The variable read decontainerizes the token, so a push-family call
+        // on a variable bound to a MISSING entry (`my $e := f('x'); $e.push: 5`
+        // with `sub f($k) is rw { %h{$k} }`) reads the slot's token itself to
+        // autovivify the entry (`hash_entry_invocant`).
+        let target = if matches!(method, "push" | "append" | "unshift" | "prepend")
+            && !target_name.is_empty()
+            && (target.is_nil() || matches!(target.view(), ValueView::Package(_)))
+            && let Some(slot) = self.resolve_local_slot(code, None, target_name)
+            && matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
+        {
+            self.locals[slot].clone()
+        } else {
+            target
+        };
         let target = if method != "VAR" && matches!(target.view(), ValueView::HashEntryRef { .. }) {
-            target.deref_container()
+            Self::hash_entry_invocant(method, &target)
         } else {
             target
         };
