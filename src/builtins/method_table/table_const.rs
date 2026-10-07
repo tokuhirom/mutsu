@@ -77,7 +77,7 @@ const fn flatten() -> [&'static MethodRow; N] {
     out
 }
 
-const ROWS: [&'static MethodRow; N] = flatten();
+const ROWS: [&MethodRow; N] = flatten();
 
 /// Every row once, indexed by [`RowId`](super::RowId).
 pub(super) static ALL: [&MethodRow; N] = ROWS;
