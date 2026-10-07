@@ -27,6 +27,27 @@ impl Interpreter {
         }))
     }
 
+    /// The `.of` of a mixin target is answered by dispatch rather than by a
+    /// declared method, so `.can('of')` / `.^can('of')` must find it too.
+    // Cost: O(r), r = roles mixed in (see `mixin_container_role_value_type`).
+    pub(crate) fn mixin_of_can_entry(
+        &self,
+        target: &Value,
+        method_name: &str,
+        results: &mut Vec<Value>,
+    ) {
+        if method_name == "of"
+            && results.is_empty()
+            && self.mixin_container_role_value_type(target).is_some()
+        {
+            results.push(Value::routine_parts(
+                Symbol::intern("Mixin"),
+                Symbol::intern("of"),
+                false,
+            ));
+        }
+    }
+
     /// Return the value type supplied by a parameterized container role mixed
     /// onto a value, if any. Unlike native Hash/Array metadata, this lives in
     /// the Mixin marker map and must not be copied onto the shared inner
@@ -49,19 +70,36 @@ impl Interpreter {
             let Some(role) = key.strip_prefix("__mutsu_role__") else {
                 continue;
             };
-            let args: Vec<String> = match mixins
+            let arg_values: Vec<Value> = match mixins
                 .get(&MetaNs::RoleTypeargs.owned_key_for_str(role))
                 .map(Value::view)
             {
-                Some(ValueView::Array(items, ..)) => items
-                    .iter()
-                    .map(|v| match v.view() {
-                        ValueView::Package(name) => name.resolve(),
-                        _ => v.to_string_value(),
-                    })
-                    .collect(),
+                Some(ValueView::Array(items, ..)) => items.iter().cloned().collect(),
                 _ => Vec::new(),
             };
+            // A role that passes one of its parameters straight through
+            // (`does Positional[TValue]`) answers with that very type
+            // object, so a nested parameterization (`CArray[CArray[uint8]]`)
+            // keeps its inner parameterization instead of a spelling.
+            let placeholders: Vec<String> =
+                (0..arg_values.len()).map(|i| format!("__arg{i}__")).collect();
+            if !placeholders.is_empty()
+                && let Some(picked) = self
+                    .role_spelling_value_type(
+                        &format!("{role}[{}]", placeholders.join(",")),
+                        0,
+                    )
+                    .and_then(|p| placeholders.iter().position(|ph| *ph == p))
+            {
+                return Some(arg_values[picked].clone());
+            }
+            let args: Vec<String> = arg_values
+                .iter()
+                .map(|v| match v.view() {
+                    ValueView::Package(name) => name.resolve(),
+                    _ => v.to_string_value(),
+                })
+                .collect();
             let spelling = if args.is_empty() {
                 role.to_string()
             } else {
@@ -741,6 +779,7 @@ impl Interpreter {
                     }
                 }
             }
+            self.mixin_of_can_entry(target, &method_name, &mut results);
             return Some(Ok(Value::array(results)));
         }
         if method == "does" && args.len() == 1 {
