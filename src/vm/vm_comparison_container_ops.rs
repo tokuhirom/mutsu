@@ -167,6 +167,20 @@ impl Interpreter {
         if root != name {
             return self.name_denotes_scalar_container(&root);
         }
+        // A sigilless name owns no Scalar of its own: it is the value it was
+        // bound to, or the caller's container when a raw parameter aliased
+        // a `$` variable (the binder records that variable's name, and the
+        // name holds the shared cell) -- the same facts `.VAR` reflects.
+        if !name.starts_with('$') {
+            return self
+                .env()
+                .get(crate::meta_ns::MetaNs::VarSourceName.str_key_for_str(name))
+                .is_some()
+                || self
+                    .env()
+                    .get(name)
+                    .is_some_and(|v| matches!(v.view(), ValueView::ContainerRef(_)));
+        }
         // `my $i := 42` (recorded readonly-immutable by the parser) and
         // `my $o := C.new` (recorded by the store) both bind straight to a
         // value. A readonly *alias* with a container behind it — a non-`is rw`
