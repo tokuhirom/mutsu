@@ -224,7 +224,7 @@ pub(crate) fn walk_call_arg<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, arg: &'ast
     match arg {
         CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => v.visit_expr(e),
         // The key of a named argument is data, like a hash-literal key.
-        CallArg::Named { name: _, value } => {
+        CallArg::Named { name: _, value, .. } => {
             if let Some(e) = value {
                 v.visit_expr(e);
             }

@@ -927,6 +927,7 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
             value: Some(Expr::Literal(Value::int(
                 crate::parser::primary::current_line_number(input),
             ))),
+            form: Default::default(),
         });
     }
     // A trailing low-precedence word infix (`ok(...) or say "NO"`) means the

@@ -1461,6 +1461,10 @@ pub(crate) enum Expr {
     Unary {
         op: TokenKind,
         expr: Box<Expr>,
+        /// True when `?` / `!` was written as the loose word prefix `so` /
+        /// `not`; the compiler does not read it.
+        #[serde(default)]
+        word: bool,
     },
     PostfixOp {
         op: TokenKind,
@@ -1705,6 +1709,10 @@ pub(crate) enum CallArg {
     Named {
         name: String,
         value: Option<Expr>,
+        /// How the pair was written (`:a(1)`, `:a`, `:!a`, `:$a`, `a => 1`);
+        /// the compiler does not read it.
+        #[serde(default)]
+        form: BinaryForm,
     },
     /// Capture slip: `|c` — flatten a capture variable into the argument list
     Slip(Expr),
@@ -3205,6 +3213,7 @@ mod env_only_decl_tests {
             cond: Expr::Unary {
                 op: crate::token_kind::TokenKind::Bang,
                 expr: Box::new(Expr::DoStmt(Box::new(vardecl("@needed")))),
+                word: false,
             },
             then_branch: vec![Stmt::Next(None)],
             else_branch: vec![],

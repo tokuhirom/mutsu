@@ -17,6 +17,7 @@ pub(crate) fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::Bang,
                 expr: Box::new(expr),
+                word: true,
             },
         ));
     }
@@ -36,6 +37,7 @@ pub(crate) fn not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::Question,
                 expr: Box::new(expr),
+                word: true,
             },
         ));
     }
@@ -175,6 +177,7 @@ pub(crate) fn or_or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> 
             Expr::Unary {
                 op: TokenKind::Bang,
                 expr: Box::new(binary),
+                word: false,
             }
         } else {
             binary
@@ -259,6 +262,7 @@ pub(crate) fn and_and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr
             Expr::Unary {
                 op: TokenKind::Bang,
                 expr: Box::new(binary),
+                word: false,
             }
         } else {
             binary

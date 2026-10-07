@@ -878,6 +878,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         cond: Expr::Unary {
                             op: crate::token_kind::TokenKind::Bang,
                             expr: Box::new(cond),
+                            word: false,
                         },
                         then_branch: body,
                         else_branch: Vec::new(),

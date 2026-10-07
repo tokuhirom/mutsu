@@ -141,6 +141,7 @@ impl Compiler {
         if self.compile_incdec_through_bound_root(expr, |elem| Expr::Unary {
             op,
             expr: Box::new(elem),
+            word: false,
         }) {
             return;
         }

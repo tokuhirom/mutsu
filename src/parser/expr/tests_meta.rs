@@ -47,7 +47,7 @@ fn parse_slip_prefix_with_topic_method_call() {
         expr,
         Expr::Unary {
             op: TokenKind::Pipe,
-            expr
+            expr, ..
         } if matches!(*expr, Expr::MethodCall { .. })
     ));
 }
@@ -129,7 +129,7 @@ fn parse_slip_prefix_with_space_before_french_quote_list() {
         expr,
         Expr::Unary {
             op: TokenKind::Pipe,
-            expr
+            expr, ..
         } if matches!(
             *expr,
             Expr::ArrayLiteral(ref items) if items.len() == 2
@@ -151,7 +151,7 @@ fn parse_slip_prefix_with_space_before_var() {
         expr,
         Expr::Unary {
             op: TokenKind::Pipe,
-            expr
+            expr, ..
         } if matches!(*expr, Expr::ArrayVar(ref name) if name == "cmd")
     ));
 }
@@ -164,6 +164,7 @@ fn parse_prefix_boolify_codevar_method_call() {
         Expr::Unary {
             op: TokenKind::Question,
             expr,
+            ..
         } => match *expr {
             Expr::MethodCall { target, .. } => {
                 assert!(matches!(*target, Expr::CodeVar(ref name) if name == "foo"));

@@ -58,6 +58,7 @@ impl Compiler {
                     args: vec![Expr::Unary {
                         op: crate::token_kind::TokenKind::Pipe,
                         expr: Box::new(list.clone()),
+                        word: false,
                     }],
                 });
                 true

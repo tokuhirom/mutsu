@@ -1606,6 +1606,7 @@ impl<'ast> crate::ast_visit::Visit<'ast> for TopicMutationScan {
             | Expr::Unary {
                 op: TokenKind::PlusPlus | TokenKind::MinusMinus,
                 expr,
+                ..
             } => expr_refs_topic(expr),
             // `* =:= $x` — container identity needs the same container.
             Expr::Binary {

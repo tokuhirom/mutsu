@@ -98,6 +98,7 @@ pub(super) fn push_bind_arity_check(
                 Expr::Unary {
                     op: TokenKind::Bang,
                     expr: Box::new(exists),
+                    word: false,
                 }
             } else {
                 exists

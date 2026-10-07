@@ -193,6 +193,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::PlusPlus,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }
@@ -206,6 +207,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::MinusMinus,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }
@@ -431,6 +433,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::Bang,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }
@@ -447,6 +450,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::Question,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }
@@ -609,6 +613,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::Pipe,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }
@@ -628,6 +633,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::Pipe,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }

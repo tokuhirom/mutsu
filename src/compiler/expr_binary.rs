@@ -400,6 +400,7 @@ impl Compiler {
             let slip_marker = Expr::Unary {
                 op: TokenKind::Pipe,
                 expr: Box::new(right.clone()),
+                word: false,
             };
             let arg_sources_idx = self.add_arg_sources_constant(std::slice::from_ref(&slip_marker));
             self.compile_expr(right);
@@ -1132,6 +1133,7 @@ impl Compiler {
             Expr::Unary {
                 op: TokenKind::MetaAssignIdentity(_),
                 expr,
+                ..
             } => self.native_int_operand_signedness(expr),
             Expr::Var(name) => self
                 .expr_native_int_type(expr.peel_parens())

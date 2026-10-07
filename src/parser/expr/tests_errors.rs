@@ -17,6 +17,7 @@ fn parse_strict_not_equal_operator() {
         Expr::Unary {
             op: TokenKind::Bang,
             expr,
+            ..
         } => match *expr {
             Expr::Binary {
                 op: TokenKind::EqEqEq,
@@ -36,6 +37,7 @@ fn parse_negated_comparison_meta_operators() {
         Expr::Unary {
             op: TokenKind::Bang,
             expr,
+            ..
         } => match *expr {
             Expr::Binary {
                 op: TokenKind::EqEq,
@@ -52,6 +54,7 @@ fn parse_negated_comparison_meta_operators() {
         Expr::Unary {
             op: TokenKind::Bang,
             expr,
+            ..
         } => match *expr {
             Expr::Binary {
                 op: TokenKind::Ident(op),
@@ -71,6 +74,7 @@ fn parse_container_not_equal_operator() {
         Expr::Unary {
             op: TokenKind::Bang,
             expr,
+            ..
         } => match *expr {
             Expr::Binary {
                 op: TokenKind::Ident(op),

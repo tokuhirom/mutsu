@@ -307,6 +307,7 @@ fn parse_ascii_minus_on_angle_complex_literal() {
         Expr::Unary {
             op: TokenKind::Minus,
             expr,
+            ..
         } => {
             // Single-element <42+2i> produces plain Complex (not ComplexStr allomorph)
             assert!(

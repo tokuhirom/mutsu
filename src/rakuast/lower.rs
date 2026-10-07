@@ -220,6 +220,7 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
         Expr::Unary {
             op: crate::token_kind::TokenKind::Bang,
             expr: Box::new(defined),
+            word: false,
         }
     } else {
         defined
@@ -2129,6 +2130,7 @@ fn negate_if(cond: Expr, is_until: bool) -> Expr {
         Expr::Unary {
             op: crate::token_kind::TokenKind::Bang,
             expr: Box::new(cond),
+            word: false,
         }
     } else {
         cond
@@ -4438,7 +4440,26 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Ok(chain);
             }
             let operand = lower_expr(named_child(node, "operand")?)?;
-            let op = prefix_token(named_child(node, "prefix")?)?;
+            let prefix = named_child(node, "prefix")?;
+            // `so EXPR` / `not EXPR`: the loose word prefixes, which the parser
+            // folds into `?` / `!`.
+            let word_op = match positional_leaf(prefix)?.view() {
+                ValueView::Str(s) if s.as_str() == "so" => {
+                    Some(crate::token_kind::TokenKind::Question)
+                }
+                ValueView::Str(s) if s.as_str() == "not" => {
+                    Some(crate::token_kind::TokenKind::Bang)
+                }
+                _ => None,
+            };
+            if let Some(op) = word_op {
+                return Ok(Expr::Unary {
+                    op,
+                    expr: Box::new(operand),
+                    word: true,
+                });
+            }
+            let op = prefix_token(prefix)?;
             // `^N` is the range `0 ..^ N` as the parser spells it; a Whatever
             // operand (`^*`) is a WhateverCode and stays the unary.
             if op == crate::token_kind::TokenKind::Caret
@@ -4455,6 +4476,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(Expr::Unary {
                 op,
                 expr: Box::new(operand),
+                word: false,
             })
         }
         // `COND ?? THEN !! ELSE` -> the ternary expression.

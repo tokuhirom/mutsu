@@ -409,6 +409,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 cond: Some(Expr::Unary {
                     op: TokenKind::Bang,
                     expr: Box::new(cond),
+                    word: false,
                 }),
                 step,
                 body,
@@ -452,6 +453,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 cond: Some(Expr::Unary {
                     op: TokenKind::Bang,
                     expr: Box::new(cond),
+                    word: false,
                 }),
                 step: None,
                 body,

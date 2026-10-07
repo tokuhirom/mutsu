@@ -98,6 +98,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 cond: Expr::Unary {
                     op: TokenKind::Bang,
                     expr: Box::new(cond),
+                    word: false,
                 },
                 body,
                 label: Some(label),

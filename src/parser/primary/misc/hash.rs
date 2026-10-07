@@ -118,15 +118,18 @@ pub(crate) fn parse_hash_literal_body(input: &str) -> PResult<'_, Expr> {
                 spread_args.push(Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,
                     expr: Box::new(Expr::HashVar(name)),
+                    word: false,
                 });
             }
             Expr::Unary {
                 op: crate::token_kind::TokenKind::Pipe,
                 expr,
+                ..
             } => {
                 spread_args.push(Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,
                     expr,
+                    word: false,
                 });
             }
             other => {

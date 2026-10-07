@@ -508,6 +508,7 @@ fn autoincrement_expr(
             Expr::Unary {
                 op: op.token_kind(),
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }

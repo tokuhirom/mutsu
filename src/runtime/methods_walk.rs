@@ -245,7 +245,7 @@ impl Interpreter {
             name: qualified,
             args: vec![Expr::Unary {
                 op: crate::token_kind::TokenKind::Pipe,
-                expr: Box::new(Expr::ArrayVar("__walk_args".to_string())),
+                expr: Box::new(Expr::ArrayVar("__walk_args".to_string())), word: false,
             }],
             modifier: None,
             quoted: false, sugar: false,

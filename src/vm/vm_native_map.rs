@@ -362,7 +362,7 @@ impl<'ast> Visit<'ast> for MapBodyClassifier {
             Expr::Subst { .. } | Expr::Transliterate { .. } | Expr::ControlFlow { .. } => {
                 self.escapes = true
             }
-            Expr::Unary { op, expr } | Expr::PostfixOp { op, expr }
+            Expr::Unary { op, expr, .. } | Expr::PostfixOp { op, expr }
                 if matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus) =>
             {
                 // `$_++` / `$_--` mutate the topic. A `++`/`--` of a plain

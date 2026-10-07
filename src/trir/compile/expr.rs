@@ -119,7 +119,7 @@ impl TrirCompiler<'_> {
                 self.ops.push(TrOp::ConcatN(parts.len() as u16));
                 Some(TrKind::Obj)
             }
-            Expr::Unary { op, expr } => self.compile_unary(op, expr, false),
+            Expr::Unary { op, expr, .. } => self.compile_unary(op, expr, false),
             Expr::Binary {
                 left, op, right, ..
             } => self.compile_binary(left, op, right),
@@ -173,7 +173,7 @@ impl TrirCompiler<'_> {
         if let Expr::Grouped(inner) = e {
             return self.compile_expr_sink(inner);
         }
-        if let Expr::Unary { op, expr } = e
+        if let Expr::Unary { op, expr, .. } = e
             && matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
         {
             self.compile_unary(op, expr, true)?;

@@ -11,6 +11,7 @@ pub(crate) fn make_chain_cmp(left: Expr, op: TokenKind, right: Expr, negated: bo
         Expr::Unary {
             op: TokenKind::Bang,
             expr: Box::new(cmp),
+            word: false,
         }
     } else {
         cmp

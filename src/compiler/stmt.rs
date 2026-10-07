@@ -3051,6 +3051,7 @@ impl Compiler {
                             CallArg::Slip(expr) => Some(Expr::Unary {
                                 op: crate::token_kind::TokenKind::Pipe,
                                 expr: Box::new(expr.clone()),
+                                word: false,
                             }),
                             _ => None,
                         })

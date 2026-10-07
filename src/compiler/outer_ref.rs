@@ -81,6 +81,7 @@ impl<'ast> Visit<'ast> for OuterWriteScan {
             | Expr::Unary {
                 op: TokenKind::PlusPlus | TokenKind::MinusMinus,
                 expr: target,
+                ..
             } => {
                 if let Expr::Var(name) = target.peel_parens() {
                     self.record(name, false);

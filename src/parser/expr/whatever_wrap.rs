@@ -100,9 +100,10 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                 }
             }
         }
-        Expr::Unary { op, expr } => Expr::Unary {
+        Expr::Unary { op, expr, word } => Expr::Unary {
             op,
             expr: Box::new(wrap_composition_operands(*expr)),
+            word,
         },
         Expr::MethodCall {
             target,

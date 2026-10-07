@@ -377,6 +377,7 @@ impl Compiler {
             Expr::Unary {
                 op: TokenKind::Bang,
                 expr: Box::new(cond.clone()),
+                word: false,
             }
         } else {
             cond.clone()

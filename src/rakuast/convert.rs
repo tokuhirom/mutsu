@@ -3292,10 +3292,25 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ],
             })
         }
-        Expr::Unary { op, expr } => Ok(RakuAstNode {
+        Expr::Unary { op, expr, word } => Ok(RakuAstNode {
             class: RakuAstClass::ApplyPrefix,
             fields: vec![
-                node_field(Some("prefix"), operator_node(RakuAstClass::Prefix, op)),
+                node_field(
+                    Some("prefix"),
+                    // `so EXPR` / `not EXPR` are the `?` / `!` the parser
+                    // folds them into.
+                    match (word, op) {
+                        (true, crate::token_kind::TokenKind::Question) => RakuAstNode {
+                            class: RakuAstClass::Prefix,
+                            fields: vec![leaf_field(None, Value::str("so".to_string()))],
+                        },
+                        (true, crate::token_kind::TokenKind::Bang) => RakuAstNode {
+                            class: RakuAstClass::Prefix,
+                            fields: vec![leaf_field(None, Value::str("not".to_string()))],
+                        },
+                        _ => operator_node(RakuAstClass::Prefix, op),
+                    },
+                ),
                 node_field(Some("operand"), convert_expr(expr)?),
             ],
         }),
@@ -3945,6 +3960,7 @@ fn with_block_condition(kind: WithBlockKind, cond: &Expr) -> Result<&Expr, Runti
             Expr::Unary {
                 op: crate::token_kind::TokenKind::Bang,
                 expr,
+                ..
             } => expr.as_ref(),
             _ => return Err(unsupported("`without` condition")),
         },
@@ -4919,6 +4935,7 @@ fn strip_negation(cond: &Expr) -> Result<&Expr, RuntimeError> {
         Expr::Unary {
             op: crate::token_kind::TokenKind::Bang,
             expr,
+            ..
         } => Ok(expr),
         _ => Err(unsupported(
             "`unless`/`until` without the parser's negation",
@@ -5986,6 +6003,17 @@ fn is_list_infix(op: &crate::token_kind::TokenKind) -> bool {
             | TokenKind::Pipe
             | TokenKind::Ampersand
             | TokenKind::Caret
+            // The sequence operators, `^^` and the set operators are list
+            // associative too (measured on rakudo 2026.09).
+            | TokenKind::DotDotDot
+            | TokenKind::DotDotDotCaret
+            | TokenKind::XorXor
+            | TokenKind::SetUnion
+            | TokenKind::SetAddition
+            | TokenKind::SetIntersect
+            | TokenKind::SetMultiply
+            | TokenKind::SetDiff
+            | TokenKind::SetSymDiff
     ) || matches!(op, TokenKind::Ident(name) if name == "min" || name == "max")
 }
 
@@ -6624,16 +6652,17 @@ fn call_args_as_exprs(args: &[crate::ast::CallArg]) -> Result<Vec<Expr>, Runtime
     args.iter()
         .map(|arg| match arg {
             CallArg::Positional(expr) => Ok(expr.clone()),
-            CallArg::Named { name, value } => Ok(Expr::Binary {
+            CallArg::Named { name, value, form } => Ok(Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(name.clone()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value.clone().unwrap_or(Expr::Literal(Value::TRUE))),
-                form: Default::default(),
+                form: *form,
             }),
             // `foo |@a`: the slip is the tight prefix `|` over the term.
             CallArg::Slip(expr) => Ok(Expr::Unary {
                 op: crate::token_kind::TokenKind::Pipe,
                 expr: Box::new(expr.clone()),
+                word: false,
             }),
             CallArg::Invocant(_) => {
                 Err(unsupported("statement call with a later invocant argument"))

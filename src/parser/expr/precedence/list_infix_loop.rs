@@ -254,6 +254,7 @@ fn parse_list_infix_loop_impl<'a>(
                     *left = Expr::Unary {
                         op: TokenKind::Bang,
                         expr: Box::new(binary),
+                        word: false,
                     };
                     rest = r;
                     continue;
@@ -276,6 +277,7 @@ fn parse_list_infix_loop_impl<'a>(
                             left: Box::new(left.clone()),
                             right: Box::new(right),
                         }),
+                        word: false,
                     };
                     rest = r;
                     continue;
@@ -298,6 +300,7 @@ fn parse_list_infix_loop_impl<'a>(
                             right: vec![right],
                             modifier: None,
                         }),
+                        word: false,
                     };
                     rest = r;
                     continue;

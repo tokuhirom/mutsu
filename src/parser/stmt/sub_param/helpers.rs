@@ -271,6 +271,7 @@ pub(crate) fn parse_literal_param_value(input: &str) -> Option<(&str, Value)> {
         Some(op) => Expr::Unary {
             op,
             expr: Box::new(term),
+            word: false,
         },
         None => term,
     };

@@ -158,6 +158,7 @@ impl Compiler {
             Expr::Unary {
                 op: TokenKind::MetaAssignIdentity(crate::token_kind::MetaAssignIdentity::EmptyStr),
                 expr: left,
+                ..
             } => (left.as_ref(), true),
             other => (other, false),
         };
@@ -205,6 +206,7 @@ impl Compiler {
             Expr::Unary {
                 op: TokenKind::MetaAssignIdentity(identity),
                 expr,
+                ..
             } => (expr.as_ref(), Some(*identity)),
             other => (other, None),
         };

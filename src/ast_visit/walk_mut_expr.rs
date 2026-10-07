@@ -232,7 +232,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             v.visit_expr_mut(rhs);
             v.visit_expr_mut(expanded);
         }
-        Expr::Unary { op: _, expr } | Expr::PostfixOp { op: _, expr } => v.visit_expr_mut(expr),
+        Expr::Unary { op: _, expr, .. } | Expr::PostfixOp { op: _, expr } => v.visit_expr_mut(expr),
         Expr::Binary {
             left, op: _, right, ..
         } => {

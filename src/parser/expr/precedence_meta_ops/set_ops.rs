@@ -258,6 +258,7 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
                     right: Box::new(right),
                     form: Default::default(),
                 }),
+                word: false,
             };
             rest = r;
             continue;

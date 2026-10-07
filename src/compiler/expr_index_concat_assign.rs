@@ -32,6 +32,7 @@ impl Compiler {
         let Expr::Unary {
             op: TokenKind::MetaAssignIdentity(crate::token_kind::MetaAssignIdentity::EmptyStr),
             expr: read,
+            ..
         } = seeded.as_ref()
         else {
             return None;

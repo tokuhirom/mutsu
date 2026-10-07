@@ -434,6 +434,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         let neg_cond = Expr::Unary {
             op: TokenKind::Bang,
             expr: Box::new(cond),
+            word: false,
         };
         if let Some(split) = try_split_decl_modifier(&then_stmt, &neg_cond, true) {
             return Ok(Some((r, split)));
@@ -666,6 +667,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 cond: Expr::Unary {
                     op: TokenKind::Bang,
                     expr: Box::new(cond),
+                    word: false,
                 },
                 body: vec![while_modifier_operand(stmt)],
                 label: None,
@@ -866,6 +868,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 quoted: false,
                 sugar: false,
             }),
+            word: false,
         };
         let modified_stmt = rewrite_placeholder_block_modifier_stmt(stmt_for_branch, &cond);
         if matches!(stmt, Stmt::Expr(_)) {

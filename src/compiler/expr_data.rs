@@ -905,6 +905,7 @@ impl Compiler {
                 Expr::HashVar(name) => self.compile_expr(&Expr::Unary {
                     op: crate::token_kind::TokenKind::Tilde,
                     expr: Box::new(Expr::HashVar(name.clone())),
+                    word: false,
                 }),
                 // A `{ … }` closure part is its own Raku call frame
                 // (`"{callframe(0).code.^name}"` is `Block`, the enclosing

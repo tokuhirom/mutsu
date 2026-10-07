@@ -348,6 +348,7 @@ fn constant_truth(mut expr: &Expr) -> Option<bool> {
             Expr::Unary {
                 op: TokenKind::Bang,
                 expr: inner,
+                ..
             } => {
                 negated = !negated;
                 expr = inner;

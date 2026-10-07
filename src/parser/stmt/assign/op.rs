@@ -181,6 +181,7 @@ fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
     Expr::Unary {
         op: TokenKind::MetaAssignIdentity(identity),
         expr: Box::new(lhs),
+        word: false,
     }
 }
 
@@ -202,6 +203,7 @@ pub(crate) fn autoviv_set_compound_lhs(lhs: Expr, op: &TokenKind) -> Expr {
     Expr::Unary {
         op: TokenKind::MetaAssignIdentity(identity),
         expr: Box::new(lhs),
+        word: false,
     }
 }
 

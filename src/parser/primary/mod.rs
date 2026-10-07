@@ -785,7 +785,7 @@ mod tests {
                     &args[1],
                     Expr::Unary {
                         op: crate::token_kind::TokenKind::Pipe,
-                        expr
+                        expr, ..
                     } if matches!(expr.as_ref(), Expr::HashVar(n) if n.as_str() == "args")
                 ));
             }

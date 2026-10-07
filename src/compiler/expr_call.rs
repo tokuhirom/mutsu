@@ -2050,6 +2050,7 @@ impl Compiler {
                     if let Expr::Unary {
                         op: TokenKind::Pipe,
                         expr,
+                        ..
                     } = arg
                     {
                         self.compile_expr(expr);

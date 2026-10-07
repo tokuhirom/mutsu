@@ -9,7 +9,7 @@ use Test;
 # Expected gists captured verbatim from Rakudo 2026.09; this file passes
 # under BOTH mutsu and raku, so raku is the oracle.
 
-plan 17;
+plan 28;
 
 is Q[sub f($a?) { }; f 1; f(1); f;].AST.gist, q:to/END/.chomp, 'call without parentheses';
     RakuAST::StatementList.new(
@@ -588,6 +588,431 @@ is Q[use newline :crlf;].AST.gist, q:to/END/.chomp, 'newline pragma';
       RakuAST::Statement::Use.new(
         module-name => RakuAST::Name.from-identifier("newline"),
         argument    => RakuAST::ColonPair::True.new("crlf")
+      )
+    )
+    END
+
+is Q[so 1; not 1;].AST.gist, q:to/END/.chomp, 'loose prefix words';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::ApplyPrefix.new(
+          prefix  => RakuAST::Prefix.new("so"),
+          operand => RakuAST::IntLiteral.new(1)
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::ApplyPrefix.new(
+          prefix  => RakuAST::Prefix.new("not"),
+          operand => RakuAST::IntLiteral.new(1)
+        )
+      )
+    )
+    END
+
+is Q[1, 3 ... 9; 1 ^^ 2; (1) (|) (2);].AST.gist, q:to/END/.chomp, 'list associative infixes';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::ApplyListInfix.new(
+          infix    => RakuAST::Infix.new("..."),
+          operands => (
+            RakuAST::ApplyListInfix.new(
+              infix    => RakuAST::Infix.new(","),
+              operands => (
+                RakuAST::IntLiteral.new(1),
+                RakuAST::IntLiteral.new(3),
+              )
+            ),
+            RakuAST::IntLiteral.new(9),
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::ApplyListInfix.new(
+          infix    => RakuAST::Infix.new("^^"),
+          operands => (
+            RakuAST::IntLiteral.new(1),
+            RakuAST::IntLiteral.new(2),
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::ApplyListInfix.new(
+          infix    => RakuAST::Infix.new("(|)"),
+          operands => (
+            RakuAST::Circumfix::Parentheses.new(
+              RakuAST::SemiList.new(
+                RakuAST::Statement::Expression.new(
+                  expression => RakuAST::IntLiteral.new(1)
+                )
+              )
+            ),
+            RakuAST::Circumfix::Parentheses.new(
+              RakuAST::SemiList.new(
+                RakuAST::Statement::Expression.new(
+                  expression => RakuAST::IntLiteral.new(2)
+                )
+              )
+            ),
+          )
+        )
+      )
+    )
+    END
+
+is Q[my %h; %h<a> = 1; %h<a b> = 1, 2; %h<a> := 1; %h{'a'} = 1;].AST.gist, q:to/END/.chomp, 'angle subscript assignment and bind';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::VarDeclaration::Simple.new(
+          sigil       => "\%",
+          desigilname => RakuAST::Name.from-identifier("h")
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::ApplyPostfix.new(
+          operand => RakuAST::Var::Lexical.new("\%h"),
+          postfix => RakuAST::Postcircumfix::LiteralHashIndex.new(
+            index    => RakuAST::QuotedString.new(
+              processors => <words val>,
+              segments   => (
+                RakuAST::StrLiteral.new("a"),
+              )
+            ),
+            assignee => RakuAST::IntLiteral.new(1)
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::ApplyPostfix.new(
+          operand => RakuAST::Var::Lexical.new("\%h"),
+          postfix => RakuAST::Postcircumfix::LiteralHashIndex.new(
+            index    => RakuAST::QuotedString.new(
+              processors => <words val>,
+              segments   => (
+                RakuAST::StrLiteral.new("a b"),
+              )
+            ),
+            assignee => RakuAST::ApplyListInfix.new(
+              infix    => RakuAST::Infix.new(","),
+              operands => (
+                RakuAST::IntLiteral.new(1),
+                RakuAST::IntLiteral.new(2),
+              )
+            )
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::ApplyInfix.new(
+          left  => RakuAST::ApplyPostfix.new(
+            operand => RakuAST::Var::Lexical.new("\%h"),
+            postfix => RakuAST::Postcircumfix::LiteralHashIndex.new(
+              index => RakuAST::QuotedString.new(
+                processors => <words val>,
+                segments   => (
+                  RakuAST::StrLiteral.new("a"),
+                )
+              )
+            )
+          ),
+          infix => RakuAST::Infix.new(":="),
+          right => RakuAST::IntLiteral.new(1)
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::ApplyInfix.new(
+          left  => RakuAST::ApplyPostfix.new(
+            operand => RakuAST::Var::Lexical.new("\%h"),
+            postfix => RakuAST::Postcircumfix::HashIndex.new(
+              index => RakuAST::SemiList.new(
+                RakuAST::Statement::Expression.new(
+                  expression => RakuAST::QuotedString.new(
+                    segments   => (
+                      RakuAST::StrLiteral.new("a"),
+                    )
+                  )
+                )
+              )
+            )
+          ),
+          infix => RakuAST::Assignment.new,
+          right => RakuAST::IntLiteral.new(1)
+        )
+      )
+    )
+    END
+
+is Q[$[1, 2]; ${ a => 1 }; $%(a => 1);].AST.gist, q:to/END/.chomp, 'item contextualizers';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Contextualizer::Item.new(
+          RakuAST::Circumfix::ArrayComposer.new(
+            RakuAST::SemiList.new(
+              RakuAST::Statement::Expression.new(
+                expression => RakuAST::ApplyListInfix.new(
+                  infix    => RakuAST::Infix.new(","),
+                  operands => (
+                    RakuAST::IntLiteral.new(1),
+                    RakuAST::IntLiteral.new(2),
+                  )
+                )
+              )
+            )
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Contextualizer::Item.new(
+          RakuAST::Circumfix::HashComposer.new(
+            RakuAST::FatArrow.new(
+              key   => "a",
+              value => RakuAST::IntLiteral.new(1)
+            )
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Contextualizer::Item.new(
+          RakuAST::Contextualizer::Hash.new(
+            RakuAST::StatementSequence.new(
+              RakuAST::Statement::Expression.new(
+                expression => RakuAST::FatArrow.new(
+                  key   => "a",
+                  value => RakuAST::IntLiteral.new(1)
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[lazy 1, 2; hyper 1, 2; race 1, 2;].AST.gist, q:to/END/.chomp, 'lazy hyper race prefixes';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::StatementPrefix::Lazy.new(
+          RakuAST::Statement::Expression.new(
+            expression => RakuAST::ApplyListInfix.new(
+              infix    => RakuAST::Infix.new(","),
+              operands => (
+                RakuAST::IntLiteral.new(1),
+                RakuAST::IntLiteral.new(2),
+              )
+            )
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::StatementPrefix::Hyper.new(
+          RakuAST::Statement::Expression.new(
+            expression => RakuAST::ApplyListInfix.new(
+              infix    => RakuAST::Infix.new(","),
+              operands => (
+                RakuAST::IntLiteral.new(1),
+                RakuAST::IntLiteral.new(2),
+              )
+            )
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::StatementPrefix::Race.new(
+          RakuAST::Statement::Expression.new(
+            expression => RakuAST::ApplyListInfix.new(
+              infix    => RakuAST::Infix.new(","),
+              operands => (
+                RakuAST::IntLiteral.new(1),
+                RakuAST::IntLiteral.new(2),
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[sub Foo::bar { }; Foo::bar(1); 1.Int::abs;].AST.gist, q:to/END/.chomp, 'qualified names';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Sub.new(
+          name => RakuAST::Name.from-identifier-parts("Foo","bar"),
+          body => RakuAST::Blockoid.new(
+            RakuAST::StatementList.new()
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Call::Name.new(
+          name => RakuAST::Name.from-identifier-parts("Foo","bar"),
+          args => RakuAST::ArgList.new(
+            RakuAST::IntLiteral.new(1)
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::ApplyPostfix.new(
+          operand => RakuAST::IntLiteral.new(1),
+          postfix => RakuAST::Call::Method.new(
+            name => RakuAST::Name.from-identifier-parts("Int","abs")
+          )
+        )
+      )
+    )
+    END
+
+is Q[sub f(Int) { }].AST.gist, q:to/END/.chomp, 'type-only parameter';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Sub.new(
+          name      => RakuAST::Name.from-identifier("f"),
+          signature => RakuAST::Signature.new(
+            parameters => (
+              RakuAST::Parameter.new(
+                type     => RakuAST::Type::Simple.new(
+                  RakuAST::Name.from-identifier("Int")
+                ),
+                optional => False
+              ),
+            )
+          ),
+          body      => RakuAST::Blockoid.new(
+            RakuAST::StatementList.new()
+          )
+        )
+      )
+    )
+    END
+
+is Q[my @a = []; [];].AST.gist, q:to/END/.chomp, 'empty array composer';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::VarDeclaration::Simple.new(
+          sigil       => "\@",
+          desigilname => RakuAST::Name.from-identifier("a"),
+          initializer => RakuAST::Initializer::Assign.new(
+            RakuAST::Circumfix::ArrayComposer.new(
+              RakuAST::SemiList.new()
+            )
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Circumfix::ArrayComposer.new(
+          RakuAST::SemiList.new()
+        )
+      )
+    )
+    END
+
+is Q[{ $^a + $:b }].AST.gist, q:to/END/.chomp, 'placeholder variables';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Block.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
+            RakuAST::StatementList.new(
+              RakuAST::Statement::Expression.new(
+                expression => RakuAST::ApplyInfix.new(
+                  left  => RakuAST::VarDeclaration::Placeholder::Positional.new(
+                    "\$a"
+                  ),
+                  infix => RakuAST::Infix.new("+"),
+                  right => RakuAST::VarDeclaration::Placeholder::Named.new(
+                    "\$b"
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[use Test; is-deeply(1, 1, :a(1)); throws-like({ 1 }, X::OutOfRange, :message('x'));].AST.gist, q:to/END/.chomp, 'test call colonpairs';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Use.new(
+        module-name => RakuAST::Name.from-identifier("Test")
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Call::Name.new(
+          name => RakuAST::Name.from-identifier("is-deeply"),
+          args => RakuAST::ArgList.new(
+            RakuAST::IntLiteral.new(1),
+            RakuAST::IntLiteral.new(1),
+            RakuAST::ColonPair::Value.new(
+              key   => "a",
+              value => RakuAST::Circumfix::Parentheses.new(
+                RakuAST::SemiList.new(
+                  RakuAST::Statement::Expression.new(
+                    expression => RakuAST::IntLiteral.new(1)
+                  )
+                )
+              )
+            )
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Call::Name.new(
+          name => RakuAST::Name.from-identifier("throws-like"),
+          args => RakuAST::ArgList.new(
+            RakuAST::Block.new(
+              may-have-signature => True,
+              body               => RakuAST::Blockoid.new(
+                RakuAST::StatementList.new(
+                  RakuAST::Statement::Expression.new(
+                    expression => RakuAST::IntLiteral.new(1)
+                  )
+                )
+              )
+            ),
+            RakuAST::Type::Simple.new(
+              RakuAST::Name.from-identifier-parts("X","OutOfRange")
+            ),
+            RakuAST::ColonPair::Value.new(
+              key   => "message",
+              value => RakuAST::Circumfix::Parentheses.new(
+                RakuAST::SemiList.new(
+                  RakuAST::Statement::Expression.new(
+                    expression => RakuAST::QuotedString.new(
+                      segments   => (
+                        RakuAST::StrLiteral.new("x"),
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[.^name; .?foo; .Str;].AST.gist, q:to/END/.chomp, 'topic metamethod calls';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Term::TopicCall.new(
+          RakuAST::Call::MetaMethod.new(
+            name => "name"
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Term::TopicCall.new(
+          RakuAST::Call::Method.new(
+            name     => RakuAST::Name.from-identifier("foo"),
+            dispatch => ".?"
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Term::TopicCall.new(
+          RakuAST::Call::Method.new(
+            name => RakuAST::Name.from-identifier("Str")
+          )
+        )
       )
     )
     END

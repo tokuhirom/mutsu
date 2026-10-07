@@ -591,6 +591,7 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
             cond: Expr::Unary {
                 op: TokenKind::Bang,
                 expr: Box::new(cond),
+                word: false,
             },
             then_branch: body,
             else_branch: Vec::new(),

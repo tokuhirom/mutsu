@@ -74,7 +74,7 @@ pub(super) fn guard(call: UndeclaredRoutineCall, slots: &[String]) -> Stmt {
             Stmt::If {
                 cond: Expr::Unary {
                     op: crate::token_kind::TokenKind::Bang,
-                    expr: Box::new(Expr::Var(slot.clone())),
+                    expr: Box::new(Expr::Var(slot.clone())), word: false,
                 },
                 then_branch: vec![inner],
                 else_branch: vec![],

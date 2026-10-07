@@ -40,6 +40,7 @@ pub(crate) fn extract_negative_literal(expr: &Expr) -> Option<String> {
     if let Expr::Unary {
         op: TokenKind::Minus,
         expr: inner,
+        ..
     } = expr
         && let Expr::Literal(lit) = inner.as_ref()
     {
@@ -141,9 +142,11 @@ pub(crate) fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Exp
         // re-wrap. Equivalent to composing into the built closure's last
         // statement, since `build_closure` doesn't care whether the leaf is a
         // literal `Expr::Whatever` or the already-substituted `$_`/`__wc_N`.
-        Expr::WhateverCurry(inner) => {
-            Expr::WhateverCurry(Box::new(Expr::Unary { op, expr: inner }))
-        }
+        Expr::WhateverCurry(inner) => Expr::WhateverCurry(Box::new(Expr::Unary {
+            op,
+            expr: inner,
+            word: false,
+        })),
         Expr::Lambda {
             param,
             mut body,
@@ -185,6 +188,7 @@ pub(crate) fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Exp
         other => Expr::Unary {
             op,
             expr: Box::new(other),
+            word: false,
         },
     }
 }
@@ -196,6 +200,7 @@ pub(crate) fn wrap_last_stmt_with_unary(stmts: &mut [Stmt], op: TokenKind) {
         *expr = Expr::Unary {
             op,
             expr: Box::new(inner),
+            word: false,
         };
     }
 }

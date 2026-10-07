@@ -152,13 +152,16 @@ impl Compiler {
                 crate::ast::CallArg::Named {
                     name,
                     value: Some(e),
+                    ..
                 } => Expr::Binary {
                     left: Box::new(Expr::Literal(Value::str(name.clone()))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(e.clone()),
                     form: Default::default(),
                 },
-                crate::ast::CallArg::Named { name, value: None } => Expr::Binary {
+                crate::ast::CallArg::Named {
+                    name, value: None, ..
+                } => Expr::Binary {
                     left: Box::new(Expr::Literal(Value::str(name.clone()))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(Expr::Literal(Value::TRUE)),
@@ -167,6 +170,7 @@ impl Compiler {
                 crate::ast::CallArg::Slip(e) => Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,
                     expr: Box::new(e.clone()),
+                    word: false,
                 },
             })
             .collect()

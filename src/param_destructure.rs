@@ -264,6 +264,7 @@ pub(crate) fn destructure_binds(
                 vec![Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,
                     expr: Box::new(slice_expr),
+                    word: false,
                 }],
                 true,
             );

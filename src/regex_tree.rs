@@ -1437,7 +1437,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
         }
         crate::ast::Expr::CodeVar(name) => Some(format!("&{name}")),
         crate::ast::Expr::BareWord(name) => Some(name.clone()),
-        crate::ast::Expr::Unary { op, expr } => Some(format!(
+        crate::ast::Expr::Unary { op, expr, .. } => Some(format!(
             "{}{}",
             crate::compiler::helpers_ops::token_kind_to_op_name(op),
             expression_source(expr)?

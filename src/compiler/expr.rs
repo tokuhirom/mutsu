@@ -456,7 +456,7 @@ impl Compiler {
                     self.code.emit(OpCode::GetPseudoStash(name_idx));
                 }
             }
-            Expr::Unary { op, expr } => {
+            Expr::Unary { op, expr, .. } => {
                 self.compile_expr_unary(op, expr);
             }
             Expr::Binary {
@@ -1139,6 +1139,7 @@ impl Compiler {
                             cmp = Expr::Unary {
                                 op: TokenKind::Bang,
                                 expr: Box::new(cmp),
+                                word: false,
                             };
                         }
                         acc = Some(match acc {

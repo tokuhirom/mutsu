@@ -3382,6 +3382,7 @@ impl Compiler {
             Expr::Unary {
                 op: TokenKind::Minus,
                 expr,
+                ..
             } if matches!(
                 expr.as_ref(),
                 Expr::Literal(v) if matches!(
@@ -4098,7 +4099,7 @@ impl Compiler {
                 v.view(),
                 crate::value::ValueView::Array(..) | crate::value::ValueView::Hash(..)
             ),
-            Expr::Unary { op, expr } => {
+            Expr::Unary { op, expr, .. } => {
                 matches!(op, TokenKind::Minus | TokenKind::Plus | TokenKind::Bang)
                     && Self::expr_yields_container_less_value(expr)
             }

@@ -66,6 +66,7 @@ pub(crate) fn defined_condition(negated: bool, tmp_name: &str, cond_expr: Expr) 
         Expr::Unary {
             op: TokenKind::Bang,
             expr: Box::new(defined),
+            word: false,
         }
     } else {
         defined

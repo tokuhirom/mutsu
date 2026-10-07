@@ -178,20 +178,20 @@ fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
         CallArg::Positional(e) | CallArg::Invocant(e) => e.clone(),
         CallArg::Named {
             name,
-            value: Some(e),
+            value: Some(e), ..
         } => Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(name.clone()))),
             op: TokenKind::FatArrow,
             right: Box::new(e.clone()), form: Default::default(),
         },
-        CallArg::Named { name, value: None } => Expr::Binary {
+        CallArg::Named { name, value: None, .. } => Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(name.clone()))),
             op: TokenKind::FatArrow,
             right: Box::new(Expr::Literal(Value::TRUE)), form: Default::default(),
         },
         CallArg::Slip(e) => Expr::Unary {
             op: TokenKind::Pipe,
-            expr: Box::new(e.clone()),
+            expr: Box::new(e.clone()), word: false,
         },
     }
 }

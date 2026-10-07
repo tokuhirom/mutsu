@@ -580,6 +580,7 @@ pub(crate) fn sub_decl_body(
                 crate::ast::CallArg::Slip(e) => Some(Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,
                     expr: Box::new(e),
+                    word: false,
                 }),
                 _ => None,
             })

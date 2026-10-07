@@ -47,6 +47,7 @@ impl Compiler {
                 Expr::Unary {
                     op: op.clone(),
                     expr: e,
+                    word: false,
                 }
             }
         };
