@@ -470,7 +470,9 @@ impl Compiler {
             Expr::DynamicMethodCall { modifier: None, .. } => true,
             Expr::Try { body, catch: None } => matches!(
                 body.as_slice(),
-                [Stmt::Expr(inner)] if self.expr_is_decontainerized_value(inner)
+                [Stmt::Expr(inner)]
+                    if matches!(inner.peel_parens(), Expr::DynamicMethodCall { modifier: None, .. })
+                        || Self::expr_is_self_decontainerizing(inner.peel_parens())
             ),
             e => Self::expr_is_self_decontainerizing(e),
         }
