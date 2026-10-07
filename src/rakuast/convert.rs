@@ -5215,7 +5215,8 @@ pub(super) fn routine_node(
     body: &[Stmt],
     return_type: Option<(&str, ReturnSpelling)>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let mut fields = vec![node_field(Some("name"), name_from_identifier(name))];
+    let name_node = name_parts::operator_name(name).unwrap_or_else(|| name_from_identifier(name));
+    let mut fields = vec![node_field(Some("name"), name_node)];
     let arrow_returns = match return_type {
         Some((t, ReturnSpelling::Arrow)) => Some(t),
         _ => None,

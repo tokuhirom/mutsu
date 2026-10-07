@@ -29,6 +29,7 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     }
     let name = node.class.printed_name();
     if node.class == RakuAstClass::Name
+        && !node.fields.iter().any(|f| f.name == Some("colonpairs"))
         && let Some(rendered) = render_name_parts(node, indent)
     {
         return rendered;
@@ -134,14 +135,29 @@ fn render_name_with_colonpairs(node: &RakuAstNode, indent: usize) -> Option<Stri
     let RakuAstFieldValue::List(pairs) = &pairs.value else {
         return None;
     };
-    let identifier = node.fields.iter().find(|f| f.name.is_none())?;
-    let RakuAstFieldValue::Node(identifier) = &identifier.value else {
-        return None;
+    let head = if let Some(parts) = node.fields.iter().find(|f| f.name == Some("parts")) {
+        let RakuAstFieldValue::List(parts) = &parts.value else {
+            return None;
+        };
+        let identifiers = parts
+            .iter()
+            .map(simple_part_identifier)
+            .collect::<Option<Vec<_>>>()?;
+        format!(
+            "RakuAST::Name.from-identifier-parts({}, colonpairs => (\n",
+            identifiers.join(",")
+        )
+    } else {
+        let identifier = node.fields.iter().find(|f| f.name.is_none())?;
+        let RakuAstFieldValue::Node(identifier) = &identifier.value else {
+            return None;
+        };
+        format!(
+            "RakuAST::Name.from-identifier({}, colonpairs => (\n",
+            render_leaf(identifier)
+        )
     };
-    let mut s = format!(
-        "RakuAST::Name.from-identifier({}, colonpairs => (\n",
-        render_leaf(identifier)
-    );
+    let mut s = head;
     let pad = " ".repeat(indent + 2);
     for pair in pairs {
         s.push_str(&pad);
