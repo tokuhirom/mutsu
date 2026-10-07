@@ -258,7 +258,7 @@ impl SharedStore {
         note_inserted_key(key);
         let target = self.owner_of(key).unwrap_or_else(|| self.scope_for(key));
         target.own.write().unwrap().insert(key.to_string(), value);
-        target.written.lock().unwrap().insert(key.to_string());
+        target.written.lock().unwrap_or_else(|e| e.into_inner()).insert(key.to_string());
     }
 
     /// Bind the name into THIS lineage, shadowing any ancestor entry. Used by
@@ -272,7 +272,7 @@ impl SharedStore {
         note_inserted_key(key);
         let target = self.scope_for(key);
         target.own.write().unwrap().insert(key.to_string(), value);
-        target.written.lock().unwrap().remove(key);
+        target.written.lock().unwrap_or_else(|e| e.into_inner()).remove(key);
     }
 
     /// True when the entry `key` resolves to is a mere seed: the spawning
@@ -281,7 +281,7 @@ impl SharedStore {
     // Cost: O(d), d = chain depth (spawn nesting).
     pub(crate) fn is_unwritten_seed(&self, key: &str) -> bool {
         match self.owner_of(key) {
-            Some(Holder::Chain(h)) => !h.written.lock().unwrap().contains(key),
+            Some(Holder::Chain(h)) => !h.written.lock().unwrap_or_else(|e| e.into_inner()).contains(key),
             _ => false,
         }
     }
@@ -356,7 +356,7 @@ impl SharedStore {
         let mut guard = target.own.write().unwrap();
         let r = guard.get_mut(key).map(f);
         if r.is_some() {
-            target.written.lock().unwrap().insert(key.to_string());
+            target.written.lock().unwrap_or_else(|e| e.into_inner()).insert(key.to_string());
         }
         r
     }
