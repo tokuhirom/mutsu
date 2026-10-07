@@ -86,6 +86,28 @@ pub(super) fn lower_body(child: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError>
 /// statement it was written over (`LEAVE say 1`).
 // Cost: O(1) beyond the conversion of the phaser, the nodes are moved.
 pub(super) fn bare_phaser_statement(phaser: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
+    // `FIRST`/`NEXT`/`LAST` keep a bare statement scope-less in a synthetic block.
+    let unwrapped;
+    let phaser = match phaser {
+        Stmt::Phaser {
+            kind,
+            body,
+            condition,
+            end_index,
+        } if matches!(body.as_slice(), [Stmt::SyntheticBlock(_)]) => {
+            let Some(Stmt::SyntheticBlock(inner)) = body.first() else {
+                unreachable!("just matched");
+            };
+            unwrapped = Stmt::Phaser {
+                kind: kind.clone(),
+                body: inner.clone(),
+                condition: condition.clone(),
+                end_index: *end_index,
+            };
+            &unwrapped
+        }
+        _ => phaser,
+    };
     let Some(mut statement) = super::convert::convert_stmt(phaser)? else {
         return Ok(None);
     };

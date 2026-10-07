@@ -7,7 +7,7 @@ use Test;
 # tree is the block `gather { say 1 }` makes.
 # This file passes under BOTH mutsu and raku, so raku is the oracle.
 
-plan 31;
+plan 59;
 
 sub init-of(Str $source) {
     $source.AST.statements[*-1].expression.initializer.expression;
@@ -46,6 +46,17 @@ isa-ok init-of('my $x = do if 1 { 2 };').blorst, RakuAST::Statement::If,
 isa-ok init-of('my $x = try say 1;').blorst.expression, RakuAST::Call::Name::WithoutParentheses,
     'try STATEMENT holds the bare call';
 
+# --- statement level: a phaser over a bare statement ---
+sub stmt-of(Str $source) { $source.AST.statements[0].expression }
+for <LEAVE ENTER END FIRST NEXT LAST> -> $kw {
+    my $class = "RakuAST::StatementPrefix::Phaser::" ~ $kw.tclc;
+    my $bare = stmt-of("$kw say 1");
+    is $bare.^name, $class, "$kw STATEMENT is a $class";
+    unlike $bare.gist, /'RakuAST::Block'/, "$kw STATEMENT holds no block";
+    like $bare.gist, /'RakuAST::Statement::Expression.new(' \s+ 'expression => RakuAST::Call'/,
+        "$kw STATEMENT holds the statement";
+    like stmt-of("$kw \{ say 1 \}").gist, /'RakuAST::Block'/, "$kw \{ BLOCK } still holds a block";
+}
 # --- write direction ---
 {
     my $ast = RakuAST::StatementPrefix::Gather.new(
@@ -70,9 +81,23 @@ isa-ok init-of('my $x = try say 1;').blorst.expression, RakuAST::Call::Name::Wit
     is EVAL($ast), 5, 'EVAL of a hand-built do over a statement';
 }
 
+{
+    my $ast = RakuAST::StatementPrefix::Phaser::Leave.new(
+        RakuAST::Statement::Expression.new(
+            expression => RakuAST::Call::Name::WithoutParentheses.new(
+                name => RakuAST::Name.from-identifier('say'),
+                args => RakuAST::ArgList.new(RakuAST::StrLiteral.new('left')))));
+    my $code = RakuAST::StatementList.new(
+        RakuAST::Statement::Expression.new(expression => $ast));
+    is-deeply EVAL($code).defined, False, 'EVAL of a hand-built LEAVE over a statement';
+}
+
 # --- the bare forms still run ---
 is-deeply EVAL('(gather take 3).list'), (3,), 'gather STATEMENT runs';
 is EVAL('do 5 + 1'), 6, 'do STATEMENT runs';
 is EVAL('try die "x"; 1'), 1, 'try STATEMENT runs';
 is EVAL('my $p = start 40 + 2; await $p'), 42, 'start STATEMENT runs';
 is EVAL('my $x = 0; for 1..3 { once $x++ }; $x'), 1, 'once STATEMENT runs';
+is EVAL('my $r = 0; for 1..3 { NEXT $r += 10; }; $r'), 30, 'NEXT STATEMENT runs';
+is EVAL('my $r = 0; for 1..3 { FIRST $r = 7; }; $r'), 7, 'FIRST STATEMENT runs';
+is EVAL('my $r = 0; for 1..3 { LAST $r = $_; }; $r'), 3, 'LAST STATEMENT runs';
