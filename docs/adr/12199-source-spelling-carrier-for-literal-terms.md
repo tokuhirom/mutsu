@@ -156,8 +156,14 @@ declared operator name (`sub infix:<foo>` is `Name.from-identifier("infix", colo
 and the rule now says so. No statement mutsu renders with a word quote differs from rakudo's
 (0 of 510 other-class hunks). All 5979 files of the `MUTSU_RAKUAST=1` ratchet pass.
 
-**Still open** (separate PRs, as section 4 says): heredocs (`heredoc`, `heredoc-stop`: 46 hunks
-each in this sample), the bare-statement prefixes (`statement-prefix`: 6), and `«a b»` /
-`<<a b>>`, whose rakudo node carries the `quotewords` processor and was not measured here.
-Operator names with a colonpair are an unrelated gap of the name, not of a term
-([#12220](https://github.com/tokuhirom/mutsu/issues/12220)).
+**What remains** is the closed slice list in
+[#12199](https://github.com/tokuhirom/mutsu/issues/12199) (measured 2026-10-07 on a 766-file,
+11827-statement sample, 94.6% identical): S2 heredocs (46 statements), S3 the bare-statement
+prefixes at expression level (`try`, `gather`, `start`, `once`, `do`; 52 occurrences) and S4 the
+statement-level ones (`Stmt::Phaser`, `FIRST`/`NEXT`/`LAST STATEMENT`; 19 occurrences), one PR
+each, each adding a subsection here with its measured result, its peel sites and its carrier
+decision. The list does not grow: a finding that is not "the parser discards how this was
+spelled" is its own issue. Two such findings exist: the word quotes other than `<...>` (`qw`,
+`«»`, `<<>>`, `qqww`, `q:w`), which `.AST` refuses today
+([#12228](https://github.com/tokuhirom/mutsu/issues/12228)), and operator names with a colonpair
+(`sub infix:<foo>`, [#12220](https://github.com/tokuhirom/mutsu/issues/12220)).
