@@ -227,6 +227,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             label: _,
             is_statement_modifier: _,
             is_until: _,
+            is_bare_term: _,
         } => {
             v.visit_expr_mut(cond);
             v.visit_stmts_mut(body);

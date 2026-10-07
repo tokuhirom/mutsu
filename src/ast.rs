@@ -2267,6 +2267,11 @@ pub(crate) enum Stmt {
         /// real `until`, never for a hand-written `while !$x`, whose supplied
         /// value really is the negation.
         is_until: bool,
+        /// True for a `while` / `until` written as a term in parentheses
+        /// (`(while COND { ... })`), as opposed to `do while ...`. Both are the
+        /// same `Expr::DoStmt`; rakudo renders the bare one as the statement
+        /// inside the parentheses, with no `do` prefix. The compiler ignores it.
+        is_bare_term: bool,
     },
     Loop {
         init: Option<Box<Stmt>>,
@@ -2913,12 +2918,24 @@ impl Expr {
         match self {
             Expr::Grouped(inner)
                 if !matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty())
-                    && !inner.is_modified_statement() =>
+                    && !inner.is_modified_statement()
+                    && !inner.is_bare_loop_term() =>
             {
                 inner
             }
             other => other,
         }
+    }
+
+    /// Whether this is a `while` / `until` written as a term without a `do`
+    /// (`(while COND { ... }).m`). Like a modified statement, it is the content
+    /// of the parentheses' semilist, so the parentheses stay.
+    // Cost: O(1).
+    pub(crate) fn is_bare_loop_term(&self) -> bool {
+        matches!(
+            self,
+            Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::While { is_bare_term: true, .. })
+        )
     }
 
     /// Whether this is a statement carrying a statement modifier
@@ -3232,6 +3249,7 @@ mod env_only_decl_tests {
             label: None,
             is_statement_modifier: false,
             is_until: false,
+            is_bare_term: false,
         }])];
         let mut out = std::collections::HashSet::new();
         collect_all_my_decl_names(&body, &mut out);

@@ -648,6 +648,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 label: None,
                 is_statement_modifier: true,
                 is_until: false,
+                is_bare_term: false,
             },
         )));
     }
@@ -673,6 +674,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 label: None,
                 is_statement_modifier: true,
                 is_until: true,
+                is_bare_term: false,
             },
         )));
     }

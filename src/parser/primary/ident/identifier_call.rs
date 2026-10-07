@@ -935,12 +935,14 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         "while" => {
-            if let Ok((r, stmt)) = crate::parser::stmt::while_stmt_pub(input) {
+            if let Ok((r, mut stmt)) = crate::parser::stmt::while_stmt_pub(input) {
+                mark_bare_term(&mut stmt);
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
         }
         "until" => {
-            if let Ok((r, stmt)) = crate::parser::stmt::until_stmt_pub(input) {
+            if let Ok((r, mut stmt)) = crate::parser::stmt::until_stmt_pub(input) {
+                mark_bare_term(&mut stmt);
                 return Ok((r, Expr::DoStmt(Box::new(stmt))));
             }
         }
@@ -2724,5 +2726,13 @@ fn stash_angle_index(symbol: &str) -> Expr {
         )
     } else {
         Expr::Literal(Value::str(symbol.to_string()))
+    }
+}
+
+/// Record that a `while` / `until` statement stands as a term without a `do`
+/// in front of it (`(while COND { ... })`).
+fn mark_bare_term(stmt: &mut crate::ast::Stmt) {
+    if let crate::ast::Stmt::While { is_bare_term, .. } = stmt {
+        *is_bare_term = true;
     }
 }

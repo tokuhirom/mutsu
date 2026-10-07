@@ -9,7 +9,7 @@ use Test;
 # Expected gists captured verbatim from Rakudo 2026.09; this file passes
 # under BOTH mutsu and raku, so raku is the oracle.
 
-plan 29;
+plan 32;
 
 is Q[sub f($a?) { }; f 1; f(1); f;].AST.gist, q:to/END/.chomp, 'call without parentheses';
     RakuAST::StatementList.new(
@@ -1090,6 +1090,91 @@ is Q[sub f(*%_) { }; f(:a<x y>, :b[1, 2], :c(1)); f :a<x>;].AST.gist, q:to/END/.
                 segments   => (
                   RakuAST::StrLiteral.new("x"),
                 )
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q|class AlsoBase { }
+class AlsoUser { also is AlsoBase; }|.AST.gist, q:to/END/.chomp, '`also is Parent;` in a class body';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Class.new(
+          name => RakuAST::Name.from-identifier("AlsoBase"),
+          body => RakuAST::Block.new(
+            body => RakuAST::Blockoid.new(
+              RakuAST::StatementList.new()
+            )
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Class.new(
+          name => RakuAST::Name.from-identifier("AlsoUser"),
+          body => RakuAST::Block.new(
+            body => RakuAST::Blockoid.new(
+              RakuAST::StatementList.new(
+                RakuAST::Statement::Also.new(
+                  traits => (
+                    RakuAST::Trait::Is.new(
+                      type => RakuAST::Type::Simple.new(
+                        RakuAST::Name.from-identifier("AlsoBase")
+                      )
+                    ),
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[class ::ColonsD { }].AST.gist, q:to/END/.chomp, '`class ::Name`';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Class.new(
+          name => RakuAST::Name.new(
+            RakuAST::Name::Part::Empty.new,
+            RakuAST::Name::Part::Simple.new("ColonsD")
+          ),
+          body => RakuAST::Block.new(
+            body => RakuAST::Blockoid.new(
+              RakuAST::StatementList.new()
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[my $w = (while 0 { }).elems;].AST.gist, q:to/END/.chomp, 'parenthesised `while` as a postfix operand';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::VarDeclaration::Simple.new(
+          sigil       => "\$",
+          desigilname => RakuAST::Name.from-identifier("w"),
+          initializer => RakuAST::Initializer::Assign.new(
+            RakuAST::ApplyPostfix.new(
+              operand => RakuAST::Circumfix::Parentheses.new(
+                RakuAST::SemiList.new(
+                  RakuAST::Statement::Loop::While.new(
+                    condition => RakuAST::IntLiteral.new(0),
+                    body      => RakuAST::Block.new(
+                      may-have-signature => True,
+                      body               => RakuAST::Blockoid.new(
+                        RakuAST::StatementList.new()
+                      )
+                    )
+                  )
+                )
+              ),
+              postfix => RakuAST::Call::Method.new(
+                name => RakuAST::Name.from-identifier("elems")
               )
             )
           )

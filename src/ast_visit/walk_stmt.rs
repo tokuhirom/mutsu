@@ -263,6 +263,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             label,
             is_statement_modifier: _,
             is_until: _,
+            is_bare_term: _,
         } => {
             v.visit_expr(cond);
             names(v, label.iter(), NameKind::Label);

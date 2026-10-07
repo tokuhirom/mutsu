@@ -108,6 +108,49 @@ pub(super) fn name_from_parts(parts: Vec<Value>) -> RakuAstNode {
     }
 }
 
+/// Put the leading empty part in front of the parts of the `name` field in
+/// `fields`: `class ::D` is `Name.new(Empty.new, Simple("D"))`. A field that is
+/// not a plain name (or no field at all) is left alone.
+// Cost: O(k), k = number of parts of the name.
+pub(super) fn with_leading_empty(fields: &mut [RakuAstField]) {
+    let Some(field) = fields.iter_mut().find(|f| f.name == Some("name")) else {
+        return;
+    };
+    let RakuAstFieldValue::Node(value) = &field.value else {
+        return;
+    };
+    let ValueView::RakuAst(name) = value.view() else {
+        return;
+    };
+    let mut parts = match name.fields.first() {
+        Some(RakuAstField {
+            name: Some("parts"),
+            value: RakuAstFieldValue::List(parts),
+        }) => parts.clone(),
+        Some(RakuAstField {
+            name: None,
+            value: RakuAstFieldValue::Node(v),
+        }) => match v.view() {
+            ValueView::Str(s) => identifier_segments(&s).map(simple_part).collect(),
+            _ => return,
+        },
+        _ => return,
+    };
+    parts.insert(0, leading_empty());
+    field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(name_from_parts(parts))));
+}
+
+/// Whether a `RakuAST::Name` starts with the empty edge (`::Foo`).
+pub(super) fn has_leading_empty(node: &RakuAstNode) -> bool {
+    matches!(
+        node.fields.first(),
+        Some(RakuAstField {
+            name: Some("parts"),
+            value: RakuAstFieldValue::List(parts),
+        }) if parts.first().is_some_and(is_empty_part)
+    )
+}
+
 /// The `::`-separated segments of a qualified identifier (`A::B` -> `A`, `B`).
 ///
 /// The one place the RakuAST layer splits a name's text. The layer converts a

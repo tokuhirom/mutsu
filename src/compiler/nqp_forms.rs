@@ -399,6 +399,7 @@ impl Compiler {
                 label: None,
                 is_statement_modifier: false,
                 is_until,
+                is_bare_term: false,
             }
         };
         self.compile_expr(&Expr::Gather(vec![inner]));

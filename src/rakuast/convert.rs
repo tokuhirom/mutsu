@@ -1088,6 +1088,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             implicit_grammar_parent,
             is_grammar,
             parent_args,
+            body_parents,
             ..
         } => {
             if *is_grammar {
@@ -1170,12 +1171,33 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 package_scope(*is_lexical, *is_unit),
                 is_colons_package(custom_traits),
             );
+            if has_leading_colons(custom_traits) {
+                name_parts::with_leading_empty(&mut fields);
+            }
             // Field order matches raku: scope, name, repr, traits, body.
             if let Some(r) = repr {
                 fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
             }
+            // `also is P;` in the body is a `Statement::Also`, not a trait.
+            let mut header_parents = parents.clone();
+            let mut also_statements = Vec::new();
+            for parent in body_parents {
+                if let Some(at) = header_parents.iter().rposition(|p| p == parent) {
+                    header_parents.remove(at);
+                }
+                for t in class_traits(
+                    std::slice::from_ref(parent),
+                    &[],
+                    parent_args,
+                    false,
+                    false,
+                    &[],
+                )? {
+                    also_statements.push(super::role::also_is_statement(t));
+                }
+            }
             let mut traits = class_traits(
-                parents,
+                &header_parents,
                 does_parents,
                 parent_args,
                 *class_is_rw,
@@ -1189,11 +1211,12 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     value: RakuAstFieldValue::List(traits),
                 });
             }
+            let class_body = block_node(&crate::parser::unhoist_nested_methods(
+                without_composed_header(body, does_parents),
+            ))?;
             fields.push(node_field(
                 Some("body"),
-                block_node(&crate::parser::unhoist_nested_methods(
-                    without_composed_header(body, does_parents),
-                ))?,
+                super::role::with_leading_statements(class_body, also_statements),
             ));
             let class = RakuAstNode {
                 class: RakuAstClass::Class,
@@ -2408,6 +2431,7 @@ pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bo
     custom_traits.iter().any(|(t, _)| {
         t != crate::parser::ANON_COLONS_TRAIT
             && t != crate::parser::EXPORT_TYPE_MARKER
+            && t != crate::parser::LEADING_COLONS_TRAIT
             && !decl_traits::is_class_trait(t)
     })
 }
@@ -2425,6 +2449,13 @@ fn expression_of(statement: &RakuAstNode) -> Option<RakuAstNode> {
             },
             _ => None,
         })
+}
+
+/// Whether a class was declared as `class ::Name`.
+pub(super) fn has_leading_colons(custom_traits: &[(String, Option<Expr>)]) -> bool {
+    custom_traits
+        .iter()
+        .any(|(t, _)| t == crate::parser::LEADING_COLONS_TRAIT)
 }
 
 /// Whether a package declaration was written with the empty name `::`.
