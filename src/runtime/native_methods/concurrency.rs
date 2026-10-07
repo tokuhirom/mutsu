@@ -120,12 +120,40 @@ impl Interpreter {
         }
     }
 
+    /// The native methods of a `Semaphore`: every one `Semaphore` declares is a
+    /// row of the method table, reached through its owner (ADR-11276 §9.22).
+    // Cost: O(1) to find the row, plus the handler's own cost.
     pub(in crate::runtime) fn native_semaphore(
         &mut self,
         attributes: &AttrMap,
         method: &str,
-        _args: Vec<Value>,
+        args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        if let Some(result) = crate::builtins::method_table::invoke_owner(
+            self,
+            &["Semaphore"],
+            method,
+            &args,
+            || Value::make_instance_without_destroy(Symbol::intern("Semaphore"), attributes.clone()),
+        ) {
+            return result;
+        }
+        match method {
+            "WHAT" => Ok(Value::package(Symbol::intern("Semaphore"))),
+            "Str" | "gist" => Ok(Value::str_from("Semaphore")),
+            _ => Err(RuntimeError::new(format!(
+                "No native method '{}' on Semaphore",
+                method
+            ))),
+        }
+    }
+
+    /// The semaphore a `Semaphore` receiver stands for, by its `semaphore-id`.
+    // Cost: O(1), two hash lookups.
+    fn semaphore_of(
+        attributes: &AttrMap,
+        method: &str,
+    ) -> Result<std::sync::Arc<SemaphoreRuntime>, RuntimeError> {
         let sem_id = match attributes.get("semaphore-id").and_then(|v| v.as_int()) {
             Some(id) if id > 0 => id as u64,
             _ => {
@@ -135,37 +163,49 @@ impl Interpreter {
                 )));
             }
         };
-        let rt = semaphore_runtime_by_id(sem_id)
-            .ok_or_else(|| RuntimeError::new("Semaphore state not found"))?;
-        match method {
-            "acquire" => {
-                semaphore_acquire(&rt)?;
-                // Entering the critical section: pull the latest value of any
-                // shared scalar a previous holder committed inside its own
-                // critical section, so `$r += $i` here reads the accumulated
-                // value rather than this thread's stale clone-time copy.
-                self.enter_critical_section();
-                Ok(Value::NIL)
-            }
-            "try_acquire" => {
-                let ok = semaphore_try_acquire(&rt)?;
-                if ok {
-                    self.enter_critical_section();
-                }
-                Ok(Value::truth(ok))
-            }
-            "release" => {
-                self.leave_critical_section();
-                semaphore_release(&rt)?;
-                Ok(Value::NIL)
-            }
-            "WHAT" => Ok(Value::package(Symbol::intern("Semaphore"))),
-            "Str" | "gist" => Ok(Value::str_from("Semaphore")),
-            _ => Err(RuntimeError::new(format!(
-                "No native method '{}' on Semaphore",
-                method
-            ))),
+        semaphore_runtime_by_id(sem_id).ok_or_else(|| RuntimeError::new("Semaphore state not found"))
+    }
+
+    /// `Semaphore.acquire`: block until a permit is free.
+    // Cost: O(1) plus the wait for a permit.
+    pub(crate) fn semaphore_acquire_method(
+        &mut self,
+        attributes: &AttrMap,
+    ) -> Result<Value, RuntimeError> {
+        let rt = Self::semaphore_of(attributes, "acquire")?;
+        semaphore_acquire(&rt)?;
+        // Entering the critical section: pull the latest value of any
+        // shared scalar a previous holder committed inside its own
+        // critical section, so `$r += $i` here reads the accumulated
+        // value rather than this thread's stale clone-time copy.
+        self.enter_critical_section();
+        Ok(Value::NIL)
+    }
+
+    /// `Semaphore.try_acquire`: take a permit if one is free.
+    // Cost: O(1).
+    pub(crate) fn semaphore_try_acquire_method(
+        &mut self,
+        attributes: &AttrMap,
+    ) -> Result<Value, RuntimeError> {
+        let rt = Self::semaphore_of(attributes, "try_acquire")?;
+        let ok = semaphore_try_acquire(&rt)?;
+        if ok {
+            self.enter_critical_section();
         }
+        Ok(Value::truth(ok))
+    }
+
+    /// `Semaphore.release`: give a permit back.
+    // Cost: O(1).
+    pub(crate) fn semaphore_release_method(
+        &mut self,
+        attributes: &AttrMap,
+    ) -> Result<Value, RuntimeError> {
+        let rt = Self::semaphore_of(attributes, "release")?;
+        self.leave_critical_section();
+        semaphore_release(&rt)?;
+        Ok(Value::NIL)
     }
 
     pub(in crate::runtime) fn native_condition_variable(
@@ -432,50 +472,29 @@ impl Interpreter {
 
     // --- Thread ---
 
+    /// The native methods of a `Thread`: every one `Thread` declares is a row of
+    /// the method table, reached through its owner (ADR-11276 §9.22).
+    // Cost: O(1) to find the row, plus the handler's own cost.
     pub(in crate::runtime) fn native_thread(
         &mut self,
         attributes: &AttrMap,
         method: &str,
     ) -> Result<Value, RuntimeError> {
-        match method {
-            "finish" => self.dispatch_thread_finish(attributes),
-            "id" | "Numeric" => Ok(attributes
-                .get("id")
-                .or_else(|| attributes.get("thread_id"))
-                .cloned()
-                .unwrap_or(Value::int(0))),
-            "name" => Ok(attributes
-                .get("name")
-                .cloned()
-                .unwrap_or_else(|| Value::str_from("<anon>"))),
-            "is-initial-thread" => {
-                let is_initial = attributes
-                    .get("is_initial")
-                    .map(|v| v.truthy())
-                    .unwrap_or(false);
-                Ok(Value::truth(is_initial))
-            }
-            "app_lifetime" => Ok(attributes
-                .get("app_lifetime")
-                .cloned()
-                .unwrap_or(Value::FALSE)),
-            "WHAT" => Ok(Value::package(crate::symbol::Symbol::intern("Thread"))),
-            "Str" | "gist" => {
-                let id = attributes
-                    .get("id")
-                    .or_else(|| attributes.get("thread_id"))
-                    .and_then(|v| v.as_int())
-                    .unwrap_or(0);
-                let name = attributes
-                    .get("name")
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_else(|| "<anon>".to_string());
-                Ok(Value::str(format!("Thread<{id}>({name})")))
-            }
-            _ => Err(RuntimeError::new(format!(
-                "No method '{}' on Thread",
-                method
-            ))),
+        if let Some(result) = crate::builtins::method_table::invoke_owner(
+            self,
+            &["Thread"],
+            method,
+            &[],
+            || Value::make_instance_without_destroy(Symbol::intern("Thread"), attributes.clone()),
+        ) {
+            return result;
         }
+        if method == "WHAT" {
+            return Ok(Value::package(crate::symbol::Symbol::intern("Thread")));
+        }
+        Err(RuntimeError::new(format!(
+            "No method '{}' on Thread",
+            method
+        )))
     }
 }

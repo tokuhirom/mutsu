@@ -132,67 +132,27 @@ impl Interpreter {
         {
             return true;
         }
-        // IO::Special has native methods handled by native_io_special
+        // IO::Special has native methods handled by native_io_special: every
+        // declared one is a row of the method table (ADR-11276 §9.22); `new` is
+        // the constructor, `Bool`/`defined` are `Mu`'s.
         if class_name == "IO::Special"
-            && matches!(
-                method_name,
-                "Str"
-                    | "gist"
-                    | "what"
-                    | "IO"
-                    | "e"
-                    | "d"
-                    | "f"
-                    | "l"
-                    | "x"
-                    | "s"
-                    | "r"
-                    | "w"
-                    | "modified"
-                    | "accessed"
-                    | "changed"
-                    | "mode"
-                    | "raku"
-                    | "perl"
-                    | "WHICH"
-                    | "new"
-                    | "Bool"
-                    | "defined"
-            )
+            && (matches!(method_name, "new" | "Bool" | "defined")
+                || owner_declares_row(&["IO::Special", "Mu"], method_name))
         {
             return true;
         }
         // IO::Handle has native methods handled by native_io_handle: every one is
         // a row of the method table (ADR-11276 §9.20), `perl` being `raku`.
-        if class_name == "IO::Handle" && {
-            let name = if method_name == "perl" { "raku" } else { method_name };
-            let (owner, name) = (Symbol::intern("IO::Handle"), Symbol::intern(name));
-            let mu = Symbol::intern("Mu");
-            (0..=2).any(|arity| {
-                crate::builtins::method_table::owner_row(owner, name, arity).is_some()
-                    || crate::builtins::method_table::owner_row(mu, name, arity).is_some()
-            })
-        } {
+        if class_name == "IO::Handle" && owner_declares_row(&["IO::Handle", "Mu"], method_name) {
             return true;
         }
         // IO::Path's comb reads file content and combs the result.
         if class_name == "IO::Path" && method_name == "comb" {
             return true;
         }
-        // Thread native methods
+        // Thread native methods: rows of the method table (ADR-11276 §9.22).
         if class_name == "Thread"
-            && matches!(
-                method_name,
-                "finish"
-                    | "id"
-                    | "Numeric"
-                    | "name"
-                    | "is-initial-thread"
-                    | "app_lifetime"
-                    | "Str"
-                    | "gist"
-                    | "WHAT"
-            )
+            && (method_name == "WHAT" || owner_declares_row(&["Thread"], method_name))
         {
             return true;
         }
@@ -870,4 +830,15 @@ impl Interpreter {
         }
         attrs
     }
+}
+
+/// Whether one of `owners` has a row for `method` at any arity a native call
+/// carries (`perl` is `Mu.raku`'s spelling).
+// Cost: O(o), o = owners, three hash lookups each.
+fn owner_declares_row(owners: &[&str], method: &str) -> bool {
+    let method = Symbol::intern(if method == "perl" { "raku" } else { method });
+    owners.iter().any(|owner| {
+        let owner = Symbol::intern(owner);
+        (0..=2).any(|arity| crate::builtins::method_table::owner_row(owner, method, arity).is_some())
+    })
 }

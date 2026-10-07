@@ -7,6 +7,7 @@
 
 use super::MethodRow;
 
+mod concurrency_state;
 mod io_handle;
 mod io_path_content;
 mod io_path_ctx;
@@ -16,6 +17,7 @@ mod io_path_lexical;
 mod io_path_misc;
 mod io_path_stat;
 mod io_spec;
+mod io_special;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
@@ -27,4 +29,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     io_path_misc::ROWS,
     io_spec::ROWS,
     io_handle::ROWS,
+    io_special::ROWS,
+    concurrency_state::ROWS,
 ];
