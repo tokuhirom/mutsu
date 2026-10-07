@@ -77,7 +77,7 @@ impl Interpreter {
             return None;
         };
         let cn = class_name.resolve();
-        
+
         // `iterator` is either a method or a `has $.iterator` accessor.
         if !self.class_does_role(&cn, "Sequence")
             || !(self.has_user_method(&cn, "iterator") || attributes.contains_key("iterator"))
@@ -92,13 +92,18 @@ impl Interpreter {
         let items = if self.has_user_method(&cn, "iterator") {
             self.drive_user_iterator_items(target)
         } else {
-            let iterator = attributes.as_map().get("iterator").cloned().unwrap_or(Value::NIL);
-            self.drive_iterator_value_items(iterator).map(|(items, advanced)| {
-                // The cursor lives in the iterator: keep the moved one, so a
-                // second `.List` continues where the first stopped.
-                attributes.insert("iterator".to_string(), advanced);
-                items
-            })
+            let iterator = attributes
+                .as_map()
+                .get("iterator")
+                .cloned()
+                .unwrap_or(Value::NIL);
+            self.drive_iterator_value_items(iterator)
+                .map(|(items, advanced)| {
+                    // The cursor lives in the iterator: keep the moved one, so a
+                    // second `.List` continues where the first stopped.
+                    attributes.insert("iterator".to_string(), advanced);
+                    items
+                })
         };
         let items = match items {
             Ok(items) => items,

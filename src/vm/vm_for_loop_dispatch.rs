@@ -776,7 +776,8 @@ impl Interpreter {
         } else {
             self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?
         };
-        self.drive_iterator_value_items(iterator).map(|(items, _)| items)
+        self.drive_iterator_value_items(iterator)
+            .map(|(items, _)| items)
     }
 
     /// Pull every item out of `iterator` (a user `Iterator` instance) via

@@ -471,11 +471,8 @@ impl Interpreter {
         if !is_type_object
             && !self.has_user_method(&cn, "Stringy")
             && !self.has_user_method(&cn, "Str")
-            && let Some(r) = self.try_sequence_role_delegate(
-                &v,
-                crate::symbol::Symbol::intern("Str"),
-                &[],
-            )
+            && let Some(r) =
+                self.try_sequence_role_delegate(&v, crate::symbol::Symbol::intern("Str"), &[])
         {
             return Ok(Value::str(r?.to_string_value()));
         }
