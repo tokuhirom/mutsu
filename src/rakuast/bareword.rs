@@ -352,7 +352,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     match scoped_kind(name) {
         Some(DeclaredKind::Type) => return Some(simple_type_node(name)),
         Some(DeclaredKind::Term) => return Some(term_name(name)),
-        None => {}
+        Some(DeclaredKind::Routine) | None => {}
     }
     // A bare type name used as a term (`Int`, `X::AdHoc`) -> `Type::Simple`.
     if is_known_type_constraint(name) || core_type_names::contains(name) {
