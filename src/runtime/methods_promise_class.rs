@@ -61,10 +61,10 @@ impl Interpreter {
         scheduler: Value,
         promise: &SharedPromise,
         delay_key: &str,
-        delay: f64,
+        delay: Value,
     ) -> Result<Value, RuntimeError> {
         let keeper = Self::promise_keeper_block(promise);
-        let named = Value::pair(delay_key.to_string(), Value::num(delay));
+        let named = Value::pair(delay_key.to_string(), delay);
         self.call_method_with_values(scheduler, "cue", vec![keeper, named])
     }
 
@@ -96,11 +96,14 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         if let Some(cls) = self.promise_class_name(target) {
-            let secs = args
+            // The delay is handed to a custom scheduler's `cue(:in)` as given
+            // (an Int stays an Int, as in Rakudo): coercing it to a Num would
+            // make `Instant + $delay` on a virtual clock pick up f64 noise.
+            let delay_arg = args
                 .iter()
                 .find(|a| !matches!(a.view(), ValueView::Pair(..)))
-                .map(|v| v.to_f64())
-                .unwrap_or(0.0);
+                .cloned();
+            let secs = delay_arg.as_ref().map(|v| v.to_f64()).unwrap_or(0.0);
             let promise =
                 self.new_bound_promise(Symbol::intern(&cls), Self::named_value(args, "scheduler"));
             // mutsu resolves this promise itself (the timer keeps it), so it
@@ -108,7 +111,12 @@ impl Interpreter {
             promise.mark_vowed();
             let ret = Value::promise(promise.clone());
             if let Some(scheduler) = promise.scheduler() {
-                if let Err(e) = self.cue_promise_on_scheduler(scheduler, &promise, "in", secs) {
+                if let Err(e) = self.cue_promise_on_scheduler(
+                    scheduler,
+                    &promise,
+                    "in",
+                    delay_arg.unwrap_or_else(|| Value::num(secs)),
+                ) {
                     return Some(Err(e));
                 }
                 return Some(Ok(ret));
@@ -163,7 +171,8 @@ impl Interpreter {
                 // Rakudo's `Promise.at` cues with `:in($at - now)`, not `:at`,
                 // so a virtual-time scheduler measures the delay from its own
                 // clock. Match that.
-                if let Err(e) = self.cue_promise_on_scheduler(scheduler, &promise, "in", delay) {
+                if let Err(e) = self.cue_promise_on_scheduler(scheduler, &promise, "in", Value::num(delay))
+                {
                     return Some(Err(e));
                 }
                 return Some(Ok(ret));
