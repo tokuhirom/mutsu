@@ -484,7 +484,8 @@ impl Compiler {
     pub(super) fn container_eq_decont_name(&self, expr: &Expr) -> Option<String> {
         match expr.peel_parens() {
             Expr::BareWord(name) if self.local_map.contains_key(name.as_str()) => {
-                Some(name.clone())
+                // A leading backslash tells the VM this is a sigilless name.
+                Some(format!("\\{name}"))
             }
             e => Self::resolve_container_var_name(e),
         }

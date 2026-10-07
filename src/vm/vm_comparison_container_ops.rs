@@ -134,12 +134,32 @@ impl Interpreter {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
         let name = Self::const_str(code, name_idx);
-        let result = if self.name_denotes_scalar_container(name) {
+        let denotes_container = match name.strip_prefix('\\') {
+            Some(sigilless) => self.sigilless_denotes_scalar_container(sigilless),
+            None => self.name_denotes_scalar_container(name),
+        };
+        let result = if denotes_container {
             false
         } else {
             crate::runtime::values_identical(&left, &right)
         };
         self.stack.push(Value::truth(result));
+    }
+
+    /// A sigilless name (`\val`) owns no Scalar of its own: it is the value
+    /// it was bound to, or the caller's container when a raw parameter
+    /// aliased a `$` variable (the binder records that variable's name, and
+    /// the name holds the shared cell) -- the same facts `.VAR` reflects.
+    /// The compiler marks such a name with a leading backslash, because a
+    /// `$x` and a `\x` are both spelled `x` once the sigil is dropped.
+    fn sigilless_denotes_scalar_container(&self, name: &str) -> bool {
+        self.env()
+            .get(crate::meta_ns::MetaNs::VarSourceName.str_key_for_str(name))
+            .is_some()
+            || self
+                .env()
+                .get(name)
+                .is_some_and(|v| matches!(v.view(), ValueView::ContainerRef(_)))
     }
 
     /// Whether the variable `name` denotes a **Scalar container** — the thing
@@ -166,20 +186,6 @@ impl Interpreter {
         let root = self.resolve_alias_root(name);
         if root != name {
             return self.name_denotes_scalar_container(&root);
-        }
-        // A sigilless name owns no Scalar of its own: it is the value it was
-        // bound to, or the caller's container when a raw parameter aliased
-        // a `$` variable (the binder records that variable's name, and the
-        // name holds the shared cell) -- the same facts `.VAR` reflects.
-        if !name.starts_with('$') {
-            return self
-                .env()
-                .get(crate::meta_ns::MetaNs::VarSourceName.str_key_for_str(name))
-                .is_some()
-                || self
-                    .env()
-                    .get(name)
-                    .is_some_and(|v| matches!(v.view(), ValueView::ContainerRef(_)));
         }
         // `my $i := 42` (recorded readonly-immutable by the parser) and
         // `my $o := C.new` (recorded by the store) both bind straight to a
