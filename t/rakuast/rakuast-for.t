@@ -20,9 +20,10 @@ is Q[for 1..3 { $_ }].AST.gist, q:to/END/.chomp, 'for -> Statement::For with top
           right => RakuAST::IntLiteral.new(3)
         ),
         body   => RakuAST::Block.new(
-          implicit-topic => True,
-          required-topic => 1,
-          body           => RakuAST::Blockoid.new(
+          implicit-topic     => True,
+          required-topic     => True,
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::Var::Lexical.new("\$_")
@@ -37,8 +38,9 @@ is Q[for 1..3 { $_ }].AST.gist, q:to/END/.chomp, 'for -> Statement::For with top
 # --- the topic marking is present even when the body ignores $_ -------------
 is Q[for 1..3 { 5 }].AST.gist.contains(q:to/FRAG/.chomp), True, 'implicit-topic marked regardless of $_ usage';
         body   => RakuAST::Block.new(
-          implicit-topic => True,
-          required-topic => 1,
+          implicit-topic     => True,
+          required-topic     => True,
+          may-have-signature => True,
     FRAG
 
 # --- for over a declared array ----------------------------------------------

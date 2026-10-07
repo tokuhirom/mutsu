@@ -499,8 +499,8 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
 }
 
-/// The label of a loop node: the name in its `labels => (Label(name => "…"),)`
-/// field, which the converter writes first. An unlabelled loop has none.
+/// The label of a loop node: the name in its `labels => (Label("…"),)` field,
+/// which the converter writes first. An unlabelled loop has none.
 // Cost: O(l), l = labels of the node (one in practice).
 fn node_label(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
     let Some(field) = node.fields.iter().find(|f| f.name == Some("labels")) else {
@@ -510,7 +510,9 @@ fn node_label(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
         return Err(unsupported(node));
     };
     match items.first().and_then(rakuast_node_of) {
-        Some(label) if label.class == RakuAstClass::Label => leaf_str(label, "name").map(Some),
+        Some(label) if label.class == RakuAstClass::Label => {
+            Ok(Some(positional_leaf(label)?.to_string_value()))
+        }
         Some(_) => Err(unsupported(node)),
         None => Ok(None),
     }

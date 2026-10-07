@@ -82,8 +82,8 @@ is Q[CATCH { default { 1 } }].AST.gist, q:to/END/.chomp, 'CATCH -> Statement::Ca
       RakuAST::Statement::Catch.new(
         body => RakuAST::Block.new(
           implicit-topic => True,
-          required-topic => 1,
-          exception      => 1,
+          required-topic => True,
+          exception      => True,
           body           => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Default.new(
@@ -114,7 +114,7 @@ is Q[subset P1 of Int where * > 0].AST.gist, q:to/END/.chomp, 'subset -> Type::S
         expression => RakuAST::Type::Subset.new(
           name   => RakuAST::Name.from-identifier("P1"),
           where  => RakuAST::ApplyInfix.new(
-            left  => RakuAST::WhateverCode::Argument.new,
+            left  => RakuAST::Term::Whatever.new,
             infix => RakuAST::Infix.new(">"),
             right => RakuAST::IntLiteral.new(0)
           ),
@@ -140,7 +140,7 @@ is Q[subset P1a where * > 0].AST.gist, q:to/END/.chomp, 'an implied base renders
         expression => RakuAST::Type::Subset.new(
           name  => RakuAST::Name.from-identifier("P1a"),
           where => RakuAST::ApplyInfix.new(
-            left  => RakuAST::WhateverCode::Argument.new,
+            left  => RakuAST::Term::Whatever.new,
             infix => RakuAST::Infix.new(">"),
             right => RakuAST::IntLiteral.new(0)
           )

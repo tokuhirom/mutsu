@@ -12,6 +12,16 @@ use super::{Constructor, RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstN
 use crate::value::{Value, ValueView};
 
 pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
+    // rakudo 2026.09 prints a priming `*` (its `WhateverCode::Argument`, still
+    // the node's `.^name`) as `RakuAST::Term::Whatever.new`, exactly like a
+    // `*` value.
+    if node.class == RakuAstClass::WhateverCodeArgument {
+        let shown = RakuAstNode {
+            class: RakuAstClass::TermWhatever,
+            fields: node.fields.clone(),
+        };
+        return render_node(&shown, indent);
+    }
     if node.class == RakuAstClass::VarDeclarationSimple
         && let Some(shown) = super::attribute::without_implicit_traits(node)
     {

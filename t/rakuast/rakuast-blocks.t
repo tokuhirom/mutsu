@@ -13,7 +13,8 @@ is Q[{ 42 }].AST.gist, q:to/END/.chomp, 'bare block -> Block(body => Blockoid)';
     RakuAST::StatementList.new(
       RakuAST::Statement::Expression.new(
         expression => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::IntLiteral.new(42)
@@ -109,7 +110,8 @@ is Q[{ my $x = 1; $x }].AST.gist, q:to/END/.chomp, 'block body is a multi-statem
     RakuAST::StatementList.new(
       RakuAST::Statement::Expression.new(
         expression => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::VarDeclaration::Simple.new(

@@ -4299,15 +4299,16 @@ fn quoted_regex_node(tree: &RegexTree) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
-/// The leading `labels => (Label(name => "..."),)` field for a labelled loop,
-/// or an empty vec when unlabelled. raku always renders labels first.
+/// The leading `labels => (Label("..."),)` field for a labelled loop, or an
+/// empty vec when unlabelled. raku always renders labels first, and a `Label`
+/// holds its name as a positional (`Label.new("L")`, measured on 2026.09).
 fn label_fields(label: &Option<String>) -> Vec<RakuAstField> {
     match label {
         None => Vec::new(),
         Some(name) => {
             let label_node = RakuAstNode {
                 class: RakuAstClass::Label,
-                fields: vec![leaf_field(Some("name"), Value::str(name.clone()))],
+                fields: vec![leaf_field(None, Value::str(name.clone()))],
             };
             vec![RakuAstField {
                 name: Some("labels"),

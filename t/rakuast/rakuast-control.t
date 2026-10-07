@@ -19,7 +19,8 @@ is Q[if 1 { 2 }].AST.gist, q:to/END/.chomp, 'if -> Statement::If(condition, then
       RakuAST::Statement::If.new(
         condition => RakuAST::IntLiteral.new(1),
         then      => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::IntLiteral.new(2)
@@ -37,7 +38,8 @@ is Q[if 1 { 2 } else { 3 }].AST.gist, q:to/END/.chomp, 'if/else -> Statement::If
       RakuAST::Statement::If.new(
         condition => RakuAST::IntLiteral.new(1),
         then      => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::IntLiteral.new(2)
@@ -46,7 +48,8 @@ is Q[if 1 { 2 } else { 3 }].AST.gist, q:to/END/.chomp, 'if/else -> Statement::If
           )
         ),
         else      => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::IntLiteral.new(3)
@@ -64,7 +67,8 @@ is Q[while 1 { 2 }].AST.gist, q:to/END/.chomp, 'while -> Statement::Loop::While(
       RakuAST::Statement::Loop::While.new(
         condition => RakuAST::IntLiteral.new(1),
         body      => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::IntLiteral.new(2)

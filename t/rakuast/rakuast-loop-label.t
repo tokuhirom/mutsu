@@ -17,13 +17,12 @@ is Q[LABEL: while 1 { 2 }].AST.gist, q:to/END/.chomp, 'labelled while -> labels 
     RakuAST::StatementList.new(
       RakuAST::Statement::Loop::While.new(
         labels    => (
-          RakuAST::Label.new(
-            name => "LABEL"
-          ),
+          RakuAST::Label.new("LABEL"),
         ),
         condition => RakuAST::IntLiteral.new(1),
         body      => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::IntLiteral.new(2)

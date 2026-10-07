@@ -15,14 +15,16 @@ is Q[given 1 { when 2 { 3 } }].AST.gist, q:to/END/.chomp, 'given/when -> Given(s
       RakuAST::Statement::Given.new(
         source => RakuAST::IntLiteral.new(1),
         body   => RakuAST::Block.new(
-          implicit-topic => True,
-          required-topic => 1,
-          body           => RakuAST::Blockoid.new(
+          implicit-topic     => True,
+          required-topic     => True,
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::When.new(
                 condition => RakuAST::IntLiteral.new(2),
                 body      => RakuAST::Block.new(
-                  body => RakuAST::Blockoid.new(
+                  may-have-signature => True,
+                  body               => RakuAST::Blockoid.new(
                     RakuAST::StatementList.new(
                       RakuAST::Statement::Expression.new(
                         expression => RakuAST::IntLiteral.new(3)
@@ -39,7 +41,7 @@ is Q[given 1 { when 2 { 3 } }].AST.gist, q:to/END/.chomp, 'given/when -> Given(s
     END
 
 # --- given topic Block is topic-marked --------------------------------------
-is Q[given 1 { when 2 { 3 } }].AST.gist.contains('implicit-topic => True'), True,
+is Q[given 1 { when 2 { 3 } }].AST.gist.contains('implicit-topic     => True'), True,
     'given body is a topic-taking Block';
 
 # --- default clause ---------------------------------------------------------

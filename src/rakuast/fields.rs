@@ -404,6 +404,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         FunctionInfix => "function",
         Infix | Prefix | Feed | FlipFlop => "operator",
         VarLexical | VarDynamic => "name",
+        Label => "name",
         NamePartSimple => "name",
         NamePartExpression => "expr",
         TermName | TermNamed | ParameterTargetTerm => "name",

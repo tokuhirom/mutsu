@@ -60,7 +60,8 @@ is Q[repeat { 1 } while 2].AST.gist, q:to/END/.chomp, 'repeat/while -> Loop::Rep
     RakuAST::StatementList.new(
       RakuAST::Statement::Loop::RepeatWhile.new(
         body      => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::IntLiteral.new(1)
