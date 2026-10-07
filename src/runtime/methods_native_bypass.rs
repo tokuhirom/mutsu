@@ -84,78 +84,20 @@ impl Interpreter {
         how_args
     }
 
-    /// Check if a method name is a ClassHOW method.
+    /// Check if a method name is a ClassHOW method: one of the `Metamodel::*HOW`
+    /// rows (ADR-11276 slice 3G), or a metamethod of `EnumHOW` /
+    /// `DefiniteHOW`, whose own dispatchers answer before the rows.
+    ///
+    /// `elems` is listed even though it is also an ordinary value method: on a
+    /// HOW *instance* the two are distinct, and without it `C.^elems` fell
+    /// through to the generic `.elems` handler, which has no implementation
+    /// for a HOW and recursed until the stack overflowed.
+    // Cost: O(1), a bit-match on the name plus three hash lookups per HOW owner.
     pub(crate) fn is_classhow_method(method: &str) -> bool {
         matches!(
             method,
-            "can"
-                | "does"
-                | "declares_method"
-                | "isa"
-                | "lookup"
-                | "find_method"
-                | "add_attribute"
-                | "add_method"
-                | "add_multi_method"
-                | "add_role"
-                | "add_fallback"
-                | "set_body_block"
-                | "add_parent"
-                | "compose"
-                | "mixin"
-                | "archetypes"
-                | "nominalize"
-                | "refinee"
-                | "refinement"
-                | "mixin_base"
-                | "name"
-                | "shortname"
-                | "array_type"
-                | "set_array_type"
-                | "set_name"
-                | "ver"
-                | "auth"
-                | "api"
-                // `Metamodel::Versioning`'s write side, and
-                // `Metamodel::Documenting`/`Metamodel::Trusting`.
-                | "set_ver"
-                | "set_auth"
-                | "set_api"
-                | "set_why"
-                // `Metamodel::AttributeContainer`'s `is rw` flag.
-                | "rw"
-                | "set_rw"
-                // `$type.HOW.WHY` reads back what `.^set_why` attached to the
-                // METACLASS. Routed here so it does not fall through to the
-                // ordinary `.WHY` declarator-comment lookup, which would only
-                // ever see the `Perl6::Metamodel::ClassHOW` instance itself.
-                | "WHY"
-                | "trusts"
-                // `Metamodel::TypePretense`, on the role metaclasses only.
-                | "pretending_to_be"
-                | "mro"
-                | "mro_unhidden"
-                // `Metamodel::DefiniteHOW`-only (ADR-0069). Listed here so the
-                // dispatcher is reached at all; the arm itself throws
-                // X::Method::NotFound for an unconstrained type, matching
-                // Rakudo, where neither method exists on `ClassHOW`.
-                | "base_type"
+            "base_type"
                 | "definite"
-                | "methods"
-                | "method_names"
-                | "attributes"
-                | "attribute_table"
-                | "get_attribute_for_usage"
-                | "parents"
-                | "roles"
-                | "candidates"
-                | "concretization"
-                | "curried_role"
-                // EnumHOW introspection. `elems` is listed here even though it
-                // is also an ordinary value method: on a HOW *instance* the two
-                // are distinct, and without this entry `C.^elems` fell through
-                // to the generic `.elems` handler, which has no implementation
-                // for a HOW and recursed until the stack overflowed.
                 | "enum_value_list"
                 | "enum_values"
                 | "enum_from_value"
@@ -164,18 +106,7 @@ impl Interpreter {
                 | "set_export_callback"
                 | "is_composed"
                 | "elems"
-                | "coerce"
-                | "parameterize"
-                | "pun"
-                | "language-revision"
-                | "method_table"
-                | "private_method_table"
-                | "private_methods"
-                | "submethod_table"
-                | "roles_to_compose"
-                | "nativesize"
-                | "unsigned"
-        )
+        ) || crate::builtins::method_table::mop_declares(method)
     }
 
     /// Whether a user method on a bare type object is applicable to this call.

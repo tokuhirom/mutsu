@@ -104,6 +104,25 @@ pub(crate) fn invoke_owner(
     call(row, Some(interp), &target, &positional, Named::new(&named)).map(|(result, _)| result)
 }
 
+/// [`invoke_owner`] for a metaobject call (ADR-11276 slice 3G): `args` is the
+/// type object followed by the call's own arguments, every one positional. A
+/// metamethod reads its flags itself (`.^methods(:all)`), so no argument is
+/// split off as named and the row is found by the full count. The target is
+/// `args[0]`.
+// Cost: O(o) to find the row, o = owners, plus the handler's own cost.
+pub(crate) fn invoke_owner_raw(
+    interp: &mut Interpreter,
+    owners: &[&str],
+    method: &str,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    let method = Symbol::intern(method);
+    let id = owners
+        .iter()
+        .find_map(|owner| super::owner_row(Symbol::intern(owner), method, args.len()))?;
+    call(row(id), Some(interp), args.first()?, args, Named::NONE).map(|(result, _)| result)
+}
+
 /// Answer a receiver-mutating method from its row, or `None` to take the
 /// cascades. The one entry a [`Handler::Mut`] row has: the caller names the
 /// receiver's [`ReceiverPlace`], and the row is found by the owner chain of
