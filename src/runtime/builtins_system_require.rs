@@ -554,11 +554,9 @@ impl Interpreter {
                 // reached as `Foo::MAIN(...)`; it can never become the
                 // program's MAIN, so only package-less / `GLOBAL::` keys leak.
                 let head = ks.split('/').next().unwrap_or(ks);
-                if head
-                    .strip_prefix("GLOBAL::")
-                    .unwrap_or(head)
-                    .contains("::")
-                {
+                if crate::qualified::is_qualified_str(
+                    head.strip_prefix("GLOBAL::").unwrap_or(head),
+                ) {
                     return false;
                 }
                 let after_pkg = crate::qualified::last_segment(**k).as_str();
