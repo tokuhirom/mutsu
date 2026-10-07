@@ -467,7 +467,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
         }
         Stmt::VarDecl { .. } => var_decl_statement(var_decl_parts(stmt)?, false),
         // A bare `{ ... }` block at statement level -> Statement::Expression(Block).
-        Stmt::Block(body) => Ok(Some(statement_expression(block_node(body)?))),
+        Stmt::Block(body) => Ok(Some(statement_expression(signature_block_node(body)?))),
         // `BEGIN { … }` / `INIT { … }` / `LEAVE { … }` / … -> a
         // `StatementPrefix::Phaser::<Kind>` wrapping the block positionally.
         // raku has one class per kind, which mutsu's single `PhaserKind` maps
@@ -563,7 +563,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     class: RakuAstClass::StatementUnless,
                     fields: vec![
                         node_field(Some("condition"), convert_expr(written_cond)?),
-                        node_field(Some("body"), block_node(then_branch)?),
+                        node_field(Some("body"), signature_block_node(then_branch)?),
                     ],
                 }));
             }
@@ -597,7 +597,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     cond
                 })?,
             ));
-            fields.push(node_field(Some("body"), block_node(body)?));
+            fields.push(node_field(Some("body"), signature_block_node(body)?));
             Ok(Some(RakuAstNode {
                 class: if *is_until {
                     RakuAstClass::StatementLoopUntil
@@ -626,7 +626,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     .as_ref()
                     .ok_or_else(|| unsupported("repeat loop without condition"))?;
                 let mut fields = label_fields(label);
-                fields.push(node_field(Some("body"), block_node(body)?));
+                fields.push(node_field(Some("body"), signature_block_node(body)?));
                 fields.push(node_field(
                     Some("condition"),
                     convert_expr(if *is_until {
@@ -820,7 +820,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             class: RakuAstClass::StatementWhen,
             fields: vec![
                 node_field(Some("condition"), convert_expr(cond)?),
-                node_field(Some("body"), block_node(body)?),
+                node_field(Some("body"), signature_block_node(body)?),
             ],
         })),
         // `default { ... }` -> Statement::Default(body => plain Block).
@@ -2436,7 +2436,7 @@ pub(super) fn subscript_dims_node(
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyPostfix,
         fields: vec![
-            node_field(Some("operand"), convert_expr(target)?),
+            node_field(Some("operand"), postfix_operand(target)?),
             node_field(Some("postfix"), index_node),
         ],
     })
@@ -2616,14 +2616,20 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // Calling a term `$f(1, 2)` -> ApplyPostfix(operand, Call::Term(args)).
         Expr::CallOn { target, args } => {
-            let call_term = RakuAstNode {
+            // raku omits `args` for an argument-less `$f()` / `&f()` / `$f.()`.
+            let mut call_term = RakuAstNode {
                 class: RakuAstClass::CallTerm,
-                fields: vec![node_field(Some("args"), arg_list(args)?)],
+                fields: Vec::new(),
             };
+            if !args.is_empty() {
+                call_term
+                    .fields
+                    .push(node_field(Some("args"), arg_list(args)?));
+            }
             Ok(RakuAstNode {
                 class: RakuAstClass::ApplyPostfix,
                 fields: vec![
-                    node_field(Some("operand"), convert_expr(target)?),
+                    node_field(Some("operand"), postfix_operand(target)?),
                     node_field(Some("postfix"), call_term),
                 ],
             })
@@ -2833,6 +2839,19 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // Only the on-demand lambda opens with a supply record.
             Some(crate::ast::SourceForm::SupplyBlock(_)) | None => Err(unsupported("source form")),
         },
+        // `()` -> `Circumfix::Parentheses(SemiList.new)`: no statement inside.
+        Expr::Grouped(inner) if matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty()) => {
+            Ok(RakuAstNode {
+                class: RakuAstClass::CircumfixParentheses,
+                fields: vec![node_field(
+                    None,
+                    RakuAstNode {
+                        class: RakuAstClass::SemiList,
+                        fields: Vec::new(),
+                    },
+                )],
+            })
+        }
         // `(EXPR)` -> `Circumfix::Parentheses(SemiList(Statement::Expression(...)))`.
         Expr::Grouped(inner) => {
             // The contents of `(...)` are a semilist of *statements*, so a
@@ -3133,7 +3152,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::PostfixOp { op, expr } => Ok(RakuAstNode {
             class: RakuAstClass::ApplyPostfix,
             fields: vec![
-                node_field(Some("operand"), convert_expr(expr)?),
+                node_field(Some("operand"), postfix_operand(expr)?),
                 node_field(Some("postfix"), postfix_node(op)),
             ],
         }),
@@ -3163,7 +3182,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Ok(RakuAstNode {
                 class: RakuAstClass::ApplyPostfix,
                 fields: vec![
-                    node_field(Some("operand"), convert_expr(target)?),
+                    node_field(Some("operand"), postfix_operand(target)?),
                     node_field(Some("postfix"), postfix),
                 ],
             })
@@ -3181,7 +3200,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         } => Ok(RakuAstNode {
             class: RakuAstClass::ApplyPostfix,
             fields: vec![
-                node_field(Some("operand"), convert_expr(target)?),
+                node_field(Some("operand"), postfix_operand(target)?),
                 node_field(
                     Some("postfix"),
                     call_quoted_method_expr(convert_expr(name_expr)?, args)?,
@@ -3219,7 +3238,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Ok(RakuAstNode {
                 class: RakuAstClass::ApplyPostfix,
                 fields: vec![
-                    node_field(Some("operand"), convert_expr(target)?),
+                    node_field(Some("operand"), postfix_operand(target)?),
                     node_field(Some("postfix"), hyper),
                 ],
             })
@@ -3403,7 +3422,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             ],
         }),
         // A bare `{ ... }` block in expression position.
-        Expr::Block(body) => block_node(body),
+        Expr::Block(body) => signature_block_node(body),
         Expr::AnonSub {
             body,
             is_rw,
@@ -3419,7 +3438,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     return Err(unsupported("`is raw` block"));
                 }
                 // A bare `{ ... }` block.
-                block_node(body)
+                signature_block_node(body)
             } else {
                 // An anonymous, parameter-less `sub { ... }`, with the `is rw`
                 // / `is raw` it was written with.
@@ -3483,7 +3502,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     || crate::regex_tree::is_array_slurpy_placeholder_block(expr)
                     || crate::regex_tree::is_hash_slurpy_placeholder_block(expr))
             {
-                return block_node(body);
+                return signature_block_node(body);
             }
             if declarator.is_routine() {
                 // `sub ($x) { }` / `method ($x) { }` — an anonymous *routine*,
@@ -3560,7 +3579,7 @@ fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // RakuAST counterpart, so unwrap it here rather than rendering the
         // wrapper. Measured against rakudo 2026.07.
         Expr::DoStmt(inner) => match inner.as_ref() {
-            Stmt::Block(body) => block_node(body),
+            Stmt::Block(body) => signature_block_node(body),
             _ => convert_expr(expr),
         },
         other => match super::match_vars::convert_interpolated(other) {
@@ -3810,7 +3829,7 @@ fn conditional_chain_fields(else_branch: &[Stmt]) -> Result<Vec<RakuAstField>, R
         // value, which raku records on the block itself.
         let block = match topic_given_body(tail) {
             Some(body) => topic_block_node(body)?,
-            None => block_node(tail)?,
+            None => signature_block_node(tail)?,
         };
         fields.push(node_field(Some("else"), block));
     }
@@ -3841,7 +3860,7 @@ fn clause_block_node(
     binding_var: &Option<String>,
 ) -> Result<RakuAstNode, RuntimeError> {
     match binding_var {
-        None => block_node(then_branch),
+        None => signature_block_node(then_branch),
         Some(name) if is_plain_scalar_name(name) => {
             pointy_block(&[super::lower::positional_param(name)], then_branch, None)
         }
@@ -3872,12 +3891,51 @@ pub(super) fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
-/// A bare `{ ... }` block -> `Block(body => Blockoid)`.
+/// The operand of an `ApplyPostfix` (`(1 + 2).abs`, `($x)[0]`, `($x)++`): raku
+/// drops ONE level of the parentheses around it, so `(1, 2).elems` has the list
+/// itself as its operand and `((1, 2)).elems` keeps the inner parentheses. The
+/// empty `().elems` is the exception, which keeps its `Circumfix::Parentheses`
+/// (measured on 2026.09).
+// Cost: O(n), n = size of the operand.
+pub(super) fn postfix_operand(operand: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    match operand {
+        Expr::Grouped(inner) if !matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty()) => {
+            convert_expr(inner)
+        }
+        other => convert_expr(other),
+    }
+}
+
+/// A `Block` that raku builds without a signature of its own: the body of a
+/// `loop`, `try`, `do`, `gather`, `start`, a phaser, a class or a `default`
+/// (`Block(body => Blockoid)`).
 pub(super) fn block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::Block,
         fields: vec![node_field(Some("body"), blockoid(body)?)],
     })
+}
+
+/// A `Block` that may take a signature (placeholders, `@_`, `%_`): the bare
+/// `{ ... }` statement or term, a block argument, and the bodies of `if` /
+/// `unless` / `else`, `while` / `until`, `repeat` and `when`. raku marks it
+/// `may-have-signature => True` ahead of the body (measured on 2026.09).
+pub(super) fn signature_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class: RakuAstClass::Block,
+        fields: vec![
+            true_field("may-have-signature"),
+            node_field(Some("body"), blockoid(body)?),
+        ],
+    })
+}
+
+/// A named field holding `True`: raku's boolean block flags.
+pub(super) fn true_field(name: &'static str) -> RakuAstField {
+    RakuAstField {
+        name: Some(name),
+        value: RakuAstFieldValue::Node(Value::truth(true)),
+    }
 }
 
 /// Convert the source-level regex tree to the corresponding RakuAST regex
@@ -4310,41 +4368,34 @@ fn expr_is_nil(expr: &Expr) -> bool {
     matches!(expr, Expr::Literal(v) | Expr::LiteralSrc(v, _) if v.is_nil())
 }
 
-/// A topic-taking block body (the `{ ... }` of an implicit-topic `for`), which
-/// raku marks with `implicit-topic => True` and `required-topic => 1` before
-/// the `body` field.
+/// A topic-taking block body (the `{ ... }` of an implicit-topic `for`, a
+/// `given`, a `with`), which raku marks `implicit-topic`, `required-topic` and
+/// `may-have-signature`, all `True`, before the `body` field.
 fn topic_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::Block,
         fields: vec![
-            RakuAstField {
-                name: Some("implicit-topic"),
-                value: RakuAstFieldValue::Node(Value::truth(true)),
-            },
-            RakuAstField {
-                name: Some("required-topic"),
-                value: RakuAstFieldValue::Node(Value::int(1)),
-            },
+            true_field("implicit-topic"),
+            true_field("required-topic"),
+            true_field("may-have-signature"),
             node_field(Some("body"), blockoid(body)?),
         ],
     })
 }
 
-/// The body of a `CATCH` block: a topic block that also carries `exception => 1`.
+/// The body of a `CATCH` / `CONTROL` block: it topicalizes the exception, so
+/// raku marks it `implicit-topic`, `required-topic` and `exception`, all
+/// `True`, and gives it no `may-have-signature`.
 fn exception_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
-    let mut node = topic_block_node(body)?;
-    // raku renders the fields in declaration order, with `exception` after the
-    // two topic flags and before `body`.
-    let body_field = node
-        .fields
-        .pop()
-        .expect("topic_block_node pushes body last");
-    node.fields.push(RakuAstField {
-        name: Some("exception"),
-        value: RakuAstFieldValue::Node(Value::int(1)),
-    });
-    node.fields.push(body_field);
-    Ok(node)
+    Ok(RakuAstNode {
+        class: RakuAstClass::Block,
+        fields: vec![
+            true_field("implicit-topic"),
+            true_field("required-topic"),
+            true_field("exception"),
+            node_field(Some("body"), blockoid(body)?),
+        ],
+    })
 }
 
 /// `default-rw => True` on every parameter of a pointy block's signature, ahead
@@ -6019,7 +6070,10 @@ fn call_name(
         fields: vec![leaf_field(None, Value::str(name.to_string()))],
     };
     let arg_list = arg_list(args)?;
-    let class = if without_parentheses {
+    // A qualified name (`M::foo`) is a `Call::Name` however it is spelled:
+    // raku has the `WithoutParentheses` form for a plain identifier only
+    // (measured on 2026.09 for `M::foo`, `M::foo 1` and `M::foo.bar`).
+    let class = if without_parentheses && !crate::qualified::is_qualified_str(name) {
         RakuAstClass::CallNameWithoutParentheses
     } else {
         RakuAstClass::CallName
@@ -6306,7 +6360,7 @@ fn literal_hash_index_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyPostfix,
         fields: vec![
-            node_field(Some("operand"), convert_expr(target)?),
+            node_field(Some("operand"), postfix_operand(target)?),
             node_field(
                 Some("postfix"),
                 RakuAstNode {

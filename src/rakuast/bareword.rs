@@ -325,10 +325,16 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     None
 }
 
-/// An argument-less call by name (`M::foo`) -> `Call::Name`.
+/// An argument-less call by name: `Call::Name::WithoutParentheses` for a plain
+/// identifier (`foo`, never parenthesised here), `Call::Name` for a qualified
+/// one (`M::foo`).
 fn call_name(name: &str) -> RakuAstNode {
     RakuAstNode {
-        class: RakuAstClass::CallName,
+        class: if crate::qualified::is_qualified_str(name) {
+            RakuAstClass::CallName
+        } else {
+            RakuAstClass::CallNameWithoutParentheses
+        },
         fields: vec![node_field(Some("name"), name_from_identifier(name))],
     }
 }

@@ -6,7 +6,7 @@
 //! operator nodes, the atomicity being in the operator's name. The parser's
 //! spelling of each is `ast::atomic_op`'s.
 
-use super::convert::{convert_expr, leaf_field, node_field, plain_infix};
+use super::convert::{convert_expr, leaf_field, node_field, plain_infix, postfix_operand};
 use super::lower::{leaf_str, lower_expr, named_child, positional_leaf};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::atomic_op::{self, Atomic, Category};
@@ -72,7 +72,7 @@ pub(super) fn convert(name: &str, args: &[Expr]) -> Option<Result<RakuAstNode, R
         } => Ok(RakuAstNode {
             class: RakuAstClass::ApplyPostfix,
             fields: vec![
-                node_field(Some("operand"), convert_expr(operand)?),
+                node_field(Some("operand"), postfix_operand(operand)?),
                 node_field(Some("postfix"), postfix_op(operator)),
             ],
         }),

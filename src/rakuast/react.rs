@@ -15,11 +15,13 @@
 //! which lowers to the bare word the compiler reads as the completion unless
 //! a lexical `&done` shadows it.
 
-use super::convert::{block_node, blockoid, convert_expr, name_from_identifier, node_field};
+use super::convert::{
+    block_node, blockoid, convert_expr, name_from_identifier, node_field, true_field,
+};
 use super::lower::{lower_block, lower_expr, named_child, named_child_or_positional};
-use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
+use super::{RakuAstClass, RakuAstNode};
 use crate::ast::{Expr, ParamDef, RoutineDeclarator, Stmt};
-use crate::value::{RuntimeError, Value};
+use crate::value::RuntimeError;
 
 /// `react { body }`, or `react STATEMENT` (`blorst`), whose one statement the
 /// node holds directly.
@@ -81,16 +83,12 @@ pub(super) fn convert_whenever(
     // A bare block topicalizes the emitted value, which rakudo marks with
     // three flags ahead of the body.
     let block = if params.is_empty() && param_defs.is_empty() {
-        let flag = |name| RakuAstField {
-            name: Some(name),
-            value: RakuAstFieldValue::Node(Value::truth(true)),
-        };
         RakuAstNode {
             class: RakuAstClass::Block,
             fields: vec![
-                flag("implicit-topic"),
-                flag("required-topic"),
-                flag("may-have-signature"),
+                true_field("implicit-topic"),
+                true_field("required-topic"),
+                true_field("may-have-signature"),
                 node_field(Some("body"), blockoid(body)?),
             ],
         }
