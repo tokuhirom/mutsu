@@ -651,7 +651,11 @@ impl Interpreter {
                     })
                     .collect()
             } else {
-                Vec::new()
+                // A native inner value has no `MethodDef`s: the builtin on it
+                // is the one candidate behind the role's method.
+                vec![super::DeferralEntry::Native {
+                    name: lookup_name.to_string(),
+                }]
             };
             let pushed_base_dispatch = !base_remaining.is_empty() || native_base;
             if pushed_base_dispatch {

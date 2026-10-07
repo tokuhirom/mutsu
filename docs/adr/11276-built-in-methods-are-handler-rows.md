@@ -1775,3 +1775,15 @@ builtin otherwise. `native_any_base_next_candidate` keeps one job, resolving the
 (and is dropped from the three `NATIVE_BASE_*` orders). `MixinBase` is not moved: its frames are built by
 `dispatch_mixin_method_call` (`methods_mixin_dispatch.rs`), a second builder, and the storage bridges depend on
 `is_container_protocol_method` frames; both need one shared frame builder first.
+
+### 9.28 Slice 4, fourth step: the builtin behind a role mixed into a native value (2026-10-07)
+
+Branch `refactor/11276-4-frame-builder`. `dispatch_mixin_method_call` builds its own frame for a role method
+called on a `Mixin`; when the inner value is native (no `MethodDef`s) the frame now carries one
+`DeferralEntry::Native { name }`, and the entry's arm answers a `Mixin` invocant through
+`mixin_base_native_entry` (the former bridge body: `STORE`, the in-place hash `ASSIGN-KEY`/`DELETE-KEY`, the array
+mutators, then the builtin on the inner value). `MixinBase` is gone from the `NATIVE_BASE_*` orders and
+`native_mixin_base_next_candidate` is deleted. The `Native` arm now serves three receiver kinds (a core-type value,
+an `Instance`, a `Mixin`). Left: the three storage bridges (`is Array`/`is Hash`/baggy subclasses), `MuBase`,
+`GrammarParse`, `GrammarBuiltinRule` and `Metamodel`, whose receivers are user instances whose frames come from
+`build_method_dispatch_frame`'s override flags.
