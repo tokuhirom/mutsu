@@ -1494,12 +1494,12 @@ fn lower_enum(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     })
 }
 
-/// The text of a `<…>` word quote (`processors => <words val>` over one
+/// The processors and text of a word quote (`processors => <words val>` over one
 /// literal segment), lowered through the parser's own `angle_words_expr`;
 /// `None` for a string without processors. Any other processor list stays
 /// the boundary.
 // Cost: O(p), p = processors of the node.
-fn word_quote_content(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
+fn word_quote_content(node: &RakuAstNode) -> Result<Option<(bool, bool, String)>, RuntimeError> {
     if !node.fields.iter().any(|f| f.name == Some("processors")) {
         return Ok(None);
     }
@@ -1508,9 +1508,13 @@ fn word_quote_content(node: &RakuAstNode) -> Result<Option<String>, RuntimeError
     if processors.is_empty() {
         return Ok(None);
     }
-    if names.len() != processors.len() || names.as_slice() != ["words", "val"] {
-        return Err(unsupported(node));
-    }
+    let (quotewords, val) = match names.as_slice() {
+        ["words", "val"] => (false, true),
+        ["words"] => (false, false),
+        ["quotewords", "val"] => (true, true),
+        ["quotewords"] => (true, false),
+        _ => return Err(unsupported(node)),
+    };
     let [segment] = list_field(node, "segments")? else {
         return Err(unsupported(node));
     };
@@ -1521,7 +1525,7 @@ fn word_quote_content(node: &RakuAstNode) -> Result<Option<String>, RuntimeError
         return Err(unsupported(node));
     }
     match positional_leaf(segment)?.view() {
-        ValueView::Str(text) => Ok(Some(text.to_string())),
+        ValueView::Str(text) => Ok(Some((quotewords, val, text.to_string()))),
         _ => Err(unsupported(node)),
     }
 }
@@ -3790,8 +3794,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // terminator line, which the lowered string no longer has.
         RakuAstClass::QuotedString | RakuAstClass::Heredoc => {
             let segments = list_field(node, "segments")?;
-            if let Some(content) = word_quote_content(node)? {
-                return Ok(crate::parser::angle_words_expr(&content));
+            if let Some((quotewords, val, content)) = word_quote_content(node)? {
+                // `<…>` keeps its own lowering (a lone numeric word is a
+                // literal term there).
+                return Ok(if !quotewords && val {
+                    crate::parser::angle_words_expr(&content)
+                } else {
+                    crate::parser::word_quote_expr(quotewords, val, &content)
+                });
             }
             if segments.len() == 1
                 && let ValueView::RakuAst(seg) = segments[0].view()

@@ -55,6 +55,70 @@ pub(crate) fn make_word_result_expr(items: Vec<Expr>) -> Expr {
     }
 }
 
+/// Whether the text of a word quote is only plain words: nothing that
+/// interpolates, quotes, nests or escapes, so its RakuAST segment is the one
+/// literal text.
+// Cost: O(n), n = length of `text`.
+pub(crate) fn word_quote_text_is_plain(text: &str) -> bool {
+    !text.chars().any(|c| {
+        matches!(
+            c,
+            '$' | '@'
+                | '%'
+                | '&'
+                | '{'
+                | '}'
+                | '\\'
+                | '"'
+                | '\''
+                | '#'
+                | ':'
+                | '<'
+                | '>'
+                | '\u{ab}'
+                | '\u{bb}'
+                | '\u{201c}'
+                | '\u{201d}'
+                | '\u{201e}'
+                | '\u{2018}'
+                | '\u{2019}'
+                | '\u{201a}'
+                | '\u{ff62}'
+        )
+    })
+}
+
+/// The expression a word quote with the given processors and plain `text`
+/// evaluates to; the one place the RakuAST lowering and the quote parsers
+/// agree on what `words`, `quotewords` and `val` mean.
+// Cost: O(n), n = length of `text`.
+pub(crate) fn word_quote_expr(quotewords: bool, val: bool, text: &str) -> Expr {
+    use crate::parser::primary::container::{angle_word_value, angle_words_subscript_index_expr};
+    match (quotewords, val) {
+        (true, true) => angle_words_subscript_index_expr(text),
+        (true, false) => {
+            let flags = crate::parser::primary::quote_adverbs::QuoteFlags {
+                quotewords: true,
+                ..crate::parser::primary::quote_adverbs::QuoteFlags::q_single()
+            };
+            make_word_result_expr(
+                super::quotewords::parse_quotewords_items(text, &flags).unwrap_or_default(),
+            )
+        }
+        (false, _) => make_word_result_expr(
+            text.split_whitespace()
+                .map(|w| {
+                    if val {
+                        Expr::Literal(angle_word_value(w))
+                    } else {
+                        Expr::Literal(literal_str(w))
+                    }
+                })
+                .collect(),
+        ),
+    }
+}
+
 pub(crate) fn quotewords_literal_marker(s: String) -> Expr {
     Expr::Literal(Value::scalar(Value::pair(
         "__mutsu_qw_literal".to_string(),

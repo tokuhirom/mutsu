@@ -26,7 +26,8 @@ pub(crate) use angle_words::angle_words_subscript_index_expr;
 // it to parse the `<...>` word-list argument.
 pub(crate) use angle_words::{angle_list, angle_words_expr};
 pub(super) use angle_words::{
-    angle_term, double_angle_list, find_nested_angle_close_pub, french_quote_list,
+    angle_term, double_angle_list, double_angle_term, find_nested_angle_close_pub,
+    french_quote_list, french_quote_term,
 };
 pub(crate) use array::fail_goal_error_at;
 pub(super) use array::percent_hash_literal;

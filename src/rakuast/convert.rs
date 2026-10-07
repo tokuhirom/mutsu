@@ -2642,6 +2642,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Spelled(spelled) => match &spelled.spelling {
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::Heredoc { stop } => heredoc_node(&spelled.expr, stop),
+            Spelling::WordQuote {
+                quotewords,
+                val,
+                text,
+            } => Ok(word_quote_with(*quotewords, *val, text)),
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
@@ -6301,15 +6306,24 @@ fn allomorph_word(v: &Value) -> Option<&str> {
 
 /// `<word>` -> `QuotedString(processors => <words val>, segments => (word,))`.
 pub(super) fn word_quote(word: &str) -> RakuAstNode {
+    word_quote_with(false, true, word)
+}
+
+/// A word quote over `word` with the `words` / `quotewords` processor, then
+/// `val` when the words are allomorphs.
+pub(super) fn word_quote_with(quotewords: bool, val: bool, word: &str) -> RakuAstNode {
+    let mut processors = vec![Value::str(
+        if quotewords { "quotewords" } else { "words" }.to_string(),
+    )];
+    if val {
+        processors.push(Value::str("val".to_string()));
+    }
     RakuAstNode {
         class: RakuAstClass::QuotedString,
         fields: vec![
             RakuAstField {
                 name: Some("processors"),
-                value: RakuAstFieldValue::List(vec![
-                    Value::str("words".to_string()),
-                    Value::str("val".to_string()),
-                ]),
+                value: RakuAstFieldValue::List(processors),
             },
             RakuAstField {
                 name: Some("segments"),

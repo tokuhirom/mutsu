@@ -25,6 +25,15 @@ pub(crate) enum Spelling {
     /// `q:to/END/`: the terminator line as written, indentation and newline
     /// included (`    END\n`).
     Heredoc { stop: Box<str> },
+    /// `qw/a b/`, `qqww/a b/`, `«a b»`: the raw text and the processors the
+    /// quote applies to it (`words` or `quotewords`, then optionally `val`).
+    WordQuote {
+        /// `quotewords` (honours inner quotes) rather than `words`.
+        quotewords: bool,
+        /// Words become allomorphs (`val`).
+        val: bool,
+        text: Box<str>,
+    },
 }
 
 /// A term and the way it was spelled; see the module documentation.
