@@ -373,6 +373,11 @@ pub(crate) struct ModuleState {
     /// with routine-registry snapshots so a nested lexical declaration cannot
     /// consume an import belonging to its caller.
     pub(crate) imported_routine_aliases: std::sync::Arc<HashSet<Symbol>>,
+    /// The `Pkg::name` aliases the bodies of loaded modules imported into their
+    /// own package via a nested `use`. An import is lexical to the importing
+    /// compunit, so it is never a member of that package's stash: Rakudo's
+    /// `Foo::.keys` lists only what `Foo` declares.
+    pub(crate) module_body_import_aliases: std::sync::Arc<HashSet<Symbol>>,
     /// Export tags inherited by a local multi that extends an imported
     /// exported proto. Rakudo exports the whole family, including the local
     /// candidate, under those tags.
@@ -563,6 +568,7 @@ impl ModuleState {
             import_scope_stack: Vec::new(),
             use_attach_depth: None,
             imported_routine_aliases: Default::default(),
+            module_body_import_aliases: Default::default(),
             imported_exported_proto_tags: Default::default(),
             imported_env_aliases: HashMap::new(),
             strict_mode: false,
@@ -640,6 +646,7 @@ impl ModuleState {
             import_scope_stack: Vec::new(),
             use_attach_depth: None,
             imported_routine_aliases: self.imported_routine_aliases.clone(),
+            module_body_import_aliases: self.module_body_import_aliases.clone(),
             imported_exported_proto_tags: self.imported_exported_proto_tags.clone(),
             imported_env_aliases: self.imported_env_aliases.clone(),
             strict_mode: self.strict_mode,
