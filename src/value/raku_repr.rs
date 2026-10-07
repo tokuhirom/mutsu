@@ -395,10 +395,14 @@ pub(crate) fn rename_map_subclass_repr(
     storage: &Value,
     rendered: String,
 ) -> String {
-    let is_map = matches!(storage.view(), ValueView::Hash(h) if h.declared_type.as_deref() == Some("Map"));
+    let is_map =
+        matches!(storage.view(), ValueView::Hash(h) if h.declared_type.as_deref() == Some("Map"));
     match rendered.strip_prefix("Map.new") {
         Some(rest) if is_map => {
-            format!("{}.new{rest}", crate::value::user_facing_type_name(class_name))
+            format!(
+                "{}.new{rest}",
+                crate::value::user_facing_type_name(class_name)
+            )
         }
         _ => rendered,
     }
