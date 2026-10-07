@@ -167,11 +167,18 @@ fn build() -> Table {
         shapes: Vec::new(),
         type_shapes: Vec::new(),
     };
+    // Each row's name, interned once, and the rows of each owner in
+    // registration order: the shape pass below visits an owner per MRO entry
+    // per shape, so it must not rescan every row to find them.
+    let mut names: Vec<Symbol> = Vec::with_capacity(table.all.len());
+    let mut by_owner: FxHashMap<&'static str, Vec<usize>> = FxHashMap::default();
     for (idx, row) in table.all.iter().enumerate() {
+        let name = Symbol::intern(row.name);
+        names.push(name);
+        by_owner.entry(row.owner).or_default().push(idx);
         // A row past `u16::MAX` stays unreachable through the table.
         if let Ok(id) = u16::try_from(idx) {
             let owner = Symbol::intern(row.owner);
-            let name = Symbol::intern(row.name);
             for arity in row.arities() {
                 table
                     .owners
@@ -194,14 +201,16 @@ fn build() -> Table {
             if !shape.reaches(owner.as_str()) {
                 continue;
             }
-            for idx in 0..table.all.len() {
+            let Some(idxs) = by_owner.get(owner.as_str()) else {
+                continue;
+            };
+            for &idx in idxs {
                 let row = table.all[idx];
                 // A row past `u16::MAX` stays unreachable through the table.
-                if row.owner == owner.as_str()
-                    && !row.flags.contains(RowFlags::OWNER_ONLY)
+                if !row.flags.contains(RowFlags::OWNER_ONLY)
                     && let Ok(id) = u16::try_from(idx)
                 {
-                    table.register(shape, row, RowId(id));
+                    table.register(shape, row, names[idx], RowId(id));
                 }
             }
         }
@@ -212,8 +221,7 @@ fn build() -> Table {
 impl Table {
     /// Make `row` (at `id`) the answer for `shape`, unless a more derived row
     /// already is.
-    fn register(&mut self, shape: DispatchShape, row: &MethodRow, id: RowId) {
-        let name = Symbol::intern(row.name);
+    fn register(&mut self, shape: DispatchShape, row: &MethodRow, name: Symbol, id: RowId) {
         let slot = name.id() as usize;
         for arity in row.arities() {
             if shape.has_instances() {
