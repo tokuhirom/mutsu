@@ -199,3 +199,30 @@ Option A held again; no abort criterion was met.
   classes are at zero and no class grew; 94.6% of the statements are identical. The
   `MUTSU_RAKUAST=1` ratchet passes for all listed files (one file, `attribute-lazy-initialization.t`,
   timed out under 4-way parallel load on a debug build and passes alone).
+
+### 6.3 Bare-statement prefixes, expression level (2026-10-07, [#12199](https://github.com/tokuhirom/mutsu/issues/12199), slice S3)
+
+Option A held a third time; no abort criterion was met. S4 (statement level) is still to do.
+
+- **Carrier**: `Spelling::BareStatement` on `Expr::Spelled`, built by the parsers of `try STMT`,
+  `gather STMT`, `start STMT`, `once STMT`, `BEGIN`/`CHECK`/... `STMT` and `do STMT`
+  (`identifier_call.rs`, `term_literals.rs`) through `Expr::spelled`, around the same prefix
+  expression the braced form builds. The wrapped expression is unchanged, so only a
+  spelling-keeping parse sees the marker.
+- **Peel sites: none found by the ratchet.** One latent site exists and is left alone:
+  `lvalue_assign_to_expr` matches `Expr::Try` to move `(try LVALUE) = RHS` inside the prefix; under a
+  keeping parse a bare `try` is wrapped and takes the generic path. It affects only the tree shape
+  of that rare form, not execution.
+- **Read** (`src/rakuast/bare_prefix.rs`): the prefix is converted as usual, then its one-statement
+  `Block` child is replaced by the statement. `do STATEMENT` becomes `StatementPrefix::Do` over
+  any converted statement (the plain converter only accepted loops and conditionals, so the corpus
+  skipped files containing it).
+- **Write**: `lower` takes either a `Block` or a statement as the prefix's child
+  (`bare_prefix::lower_body`; `start` lowers any non-block child through `lower_stmt`, which also
+  made `start react { ... }` and `start until ... { ... }` round-trip). The constructors
+  `StatementPrefix::{Do,Try,Gather}.new` were missing from the class table and are added.
+- **Measured**: corpus (760 files, 11624 statements) 95.1% identical (94.6% before); the new
+  `bare-prefix` class is at zero. Two hunks of the old `statement-prefix` class remain and are not
+  spelling findings: `try X if C` (modifier scope) and `sink A, B` ([#12240](https://github.com/tokuhirom/mutsu/issues/12240)).
+  The `MUTSU_RAKUAST=1` ratchet failed on two files at first (`start react`/`start until`, fixed
+  above); the three timeouts left in a 4-way parallel debug run pass alone.

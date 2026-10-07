@@ -13,6 +13,7 @@
 mod anon_state;
 mod atomic_op;
 mod attribute;
+mod bare_prefix;
 mod bareword;
 mod capture_term;
 mod chain;
@@ -3152,6 +3153,9 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::StatementPrefix::Phaser::Begin", "new") => {
             RakuAstClass::StatementPrefixPhaserBegin
         }
+        ("RakuAST::StatementPrefix::Do", "new") => RakuAstClass::StatementPrefixDo,
+        ("RakuAST::StatementPrefix::Try", "new") => RakuAstClass::StatementPrefixTry,
+        ("RakuAST::StatementPrefix::Gather", "new") => RakuAstClass::StatementPrefixGather,
         ("RakuAST::StatementPrefix::Once", "new") => RakuAstClass::StatementPrefixOnce,
         ("RakuAST::StatementPrefix::Start", "new") => RakuAstClass::StatementPrefixStart,
         ("RakuAST::StatementPrefix::Quietly", "new") => RakuAstClass::StatementPrefixQuietly,

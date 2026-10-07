@@ -34,6 +34,11 @@ pub(crate) enum Spelling {
         val: bool,
         text: Box<str>,
     },
+    /// `gather say 1`, `try say 1`, `start say 1`, `once say 1`, `BEGIN say 1`:
+    /// a statement prefix written over a bare statement. The wrapped
+    /// expression is the same prefix over the one-statement block
+    /// `gather { say 1 }` makes; RakuAST keeps the statement itself.
+    BareStatement,
 }
 
 /// A term and the way it was spelled; see the module documentation.

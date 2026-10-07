@@ -2647,6 +2647,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 val,
                 text,
             } => Ok(word_quote_with(*quotewords, *val, text)),
+            Spelling::BareStatement => super::bare_prefix::bare_statement_node(&spelled.expr),
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
