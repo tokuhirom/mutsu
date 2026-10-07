@@ -166,6 +166,7 @@ impl IoHandleState {
         let new_pos = file
             .seek(seek_from)
             .map_err(|err| RuntimeError::new(format!("Failed to seek: {}", err)))?;
+        self.pending_words.clear();
         Ok(new_pos as i64)
     }
 
