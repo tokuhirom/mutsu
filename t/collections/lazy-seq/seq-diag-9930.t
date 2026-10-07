@@ -8,4 +8,4 @@ for <seq-array-context-reiterate seq-skip-consumed seq-consumption-matrix> -> $n
     my $out = $p.out.slurp(:close).lines.grep(*.starts-with('not ok')).join(' ; ');
     @report.push("$name rc={$p.exitcode} err=[$err] notok=[$out]");
 }
-skip-all @report.join(' ## ');
+plan :skip-all(@report.join(" ## "));
