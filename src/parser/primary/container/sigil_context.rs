@@ -33,7 +33,7 @@ pub(crate) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
                 args: vec![],
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             },
         ));
     }
@@ -147,7 +147,7 @@ pub(crate) fn itemized_brace_expr(input: &str) -> PResult<'_, Expr> {
                 args: vec![],
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: true,
             },
         ))
     } else {
@@ -182,7 +182,7 @@ pub(crate) fn itemized_bracket_expr(input: &str) -> PResult<'_, Expr> {
             args: vec![],
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: true,
         },
     ))
 }

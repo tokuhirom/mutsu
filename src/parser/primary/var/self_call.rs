@@ -38,7 +38,7 @@ pub(super) fn contextualized_self_call<'a>(
             args,
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         };
         (
             r,
@@ -48,7 +48,7 @@ pub(super) fn contextualized_self_call<'a>(
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             },
         )
     }))
@@ -116,7 +116,7 @@ pub(super) fn longname_self_call<'a>(
             args,
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         },
     )))
 }

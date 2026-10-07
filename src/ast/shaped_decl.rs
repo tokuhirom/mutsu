@@ -42,7 +42,7 @@ fn array_new(args: Vec<Expr>) -> Expr {
         args,
         modifier: None,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     }
 }
 

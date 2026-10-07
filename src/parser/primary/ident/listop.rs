@@ -374,7 +374,7 @@ pub(crate) fn try_parse_no_paren_invocant_colon_call<'a>(
             args,
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         }),
     ))
 }

@@ -535,7 +535,7 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
                 args: vec![Expr::Literal(crate::value::Value::int(1))],
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             }
         } else {
             seq
@@ -719,7 +719,7 @@ fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr>
             args: vec![Expr::Literal(crate::value::Value::int(1))],
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         }
     } else {
         seq

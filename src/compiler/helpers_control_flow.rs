@@ -378,7 +378,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 }),
                 else_expr: Box::new(source.clone()),
             }

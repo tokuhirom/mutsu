@@ -16,7 +16,7 @@ pub(super) fn staged_elems(array_bare: &str) -> Expr {
         args: Vec::new(),
         modifier: None,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     }
 }
 
@@ -29,7 +29,7 @@ pub(super) fn staged_exists(array_bare: &str, i: usize) -> Expr {
         args: vec![Expr::Literal(Value::int(i as i64))],
         modifier: None,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     }
 }
 

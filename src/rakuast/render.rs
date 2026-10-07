@@ -76,13 +76,17 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     // the multi-line form.
     let fields = rendered_fields(node);
     // Rakudo renders a char-class `Character`, a `Var::Dynamic`, a
-    // `Var::Attribute` and a regex back-reference on their own lines all the
-    // same.
+    // `Var::Attribute`, a placeholder and a regex back-reference on their own
+    // lines all the same.
     if !matches!(
         node.class,
         RakuAstClass::RegexCharClassEnumerationElementCharacter
             | RakuAstClass::VarDynamic
             | RakuAstClass::VarAttribute
+            | RakuAstClass::VarDeclarationPlaceholderPositional
+            | RakuAstClass::VarDeclarationPlaceholderNamed
+            | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
+            | RakuAstClass::VarDeclarationPlaceholderSlurpyHash
             | RakuAstClass::RegexBackReferenceNamed
             | RakuAstClass::RegexBackReferencePositional
     ) && fields

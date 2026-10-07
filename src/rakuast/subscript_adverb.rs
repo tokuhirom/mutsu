@@ -49,7 +49,7 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
                     .iter()
                     .map(colonpair)
                     .collect::<Result<Vec<_>, _>>()
-                    .and_then(|colonpairs| angle_subscript_node(target, index, colonpairs)),
+                    .and_then(|colonpairs| angle_subscript_node(target, index, None, colonpairs)),
             );
         }
         Expr::Index {

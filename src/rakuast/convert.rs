@@ -362,7 +362,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     args: call_args_as_exprs(&args[1..])?,
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 };
                 return Ok(Some(statement_expression(convert_expr(&method)?)));
             }
@@ -1704,7 +1704,7 @@ fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Ex
         args: method_args.clone(),
         modifier,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     };
     Some((call, value))
 }
@@ -2432,6 +2432,7 @@ pub(super) fn angle_key_text(index: &Expr) -> Option<String> {
 pub(super) fn angle_subscript_node(
     target: &Expr,
     index: &Expr,
+    assignee: Option<&Expr>,
     colonpairs: Vec<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let text = angle_key_text(index).ok_or_else(|| unsupported("angle subscript key"))?;
@@ -2444,6 +2445,11 @@ pub(super) fn angle_subscript_node(
             name: Some("colonpairs"),
             value: RakuAstFieldValue::List(colonpairs),
         });
+    }
+    if let Some(value) = assignee {
+        index_node
+            .fields
+            .push(node_field(Some("assignee"), convert_expr(value)?));
     }
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyPostfix,
@@ -3321,12 +3327,23 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             args,
             modifier,
             quoted,
-            on_topic,
+            sugar,
         } => {
+            // `lazy EXPR` / `hyper EXPR` / `race EXPR` and `$[1, 2]` / `${...}`:
+            // sugar for the call, with a node of its own.
+            if *sugar && args.is_empty() && modifier.is_none() {
+                if let Some(prefix) = super::prefix_call::convert_method(name.as_str(), target) {
+                    return prefix;
+                }
+                if name.as_str() == "item" && !matches!(&**target, Expr::Var(topic) if topic == "_")
+                {
+                    return super::contextualizer::convert_item_call(target);
+                }
+            }
             let postfix = method_call_postfix(name.as_str(), args, *modifier, *quoted)?;
             // `.say` / `.foo(1)`: a call on the topic written without an
             // invocant is `Term::TopicCall` over the bare call.
-            if *on_topic && matches!(&**target, Expr::Var(topic) if topic == "_") {
+            if *sugar && matches!(&**target, Expr::Var(topic) if topic == "_") {
                 return Ok(RakuAstNode {
                     class: RakuAstClass::TermTopicCall,
                     fields: vec![node_field(None, postfix)],
@@ -3425,6 +3442,17 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         } => super::meta_infix::convert(meta, op, left, right, expr),
         // An array-composer literal `[1, 2, 3]` ->
         // `Circumfix::ArrayComposer(SemiList(Statement::Expression(comma-list)))`.
+        // `[]`: a composer of an empty semilist, with no statement at all.
+        Expr::BracketArray(items, false) if items.is_empty() => Ok(RakuAstNode {
+            class: RakuAstClass::CircumfixArrayComposer,
+            fields: vec![node_field(
+                None,
+                RakuAstNode {
+                    class: RakuAstClass::SemiList,
+                    fields: Vec::new(),
+                },
+            )],
+        }),
         Expr::BracketArray(items, trailing_comma) => {
             // `[EXPR for LIST]`: the parser holds the modified statement as the
             // one element; rakudo has it as the composer's statement.
@@ -3477,7 +3505,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             index,
             is_positional: false,
             spelling: crate::ast::IndexSpelling::Angle,
-        } if angle_key_text(index).is_some() => angle_subscript_node(target, index, Vec::new()),
+        } if angle_key_text(index).is_some() => {
+            angle_subscript_node(target, index, None, Vec::new())
+        }
         Expr::Index {
             target,
             index,
@@ -3523,9 +3553,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }),
         // Measured on 2026.09: rakudo folds an assignment to `@a[…]` or
         // `%h<…>` into the postcircumfix as its `assignee`, but keeps an
-        // `Assignment` infix over a `%h{…}` subscript. mutsu does not tell
-        // `%h<…>` from `%h{…}` yet (#10654) and renders both as `HashIndex`,
-        // so an associative assignment takes the `HashIndex` form.
+        // `Assignment` infix over a `%h{…}` subscript.
         // `@a[i] := v` / `%h<k> := v`: an `IndexAssign` whose value is the
         // parser's bind marker, rendered as rakudo does -- a plain `:=` infix
         // over the subscript. A slice or multi-dimensional index
@@ -3536,18 +3564,23 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             index,
             value,
             is_positional,
+            spelling,
         } if index_bind_rhs(value).is_some() => {
             let rhs = index_bind_rhs(value).ok_or_else(|| unsupported("indexed bind"))?;
             if matches!(index.as_ref(), Expr::ArrayLiteral(_)) {
                 return Err(unsupported("slice or multi-dimensional bind"));
             }
+            let left = if *spelling == crate::ast::IndexSpelling::Angle
+                && angle_key_text(index).is_some()
+            {
+                angle_subscript_node(target, index, None, Vec::new())?
+            } else {
+                subscript_node(target, index, *is_positional, None, Vec::new())?
+            };
             Ok(RakuAstNode {
                 class: RakuAstClass::ApplyInfix,
                 fields: vec![
-                    node_field(
-                        Some("left"),
-                        subscript_node(target, index, *is_positional, None, Vec::new())?,
-                    ),
+                    node_field(Some("left"), left),
                     node_field(Some("infix"), plain_infix(":=")),
                     node_field(Some("right"), convert_expr(rhs)?),
                 ],
@@ -3558,12 +3591,24 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             index,
             value,
             is_positional: true,
+            ..
         } => subscript_node(target, index, true, Some(value), Vec::new()),
+        // `%h<k> = v`: the assignment folds into the literal hash index.
         Expr::IndexAssign {
             target,
             index,
             value,
             is_positional: false,
+            spelling: crate::ast::IndexSpelling::Angle,
+        } if angle_key_text(index).is_some() => {
+            angle_subscript_node(target, index, Some(value), Vec::new())
+        }
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+            is_positional: false,
+            ..
         } => Ok(RakuAstNode {
             class: RakuAstClass::ApplyInfix,
             fields: vec![
@@ -5354,6 +5399,11 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             );
         }
     }
+    // `sub f(Int)`: the parser names a parameter written as a bare type, which
+    // rakudo gives no target.
+    if pd.name == TYPE_ONLY_PARAM && !pd.is_invocant {
+        node.fields.retain(|field| field.name != Some("target"));
+    }
     if let Some(sub_params) = super::named_param::destructuring_sub_signature(pd) {
         node.fields.push(node_field(
             Some("sub-signature"),
@@ -5386,6 +5436,9 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
     }
     Ok(node)
 }
+
+/// The parser's name for a parameter written as a bare type (`sub f(Int)`).
+pub(super) const TYPE_ONLY_PARAM: &str = "__type_only__";
 
 /// The parser's names for an anonymous `$` / `@` / `%` parameter.
 pub(super) const ANONYMOUS_SCALAR_PARAM: &str = "__ANON_STATE__";
@@ -6237,10 +6290,7 @@ fn call_name(
     args: &[Expr],
     without_parentheses: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let name_node = RakuAstNode {
-        class: RakuAstClass::Name,
-        fields: vec![leaf_field(None, Value::str(name.to_string()))],
-    };
+    let name_node = name_from_identifier(name);
     let arg_list = arg_list(args)?;
     // A qualified name (`M::foo`) is a `Call::Name` however it is spelled:
     // raku has the `WithoutParentheses` form for a plain identifier only

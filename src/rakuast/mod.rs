@@ -389,6 +389,9 @@ pub enum RakuAstClass {
     StatementPrefixStart,
     StatementPrefixQuietly,
     StatementPrefixSink,
+    StatementPrefixLazy,
+    StatementPrefixHyper,
+    StatementPrefixRace,
     Mixin,
     VarAttribute,
     VarAttributePublic,
@@ -676,6 +679,9 @@ impl RakuAstClass {
             StatementPrefixStart => "RakuAST::StatementPrefix::Start",
             StatementPrefixQuietly => "RakuAST::StatementPrefix::Quietly",
             StatementPrefixSink => "RakuAST::StatementPrefix::Sink",
+            StatementPrefixLazy => "RakuAST::StatementPrefix::Lazy",
+            StatementPrefixHyper => "RakuAST::StatementPrefix::Hyper",
+            StatementPrefixRace => "RakuAST::StatementPrefix::Race",
             Mixin => "RakuAST::Mixin",
             VarAttribute => "RakuAST::Var::Attribute",
             VarAttributePublic => "RakuAST::Var::Attribute::Public",
@@ -971,7 +977,10 @@ impl RakuAstClass {
                 "RakuAST::Termish",
                 "RakuAST::Expression",
             ],
-            StatementPrefixSink => &[
+            StatementPrefixSink
+            | StatementPrefixLazy
+            | StatementPrefixHyper
+            | StatementPrefixRace => &[
                 "RakuAST::StatementPrefix::CallMethod",
                 "RakuAST::StatementPrefix",
                 "RakuAST::Term",
@@ -1509,6 +1518,9 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementPrefixStart,
     RakuAstClass::StatementPrefixQuietly,
     RakuAstClass::StatementPrefixSink,
+    RakuAstClass::StatementPrefixLazy,
+    RakuAstClass::StatementPrefixHyper,
+    RakuAstClass::StatementPrefixRace,
     RakuAstClass::Mixin,
     RakuAstClass::VarAttribute,
     RakuAstClass::VarAttributePublic,
@@ -3114,6 +3126,9 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::StatementPrefix::Start", "new") => RakuAstClass::StatementPrefixStart,
         ("RakuAST::StatementPrefix::Quietly", "new") => RakuAstClass::StatementPrefixQuietly,
         ("RakuAST::StatementPrefix::Sink", "new") => RakuAstClass::StatementPrefixSink,
+        ("RakuAST::StatementPrefix::Lazy", "new") => RakuAstClass::StatementPrefixLazy,
+        ("RakuAST::StatementPrefix::Hyper", "new") => RakuAstClass::StatementPrefixHyper,
+        ("RakuAST::StatementPrefix::Race", "new") => RakuAstClass::StatementPrefixRace,
         ("RakuAST::Mixin", "new") => RakuAstClass::Mixin,
         ("RakuAST::Var::Attribute", "new") => RakuAstClass::VarAttribute,
         ("RakuAST::StatementPrefix::React", "new") => RakuAstClass::StatementPrefixReact,

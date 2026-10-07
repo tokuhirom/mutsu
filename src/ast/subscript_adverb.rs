@@ -62,7 +62,7 @@ pub(crate) fn delete_key(target: Expr) -> Expr {
         args: vec![],
         modifier: None,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     }
 }
 

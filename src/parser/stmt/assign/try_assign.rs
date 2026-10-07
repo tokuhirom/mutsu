@@ -310,6 +310,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     Box::new(target),
                     Box::new(index_expr),
                     is_positional,
+                    Default::default(),
                     rhs,
                 ),
             ));
@@ -357,6 +358,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 index: Box::new(index_expr),
                 value: Box::new(rhs),
                 is_positional,
+                spelling: Default::default(),
             };
             return crate::parser::stmt::word_logical_split::wrap_trailing_word_logical_expr(
                 rest, assigned,
@@ -401,7 +403,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     args,
                     modifier: None,
                     quoted: true,
-                    on_topic: false,
+                    sugar: false,
                 },
                 QuotedMethodName::Dynamic(name_expr) => Expr::DynamicMethodCall {
                     target: Box::new(method_target),
@@ -473,7 +475,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             args,
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         };
         // Leave another `.=` for the assignment-expression parser. If the
         // postfix loop sees it here, it treats the first method result as the

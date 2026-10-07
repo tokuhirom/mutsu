@@ -1,5 +1,5 @@
 //! The source form the parser records for constructs the compiler treats
-//! alike (`Binary.form`, `MethodCall.on_topic`, `Index.spelling`): the RakuAST
+//! alike (`Binary.form`, `MethodCall.sugar`, `Index.spelling`): the RakuAST
 //! boundary renders the node raku has for each, so the form must survive the
 //! parse -- both the bare expression parser and the whole-program one, which
 //! runs the post-parse passes over the tree.
@@ -67,10 +67,10 @@ fn colonpairs_keep_their_form() {
 #[test]
 fn topic_calls_keep_their_form() {
     for (source, want) in [(".say", true), ("$_.say", false)] {
-        let Expr::MethodCall { on_topic, .. } = program_expr(source) else {
+        let Expr::MethodCall { sugar, .. } = program_expr(source) else {
             panic!("{source}: not a method call");
         };
-        assert_eq!(on_topic, want, "{source}");
+        assert_eq!(sugar, want, "{source}");
     }
 }
 

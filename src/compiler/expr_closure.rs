@@ -831,6 +831,7 @@ impl Compiler {
             index: source_index,
             value: source_value,
             is_positional: source_positional,
+            ..
         }) = args.first()
         else {
             return false;
@@ -1098,7 +1099,7 @@ impl Compiler {
                     ],
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 }],
                 listop: false,
             });
@@ -1125,7 +1126,7 @@ impl Compiler {
                     ],
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 }),
                 is_bind: false,
             };

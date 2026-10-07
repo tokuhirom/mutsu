@@ -60,7 +60,7 @@ impl Compiler {
                 args: args.clone(),
                 modifier: *modifier,
                 quoted: *quoted,
-                on_topic: false,
+                sugar: false,
             },
             Expr::DynamicMethodCall {
                 target,
@@ -150,6 +150,7 @@ impl Compiler {
                 index,
                 value,
                 is_positional,
+                ..
             } = left
         {
             // Apply the same bareword auto-quote the expression parser does
@@ -171,6 +172,7 @@ impl Compiler {
                 index: index.clone(),
                 value: Box::new(pair),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             });
             return;
         }
@@ -346,7 +348,7 @@ impl Compiler {
                             args: args.clone(),
                             modifier: *modifier,
                             quoted: *quoted,
-                            on_topic: false,
+                            sugar: false,
                         }
                     } else {
                         left.clone()
@@ -1089,6 +1091,7 @@ impl Compiler {
             index: Box::new(Expr::Var(idx_name)),
             value: Box::new(Expr::Var(val_name)),
             is_positional,
+            spelling: Default::default(),
         });
         self.code.emit(OpCode::Pop);
         let jump_end = self.code.emit(OpCode::Jump(0));

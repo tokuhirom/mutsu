@@ -223,13 +223,13 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 }),
                 name: *name,
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             self.compile_expr(&via_var);
             return;
@@ -651,7 +651,7 @@ impl Compiler {
             args: Vec::new(),
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         };
         self.compile_expr(&Expr::desugar_block(vec![
             Stmt::MarkBind,

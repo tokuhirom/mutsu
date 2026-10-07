@@ -466,7 +466,7 @@ impl Compiler {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             },
             type_constraint: None,
             is_state: false,
@@ -492,7 +492,7 @@ impl Compiler {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
         }
 
@@ -514,6 +514,7 @@ impl Compiler {
                 index: index.clone(),
                 value: Box::new(Expr::ArrayVar(tmp)),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             })],
             else_branch: Vec::new(),
             binding_var: None,
@@ -683,7 +684,7 @@ impl Compiler {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             }),
             right: Box::new(Expr::BareWord("Scalar".to_string())),
             form: Default::default(),
@@ -711,7 +712,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 }),
                 else_expr: Box::new(element),
             },
@@ -725,6 +726,7 @@ impl Compiler {
                 index: Box::new(idx_var),
                 value: Box::new(Expr::Var(tmp)),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             })],
             binding_var: None,
             is_statement_modifier: false,
@@ -2862,7 +2864,7 @@ impl Compiler {
                             args: Vec::new(),
                             modifier: None,
                             quoted: false,
-                            on_topic: false,
+                            sugar: false,
                         };
                     }
                     self.compile_stmt(&rewritten);
@@ -5011,6 +5013,7 @@ impl Compiler {
                         index: key.clone(),
                         value: val_expr.clone(),
                         is_positional,
+                        spelling: Default::default(),
                     });
                     self.compile_let_save_elem(
                         &target_expr,

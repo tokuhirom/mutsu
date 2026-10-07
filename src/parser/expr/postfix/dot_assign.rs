@@ -184,6 +184,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
             target: idx_target,
             index,
             is_positional,
+            spelling,
             ..
         } => {
             use std::sync::atomic::Ordering;
@@ -217,6 +218,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                     index: Box::new(tmp_idx_expr),
                     value: Box::new(assigned_value),
                     is_positional: *is_positional,
+                    spelling: *spelling,
                 }),
             ])
         }
@@ -274,6 +276,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 index,
                 value: Box::new(new_value),
                 is_positional,
+                spelling: Default::default(),
             }));
             // A rewrap of the node that came in: appending the writeback does
             // not change whether it was a block, so carry its origin over.
@@ -343,7 +346,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 args: Vec::new(),
                 modifier: None,
                 quoted,
-                on_topic: false,
+                sugar: false,
             };
             // `$cur.meth(margs)` — the mutating method applied to the current value.
             let meth_result = method_call_fn(cur_var.clone());
@@ -354,7 +357,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 args: vec![meth_result.clone()],
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             let then_expr =
                 Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(cur_var.clone())]);
@@ -372,7 +375,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 args: vec![Expr::Literal(Value::str("STORE".to_string()))],
                 modifier: Some('^'),
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             let ternary = Expr::Ternary {
                 cond: Box::new(can_store),
@@ -435,7 +438,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 args: vec![Expr::Literal(Value::str("STORE".to_string()))],
                 modifier: Some('^'),
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             let store_call = Expr::MethodCall {
                 target: Box::new(tmp_var.clone()),
@@ -443,7 +446,7 @@ fn expand_dot_assign(target: Expr, method_call_fn: &impl Fn(Expr) -> Expr) -> Ex
                 args: vec![meth_result.clone()],
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             let then_expr = Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(tmp_var)]);
             let ternary = Expr::Ternary {
@@ -519,7 +522,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
                     args: args.clone(),
                     modifier: None,
                     quoted: true,
-                    on_topic: false,
+                    sugar: false,
                 })
             }
             QuotedMethodName::Dynamic(name_expr) => {
@@ -641,7 +644,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
         args: args.clone(),
         modifier: None,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     });
     Ok((r_final, result))
 }

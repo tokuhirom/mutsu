@@ -45,12 +45,14 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(value),
             is_positional,
+            spelling,
         },
         Expr::MultiDimIndex {
             target,
@@ -83,6 +85,7 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
                     index: Box::new(args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL))),
                     value: Box::new(value),
                     is_positional: true,
+                    spelling: Default::default(),
                 };
             }
             // Match the expression-context lowering in `paren.rs` (NOT the
@@ -252,6 +255,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => {
             let lhs_expr = Expr::Index {
@@ -265,6 +269,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
                 index,
                 value: Box::new(compound_assigned_value_expr(lhs_expr, op, value)),
                 is_positional: true,
+                spelling,
             }
         }
         Expr::MultiDimIndex {
@@ -390,12 +395,14 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => Some(Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),
             is_positional,
+            spelling,
         }),
         _ => None,
     }
@@ -449,7 +456,7 @@ pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Opt
                     args: vec![Expr::Literal(Value::int(pos as i64))],
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 }
             } else {
                 rhs
@@ -473,12 +480,14 @@ pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Opt
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(extracted_rhs),
             is_positional,
+            spelling,
         },
         _ => return None,
     })

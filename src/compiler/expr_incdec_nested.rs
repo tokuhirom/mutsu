@@ -206,6 +206,7 @@ impl Compiler {
                 index: index.clone(),
                 value: Box::new(Expr::Var(tmp_val)),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             };
             self.compile_expr(&assign_expr);
             self.code.emit(OpCode::Pop);

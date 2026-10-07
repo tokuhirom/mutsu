@@ -413,7 +413,7 @@ pub(crate) fn parse_elsif_chain(
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             let (r, _) = ws(r)?;
             clauses.push(IfChainClause {

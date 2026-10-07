@@ -179,6 +179,7 @@ impl Compiler {
                 index: index.clone(),
                 value: Box::new(value.clone()),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             }),
             Expr::Grouped(inner) => Self::assign_expr_for_lvalue(inner, value),
             // Nested selector on a branch, e.g. `cond1 ?? (cond2 ?? $a !! $b) !! $c`.

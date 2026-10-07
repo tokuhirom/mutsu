@@ -123,7 +123,7 @@ impl Interpreter {
             name: Symbol::intern(read_method),
             args: window(),
             modifier: None,
-            quoted: false, on_topic: false,
+            quoted: false, sugar: false,
         })];
         let fetcher = Value::make_sub(
             Symbol::intern(""),
@@ -151,7 +151,7 @@ impl Interpreter {
                     name: Symbol::intern("chars"),
                     args: Vec::new(),
                     modifier: None,
-                    quoted: false, on_topic: false,
+                    quoted: false, sugar: false,
                 },
                 op: AssignOp::Assign,
                 target_is_sigilless: false,

@@ -376,7 +376,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     target,
                     index,
                     is_positional,
-                    ..
+                    spelling,
                 } if matches!(
                     target.as_ref(),
                     // A pseudo-stash target is the `Pkg::<@a> := v` spelling
@@ -408,7 +408,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     // reached before the statement-level indexed-bind parser.
                     return Ok((
                         r2,
-                        crate::parser::index_bind_expr(target, index, is_positional, rhs),
+                        crate::parser::index_bind_expr(target, index, is_positional, spelling, rhs),
                     ));
                 }
                 _ => {}
@@ -521,6 +521,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => Ok((
             r,
@@ -529,6 +530,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 index,
                 value: Box::new(rhs),
                 is_positional,
+                spelling,
             },
         )),
         Expr::Call { name, args, .. } => Ok((

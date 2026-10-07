@@ -220,7 +220,7 @@ pub(super) fn parse_sigilless_decl(
             args,
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         };
         let decl = Stmt::VarDecl {
             name: name.clone(),
@@ -474,7 +474,7 @@ pub(super) fn try_dot_twigil_attr<'a>(
                 args,
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             (r, Some(expr), false)
         } else {

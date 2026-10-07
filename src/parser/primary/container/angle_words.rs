@@ -260,7 +260,7 @@ fn split_quotish_words(content: &str, delims: Option<(&str, &str)>) -> Result<Ve
                 args: vec![],
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             });
         } else if word.contains('$')
             || word.contains('@')

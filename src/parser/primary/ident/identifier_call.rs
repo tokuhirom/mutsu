@@ -1862,7 +1862,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             args: vec![],
                             modifier: None,
                             quoted: false,
-                            on_topic: false,
+                            sugar: false,
                         },
                     ));
                 }
@@ -1881,7 +1881,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             args: method_args,
                             modifier: None,
                             quoted: false,
-                            on_topic: false,
+                            sugar: false,
                         },
                     ));
                 }
@@ -1897,7 +1897,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         args: method_args,
                         modifier: None,
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     },
                 ));
             }
@@ -2057,7 +2057,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         args: method_args,
                         modifier: None,
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     },
                 ));
             }
@@ -2686,7 +2686,7 @@ fn slip_arg_count(slip: Expr) -> Expr {
         args: Vec::new(),
         modifier: None,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     }
 }
 

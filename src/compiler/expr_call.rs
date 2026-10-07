@@ -637,6 +637,7 @@ impl Compiler {
                 index: index.clone(),
                 value: Box::new(args[2].clone()),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             };
             self.compile_expr(&outer);
             return;
@@ -857,7 +858,7 @@ impl Compiler {
                                 args: vec![Expr::Literal(Value::int(offset as i64))],
                                 modifier: None,
                                 quoted: false,
-                                on_topic: false,
+                                sugar: false,
                             }
                         } else {
                             Expr::Var(tmp_name.clone())
@@ -878,7 +879,7 @@ impl Compiler {
                                 args: vec![Expr::Literal(Value::int(offset as i64))],
                                 modifier: None,
                                 quoted: false,
-                                on_topic: false,
+                                sugar: false,
                             }
                         } else {
                             Expr::Var(tmp_name.clone())
@@ -937,6 +938,7 @@ impl Compiler {
                             index: index.clone(),
                             value: Box::new(rhs_item),
                             is_positional: *is_positional,
+                            spelling: Default::default(),
                         });
                         self.code.emit(OpCode::Pop);
                         offset += width;
@@ -1365,6 +1367,7 @@ impl Compiler {
                         index: index.clone(),
                         value: Box::new(Expr::Literal(Value::NIL)),
                         is_positional: true,
+                        spelling: Default::default(),
                     };
                     self.compile_expr(&assign_expr);
                 }
@@ -1397,7 +1400,7 @@ impl Compiler {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             self.compile_expr(&method_call);
         }
@@ -1491,7 +1494,7 @@ impl Compiler {
                     args: args[1..].to_vec(),
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 };
                 self.compile_expr(&method_call);
             }
@@ -1524,6 +1527,7 @@ impl Compiler {
                     index: index.clone(),
                     value: Box::new(Expr::BracketArray(Vec::new(), false)),
                     is_positional: *is_positional,
+                    spelling: Default::default(),
                 }),
                 form: Default::default(),
             };
@@ -1575,6 +1579,7 @@ impl Compiler {
                         Expr::Index { is_positional, .. } => *is_positional,
                         _ => true,
                     },
+                    spelling: Default::default(),
                 };
                 let method_call = Expr::MethodCall {
                     target: Box::new(slot.clone()),
@@ -1582,7 +1587,7 @@ impl Compiler {
                     args: args[1..].to_vec(),
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 };
                 // Write the method call result back to the slot so that
                 // nested hash mutations (e.g. `push %h<a><b>, 1, 2`)
@@ -1601,6 +1606,7 @@ impl Compiler {
                         Expr::Index { is_positional, .. } => *is_positional,
                         _ => true,
                     },
+                    spelling: Default::default(),
                 };
                 let do_block =
                     Expr::desugar_block(vec![Stmt::Expr(viv_assign), Stmt::Expr(writeback)]);
@@ -1612,7 +1618,7 @@ impl Compiler {
                     args: args[1..].to_vec(),
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 };
                 self.compile_expr(&method_call);
             }
@@ -1814,6 +1820,7 @@ impl Compiler {
                         index: index.clone(),
                         value: Box::new(args[2].clone()),
                         is_positional: true,
+                        spelling: Default::default(),
                     })),
                     _ => None,
                 };
@@ -2020,7 +2027,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 };
                 self.compile_expr(&method_call);
                 return;

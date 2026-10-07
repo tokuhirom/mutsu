@@ -93,7 +93,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
                 args: vec![mapper],
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             })],
             is_rw: false,
             is_raw: false,

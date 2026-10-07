@@ -775,7 +775,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             args,
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         },
     };
     // A postfix chain after the call (`my $x .= $m.actions.new`,

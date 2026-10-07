@@ -207,7 +207,7 @@ impl Interpreter {
             name: Symbol::intern(method),
             args: vec![crate::ast::Expr::Literal(arg)],
             modifier: None,
-            quoted: false, on_topic: false,
+            quoted: false, sugar: false,
         })];
         Self::synthesized_thunk(body)
     }

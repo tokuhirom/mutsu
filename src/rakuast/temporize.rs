@@ -218,6 +218,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                     index: index.clone(),
                     value: Box::new(value),
                     is_positional: *is_positional,
+                    spelling: Default::default(),
                 },
                 None => lvalue.clone(),
             };

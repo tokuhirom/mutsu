@@ -110,14 +110,14 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
             args,
             modifier,
             quoted,
-            on_topic,
+            sugar,
         } => Expr::MethodCall {
             target: Box::new(wrap_composition_operands(*target)),
             name,
             args: args.into_iter().map(wrap_composition_operands).collect(),
             modifier,
             quoted,
-            on_topic,
+            sugar,
         },
         Expr::CallOn { target, args } => Expr::CallOn {
             target: Box::new(wrap_composition_operands(*target)),
@@ -174,7 +174,7 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
                         args: args.clone(),
                         modifier: *modifier,
                         quoted: *quoted,
-                        on_topic: false,
+                        sugar: false,
                     })
                 }
                 // Recursive: MethodCall -> MethodCall -> ... -> CallOn
@@ -186,7 +186,7 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
                         args: args.clone(),
                         modifier: *modifier,
                         quoted: *quoted,
-                        on_topic: false,
+                        sugar: false,
                     })
                 }
                 _ => None,

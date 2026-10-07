@@ -113,6 +113,6 @@ pub(in crate::runtime::begin_prologue) fn slot_read(slot: String) -> Expr {
         name: crate::symbol::Symbol::intern("__mutsu_zen_angle"),
         args: vec![],
         modifier: None,
-        quoted: false, on_topic: false,
+        quoted: false, sugar: false,
     }
 }

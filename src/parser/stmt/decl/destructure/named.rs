@@ -24,7 +24,7 @@ pub(super) fn parse_named_destructuring(
         args: Vec::new(),
         modifier: None,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     };
     let mut stmts = vec![Stmt::VarDecl {
         name: tmp_name,
@@ -80,7 +80,7 @@ pub(super) fn parse_named_destructuring(
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 }),
                 else_expr: Box::new(Expr::ArrayLiteral(Vec::new())),
             }

@@ -55,6 +55,7 @@ where
         index: Box::new(tmp_idx_expr),
         value: Box::new(value),
         is_positional,
+        spelling: Default::default(),
     };
     body.push(Stmt::Expr(store(build_assigned_value(lhs_expr))));
     Expr::desugar_block(body)
@@ -103,6 +104,7 @@ fn compound_index_assign_op_expr(
         index: Box::new(tmp_idx_expr),
         value: Box::new(value),
         is_positional,
+        spelling: Default::default(),
     };
     let tail = short_circuit_subscript_assign(keep, lhs_expr, rhs, &mut body, store);
     body.push(Stmt::Expr(tail));
@@ -324,7 +326,7 @@ pub(crate) fn build_compound_assign_expr(
                 args: args.clone(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             let assigned_value = compound_assigned_value_expr(current_value, op, rhs);
             method_lvalue_roundtrip_assign_expr(
@@ -706,7 +708,7 @@ pub(crate) fn build_custom_compound_assign_expr(
                 args: args.clone(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             let assigned_value = Expr::InfixFunc {
                 name: op_name,
@@ -801,6 +803,7 @@ pub(crate) fn build_meta_assign_expr(
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => {
             let lhs_expr = Expr::Index {
@@ -819,6 +822,7 @@ pub(crate) fn build_meta_assign_expr(
                     right: Box::new(rhs),
                 }),
                 is_positional,
+                spelling,
             }
         }
         _ => return Err(PError::expected("assignment expression")),

@@ -52,6 +52,7 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
                     index: Box::new(args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL))),
                     value: Box::new(rhs),
                     is_positional: true,
+                    spelling: Default::default(),
                 };
             }
             let target_var_name = method_lvalue_target_name(&target);
@@ -147,7 +148,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             args,
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         };
         let stmt = Stmt::Expr(topic_dot_assign(call));
         return parse_statement_modifier(rest, stmt);
@@ -358,6 +359,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 target,
                 index,
                 is_positional,
+                spelling,
                 ..
             } => {
                 let tmp_idx = format!(
@@ -390,6 +392,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         index: Box::new(tmp_idx_expr),
                         value: Box::new(assigned_value),
                         is_positional: true,
+                        spelling,
                     }),
                 ]));
                 return parse_statement_modifier(r, stmt);
@@ -475,7 +478,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             args: method_args.clone(),
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         };
         match expr {
             // `$_ .= meth`: route the topic metaop through `__mutsu_topic_dotassign`
@@ -546,6 +549,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target,
             index,
             is_positional,
+            spelling,
             ..
         } = expr
         {
@@ -560,6 +564,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Box::new(args[1].clone()),
                     value: Box::new(value),
                     is_positional,
+                    spelling,
                 });
                 return parse_statement_modifier(rest, stmt);
             }
@@ -568,6 +573,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 index,
                 value: Box::new(value),
                 is_positional,
+                spelling,
             });
             return parse_statement_modifier(rest, stmt);
         }
@@ -576,6 +582,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         target,
         index,
         is_positional,
+        spelling,
         ..
     } = expr.clone()
         && let Some(rest) = parse_hyper_assign_op(rest)
@@ -594,6 +601,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             index,
             value: Box::new(value),
             is_positional,
+            spelling,
         });
         return parse_statement_modifier(rest, stmt);
     }
@@ -618,12 +626,13 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 target,
                 index,
                 is_positional,
-                ..
+                spelling,
             } => {
                 let stmt = Stmt::Expr(super::lvalue::index_bind_expr(
                     target,
                     index,
                     is_positional,
+                    spelling,
                     value,
                 ));
                 return parse_statement_modifier(rest, stmt);
@@ -637,6 +646,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     target,
                     Box::new(Expr::ArrayLiteral(dimensions)),
                     true,
+                    Default::default(),
                     value,
                 ));
                 return parse_statement_modifier(rest, stmt);
@@ -858,6 +868,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Box::new(args[0].clone()),
                     value: Box::new(rhs),
                     is_positional: true,
+                    spelling: Default::default(),
                 };
                 let stmt = Stmt::Expr(assigned);
                 return parse_statement_modifier(r, stmt);
@@ -1040,7 +1051,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                                 args: Vec::new(),
                                 modifier: None,
                                 quoted: false,
-                                on_topic: false,
+                                sugar: false,
                             }),
                             index: Box::new(Expr::Literal(Value::str(key))),
                             is_positional: false,
@@ -1237,6 +1248,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target,
             index,
             is_positional,
+            spelling,
             ..
         } = &expr
         {
@@ -1277,6 +1289,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Box::new(tmp_idx_expr),
                     value: Box::new(assigned_value),
                     is_positional: *is_positional,
+                    spelling: *spelling,
                 }),
             ]));
             return parse_statement_modifier(r, stmt);
@@ -1353,6 +1366,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target,
             index,
             is_positional,
+            spelling,
             ..
         } = &expr
         {
@@ -1404,6 +1418,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Box::new(tmp_idx_expr),
                     value: Box::new(assigned_value),
                     is_positional: true,
+                    spelling: *spelling,
                 }),
             ]);
             let stmt = Stmt::Expr(compound_assign_marker(

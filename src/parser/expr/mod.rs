@@ -663,6 +663,7 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
             index,
             value: bind,
             is_positional,
+            ..
         } if is_bind_index_value(&bind) => {
             let Expr::Call { name, mut args, .. } = *bind else {
                 unreachable!("is_bind_index_value checked the shape");
@@ -679,6 +680,7 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
                     listop: false,
                 }),
                 is_positional,
+                spelling: Default::default(),
             }
         }
         left => reassociated_fat_arrow_pair(left, value),

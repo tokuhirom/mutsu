@@ -1178,7 +1178,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 args,
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             // NOTE: a leading-dot `.=meth` in *expression* position (e.g. the RHS
             // of an `andthen`/`orelse` chain) keeps the plain `AssignExpr` form so
@@ -1438,7 +1438,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                     args,
                     modifier: quoted_modifier,
                     quoted: true,
-                    on_topic: false,
+                    sugar: false,
                 },
                 crate::parser::expr::QuotedMethodName::Dynamic(name_expr) => {
                     Expr::DynamicMethodCall {
@@ -1542,7 +1542,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 args,
                 modifier,
                 quoted: false,
-                on_topic: true,
+                sugar: true,
             },
         ));
     }
@@ -1561,7 +1561,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                 args,
                 modifier,
                 quoted: false,
-                on_topic: true,
+                sugar: true,
             },
         ));
     }
@@ -1573,7 +1573,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
             args: Vec::new(),
             modifier,
             quoted: false,
-            on_topic: true,
+            sugar: true,
         },
     ))
 }

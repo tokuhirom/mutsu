@@ -325,7 +325,7 @@ fn parse_io_colon_invocant_stmt<'a>(input: &'a str, method_name: &str) -> PResul
             args,
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         }),
     ))
 }

@@ -100,7 +100,7 @@ pub(crate) fn try_parse_interp_self_accessor_call<'a>(
             args,
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         },
         after,
     ))
@@ -182,7 +182,7 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
                                 args: vec![],
                                 modifier,
                                 quoted,
-                                on_topic: false,
+                                sugar: false,
                             };
                         }
                         let args = if args_str.trim().is_empty() {
@@ -336,7 +336,7 @@ pub(crate) fn try_parse_interp_method_call(input: &str, target: Expr) -> (Expr, 
                         args,
                         modifier: *modifier,
                         quoted: *quoted,
-                        on_topic: false,
+                        sugar: false,
                     };
                 }
                 rest = after_parens;

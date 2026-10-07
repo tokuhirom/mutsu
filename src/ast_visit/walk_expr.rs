@@ -220,6 +220,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             index,
             value,
             is_positional: _,
+            ..
         } => {
             v.visit_expr(target);
             v.visit_expr(index);

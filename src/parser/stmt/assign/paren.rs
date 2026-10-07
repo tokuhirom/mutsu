@@ -17,6 +17,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 index,
                 value,
                 is_positional,
+                ..
             } = inner_assign
             {
                 let mut items = vec![*value];
@@ -41,6 +42,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                         index,
                         value: Box::new(Expr::ArrayLiteral(items)),
                         is_positional,
+                        spelling: Default::default(),
                     },
                 ));
             } else if let Expr::AssignExpr {
@@ -190,12 +192,14 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                 target,
                 index,
                 is_positional,
+                spelling,
                 ..
             } => Expr::IndexAssign {
                 target,
                 index,
                 value: Box::new(rhs),
                 is_positional,
+                spelling,
             },
             Expr::MultiDimIndex {
                 target,
@@ -312,12 +316,14 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),
             is_positional,
+            spelling,
         },
         Expr::MultiDimIndex {
             target,
@@ -345,6 +351,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                     index: Box::new(args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL))),
                     value: Box::new(rhs),
                     is_positional: true,
+                    spelling: Default::default(),
                 }
             } else {
                 let target_var_name =

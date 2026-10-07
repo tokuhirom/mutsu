@@ -182,7 +182,7 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
                     args: vec![],
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 }
             }
         } else {

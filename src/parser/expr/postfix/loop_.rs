@@ -503,7 +503,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 args: vec![],
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: true,
             },
         ));
     }
@@ -527,7 +527,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: true,
             },
         ));
     }
@@ -551,7 +551,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: true,
             },
         ));
     }
@@ -827,7 +827,7 @@ fn parse_zen_angle(expr: Expr, rest: &str) -> (Expr, &str) {
             args: Vec::new(),
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         },
     };
     let zen_adverb = [
@@ -848,7 +848,7 @@ fn parse_zen_angle(expr: Expr, rest: &str) -> (Expr, &str) {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             },
             &rest[adv.len()..],
         );
@@ -1283,7 +1283,7 @@ fn postfix_expr_loop_from(
                             args,
                             modifier,
                             quoted: false,
-                            on_topic: false,
+                            sugar: false,
                         };
                         rest = r3;
                         continue;
@@ -1295,7 +1295,7 @@ fn postfix_expr_loop_from(
                         args: Vec::new(),
                         modifier,
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     };
                     rest = r2;
                     continue;
@@ -1381,7 +1381,7 @@ fn postfix_expr_loop_from(
                         args,
                         modifier,
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     };
                     rest = r;
                     continue;
@@ -1410,7 +1410,7 @@ fn postfix_expr_loop_from(
                                 args: vec![seq],
                                 modifier,
                                 quoted: false,
-                                on_topic: false,
+                                sugar: false,
                             };
                             rest = r_seq;
                             continue;
@@ -1506,7 +1506,7 @@ fn postfix_expr_loop_from(
                         args: crate::parser::primary::lift_list_infix_in_arg_list(args),
                         modifier,
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     };
                     rest = r_inner;
                     continue;
@@ -1518,7 +1518,7 @@ fn postfix_expr_loop_from(
                     args: Vec::new(),
                     modifier,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 };
                 if let Some(op) = trailing_postfix {
                     method_expr = Expr::PostfixOp {
@@ -1552,7 +1552,7 @@ fn postfix_expr_loop_from(
                             args,
                             modifier,
                             quoted: true,
-                            on_topic: false,
+                            sugar: false,
                         };
                     }
                     QuotedMethodName::Dynamic(name_expr) => {
@@ -1682,7 +1682,7 @@ fn postfix_expr_loop_from(
                         args,
                         modifier: Some('!'),
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     };
                     rest = r;
                     continue;
@@ -1729,7 +1729,7 @@ fn postfix_expr_loop_from(
                         args: crate::parser::primary::lift_list_infix_in_arg_list(args),
                         modifier: Some('!'),
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     };
                     rest = r_inner;
                     continue;
@@ -1740,7 +1740,7 @@ fn postfix_expr_loop_from(
                     args: Vec::new(),
                     modifier: Some('!'),
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 };
                 rest = r;
                 continue;
@@ -1762,7 +1762,7 @@ fn postfix_expr_loop_from(
                             args,
                             modifier: Some('!'),
                             quoted: true,
-                            on_topic: false,
+                            sugar: false,
                         };
                     }
                     QuotedMethodName::Dynamic(name_expr) => {
@@ -1792,7 +1792,7 @@ fn postfix_expr_loop_from(
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             expr = Expr::Index {
                 target: Box::new(who),
@@ -2187,7 +2187,7 @@ fn postfix_expr_loop_from(
                 args,
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             };
             rest = r;
             continue;
@@ -2374,7 +2374,7 @@ fn postfix_expr_loop_from(
                                     args: vec![],
                                     modifier: None,
                                     quoted: false,
-                                    on_topic: false,
+                                    sugar: false,
                                 };
                             }
                             DeleteAdverb::Delete(Some(cond)) => {
@@ -2384,7 +2384,7 @@ fn postfix_expr_loop_from(
                                     args: vec![],
                                     modifier: None,
                                     quoted: false,
-                                    on_topic: false,
+                                    sugar: false,
                                 };
                                 expr = Expr::Ternary {
                                     cond: Box::new(cond),
@@ -2832,7 +2832,7 @@ fn postfix_expr_loop_from(
                         args: vec![],
                         modifier: None,
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     };
                 }
                 DeleteAdverb::Delete(Some(cond)) => {
@@ -2842,7 +2842,7 @@ fn postfix_expr_loop_from(
                         args: vec![],
                         modifier: None,
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     };
                     expr = Expr::Ternary {
                         cond: Box::new(cond),

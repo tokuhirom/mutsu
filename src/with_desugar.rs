@@ -60,7 +60,7 @@ pub(crate) fn defined_condition(negated: bool, tmp_name: &str, cond_expr: Expr) 
         args: Vec::new(),
         modifier: None,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     };
     if negated {
         Expr::Unary {
@@ -179,7 +179,7 @@ pub(crate) fn orwith_conditional(cond_expr: Expr, body: Vec<Stmt>, else_branch: 
         args: Vec::new(),
         modifier: None,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     };
     Stmt::If {
         cond,

@@ -160,7 +160,7 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
                         args: vec![],
                         modifier: None,
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     },
                 ));
             }

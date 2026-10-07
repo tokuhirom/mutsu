@@ -139,7 +139,7 @@ pub(super) fn build_topic_subst_compound_expr(
             args,
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         }),
         is_bind: false,
     })

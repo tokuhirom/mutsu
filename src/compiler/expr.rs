@@ -38,6 +38,7 @@ impl Compiler {
                 index,
                 value: Box::new(value),
                 is_positional,
+                spelling: Default::default(),
             },
             // Any other lvalue shape: fall back to the generic named-sub lvalue
             // assignment helper (mirrors the parser's `assign_to_target_expr`).
@@ -664,7 +665,7 @@ impl Compiler {
                     args: args.clone(),
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 });
             }
             Expr::Call { name, args, .. } => {
@@ -692,7 +693,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 });
             }
             // `(EXPR).method` is exactly `EXPR.method`. Parentheses in Raku are
@@ -720,7 +721,7 @@ impl Compiler {
                     args: args.clone(),
                     modifier: *modifier,
                     quoted: *quoted,
-                    on_topic: false,
+                    sugar: false,
                 };
                 self.compile_expr(&peeled);
             }
@@ -1398,6 +1399,7 @@ impl Compiler {
                 index,
                 value,
                 is_positional,
+                ..
             } => {
                 self.compile_expr_index_assign(target, index, value, *is_positional);
             }

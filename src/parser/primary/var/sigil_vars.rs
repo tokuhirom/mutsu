@@ -152,7 +152,7 @@ fn brace_list_contextualizer(input: &str) -> PResult<'_, Expr> {
             args: vec![],
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         },
     ))
 }
@@ -277,7 +277,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                 args: vec![],
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             },
         ));
     }
@@ -294,7 +294,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                     args: vec![],
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 },
             ));
         }
@@ -315,7 +315,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                     args: vec![],
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 },
             ));
         }
@@ -358,7 +358,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                     args: vec![],
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 },
             ));
         }
@@ -466,7 +466,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
                 args: vec![],
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             },
         ));
     }
@@ -504,7 +504,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
                     args: vec![],
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 },
             ));
         }
@@ -600,7 +600,7 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
                 args,
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             },
         ));
     }

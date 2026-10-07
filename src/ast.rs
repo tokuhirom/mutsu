@@ -1044,7 +1044,7 @@ impl Expr {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             },
             other => other,
         }
@@ -1257,9 +1257,12 @@ pub(crate) enum Expr {
         /// True when the method name was quoted (e.g. `."DEFINITE"()`),
         /// which bypasses pseudo-method macros like .DEFINITE, .WHAT, etc.
         quoted: bool,
-        /// True for a method call on the topic written without an invocant
-        /// (`.say`, raku's `Term::TopicCall`), whose `target` is then `$_`.
-        on_topic: bool,
+        /// True for a call written as sugar, without a `.name` of its own:
+        /// a method call on the topic (`.say`, raku's `Term::TopicCall`, whose
+        /// `target` is then `$_`), the item contextualizer (`$[1, 2]`, `${...}`)
+        /// and the `lazy` / `hyper` / `race` statement prefixes. The compiler
+        /// does not read it.
+        sugar: bool,
     },
     DynamicMethodCall {
         target: Box<Expr>,
@@ -1422,6 +1425,10 @@ pub(crate) enum Expr {
         /// `%h<key>[42] = 17`.
         #[serde(default = "default_is_positional")]
         is_positional: bool,
+        /// How the subscript was written (`%h<a>` / `%h{'a'}`); the compiler
+        /// does not read it.
+        #[serde(default)]
+        spelling: IndexSpelling,
     },
     Ternary {
         cond: Box<Expr>,

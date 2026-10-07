@@ -3585,7 +3585,7 @@ impl Compiler {
             args: Vec::new(),
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         };
         // Multi-param pointy blocks (`-> $a, $b = 7`) carry a full ParamDef per
         // param. A param is *required* when it has neither an optional marker
@@ -3685,13 +3685,13 @@ impl Compiler {
                             args: vec![Expr::Literal(Value::int(positional_slot as i64))],
                             modifier: None,
                             quoted: false,
-                            on_topic: false,
+                            sugar: false,
                         }),
                         name: Symbol::intern("Array"),
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     }
                 } else {
                     Expr::Hash(Vec::new(), crate::ast::HashSpelling::Composer)
@@ -3762,7 +3762,7 @@ impl Compiler {
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     }
                 } else {
                     Expr::DeitemizeForBind(Box::new(value_expr))
@@ -3852,7 +3852,7 @@ impl Compiler {
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
-                        on_topic: false,
+                        sugar: false,
                     },
                     type_constraint: None,
                     is_state: false,

@@ -88,6 +88,7 @@ impl Compiler {
                 index: index.clone(),
                 value,
                 is_positional: *is_positional,
+                spelling: Default::default(),
             },
             other => Expr::MethodCall {
                 target: Box::new(other.clone()),
@@ -95,7 +96,7 @@ impl Compiler {
                 args: vec![*value],
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             },
         }
     }

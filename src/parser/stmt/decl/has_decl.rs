@@ -296,7 +296,7 @@ fn box_target_default_expr(tc: &str) -> Expr {
             args: Vec::new(),
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         },
         seed => seed,
     }
@@ -1050,7 +1050,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
                 args,
                 modifier: None,
                 quoted: false,
-                on_topic: false,
+                sugar: false,
             }),
         )
     } else if rest.starts_with('=') && !rest.starts_with("==") {

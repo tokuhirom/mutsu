@@ -156,12 +156,14 @@ pub(crate) fn build_pipe_feed_expr(source: Expr, sink: Expr) -> Expr {
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(source),
             is_positional,
+            spelling,
         },
         Expr::MultiDimIndex {
             target,
@@ -284,6 +286,7 @@ pub(crate) fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => {
             let current = Expr::Index {
@@ -301,6 +304,7 @@ pub(crate) fn build_append_feed_expr(source: Expr, sink: Expr) -> Expr {
                     listop: false,
                 }),
                 is_positional: true,
+                spelling,
             }
         }
         Expr::Whatever => Expr::Call {

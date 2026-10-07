@@ -110,7 +110,7 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             args: vec![],
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         }
     } else {
         Expr::Call {

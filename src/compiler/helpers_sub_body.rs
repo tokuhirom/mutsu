@@ -134,7 +134,7 @@ impl Compiler {
             args: method_args,
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         })
     }
 

@@ -122,6 +122,7 @@ pub(crate) fn index_bind_expr(
     target: Box<Expr>,
     index: Box<Expr>,
     is_positional: bool,
+    spelling: crate::ast::IndexSpelling,
     rhs: Expr,
 ) -> Expr {
     Expr::IndexAssign {
@@ -129,6 +130,7 @@ pub(crate) fn index_bind_expr(
         index,
         value: Box::new(bind_index_value(rhs)),
         is_positional,
+        spelling,
     }
 }
 
@@ -200,7 +202,7 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
                     args: vec![Expr::Literal(Value::int(pos as i64))],
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 }
             } else {
                 rhs
@@ -226,12 +228,14 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => Stmt::Expr(Expr::IndexAssign {
             target,
             index,
             value: Box::new(extracted_rhs),
             is_positional,
+            spelling,
         }),
         _ => return None,
     })

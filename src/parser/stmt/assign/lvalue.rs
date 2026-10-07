@@ -217,6 +217,7 @@ pub(crate) fn named_sub_lvalue_assign_expr(
                     index: Box::new(index),
                     value: Box::new(value),
                     is_positional,
+                    spelling: Default::default(),
                 }
             };
         }
@@ -267,6 +268,7 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
                     index: Box::new(base_index),
                     value: Box::new(rhs),
                     is_positional: true,
+                    spelling: Default::default(),
                 });
             }
             None
@@ -323,7 +325,7 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
                     args: vec![Expr::Literal(Value::int(pos as i64))],
                     modifier: None,
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 }
             } else {
                 rhs
@@ -343,12 +345,14 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => Some(Expr::IndexAssign {
             target,
             index,
             value: Box::new(extracted_rhs),
             is_positional,
+            spelling,
         }),
         _ => None,
     }

@@ -214,7 +214,7 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
         args: Vec::new(),
         modifier: None,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     };
     let cond = if matches!(kind, GivenWithKind::Without) {
         Expr::Unary {
@@ -1010,7 +1010,7 @@ pub(super) fn lower_dotty_assign(
         args: args.clone(),
         modifier,
         quoted: false,
-        on_topic: false,
+        sugar: false,
     };
     if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
         return Ok(crate::parser::topic_dot_assign(method_call(target)));
@@ -1852,6 +1852,15 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         "self".to_string()
     } else if let Some(type_capture) = &type_capture {
         format!("__type_capture__{type_capture}")
+    } else if parameter.fields.iter().any(|f| f.name == Some("type"))
+        && !parameter.fields.iter().any(|f| f.name == Some("slurpy"))
+        && !parameter
+            .fields
+            .iter()
+            .any(|f| f.name == Some("sub-signature"))
+    {
+        // `sub f(Int)`: a parameter of a bare type, which the parser names so.
+        super::convert::TYPE_ONLY_PARAM.to_string()
     } else if parameter.fields.iter().any(|f| {
         f.name == Some("slurpy")
             && matches!(&f.value, RakuAstFieldValue::Node(v)
@@ -2262,7 +2271,7 @@ fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         target,
         index,
         is_positional,
-        ..
+        spelling,
     } = lower_expr(named_child(node, "left")?)?
     else {
         return Err(unsupported(node));
@@ -2272,6 +2281,7 @@ fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         target,
         index,
         is_positional,
+        spelling,
         rhs,
     ))
 }
@@ -2360,7 +2370,7 @@ fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
         target,
         index,
         is_positional,
-        ..
+        spelling,
     } = lowered
     else {
         return Ok(None);
@@ -2370,6 +2380,7 @@ fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
         index,
         value: Box::new(lower_expr(named_child(node, "right")?)?),
         is_positional,
+        spelling,
     }))
 }
 
@@ -3977,6 +3988,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // single `Statement::Expression` (a comma list, or a lone element).
         RakuAstClass::CircumfixArrayComposer => {
             let semilist = named_child_or_positional(node)?;
+            // `[]`: a semilist with no statement at all.
+            if semilist.fields.is_empty() {
+                return Ok(Expr::BracketArray(Vec::new(), false));
+            }
             let inner = named_child_or_positional(semilist)?;
             // A one-operand comma list is `[$x,]`: the trailing comma that keeps
             // a lone array element from flattening.
@@ -4004,14 +4019,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     args,
                     modifier,
                     quoted,
-                    on_topic: _,
+                    sugar: _,
                 } => Ok(Expr::MethodCall {
                     target,
                     name,
                     args,
                     modifier,
                     quoted,
-                    on_topic: true,
+                    sugar: true,
                 }),
                 other => Ok(other),
             }
@@ -4102,6 +4117,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::StatementPrefixStart
         | RakuAstClass::StatementPrefixQuietly
         | RakuAstClass::StatementPrefixSink => super::prefix_call::lower(node),
+        // `lazy EXPR` / `hyper EXPR` / `race EXPR` -> the method call the
+        // parser spells them as.
+        RakuAstClass::StatementPrefixLazy
+        | RakuAstClass::StatementPrefixHyper
+        | RakuAstClass::StatementPrefixRace => super::prefix_call::lower_method(node),
         // `once { … }` -> a once expression over the lowered block body.
         RakuAstClass::StatementPrefixOnce => Ok(Expr::Once {
             body: lower_block(named_child_or_positional(node)?)?,
@@ -4619,6 +4639,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                             index: Box::new(index),
                             value: Box::new(lower_expr(assignee)?),
                             is_positional,
+                            // `%h<a> = 1` keeps its brackets.
+                            spelling: if postfix.class
+                                == RakuAstClass::PostcircumfixLiteralHashIndex
+                            {
+                                crate::ast::IndexSpelling::Angle
+                            } else {
+                                Default::default()
+                            },
                         });
                     }
                     super::subscript_adverb::lower(
@@ -4656,7 +4684,7 @@ fn lower_method_postfix(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, Ru
             args: arg_exprs(postfix)?,
             modifier: dispatch_modifier(postfix)?,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         }),
         // `$x."name"()` -> Call::QuotedMethod, whose `name` is a QuotedString
         // rather than a Name. An interpolated name lowers to the existing
@@ -4671,7 +4699,7 @@ fn lower_method_postfix(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, Ru
                         args: arg_exprs(postfix)?,
                         modifier: None,
                         quoted: true,
-                        on_topic: false,
+                        sugar: false,
                     })
                 }
                 name_expr => Ok(Expr::DynamicMethodCall {
@@ -4692,7 +4720,7 @@ fn lower_method_postfix(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, Ru
             args: arg_exprs(postfix)?,
             modifier: Some('^'),
             quoted: false,
-            on_topic: false,
+            sugar: false,
         }),
         // `$o.$name(1)` / `$o.&f(1)`.
         RakuAstClass::CallTermAsMethod | RakuAstClass::CallNameAsMethod => {

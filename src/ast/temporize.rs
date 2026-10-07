@@ -147,6 +147,7 @@ pub(crate) fn recognize(stmt: &Stmt) -> Option<Temporized> {
                         index: key,
                         value: assigned_value,
                         is_positional,
+                        ..
                     } => {
                         target = Target::Element(Expr::Index {
                             target: container.clone(),

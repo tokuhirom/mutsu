@@ -468,6 +468,9 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         | StatementPrefixStart
         | StatementPrefixQuietly
         | StatementPrefixSink
+        | StatementPrefixLazy
+        | StatementPrefixHyper
+        | StatementPrefixRace
         | StatementPrefixPhaserBegin
         | StatementPrefixPhaserCheck
         | StatementPrefixPhaserClose

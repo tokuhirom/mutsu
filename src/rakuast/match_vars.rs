@@ -72,7 +72,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             args: Vec::new(),
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         }),
         _ => Err(unsupported(node)),
     }

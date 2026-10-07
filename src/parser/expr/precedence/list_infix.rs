@@ -12,7 +12,7 @@ pub(super) fn wrap_left_exclusive_sequence(op_str: &str, expr: Expr) -> Expr {
             args: vec![Expr::Literal(crate::value::Value::int(1))],
             modifier: None,
             quoted: false,
-            on_topic: false,
+            sugar: false,
         }
     } else {
         expr

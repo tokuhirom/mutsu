@@ -23,7 +23,7 @@ impl Compiler {
                     args: vec![Expr::Literal(Value::str(name.resolve()))],
                     modifier: Some('^'),
                     quoted: false,
-                    on_topic: false,
+                    sugar: false,
                 };
                 self.compile_expr(&lookup);
             }
