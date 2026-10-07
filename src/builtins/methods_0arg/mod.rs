@@ -863,7 +863,8 @@ fn dispatch_capture(
     // These are the `Capture` rows' implementations (`method_table::capture`).
     use crate::builtins::method_table::capture;
     match method {
-        "hash" | "Hash" => capture::hash(target, &[]),
+        "hash" => capture::hash(target, &[]),
+        "Hash" => capture::hash_coerce(target, &[]),
         "list" => capture::list(target, &[]),
         "elems" | "Numeric" | "Int" => capture::elems(target, &[]),
         "is-lazy" => Some(Ok(Value::FALSE)),
