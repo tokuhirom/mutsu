@@ -1838,3 +1838,15 @@ whose answers need no interpreter.
   `Seq`, `Set`/`Bag`/`Mix` and their hash forms), `Version`, `Blob`, `Capture`, `Nil` and the objects group
   (`Exception`, `Failure`, `Code`, `Signature`, `Backtrace`), `Cool`/`Any`/`Mu`, and `clone`/`fmt` everywhere.
   Finding: `(5 but "x").gist` answers `5` in mutsu and `x` in Rakudo; the mixin path does not take the rows.
+
+### 9.31 The rendering and identity names, collections (2026-10-07)
+
+Second step of the rendering and identity names (`refactor/11276-rendering-collections`), after §9.30.
+
+- `WHICH` rows (7) on `Array`, `Hash`, `Pair`, `Range`, `Set`, `Bag` and `Mix`, the owners Rakudo declares it on,
+  calling the same `which_of` as the cascade. `List`, `SetHash`, `BagHash` and `MixHash` reach them through the MRO.
+- `gist` and `raku` rows (12) on the six quant hashes, calling `setbagmix_gist` / `setbagmix_raku`, and `Range.raku`
+  (Rakudo declares no `Range.gist`; the cascade answers it with the same text). The cascade's `Set`/`Bag`/`Mix`
+  and `Range` arms in `dispatch_core_repr` call the handlers, so the three hand-copied arms are gone.
+- Left: `Array`/`List`/`Hash`/`Map`/`Pair`/`Seq` `gist`/`raku`/`Str`/`fmt` (the cycle- and user-`gist`-aware
+  `GistRoute` walk), `Version`, `Blob`, `Capture`, `Nil`, the objects group, `Cool`/`Any`/`Mu`, `clone`.

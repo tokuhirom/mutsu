@@ -432,39 +432,17 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("{}()", class_name))))
             }
         }
-        ValueView::Bag(_, _) => {
-            if method == "raku" || method == "perl" {
+        // The renderers the quant hashes' rows share. The rows decline an
+        // element that may carry a user `gist`/`raku`; this arm renders it
+        // with the default form, as it always did.
+        ValueView::Bag(..) | ValueView::Set(..) | ValueView::Mix(..) => {
+            if method == "gist" {
                 Some(Ok(Value::str(
-                    super::raku_repr::setbagmix_raku(target).unwrap(),
+                    crate::value::gist::setbagmix_gist(target).unwrap(),
                 )))
             } else {
-                // gist: Bag(key(count) ...) or BagHash(key(count) ...)
-                Some(Ok(Value::str(
-                    runtime::utils::setbagmix_gist(target).unwrap(),
-                )))
-            }
-        }
-        ValueView::Set(_, _) => {
-            if method == "raku" || method == "perl" {
                 Some(Ok(Value::str(
                     super::raku_repr::setbagmix_raku(target).unwrap(),
-                )))
-            } else {
-                // gist: Set(a b c) or SetHash(a b c)
-                Some(Ok(Value::str(
-                    runtime::utils::setbagmix_gist(target).unwrap(),
-                )))
-            }
-        }
-        ValueView::Mix(_, _) => {
-            if method == "raku" || method == "perl" {
-                Some(Ok(Value::str(
-                    super::raku_repr::setbagmix_raku(target).unwrap(),
-                )))
-            } else {
-                // gist: Mix(key(weight) ...) or MixHash(key(weight) ...)
-                Some(Ok(Value::str(
-                    runtime::utils::setbagmix_gist(target).unwrap(),
                 )))
             }
         }
@@ -912,11 +890,7 @@ pub(super) fn dispatch(
             }
         }
         _ if target.is_range() && (method == "gist" || method == "raku" || method == "perl") => {
-            Some(Ok(Value::str(if method == "gist" {
-                range_gist_string(target)
-            } else {
-                raku_value(target)
-            })))
+            crate::builtins::method_table::collection_render::range_render(target, &[])
         }
         // A genuinely-lazy (infinite) list renders a `(...)`/`[...]`/`...`
         // placeholder rather than materializing — e.g. `[2,3].roll(*).gist`

@@ -23,7 +23,7 @@ use crate::value::{Value, ValueView};
 /// Measured against raku v2026.07: `Int`/`Str`/`Rat`/`Set`/`Pair`/a type object
 /// answer `ValueObjAt`; `Array`/`List`/`Hash`/a `Scalar`-held value answer
 /// `ObjAt`.
-fn has_value_identity(v: &Value) -> bool {
+pub(crate) fn has_value_identity(v: &Value) -> bool {
     match v.view() {
         // A `Pair`'s Str key is always value-identified; only the value decides.
         ValueView::Pair(_, val) => has_value_identity(val),
