@@ -14,10 +14,10 @@ use Test;
 
 my $s1 = 'hello';
 $s1 ~~ TR/e/a/;
-is $s1, 'hallo', 'smartmatch TR mutates LHS';
+is $s1, 'hello', 'smartmatch TR leaves LHS unchanged';
 
 my $s2 = 'meows';
 $s2 ~~ TR:d/eox/E/;
-is $s2, 'mEws', 'smartmatch TR with :d mutates LHS';
+is $s2, 'meows', 'smartmatch TR with :d leaves LHS unchanged';
 
 done-testing;
