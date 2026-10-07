@@ -463,7 +463,31 @@ impl Compiler {
         match expr.peel_parens() {
             Expr::Literal(_) => true,
             Expr::BareWord(name) => !self.local_map.contains_key(name.as_str()),
+            // A method call's result is an rvalue (`$tv.Int` is not `$tv`'s
+            // Scalar), and `try` hands its body's value through untouched.
+            // Only a statically-named call is ruled by the raw-invocant
+            // family; a run-time name (`."$name"()`) is a plain call.
+            Expr::DynamicMethodCall { modifier: None, .. } => true,
+            Expr::Try { body, catch: None } => matches!(
+                body.as_slice(),
+                [Stmt::Expr(inner)]
+                    if matches!(inner.peel_parens(), Expr::DynamicMethodCall { modifier: None, .. })
+                        || Self::expr_is_self_decontainerizing(inner.peel_parens())
+            ),
             e => Self::expr_is_self_decontainerizing(e),
+        }
+    }
+
+    /// The name `=:=` asks the VM about when its other operand is a bare
+    /// value: a `$` variable, or a sigilless local (`\val`), whose binding
+    /// either owns a Scalar or is the value itself.
+    pub(super) fn container_eq_decont_name(&self, expr: &Expr) -> Option<String> {
+        match expr.peel_parens() {
+            Expr::BareWord(name) if self.local_map.contains_key(name.as_str()) => {
+                // A leading backslash tells the VM this is a sigilless name.
+                Some(format!("\\{name}"))
+            }
+            e => Self::resolve_container_var_name(e),
         }
     }
 

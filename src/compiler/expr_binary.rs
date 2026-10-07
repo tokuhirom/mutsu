@@ -749,11 +749,11 @@ impl Compiler {
             let self_decont_name = if self.expr_is_decontainerized_value(left)
                 || (is_aggregate_var(left) && matches!(right.peel_parens(), Expr::Var(_)))
             {
-                Self::resolve_container_var_name(right)
+                self.container_eq_decont_name(right)
             } else if self.expr_is_decontainerized_value(right)
                 || (is_aggregate_var(right) && matches!(left.peel_parens(), Expr::Var(_)))
             {
-                Self::resolve_container_var_name(left)
+                self.container_eq_decont_name(left)
             } else {
                 None
             };
