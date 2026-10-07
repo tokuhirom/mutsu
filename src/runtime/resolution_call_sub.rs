@@ -622,7 +622,12 @@ impl Interpreter {
                 for candidate in &candidates {
                     if let ValueView::Sub(cand_data) = candidate.view() {
                         let saved_env = self.env.clone();
+                        // The binder alone is lenient about sigil-constrained
+                        // named params (`:%env` takes `True`), so the multi
+                        // type match decides first, as in a by-name dispatch.
                         let applicable = self
+                            .args_match_param_types(&call_args, &cand_data.param_defs)
+                            && self
                             .bind_function_args_values(
                                 &cand_data.param_defs,
                                 &cand_data.params,

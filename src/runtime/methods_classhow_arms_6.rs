@@ -121,6 +121,29 @@ impl Interpreter {
             }
     }
 
+    // `.^role_arguments` of a curried role (`R[Int]`, `Associative[Int]`): the
+    // type arguments it was parameterized with, as a List; empty otherwise.
+    // Cost: O(a), a = the length of the role's name (its argument list).
+    pub(crate) fn mop_role_arguments(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        let type_args: Vec<Value> = match args[0].view() {
+            ValueView::ParametricRole { type_args, .. } => type_args.to_vec(),
+            ValueView::Package(name) => {
+                match Self::parse_parametric_type_name(&name.resolve()) {
+                    Some((_, names)) => names
+                        .iter()
+                        .map(|arg| {
+                            self.resolve_type_object(arg)
+                                .unwrap_or_else(|| Value::package(Symbol::intern(arg)))
+                        })
+                        .collect(),
+                    None => Vec::new(),
+                }
+            }
+            _ => Vec::new(),
+        };
+        Ok(Value::array(type_args))
+    }
+
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_language_revision(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
             // Check for per-candidate language revision embedded as an

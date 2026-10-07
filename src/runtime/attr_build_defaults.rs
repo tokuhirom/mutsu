@@ -154,7 +154,20 @@ impl Interpreter {
                 _ => continue,
             }
             let val = if let Some(build_override) = &d.build_override {
-                let val = self.call_sub_value(build_override.clone(), Vec::new(), false)?;
+                // `(object, type)`, as in the pre-BUILD pass.
+                let attr_type = self
+                    .class_attribute_default(class_key, &d.name)
+                    .unwrap_or_else(|| {
+                        self.seed_attr_value(class_key, &d.name, d.sigil, &attr_type_constraints)
+                    });
+                let val = self.call_sub_value(
+                    build_override.clone(),
+                    vec![inv.clone(), attr_type],
+                    false,
+                )?;
+                // A `.map`/`.grep` result is still deferred; the attribute
+                // owns its elements, so pull them now (ADR-0058).
+                self.reify_map_grep_seq(&val)?;
                 Self::coerce_attr_value_by_sigil(val, d.sigil)
             } else if let Some(arg) = &d.default {
                 // A literal needs no evaluation context at all — the same fast

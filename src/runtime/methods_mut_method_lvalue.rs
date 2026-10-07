@@ -253,6 +253,23 @@ impl Interpreter {
             let repr = cur.to_string_value();
             return Err(RuntimeError::assignment_ro_typename(&typename, &repr));
         }
+        // `$var.var = ...` inside a variable trait handler assigns the variable
+        // the `Variable` object reflects (`trait_mod:<is>(Variable $v, ...)`).
+        // The variable lives in the declaring frame, so the value rides the
+        // trait writeback relay (`exec_apply_var_trait_op`) back to it.
+        if method == "var"
+            && method_args.is_empty()
+            && self.trait_mod_writeback_key.is_some()
+            && matches!(
+                target.view(),
+                ValueView::Instance { class_name, attributes, .. }
+                    if class_name == "Variable"
+                        && attributes.as_map().contains_key("__mutsu_var_target")
+            )
+        {
+            self.trait_mod_writeback_value = Some(value.clone());
+            return Ok(value);
+        }
         // An `is repr('CStruct')` handle keeps no Raku attributes: its fields
         // live in the C struct its `address` points at, so an assignment has to
         // write native memory (`$bind.buffer = $addr`). Without this the write
