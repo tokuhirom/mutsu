@@ -102,6 +102,17 @@ pub(crate) fn apply_quanthash_mutator(
     let mut node = receiver.clone();
     match receiver.view() {
         ValueView::Set(..) if matches!(method, "set" | "unset") => {
+            // Rakudo declares `method set(SetHash:D: \to-set, *%_)`: exactly one
+            // positional, and no named parameter is accepted.
+            let stripped = crate::builtins::strip_undeclared_nameds(method, args);
+            let args: &[Value] = stripped.as_deref().unwrap_or(args);
+            if args.len() != 1 {
+                let word = if args.is_empty() { "few" } else { "many" };
+                return Err(RuntimeError::new(format!(
+                    "Too {word} positionals passed; expected 2 arguments but got {}",
+                    args.len() + 1
+                )));
+            }
             set_or_unset(&mut node, method == "set", args);
             Ok(Value::NIL)
         }
@@ -138,7 +149,7 @@ fn random_index(len: usize) -> usize {
     (crate::builtins::rng::builtin_rand() * len as f64) as usize % len
 }
 
-/// `SetHash.set(*@keys)` / `.unset(*@keys)`: each argument is one key, or a
+/// `SetHash.set(\to-set)` / `.unset(\to-set)`: the argument is one key, or a
 /// list whose elements are keys.
 fn set_or_unset(node: &mut Value, setting: bool, args: &[Value]) {
     node.with_set_mut(|gc, _| {
