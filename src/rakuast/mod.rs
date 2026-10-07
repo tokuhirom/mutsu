@@ -114,6 +114,8 @@ pub enum RakuAstClass {
     // `v6.d` / `<1+2i>`: the value is the node's one positional field.
     VersionLiteral,
     ComplexLiteral,
+    // `:(Int $x)`: a signature literal, `Signature` as its one positional field.
+    FakeSignature,
     StrLiteral,
     QuotedString,
     // `q:to/END/`: a `QuotedString` that also keeps its `stop` line (ADR-12199).
@@ -474,6 +476,7 @@ impl RakuAstClass {
             RatLiteral => "RakuAST::RatLiteral",
             VersionLiteral => "RakuAST::VersionLiteral",
             ComplexLiteral => "RakuAST::ComplexLiteral",
+            FakeSignature => "RakuAST::FakeSignature",
             StrLiteral => "RakuAST::StrLiteral",
             QuotedString => "RakuAST::QuotedString",
             Heredoc => "RakuAST::Heredoc",
@@ -845,6 +848,7 @@ impl RakuAstClass {
             | RatLiteral
             | VersionLiteral
             | ComplexLiteral
+            | FakeSignature
             | StrLiteral
             | QuotedString
             | Heredoc
@@ -1144,6 +1148,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::RatLiteral"
         | "RakuAST::VersionLiteral"
         | "RakuAST::ComplexLiteral"
+        | "RakuAST::FakeSignature"
         | "RakuAST::StrLiteral"
         | "RakuAST::QuotedString"
         | "RakuAST::Heredoc"
@@ -1318,6 +1323,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::RatLiteral,
     RakuAstClass::VersionLiteral,
     RakuAstClass::ComplexLiteral,
+    RakuAstClass::FakeSignature,
     RakuAstClass::StrLiteral,
     RakuAstClass::QuotedString,
     RakuAstClass::Heredoc,

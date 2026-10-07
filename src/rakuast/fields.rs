@@ -416,6 +416,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
             "value"
         }
         FunctionInfix => "function",
+        FakeSignature => "signature",
         Infix | Prefix | Feed | FlipFlop | Mixin => "operator",
         VarAttribute => "name",
         VarLexical | VarDynamic => "name",

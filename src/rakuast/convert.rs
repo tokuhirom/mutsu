@@ -6288,8 +6288,31 @@ fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
             Some(word) => Ok(word_quote(word)),
             None => Err(unsupported("mixin literal")),
         },
+        // `:(Int $x)`: the parser folds a signature literal to a `Signature`
+        // value, which keeps the declared parameters it was built from;
+        // rakudo wraps them in a `FakeSignature`.
+        ValueView::Instance { class_name, .. } if class_name == "Signature" => signature_literal(v),
         other => Err(unsupported(&format!("literal {other:?}"))),
     }
+}
+
+/// `FakeSignature.new(Signature(parameters => (...)[, returns => Type]))` for a
+/// `:(...)` literal. A signature without its declared parameters (the permissive
+/// fallback parse) stays the boundary.
+// Cost: O(n), n = size of the parameter list.
+fn signature_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
+    let info = crate::value::signature::extract_sig_info(v)
+        .ok_or_else(|| unsupported("signature literal"))?;
+    let Some(defs) = info.param_defs.as_deref() else {
+        return Err(unsupported("signature literal without declared parameters"));
+    };
+    Ok(RakuAstNode {
+        class: RakuAstClass::FakeSignature,
+        fields: vec![node_field(
+            None,
+            signature(defs, false, info.return_type.as_deref())?,
+        )],
+    })
 }
 
 /// The word of an allomorph literal (`<42>` is `IntStr` 42 spelled "42"), or
