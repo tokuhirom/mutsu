@@ -213,35 +213,19 @@ impl Interpreter {
         result
     }
 
-    fn exec_one_dispatch(
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_00(
         &mut self,
         code: &CompiledCode,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
-        #[cfg(feature = "alloc-stats")]
-        let _allocation_line = crate::alloc_stats::enter_line(
-            code.location_at(*ip)
-                .map(|(file, line)| crate::profile::LineLocation { file, line }),
-        );
-        crate::trace::trace_log!(
-            "vm",
-            "exec_one[{}]: {:?}",
-            ip,
-            std::mem::discriminant(&code.ops[*ip])
-        );
-        // Per-opcode execution histogram (MUTSU_VM_STATS=1 only; a single
-        // cached bool load when off). Feeds instruction-set tuning decisions.
-        crate::vm::vm_stats::record_opcode(&code.ops[*ip]);
-        // Per-opcode allocation accounting (`alloc-stats` builds only; expands
-        // to nothing otherwise). `mfast:body` -- the bytecode execution of a
-        // method -- is the largest region in the #7561 report and could not be
-        // attributed any further without splitting it by opcode family.
-        crate::alloc_scope_dyn!(crate::alloc_stats::opcode_label(&code.ops[*ip]));
-        // Track the currently-executing frame's code so the lazy-force machinery
-        // can reconcile this (caller) frame's local slots from env after a reify
-        // that mutated a captured-outer lexical (Slice F). See `current_code`.
-        self.current_code = code as *const CompiledCode as usize;
         match &code.ops[*ip] {
             // ADR-0110 §3.3: a statically resolved call into a typed routine.
             // First arm because it is the whole of a hot call site.
@@ -744,6 +728,25 @@ impl Interpreter {
                 self.stack.push(val);
                 *ip += 1;
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_01(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        _compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(d), one env probe for `self`.
             OpCode::GetSelfOrNoSelf(name_idx) => {
                 // Load `self` for a `$.attr` accessor from the captured env.
@@ -1105,6 +1108,25 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_02(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(1) on a type-object memo hit (ADR-0121 D3); otherwise O(p*|name|),
             // p = packages on the bare-name search path (each probe formats a qualified key);
             // independent of the registry size (measured).
@@ -3084,6 +3106,25 @@ impl Interpreter {
                 self.mirror_attr_env_to_cell(code, *name_idx, None);
                 *ip += 1;
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_03(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        _compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(p) (see exec_set_var_type).
             OpCode::SetVarType { name_idx, tc_idx } => {
                 self.exec_set_var_type(code, ip, *name_idx, *tc_idx, false, false)?;
@@ -3407,6 +3448,25 @@ impl Interpreter {
                 self.stack.push(result);
                 *ip += 1;
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_04(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        _compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(1).
             OpCode::WrapScalar => {
                 // Wrap the top-of-stack value in a Scalar container.
@@ -3709,6 +3769,25 @@ impl Interpreter {
                 self.exec_container_eq_indexed_op(code, *left_name_idx, *right_name_idx);
                 *ip += 1;
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_05(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(1).
             OpCode::ContainerEqRaw => {
                 self.exec_container_eq_raw_op();
@@ -4009,6 +4088,25 @@ impl Interpreter {
                 *ip += 1;
             }
 
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_06(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        _compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // -- Bitwise --
             // Cost: O(1) for Int operands; O(b) for BigInt, b = limbs.
             OpCode::BitAnd => {
@@ -4314,6 +4412,25 @@ impl Interpreter {
                 self.stack.push(result);
                 *ip += 1;
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_07(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        _compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(1).
             OpCode::Dup => {
                 let val = self.stack.last().unwrap().clone();
@@ -4816,6 +4933,25 @@ impl Interpreter {
                 *ip += 1;
             }
 
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_08(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // -- Range creation --
             // Cost: O(1) (a list endpoint numifies to its element count).
             OpCode::MakeRange => {
@@ -5115,6 +5251,25 @@ impl Interpreter {
                 *ip += 1;
             }
 
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_09(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        _compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // -- Indexing --
             // Cost: O(1) for a single index/key; O(k) for a slice, k = indices (see
             // exec_index_op_with_positional).
@@ -5414,6 +5569,25 @@ impl Interpreter {
                 *ip += 1;
             }
 
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_10(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        _compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(e), e = elements dropped; the slot lookup is one probe of the chunk's name
             // index.
             OpCode::UndefineAggregate(name_idx) => {
@@ -5724,6 +5898,25 @@ impl Interpreter {
                 *ip += 1;
             }
 
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_11(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // -- Variable access --
             // Cost: O(1) (an env probe per scope tier; `$<name>` adds one hash AT-KEY).
             OpCode::GetCaptureVar(name_idx) => {
@@ -6024,6 +6217,25 @@ impl Interpreter {
                     Err(e) => return Err(e),
                 }
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_12(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(s), s = routine-stack depth (Failure origin capture).
             OpCode::Fail => {
                 self.sync_source_line(code, *ip);
@@ -6347,6 +6559,25 @@ impl Interpreter {
                 self.register_lexical_class(name);
                 *ip += 1;
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_13(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(m) plus hashed lookups, m = bytes of the name (probed, then copied and
             // interned once). A qualified name is resolved through its parent package's stash, so
             // it also pays O(s), s = members of that package. One-shot per scope entry.
@@ -6651,6 +6882,25 @@ impl Interpreter {
                 self.exec_state_var_init_op(code, *slot, *key_idx);
                 *ip += 1;
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_14(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(1).
             OpCode::StateVarInitGuard(key_idx, jump_to) => {
                 *ip = if self.state_var_init_guard_taken(*key_idx) {
@@ -6955,6 +7205,25 @@ impl Interpreter {
                 self.exec_augment_class_op(code, *idx, *site_id)?;
                 *ip += 1;
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_15(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(1) (one registry insert).
             OpCode::RegisterSubset {
                 idx,
@@ -7313,6 +7582,25 @@ impl Interpreter {
                 self.sigilless_bind_source = Some((code.const_sym(*name_idx), writable));
                 *ip += 1;
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
+        }
+        Ok(())
+    }
+
+    /// One slice of the opcode `match` (see [`Self::exec_one_dispatch`]): a debug build
+    /// gives every local of every arm its own stack slot, so the single 7k-line match
+    /// cost ~140 KB per executed opcode on the native stack; split into groups, a
+    /// recursion only pays for the slice it passes through. Release inlines the groups
+    /// back into the dispatcher.
+    #[cfg_attr(debug_assertions, inline(never))]
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    pub(super) fn exec_ops_group_16(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        match &code.ops[*ip] {
             // Cost: O(1) amortized (the paired MarkSigillessBindSource verdict, else one probe of
             // the chunk's name index).
             OpCode::MarkSigillessBind(name_idx) => {
@@ -7400,8 +7688,41 @@ impl Interpreter {
                 self.sync_source_line(code, *ip);
                 self.exec_let_block_op(code, *body_end, *value_on_stack, ip, compiled_fns)?;
             }
+            _ => unreachable!("opcode routed to the wrong exec_ops group"),
         }
         Ok(())
+    }
+
+    fn exec_one_dispatch(
+        &mut self,
+        code: &CompiledCode,
+        ip: &mut usize,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(), RuntimeError> {
+        #[cfg(feature = "alloc-stats")]
+        let _allocation_line = crate::alloc_stats::enter_line(
+            code.location_at(*ip)
+                .map(|(file, line)| crate::profile::LineLocation { file, line }),
+        );
+        crate::trace::trace_log!(
+            "vm",
+            "exec_one[{}]: {:?}",
+            ip,
+            std::mem::discriminant(&code.ops[*ip])
+        );
+        // Per-opcode execution histogram (MUTSU_VM_STATS=1 only; a single
+        // cached bool load when off). Feeds instruction-set tuning decisions.
+        crate::vm::vm_stats::record_opcode(&code.ops[*ip]);
+        // Per-opcode allocation accounting (`alloc-stats` builds only; expands
+        // to nothing otherwise). `mfast:body` -- the bytecode execution of a
+        // method -- is the largest region in the #7561 report and could not be
+        // attributed any further without splitting it by opcode family.
+        crate::alloc_scope_dyn!(crate::alloc_stats::opcode_label(&code.ops[*ip]));
+        // Track the currently-executing frame's code so the lazy-force machinery
+        // can reconcile this (caller) frame's local slots from env after a reify
+        // that mutated a captured-outer lexical (Slice F). See `current_code`.
+        self.current_code = code as *const CompiledCode as usize;
+        self.route_op(code, ip, compiled_fns)
     }
 
     /// Adopt the source line of the instruction at `ip` as the current line.
