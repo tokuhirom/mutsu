@@ -998,8 +998,11 @@ pub(crate) enum BinaryForm {
     /// An ordinary infix: `a OP b`, `a => b`.
     #[default]
     Infix,
-    /// `:a(EXPR)`, `:a<x>`, `:a[1]`: raku's `ColonPair::Value`.
+    /// `:a(EXPR)`: raku's `ColonPair::Value`, over the parenthesized value.
     ColonPairValue,
+    /// `:a<x>`, `:a[1]`, `:a«x»`: raku's `ColonPair::Value` over the bracketed
+    /// value itself, with no parentheses around it.
+    ColonPairBracketed,
     /// `:a`: raku's `ColonPair::True`.
     ColonPairTrue,
     /// `:!a`: raku's `ColonPair::False`.

@@ -606,7 +606,7 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                                         // is flattened (`:args[<1 2>]` -> [1, 2], not [[1,2]])
                                         // -- unless a trailing comma keeps it whole.
                                         value: Some(Expr::BracketArray(items, trailing_comma)),
-                                        form: crate::ast::BinaryForm::ColonPairValue,
+                                        form: crate::ast::BinaryForm::ColonPairBracketed,
                                     },
                                 ));
                             }
@@ -635,7 +635,7 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                         CallArg::Named {
                             name,
                             value: Some(Expr::BracketArray(items, false)),
-                            form: crate::ast::BinaryForm::ColonPairValue,
+                            form: crate::ast::BinaryForm::ColonPairBracketed,
                         },
                     ));
                 }
@@ -685,7 +685,7 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                                 value: Some(Expr::Literal(crate::parser::angle_word_value(
                                     words[0],
                                 ))),
-                                form: crate::ast::BinaryForm::ColonPairValue,
+                                form: crate::ast::BinaryForm::ColonPairBracketed,
                             },
                         ));
                     }
@@ -698,7 +698,7 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                         CallArg::Named {
                             name,
                             value: Some(Expr::ArrayLiteral(items)),
-                            form: crate::ast::BinaryForm::ColonPairValue,
+                            form: crate::ast::BinaryForm::ColonPairBracketed,
                         },
                     ));
                 }
@@ -720,7 +720,7 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                         CallArg::Named {
                             name,
                             value: Some(*right),
-                            form: crate::ast::BinaryForm::ColonPairValue,
+                            form: crate::ast::BinaryForm::ColonPairBracketed,
                         },
                     ));
                 }

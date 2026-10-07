@@ -4221,13 +4221,20 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         RakuAstClass::ColonPairVariable | RakuAstClass::ColonPairValue => {
             let key = leaf_str(node, "key")?;
-            let value = lower_expr(named_child(node, "value")?)?;
+            let value_node = named_child(node, "value")?;
+            let value = lower_expr(value_node)?;
             Ok(Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(key))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
                 form: if node.class == RakuAstClass::ColonPairVariable {
                     crate::ast::BinaryForm::ColonPairVariable
+                } else if matches!(
+                    value_node.class,
+                    RakuAstClass::CircumfixArrayComposer | RakuAstClass::QuotedString
+                ) {
+                    // `:a[1, 2]` / `:a<x y>`: no parentheses around the value.
+                    crate::ast::BinaryForm::ColonPairBracketed
                 } else {
                     crate::ast::BinaryForm::ColonPairValue
                 },

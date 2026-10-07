@@ -6468,6 +6468,7 @@ fn colonpair_spelling(expr: &Expr, form: crate::ast::BinaryForm) -> Option<RakuA
         BinaryForm::ColonPairFalse => colonpair_false_expr(expr),
         BinaryForm::ColonPairVariable => colonpair_variable_expr(expr),
         BinaryForm::ColonPairValue => colonpair_value_expr(expr),
+        BinaryForm::ColonPairBracketed => colonpair_bracketed_expr(expr),
         BinaryForm::Infix | BinaryForm::CaretPrefix => return None,
     }
     .ok()
@@ -6567,6 +6568,18 @@ fn colonpair_variable_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
 /// only the value expression. A bare block is the exception: Rakudo keeps it as
 /// a direct `RakuAST::Block` value rather than wrapping it in parentheses.
 pub(super) fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    colonpair_value_node(expr, true)
+}
+
+/// `:a<x y>` / `:a[1, 2]`: the colonpair over the bracketed value itself, a
+/// word-quote or an array composer, with no parentheses around it.
+// Cost: O(n), n = size of the pair.
+fn colonpair_bracketed_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    colonpair_value_node(expr, false)
+}
+
+// Cost: O(n), n = size of the pair.
+fn colonpair_value_node(expr: &Expr, parenthesize: bool) -> Result<RakuAstNode, RuntimeError> {
     let Expr::Binary {
         left,
         op: crate::token_kind::TokenKind::FatArrow,
@@ -6582,16 +6595,25 @@ pub(super) fn colonpair_value_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeEr
     let ValueView::Str(key) = value.view() else {
         return Err(unsupported("colonpair value key"));
     };
-    let value = convert_expr(right)?;
-    let is_direct_block = matches!(
-        right.as_ref(),
-        Expr::AnonSub { is_block: true, .. }
-            | Expr::Block(_)
-            | Expr::Hash(_, crate::ast::HashSpelling::Composer)
-    ) || crate::regex_tree::is_scalar_placeholder_block(right)
+    let value = match right.as_ref() {
+        // `:a<x y>` keeps the raw word text as one word-quote.
+        Expr::Literal(_) | Expr::ArrayLiteral(_) if !parenthesize => match angle_key_text(right) {
+            Some(text) => word_quote(&text),
+            None => convert_expr(right)?,
+        },
+        _ => convert_expr(right)?,
+    };
+    let is_direct_block = parenthesize
+        && matches!(
+            right.as_ref(),
+            Expr::AnonSub { is_block: true, .. }
+                | Expr::Block(_)
+                | Expr::Hash(_, crate::ast::HashSpelling::Composer)
+        )
+        || crate::regex_tree::is_scalar_placeholder_block(right)
         || crate::regex_tree::is_array_slurpy_placeholder_block(right)
         || crate::regex_tree::is_hash_slurpy_placeholder_block(right);
-    if is_direct_block {
+    if is_direct_block || !parenthesize {
         return Ok(RakuAstNode {
             class: RakuAstClass::ColonPairValue,
             fields: vec![

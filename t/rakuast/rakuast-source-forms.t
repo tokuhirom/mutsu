@@ -9,7 +9,7 @@ use Test;
 # Expected gists captured verbatim from Rakudo 2026.09; this file passes
 # under BOTH mutsu and raku, so raku is the oracle.
 
-plan 28;
+plan 29;
 
 is Q[sub f($a?) { }; f 1; f(1); f;].AST.gist, q:to/END/.chomp, 'call without parentheses';
     RakuAST::StatementList.new(
@@ -1011,6 +1011,87 @@ is Q[.^name; .?foo; .Str;].AST.gist, q:to/END/.chomp, 'topic metamethod calls';
         expression => RakuAST::Term::TopicCall.new(
           RakuAST::Call::Method.new(
             name => RakuAST::Name.from-identifier("Str")
+          )
+        )
+      )
+    )
+    END
+
+is Q[sub f(*%_) { }; f(:a<x y>, :b[1, 2], :c(1)); f :a<x>;].AST.gist, q:to/END/.chomp, 'bracketed colonpair values';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Sub.new(
+          name      => RakuAST::Name.from-identifier("f"),
+          signature => RakuAST::Signature.new(
+            parameters => (
+              RakuAST::Parameter.new(
+                target => RakuAST::ParameterTarget::Var.new(
+                  name => "\%_"
+                ),
+                slurpy => RakuAST::Parameter::Slurpy::Flattened
+              ),
+            )
+          ),
+          body      => RakuAST::Blockoid.new(
+            RakuAST::StatementList.new()
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Call::Name.new(
+          name => RakuAST::Name.from-identifier("f"),
+          args => RakuAST::ArgList.new(
+            RakuAST::ColonPair::Value.new(
+              key   => "a",
+              value => RakuAST::QuotedString.new(
+                processors => <words val>,
+                segments   => (
+                  RakuAST::StrLiteral.new("x y"),
+                )
+              )
+            ),
+            RakuAST::ColonPair::Value.new(
+              key   => "b",
+              value => RakuAST::Circumfix::ArrayComposer.new(
+                RakuAST::SemiList.new(
+                  RakuAST::Statement::Expression.new(
+                    expression => RakuAST::ApplyListInfix.new(
+                      infix    => RakuAST::Infix.new(","),
+                      operands => (
+                        RakuAST::IntLiteral.new(1),
+                        RakuAST::IntLiteral.new(2),
+                      )
+                    )
+                  )
+                )
+              )
+            ),
+            RakuAST::ColonPair::Value.new(
+              key   => "c",
+              value => RakuAST::Circumfix::Parentheses.new(
+                RakuAST::SemiList.new(
+                  RakuAST::Statement::Expression.new(
+                    expression => RakuAST::IntLiteral.new(1)
+                  )
+                )
+              )
+            )
+          )
+        )
+      ),
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::Call::Name::WithoutParentheses.new(
+          name => RakuAST::Name.from-identifier("f"),
+          args => RakuAST::ArgList.new(
+            RakuAST::ColonPair::Value.new(
+              key   => "a",
+              value => RakuAST::QuotedString.new(
+                processors => <words val>,
+                segments   => (
+                  RakuAST::StrLiteral.new("x"),
+                )
+              )
+            )
           )
         )
       )
