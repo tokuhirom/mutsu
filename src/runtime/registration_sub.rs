@@ -3,7 +3,7 @@ use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// Outcome of a `register_sub_decl` call, distinguishing a genuine
 /// (re-)installation from an idempotent no-op re-registration of an already
@@ -43,56 +43,6 @@ pub(crate) fn test_assertion_name_possible(name: &str) -> bool {
     TEST_ASSERTION_NAMES
         .get()
         .is_some_and(|names| names.read().unwrap().contains(name))
-}
-
-/// Process-wide, monotonic record of role names composed onto a *named
-/// routine* (`sub foo() {...}` mixed with a role via `.^mixin(Role)` or a
-/// trait handler's `$r does Role`), keyed by `"package::name"`. A Sub value
-/// for a named routine is rebuilt fresh from the registry at every call
-/// (`vm_call_named_inner.rs`) and at every bare `&name` mention
-/// (`vm_misc_codevar.rs`) — see
-/// `news/2026-08/test-assertion-trait-is-not-introspectable.md` — so
-/// composing a role onto one instance of that Sub does not by
-/// itself make a later rebuild carry it. This records "roles a plain rebuild
-/// must also re-apply" so `Interpreter::materialize_routine_mixins` can
-/// restore them. Same conservative monotonic-counter contract as
-/// `TEST_ASSERTION_DECLS` above: insert-only, so a lookup miss is always
-/// correct (just means "never mixed"), and the common case (no routine ever
-/// mixed) costs one relaxed load on every call.
-static ROUTINE_MIXIN_DECLS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-static ROUTINE_MIXIN_ROLES: std::sync::OnceLock<std::sync::RwLock<HashMap<String, Vec<String>>>> =
-    std::sync::OnceLock::new();
-
-/// Record that `role_name` was composed onto the named routine
-/// `qualified_name` (`"package::name"`).
-pub(crate) fn note_routine_mixin_role(qualified_name: &str, role_name: &str) {
-    let map = ROUTINE_MIXIN_ROLES.get_or_init(|| std::sync::RwLock::new(HashMap::new()));
-    let mut roles = map.write().unwrap();
-    let entry = roles.entry(qualified_name.to_string()).or_default();
-    if !entry.iter().any(|r| r == role_name) {
-        entry.push(role_name.to_string());
-    }
-    drop(roles);
-    ROUTINE_MIXIN_DECLS.fetch_add(1, std::sync::atomic::Ordering::Release);
-}
-
-/// Cheap pre-check for the overwhelmingly common case (no routine anywhere
-/// was ever mixed with a role): a caller on a hot path should skip building
-/// the `"package::name"` lookup key entirely when this is false.
-pub(crate) fn any_routine_mixin_roles() -> bool {
-    ROUTINE_MIXIN_DECLS.load(std::sync::atomic::Ordering::Acquire) != 0
-}
-
-/// The role names ever composed onto the named routine `qualified_name`
-/// (empty when none were).
-pub(crate) fn routine_mixin_roles(qualified_name: &str) -> Vec<String> {
-    if !any_routine_mixin_roles() {
-        return Vec::new();
-    }
-    ROUTINE_MIXIN_ROLES
-        .get()
-        .and_then(|m| m.read().unwrap().get(qualified_name).cloned())
-        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

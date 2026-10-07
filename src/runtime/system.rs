@@ -418,6 +418,7 @@ impl Interpreter {
                     role_param_bindings: None,
                     nested_capture_index: None,
                     captured_readonly: None,
+                    routine_cell: Default::default(),
                 };
                 let owner = crate::symbol::Symbol::intern(&class_name);
                 let method_sym = crate::symbol::Symbol::intern(&resolved_method_name);

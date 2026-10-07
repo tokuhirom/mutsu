@@ -726,9 +726,9 @@ impl Interpreter {
                 Value::array(vec![method_obj.clone()]),
             );
             let method_obj = Value::make_instance(class_name, am);
-            return self.method_object_with_routine_mixins(method_obj, name, owner_class);
+            return self.method_object_with_routine_mixins(method_obj, method_def, name, owner_class, is_dispatcher);
         }
-        self.method_object_with_routine_mixins(method_obj, name, owner_class)
+        self.method_object_with_routine_mixins(method_obj, method_def, name, owner_class, is_dispatcher)
     }
 
     /// A role composed onto a method at declaration (`multi sub
@@ -740,11 +740,23 @@ impl Interpreter {
     fn method_object_with_routine_mixins(
         &self,
         method_obj: Value,
+        method_def: &MethodDef,
         name: &str,
         owner_class: Option<&str>,
+        is_dispatcher: bool,
     ) -> Value {
-        match owner_class {
-            Some(owner) => self.materialize_routine_mixins_shared(method_obj, owner, name),
+        // A dispatcher is the `proto method` itself: its traits ran on the
+        // proto's cell, not on any candidate's.
+        // The dispatcher of a plain `multi` is generated, so it carries none.
+        let cell = if is_dispatcher {
+            owner_class
+                .and_then(|owner| self.registry().method_entry_proto(owner, name))
+                .map(|proto| proto.routine_cell.clone())
+        } else {
+            Some(method_def.routine_cell.clone())
+        };
+        match cell.and_then(|cell| cell.get()) {
+            Some(overrides) => Value::mixin_parts(Arc::new(method_obj), overrides),
             None => method_obj,
         }
     }

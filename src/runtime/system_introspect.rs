@@ -186,7 +186,7 @@ impl Interpreter {
     fn insert_callframe_code_attrs(attrs: &mut ValueMap, code: &Value) {
         // A routine ever composed with a role (`.^mixin(Role)`, or a trait
         // handler's `$r does Role`) is a `Mixin` wrapping its `Sub` here, not
-        // a bare `Sub` — see `Interpreter::materialize_routine_mixins`. Look
+        // a bare `Sub` — see the routine composition cell (ADR-11827). Look
         // through it so such a routine still reports its name/package instead
         // of falling to the "no code" arm below.
         let sub_data = match code.view() {

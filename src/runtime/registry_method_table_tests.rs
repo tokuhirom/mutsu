@@ -27,6 +27,7 @@ fn dummy_method_def() -> MethodDef {
         role_param_bindings: None,
         nested_capture_index: None,
         captured_readonly: None,
+        routine_cell: Default::default(),
     }
 }
 

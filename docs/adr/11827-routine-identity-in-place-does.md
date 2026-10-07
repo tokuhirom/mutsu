@@ -1,6 +1,6 @@
 # ADR-11827: A routine has identity; `does` on it composes in place
 
-- **Status**: Proposed (maintainer asked for this ADR on 2026-10-04). Phases 1 and 2 are implemented; see §5.
+- **Status**: Proposed (maintainer asked for this ADR on 2026-10-04). Phases 1-3 are implemented; see §5.
 - **Date**: 2026-10-04
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#11827](https://github.com/tokuhirom/mutsu/issues/11827)
@@ -105,7 +105,7 @@ invocant first.
   live as long as the registry anyway. A closure that is mixed into with itself as a role
   argument stays alive; the ADR accepts that as the conservative side.
 
-### 2.6 `ROUTINE_MIXIN_ROLES`
+### 2.6 `ROUTINE_MIXIN_ROLES` (removed in phase 3)
 
 The name-keyed table becomes redundant once rebuilds share the def's cell. It is removed in
 phase 1 when every reader reads the cell, and kept as is until then.
@@ -136,4 +136,9 @@ phase 1 when every reader reads the cell, and kept as is until then.
 | --- | --- | --- |
 | 1 | Cell on `SubData` / `FunctionDef`; `does` writes it; method dispatch and role checks on routine receivers read it; `.clone` gets a fresh cell | done (`t/oo/routine-does-identity.t`) |
 | 2 | Method traits on one persistent `Method`; `$!do` on a method reaches dispatch | done (`t/oo/method/method-do-attr-bind.t`). Not yet: a `does` on a `.^find_method` object is not seen by a later lookup (each lookup builds a new `Method` instance); that moves to phase 3 with the def-owned identity |
-| 3 | Remove `ROUTINE_MIXIN_ROLES` | planned |
+| 3 | A method's `MethodDef` owns the cell its traits ran on; method objects a lookup builds read it; `ROUTINE_MIXIN_ROLES` and `materialize_routine_mixins*` are gone | done (`t/oo/role/method-trait-role-def-identity.t`) |
+
+Not done: a `does` run by user code on a method object a lookup returned
+(`K.^find_method('m') does R`) reblesses that one `Instance` and is not seen by a later lookup
+(rakudo: it is). The trait path, which is what upstream NativeCall uses, is covered. Tracked in
+a separate issue.

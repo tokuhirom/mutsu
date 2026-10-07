@@ -285,6 +285,7 @@ impl Interpreter {
                         role_param_bindings: None,
                         nested_capture_index: None,
                         captured_readonly: Some(self.capture_declaring_readonly_state()),
+                        routine_cell: Default::default(),
                     };
                     // ADR-0019 D3-5: `my method`/`our method` are not part of
                     // the class method table — only callable as functions,

@@ -236,7 +236,7 @@ impl Interpreter {
         // Search the block_stack for a Sub matching this frame's name. A
         // routine ever composed with a role (`.^mixin(Role)`, or a trait
         // handler's `$r does Role`) is a `Mixin` wrapping its `Sub` here, not
-        // a bare `Sub` — see `Interpreter::materialize_routine_mixins` — so
+        // a bare `Sub` — see the routine composition cell (ADR-11827) — so
         // look through that wrapper the same way.
         let sub_val = self
             .block_stack

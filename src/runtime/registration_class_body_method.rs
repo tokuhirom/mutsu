@@ -186,6 +186,7 @@ impl Interpreter {
                 .nested_method_captures
                 .remove(&(Symbol::intern(cx.name), index))
         });
+        let method_cell = crate::value::RoutineCell::default();
         let def = MethodDef {
             syms: Default::default(),
             lexical_package: crate::symbol::Symbol::intern(&cx.saved_package),
@@ -234,6 +235,7 @@ impl Interpreter {
             role_param_bindings: None,
             nested_capture_index: decl.nested_capture_index,
             captured_readonly: Some(self.capture_declaring_readonly_state()),
+            routine_cell: method_cell.clone(),
         };
         // `my method` and `our method` are NOT part of the class
         // method table — they are only callable as functions.
@@ -324,6 +326,7 @@ impl Interpreter {
             false,
             decl.return_type.as_deref(),
             &decl.custom_traits,
+            &method_cell,
         )?;
         // `Method::Also` implements `is also<NAME>` through a custom
         // metarole that calls `.^add_method` during composition. Keep the
