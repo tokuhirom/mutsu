@@ -736,7 +736,12 @@ impl Interpreter {
                     continue;
                 }
 
-                if let Some(val) = sv.get(key) {
+                // A seed nobody wrote is the spawning binding's snapshot, not a
+                // published value: pulling it replaced another binding of the
+                // same bare name this thread holds (#12204).
+                if !sv.is_unwritten_seed(key)
+                    && let Some(val) = sv.get(key)
+                {
                     updates.push((key.clone(), val));
                 }
             }
