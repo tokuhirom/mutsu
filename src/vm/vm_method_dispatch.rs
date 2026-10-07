@@ -1251,7 +1251,7 @@ impl Interpreter {
             for (name, v) in carried {
                 merged_env.insert(name, v);
             }
-            self.persist_nested_capture_writes(owner_sym, &method_def, capture_writes);
+            self.persist_nested_capture_writes(owner_sym, method_def, capture_writes);
             // Precise dirty signal (Slice 6.3): the caller only needs an
             // env->locals re-sync when this method actually merged a
             // caller-visible write (captured-outer var, global, &sub) or wrote
@@ -2722,7 +2722,7 @@ impl Interpreter {
                 for (name, v) in carried {
                     merged.insert(name, v);
                 }
-                self.persist_nested_capture_writes(owner_sym, &method_def, capture_writes);
+                self.persist_nested_capture_writes(owner_sym, method_def, capture_writes);
                 // Precise dirty signal (Slice 6.3): re-sync the caller's locals
                 // only when the method merged a caller-visible write.
                 self.dispatch.method_dispatch_pure = !wrote_caller;

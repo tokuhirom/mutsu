@@ -64,10 +64,7 @@ impl<'a> RakudoInstanceEqv<'a> {
     // Cost: O(d), d = MRO depth of `class`.
     fn is_exception_class(&mut self, class: Symbol) -> bool {
         let exception = Symbol::intern("Exception");
-        self.interp
-            .class_mro(class.as_str())
-            .iter()
-            .any(|c| *c == exception)
+        self.interp.class_mro(class.as_str()).contains(&exception)
     }
 
     /// `$value.raku` through the compiled user method; `None` when the
