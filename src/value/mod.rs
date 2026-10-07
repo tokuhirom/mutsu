@@ -552,7 +552,7 @@ pub(crate) mod capture_text;
 pub(crate) mod compare;
 pub(crate) mod container_lock;
 mod dispatch_shape;
-pub(crate) use dispatch_shape::DispatchShape;
+pub(crate) use dispatch_shape::{DispatchShape, const_str_eq};
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
 mod entry_path;

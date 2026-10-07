@@ -1,11 +1,14 @@
 //! The lookup structure behind the built-in method table (ADR-11276 §2.6):
 //! every group's rows, resolved once per process along each shape's MRO.
 
+use super::table_const::{
+    ALL, ARITIES, ENTRY_IDS, ENTRY_KEYS, ENTRY_START, NAME_ROWS, NAME_START, NAMES, SHAPES,
+    TYPE_SHAPES,
+};
 use super::{MethodRow, RowFlags};
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, Value};
-use rustc_hash::FxHashMap;
-use std::sync::OnceLock;
+use std::cell::RefCell;
 
 use super::{collections, ctors_mop, instances, io_concurrency, mutating, scalars};
 
@@ -13,7 +16,7 @@ use super::{collections, ctors_mop, instances, io_concurrency, mutating, scalars
 /// directory of its own, so a slice adds its rows to its group's
 /// `FAMILIES` and never edits this list: the groups are listed here once, in
 /// slice 3A.
-static GROUPS: &[&[&[MethodRow]]] = &[
+pub(super) static GROUPS: &[&[&[MethodRow]]] = &[
     scalars::FAMILIES,
     collections::FAMILIES,
     instances::FAMILIES,
@@ -23,11 +26,9 @@ static GROUPS: &[&[&[MethodRow]]] = &[
 ];
 
 /// Every row of every group, in registration order.
+#[cfg(test)]
 pub(super) fn all_rows() -> impl Iterator<Item = &'static MethodRow> {
-    GROUPS
-        .iter()
-        .flat_map(|families| families.iter())
-        .flat_map(|rows| rows.iter())
+    ALL.iter().copied()
 }
 
 /// What a call's receiver is to the table: an instance of a shape, or the type
@@ -77,60 +78,6 @@ impl Receiver {
     }
 }
 
-/// `(receiver, method, arity) -> row`, resolved along each shape's MRO, plus
-/// the arities each method name has rows for.
-pub(super) struct Table {
-    pub(super) rows: FxHashMap<(Receiver, Symbol, u8), RowId>,
-    /// `(owner, method, arity) -> row`, for a receiver the table has no shape
-    /// for (an instance of a user subclass) whose MRO names the owner.
-    owners: FxHashMap<(Symbol, Symbol, u8), RowId>,
-    /// `(owner, method) -> row` for a slurpy row, which answers any arity from
-    /// its own up.
-    slurpy: FxHashMap<(Symbol, Symbol), RowId>,
-    /// Every row once, indexed by [`RowId`].
-    pub(super) all: Vec<&'static MethodRow>,
-    /// Per `Symbol` id, one bit per arity some row with that name takes (bit
-    /// `a` for `a` arguments). Most calls are to methods with no row, or with
-    /// a row for another arity (`$s.index($n, $from)` beside the one-needle
-    /// row); testing a bit answers those without hashing.
-    arities: Vec<u8>,
-    /// Per `Symbol` id, one bit per [`DispatchShape`] some row with that name
-    /// is resolved for on an instance. A name with rows for other receivers
-    /// (`Int` has rows on the numeric types, none on `Str`) is refused for
-    /// this one by a bit test too, without the hash lookup or a call site's
-    /// memo.
-    shapes: Vec<u64>,
-    /// The same bits for a type object receiver: only rows flagged
-    /// `TYPE_OBJECT_OK` set them.
-    type_shapes: Vec<u64>,
-}
-
-impl Table {
-    /// Whether some row with `method`'s name is resolved for `receiver`.
-    // Cost: O(1), a bit test.
-    #[inline]
-    pub(super) fn has_shape(&self, method: Symbol, receiver: Receiver) -> bool {
-        let bits = if receiver.type_object {
-            &self.type_shapes
-        } else {
-            &self.shapes
-        };
-        bits.get(method.id() as usize)
-            .is_some_and(|bits| bits & (1 << (receiver.shape as u64)) != 0)
-    }
-
-    /// Whether some row is named `method` and takes `arity` arguments.
-    // Cost: O(1), a bit test.
-    #[inline]
-    pub(super) fn has_name(&self, method: Symbol, arity: usize) -> bool {
-        arity < 8
-            && self
-                .arities
-                .get(method.id() as usize)
-                .is_some_and(|bits| bits & (1 << arity) != 0)
-    }
-}
-
 /// A row's index in the table: what a call site's inline cache remembers
 /// (`vm_method_site_lane`). Stable for the life of the process.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,183 +96,123 @@ impl RowId {
     }
 }
 
-/// Built on the first lookup, not at `Interpreter` construction: the cost is
-/// one pass over the rows per shape (a few hundred inserts today).
-pub(super) fn table() -> &'static Table {
-    static TABLE: OnceLock<Table> = OnceLock::new();
-    TABLE.get_or_init(build)
+/// The memo's marker for a symbol not yet looked up.
+const UNKNOWN: u16 = u16::MAX;
+/// The memo's marker for a symbol that names no row.
+const NO_NAME: u16 = u16::MAX - 1;
+
+thread_local! {
+    /// Per symbol id, its index in [`NAMES`] (or a marker). A symbol is
+    /// interned at run time, so the compile-time index cannot be keyed by it;
+    /// each distinct name pays one binary search per thread, the first time it
+    /// is asked about.
+    static NAME_MEMO: RefCell<Vec<u16>> = const { RefCell::new(Vec::new()) };
 }
 
-fn build() -> Table {
-    let all: Vec<&'static MethodRow> = all_rows().collect();
-    let mut table = Table {
-        rows: FxHashMap::default(),
-        owners: FxHashMap::default(),
-        slurpy: FxHashMap::default(),
-        all,
-        arities: Vec::new(),
-        shapes: Vec::new(),
-        type_shapes: Vec::new(),
-    };
-    // Each row's name, interned once, and the rows of each owner in
-    // registration order: the shape pass below visits an owner per MRO entry
-    // per shape, so it must not rescan every row to find them.
-    let mut names: Vec<Symbol> = Vec::with_capacity(table.all.len());
-    let mut by_owner: FxHashMap<&'static str, Vec<usize>> = FxHashMap::default();
-    // Rows of one owner sit together, so the owner symbol is interned once
-    // per run of rows rather than once per row.
-    let mut last_owner: Option<(&'static str, Symbol)> = None;
-    for (idx, row) in table.all.iter().enumerate() {
-        let name = Symbol::intern(row.name);
-        names.push(name);
-        by_owner.entry(row.owner).or_default().push(idx);
-        // A row past `u16::MAX` stays unreachable through the table.
-        if let Ok(id) = u16::try_from(idx) {
-            let owner = match last_owner {
-                Some((text, sym)) if text == row.owner => sym,
-                _ => {
-                    let sym = Symbol::intern(row.owner);
-                    last_owner = Some((row.owner, sym));
-                    sym
-                }
-            };
-            for arity in row.arities() {
-                table
-                    .owners
-                    .entry((owner, name, arity))
-                    .or_insert(RowId(id));
-            }
-            if row.flags.contains(RowFlags::SLURPY) {
-                table.slurpy.entry((owner, name)).or_insert(RowId(id));
-            }
-        }
+/// `method`'s index in [`NAMES`], if some row is named so.
+// Cost: O(1) after the first ask per thread; O(log u * len), u = distinct row
+// names, len = name length, on the first.
+#[inline]
+fn name_index(method: Symbol) -> Option<usize> {
+    let id = method.id() as usize;
+    let cached = NAME_MEMO.try_with(|memo| memo.borrow().get(id).copied());
+    match cached {
+        Ok(Some(idx)) if idx != UNKNOWN => return (idx != NO_NAME).then_some(usize::from(idx)),
+        _ => {}
     }
-    for shape in DispatchShape::ALL {
-        let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_syms(shape.type_name())
-        else {
-            continue;
-        };
-        for owner in mro.iter() {
-            // A closed shape (`DispatchShape::inherits`) reaches only the rows
-            // its own type and the ancestors it names own.
-            if !shape.reaches(owner.as_str()) {
-                continue;
-            }
-            let Some(idxs) = by_owner.get(owner.as_str()) else {
-                continue;
-            };
-            for &idx in idxs {
-                let row = table.all[idx];
-                // A row past `u16::MAX` stays unreachable through the table.
-                if !row.flags.contains(RowFlags::OWNER_ONLY)
-                    && let Ok(id) = u16::try_from(idx)
-                {
-                    table.register(shape, row, names[idx], RowId(id));
-                }
-            }
+    let found = NAMES.binary_search(&method.as_str()).ok();
+    let marker = found.map_or(NO_NAME, |idx| idx as u16);
+    // A thread that is being torn down has no memo; the answer stands without it.
+    let _ = NAME_MEMO.try_with(|memo| {
+        let mut memo = memo.borrow_mut();
+        if memo.len() <= id {
+            memo.resize(id + 1, UNKNOWN);
         }
-    }
-    table
+        memo[id] = marker;
+    });
+    found
 }
 
-impl Table {
-    /// Make `row` (at `id`) the answer for `shape`, unless a more derived row
-    /// already is.
-    fn register(&mut self, shape: DispatchShape, row: &MethodRow, name: Symbol, id: RowId) {
-        let slot = name.id() as usize;
-        for arity in row.arities() {
-            if shape.has_instances() {
-                self.rows
-                    .entry((Receiver::instance(shape), name, arity))
-                    .or_insert(id);
-            }
-            if self.arities.len() <= slot {
-                self.arities.resize(slot + 1, 0);
-            }
-            self.arities[slot] |= 1 << arity;
-            if row.flags.contains(RowFlags::TYPE_OBJECT_OK) {
-                self.rows
-                    .entry((Receiver::type_object(shape), name, arity))
-                    .or_insert(id);
-            }
-        }
-        set_bit(&mut self.shapes, slot, shape);
-        if row.flags.contains(RowFlags::TYPE_OBJECT_OK) {
-            set_bit(&mut self.type_shapes, slot, shape);
-        }
-    }
-}
-
-/// Set `shape`'s bit in the mask of the symbol at `slot`.
-fn set_bit(masks: &mut Vec<u64>, slot: usize, shape: DispatchShape) {
-    if masks.len() <= slot {
-        masks.resize(slot + 1, 0);
-    }
-    masks[slot] |= 1 << (shape as u64);
-}
-
-/// Whether any row is named `method` and takes `arity` arguments: the test
+/// Whether some row is named `method` and takes `arity` arguments: the test
 /// every lookup makes first.
-// Cost: O(1), a bit test.
+// Cost: O(1), a memo read and a bit test.
 #[inline]
 pub(crate) fn names_a_row(method: Symbol, arity: usize) -> bool {
-    table().has_name(method, arity)
+    arity < 8 && name_index(method).is_some_and(|name| ARITIES[name] & (1 << arity) != 0)
 }
 
 /// Whether a receiver of `receiver` may have a row for `method`: the second
 /// bit test, once the receiver is known. `false` is definite.
-// Cost: O(1), a bit test.
+// Cost: O(1), a memo read and a bit test.
 #[inline]
 pub(crate) fn shape_has_row(receiver: Receiver, method: Symbol) -> bool {
-    table().has_shape(method, receiver)
+    let Some(name) = name_index(method) else {
+        return false;
+    };
+    let bits = if receiver.type_object {
+        TYPE_SHAPES[name]
+    } else {
+        SHAPES[name]
+    };
+    bits & (1 << (receiver.shape as u64)) != 0
 }
 
 /// The row a receiver dispatches `method` to when called with `arity`
 /// positional arguments, if the table has one.
-// Cost: O(1), a bit test and one hash lookup.
+// Cost: O(log e), e = entries of the method's name (a memo read, two bit
+// tests and a binary search).
 #[inline]
 pub(crate) fn resolve(receiver: Receiver, method: Symbol, arity: usize) -> Option<RowId> {
-    let table = table();
-    if !table.has_name(method, arity) || !table.has_shape(method, receiver) {
+    let name = name_index(method)?;
+    if arity >= 8 || ARITIES[name] & (1 << arity) == 0 || !shape_has_row(receiver, method) {
         return None;
     }
-    let arity = u8::try_from(arity).ok()?;
-    table.rows.get(&(receiver, method, arity)).copied()
+    let key = u16::from(receiver.to_bits()) << 8 | arity as u16;
+    let (lo, hi) = (
+        usize::from(ENTRY_START[name]),
+        usize::from(ENTRY_START[name + 1]),
+    );
+    let at = ENTRY_KEYS[lo..hi].binary_search(&key).ok()?;
+    Some(RowId(ENTRY_IDS[lo + at]))
+}
+
+/// The ids of the rows named `NAMES[name]`, in registration order.
+// Cost: O(1).
+fn rows_named(name: usize) -> &'static [u16] {
+    &NAME_ROWS[usize::from(NAME_START[name])..usize::from(NAME_START[name + 1])]
 }
 
 /// The row `owner` declares for `method` taking `arity` positional arguments,
 /// whatever the receiver is: the lookup of a receiver that has no shape. A
 /// slurpy row answers every arity from its own up, however long.
-// Cost: O(1), two hash lookups at most.
+// Cost: O(k), k = rows named `method` (a string compare of the owner each).
 pub(crate) fn owner_row(owner: Symbol, method: Symbol, arity: usize) -> Option<RowId> {
-    let table = table();
-    if let Some(&id) = u8::try_from(arity)
-        .ok()
-        .and_then(|arity| table.owners.get(&(owner, method, arity)))
+    let rows = rows_named(name_index(method)?);
+    let owner = owner.as_str();
+    let declared = || {
+        rows.iter()
+            .copied()
+            .filter(|&id| ALL[usize::from(id)].owner == owner)
+    };
+    if let Some(arity) = u8::try_from(arity).ok()
+        && let Some(id) = declared().find(|&id| ALL[usize::from(id)].arities().contains(&arity))
     {
-        return Some(id);
+        return Some(RowId(id));
     }
-    let id = *table.slurpy.get(&(owner, method))?;
-    (arity >= usize::from(row(id).arity)).then_some(id)
+    let id = declared().find(|&id| ALL[usize::from(id)].flags.contains(RowFlags::SLURPY))?;
+    (arity >= usize::from(ALL[usize::from(id)].arity)).then_some(RowId(id))
 }
 
 /// The row `id` names.
 // Cost: O(1).
 #[inline]
 pub(crate) fn row(id: RowId) -> &'static MethodRow {
-    table().all[usize::from(id.0)]
+    ALL[usize::from(id.0)]
 }
 
 /// The row a receiver dispatches `method` to, if any (the lookup
 /// [`super::try_dispatch`] makes, for tests).
 #[cfg(test)]
 pub(super) fn lookup(receiver: Receiver, method: Symbol, arity: u8) -> Option<&'static MethodRow> {
-    let table = table();
-    if !table.has_name(method, usize::from(arity)) {
-        return None;
-    }
-    table
-        .rows
-        .get(&(receiver, method, arity))
-        .map(|id| row(*id))
+    resolve(receiver, method, usize::from(arity)).map(row)
 }

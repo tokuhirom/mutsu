@@ -234,15 +234,15 @@ impl DispatchShape {
     /// `IO::Spec::Unix`, whose methods its classes inherit, and never `Any`
     /// or `Mu`).
     // Cost: O(1).
-    pub(crate) fn reaches(self, owner: &str) -> bool {
+    pub(crate) const fn reaches(self, owner: &str) -> bool {
         self.inherits()
-            || owner == self.type_name()
+            || const_str_eq(owner, self.type_name())
             // `IO::Handle` renders itself (`Mu.raku`) through a `Mu` row of its own.
-            || (self == DispatchShape::IoHandle && owner == "Mu")
+            || (matches!(self, DispatchShape::IoHandle) && const_str_eq(owner, "Mu"))
             || (matches!(
                 self,
                 DispatchShape::IoSpecWin32 | DispatchShape::IoSpecCygwin | DispatchShape::IoSpecQnx
-            ) && owner == "IO::Spec::Unix")
+            ) && const_str_eq(owner, "IO::Spec::Unix"))
     }
 
     /// Whether rows owned by an ancestor of this shape's type reach it. The
@@ -309,4 +309,21 @@ fn instance_shapes() -> &'static [(Symbol, DispatchShape); 11] {
             (Symbol::intern("IO::Handle"), DispatchShape::IoHandle),
         ]
     })
+}
+
+/// `a == b` for a `const fn`, where `==` on `str` is not yet available.
+// Cost: O(n), n = the shorter length.
+pub(crate) const fn const_str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
 }

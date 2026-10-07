@@ -5,7 +5,7 @@
 //! positional ones, once, whichever entry the call came through. The checks a
 //! row's handler used to repeat (or silently skip) live here.
 
-use super::{Handler, MethodRow, Named, Receiver, RowFlags, RowId, row, table};
+use super::{Handler, MethodRow, Named, Receiver, RowFlags, RowId, row};
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value};
@@ -153,13 +153,12 @@ fn dispatch(
     method: Symbol,
     args: &[Value],
 ) -> Option<Answer> {
-    let table = table();
     // Named-ness is a call-site property carried by the value's flavour
     // (ADR-0021): a string-keyed `Pair` is a named argument, and a row is
     // looked up by its positional arity.
     let named_count = args.iter().filter(|arg| arg.is_string_pair_value()).count();
     let arity = args.len() - named_count;
-    if !table.has_name(method, arity) {
+    if !super::names_a_row(method, arity) {
         return None;
     }
     let receiver = Receiver::of(target)?;

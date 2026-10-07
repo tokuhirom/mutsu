@@ -3,6 +3,7 @@ use crate::symbol::Symbol;
 use crate::value::{DispatchShape, Value};
 
 mod collections;
+mod const_index;
 mod ctors_mop;
 mod instances;
 mod io_concurrency;
