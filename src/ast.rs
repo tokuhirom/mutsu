@@ -2893,10 +2893,41 @@ impl Expr {
     // Cost: O(1).
     pub(crate) fn postfix_operand(&self) -> &Expr {
         match self {
-            Expr::Grouped(inner) if !matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty()) => {
+            Expr::Grouped(inner)
+                if !matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty())
+                    && !inner.is_modified_statement() =>
+            {
                 inner
             }
             other => other,
+        }
+    }
+
+    /// Whether this is a statement carrying a statement modifier
+    /// (`EXPR for LIST`, `EXPR if COND`, `EXPR with TOPIC`) in expression
+    /// position. `(EXPR for LIST).join` keeps the parentheses: the modified
+    /// statement is the content of a semilist, not an operand.
+    // Cost: O(1).
+    pub(crate) fn is_modified_statement(&self) -> bool {
+        let Expr::DoStmt(stmt) = self else {
+            return false;
+        };
+        match stmt.as_ref() {
+            Stmt::For {
+                is_statement_modifier: true,
+                ..
+            }
+            | Stmt::If {
+                is_statement_modifier: true,
+                ..
+            }
+            | Stmt::Given {
+                is_statement_modifier: true,
+                ..
+            } => true,
+            // `EXPR with TOPIC` is wrapped once more, to keep expression semantics.
+            Stmt::Expr(inner) => inner.is_modified_statement(),
+            _ => false,
         }
     }
 }

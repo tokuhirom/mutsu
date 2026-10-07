@@ -3829,6 +3829,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // position as a `DoStmt`.
         RakuAstClass::VarDeclarationSimple
         | RakuAstClass::VarDeclarationTerm
+        | RakuAstClass::VarDeclarationConstant
         | RakuAstClass::TypeEnum
         | RakuAstClass::Method
         | RakuAstClass::Submethod => Ok(Expr::DoStmt(Box::new(lower_stmt_inner(node)?))),
@@ -3926,6 +3927,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // single-statement form is handled.
         RakuAstClass::CircumfixParentheses => {
             let semilist = named_child_or_positional(node)?;
+            // `()`: a semilist with no statement at all.
+            if semilist.fields.is_empty() {
+                return Ok(Expr::ArrayLiteral(Vec::new()));
+            }
             let inner = named_child_or_positional(semilist)?;
             // The contents of `(...)` are a semilist of *statements*: a
             // declaration written there (`(my $x = 9) given 2`) is a statement,
@@ -3992,17 +3997,24 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // compiles to.
         RakuAstClass::TermTopicCall => {
             let call = named_child_or_positional(node)?;
-            if !is_method_call(call) {
-                return Err(unsupported(node));
+            match lower_method_postfix(Expr::Var("_".to_string()), call)? {
+                Expr::MethodCall {
+                    target,
+                    name,
+                    args,
+                    modifier,
+                    quoted,
+                    on_topic: _,
+                } => Ok(Expr::MethodCall {
+                    target,
+                    name,
+                    args,
+                    modifier,
+                    quoted,
+                    on_topic: true,
+                }),
+                other => Ok(other),
             }
-            Ok(Expr::MethodCall {
-                target: Box::new(Expr::Var("_".to_string())),
-                name: crate::symbol::Symbol::intern(&call_name_str(call)?),
-                args: arg_exprs(call)?,
-                modifier: dispatch_modifier(call)?,
-                quoted: false,
-                on_topic: true,
-            })
         }
         // `[+] @a` / `[\\+] @a` -> a reduction over a single argument. mutsu's
         // `Expr::Reduction` keeps the triangle form in the operator string
@@ -4489,57 +4501,13 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let operand = lower_expr(named_child(node, "operand")?)?;
             let postfix = named_child(node, "postfix")?;
             match postfix.class {
-                // `self!priv(...)` carries the `!` modifier, as a class of its own.
-                RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod => {
-                    Ok(Expr::MethodCall {
-                        target: Box::new(operand),
-                        name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
-                        args: arg_exprs(postfix)?,
-                        modifier: dispatch_modifier(postfix)?,
-                        quoted: false,
-                        on_topic: false,
-                    })
-                }
-                // `$x."name"()` -> Call::QuotedMethod, whose `name` is a
-                // QuotedString rather than a Name. An interpolated name lowers
-                // to the existing DynamicMethodCall execution path.
-                RakuAstClass::CallQuotedMethod => {
-                    let name_expr = lower_expr(named_child(postfix, "name")?)?;
-                    match name_expr {
-                        Expr::Literal(value) if matches!(value.view(), ValueView::Str(_)) => {
-                            Ok(Expr::MethodCall {
-                                target: Box::new(operand),
-                                name: crate::symbol::Symbol::intern(&value.to_string_value()),
-                                args: arg_exprs(postfix)?,
-                                modifier: None,
-                                quoted: true,
-                                on_topic: false,
-                            })
-                        }
-                        name_expr => Ok(Expr::DynamicMethodCall {
-                            target: Box::new(operand),
-                            name_expr: Box::new(name_expr),
-                            args: arg_exprs(postfix)?,
-                            modifier: None,
-                            quoted: true,
-                        }),
-                    }
-                }
-                // `.^name` -> a metamethod call. Its `name` is a plain string,
-                // not a `Name` node, and mutsu keeps the `^` in the same
-                // `modifier` slot the dispatch modifiers use.
-                RakuAstClass::CallMetaMethod => Ok(Expr::MethodCall {
-                    target: Box::new(operand),
-                    name: crate::symbol::Symbol::intern(&leaf_str(postfix, "name")?),
-                    args: arg_exprs(postfix)?,
-                    modifier: Some('^'),
-                    quoted: false,
-                    on_topic: false,
-                }),
-                // `$o.$name(1)` / `$o.&f(1)`.
-                RakuAstClass::CallTermAsMethod | RakuAstClass::CallNameAsMethod => {
-                    super::dynamic_method::lower(operand, postfix)
-                }
+                // `.method`, `self!priv`, `."name"`, `.^name`, `.$name` / `.&f`.
+                RakuAstClass::CallMethod
+                | RakuAstClass::CallPrivateMethod
+                | RakuAstClass::CallQuotedMethod
+                | RakuAstClass::CallMetaMethod
+                | RakuAstClass::CallTermAsMethod
+                | RakuAstClass::CallNameAsMethod => lower_method_postfix(operand, postfix),
                 // `@a>>.abs` -> MetaPostfix::Hyper wrapping the ordinary
                 // method-call postfix.
                 RakuAstClass::MetaPostfixHyper => {
@@ -4580,16 +4548,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     op: postfix_token(postfix)?,
                     expr: Box::new(operand),
                 }),
-                // `$f(EXPR)` -> Call::Term(args) -> a call on the operand term.
-                // A call on a type term is the coercion call the parser keeps
-                // as a `Call` named after the type (`Num(EXPR)`).
-                RakuAstClass::CallTerm if let Expr::BareWord(type_name) = &operand => {
-                    Ok(Expr::Call {
-                        name: crate::symbol::Symbol::intern(type_name),
-                        args: arg_exprs(postfix)?,
-                        listop: false,
-                    })
-                }
+                // `$f(EXPR)` / `Type.(EXPR)` -> Call::Term(args) -> a call on the
+                // operand term.
                 RakuAstClass::CallTerm => Ok(Expr::CallOn {
                     target: Box::new(operand),
                     args: arg_exprs(postfix)?,
@@ -4677,6 +4637,63 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             }
         }
         _ => Err(unsupported(node)),
+    }
+}
+
+/// A method-call postfix (`.name`, `!name`, `."name"`, `.^name`, `.$name`,
+/// `.&name`) applied to `operand`.
+fn lower_method_postfix(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    match postfix.class {
+        // `self!priv(...)` carries the `!` modifier, as a class of its own.
+        RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod => Ok(Expr::MethodCall {
+            target: Box::new(operand),
+            name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
+            args: arg_exprs(postfix)?,
+            modifier: dispatch_modifier(postfix)?,
+            quoted: false,
+            on_topic: false,
+        }),
+        // `$x."name"()` -> Call::QuotedMethod, whose `name` is a QuotedString
+        // rather than a Name. An interpolated name lowers to the existing
+        // DynamicMethodCall execution path.
+        RakuAstClass::CallQuotedMethod => {
+            let name_expr = lower_expr(named_child(postfix, "name")?)?;
+            match name_expr {
+                Expr::Literal(value) if matches!(value.view(), ValueView::Str(_)) => {
+                    Ok(Expr::MethodCall {
+                        target: Box::new(operand),
+                        name: crate::symbol::Symbol::intern(&value.to_string_value()),
+                        args: arg_exprs(postfix)?,
+                        modifier: None,
+                        quoted: true,
+                        on_topic: false,
+                    })
+                }
+                name_expr => Ok(Expr::DynamicMethodCall {
+                    target: Box::new(operand),
+                    name_expr: Box::new(name_expr),
+                    args: arg_exprs(postfix)?,
+                    modifier: None,
+                    quoted: true,
+                }),
+            }
+        }
+        // `.^name` -> a metamethod call. Its `name` is a plain string, not a
+        // `Name` node, and mutsu keeps the `^` in the same `modifier` slot the
+        // dispatch modifiers use.
+        RakuAstClass::CallMetaMethod => Ok(Expr::MethodCall {
+            target: Box::new(operand),
+            name: crate::symbol::Symbol::intern(&leaf_str(postfix, "name")?),
+            args: arg_exprs(postfix)?,
+            modifier: Some('^'),
+            quoted: false,
+            on_topic: false,
+        }),
+        // `$o.$name(1)` / `$o.&f(1)`.
+        RakuAstClass::CallTermAsMethod | RakuAstClass::CallNameAsMethod => {
+            super::dynamic_method::lower(operand, postfix)
+        }
+        _ => Err(unsupported(postfix)),
     }
 }
 

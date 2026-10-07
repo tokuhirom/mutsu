@@ -203,7 +203,21 @@ pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Some(NameShape::Identifier(name)) => name,
         _ => return Err(super::lower::unsupported(node)),
     };
-    let (arg, tags) = lower_argument(node)?;
+    let (mut arg, mut tags) = lower_argument(node)?;
+    // `use newline :crlf` keeps its pair as the argument, where any other
+    // module's `:tag` is an import tag.
+    if module == "newline"
+        && arg.is_none()
+        && let [tag] = tags.as_slice()
+    {
+        arg = Some(Expr::Binary {
+            left: Box::new(Expr::Literal(Value::str(tag.clone()))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(Expr::Literal(Value::TRUE)),
+            form: crate::ast::BinaryForm::ColonPairTrue,
+        });
+        tags.clear();
+    }
     Ok(Stmt::Use {
         module,
         arg,
