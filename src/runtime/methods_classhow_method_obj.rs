@@ -828,6 +828,7 @@ impl Interpreter {
                     }
                 }
             }
+            self.mixin_of_can_entry(target, method_name, &mut results);
             return results;
         }
         let class_name = match target.view() {

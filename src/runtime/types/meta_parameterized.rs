@@ -130,10 +130,17 @@ impl Interpreter {
         }
         let mut how_args = vec![base_ty.clone()];
         for arg in args {
-            how_args.push(match self.constraint_type_value(arg) {
+            let nested = if arg.contains('[') {
+                // A nested parameterization (`C[C[int32]]`) is the type
+                // object its own `^parameterize` builds, not its spelling.
+                self.meta_parameterized_type(arg)
+            } else {
+                None
+            };
+            how_args.push(match nested.or_else(|| self.constraint_type_value(arg)) {
                 Some(v) => v,
-                // A nested parameterization (`C[C[int32]]`) or a native type
-                // name the registry does not list: the spelling is the type.
+                // A native type name the registry does not list: the
+                // spelling is the type.
                 None => Value::package(Symbol::intern(arg)),
             });
         }
