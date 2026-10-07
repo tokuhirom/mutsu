@@ -386,6 +386,8 @@ pub enum RakuAstClass {
     StatementTrusts,
     StatementPrefixOnce,
     Nqp,
+    /// `nqp::const::NAME`, a constant of the nqp backend.
+    NqpConst,
     StatementPrefixStart,
     StatementPrefixQuietly,
     StatementPrefixSink,
@@ -676,6 +678,7 @@ impl RakuAstClass {
             StatementTrusts => "RakuAST::Statement::Trusts",
             StatementPrefixOnce => "RakuAST::StatementPrefix::Once",
             Nqp => "RakuAST::Nqp",
+            NqpConst => "RakuAST::Nqp::Const",
             StatementPrefixStart => "RakuAST::StatementPrefix::Start",
             StatementPrefixQuietly => "RakuAST::StatementPrefix::Quietly",
             StatementPrefixSink => "RakuAST::StatementPrefix::Sink",
@@ -988,7 +991,7 @@ impl RakuAstClass {
                 "RakuAST::Expression",
             ],
             Mixin => &["RakuAST::Infix", "RakuAST::Infixish"],
-            Nqp => EXPR,
+            Nqp | NqpConst => EXPR,
             VarAttribute => &[
                 "RakuAST::Var",
                 "RakuAST::Term",
@@ -1515,6 +1518,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementTrusts,
     RakuAstClass::StatementPrefixOnce,
     RakuAstClass::Nqp,
+    RakuAstClass::NqpConst,
     RakuAstClass::StatementPrefixStart,
     RakuAstClass::StatementPrefixQuietly,
     RakuAstClass::StatementPrefixSink,

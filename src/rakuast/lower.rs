@@ -4075,6 +4075,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::StatementLoopWhile
         | RakuAstClass::StatementLoopUntil
         | RakuAstClass::StatementLoop => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),
+        // `nqp::const::NAME`: the constant as the bareword the parser keeps.
+        RakuAstClass::NqpConst => match node.fields.first().map(|f| &f.value) {
+            Some(RakuAstFieldValue::Node(name)) => match name.view() {
+                ValueView::Str(name) => Ok(Expr::BareWord(format!("nqp::const::{}", name.as_str()))),
+                _ => Err(unsupported(node)),
+            },
+            _ => Err(unsupported(node)),
+        },
         // `nqp::op(ARGS)`: the first positional is the op, the rest its arguments.
         RakuAstClass::Nqp => {
             let mut fields = node.fields.iter();

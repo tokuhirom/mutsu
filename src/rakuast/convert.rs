@@ -1588,7 +1588,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
 /// any other name, including a constant (`nqp::const::CCLASS_WORD`, which raku
 /// has a node of its own for).
 // Cost: O(k), k = length of `name`.
-fn nqp_op(name: &str) -> Option<&str> {
+pub(super) fn nqp_op(name: &str) -> Option<&str> {
     let op = name.strip_prefix("nqp::")?;
     (!op.is_empty() && !crate::qualified::is_qualified_str(op)).then_some(op)
 }
@@ -2615,7 +2615,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             if let Some(op) = nqp_op(name.as_str()) {
                 let mut fields = vec![leaf_field(None, Value::str(op.to_string()))];
-                for arg in args {
+                for arg in args.iter().filter(|a| !is_injected_named_arg(a)) {
                     fields.push(node_field(None, convert_expr(arg)?));
                 }
                 return Ok(RakuAstNode {
