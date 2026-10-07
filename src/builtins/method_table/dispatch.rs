@@ -138,6 +138,11 @@ pub(crate) fn invoke_mut(
     let Handler::Mut(handler) = row.handler else {
         return None;
     };
+    // An `augment` or `.wrap` of the receiver's type that defines the method
+    // takes the call from the row, which has effects and so must not run first.
+    if interp.native_lever_a_user_override_sym(place.value().descalarize(), method) {
+        return None;
+    }
     if named_count == 0 {
         return handler(interp, place, args, Named::NONE);
     }

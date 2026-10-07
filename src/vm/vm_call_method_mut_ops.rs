@@ -2616,26 +2616,6 @@ impl Interpreter {
                     self.stack.push(result?);
                     return Ok(());
                 }
-                // Symmetric bound-cell fast path for hash mutators (`%h.push` /
-                // `.append`) where `%h := %g` holds a shared `ContainerRef` cell.
-                // The array mutator above descends the cell via
-                // `env_root_descended_mut`; hashes need the same so the mutation
-                // propagates to the bind source instead of detaching into the
-                // receiver's own slot.
-                if modifier.is_none()
-                    && let Some(result) = self.try_native_hash_mut_bound(target_name, method, &args)
-                {
-                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
-                    self.shadow_check_native_row_candidate(
-                        &target,
-                        method,
-                        method_sym,
-                        args.len(),
-                        true,
-                    );
-                    self.stack.push(result?);
-                    return Ok(());
-                }
                 // Native fast path for the simple (non-erroring) forms of `splice`
                 // on a plain, untyped `@`-array (ledger §1: native receiver
                 // dispatch -> Interpreter-native).
@@ -3160,48 +3140,6 @@ impl Interpreter {
         let mut bytes = name.bytes();
         matches!(bytes.next(), Some(b'@') | Some(b'%'))
             && matches!(bytes.next(), Some(c) if c.is_ascii_alphabetic() || c == b'_')
-    }
-
-    /// Bound-hash twin of `try_native_array_mut`: `$r.push((k => v))` /
-    /// `$r.append(...)` where `my $r := %g` holds a shared `ContainerRef` cell.
-    /// Only the bound case is intercepted — a plain hash has no cell to detach,
-    /// so its existing interpreter writeback (into the receiver's slot) is
-    /// already correct. Hash push/append semantics (existing-key value becomes a
-    /// list) are non-trivial, so we delegate to the interpreter on the *inner*
-    /// hash and write the result back through the cell, keeping every alias
-    /// coherent.
-    ///
-    /// A `%`-SIGILED name is deliberately NOT intercepted: the interpreter's own
-    /// `%`-arm (`runtime/methods_mut_dispatch.rs`) descends the cell itself now,
-    /// and it is the only path carrying the richer semantics an intercept here
-    /// would skip — the object-hash `.WHICH` key encoding with its
-    /// `original_keys` record, the typed-hash key/value type checks, and the
-    /// duplicate-key array-conflict check. Routing `%h` through the by-value
-    /// implementation instead silently stringified an object hash's key and
-    /// dropped the type check.
-    fn try_native_hash_mut_bound(
-        &mut self,
-        target_name: &str,
-        method: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(method, "push" | "append") || target_name.starts_with('%') {
-            return None;
-        }
-        let cell = match self.env().get(target_name).map(Value::view) {
-            Some(ValueView::ContainerRef(cell)) => cell.clone(),
-            _ => return None,
-        };
-        let inner = cell.lock().unwrap().clone();
-        if !matches!(inner.view(), ValueView::Hash(_)) {
-            return None;
-        }
-        let result = match loan_env!(self, call_method_with_values(inner, method, args.to_vec())) {
-            Ok(v) => v,
-            Err(e) => return Some(Err(e)),
-        };
-        *cell.lock().unwrap() = result.clone();
-        Some(Ok(result))
     }
 
     fn try_native_array_mut(

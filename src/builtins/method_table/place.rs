@@ -89,6 +89,24 @@ impl<'a> ReceiverPlace<'a> {
         }
     }
 
+    /// The live container to write through: what the binding's name resolves to
+    /// now (the interpreter's env helper finds a compunit's unit-lexical cell
+    /// or an `our` package container and descends a `:=`-bound cell), or the
+    /// detached value itself. `None` when a binding's name no longer resolves,
+    /// which a handler answers by declining or by rebuilding from
+    /// [`Self::value`].
+    // Cost: O(1) for a detached value; for a binding, one env lookup plus the
+    // cell descent.
+    pub(crate) fn slot<'s>(&'s mut self, interp: &'s mut Interpreter) -> Option<&'s mut Value> {
+        match self {
+            ReceiverPlace::Var { name, .. } if !name.is_empty() => {
+                interp.env_root_descended_mut(name)
+            }
+            ReceiverPlace::Var { .. } => None,
+            ReceiverPlace::Detached(value) => Some(&mut **value),
+        }
+    }
+
     /// Replace the value the receiver holds (a method that changes the value,
     /// not the container: `Str.subst-mutate`). A binding is written in both
     /// halves of the dual store when the call came through the VM; a detached

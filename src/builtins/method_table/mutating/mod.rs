@@ -14,11 +14,13 @@ use super::MethodRow;
 use crate::value::{Value, ValueView};
 
 pub(crate) mod baghash;
+pub(crate) mod hash;
 pub(crate) mod quanthash;
 pub(crate) mod text;
 
 /// Every family of this group.
-pub(super) static FAMILIES: &[&[MethodRow]] = &[baghash::ROWS, quanthash::ROWS, text::ROWS];
+pub(super) static FAMILIES: &[&[MethodRow]] =
+    &[baghash::ROWS, hash::ROWS, quanthash::ROWS, text::ROWS];
 
 /// The owners whose rows a mutating call on `value` may dispatch to, most
 /// derived first, or `None` when no mutating row can answer a value of that
@@ -32,6 +34,7 @@ pub(crate) fn owners_of(value: &Value, has_name: bool) -> Option<&'static [&'sta
         // A method that replaces the value (`subst-mutate`) or writes back under
         // the binding (`substr-rw`) has nothing to write to without a name.
         ValueView::Str(_) if has_name => Some(&["Str"]),
+        ValueView::Hash(_) => Some(&["Hash", "Map"]),
         ValueView::Set(_, true) => Some(&["SetHash"]),
         ValueView::Set(_, false) => Some(&["Set"]),
         ValueView::Bag(_, true) => Some(&["BagHash"]),
