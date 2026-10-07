@@ -314,9 +314,9 @@ pub(super) fn operator_name(name: &str) -> Option<RakuAstNode> {
 fn operator_colonpairs(symbol: &str) -> RakuAstField {
     RakuAstField {
         name: Some("colonpairs"),
-        value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(
-            super::convert::word_quote(symbol),
-        ))]),
+        value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(super::convert::word_quote(
+            symbol,
+        )))]),
     }
 }
 
