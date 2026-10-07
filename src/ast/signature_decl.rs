@@ -22,6 +22,10 @@ pub(crate) enum SourceForm {
     /// its `emit` / `done` onto the on-demand emitter. It opens the emitter
     /// lambda's body.
     SupplyBlock(Vec<Stmt>),
+    /// `BEGIN say 1`: a phaser written over a bare statement (ADR-12199). It
+    /// opens a one-statement expansion whose second statement is the phaser;
+    /// only a spelling-keeping parse builds it.
+    BarePhaser,
 }
 
 /// `my|our|state [TYPE] (VARS) [is default(EXPR)] [= RHS | := RHS]`.

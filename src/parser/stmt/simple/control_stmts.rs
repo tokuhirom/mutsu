@@ -458,6 +458,7 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     // many lines. No deparse of the AST can reproduce that, so the slice is
     // taken here, where the source is still in hand.
     let condition_src = rest;
+    let bare = !rest.starts_with('{');
     let (rest, body) = if rest.starts_with('{') {
         block(rest)?
     } else {
@@ -503,15 +504,25 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     // (ADR-11756 §2.3).
     let end_index = (matches!(kind, PhaserKind::End) && !crate::anon_names::in_content_unit())
         .then(crate::ast::next_end_phaser_index);
-    Ok((
-        rest,
-        Stmt::Phaser {
-            kind,
-            body,
-            condition,
-            end_index,
-        },
-    ))
+    let phaser = Stmt::Phaser {
+        kind,
+        body,
+        condition,
+        end_index,
+    };
+    // A phaser over a bare statement (`LEAVE say 1`): rakudo keeps the
+    // statement as the prefix's child, which the block-less body cannot tell
+    // from `LEAVE { say 1 }`. A spelling-keeping parse marks it (ADR-12199).
+    if bare && crate::ast::spelled::keeping() {
+        return Ok((
+            rest,
+            Stmt::SyntheticBlock(vec![
+                Stmt::SourceForm(Box::new(crate::ast::SourceForm::BarePhaser)),
+                phaser,
+            ]),
+        ));
+    }
+    Ok((rest, phaser))
 }
 
 /// Fold `$*RAKU.version` / `$*PERL.version` to a Version literal of the current
