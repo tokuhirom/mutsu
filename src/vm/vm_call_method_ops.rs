@@ -2330,6 +2330,23 @@ impl Interpreter {
                             );
                             self.try_compiled_method_or_interpret_sym(target, method_sym, args)
                         }
+                    } else if matches!(method, "values" | "kv" | "pairs")
+                        && args.is_empty()
+                        && matches!(target.view(), ValueView::Array(..))
+                        && !self.native_lever_a_user_override_sym(&target, method_sym)
+                        && let Some(produced) =
+                            self.try_element_container_producer(&target, method, &args)
+                    {
+                        // A positional view of an Array that is not a named
+                        // variable (`$a.list.kv`, `@$a.values`): the receiver
+                        // is the very Array, so the view hands out its element
+                        // containers exactly as `@a.kv` does (ADR-0045).
+                        self.dispatch.method_dispatch_pure = true;
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "callmethod",
+                            "element-container-producer",
+                        );
+                        Ok(produced)
                     } else if let Some(native_result) =
                         self.try_native_method(&target, method_sym, &args)
                     {
