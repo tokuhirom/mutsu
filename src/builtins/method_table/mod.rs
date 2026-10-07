@@ -55,6 +55,7 @@ mod mutating;
 mod row;
 mod scalars;
 mod table;
+mod table_const;
 
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
@@ -76,7 +77,6 @@ pub(crate) use dispatch::{admits, answer, invoke, invoke_in, invoke_owner, try_d
 pub(crate) use row::{Handler, MethodRow, Named, RowFlags};
 #[cfg(test)]
 use table::all_rows;
-use table::table;
 pub(crate) use table::{Receiver, RowId, names_a_row, owner_row, resolve, row, shape_has_row};
 
 #[cfg(test)]

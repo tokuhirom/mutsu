@@ -707,6 +707,21 @@ pub(crate) fn builtin_type_mro_syms(name: &str) -> Option<std::sync::Arc<[crate:
     interned_catalog().get(name).map(|row| row.mro_syms.clone())
 }
 
+/// The MRO of the catalog type `name`, as the catalog spells it. Unlike
+/// [`builtin_type_mro_syms`] it needs no interning and no table, so a
+/// `const` evaluation can read it (the method table's compile-time index).
+// Cost: O(c), c = catalog rows (a scan; meant for compile-time evaluation).
+pub(crate) const fn builtin_type_mro_strs(name: &str) -> Option<&'static [&'static str]> {
+    let mut i = 0;
+    while i < CATALOG.len() {
+        if crate::value::const_str_eq(CATALOG[i].name, name) {
+            return Some(CATALOG[i].mro);
+        }
+        i += 1;
+    }
+    None
+}
+
 /// `builtin_type_info(name).mro`, interned to [`crate::type_id::TypeId`]s once per process.
 ///
 /// Borrowed rather than cloned: the E1 classifier splices chains together, so it
