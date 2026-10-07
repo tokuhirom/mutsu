@@ -1642,7 +1642,7 @@ impl Interpreter {
         }
         // `$s.subst-mutate(pattern, replacement, ...)` substitutes in place (like
         // `s///`) and returns the value `s///` would set in `$/`: a Match for a
-        // single hit, the `Any` type object when nothing matched, or a List of
+        // single hit, `Nil` when nothing matched, or a List of
         // Matches under `:g`. Reuses the `.subst` machinery for the new string
         // and the `.match` machinery for the return, then writes the new string
         // back to the variable -- mirroring the `Match.make` pattern above.
@@ -1663,9 +1663,6 @@ impl Interpreter {
                     }
                 }
             }
-            let global = args.iter().any(
-                |a| matches!(a.view(), ValueView::Pair(k, v) if (k == "g" || k == "global") && v.truthy()),
-            );
             let literal_string_pattern = args
                 .iter()
                 .find(|arg| !matches!(arg.view(), ValueView::Pair(..)))
@@ -1674,17 +1671,19 @@ impl Interpreter {
                 // `dispatch_subst` already selected the grapheme-safe literal
                 // matches and published them in `$/`. Re-running them through
                 // the regex engine could accept a codepoint inside a grapheme.
-                self.env().get("/").cloned().unwrap_or(Value::NIL)
+                // A failed literal `s///` leaves `$/` as `Any`; the method answers `Nil`.
+                match self.env().get("/") {
+                    Some(m) if !m.is_nil() && !matches!(m.view(), ValueView::Package(_)) => {
+                        m.clone()
+                    }
+                    _ => Value::NIL,
+                }
             } else {
                 self.dispatch_match_method(target.clone(), &match_args)?
             };
-            // A single failed match yields the `Any` type object (matching `$/`
-            // after a failed `s///`), where `.match` alone would yield `Nil`.
-            let ret = if !global && match_result.is_nil() {
-                Value::package(crate::symbol::wk::any())
-            } else {
-                match_result
-            };
+            // Rakudo answers `Nil` for a miss (`:g`/`:x` answer an empty list),
+            // which is exactly what `.match` returns.
+            let ret = match_result;
             self.env_mut()
                 .insert(target_name.to_string(), new_str.clone());
             self.locals_set_by_name(code, target_name, new_str);
