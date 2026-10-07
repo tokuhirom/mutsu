@@ -143,6 +143,14 @@ pub(crate) fn invoke_mut(
     if interp.native_lever_a_user_override_sym(place.value().descalarize(), method) {
         return None;
     }
+    // ADR-0068 §4 step 3: a mutating method on a container two threads can
+    // reach (`$obj.attr.push($v)`) restructures the backing node, so the row
+    // runs under the container-structure lock keyed on that node. Taken here,
+    // at the one entry a `Mut` row has, so every caller (the VM's opcodes, the
+    // by-name and by-value entries) is excluded alike. A no-op until a second
+    // VM mutator thread is spawned, and nested acquisition is a no-op too.
+    let _exclusion =
+        crate::value::container_lock::ContainerStructGuard::acquire_for(None, place.value());
     if named_count == 0 {
         return handler(interp, place, args, Named::NONE);
     }
