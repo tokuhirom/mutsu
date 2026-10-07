@@ -432,12 +432,18 @@ pub(super) fn dispatch(
                 Some(Ok(Value::str(format!("{}()", class_name))))
             }
         }
+        // The renderers the quant hashes' rows share. The rows decline an
+        // element that may carry a user `gist`/`raku`; this arm renders it
+        // with the default form, as it always did.
         ValueView::Bag(..) | ValueView::Set(..) | ValueView::Mix(..) => {
-            use crate::builtins::method_table::collection_render as render;
             if method == "gist" {
-                render::quant_gist(target, &[])
+                Some(Ok(Value::str(
+                    crate::value::gist::setbagmix_gist(target).unwrap(),
+                )))
             } else {
-                render::quant_raku(target, &[])
+                Some(Ok(Value::str(
+                    super::raku_repr::setbagmix_raku(target).unwrap(),
+                )))
             }
         }
         ValueView::Package(name) => {
