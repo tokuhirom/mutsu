@@ -2822,6 +2822,20 @@ impl Expr {
         }
         expr
     }
+
+    /// The operand a postfix (`.method`, `[...]`, `++`, `(...)`) sits on in
+    /// RakuAST: raku drops ONE level of the parentheses around it, so
+    /// `(1, 2).elems` is the list itself and `((1, 2)).elems` keeps the inner
+    /// parentheses. The empty `()` keeps its own (measured on 2026.09).
+    // Cost: O(1).
+    pub(crate) fn postfix_operand(&self) -> &Expr {
+        match self {
+            Expr::Grouped(inner) if !matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty()) => {
+                inner
+            }
+            other => other,
+        }
+    }
 }
 
 pub(crate) fn has_var_decl(stmts: &[Stmt], name: &str) -> bool {

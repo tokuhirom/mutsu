@@ -3891,19 +3891,12 @@ pub(super) fn blockoid(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
-/// The operand of an `ApplyPostfix` (`(1 + 2).abs`, `($x)[0]`, `($x)++`): raku
-/// drops ONE level of the parentheses around it, so `(1, 2).elems` has the list
-/// itself as its operand and `((1, 2)).elems` keeps the inner parentheses. The
-/// empty `().elems` is the exception, which keeps its `Circumfix::Parentheses`
-/// (measured on 2026.09).
+/// The operand of an `ApplyPostfix` (`(1 + 2).abs`, `($x)[0]`, `($x)++`): the
+/// expression without the one level of parentheses raku drops
+/// ([`Expr::postfix_operand`]).
 // Cost: O(n), n = size of the operand.
 pub(super) fn postfix_operand(operand: &Expr) -> Result<RakuAstNode, RuntimeError> {
-    match operand {
-        Expr::Grouped(inner) if !matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty()) => {
-            convert_expr(inner)
-        }
-        other => convert_expr(other),
-    }
+    convert_expr(operand.postfix_operand())
 }
 
 /// A `Block` that raku builds without a signature of its own: the body of a
