@@ -1888,6 +1888,22 @@ impl Interpreter {
             _ => target,
         };
 
+        // A receiver-mutating built-in method answered from its row
+        // (ADR-11276 §9.23): `BagHash.add`/`remove` so far. The row writes
+        // through the receiver's shared node and re-seats the dual store
+        // itself, so there is nothing to write back here.
+        {
+            let mut place =
+                crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code);
+            if let Some(result) =
+                crate::builtins::method_table::invoke_mut(self, &mut place, method_sym, &args)
+            {
+                crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "mut-row");
+                self.stack.push(result?);
+                return Ok(());
+            }
+        }
+
         // Fast paths for xxKEY methods on Hash/Set/Bag/Mix types
         match method {
             "AT-KEY" if args.len() == 1 => {
@@ -2438,34 +2454,6 @@ impl Interpreter {
                         return Err(RuntimeError::bind(name));
                     }
                     _ => {}
-                }
-            }
-            // `$b.add(x)` / `$b.remove(x)`: the BagHash-only per-key count
-            // mutators (semantics, and the rationale for mutating in place
-            // through the shared node, live in `vm_baghash_mutators`). The
-            // counts are already adjusted through the bag's own `Gc` node, so
-            // the writeback below is NOT what makes the mutation visible -- it
-            // re-seats the SAME (mutated) value in both halves of the dual
-            // store so a later locals<->env sync cannot resurrect a stale
-            // snapshot of the bag (`my %b is BagHash` reproduced exactly that).
-            "add" | "remove" => {
-                if let Some(receiver) =
-                    crate::vm::vm_baghash_mutators::baghash_mutator_receiver(&target, method)
-                {
-                    let result = crate::vm::vm_baghash_mutators::apply_baghash_mutator(
-                        receiver, method, &args,
-                    )?;
-                    if !target_name.is_empty() {
-                        self.env_mut()
-                            .insert(target_name.to_string(), target.clone());
-                        self.update_local_if_exists(code, target_name, &target);
-                    }
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethodmut",
-                        "baghash-add-remove",
-                    );
-                    self.stack.push(result);
-                    return Ok(());
                 }
             }
             // `SetHash.set`/`.unset` and the QuantHash `.grab`/`.grabpairs`:

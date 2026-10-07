@@ -240,16 +240,22 @@ impl Interpreter {
             // binds the returned value to the variable.
             return Some(Ok(target.clone()));
         }
-        // `BagHash.add` / `.remove` adjust the wrapped bag's counts in place
-        // through its shared node (see `vm_baghash_mutators`), so the
-        // subclass instance observes them with no write-back.
+        // A receiver-mutating row (`BagHash.add` / `.remove`) adjusts the
+        // wrapped bag's counts in place through its shared node
+        // (ADR-11276 §9.23), so the subclass instance observes them with no
+        // write-back.
         // Cost: O(n) in the number of items added/removed.
-        if let Some(receiver) =
-            crate::vm::vm_baghash_mutators::baghash_mutator_receiver(&storage, method)
         {
-            return Some(crate::vm::vm_baghash_mutators::apply_baghash_mutator(
-                receiver, method, args,
-            ));
+            let mut bag = storage.clone();
+            let mut place = crate::builtins::method_table::ReceiverPlace::detached(&mut bag);
+            if let Some(result) = crate::builtins::method_table::invoke_mut(
+                self,
+                &mut place,
+                crate::symbol::Symbol::intern(method),
+                args,
+            ) {
+                return Some(result);
+            }
         }
         // Seed a synthetic binding so the native mutating fast paths (which
         // write the updated container back into `self.env` by NAME) have

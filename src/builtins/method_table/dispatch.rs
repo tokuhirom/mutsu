@@ -5,7 +5,7 @@
 //! positional ones, once, whichever entry the call came through. The checks a
 //! row's handler used to repeat (or silently skip) live here.
 
-use super::{Handler, MethodRow, Named, Receiver, RowFlags, RowId, row};
+use super::{Handler, MethodRow, Named, Receiver, ReceiverPlace, RowFlags, RowId, mutating, row};
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{DispatchShape, RuntimeError, Value};
@@ -34,6 +34,9 @@ fn call(
         Handler::Narrow(f) => f(target, positional).map(|r| (r, rerunnable)),
         Handler::Named(f) => f(target, positional, named).map(|r| (r, rerunnable)),
         Handler::Interp(f) => f(interp?, target, positional, named).map(|r| (r, false)),
+        // A row that writes through its receiver needs a place, which only
+        // `invoke_mut` has: no shape lookup, lane or pure entry runs it.
+        Handler::Mut(_) => None,
     }
 }
 
@@ -99,6 +102,54 @@ pub(crate) fn invoke_owner(
         .cloned()
         .partition(|arg| arg.is_string_pair_value());
     call(row, Some(interp), &target, &positional, Named::new(&named)).map(|(result, _)| result)
+}
+
+/// Answer a receiver-mutating method from its row, or `None` to take the
+/// cascades. The one entry a [`Handler::Mut`] row has: the caller names the
+/// receiver's [`ReceiverPlace`], and the row is found by the owner chain of
+/// the receiver's value kind (`Array` then `List`, `BagHash`, ...), not by a
+/// shape, because a mutator is not answered by a pure entry, a call-site lane
+/// or the debug cross-check (a second run would apply the mutation twice).
+///
+/// The guard step of this entry: a named argument the row does not declare is
+/// dropped (a method has the implicit `*%_`, ADR-0070), the row is found by
+/// the positional arity, and no argument is admitted or refused, because a
+/// mutator reads its arguments raw (`@a.push(@b)`, `$bag.add(<a b>)`). A
+/// handler declines with `None` for a call outside its signature.
+// Cost: O(1) when no mutating row has the name (a bit test); otherwise O(a) to
+// split a arguments, O(o) owner lookups, plus the handler's own cost.
+#[inline]
+pub(crate) fn invoke_mut(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    method: Symbol,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    let named_count = args.iter().filter(|arg| arg.is_string_pair_value()).count();
+    let arity = args.len() - named_count;
+    if !super::table::names_a_mut_row(method, arity) {
+        return None;
+    }
+    let owners = mutating::owners_of(place.value())?;
+    let id = owners
+        .iter()
+        .find_map(|owner| super::owner_row(Symbol::intern(owner), method, arity))?;
+    let row = row(id);
+    let Handler::Mut(handler) = row.handler else {
+        return None;
+    };
+    if named_count == 0 {
+        return handler(interp, place, args, Named::NONE);
+    }
+    let (named, positional): (Vec<Value>, Vec<Value>) = args
+        .iter()
+        .cloned()
+        .partition(|arg| arg.is_string_pair_value());
+    let named: Vec<Value> = named
+        .into_iter()
+        .filter(|pair| names_declared(row, pair))
+        .collect();
+    handler(interp, place, &positional, Named::new(&named))
 }
 
 /// Whether `arg` is a plain scalar a row may be handed by default: a `Str`

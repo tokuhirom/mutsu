@@ -2,11 +2,31 @@
 //!
 //! `push`, `pop`, `shift`, `unshift`, `append`, `prepend`, `splice`, the hash
 //! and quant-hash mutators, `subst-mutate`, `substr-rw`: rows whose handler
-//! writes through the receiver's container (`Handler::Mut`, which slice 3F
-//! adds together with `ReceiverPlace`). A slice adds a family module here and
-//! lists it in [`FAMILIES`]; no other file names it.
+//! writes through the receiver's container ([`Handler::Mut`](super::Handler::Mut),
+//! which takes the receiver's [`ReceiverPlace`](super::ReceiverPlace)). A slice adds a family
+//! module here and lists it in [`FAMILIES`]; no other file names it.
+//!
+//! A `Mut` row is registered by its owner only and reached through
+//! [`invoke_mut`](super::invoke_mut), which asks [`owners_of`] for the owner
+//! chain of the receiver's value kind.
 
 use super::MethodRow;
+use crate::value::{Value, ValueView};
+
+pub(crate) mod baghash;
 
 /// Every family of this group.
-pub(super) static FAMILIES: &[&[MethodRow]] = &[];
+pub(super) static FAMILIES: &[&[MethodRow]] = &[baghash::ROWS];
+
+/// The owners whose rows a mutating call on `value` may dispatch to, most
+/// derived first, or `None` when no mutating row can answer a value of that
+/// kind. A `Scalar` container is seen through. The owner is decided by what
+/// the value is (a `Bag` is a `BagHash` only when it is mutable), exactly the
+/// distinction each cascade arm used to make with its own receiver probe.
+// Cost: O(1), a tag probe.
+pub(super) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
+    match value.descalarize().view() {
+        ValueView::Bag(_, true) => Some(&["BagHash"]),
+        _ => None,
+    }
+}

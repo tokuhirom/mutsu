@@ -139,7 +139,9 @@ fn no_row_is_registered_twice() {
 #[test]
 fn every_row_is_reached_and_answers() {
     for row in rows() {
-        if row.flags.contains(RowFlags::OWNER_ONLY) {
+        // A row that is reached only through its owner (`OWNER_ONLY`, or a
+        // `Mut` row, whose one entry is `invoke_mut`) has no shape to find it.
+        if row.flags.contains(RowFlags::OWNER_ONLY) || row.handler.is_mut() {
             continue;
         }
         let mut reached = false;
@@ -459,6 +461,7 @@ fn dump_rows() {
             Handler::Narrow(_) => "Narrow",
             Handler::Named(_) => "Named",
             Handler::Interp(_) => "Interp",
+            Handler::Mut(_) => "Mut",
         };
         let mut flags = Vec::new();
         if row.flags.contains(RowFlags::TYPE_OBJECT_OK) {

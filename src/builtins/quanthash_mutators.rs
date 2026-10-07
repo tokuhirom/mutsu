@@ -1,7 +1,7 @@
 //! `SetHash.set` / `.unset` and `SetHash`/`BagHash`/`MixHash` `.grab` /
 //! `.grabpairs` — the QuantHash mutators that remove or add whole keys.
 //!
-//! Like `BagHash.add`/`.remove` (`vm_baghash_mutators`), every mutation here
+//! Like `BagHash.add`/`.remove` (`method_table::mutating::baghash`), every mutation here
 //! goes **in place** through the QuantHash's shared `Gc` node. A mutable
 //! QuantHash is a reference type in Raku: `my $b = $a` aliases it, and a
 //! `SetHash` held in an attribute, returned by an accessor or stored in an

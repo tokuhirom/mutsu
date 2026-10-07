@@ -1,5 +1,6 @@
 //! The row type: what a built-in method is (ADR-11276 §2).
 
+use super::ReceiverPlace;
 use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -14,10 +15,17 @@ pub(crate) type NamedFn = fn(&Value, &[Value], Named<'_>) -> Option<Result<Value
 pub(crate) type InterpFn =
     fn(&mut Interpreter, &Value, &[Value], Named<'_>) -> Option<Result<Value, RuntimeError>>;
 
+/// A [`Handler::Mut`] implementation: the receiver's place, the positional
+/// arguments, then the named ones the row declared. `None` declines, and the
+/// call takes the cascades.
+pub(crate) type MutFn = fn(
+    &mut Interpreter,
+    &mut ReceiverPlace<'_>,
+    &[Value],
+    Named<'_>,
+) -> Option<Result<Value, RuntimeError>>;
+
 /// A built-in method's implementation.
-///
-/// ADR-11276 §2 also names a receiver-writing kind (`Mut`); slice 3F adds it
-/// together with `ReceiverPlace`.
 #[derive(Clone, Copy)]
 pub(crate) enum Handler {
     /// Needs no interpreter. `args` are the positional arguments, exactly
@@ -41,13 +49,28 @@ pub(crate) enum Handler {
     /// Its effects make the debug cross-check unable to re-run it, so it is
     /// answered once, by the row.
     Interp(InterpFn),
+    /// A handler that writes through its receiver (`push`, `splice`,
+    /// `subst-mutate`, `BagHash.add`): it gets the receiver's
+    /// [`ReceiverPlace`] and needs the interpreter. A `Mut` row is registered
+    /// by its owner only, never by a receiver shape, so no shape lookup, no
+    /// call-site lane and no pure entry reaches it; the one entry is
+    /// [`invoke_mut`](super::invoke_mut). The debug cross-check never re-runs
+    /// it, because a second run would apply the mutation twice.
+    Mut(MutFn),
 }
 
 impl Handler {
     /// Whether the handler can be run without an interpreter.
     // Cost: O(1).
     pub(crate) const fn is_pure(self) -> bool {
-        !matches!(self, Handler::Interp(_))
+        !matches!(self, Handler::Interp(_) | Handler::Mut(_))
+    }
+
+    /// Whether the handler writes through its receiver, so that only
+    /// [`invoke_mut`](super::invoke_mut) may call it.
+    // Cost: O(1).
+    pub(crate) const fn is_mut(self) -> bool {
+        matches!(self, Handler::Mut(_))
     }
 }
 

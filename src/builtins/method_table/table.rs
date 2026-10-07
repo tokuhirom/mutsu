@@ -2,8 +2,8 @@
 //! every group's rows, resolved once per process along each shape's MRO.
 
 use super::table_const::{
-    ALL, ARITIES, ENTRY_IDS, ENTRY_KEYS, ENTRY_START, NAME_ROWS, NAME_START, NAMES, SHAPES,
-    TYPE_SHAPES,
+    ALL, ARITIES, ENTRY_IDS, ENTRY_KEYS, ENTRY_START, MUT_ARITIES, NAME_ROWS, NAME_START, NAMES,
+    SHAPES, TYPE_SHAPES,
 };
 use super::{MethodRow, RowFlags};
 use crate::symbol::Symbol;
@@ -139,6 +139,15 @@ fn name_index(method: Symbol) -> Option<usize> {
 #[inline]
 pub(crate) fn names_a_row(method: Symbol, arity: usize) -> bool {
     arity < 8 && name_index(method).is_some_and(|name| ARITIES[name] & (1 << arity) != 0)
+}
+
+/// Whether any mutating row is named `method` and takes `arity` arguments:
+/// the test every [`invoke_mut`](super::invoke_mut) call makes first. A call
+/// longer than the masks go answers by bit 7, which only a slurpy row sets.
+// Cost: O(1), a memo read and a bit test.
+#[inline]
+pub(crate) fn names_a_mut_row(method: Symbol, arity: usize) -> bool {
+    name_index(method).is_some_and(|name| MUT_ARITIES[name] & (1 << arity.min(7)) != 0)
 }
 
 /// Whether a receiver of `receiver` may have a row for `method`: the second

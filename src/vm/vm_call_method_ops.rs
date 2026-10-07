@@ -2257,26 +2257,29 @@ impl Interpreter {
                     self.stack.push(result);
                     return Ok(());
                 }
-                // `BagHash.add` / `.remove` reached through the non-mutating
-                // (CallMethod) opcode: an invocant with no simple variable name
-                // to write back through, e.g. `$obj.bag.add('x')` or
-                // `@bags[0].remove('x')`. Same container-identity story as the
-                // shift/pop fast path just below — the per-key count adjustment
-                // goes through the bag's SHARED backing node, so the holder
-                // observes it. `vm_call_method_mut_ops.rs` runs the same helper
-                // for the named-variable form (and re-seats the dual store).
-                if let Some(receiver) =
-                    crate::vm::vm_baghash_mutators::baghash_mutator_receiver(&target, method)
+                // A receiver-mutating built-in method on an invocant with no
+                // simple variable name to write back through, e.g.
+                // `$obj.bag.add('x')` or `@bags[0].remove('x')`, answered from
+                // its row (ADR-11276 §9.23; `BagHash.add`/`remove` so far).
+                // Container identity (§3): the row writes through the
+                // receiver's SHARED backing node, so the holder observes it.
                 {
-                    let result = crate::vm::vm_baghash_mutators::apply_baghash_mutator(
-                        receiver, method, &args,
-                    )?;
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "baghash-add-remove",
-                    );
-                    self.stack.push(result);
-                    return Ok(());
+                    let mut detached = target.clone();
+                    let mut place =
+                        crate::builtins::method_table::ReceiverPlace::detached(&mut detached);
+                    if let Some(result) = crate::builtins::method_table::invoke_mut(
+                        self,
+                        &mut place,
+                        crate::symbol::Symbol::intern(method),
+                        &args,
+                    ) {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethod",
+                            "mut-row",
+                        );
+                        self.stack.push(result?);
+                        return Ok(());
+                    }
                 }
                 // `SetHash.set`/`.unset` and the QuantHash `.grab`/`.grabpairs`
                 // on an invocant with no variable name (`$obj.q.grab`,
