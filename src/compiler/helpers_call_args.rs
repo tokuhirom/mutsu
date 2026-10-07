@@ -414,6 +414,28 @@ impl Compiler {
     /// Like [`Self::compile_method_arg`] but lets the caller force the closure
     /// argument into an escaping position (for supply-consuming methods; see
     /// [`Self::method_escapes_closure_args`]).
+    /// The name of a plain scalar `my $x ...` declaration written directly as
+    /// a call argument (the shape that wants its own lexical slot).
+    fn method_arg_decl_slot_name(arg: &Expr) -> Option<String> {
+        if let Expr::DoStmt(stmt) = arg
+            && let Stmt::VarDecl {
+                name,
+                is_our: false,
+                custom_traits,
+                ..
+            } = stmt.as_ref()
+            && !name.starts_with(['@', '%', '&'])
+            && !name.starts_with("__ANON")
+            && !custom_traits
+                .iter()
+                .any(|(trait_name, _)| trait_name == "__constant")
+        {
+            Some(name.clone())
+        } else {
+            None
+        }
+    }
+
     pub(super) fn compile_method_arg_with_escape(&mut self, arg: &Expr, escaping: bool) {
         // A method argument is normally passed to the callee, not stored in the
         // caller frame, so a closure argument is conservatively NON-escaping
@@ -446,7 +468,19 @@ impl Compiler {
                 {
                     s.mint_named_pair = true;
                 }
+                // An inline scalar declaration passed directly to a method
+                // takes a real lexical slot, like the plain-call form: an
+                // env-only store lets a closure over it resolve the name to
+                // a later same-named declaration's slot (#12282).
+                let call_arg_decl = Self::method_arg_decl_slot_name(arg)
+                    .filter(|name| !s.promoted_expr_decl_names.contains(name));
+                let inserted = call_arg_decl
+                    .as_ref()
+                    .is_some_and(|name| s.call_arg_decl_slots.insert(name.clone()));
                 s.compile_expr(arg);
+                if inserted && let Some(name) = call_arg_decl.as_ref() {
+                    s.call_arg_decl_slots.remove(name);
+                }
                 s.maybe_promote_attr_arg_read(arg);
                 if Self::needs_decont(arg) {
                     s.code.emit(OpCode::Decont);
