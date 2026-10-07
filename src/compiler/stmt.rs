@@ -3401,46 +3401,15 @@ impl Compiler {
                 let saved_scope =
                     (!*is_statement_modifier).then(|| self.push_dynamic_scope_lexical());
                 if Self::has_block_leave_worthy_phasers(body) {
-                    // Unlike `Stmt::If`'s body, a `given` body was compiled
-                    // by iterating and compiling each statement in place —
-                    // an un-lowered `Stmt::Phaser { kind: Leave, .. }` alone
-                    // compiles to a no-op, so its LEAVE never fired. Mirrors
-                    // the `Stmt::If` arm's own check. Deliberately
-                    // `has_block_leave_worthy_phasers`, not
-                    // `has_block_enter_leave_phasers` — the loop-phaser
-                    // lowering (`helpers_phasers.rs`) synthesizes a `given
-                    // $topic { POST { ... } }`/`PRE` wrapper whose body is
-                    // solely a re-wrapped `Stmt::Phaser` node; routing that
-                    // phaser-only body through `compile_phaser_block_scope`
-                    // left its topic unset, breaking POST/PRE inside loops.
-                    //
-                    // This is a *statement*-context `given` (an expression-
-                    // context one, e.g. `do given ... { ... }`, compiles
-                    // through a different, `Push`-mode path) sharing the
-                    // enclosing frame's `$_` register. `PhaserBlockResult::
-                    // Discard` (not `ReturnViaTopic`, unlike the `Stmt::If`
-                    // arm before this same fix): routing the body's own
-                    // trailing value through `SetTopic` reassigned `$_` to
-                    // it, clobbering the topic a LEAVE phaser needs (`given
-                    // open $path, :w { LEAVE .close; say $_ }` made `.close`
-                    // see `say`'s `Bool` result instead of the file handle,
-                    // breaking roast/S32-io/open.t and spurt.t). `Discard`
-                    // still lets the value survive on the stack through
-                    // LEAVE/KEEP/UNDO/POST (so their own checks/reads still
-                    // see it), then pops it once at the very end instead of
-                    // ever routing it through `$_` -- verified against real
-                    // raku for both statement-context `given` (a trailing
-                    // sink-context warning, same as raku) and `do given`
-                    // expression context (the value still comes through
-                    // correctly, via the separate `Push`-mode path).
-                    self.compile_phaser_block_scope(
-                        body,
-                        if needs_value {
-                            PhaserBlockResult::Push
-                        } else {
-                            PhaserBlockResult::Discard
-                        },
-                    );
+                    // A `given`/`with` body with a LEAVE/KEEP/UNDO phaser is a
+                    // real block scope. Like every other `given`, it nets one
+                    // value (`stmt_nets_a_stack_value`): a non-final statement
+                    // pops it, a final one is the enclosing block's value
+                    // (`sub f { with $x { LEAVE ...; "v" } }` returns "v").
+                    // `Push`, not `ReturnViaTopic`: routing the trailing value
+                    // through `SetTopic` would clobber the topic a LEAVE
+                    // phaser reads (`given open $path { LEAVE .close; ... }`).
+                    self.compile_phaser_block_scope(body, PhaserBlockResult::Push);
                 } else if Self::has_catch_or_control(body) {
                     self.compile_implicit_try(body);
                     if !needs_value {

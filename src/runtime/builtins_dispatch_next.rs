@@ -176,6 +176,30 @@ impl Interpreter {
     }
 
     /// Re-dispatch to the same multi/method from the top with new arguments.
+    /// Whether `method_name` on `invocant`'s class resolves only to non-multi
+    /// candidates (and at least one exists). Raku's `samewith` re-calls such a
+    /// routine with the invocant spelled out as the first argument, unlike a
+    /// multi method, whose dispatcher supplies it.
+    // Cost: O(m + c), m = MRO length, c = overloads of the name along the MRO.
+    fn method_name_is_only_routine(&mut self, invocant: &Value, method_name: &str) -> bool {
+        let class_name = crate::value::what_type_name(invocant);
+        let bare = method_name.trim_start_matches('!');
+        let mro = self.class_mro(&class_name);
+        let mut found = false;
+        for cn in mro.iter() {
+            let overloads = self
+                .registry()
+                .get_method_overloads_with_role_fallback(cn.as_str(), bare);
+            for def in overloads.into_iter().flatten() {
+                if def.is_multi {
+                    return false;
+                }
+                found = true;
+            }
+        }
+        found
+    }
+
     pub(super) fn builtin_samewith(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // Use the samewith context stack to find the enclosing multi sub/method.
         // A lazy `gather` body re-pushes the context it captured at creation for
@@ -186,7 +210,14 @@ impl Interpreter {
                 return self.call_sub_value(callable, args.to_vec(), false);
             }
             if let Some(inv) = ctx.invocant {
-                // Method dispatch: re-call the method on the same invocant
+                // Method dispatch. A multi method re-dispatches on the same
+                // invocant, but a lone `method` is re-called like a sub: the
+                // invocant is the first argument (`samewith(self, $x)`).
+                if let Some((first, rest)) = args.split_first()
+                    && self.method_name_is_only_routine(&inv, &ctx.name)
+                {
+                    return self.call_method_with_values(first.clone(), &ctx.name, rest.to_vec());
+                }
                 return self.call_method_with_values(inv, &ctx.name, args.to_vec());
             } else {
                 // Sub dispatch: re-call the function by name
