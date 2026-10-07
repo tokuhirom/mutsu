@@ -681,12 +681,21 @@ impl Interpreter {
     /// then the nearest enclosing named routine (anonymous blocks inherit that
     /// lexical owner), then whatever package is current.
     pub(crate) fn running_package_candidates(&self) -> [Option<&str>; 4] {
-        let frame = self
+        // A called closure compiled in a compunit of its own anchors on that
+        // compunit, not on the routine that happens to be calling it: a block of
+        // the main script handed to a module routine (`cb({ array[..] })`) must
+        // not see the module's file-scope names.
+        let own_block = self
             .routine_stack
-            .iter()
-            .rev()
-            .find(|frame| !frame.is_block)
-            .or_else(|| self.routine_stack.last());
+            .last()
+            .filter(|frame| frame.is_block && !frame.is_inlined_block && frame.def_file.is_some());
+        let frame = own_block.or_else(|| {
+            self.routine_stack
+                .iter()
+                .rev()
+                .find(|frame| !frame.is_block)
+                .or_else(|| self.routine_stack.last())
+        });
         [
             self.method_class_stack_top_str(),
             frame.and_then(|frame| frame.lexical_package.map(|pkg| pkg.as_str())),
