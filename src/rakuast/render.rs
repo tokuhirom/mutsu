@@ -75,12 +75,14 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     // (`Assignment.new(:item)`); any named field, child node, or list forces
     // the multi-line form.
     let fields = rendered_fields(node);
-    // Rakudo renders a char-class `Character`, a `Var::Dynamic` and a regex
-    // back-reference on their own lines all the same.
+    // Rakudo renders a char-class `Character`, a `Var::Dynamic`, a
+    // `Var::Attribute` and a regex back-reference on their own lines all the
+    // same.
     if !matches!(
         node.class,
         RakuAstClass::RegexCharClassEnumerationElementCharacter
             | RakuAstClass::VarDynamic
+            | RakuAstClass::VarAttribute
             | RakuAstClass::RegexBackReferenceNamed
             | RakuAstClass::RegexBackReferencePositional
     ) && fields
