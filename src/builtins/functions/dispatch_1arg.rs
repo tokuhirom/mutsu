@@ -465,6 +465,9 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                         Value::int(q)
                     }
                 }
+                ValueView::BigInt(_) | ValueView::BigRat(..) | ValueView::FatRat(..) => {
+                    return crate::builtins::method_table::scalars::real::floor_of(arg);
+                }
                 _ => Value::int(0),
             }))
         }
@@ -484,6 +487,9 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     } else {
                         Value::int(q)
                     }
+                }
+                ValueView::BigInt(_) | ValueView::BigRat(..) | ValueView::FatRat(..) => {
+                    return crate::builtins::method_table::scalars::real::ceiling_of(arg);
                 }
                 _ => Value::int(0),
             }))
@@ -521,6 +527,9 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 ValueView::Rat(n, d) if d != 0 => {
                     let f = crate::value::rat_to_f64(n, d);
                     raku_round_to_value(f)
+                }
+                ValueView::BigInt(_) | ValueView::BigRat(..) | ValueView::FatRat(..) => {
+                    return crate::builtins::method_table::scalars::real::round_of(arg);
                 }
                 _ => Value::int(0),
             }))

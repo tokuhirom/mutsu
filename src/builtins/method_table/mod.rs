@@ -54,7 +54,7 @@ mod io_concurrency;
 mod mutating;
 mod place;
 mod row;
-mod scalars;
+pub(crate) mod scalars;
 mod table;
 mod table_const;
 
