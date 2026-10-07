@@ -11282,14 +11282,19 @@ impl CompiledCode {
                 | OpCode::GetCallerOuterVar { .. } => {
                     self.uses_callframe = true;
                 }
-                OpCode::GetPseudoStash(name_idx) | OpCode::GetPseudoStashKeyed(name_idx) => {
+                OpCode::GetPseudoStash(name_idx)
+                | OpCode::GetPseudoStashKeyed(name_idx)
+                | OpCode::IndexAssignPseudoStashNamed {
+                    stash_name_idx: name_idx,
+                    ..
+                } => {
                     if let Some(value) = self.constants.get(*name_idx as usize)
                         && let ValueView::Str(name) = value.view()
                         && crate::qualified::segments(crate::symbol::Symbol::intern(
                             name.trim_end_matches("::"),
                         ))
-                        .iter()
-                        .all(|part| part.as_str() == "CALLER")
+                        .first()
+                        .is_some_and(|part| part.as_str() == "CALLER")
                     {
                         self.uses_callframe = true;
                     }

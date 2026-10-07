@@ -84,12 +84,20 @@ impl Interpreter {
                 return Err(self.type_check_element_failure(name, value_type, item));
             }
         }
+        // A native array source (`my str @x`, declared `array[str]`) keeps its
+        // declared type when it lands in a same-typed attribute: `nqp::atpos_s`
+        // and friends accept only a native array (DirHandle/P5opendir).
+        let declared_type = self
+            .container_type_metadata(&val)
+            .filter(|info| info.value_type == value_type)
+            .and_then(|info| info.declared_type)
+            .filter(|d| d.starts_with("array["));
         val = self.tag_container_metadata(
             val,
             crate::runtime::ContainerTypeInfo {
                 value_type: value_type.to_string(),
                 key_type: key_type.map(str::to_string),
-                declared_type: None,
+                declared_type,
             },
         );
         Ok(val)

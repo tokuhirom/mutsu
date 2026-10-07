@@ -1228,6 +1228,7 @@ impl Interpreter {
                 params: method_def.param_syms(),
                 locals: cc.locals_syms(),
             };
+            let carried = self.carried_runtime_name_writes(&current_env, &is_method_local);
             let (mut merged_env, wrote_caller, changed_caller_locals) = merge_method_env(
                 frame.saved_env,
                 current_env,
@@ -1235,6 +1236,9 @@ impl Interpreter {
                 &is_method_local,
                 &is_unwritten_capture,
             );
+            for (name, v) in carried {
+                merged_env.insert(name, v);
+            }
             // Precise dirty signal (Slice 6.3): the caller only needs an
             // env->locals re-sync when this method actually merged a
             // caller-visible write (captured-outer var, global, &sub) or wrote
@@ -2692,13 +2696,17 @@ impl Interpreter {
                     params: method_def.param_syms(),
                     locals: cc.locals_syms(),
                 };
-                let (merged, wrote_caller, changed_caller_locals) = merge_method_env(
+                let carried = self.carried_runtime_name_writes(&current_env, &is_method_local);
+                let (mut merged, wrote_caller, changed_caller_locals) = merge_method_env(
                     frame.saved_env,
                     current_env,
                     &frame_syms,
                     &is_method_local,
                     &is_unwritten_capture,
                 );
+                for (name, v) in carried {
+                    merged.insert(name, v);
+                }
                 // Precise dirty signal (Slice 6.3): re-sync the caller's locals
                 // only when the method merged a caller-visible write.
                 self.dispatch.method_dispatch_pure = !wrote_caller;

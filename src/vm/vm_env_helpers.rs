@@ -2501,6 +2501,24 @@ impl Interpreter {
         }
     }
 
+    /// The values of the pending by-name caller writes (see
+    /// [`Self::propagate_pending_caller_writes`]) a dying METHOD frame holds in
+    /// `current`, minus the names the method declared itself; the method return
+    /// merge inserts them into the caller env, since its own filters never see
+    /// a runtime-named write (`CALLER::LEXICAL::<$x> = v`).
+    // Cost: O(w), w = pending runtime-name writes (empty for nearly every program).
+    pub(super) fn carried_runtime_name_writes(
+        &self,
+        current: &crate::env::Env,
+        is_local: &dyn Fn(&str) -> bool,
+    ) -> Vec<(String, Value)> {
+        self.pending_runtime_name_writes
+            .iter()
+            .filter(|name| !is_local(name))
+            .filter_map(|name| current.get(name).map(|v| (name.clone(), v.clone())))
+            .collect()
+    }
+
     /// Carry a still-unclaimed RUNTIME-NAME write ACROSS a frame boundary.
     ///
     /// `pending_runtime_name_writes` names a lexical that some nested frame wrote
