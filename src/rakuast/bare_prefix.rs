@@ -94,7 +94,13 @@ pub(super) fn bare_phaser_statement(phaser: &Stmt) -> Result<Option<RakuAstNode>
             body,
             condition,
             end_index,
-        } if matches!(body.as_slice(), [Stmt::SyntheticBlock(_)]) => {
+        } if matches!(
+            kind,
+            crate::ast::PhaserKind::First
+                | crate::ast::PhaserKind::Next
+                | crate::ast::PhaserKind::Last
+        ) && matches!(body.as_slice(), [Stmt::SyntheticBlock(_)]) =>
+        {
             let Some(Stmt::SyntheticBlock(inner)) = body.first() else {
                 unreachable!("just matched");
             };

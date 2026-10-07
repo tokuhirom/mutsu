@@ -3066,9 +3066,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 super::method_assign_decl::convert(decl)
             }
             // Only the on-demand lambda opens with a supply record.
-            Some(
-                crate::ast::SourceForm::SupplyBlock(_) | crate::ast::SourceForm::BarePhaser,
-            )
+            Some(crate::ast::SourceForm::SupplyBlock(_) | crate::ast::SourceForm::BarePhaser)
             | None => Err(unsupported("source form")),
         },
         // `()` -> `Circumfix::Parentheses(SemiList.new)`: no statement inside.

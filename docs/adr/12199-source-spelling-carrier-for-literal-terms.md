@@ -226,3 +226,24 @@ Option A held a third time; no abort criterion was met. S4 (statement level) is 
   spelling findings: `try X if C` (modifier scope) and `sink A, B` ([#12240](https://github.com/tokuhirom/mutsu/issues/12240)).
   The `MUTSU_RAKUAST=1` ratchet failed on two files at first (`start react`/`start until`, fixed
   above); the three timeouts left in a 4-way parallel debug run pass alone.
+
+### 6.4 Bare-statement prefixes, statement level (2026-10-07, [#12199](https://github.com/tokuhirom/mutsu/issues/12199), slice S4)
+
+Option A held a fourth time; no abort criterion was met. This closes the slice list.
+
+- **Carrier decision**: `Stmt` has no wrapper variant, and `Stmt::Phaser` is built and matched in
+  dozens of places, so neither a wrapper variant nor a new field was worth its peel sites. A
+  spelling-keeping parse of a phaser over a bare statement (`LEAVE say 1`, `FIRST say 1`) returns
+  `Stmt::SyntheticBlock([Stmt::SourceForm(SourceForm::BarePhaser), Stmt::Phaser { .. }])`, the
+  existing source-form record pattern (`SignatureDecl`, `SupplyBlock`). The phaser inside is
+  unchanged, and no executing parse builds the record (`ast::spelled::keeping()`).
+- **Peel sites: none found.** The `MUTSU_RAKUAST=1` ratchet failed on one file
+  (`begin-selective-import-proto-multi.t`), which was a bug in the converter's unwrapping of the
+  `FIRST`/`NEXT`/`LAST` synthetic block (it must not touch other kinds), not a parse-time consumer.
+- **Read** (`bare_prefix::bare_phaser_statement`): the phaser is converted as usual and its block
+  child replaced by the statement. `FIRST`/`NEXT`/`LAST` keep their bare statement in a
+  scope-less `SyntheticBlock`, which is unwrapped first. **Write**: `lower_phaser` takes a block or a
+  bare statement (`bare_prefix::lower_phaser_body`), re-wrapping the loop phasers' statement.
+- **Measured**: the `bare-prefix` class is at zero on the corpus (1426 files, 21784 statements,
+  95.0% identical); the `MUTSU_RAKUAST=1` ratchet passes except three debug-build timeouts that
+  pass alone.
