@@ -1155,6 +1155,16 @@ impl Interpreter {
                     || method_def.params.iter().any(|p| p == s)
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
+                    // A composed role's type parameter (`T` of `role R[::T]` /
+                    // `role R[$T]`) is bound into the callee env for this
+                    // call only. Merging it back would clobber the caller's
+                    // own `$T` when the caller is another instance of the
+                    // same role composed with a different argument and the
+                    // call is a recursion into it (HTML::Tag's `render`).
+                    || method_def
+                        .role_param_bindings
+                        .as_deref()
+                        .is_some_and(|b| b.iter().any(|(n, _)| n == s))
                     || class_body_static_names
                         .get(owner_class)
                         .is_some_and(|names| names.contains(s))
