@@ -60,6 +60,7 @@ mod symbolic_deref;
 mod temporize;
 mod type_args;
 mod type_call;
+mod type_ctor;
 mod type_lower;
 mod use_stmt;
 mod word_quote;
@@ -1680,6 +1681,11 @@ pub fn construct(
     {
         return node.map(Some);
     }
+    if method == "new"
+        && let Some(node) = type_ctor::construct(class_name, args)
+    {
+        return node.map(Some);
+    }
     if matches!(class_name, "RakuAST::QuotedString" | "RakuAST::Heredoc") && method == "new" {
         let heredoc = class_name == "RakuAST::Heredoc";
         let segments = named_arg(args, "segments")
@@ -3147,6 +3153,9 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Initializer::Bind", "new") => RakuAstClass::InitializerBind,
         ("RakuAST::Type::Simple", "new") => RakuAstClass::TypeSimple,
         ("RakuAST::Type::Setting", "new") => RakuAstClass::TypeSetting,
+        ("RakuAST::Type::Definedness", "new") => RakuAstClass::TypeDefinedness,
+        ("RakuAST::Type::AnyDefinedness", "new") => RakuAstClass::TypeAnyDefinedness,
+        ("RakuAST::Type::Coercion", "new") => RakuAstClass::TypeCoercion,
         ("RakuAST::Type::Capture", "new") => RakuAstClass::TypeCapture,
         ("RakuAST::Trait::Returns", "new") => RakuAstClass::TraitReturns,
         ("RakuAST::Trait::Of", "new") => RakuAstClass::TraitOf,
@@ -3545,6 +3554,9 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::InitializerBind
             | RakuAstClass::TypeSimple
             | RakuAstClass::TypeEnum
+            | RakuAstClass::TypeDefinedness
+            | RakuAstClass::TypeAnyDefinedness
+            | RakuAstClass::TypeCoercion
             | RakuAstClass::TypeSetting
             | RakuAstClass::TypeCapture
             | RakuAstClass::QuotedRegex
