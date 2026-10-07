@@ -70,7 +70,7 @@ fn mark_expr_after_plant(expr: &mut Expr) {
         Expr::Grouped(inner) => mark_expr(inner),
         // A spelled term (ADR-12199) holds a word list, which has no `*`:
         // classify what it wraps as if the wrapper were not there.
-        Expr::Spelled(spelled) => mark_expr_after_plant(&mut spelled.expr),
+        Expr::Spelled(spelled) => mark_expr(&mut spelled.expr),
         // Comma-list positions: `1, *, 2`, `[*]`, `\(*, 1)`.
         Expr::ArrayLiteral(items)
         | Expr::BracketArray(items, _)
