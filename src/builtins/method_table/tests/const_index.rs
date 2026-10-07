@@ -12,6 +12,7 @@ struct Legacy {
     owners: FxHashMap<(Symbol, Symbol, u8), RowId>,
     slurpy: FxHashMap<(Symbol, Symbol), RowId>,
     arities: FxHashMap<Symbol, u8>,
+    mut_arities: FxHashMap<Symbol, u8>,
     shapes: FxHashMap<Symbol, u64>,
     type_shapes: FxHashMap<Symbol, u64>,
 }
@@ -24,6 +25,7 @@ fn legacy() -> Legacy {
         owners: FxHashMap::default(),
         slurpy: FxHashMap::default(),
         arities: FxHashMap::default(),
+        mut_arities: FxHashMap::default(),
         shapes: FxHashMap::default(),
         type_shapes: FxHashMap::default(),
     };
@@ -37,6 +39,11 @@ fn legacy() -> Legacy {
         if row.flags.contains(RowFlags::SLURPY) {
             t.slurpy.entry((owner, name)).or_insert(id);
         }
+        if row.handler.is_mut() {
+            for arity in row.arities() {
+                *t.mut_arities.entry(name).or_default() |= 1 << arity;
+            }
+        }
     }
     for shape in DispatchShape::ALL {
         let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_syms(shape.type_name())
@@ -48,7 +55,11 @@ fn legacy() -> Legacy {
                 continue;
             }
             for (idx, row) in all.iter().enumerate() {
-                if row.owner != owner.as_str() || row.flags.contains(RowFlags::OWNER_ONLY) {
+                // A `Mut` row is registered by its owner only (ADR-11276 §9.23).
+                if row.owner != owner.as_str()
+                    || row.flags.contains(RowFlags::OWNER_ONLY)
+                    || row.handler.is_mut()
+                {
                     continue;
                 }
                 let id = RowId::from_bits(idx as u16);
@@ -91,6 +102,16 @@ fn const_index_matches_the_runtime_builder() {
         for arity in 0..10usize {
             let want = arity < 8 && arities & (1 << arity) != 0;
             assert_eq!(names_a_row(sym, arity), want, "{name}/{arity} names_a_row");
+        }
+        let mut_arities = old.mut_arities.get(&sym).copied().unwrap_or(0);
+        for arity in 0..10usize {
+            // A call longer than the masks go answers by bit 7.
+            let want = mut_arities & (1 << arity.min(7)) != 0;
+            assert_eq!(
+                names_a_mut_row(sym, arity),
+                want,
+                "{name}/{arity} names_a_mut_row"
+            );
         }
         for shape in DispatchShape::ALL {
             for type_object in [false, true] {
