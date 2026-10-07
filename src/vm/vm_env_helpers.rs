@@ -2157,10 +2157,9 @@ impl Interpreter {
             // (a worker routine with a local `$i` pinned the caller's loop
             // variable to its value at the spawn).
             if self.threads.shared_vars_active
-                && self
-                    .env()
-                    .get(name)
-                    .is_some_and(|current| Self::is_unchanged_scalar_write(current, &self.locals[i]))
+                && self.env().get(name).is_some_and(|current| {
+                    Self::is_unchanged_scalar_write(current, &self.locals[i])
+                })
             {
                 continue;
             }
