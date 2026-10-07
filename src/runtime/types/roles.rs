@@ -71,93 +71,6 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Re-apply any roles ever composed onto the named routine
-    /// `package::name` (via `.^mixin(Role)` or a trait handler's `$r does
-    /// Role`) to a freshly rebuilt `sub_val` for that same routine.
-    ///
-    /// A named routine's Sub value is rebuilt from the registry at every call
-    /// and at every bare `&name` mention rather than kept as one persistent
-    /// object, so a role composed onto one instance does not automatically
-    /// appear on the next rebuild. `note_routine_mixin_role` (called from
-    /// `compose_role_on_value` above) records which roles a given routine has
-    /// ever been composed with; this restores them. Cheap no-op (a single
-    /// relaxed atomic load, no allocation) when no routine anywhere has ever
-    /// been mixed with a role.
-    ///
-    /// TODO: recorded compositions are always parameterless (`&[]`) — a
-    /// routine mixed with a *parameterized* role (`$r does Role[Arg]`) would
-    /// lose the type arguments on rebuild. No known caller does this yet
-    /// (`Test.rakumod`'s marker roles are parameterless); extending
-    /// `note_routine_mixin_role` to also record `role_args` would fix it.
-    pub(crate) fn materialize_routine_mixins(
-        &mut self,
-        sub_val: Value,
-        package: &str,
-        name: &str,
-    ) -> Value {
-        if !crate::runtime::registration_sub::any_routine_mixin_roles() {
-            return sub_val;
-        }
-        let qualified = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
-        let roles = crate::runtime::registration_sub::routine_mixin_roles(qualified.as_str());
-        let mut result = sub_val;
-        for role_name in roles {
-            result = self
-                .compose_role_on_value(result.clone(), &role_name, &[], false)
-                .unwrap_or(result);
-        }
-        result
-    }
-
-    /// Lightweight `&self` counterpart to [`Self::materialize_routine_mixins`]
-    /// for call sites that only hold shared access (e.g.
-    /// `sub_value_from_function_def`, which `&name` code-var resolution uses
-    /// and cannot take `&mut self` without a much larger signature change).
-    /// Restores only the `__mutsu_role__<name>` / role-id markers, not the
-    /// full composition — the role's BUILD/TWEAK submethods and deferred body
-    /// already ran once, at the original `.^mixin`/`does` call that first
-    /// composed it, and must not run again on every rebuild.
-    pub(crate) fn materialize_routine_mixins_shared(
-        &self,
-        sub_val: Value,
-        package: &str,
-        name: &str,
-    ) -> Value {
-        if !crate::runtime::registration_sub::any_routine_mixin_roles() {
-            return sub_val;
-        }
-        let qualified = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
-        let roles = crate::runtime::registration_sub::routine_mixin_roles(qualified.as_str());
-        if roles.is_empty() {
-            return sub_val;
-        }
-        let (inner, mut mixins) = match sub_val.view() {
-            ValueView::Mixin(inner, existing) => (inner.as_ref().clone(), (**existing).clone()),
-            _ => (sub_val, ValueMap::default().into()),
-        };
-        for role_name in &roles {
-            mixins.insert(MetaNs::Role.owned_key_for_str(role_name), Value::TRUE);
-            // Preserve an already-stamped application order across rebuilds
-            // (a routine rebuilds its mixin markers on every call/`&name`
-            // mention); only stamp when this is the first time.
-            mixins
-                .entry(MetaNs::RoleSeq.owned_key_for_str(role_name))
-                .or_insert_with(|| Value::int(crate::value::next_instance_id() as i64));
-            let role_id = self
-                .registry()
-                .roles
-                .get(role_name)
-                .map_or(0, |r| r.role_id);
-            if role_id != 0 {
-                mixins.insert(
-                    MetaNs::RoleId.owned_key_for_str(role_name),
-                    Value::int(role_id as i64),
-                );
-            }
-        }
-        Value::mixin_with_state(inner, mixins)
-    }
-
     pub(crate) fn role_def_for_mixin_role(
         &self,
         mixins: &crate::value::MixinOverrides,
@@ -1167,28 +1080,6 @@ impl Interpreter {
             if let Some(saved) = saved_env {
                 self.env = saved;
             }
-        }
-
-        // A Sub value is rebuilt fresh from the registry at every call and at
-        // every bare `&name` mention (see `Interpreter::materialize_routine_mixins`),
-        // so composing a role onto *this* instance does not by itself make a
-        // later rebuild of the same routine carry it. Record the composition
-        // so those rebuild sites can re-apply it.
-        //
-        // Only for a Method object now: a sub's rebuilds share the def's
-        // composition cell (ADR-11827), which `does` writes, while this
-        // name-keyed record also caught a `but` copy and a `.clone`. Method
-        // traits move to the cell in ADR-11827 phase 2.
-        if let ValueView::Sub(sub_data) = inner.view()
-            && matches!(
-                sub_data.env.get("__mutsu_callable_type").map(Value::view),
-                Some(ValueView::Str(t)) if t.as_str() == "Method"
-            )
-        {
-            crate::runtime::registration_sub::note_routine_mixin_role(
-                crate::qualified::qualified(sub_data.package, sub_data.name).as_str(),
-                role_name,
-            );
         }
 
         Ok(Value::mixin_with_state(inner, mixins))

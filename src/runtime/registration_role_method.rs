@@ -306,6 +306,7 @@ impl Interpreter {
             role_param_bindings: None,
             nested_capture_index: decl.nested_capture_index,
             captured_readonly: Some(self.capture_declaring_readonly_state()),
+            routine_cell: Default::default(),
         };
         // A role method's custom `is` traits dispatch to a user
         // `trait_mod:<is>` at declaration time, with `$*PACKAGE` the role --
@@ -320,6 +321,7 @@ impl Interpreter {
             false,
             decl.return_type.as_deref(),
             &decl.custom_traits,
+            &def.routine_cell,
         )?;
         // `my method` in roles are role-private, skip method table.
         // Submethods (is_submethod) DO get composed even though

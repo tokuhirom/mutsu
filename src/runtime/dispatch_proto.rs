@@ -305,6 +305,7 @@ impl Interpreter {
             role_param_bindings: None,
             nested_capture_index: None,
             captured_readonly: None,
+            routine_cell: Default::default(),
         };
         // ADR-0019 D3-8 never compiled proto method bodies at plan-lowering
         // time (`todo/tickets/adr0019-method-body-compile-dedup-remnants.md`

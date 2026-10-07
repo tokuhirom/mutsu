@@ -606,6 +606,7 @@ impl Interpreter {
         };
         let proto_params = fdef.params.clone();
         let proto_param_defs = fdef.param_defs.clone();
+        let proto_cell = fdef.routine_cell.clone();
         self.registry_mut()
             .set_proto_method(owner, &method_name, fdef);
         self.apply_method_is_traits(
@@ -618,6 +619,7 @@ impl Interpreter {
             true,
             return_type.as_deref(),
             trait_args,
+            &proto_cell,
         )
     }
 

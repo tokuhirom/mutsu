@@ -168,6 +168,7 @@ pub(super) fn make_delegation_method(attr_var_name: &str, target_method: &str) -
         role_param_bindings: None,
         nested_capture_index: None,
         captured_readonly: None,
+        routine_cell: Default::default(),
     }
 }
 
@@ -457,6 +458,7 @@ pub(super) fn substitute_type_params_in_method(
         role_param_bindings: method.role_param_bindings.clone(),
         nested_capture_index: method.nested_capture_index,
         captured_readonly: method.captured_readonly.clone(),
+        routine_cell: Default::default(),
     }
 }
 

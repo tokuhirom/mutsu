@@ -268,6 +268,11 @@ pub(crate) struct MethodDef {
     /// The parameter names and source file above, interned on first dispatch
     /// (see [`super::method_def_syms`]).
     pub(crate) syms: super::method_def_syms::MethodDefSyms,
+    /// The method's composition cell (ADR-11827 §2.4): the one `Method` code
+    /// object its declaration's traits ran on. Every method object a lookup
+    /// builds for this def, and every clone of the def a role composition
+    /// copies, shares it.
+    pub(crate) routine_cell: crate::value::RoutineCell,
 }
 
 /// Invocant context for an active `proto method` `{*}` dispatch.

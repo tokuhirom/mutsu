@@ -47,7 +47,7 @@ impl Interpreter {
             // instead of the `__mutsu_role__<name>` marker every other
             // role-aware consumer (`.can`, `.^can`, `nqp::can`, `.does`)
             // expects, and (for a routine invocant) the composition is
-            // never recorded for `materialize_routine_mixins` to restore
+            // never stored in the routine composition cell
             // on a later rebuild (see
             // news/2026-08/test-assertion-trait-is-not-introspectable.md).
             //

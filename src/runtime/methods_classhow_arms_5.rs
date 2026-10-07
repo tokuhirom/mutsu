@@ -55,6 +55,7 @@ impl Interpreter {
                 role_param_bindings: None,
                 nested_capture_index: None,
                 captured_readonly: None,
+                routine_cell: Default::default(),
             };
             // `^add_multi_method` must still *error* for an unregistered
             // class -- existence keys off `classes.contains_key`, not the

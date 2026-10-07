@@ -31,6 +31,7 @@ impl Interpreter {
         is_proto: bool,
         return_type: Option<&str>,
         traits: &[(String, Option<crate::ast::Expr>)],
+        cell: &crate::value::RoutineCell,
     ) -> Result<(), RuntimeError> {
         if !traits.iter().any(|(t, _)| !is_parser_marker(t)) {
             return Ok(());
@@ -51,6 +52,7 @@ impl Interpreter {
             is_proto,
             return_type,
             traits,
+            cell,
         );
         match saved_package_var {
             Some(v) => self.env.insert("*PACKAGE".to_string(), v),
@@ -94,6 +96,7 @@ impl Interpreter {
             true,
             return_type.as_deref(),
             trait_args,
+            &Default::default(),
         )
     }
 
@@ -109,6 +112,7 @@ impl Interpreter {
         is_proto: bool,
         return_type: Option<&str>,
         traits: &[(String, Option<crate::ast::Expr>)],
+        cell: &crate::value::RoutineCell,
     ) -> Result<(), RuntimeError> {
         // One code object for the whole declaration: every trait handler
         // composes onto, and binds `$!do` on, the same Method (ADR-11827
@@ -176,6 +180,16 @@ impl Interpreter {
             is_rw,
             trait_env,
         );
+        // The declaration's own cell is the code object's: a `does` a trait
+        // handler runs on it lands where every later lookup reads it.
+        let sub_val = match sub_val.view() {
+            ValueView::Sub(data) => {
+                let mut data = (**data).clone();
+                data.routine_cell = cell.clone();
+                Value::sub_value(crate::gc::Gc::new(data))
+            }
+            _ => sub_val,
+        };
         for (trait_name, trait_arg) in traits {
             if is_parser_marker(trait_name) {
                 continue;

@@ -133,12 +133,7 @@ impl Interpreter {
                         false,
                         l.env.flattened(),
                     );
-                    let sub_val = self.with_def_routine_cell(sub_val, l);
-                    self.materialize_routine_mixins_shared(
-                        sub_val,
-                        l.package.as_str(),
-                        l.name.as_str(),
-                    )
+                    self.with_def_routine_cell(sub_val, l)
                 })
                 .clone(),
         }

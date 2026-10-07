@@ -2133,6 +2133,7 @@ mod tests {
             role_param_bindings: None,
             nested_capture_index: None,
             captured_readonly: None,
+            routine_cell: Default::default(),
         };
         registry
             .classes

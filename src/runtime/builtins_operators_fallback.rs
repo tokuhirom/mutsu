@@ -720,13 +720,6 @@ impl Interpreter {
                 self.env.clone(),
                 def.compiled.clone(),
             );
-            // See the matching comment in `vm_call_named_inner.rs`: restore
-            // any role ever composed onto this routine, lost on this rebuild.
-            let sub_val = self.materialize_routine_mixins(
-                sub_val,
-                &def.package.resolve(),
-                &def.name.resolve(),
-            );
             self.block_stack
                 .push(crate::runtime::CodeFrame::Ready(sub_val));
             let pushed_assertion = self.push_test_assertion_context(def.is_test_assertion);
