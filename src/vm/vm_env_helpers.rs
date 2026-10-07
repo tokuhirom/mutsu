@@ -1179,15 +1179,50 @@ impl Interpreter {
         val: &Value,
         source_kind: Option<crate::ast::ReadonlyKind>,
     ) -> bool {
-        let Some(cell) = self
+        let scalar = !name.starts_with(['@', '%', '&']);
+        if let Some(cell) = self
             .unit_lexical_slot(name, None)
             .and_then(Self::binding_cell_of)
-        else {
+        {
+            Self::seat_in_binding_cell(val.clone(), cell, scalar, source_kind);
+            return true;
+        }
+        // No binding cell. A compunit lexical reached through the package
+        // chain (a module's file-scope `my`, read by the module's own
+        // routines) has no live declaring frame whose slot would need to see
+        // the rebind, so the rebind REPLACES the store's binding with a fresh
+        // container. Writing through the existing cell would instead reach
+        // every name `:=`-bound to it earlier (`my $new := $buf; $buf := X`
+        // turned `$new` into X as well, #11797). A mainline or block bucket
+        // keeps its declaring frame's slot in step through a binding cell
+        // instead, and a routine-nested sub's own alias is per activation.
+        if self.lexsub_alias_frame_active()
+            || self.active_unit_lexical_bucket().is_some_and(|bucket| {
+                self.lexicals
+                    .unit_lexicals
+                    .get(bucket)
+                    .is_some_and(|m| m.contains_key(name))
+            })
+        {
             return false;
-        };
-        let scalar = !name.starts_with(['@', '%', '&']);
-        Self::seat_in_binding_cell(val.clone(), cell, scalar, source_kind);
-        true
+        }
+        if self.unit_lexical_slot(name, None).is_none() {
+            return false;
+        }
+        let (container, decision) = Self::rebound_container(val.clone(), scalar, source_kind);
+        if scalar
+            && !val.is_container_ref()
+            && let ValueView::ContainerRef(fresh) = container.view()
+        {
+            fresh.set_binding_decision(decision);
+        }
+        match self.unit_lexical_slot_mut(name, None) {
+            Some(slot) => {
+                *slot = container;
+                true
+            }
+            None => false,
+        }
     }
 
     /// Bind companion of [`Self::unit_scope_lexical_write`]: a `:=` installs a

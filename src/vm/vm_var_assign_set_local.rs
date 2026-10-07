@@ -1102,34 +1102,44 @@ impl Interpreter {
             }
             return None;
         }
-        let container = if new.is_container_ref() {
-            if scalar {
-                cell.set_binding_decision(source_kind);
-            }
-            Self::innermost_container(new)
-        } else {
-            match source_kind
-                .or_else(|| Self::rebound_value_kind(&new))
-                .filter(|_| scalar)
-            {
-                Some(kind) => {
-                    cell.set_binding_decision(None);
-                    Value::container_ref(crate::gc::Gc::new(
-                        crate::value::ContainerCell::new_readonly_binding(new, kind),
-                    ))
-                }
-                None => {
-                    if scalar {
-                        cell.set_binding_decision(None);
-                    }
-                    new.into_container_ref()
-                }
-            }
-        };
+        let (container, decision) = Self::rebound_container(new, scalar, source_kind);
+        if scalar {
+            cell.set_binding_decision(decision);
+        }
         *cell
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = container;
         Some(Value::container_ref(cell))
+    }
+
+    /// The container a rebind to `new` leaves the variable holding, and the
+    /// writability decision of that binding (`None`: writable; `Some(kind)`:
+    /// readonly), as [`Self::seat_in_binding_cell`] and
+    /// [`Self::unit_scope_lexical_rebind`] both need them. A container is
+    /// bound through to its innermost cell (its decision is the source's); a
+    /// bare value gets a fresh container, readonly for the kinds rakudo
+    /// refuses an assignment for.
+    // Cost: O(c), c = binding cells chained in front of `new`.
+    pub(super) fn rebound_container(
+        new: Value,
+        scalar: bool,
+        source_kind: Option<crate::ast::ReadonlyKind>,
+    ) -> (Value, Option<crate::ast::ReadonlyKind>) {
+        if new.is_container_ref() {
+            return (Self::innermost_container(new), source_kind);
+        }
+        match source_kind
+            .or_else(|| Self::rebound_value_kind(&new))
+            .filter(|_| scalar)
+        {
+            Some(kind) => (
+                Value::container_ref(crate::gc::Gc::new(
+                    crate::value::ContainerCell::new_readonly_binding(new, kind),
+                )),
+                None,
+            ),
+            None => (new.into_container_ref(), None),
+        }
     }
 
     /// The readonly kind a `$` variable `:=`-bound straight to the value `v`
@@ -2768,9 +2778,18 @@ impl Interpreter {
             let source_in_enclosing_decl_scope = !self.lexicals.nested_capture_owners.is_empty()
                 && !source_in_same_scope
                 && self.env().contains_key(&resolved_source);
+            // A file-scope lexical of the running routine's own compunit (a
+            // module routine reading its module's `my`) is an outer variable
+            // too, but no frame env vouches for it: it lives only in the
+            // compunit's lexical store (#11797).
+            let source_in_unit_store = !source_in_same_scope
+                && !is_percall_pseudo_var
+                && !synthetic_index_source
+                && self.unit_lexical_slot(&resolved_source, None).is_some();
             let source_in_outer_frame = !is_percall_pseudo_var
                 && !synthetic_index_source
                 && (source_in_enclosing_decl_scope
+                    || source_in_unit_store
                     || self
                         .call_frames
                         .iter()
@@ -2870,6 +2889,20 @@ impl Interpreter {
                             }),
                     },
                 };
+                // A source that holds a binding cell (`binding_cell_of`, #9237)
+                // is bound through to its container: the new name aliases the
+                // container, not the source's binding, so a later rebind of the
+                // source (`$src := ...` re-seats the binding cell's content)
+                // leaves it alone (#11797). The source itself keeps the binding
+                // cell wherever it is recorded below.
+                let source_binding_cell =
+                    Self::binding_cell_of(&Value::container_ref(cell.clone()))
+                        .map(|_| Value::container_ref(cell.clone()));
+                let cell =
+                    match Self::innermost_container(Value::container_ref(cell.clone())).view() {
+                        ValueView::ContainerRef(inner) => inner.clone(),
+                        _ => cell,
+                    };
                 // A bound `@`/`%` variable adopts the *source* container's
                 // declared element/key type, not its own (`my Int %a; my Cool
                 // %b := %a` ⇒ `%b.of` is `Int`). Propagate the inner container's
@@ -2888,14 +2921,17 @@ impl Interpreter {
                     self.loan_env_for(|i| i.set_var_bound_type_constraint(name, constraint));
                 }
                 let container = Value::container_ref(cell);
+                // What the SOURCE's own stores hold: its binding cell when it
+                // has one, else the shared container.
+                let source_container = source_binding_cell.unwrap_or_else(|| container.clone());
                 self.locals[idx] = container.clone();
                 if let Some(source_idx) =
                     Self::bind_source_local_slot(code, bind_source_slot, &effective_source)
                 {
-                    self.locals[source_idx] = container.clone();
+                    self.locals[source_idx] = source_container.clone();
                     self.flush_local_to_env(code, source_idx);
                 }
-                self.set_env_with_main_alias(&effective_source, container.clone());
+                self.set_env_with_main_alias(&effective_source, source_container.clone());
                 // Propagate the shared cell into saved call frames so the
                 // binding survives method returns (env restore) without
                 // reverting to a stale value (same as the scalar path below).
@@ -2904,7 +2940,7 @@ impl Interpreter {
                 self.propagate_bind_to_ancestor_frames(
                     &effective_source,
                     effective_source_is_own_lexical,
-                    &container,
+                    &source_container,
                 );
                 self.set_env_with_main_alias(name, container.clone());
                 self.flush_local_to_env(code, idx);
@@ -3028,11 +3064,25 @@ impl Interpreter {
                         _ => arc,
                     }
                 });
+                // The source's binding cell can live in its own slot, in the
+                // compunit's lexical store (a mainline lexical a named sub
+                // reads, ADR-0024) or in an env tier; wherever it is, the bind
+                // leaves it there (#11797).
                 let source_keeps_binding_cell =
                     Self::bind_source_local_slot(code, bind_source_slot, &resolved_source)
-                        .is_some_and(|s| Self::binding_cell_of(&self.locals[s]).is_some());
+                        .is_some_and(|s| Self::binding_cell_of(&self.locals[s]).is_some())
+                        || self
+                            .unit_lexical_slot(&resolved_source, None)
+                            .is_some_and(|slot| Self::binding_cell_of(slot).is_some())
+                        || self
+                            .env()
+                            .get(&resolved_source)
+                            .is_some_and(|slot| Self::binding_cell_of(slot).is_some());
                 let container = match (val.view(), source_cell) {
-                    (ValueView::ContainerRef(arc), _) => Value::container_ref(arc.clone()),
+                    // `val` can be the source's binding cell itself (a
+                    // `WrapVarRef` of a mainline lexical carries the raw cell):
+                    // bind to the container behind it, as `source_cell` does.
+                    (ValueView::ContainerRef(_), _) => Self::innermost_container(val.clone()),
                     (_, Some(arc)) => Value::container_ref(arc),
                     _ => {
                         // A freshly minted cell must inherit the SOURCE

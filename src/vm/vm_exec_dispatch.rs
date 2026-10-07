@@ -2923,11 +2923,19 @@ impl Interpreter {
                 }
                 if let Some(cell) = binding_cell {
                     // A value rebound from a readonly binding (`$m := $p`,
-                    // `$p` a parameter) keeps that binding's kind.
+                    // `$p` a parameter) keps that binding's kind.
                     let source_kind = bind_source
                         .as_deref()
                         .and_then(|source| self.readonly_kind(source));
                     self.reseat_env_binding_cell(name_sym, cell, source_kind);
+                }
+                if is_rebind {
+                    // A rebind changes what the name resolves to, so a cached
+                    // resolution of it is stale: TRIR memoizes a routine's free
+                    // variable bindings under this generation, and a sibling
+                    // routine that ran before the rebind would otherwise keep
+                    // pushing into the old container (#11797).
+                    self.lexicals.unit_lexical_gen = self.lexicals.unit_lexical_gen.wrapping_add(1);
                 }
                 if sg_is_vardecl
                     && !carrier_logged_before
@@ -3018,7 +3026,11 @@ impl Interpreter {
                 // superset, see `sigilless_alias_index`), each re-checked
                 // against this frame's env overlay -- the same entries the old
                 // whole-overlay scan found, without visiting the rest.
-                {
+                //
+                // A rebind (`$name := ...`) installs a new binding and leaves
+                // every name bound to the OLD container where it was, so it
+                // propagates to none of them (#11797).
+                if !is_rebind {
                     let reverse_targets: Vec<String> = crate::sigilless_alias_index::aliases_of(
                         name_sym,
                     )

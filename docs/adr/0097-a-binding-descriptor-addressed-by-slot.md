@@ -829,6 +829,39 @@ one turns up, the same binding cell is the place to extend.
   closure share the cell, so they see the new binding, and the call-return
   writeback carries the same cell back to the frame's slot.
 
+### 14.2 A bind takes the container, and every store reseats on a rebind (#11797, 2026-10-06)
+
+`my $new := $outer; $outer := X` inside a routine moved `$new` too, which
+broke Rakudo's `Telemetry::periods`. The rule §14 states ("`my $g := $a` binds
+`$g` to the innermost container `C`, not to `B`") was only implemented on one of
+the two `SetLocal` bind branches and not at all for a source that lives in a
+store rather than a frame. The remaining gaps, in the order they were found:
+
+- **Bind.** Both whole-container and scalar branches now peel the source's
+  binding cell (`innermost_container`) for the new name and leave the source's
+  own slot, compunit-store entry and env entry holding the binding cell. A
+  source that is a file-scope lexical of the running compunit counts as an outer
+  variable even though no frame env names it.
+- **Rebind.** `SetGlobal`'s reverse alias propagation (`aliases_of`) is skipped
+  for a rebind: it only exists to keep a *shared-container* write in step, and a
+  rebind shares nothing. Where the store has no binding cell to re-seat
+  (`unit_scope_lexical_rebind`), a compunit lexical reached through the package
+  chain has its slot replaced by a fresh container (`rebound_container`, shared
+  with `seat_in_binding_cell`). The mainline and block buckets keep the binding
+  cell, because their declaring frame's slot must see the rebind.
+- **Caches.** A by-name rebind bumps `unit_lexical_gen`. TRIR keys its
+  free-variable memo on it, and a sibling routine that ran before the rebind kept
+  using the old container.
+
+Still open: the `package_lexicals` store (a `module Foo { my ... }` block or a
+class body's `my`) still writes through the shared cell on a rebind
+([#12129](https://github.com/tokuhirom/mutsu/issues/12129)). Its declaring body
+writes lexicals back after it runs (ADR-0134), so replacing the slot needs that
+writeback to be taught the new binding first. A rebind from a routine of a
+script file that itself starts with `unit module` is not seen at all
+([#12130](https://github.com/tokuhirom/mutsu/issues/12130), not a regression of
+this section: the no-alias form was already broken).
+
 ## 15. The spoiler latch guards an env/slot divergence, not a bind site (#9914, 2026-10-01)
 
 This section replaces §11.5's plan for wiring a per-slot answer into the
