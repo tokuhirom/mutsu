@@ -107,7 +107,7 @@ pub(super) fn bare_phaser_statement(phaser: &Stmt) -> Result<Option<RakuAstNode>
             unwrapped = Stmt::Phaser {
                 kind: kind.clone(),
                 body: inner.clone(),
-                condition: condition.clone(),
+                condition: *condition,
                 end_index: *end_index,
             };
             &unwrapped
