@@ -156,6 +156,15 @@ declared operator name (`sub infix:<foo>` is `Name.from-identifier("infix", colo
 and the rule now says so. No statement mutsu renders with a word quote differs from rakudo's
 (0 of 510 other-class hunks). All 5979 files of the `MUTSU_RAKUAST=1` ratchet pass.
 
+**Other word quotes (2026-10-07, [#12228](https://github.com/tokuhirom/mutsu/issues/12228)).**
+`Spelling::WordQuote { quotewords, val, text }` carries the processors of `qw`/`Qw`/`q:w`
+(`words`), `qww`/`qqww`/`qq:ww` (`quotewords`) and `«…»`/`<<…>>` (`quotewords val`); the quote
+parsers (`spell_word_quote`, `french_quote_term`, `double_angle_term`) wrap only a quote whose
+text is plain (`word_quote_text_is_plain`: no interpolation, inner quote, nesting or escape).
+`french_quote_list`/`double_angle_list` stay unwrapped for the subscript and colonpair callers,
+as `angle_list` does. The lowering of every processor list is `parser::word_quote_expr`. The
+interpolating forms (`<<a $b>>`, `«a "b c"»`) need segment nodes and remain refused.
+
 **What remains** is the closed slice list in
 [#12199](https://github.com/tokuhirom/mutsu/issues/12199) (measured 2026-10-07 on a 766-file,
 11827-statement sample, 94.6% identical): S2 heredocs (46 statements), S3 the bare-statement

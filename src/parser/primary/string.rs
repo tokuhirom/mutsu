@@ -23,7 +23,7 @@ pub(super) use escapes::process_escape_sequence;
 pub(super) use helpers::{
     make_word_result_expr, non_variable_dollar_perror, quotewords_atom_expr,
     quotewords_atom_expr_allomorphic, read_bracketed, unicode_bracket_close_pub,
-    unrecognized_backslash_perror,
+    unrecognized_backslash_perror, word_quote_text_is_plain,
 };
 pub(in crate::parser::primary) use interp_content::parse_interpolation_block;
 pub(super) use interp_content::{finalize_interpolation, parse_closure_part};
@@ -45,6 +45,7 @@ pub(in crate::parser) use interp_content::{
 };
 pub(in crate::parser) use qx::qx_string;
 
+pub(crate) use helpers::word_quote_expr;
 pub(crate) use helpers::{
     count_repeated_bracket, process_q_escapes, quote_delimiters, read_delimited_content,
     read_delimited_content_interpolating, read_multi_bracketed, unicode_bracket_close,

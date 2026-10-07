@@ -525,7 +525,7 @@ pub(crate) fn angle_word_value(word: &str) -> Value {
     primary::angle_word_value(word)
 }
 
-pub(crate) use primary::{angle_word_is_numeric_literal, angle_words_expr};
+pub(crate) use primary::{angle_word_is_numeric_literal, angle_words_expr, word_quote_expr};
 
 fn line_col_at_offset(source: &str, offset: usize) -> (usize, usize) {
     let offset = offset.min(source.len());

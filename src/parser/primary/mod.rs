@@ -329,6 +329,7 @@ pub(crate) fn angle_word_value(word: &str) -> Value {
 }
 
 pub(crate) use container::{angle_word_is_numeric_literal, angle_words_expr};
+pub(crate) use string::word_quote_expr;
 
 /// Compute the 1-based line number of `input` within the original source.
 pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
@@ -592,9 +593,9 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
         try_primary!(container::paren_expr(input));
         try_primary!(misc::reduction_op(input));
         try_primary!(container::array_literal(input));
-        try_primary!(container::double_angle_list(input));
+        try_primary!(container::double_angle_term(input));
         try_primary!(container::angle_term(input));
-        try_primary!(container::french_quote_list(input));
+        try_primary!(container::french_quote_term(input));
         try_primary!(ident::whatever(input));
         try_primary!(misc::capture_literal(input));
         try_primary!(misc::arrow_lambda(input));

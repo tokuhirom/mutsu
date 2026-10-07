@@ -1,5 +1,6 @@
 use super::*;
 use crate::ast::Expr;
+use crate::ast::spelled::Spelling;
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
@@ -94,12 +95,34 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     // Process content with flags
     if flags.quotewords {
         let items = parse_quotewords_items(content, &flags)?;
-        return Ok((after, make_word_result_expr(items)));
+        return Ok((
+            after,
+            spell_word_quote(&flags, content, make_word_result_expr(items)),
+        ));
     }
     let expr = process_content_with_flags(content, &flags);
 
     // Apply post-processing (execute, word-split, format)
     apply_post_processing(after, expr, &flags)
+}
+
+/// `expr`, a word quote written with `flags` over the plain text `text`,
+/// remembering that spelling when the parse keeps them (ADR-12199): rakudo
+/// renders it as one `QuotedString` with `words` / `quotewords` processors. A
+/// quote that interpolates or quotes a word, or takes `:v`, stays plain.
+fn spell_word_quote(
+    flags: &crate::parser::primary::quote_adverbs::QuoteFlags,
+    text: &str,
+    expr: Expr,
+) -> Expr {
+    if flags.val || !super::word_quote_text_is_plain(text) {
+        return expr;
+    }
+    Expr::spelled(expr, || Spelling::WordQuote {
+        quotewords: flags.quotewords,
+        val: false,
+        text: text.into(),
+    })
 }
 
 /// Apply execute, word-split, and format post-processing to a quote expression.
@@ -126,7 +149,10 @@ pub(crate) fn apply_post_processing<'a>(
         && let ValueView::Str(s) = lit.view()
     {
         let items = parse_quotewords_items(&s, flags)?;
-        return Ok((after, make_word_result_expr(items)));
+        return Ok((
+            after,
+            spell_word_quote(flags, &s, make_word_result_expr(items)),
+        ));
     }
 
     if flags.words || flags.quotewords {
@@ -142,7 +168,10 @@ pub(crate) fn apply_post_processing<'a>(
                     .map(|w| Expr::Literal(literal_str(w.to_string())))
                     .collect()
             };
-            return Ok((after, make_word_result_expr(words)));
+            return Ok((
+                after,
+                spell_word_quote(flags, &s, make_word_result_expr(words)),
+            ));
         }
         let func_name = if flags.val {
             "__mutsu_quotewords_atom"
@@ -314,7 +343,10 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
     // Process content with flags
     if flags.quotewords {
         let items = parse_quotewords_items(content, &flags)?;
-        return Ok((rest, make_word_result_expr(items)));
+        return Ok((
+            rest,
+            spell_word_quote(&flags, content, make_word_result_expr(items)),
+        ));
     }
     let expr = process_content_with_flags(content, &flags);
 
