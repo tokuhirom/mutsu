@@ -23,6 +23,10 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             walk_regex_tree(v, tree);
         }
         Expr::LiteralSrc(value, _source) => walk_literal(v, value),
+        Expr::Spelled(spelled) => {
+            let crate::ast::spelled::Spelled { expr, spelling: _ } = spelled.as_ref();
+            v.visit_expr(expr);
+        }
         Expr::Grouped(inner)
         | Expr::ZenSlice(inner)
         | Expr::WhateverCurry(inner)

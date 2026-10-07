@@ -235,11 +235,8 @@ pub(in crate::parser) fn handles_clause_term(
 pub(crate) fn handle_specs_from_term(term: &crate::ast::Expr) -> Option<Vec<HandleSpec>> {
     use crate::ast::Expr;
     // Parentheses are transparent: `handles ('a', 'b')` names the same list.
-    let mut term = term;
-    while let Expr::Grouped(inner) = term {
-        term = inner;
-    }
-    match term {
+    // So is the spelling a word list `<a b>` keeps for RakuAST (ADR-12199).
+    match term.peel_parens() {
         Expr::Whatever => Some(vec![HandleSpec::Wildcard]),
         Expr::Literal(value) => Some(vec![HandleSpec::Name(value.as_str()?.to_string())]),
         Expr::ArrayLiteral(items) => {

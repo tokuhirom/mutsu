@@ -5,11 +5,11 @@ use Test;
 # calls with and without parentheses, colonpairs, `^N`, topic calls, angle
 # subscripts, mixins, attribute variables, private calls, nqp ops, type
 # calls, statement prefixes, `()`, labels, `use v6.d`, parenthesized
-# modifiers, postfix operands and `use newline`.
+# modifiers, postfix operands, `use newline` and word lists.
 # Expected gists captured verbatim from Rakudo 2026.09; this file passes
 # under BOTH mutsu and raku, so raku is the oracle.
 
-plan 32;
+plan 33;
 
 is Q[sub f($a?) { }; f 1; f(1); f;].AST.gist, q:to/END/.chomp, 'call without parentheses';
     RakuAST::StatementList.new(
@@ -1175,6 +1175,25 @@ is Q[my $w = (while 0 { }).elems;].AST.gist, q:to/END/.chomp, 'parenthesised `wh
               ),
               postfix => RakuAST::Call::Method.new(
                 name => RakuAST::Name.from-identifier("elems")
+              )
+            )
+          )
+        )
+      )
+    )
+    END
+
+is Q[my @a = <a b  c>;].AST.gist, q:to/END/.chomp, 'word list keeps its raw text';
+    RakuAST::StatementList.new(
+      RakuAST::Statement::Expression.new(
+        expression => RakuAST::VarDeclaration::Simple.new(
+          sigil       => "\@",
+          desigilname => RakuAST::Name.from-identifier("a"),
+          initializer => RakuAST::Initializer::Assign.new(
+            RakuAST::QuotedString.new(
+              processors => <words val>,
+              segments   => (
+                RakuAST::StrLiteral.new("a b  c"),
               )
             )
           )

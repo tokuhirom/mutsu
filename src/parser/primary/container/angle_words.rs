@@ -1,4 +1,5 @@
 use crate::ast::Expr;
+use crate::ast::spelled::Spelling;
 use crate::parser::expr::expression;
 use crate::parser::helpers::{is_non_breaking_space, split_angle_words};
 use crate::parser::parse_result::{PError, PResult};
@@ -11,6 +12,25 @@ use super::allomorph::{angle_word_is_numeric_literal, angle_word_value, strip_al
 /// Parse a < > quote-word list.
 pub(crate) fn angle_list(input: &str) -> PResult<'_, Expr> {
     parse_quote_word_list(input, "<", ">", true, false)
+}
+
+/// A `<…>` word list in term position. Unlike [`angle_list`], whose callers
+/// want the plain expression (an `is trait<arg>` argument), it keeps the raw
+/// text between the brackets when the parse asks for spellings (ADR-12199): RakuAST
+/// writes `<a b  c>` as `QuotedString(processors => <words val>, segments =>
+/// ("a b  c",))`. A single numeric literal (`<1/2>`, `<1+2i>`) is a number
+/// term, not a quote, and keeps no spelling.
+pub(crate) fn angle_term(input: &str) -> PResult<'_, Expr> {
+    let (rest, expr) = angle_list(input)?;
+    // `input` is `<` + content + `>` + `rest`.
+    let content = &input[1..input.len() - rest.len() - 1];
+    if matches!(expr, Expr::Literal(_)) && angle_word_is_numeric_literal(content) {
+        return Ok((rest, expr));
+    }
+    Ok((
+        rest,
+        Expr::spelled(expr, || Spelling::Words(content.into())),
+    ))
 }
 
 /// Parse a « » quote-word list.

@@ -113,6 +113,13 @@ impl Compiler {
             Expr::LiteralSrc(v, _) => {
                 self.compile_expr(&Expr::Literal(v.clone()));
             }
+            // The parser strips every `Spelled` wrapper before a tree reaches the
+            // compiler (ADR-12199, `ast::spelled::strip_spelling`); this arm only
+            // keeps a leaked one from changing what a program does.
+            Expr::Spelled(spelled) => {
+                debug_assert!(false, "Expr::Spelled reached the compiler");
+                self.compile_expr(&spelled.expr);
+            }
             Expr::RegexLiteral { value, tree } => {
                 // The tree is part of the AST contract, not merely parser
                 // bookkeeping. Reattach it here as well so a serialized AST

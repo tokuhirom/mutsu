@@ -16,6 +16,10 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             walk_regex_tree_mut(v, tree)
         }
         Expr::LiteralSrc(_value, _source) => {}
+        Expr::Spelled(spelled) => {
+            let crate::ast::spelled::Spelled { expr, spelling: _ } = spelled.as_mut();
+            v.visit_expr_mut(expr);
+        }
         Expr::Grouped(inner)
         | Expr::ZenSlice(inner)
         | Expr::WhateverCurry(inner)

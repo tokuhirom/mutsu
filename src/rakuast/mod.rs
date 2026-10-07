@@ -1567,7 +1567,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
 
 /// Entry point for `Str.AST`: parse the source, convert, wrap in `Value::RakuAst`.
 pub fn str_dot_ast(source: &str) -> Result<Value, RuntimeError> {
-    let (stmts, _finish) = crate::parse_dispatch::parse_source(source)?;
+    let (stmts, _finish) = crate::parse_dispatch::parse_source_spelled(source)?;
     let node = convert::statement_list(&stmts)?;
     Ok(Value::rakuast(Box::new(node)))
 }

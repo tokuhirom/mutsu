@@ -1,6 +1,6 @@
 # ADR-12199: Word lists, heredocs and bare-statement prefixes keep their source spelling in a wrapper the compiler never sees
 
-- **Status**: Accepted (2026-10-07). Not implemented: the first PR is the word-list experiment of section 4.
+- **Status**: Accepted (2026-10-07). Word lists implemented (section 6); heredocs and the bare-statement prefixes are not.
 - **Date**: 2026-10-07
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#12199](https://github.com/tokuhirom/mutsu/issues/12199). Roadmap:
@@ -104,3 +104,60 @@ mechanism holds.
 - A new variant exists for the length of the hybrid period; a pass that rebuilds a node must carry
   it (the same rule `docs/rakuast/README.md` states for the S9 fields).
 - If Stage 2 lands first for these constructs, this ADR is superseded without any code to remove.
+
+## 6. Implementation status
+
+### 6.1 Word lists (2026-10-07, [#12199](https://github.com/tokuhirom/mutsu/issues/12199))
+
+The experiment of section 4 held; option A is kept with one refinement and no abort criterion
+was met.
+
+**Refinement: the wrapper is built only when the parse asks for it, so there is no strip pass.**
+Section 3.2 had every executing entry point strip the wrapper again. The `Expr`-returning entry
+points the compiler calls lazily (`interpolate_qq_content`, `parse_qq_interpolation`) and the
+nested parses a module load starts made "strip at the end of the executing entry points" a list
+that had to be kept complete by hand. Instead `ast::spelled::keep_spelling(true)` is set by the
+parses whose tree only the RakuAST conversion consumes (`Str.AST` through
+`parse_dispatch::parse_source_spelled`, and the units `MUTSU_RAKUAST` round-trips,
+`rakuast::frontend::covers`); every other parse leaves it off, so `Expr::spelled` returns the plain
+expression and the compiler, the precompilation cache and the analyses see exactly the tree they
+always saw. A nested parse sets its own value and puts the outer one back (`KeepGuard`). No tree
+that reaches the compiler can contain the wrapper by construction, which a strip pass can only
+promise by being complete; the compiler arm stays only as a `debug_assert!` backstop. The cost
+on the executing path is one thread-local read per `<...>` term (no measurement was taken: there
+is no pass to measure).
+
+**What was needed.**
+
+- `Expr::Spelled(Box<Spelled>)`, `Spelled { expr, spelling }`, `Spelling::Words(raw text)` in
+  `src/ast/spelled.rs`. The four exhaustive matches over `Expr` (`walk_expr`, `walk_expr_mut`,
+  the whatever-curry marker, the compiler) got an arm each; no other site failed to compile.
+- `parser::primary::container::angle_term` wraps the `<...>` term. `angle_list` stays unwrapped:
+  the declarator trait-argument sugar (`is assoc<left>`) reads its result directly and RakuAST
+  has its own node for it. A single numeric literal (`<1/2>`, `<1+2i>`) is a number term in
+  rakudo, not a quote, and is not wrapped.
+- `Expr::peel_parens` also looks through `Spelled`. **One parse-time shape check needed a peel**:
+  `handle_specs_from_term` (the `handles <a b>` clause of an attribute) matched the term after
+  peeling only `Grouped`, so under a spelling-keeping parse it read no specs and the converter
+  refused the attribute. It was found by the `MUTSU_RAKUAST=1` ratchet (26 of the 5979 listed
+  files failed), not by the probes or the corpus, which is why the ratchet is a gate of this
+  step. The abort criterion ("more than a handful of `peel` sites") was not approached; the
+  shapes probed against rakudo (`for <a b>`, `use Test <plan>`, `my ($x, $y) = <a b>`,
+  `<a b>, <c d>`, `<a b> Z <c d>`, postfix calls and subscripts) and the corpus needed none.
+- `convert` renders `Spelled(Words(text))` as `QuotedString(processors => <words val>, segments
+  => (StrLiteral(text),))`. `lower` already turned that node into the compiler's form
+  (`angle_words_expr`), so the round trip needed nothing.
+
+**Measured.** On the corpus (`scripts/ast-text-corpus.sh`, 763 files, 11779 statements):
+94.7% of the statements are identical to rakudo's, and the `words-quote` class is at zero. The
+class used to claim every statement whose rakudo text contains `words val`, which includes a
+declared operator name (`sub infix:<foo>` is `Name.from-identifier("infix", colonpairs =>
+(QuotedString words))`); those 54 statements belong to the existing `name-parts-colonpairs` class
+and the rule now says so. No statement mutsu renders with a word quote differs from rakudo's
+(0 of 510 other-class hunks). All 5979 files of the `MUTSU_RAKUAST=1` ratchet pass.
+
+**Still open** (separate PRs, as section 4 says): heredocs (`heredoc`, `heredoc-stop`: 46 hunks
+each in this sample), the bare-statement prefixes (`statement-prefix`: 6), and `«a b»` /
+`<<a b>>`, whose rakudo node carries the `quotewords` processor and was not measured here.
+Operator names with a colonpair are an unrelated gap of the name, not of a term
+([#12220](https://github.com/tokuhirom/mutsu/issues/12220)).

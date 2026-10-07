@@ -162,7 +162,11 @@ pub fn gc_register_main_thread() {
 pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
     // Dumping does not execute: no parse-time probe may run a `use`d module.
     let _no_execute = parser::no_execute::NoExecuteGuard::enter();
-    let (stmts, _) = parse_dispatch::parse_source(input)?;
+    let (stmts, _) = if rakuast::frontend::covers(rakuast::frontend::Unit::Mainline) {
+        parse_dispatch::parse_source_spelled(input)?
+    } else {
+        parse_dispatch::parse_source(input)?
+    };
     // Under `MUTSU_RAKUAST` the dump is the tree the unit would run as: the
     // RakuAST round trip's result, so the two frontends can be diffed.
     let stmts = rakuast::frontend::round_trip_if_enabled(stmts, rakuast::frontend::Unit::Mainline)?;

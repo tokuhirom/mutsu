@@ -90,6 +90,7 @@ impl Interpreter {
             &user_sub_names,
             &user_type_names,
             &user_value_term_names,
+            crate::rakuast::frontend::covers(crate::rakuast::frontend::Unit::Eval),
         );
         crate::parser::clear_parser_lib_paths();
         // ADR-10723 Stage 0: under `MUTSU_RAKUAST=1` an EVAL string runs as

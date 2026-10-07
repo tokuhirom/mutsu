@@ -725,6 +725,25 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
 /// Parse a full program using the nom-based parser.
 /// Returns `(statements, Option<finish_content>)`.
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    parse_program_keeping(input, false)
+}
+
+/// [`parse_program`] for `.AST`: the terms that remember how they were spelled
+/// (`<a b  c>`) come back wrapped in `Expr::Spelled` (ADR-12199). Nothing but
+/// the RakuAST conversion may consume this tree: the compiler never sees a
+/// wrapper.
+pub(crate) fn parse_program_spelled(
+    input: &str,
+) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    parse_program_keeping(input, true)
+}
+
+fn parse_program_keeping(
+    input: &str,
+    keep_spelling: bool,
+) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    // A parse nested inside this one (a module load) sets its own.
+    let _spelling = crate::ast::spelled::keep_spelling(keep_spelling);
     // Re-entrant (a nested EVAL or module load parses from inside a running
     // program), which the claim-at-exit rule handles without a depth counter.
     let _region = crate::profile::enter(crate::profile::Region::Parse);
@@ -871,6 +890,7 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     user_sub_names: &[String],
     user_type_names: &[String],
     user_value_term_names: &[String],
+    keep_spelling: bool,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // Set pre-seed operators before calling parse_program.
     // parse_program will call reset_user_subs, then we re-register after.
@@ -890,7 +910,7 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     // (EVAL / EVAL :check / throws-like code strings), so the final statement
     // is a return position, not sink context.
     set_eval_value_tail();
-    let result = parse_program(input);
+    let result = parse_program_keeping(input, keep_spelling);
     stmt::set_eval_operator_preseed(Vec::new());
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
     stmt::set_eval_user_sub_preseed(Vec::new());
@@ -953,6 +973,9 @@ pub(crate) fn parse_program_partial_with_operators(
 pub(crate) fn parse_program_recovering(
     input: &str,
 ) -> (Vec<Stmt>, Option<String>, Vec<RuntimeError>) {
+    // A best-effort scan of another unit (a module's exports, an analysis): its
+    // statements are never converted to RakuAST.
+    let _spelling = crate::ast::spelled::keep_spelling(false);
     let memo_enabled = parse_memo_enabled();
     if memo_enabled {
         expr::reset_expression_memo();
