@@ -3747,7 +3747,11 @@ impl Interpreter {
                     Some(ValueView::ContainerRef(_) | ValueView::Proxy { .. })
                 )
             {
-                if self.lexicals.our_scalar_cell_names.contains(&code.locals[slot]) {
+                if self
+                    .lexicals
+                    .our_scalar_cell_names
+                    .contains(&code.locals[slot])
+                {
                     self.env_mut().remove_sym(sym);
                 } else {
                     self.env_mut().insert_sym(sym, Value::NIL);
