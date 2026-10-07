@@ -5,7 +5,7 @@
 //! `Str` separately. A number's `gist` is its string value, its `raku` is the
 //! form that evaluates back to it (`Value::raku`, also behind a collection's
 //! `.raku`), a `Str` quotes and escapes itself, and a `Bool` spells its enum
-//! constant. `WHICH` is [`which_of`](crate::builtins::methods_0arg::which::which_of), the one
+//! constant. `WHICH` is [`which_of`], the one
 //! identity routine every layer shares. A rational with a zero denominator
 //! cannot be rendered by a pure handler (its `gist` throws with the
 //! interpreter's context), so those rows decline it.
