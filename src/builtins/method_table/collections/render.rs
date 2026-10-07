@@ -86,8 +86,8 @@ fn has_object_element(target: &Value) -> bool {
     }
     match target.view() {
         ValueView::Set(s, _) => any_object(s.iter(), |k| s.typed_key(k)),
-        ValueView::Bag(b, _) => any_object(b.iter().map(|(k, _)| k), |k| b.typed_key(k)),
-        ValueView::Mix(m, _) => any_object(m.iter().map(|(k, _)| k), |k| m.typed_key(k)),
+        ValueView::Bag(b, _) => any_object(b.keys(), |k| b.typed_key(k)),
+        ValueView::Mix(m, _) => any_object(m.keys(), |k| m.typed_key(k)),
         _ => false,
     }
 }
