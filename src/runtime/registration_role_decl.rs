@@ -220,7 +220,11 @@ impl Interpreter {
             .attributes
             .iter()
             .any(|attr| attr.default.is_some())
-            || type_param_defs.iter().any(|pd| pd.default.is_some());
+            || type_param_defs.iter().any(|pd| pd.default.is_some())
+            // A deferred body runs in the composing class's scope, but names
+            // what the role's own scope sees (`my role Excluded {}` in the
+            // role's module).
+            || !role_def.deferred_body.is_empty();
         if has_expr_default {
             let captured_env = self.env.flatten();
             let captured_unit = self.current_unit;

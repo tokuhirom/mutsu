@@ -362,6 +362,7 @@ impl Interpreter {
                 class_def: &mut class_def,
                 out: RoleCompositionOutcome::default(),
                 is_hoisted_shell,
+                pending_attrs: attr_decls,
             };
             if let Err(err) =
                 self.compose_class_parent_roles(&mut cx, parents, does_parents, parent_pre_args)

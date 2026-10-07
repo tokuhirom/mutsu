@@ -201,6 +201,7 @@ impl Interpreter {
                 class_def,
                 out: RoleCompositionOutcome::default(),
                 is_hoisted_shell: cx.is_hoisted_shell,
+                pending_attrs: &[],
             };
             let no_pre_args: Vec<Option<&[crate::opcode::DeclTraitArg]>> =
                 vec![None; late_roles.len()];
