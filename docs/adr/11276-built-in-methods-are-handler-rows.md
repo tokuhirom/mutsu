@@ -1059,7 +1059,7 @@ suite (`cargo test --lib method_table native_method_row`):
   the coercions (`Date`, `DateTime`, `Instant`, `Int`, `Numeric`, `Real`), `WHICH`, `raku`, `Str`,
   `gist`. A value with a `:formatter` is rendered by running that Callable, which only the
   interpreter can do: the `Str`/`gist` rows decline it and the interpreter's path answers.
-- [x] *`Instant` and `Duration`* (`instances/instant.rs`, 50 rows): two new instance-class shapes.
+- [x] *`Instant` and `Duration`* (`instances/instant.rs`, 51 rows): two new instance-class shapes.
   Both do `Real` and hold their seconds in one number, so a handler asks the question of that number
   and wraps the answer only where the method keeps the type (`abs`, `succ`, `pred`): `Bool`,
   `Bridge`, `Int`, `Num`, `Rat` and `FatRat` (with and without an epsilon), `Complex`, `Numeric`,
@@ -1240,8 +1240,8 @@ the path ([#12149](https://github.com/tokuhirom/mutsu/issues/12149); `starts-wit
 
 ### 9.20 Slice 3E, part 2: `IO::Handle` (2026-10-06)
 
-Branch `refactor/11276-3e-io-handle`. Owner: `IO::Handle`, the first of the slice's remainder (§9.19). 50 rows
-registered (943 -> 993): the state methods (`path`, `IO`, `Str`, `gist`, `raku`, `nl-in`, `nl-out`,
+Branch `refactor/11276-3e-io-handle`. Owner: `IO::Handle`, the first of the slice's remainder (§9.19). 51 rows
+registered (943 -> 994): the state methods (`DESTROY`, `path`, `IO`, `Str`, `gist`, `raku`, `nl-in`, `nl-out`,
 `chomp`, `out-buffer`, `encoding`, `opened`, `t`, `tell`, `eof`, `seek`, `lock`, `unlock`, `flush`,
 `close`, `native-descriptor`, ), the reads (`get`, `getc`, `readchars`, `lines`, `words`,
 `read`, `slurp`, `slurp-rest`, `split`, `comb`, `Supply`), the writes (`print`, `put`, `say`, `printf`,

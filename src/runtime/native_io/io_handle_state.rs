@@ -2,6 +2,29 @@ use super::*;
 
 impl Interpreter {
     // Cost: TODO
+    pub(crate) fn io_handle_destroy(
+        &mut self,
+        target_val: &Value,
+        _args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // Standard handles ($*IN, $*OUT, $*ERR) must not be closed by DESTROY
+        let is_std = if let Some(id) = Self::handle_id_from_value(target_val) {
+            self.io_handles().map.get(&id).is_some_and(|s| {
+                matches!(
+                    s.target,
+                    IoHandleTarget::Stdin | IoHandleTarget::Stdout | IoHandleTarget::Stderr
+                )
+            })
+        } else {
+            false
+        };
+        if !is_std {
+            let _ = self.close_handle_value(target_val)?;
+        }
+        Ok(Value::TRUE)
+    }
+
+    // Cost: TODO
     pub(crate) fn io_handle_path(
         &mut self,
         target_val: &Value,

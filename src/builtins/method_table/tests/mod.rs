@@ -312,6 +312,8 @@ fn receivers_pack_into_distinct_bytes() {
 #[test]
 fn rows_are_declared_by_rakudo() {
     let undeclared: Vec<String> = rows()
+        // `DESTROY` is a submethod: Rakudo's `.^method_table` does not list it.
+        .filter(|row| row.name != "DESTROY")
         .filter(|row| {
             let owner =
                 match crate::builtins::builtin_type_methods::canonical_builtin_owner(row.owner) {

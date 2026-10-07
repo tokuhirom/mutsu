@@ -46,6 +46,7 @@ macro_rules! row {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
+    row!("DESTROY", 0, destroy_row, RowFlags::NONE, &[]),
     row!("open", 0, open_row, RowFlags::OWNER_ONLY, OPEN_NAMED),
     row!("path", 0, path_row, RowFlags::NONE, &[]),
     row!("IO", 0, path_row, RowFlags::NONE, &[]),
@@ -616,4 +617,16 @@ fn open_row(
 ) -> Option<Result<Value, RuntimeError>> {
     matches!(target.view(), ValueView::Instance { .. })
         .then(|| interp.io_handle_open(target, &joined_args(args, named.pairs())))
+}
+
+/// `IO::Handle.destroy`.
+// Cost: O(b), b = buffered bytes flushed by the close.
+fn destroy_row(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    matches!(target.view(), ValueView::Instance { .. })
+        .then(|| interp.io_handle_destroy(target, &joined_args(args, named.pairs())))
 }
