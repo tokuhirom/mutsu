@@ -162,52 +162,17 @@ impl Interpreter {
         {
             return true;
         }
-        // IO::Handle has native methods handled by native_io_handle
-        if class_name == "IO::Handle"
-            && matches!(
-                method_name,
-                "DESTROY"
-                    | "path"
-                    | "IO"
-                    | "Str"
-                    | "gist"
-                    | "open"
-                    | "nl-out"
-                    | "nl-in"
-                    | "chomp"
-                    | "print-nl"
-                    | "close"
-                    | "get"
-                    | "getc"
-                    | "readchars"
-                    | "lines"
-                    | "words"
-                    | "read"
-                    | "write"
-                    | "print"
-                    | "say"
-                    | "put"
-                    | "flush"
-                    | "lock"
-                    | "unlock"
-                    | "out-buffer"
-                    | "seek"
-                    | "tell"
-                    | "eof"
-                    | "encoding"
-                    | "opened"
-                    | "slurp"
-                    | "Supply"
-                    | "native-descriptor"
-                    | "spurt"
-                    | "t"
-                    | "printf"
-                    | "split"
-                    | "comb"
-                    | "raku"
-                    | "perl"
-            )
-        {
+        // IO::Handle has native methods handled by native_io_handle: every one is
+        // a row of the method table (ADR-11276 §9.20), `perl` being `raku`.
+        if class_name == "IO::Handle" && {
+            let name = if method_name == "perl" { "raku" } else { method_name };
+            let (owner, name) = (Symbol::intern("IO::Handle"), Symbol::intern(name));
+            let mu = Symbol::intern("Mu");
+            (0..=2).any(|arity| {
+                crate::builtins::method_table::owner_row(owner, name, arity).is_some()
+                    || crate::builtins::method_table::owner_row(mu, name, arity).is_some()
+            })
+        } {
             return true;
         }
         // IO::Path's comb reads file content and combs the result.

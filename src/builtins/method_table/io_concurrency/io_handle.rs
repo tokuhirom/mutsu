@@ -129,6 +129,8 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Supply", 0, supply_row, RowFlags::NONE, &["size"]),
     row!("print-nl", 0, print_nl_row, RowFlags::NONE, &[]),
     row!("write", 1, write_row, RowFlags::ANY_ARGS, &[]),
+    row!("READ", 1, read_primitive_row, RowFlags::ANY_ARGS, &[]),
+    row!("WRITE", 1, write_primitive_row, RowFlags::ANY_ARGS, &[]),
     row!("spurt", 1, spurt_row, RowFlags::ANY_ARGS, &["close"]),
     row!(
         "split",
@@ -520,6 +522,30 @@ fn write_row(
 ) -> Option<Result<Value, RuntimeError>> {
     matches!(target.view(), ValueView::Instance { .. })
         .then(|| interp.io_handle_write(target, &joined_args(args, named.pairs())))
+}
+
+/// `IO::Handle.READ`.
+// Cost: O(b), b = bytes requested.
+fn read_primitive_row(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    matches!(target.view(), ValueView::Instance { .. })
+        .then(|| interp.io_handle_read_primitive(target, &joined_args(args, named.pairs())))
+}
+
+/// `IO::Handle.WRITE`.
+// Cost: O(b), b = bytes written.
+fn write_primitive_row(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    matches!(target.view(), ValueView::Instance { .. })
+        .then(|| interp.io_handle_write_primitive(target, &joined_args(args, named.pairs())))
 }
 
 /// `IO::Handle.spurt`.

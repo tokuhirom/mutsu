@@ -38,6 +38,35 @@ impl Interpreter {
         Ok(Value::TRUE)
     }
 
+    /// `IO::Handle.WRITE(Blob:D $buf)`: Rakudo's primitive write, the raw bytes
+    /// of `$buf` to the handle. Anything but a `Blob` fails the bind.
+    // Cost: O(b), b = bytes written.
+    pub(crate) fn io_handle_write_primitive(
+        &mut self,
+        target_val: &Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let Some(buf) = args.first() else {
+            return Err(
+                crate::runtime::methods_signature_errors::make_multi_no_match_error("WRITE"),
+            );
+        };
+        let is_blob = matches!(buf.view(), ValueView::Instance { class_name, .. }
+            if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()));
+        if !is_blob {
+            return Err(crate::runtime::utils::typecheck_binding_parameter_with_hint(
+                "$buf",
+                "Blob",
+                buf,
+                &crate::runtime::utils::value_short_repr(buf),
+                None,
+            ));
+        }
+        let bytes = self.supply_chunk_to_bytes(buf, "utf-8");
+        self.write_bytes_to_handle_value(target_val, &bytes)?;
+        Ok(Value::TRUE)
+    }
+
     // Cost: TODO
     pub(crate) fn io_handle_print(
         &mut self,

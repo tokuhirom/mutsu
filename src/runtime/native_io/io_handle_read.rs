@@ -210,6 +210,39 @@ impl Interpreter {
         Ok(Self::make_buf(all_bytes))
     }
 
+    /// `IO::Handle.READ(Int:D $bytes)`: Rakudo's primitive read, up to `$bytes`
+    /// bytes from the handle as a `Buf`. Unlike `.read`, the count is required (no
+    /// "read the rest" form).
+    // Cost: O(b), b = bytes requested.
+    pub(crate) fn io_handle_read_primitive(
+        &mut self,
+        target_val: &Value,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let count = match args.first().map(Value::view) {
+            Some(ValueView::Int(i)) => i.max(0) as usize,
+            Some(_) => {
+                let arg = &args[0];
+                return Err(crate::runtime::utils::typecheck_binding_parameter_with_hint(
+                    "$bytes",
+                    "Int",
+                    arg,
+                    &crate::runtime::utils::value_short_repr(arg),
+                    None,
+                ));
+            }
+            None => {
+                return Err(
+                    crate::runtime::methods_signature_errors::make_multi_no_match_error(
+                        "READ",
+                    ),
+                );
+            }
+        };
+        let bytes = self.read_bytes_from_handle_value(target_val, count)?;
+        Ok(Self::make_buf(bytes))
+    }
+
     // `slurp-rest` is the deprecated Rakudo spelling of "slurp the rest
     // of the handle from the current position" — same behavior as
     // `.slurp` here, which also reads from the current position.

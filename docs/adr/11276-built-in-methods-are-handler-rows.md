@@ -1303,7 +1303,24 @@ stale word ([#12186](https://github.com/tokuhirom/mutsu/issues/12186)).
 
 **Deferred.** `IO::CatHandle`, `IO::Pipe`, `IO::Special`, the sockets, `Proc::Async`, `Promise`, `Channel`,
 `Supply`, the schedulers, `Lock`, `Semaphore` and `Thread` (§9.19: the snapshot lists none of the owners,
-so each needs recognition rows first), and `IO::Handle`'s `READ`/`WRITE` stubs.
+so each needs recognition rows first).
+
+### 9.21 Slice 3E, part 3: `IO::Handle`'s `READ` and `WRITE` (2026-10-07)
+
+Branch `refactor/11276-3e-io-handle-stubs`. Two rows registered (994 -> 996). §9.20 called `READ` and `WRITE`
+"stubs for a subclass to override"; that was wrong for a handle that has a real file behind it. In Rakudo
+they are the primitives the handle's own methods are built on: `READ(Int:D $bytes)` reads up to that many
+bytes and answers a `Buf`, `WRITE(Blob:D $buf)` writes the raw bytes and answers `True`, and both bind their
+argument strictly (`X::TypeCheck::Binding::Parameter`). Each is one `Interpreter` method
+(`io_handle_read_primitive`, `io_handle_write_primitive`) beside the `read` and `write` ones, sharing the
+byte-level handle helpers; unlike `.read`, a `READ` with no count is a bind failure, not "the rest".
+The user-subclass overlay is unchanged: it still runs first and a user `WRITE`/`READ` still wins.
+
+One more cascade copy went: `class_introspection.rs`'s hand-written list of `IO::Handle` method names
+(which answered "is this a native method?" and had no `WRITE`/`READ`) now asks the table for the owner's
+rows, so the list and the table cannot drift. Not done: a bare `class H is IO::Handle {}` has no handle and
+Rakudo's `H.new.READ(1)` dies with an `X::AdHoc` about `MVMOSHandle`; mutsu answers `X::Method::NotFound`
+because only the exact class `IO::Handle` is asked, as before.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
