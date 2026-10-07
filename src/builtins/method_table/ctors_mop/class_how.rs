@@ -3,7 +3,7 @@
 //! its `ClassHOW` and the other HOW classes.
 //!
 //! A mutsu HOW is one dispatcher over many HOW kinds, so none of these rows has a
-//! shape: each is reached through its owner by [`super::invoke_owner_raw`], with
+//! shape: each is reached through its owner by [`crate::builtins::method_table::invoke_owner_raw`], with
 //! the type object first among the arguments, and every handler is one
 //! `Interpreter` method (`runtime/methods_classhow_arms_*.rs`). The owner of a
 //! row is the HOW class Rakudo declares the metamethod on; the metamethods that
