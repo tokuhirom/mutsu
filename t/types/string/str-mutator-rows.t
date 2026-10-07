@@ -4,7 +4,7 @@ use Test;
 # (ADR-11276 §9.23): `Handler::Mut` rows that need the receiver's binding, since
 # a string is immutable and the variable is what changes.
 
-plan 16;
+plan 18;
 
 my $s = "hello world";
 my $m = $s.subst-mutate("o", "0");
@@ -26,8 +26,11 @@ $v.subst-mutate("b", "X", :x(1));
 is $v, 'aXcabc', ':x(1) stops after one replacement';
 
 my $none = "abc";
-$none.subst-mutate("zzz", "y");
-is $none, 'abc', 'a miss leaves the variable alone';
+is $none.subst-mutate("zzz", "y").raku, 'Nil',
+    'a miss answers Nil, as Rakudo does (not the Any type object)';
+is $none, 'abc', 'and leaves the variable alone';
+my $all-miss = $none.subst-mutate("zzz", "y", :g);
+is $all-miss.elems, 0, 'a :g miss answers an empty list';
 
 # the variable is what changes: every way a name can hold the string
 sub copy-and-mutate($x is copy) { $x.subst-mutate("a", "b"); $x }
