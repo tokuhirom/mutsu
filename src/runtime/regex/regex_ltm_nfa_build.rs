@@ -358,6 +358,7 @@ impl<'a> NfaBuilder<'a> {
             // position.
             LtmAtomMode::Terminate if is_ws_atom(atom) => {
                 return self.push(NfaNode::WsLead {
+                    lead: open,
                     atom: Box::new(atom.clone()),
                     pkg,
                     ic,

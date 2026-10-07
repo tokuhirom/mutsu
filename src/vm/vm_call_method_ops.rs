@@ -510,6 +510,43 @@ impl Interpreter {
         Ok(Some(out))
     }
 
+    /// The value a method runs on when its invocant is a deferred hash-entry
+    /// token (`sub f($k) is rw { %h{$k} }; f('x').push: 5`, or a variable
+    /// `:=`-bound to such a token). The entry's current value, except that the
+    /// push family autovivifies a MISSING entry: Raku's `Any:U` autovivification
+    /// stores a fresh Array into it, so the token is written through first and
+    /// the stored node is returned, which the method then mutates in place (a
+    /// deferred token itself still reads `Any` after an independent write: it
+    /// is not retro-bound).
+    // Cost: O(1) for a one-step path, O(p) in the path length p when it writes.
+    pub(super) fn hash_entry_invocant(method: &str, target: &Value) -> Value {
+        if matches!(method, "push" | "append" | "unshift" | "prepend") {
+            // An earlier push through the same token already stored its Array.
+            let stored = target.hash_entry_locate().and_then(|t| t.peek());
+            let current = match &stored {
+                Some(stored) => stored.deref_container().descalarize().clone(),
+                None => target.hash_entry_read(),
+            };
+            let missing = current.is_nil()
+                || matches!(current.view(), ValueView::Package(p) if {
+                    !matches!(
+                        p.resolve().split('[').next().unwrap_or(""),
+                        "List" | "Seq" | "Slip" | "Range" | "Hash" | "Map" | "Buf" | "Blob"
+                    )
+                });
+            if !missing && stored.is_some() {
+                return current;
+            }
+            if missing {
+                target.hash_entry_write(Value::real_array(Vec::new()));
+                if let Some(stored) = target.hash_entry_locate().and_then(|t| t.peek()) {
+                    return stored.deref_container().descalarize().clone();
+                }
+            }
+        }
+        target.deref_container()
+    }
+
     pub(super) fn exec_call_method_op(
         &mut self,
         code: &CompiledCode,
@@ -846,7 +883,12 @@ impl Interpreter {
                 // (`sub g() is rw { %h<absent> }; g().defined`) reads as the
                 // entry's current value — `Any` while the key does not exist —
                 // exactly like the `:=`-bound spelling does through `GetLocal`.
-                ValueView::HashEntryRef { .. } => target.deref_container(),
+                //
+                // The push family is the exception for a MISSING entry: Raku's
+                // `Any:U` autovivification stores a fresh Array into the entry
+                // (`sub f($k) is rw { %h{$k} }; f('x').push: 5` leaves
+                // `%h = x => [5]`), so the token is written through first.
+                ValueView::HashEntryRef { .. } => Self::hash_entry_invocant(method, &target),
                 // ADR-0040 slice 1: a reference-pushed element
                 // (`@a.push(@b)`; `@a[0]` is `$`-itemized around a shared
                 // `ContainerRef` alias, i.e. `Scalar(ContainerRef(cell))`)
