@@ -3164,7 +3164,7 @@ impl Interpreter {
 
     /// The simple array mutators (`push`/`pop`/`shift`/`unshift`/`append`/`prepend`,
     /// and `splice`) applied directly to an `is Array`-backed instance's backing
-    /// storage `Value`: the row's [`ReceiverPlace::Detached`] form, so the same
+    /// storage `Value`: the row's `ReceiverPlace::Detached` form, so the same
     /// handler that answers `@a.push` answers it (ADR-11276 §9.23). `storage` is
     /// mutated in place through its shared node and the method's result value
     /// is returned; the caller writes the instance back.
