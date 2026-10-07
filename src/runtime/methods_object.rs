@@ -517,6 +517,9 @@ impl Interpreter {
         let seed_defaults = (0..class_attrs.len())
             .map(|_| std::sync::OnceLock::new())
             .collect();
+        let has_subset_attr = type_constraints
+            .values()
+            .any(|tc| self.constraint_is_user_subset(tc));
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
             seed_defaults,
             alias_attributes,
@@ -529,6 +532,7 @@ impl Interpreter {
             has_build,
             has_tweak,
             has_smiley,
+            has_subset_attr,
             attrs_fully_known,
             has_custom_bless,
             has_container_defaults,
