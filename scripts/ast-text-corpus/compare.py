@@ -31,7 +31,7 @@ RULES = [
         or ("SemiList" in b and "SemiList" in a)),
     ("whatever", lambda a, b: "Term::Whatever" in a and "WhateverCode::Argument" in b),
     ("nqp-op", lambda a, b: "RakuAST::Nqp" in a),
-    ("words-quote", lambda a, b: "words val" in a),
+    ("words-quote", lambda a, b: "words val" in a and "colonpairs" not in a),
     ("attribute-var", lambda a, b: "Var::Attribute" in a),
     ("topic-call", lambda a, b: "TopicCall" in a),
     ("statement-prefix", lambda a, b: "StatementPrefix" in a),
