@@ -468,10 +468,7 @@ impl Compiler {
             // Only a statically-named call is ruled by the raw-invocant
             // family; a run-time name (`."$name"()`) is a plain call.
             Expr::DynamicMethodCall { modifier: None, .. } => true,
-            Expr::Try {
-                body,
-                catch: None,
-            } => matches!(
+            Expr::Try { body, catch: None } => matches!(
                 body.as_slice(),
                 [Stmt::Expr(inner)] if self.expr_is_decontainerized_value(inner)
             ),
