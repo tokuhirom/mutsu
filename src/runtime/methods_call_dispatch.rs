@@ -157,6 +157,17 @@ impl Interpreter {
         if let Some(result) = self.try_user_find_method_dispatch(&target, method, &args) {
             return result;
         }
+        // A `does Sequence` class with its own `iterator` (`vm_sequence_role_delegate.rs`):
+        // the interpreter-entry twin of the VM call-site hooks, for `~`, `eq`,
+        // interpolation and every other internal `.Str`/`.list` request.
+        if let Some(result) = self.try_sequence_role_delegate(
+            &target,
+            crate::symbol::Symbol::intern(method),
+            &args,
+        ) {
+            return result;
+        }
+
         // A `VarRef` (the value `Variable.var` hands back, e.g. inside a
         // `trait_mod:<is>(Variable:D \v, ...)` body calling `v.var.keyof`) is a
         // transient wrapper around the variable's real value, not a type of
@@ -464,7 +475,6 @@ impl Interpreter {
         if let Some(result) = self.try_native_backing_delegate(&target, method, &args) {
             return result;
         }
-
         // Augmented native-type dispatch: a plain Array/List/Hash/Str/Range/
         // Set/Bag/Mix/... receiver is not `Instance`/`Package`, so none of this
         // function's by-name native dispatch below (`dispatch_method_by_name_*`,

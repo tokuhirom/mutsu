@@ -577,7 +577,9 @@ impl Interpreter {
             return false;
         }
         let cn = class_name.resolve();
-        self.has_user_method(&cn, "Stringy") || self.has_user_method(&cn, "Str")
+        self.has_user_method(&cn, "Stringy")
+            || self.has_user_method(&cn, "Str")
+            || self.is_iterator_sequence_instance(v)
     }
 
     pub(super) fn exec_cmp_op(&mut self) -> Result<(), RuntimeError> {

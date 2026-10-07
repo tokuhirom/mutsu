@@ -1259,7 +1259,7 @@ impl Interpreter {
             if let Some(roles) = self.registry().class_composed_roles.get(cn.as_str())
                 && roles.iter().any(|r| r == base)
             {
-                return 1;
+                return self.composed_role_distance(roles, base);
             }
         }
         if let ValueView::Package(name) = value.view() {
@@ -1288,7 +1288,7 @@ impl Interpreter {
                 if let Some(roles) = self.registry().class_composed_roles.get(lookup)
                     && roles.iter().any(|r| r == base)
                 {
-                    return 1;
+                    return self.composed_role_distance(roles, base);
                 }
             }
         }
@@ -1321,6 +1321,22 @@ impl Interpreter {
         }
         // Not found in hierarchy; return a large distance
         UNRELATED_DISTANCE
+    }
+
+    /// Distance of a class to a role in its composed-role list: 1 when the class
+    /// composes `base` directly, 2 when another composed role itself composes it
+    /// (`class D does R3`, `role R3 does R2` -- `R3` is the narrower constraint
+    /// for a `D`).
+    // Cost: O(r * p), r = composed roles, p = role-parent edges walked per check.
+    fn composed_role_distance(&self, roles: &[String], base: &str) -> usize {
+        if roles
+            .iter()
+            .any(|r| r != base && self.role_is_descendant_of(r, base))
+        {
+            2
+        } else {
+            1
+        }
     }
 
     /// Like `type_hierarchy_distance`, but also considers the source variable's

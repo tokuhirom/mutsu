@@ -467,6 +467,18 @@ impl Interpreter {
             ValueView::Package(name) => (name.resolve(), true),
             _ => return Ok(v),
         };
+        // A `does Sequence` class stringifies through its own iterator.
+        if !is_type_object
+            && !self.has_user_method(&cn, "Stringy")
+            && !self.has_user_method(&cn, "Str")
+            && let Some(r) = self.try_sequence_role_delegate(
+                &v,
+                crate::symbol::Symbol::intern("Str"),
+                &[],
+            )
+        {
+            return Ok(Value::str(r?.to_string_value()));
+        }
         // A Date/DateTime `:formatter` is user code the pure stringifier
         // cannot run.
         if self.has_user_method(&cn, "Stringy")

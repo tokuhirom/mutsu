@@ -727,6 +727,21 @@ impl Interpreter {
                 } else {
                     base.to_string()
                 };
+                // A bare user type name in the signature names the type visible
+                // from the package that DECLARED the candidate (`role SI` nested
+                // in `class Outer` registers as `Outer::SI`); measuring the bare
+                // spelling against the argument's roles scored it "unrelated"
+                // and a wider `Iterator` candidate out-ranked it. The sub
+                // dispatch's ranking does the same.
+                let owner = def.lexical_package.resolve();
+                let resolved = if !owner.is_empty()
+                    && !crate::runtime::utils::is_known_type_constraint(&resolved)
+                    && !self.has_type_direct(&resolved)
+                {
+                    self.resolve_type_name_for_owner(&owner, resolved)
+                } else {
+                    resolved
+                };
                 if arg_idx < args.len() {
                     // A container argument (a hash element, `%h.values[0]`,
                     // a Pair's value) ranks by its contents, as it type-checks.
