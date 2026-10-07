@@ -723,17 +723,24 @@ impl Compiler {
         // retain the captured variable's container identity across the routine
         // boundary. A named sub has no runtime closure-creation point, so box
         // these at the owner's declaration just like named-sub writes.
-        // scope so `compute_free_vars` can flag the locals it mutates as
+        // scope so `compute_free_vars` can flag the locals needing cells as
         // `needs_cell_named_sub` (the VM then boxes them at their declaration site
         // for cross-call accumulation through a shared cell — see
         // docs/captured-outer-cell-sharing.md). A named sub has no runtime creation
-        // op, so this compile-time pass is the only place to surface its writes.
+        // op, so this compile-time pass is the only place to surface its cell needs.
         // In addition to scalar/whole-container name rebinds (`free_var_writes`),
         // include `@`/`%` containers the sub mutates IN PLACE (push / element
         // assign — `free_var_container_writes`), so a captured outer container
         // (e.g. a user `trait_mod:<is>` pushing to an outer `@names`) is boxed too.
-        let mut nf_writes = cf.code.free_var_writes.clone();
-        nf_writes.extend(cf.code.free_var_container_writes.iter().copied());
+        // Also include free scalar call arguments: an `is rw` / `is raw` callee
+        // can write through them without a name-write opcode.
+        let mut nf_cell_requirements = cf.code.free_var_writes.clone();
+        nf_cell_requirements.extend(cf.code.free_var_container_writes.iter().copied());
+        // A free scalar passed to a call can be written through an `is rw` /
+        // `is raw` parameter without any name-write opcode in this sub. Treat
+        // that as a cell requirement at the declaring frame too: each worker's
+        // binder must reuse the captured cell rather than minting a private one.
+        nf_cell_requirements.extend(cf.code.free_var_call_arg_syms.iter().copied());
         // ADR-0032 D2 (slice 1+2): bubble this sub's container-capture edges
         // — already recorded in `cf.code.container_ref_capture_syms` by D1
         // during `sub_compiler`'s own compile above — to the enclosing
@@ -749,9 +756,10 @@ impl Compiler {
             let syms = cf.code.container_ref_capture_syms.clone();
             self.bubble_container_ref_capture_syms(&syms);
         }
-        self.code
-            .named_sub_captures
-            .push((nf_writes, cf.code.needs_cell_named_sub_free.clone()));
+        self.code.named_sub_captures.push((
+            nf_cell_requirements,
+            cf.code.needs_cell_named_sub_free.clone(),
+        ));
         // Contribute this named sub's full free-variable set (reads AND
         // writes) to the enclosing scope's ordinary closure-capture set, the
         // way `add_closure_code_baked` already does for a nested anonymous

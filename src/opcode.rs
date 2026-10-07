@@ -7143,9 +7143,12 @@ pub(crate) struct CompiledCode {
     /// `rw_arg_env_sync_syms` is: the writeback gates key on that set, and a
     /// call argument is only a *possible* write.
     pub(crate) free_var_call_arg_syms: Vec<Symbol>,
-    /// Write contributions of directly-nested *named subs* (declared in this
-    /// scope), each a `(free_var_writes, needs_cell_named_sub_free)` pair copied
-    /// from the sub's finalized `CompiledCode`. A named sub is always reachable
+    /// Cell requirements of directly-nested *named subs* (declared in this
+    /// scope), each a `(free_var_writes_and_call_args, needs_cell_named_sub_free)`
+    /// pair copied from the sub's finalized `CompiledCode`. The first set also
+    /// includes in-place container writes and free scalar call arguments, which
+    /// may be written through an `is rw` / `is raw` parameter. A named sub is
+    /// always reachable
     /// (callable any time after declaration) and — unlike a closure — has no
     /// runtime creation op (`RegisterSub` is hoisted to the top of the scope,
     /// before the captured local is even declared). So `compute_free_vars` uses
@@ -10837,8 +10840,8 @@ impl CompiledCode {
         // var in a sibling block).
         let mut ncns: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
         let mut ncns_free: std::collections::HashSet<Symbol> = std::collections::HashSet::new();
-        for (nf_writes, nf_ncns_free) in &self.named_sub_captures {
-            for sym in nf_writes {
+        for (nf_cell_requirements, nf_ncns_free) in &self.named_sub_captures {
+            for sym in nf_cell_requirements {
                 if sym.with_str(|s| own.contains(s)) {
                     ncns.insert(*sym);
                 } else {

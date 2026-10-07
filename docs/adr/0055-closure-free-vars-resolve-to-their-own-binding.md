@@ -688,3 +688,21 @@ interplay with an earlier same-named atomic block still loses updates; it
 predates this change and is filed as #12075. See
 `news/2026-10/closure-call-argument-captures-get-a-cell.md`; pin:
 `t/concurrency/thread-lock/thread-rw-param-captured-scalar.t`.
+
+### 7.11 A named sub's call arguments require a shared cell (2026-10-07, #12075)
+
+The §7.10 call-argument set was used for escaping closures, but the parallel
+named-sub path only forwarded direct name writes and in-place container writes
+to `needs_cell_named_sub`. A named sub that forwards a free scalar to an `is rw`
+call therefore did not request a cell at its declaring lexical's declaration.
+When an earlier same-named `atomicint` lexical had populated the shared name
+lane, the worker's binder could attach its private cell to that stale name
+entry, leaving the later declaration's slot unchanged. The repro's three
+workers printed `0` instead of `3`.
+
+Fold `free_var_call_arg_syms` into the named-sub declaration cell requirements.
+The compiler already limits this set to free plain scalar call arguments; this
+does not classify the argument as an unconditional write or add it to runtime
+writeback. It ensures all aliases use the same cell, just as for a nested
+escaping closure in §7.10. Pinned by
+`t/concurrency/thread-lock/atomicint-rw-named-sub-prior-same-name.t`.
