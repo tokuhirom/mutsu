@@ -683,8 +683,7 @@ impl crate::runtime::Interpreter {
         // A `CArray`-typed field whose class was declared `is repr('CArray')`
         // (upstream's `CArray[T]`, or any other class with that REPR) reads
         // back as that type over the memory it points at; a NULL pointer is
-        // the type object, as in rakudo. The name-keyed handle below serves
-        // the native provider's own `CArray`.
+        // the type object, as in rakudo.
         // The layout resolves the declared name the same way, so a `my class`
         // (registered under its declaration-site storage name) is the class
         // the field was laid out as.
@@ -693,15 +692,6 @@ impl crate::runtime::Interpreter {
             && let Some(built) = self.native_pointer_of_declared(&carray_class, addr, true)
         {
             return built.ok();
-        }
-        // A `CArray`-typed field is a `CArray` handle, not a bare `Pointer`:
-        // being able to index it is the whole reason a binding declares the
-        // field that way (`Compress::Zlib::Raw`'s `z_stream.next-in`).
-        if short_base_name(&declared).starts_with("CArray") {
-            return Some(crate::runtime::nativecall::make_native_handle(
-                short_base_name(&declared),
-                addr,
-            ));
         }
         // A NULL CStruct pointer field reads as its declared type object, as
         // it does in Rakudo. This is distinct from `Pointer.new(0)`, which is
@@ -718,10 +708,7 @@ impl crate::runtime::Interpreter {
             if let Some(built) = self.native_pointer_of_declared(&declared, addr, true) {
                 return built.ok();
             }
-            return Some(crate::runtime::nativecall::make_typed_pointer(
-                addr,
-                pointer_parameter(&declared).unwrap_or("void"),
-            ));
+            return None;
         }
         Some(crate::runtime::nativecall::make_native_handle(
             if self.is_cstruct_class(&declared) {
