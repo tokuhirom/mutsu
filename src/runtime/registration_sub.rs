@@ -1408,7 +1408,12 @@ impl Interpreter {
         let shadows_outer_eval_name = is_in_eval && is_outer_amp_name(&code_var_key);
         if let Some(existing) = self.env.get(&code_var_key) {
             // Mixin values in &name come from trait_mod and should not block registration.
+            // So does the dispatcher of the very family a `multi` joins: an
+            // imported `&trait_mod:<is>` (NativeCall's `sub EXPORT`) is not a
+            // plain `sub` that the new candidate would redeclare, however many
+            // module levels it travelled through to reach this scope.
             if !matches!(existing.view(), ValueView::Mixin(..))
+                && !(multi && Self::is_family_dispatcher_of(existing, name))
                 && !shadows_outer_eval_name
                 && !allow_lexical_shadow
                 && !imported_routine_alias
