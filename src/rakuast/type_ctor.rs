@@ -13,8 +13,8 @@
 //! (`base-type`, then `definite` / `constraint`); `constraint` is omitted when
 //! absent, as for `Int()`.
 
-use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, named_arg};
 use super::require_rakuast_type;
+use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, named_arg};
 use crate::value::{RuntimeError, Value, ValueView};
 
 fn field(name: &'static str, value: Value) -> RakuAstField {
@@ -26,10 +26,7 @@ fn field(name: &'static str, value: Value) -> RakuAstField {
 
 /// The `.new` of one of the three classes, or `None` for any other class.
 // Cost: O(1) -- a fixed number of named-argument lookups.
-pub(super) fn construct(
-    class_name: &str,
-    args: &[Value],
-) -> Option<Result<Value, RuntimeError>> {
+pub(super) fn construct(class_name: &str, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let class = match class_name {
         "RakuAST::Type::Definedness" => RakuAstClass::TypeDefinedness,
         "RakuAST::Type::AnyDefinedness" => RakuAstClass::TypeAnyDefinedness,
@@ -39,11 +36,7 @@ pub(super) fn construct(
     Some(build(class, class_name, args))
 }
 
-fn build(
-    class: RakuAstClass,
-    class_name: &str,
-    args: &[Value],
-) -> Result<Value, RuntimeError> {
+fn build(class: RakuAstClass, class_name: &str, args: &[Value]) -> Result<Value, RuntimeError> {
     let ctor = format!("{class_name}.new");
     let base = named_arg(args, "base-type")
         .ok_or_else(|| RuntimeError::new(format!("{ctor} requires `base-type`")))?;
