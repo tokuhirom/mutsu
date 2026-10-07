@@ -84,11 +84,17 @@ def log(msg):
 
 def run(cmd, cwd, timeout, sandbox, sbx_home, writable=()):
     """One interpreter run. Returns (returncode, combined output)."""
+    interp_dir = os.path.dirname(cmd[0]) if os.sep in cmd[0] else ""
     if sandbox:
         cmd = eco.sandbox_wrap(cmd, cwd, sbx_home, writable=writable)
     # MUTSU_FUDGE is roast-only: with it set, a stray `#?rakudo skip` comment in
     # a distribution would silently drop the next statement.
     env = {k: v for k, v in os.environ.items() if k != "MUTSU_FUDGE"}
+    # `$*EXECUTABLE-NAME` is the interpreter's basename on both sides, so a suite
+    # that does `run($*EXECUTABLE-NAME, ...)` needs that interpreter on PATH. raku
+    # is; a MUTSU_BIN under target/ is not, and such a suite failed on mutsu only.
+    if interp_dir:
+        env["PATH"] = interp_dir + os.pathsep + env.get("PATH", "")
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
                               timeout=timeout, cwd=cwd, env=env)
