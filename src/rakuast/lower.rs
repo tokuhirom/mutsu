@@ -4143,7 +4143,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // `nqp::const::NAME`: the constant as the bareword the parser keeps.
         RakuAstClass::NqpConst => match node.fields.first().map(|f| &f.value) {
             Some(RakuAstFieldValue::Node(name)) => match name.view() {
-                ValueView::Str(name) => Ok(Expr::BareWord(format!("nqp::const::{}", name.as_str()))),
+                ValueView::Str(name) => {
+                    Ok(Expr::BareWord(format!("nqp::const::{}", name.as_str())))
+                }
                 _ => Err(unsupported(node)),
             },
             _ => Err(unsupported(node)),

@@ -89,6 +89,7 @@ pub(in crate::parser) use module_exports::{
 /// Crate-wide for the compiler's `is_definite_return_spec` too: an imported
 /// `constant` may be a type alias the parser cannot see through (#11706).
 pub(crate) use pragma_preseed::is_imported_value_term;
+pub(crate) use pragma_preseed::term_keywords_shadowable;
 pub(in crate::parser) use pragma_preseed::{
     cached_type_names, current_attributes_pragma, imported_value_term_names,
     is_user_declared_enum_type, is_user_declared_sub, note_import_export_hook, push_package_path,
@@ -118,7 +119,6 @@ pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapsho
 pub(crate) use slang_use::apply_slang_overrides;
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
 pub(crate) use user_ops::{DeclaredNameKind, declared_name_kind};
-pub(crate) use pragma_preseed::term_keywords_shadowable;
 pub(in crate::parser) use user_ops::{
     is_circumfix_close_delimiter, is_circumfix_close_delimiter_word, is_declared_symbol_name,
     is_user_declared_postfix_sub, is_user_declared_prefix_sub, is_user_declared_value_term,

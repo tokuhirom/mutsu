@@ -163,11 +163,14 @@ fn when_modifier_parts<'a>(topic: &Expr, body: &'a [Stmt]) -> Option<(&'a Expr, 
         return None;
     }
     let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
-    let (Some(Stmt::When {
-        cond,
-        body,
-        is_statement_modifier: true,
-    }), None) = (real.next(), real.next())
+    let (
+        Some(Stmt::When {
+            cond,
+            body,
+            is_statement_modifier: true,
+        }),
+        None,
+    ) = (real.next(), real.next())
     else {
         return None;
     };
