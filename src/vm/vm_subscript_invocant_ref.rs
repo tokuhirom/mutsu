@@ -83,7 +83,28 @@ impl Interpreter {
             self.stack.push(cell);
             return Ok(());
         }
-        self.exec_index_op_with_positional(mark.is_positional)
+        // A callee that does not bind the container reads the value, exactly
+        // as the plain `Index` op does.
+        self.exec_index_op_with_positional(mark.is_positional)?;
+        self.decont_native_pos_ref_on_top()
+    }
+
+    /// `$native-array[$i]` answers the element's reference (`IntPosRef`, what
+    /// upstream's typed `CArray` returns from `AT-POS ... is raw`). A plain
+    /// read wants the value in it: a number handed to `^`, `x`, `..`, a
+    /// subscript or `-` is read by pure Rust that cannot FETCH. The forms that
+    /// want the container -- a bind, an `is rw` argument, `.VAR` -- are other
+    /// opcodes (`IndexVarRef`, `IndexArgRef` toward a binding callee, ...).
+    // Cost: O(1) (one tag probe; one element decode for a reference).
+    pub(crate) fn decont_native_pos_ref_on_top(&mut self) -> Result<(), RuntimeError> {
+        if let Some(reference) = self
+            .stack
+            .pop_if(|top| crate::runtime::native_pos_ref::is_native_pos_ref(top))
+        {
+            let value = loan_env!(self, auto_fetch_proxy(&reference))?;
+            self.stack.push(value);
+        }
+        Ok(())
     }
 
     /// The element cell for a subscript receiver, or `None` for every shape

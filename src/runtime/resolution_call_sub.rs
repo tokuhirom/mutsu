@@ -122,157 +122,6 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Promise"), attrs)
     }
 
-    /// The declared name of a callable value, for looking it up in name-keyed
-    /// registries. `None` for anonymous blocks/closures.
-    pub(crate) fn callable_value_name(func: &Value) -> Option<String> {
-        let (package, name) = match func.view() {
-            ValueView::Routine { package, name, .. } => (package.resolve(), name.resolve()),
-            ValueView::Sub(data) => (data.package.resolve(), data.name.resolve()),
-            _ => return None,
-        };
-        if name.is_empty() {
-            return None;
-        }
-        if crate::qualified::is_global_package(crate::qualified::known_symbol(&package)) {
-            Some(name.to_string())
-        } else {
-            Some(
-                crate::qualified::qualified_text(&package, &name)
-                    .as_str()
-                    .to_string(),
-            )
-        }
-    }
-
-    /// Resolve `name`'s `is native` C-FFI descriptor, if any, honoring Raku's
-    /// lexical-shadowing rule: a same-file (or otherwise more locally
-    /// declared) plain sub of the same bare name always wins over an
-    /// imported/needed native descriptor.
-    ///
-    /// A package-qualified `name` (`Foo::Bar::baz`) is unambiguous — it
-    /// always resolves straight to `native_call_specs[name]` (falling back to
-    /// the short name, for a descriptor registered before this qualified key
-    /// existed).
-    ///
-    /// A *bare* `name` walks the same package chain ordinary bare-name
-    /// routine lookup uses (`bare_name_packages()`, innermost scope first,
-    /// ending at `GLOBAL`). At each enclosing package, whichever of these is
-    /// found FIRST decides that scope:
-    ///
-    /// - A native descriptor registered directly under `pkg::name` — this is
-    ///   the native routine's own declaring scope, so dispatch natively.
-    /// - A registered `FunctionDef` under `pkg::name` (a plain sub, or a
-    ///   `multi` candidate keyed `pkg::name/<arity...>`) — trace it to its
-    ///   TRUE declaring package via `FunctionDef::package`: `use`/`import`
-    ///   re-exporting an already-registered routine into a new package
-    ///   aliases the exact same `Arc<FunctionDef>` under the new qualified
-    ///   key (`import_module`) without rewriting `package`, so a re-exported
-    ///   NativeCall sub (e.g. `use NCTypeAliasMod;` pulling `alloc` into the
-    ///   importing script's `GLOBAL` scope) still traces back to its real
-    ///   native home and dispatches natively — it is the SAME routine, not a
-    ///   shadow (regression: `t/nativecall-constant-type-alias.t`). If the
-    ///   true owner carries no native descriptor for `name`, this is a
-    ///   genuinely different (non-native) routine — whether declared locally
-    ///   or imported from a third module — so stop the walk and return
-    ///   `None`, letting ordinary dispatch reach that exact `FunctionDef`.
-    ///   `native_call_specs` is otherwise a single flat, unscoped table, so
-    ///   without this walk a call would keep routing to whichever native
-    ///   descriptor happened to share the bare name, no matter how it was
-    ///   registered relative to a same-file local wrapper; see
-    ///   `Compress::Zlib.pm6`'s local 2-arg `compress` wrapper (imported into
-    ///   a caller's `GLOBAL` scope exactly like `alloc` above, but tracing
-    ///   back to `Compress::Zlib`, which has no native `compress` of its
-    ///   own) around `Compress::Zlib::Raw`'s 4-arg native `compress`,
-    ///   `news/2026-08/native-call-local-sub-shadows-imported-same-name.md`.
-    /// - Neither: continue to the next enclosing package.
-    ///
-    /// Finding neither at any enclosing package falls back to the historic
-    /// flat bare-name entry for backward compatibility.
-    pub(crate) fn resolve_native_call_spec(
-        &self,
-        name: &str,
-    ) -> Option<crate::runtime::nativecall::NativeCallSpec> {
-        if crate::qualified::is_qualified_str(name) {
-            return self
-                .module
-                .native_call_specs
-                .get(name)
-                .cloned()
-                .or_else(|| {
-                    crate::qualified::split_qualified(crate::qualified::known_symbol(name))
-                        .map(|(head, tail)| (head.as_str(), tail.as_str()))
-                        .and_then(|(_, short)| self.module.native_call_specs.get(short).cloned())
-                });
-        }
-        // Trace a `FunctionDef` to its declaring package's native descriptor
-        // for `name`, if it has one — see the doc comment above.
-        let native_of_true_owner = |def: &FunctionDef| {
-            let owner = def.package.resolve();
-            self.module
-                .native_call_specs
-                .get(
-                    &crate::qualified::qualified_text(&owner, name)
-                        .as_str()
-                        .to_string(),
-                )
-                .cloned()
-        };
-        for pkg in self.bare_name_packages() {
-            let qualified = crate::qualified::qualified_text(&pkg, name)
-                .as_str()
-                .to_string();
-            if let Some(spec) = self.module.native_call_specs.get(&qualified) {
-                return Some(spec.clone());
-            }
-            if let Some(def) = self.registry().functions.get(&Symbol::intern(&qualified)) {
-                return native_of_true_owner(def);
-            }
-            let multi_prefix = format!("{qualified}/");
-            if let Some((_, def)) = self
-                .registry()
-                .functions
-                .iter()
-                .find(|(k, _)| k.as_str().starts_with(&multi_prefix))
-            {
-                return native_of_true_owner(def);
-            }
-        }
-        self.module.native_call_specs.get(name).cloned()
-    }
-
-    /// Dispatch `name` over C FFI if it is a registered `is native` sub.
-    /// `Ok(None)` means "not a native sub" — the caller continues normally.
-    ///
-    /// Unlike the VM opcode paths this does not write `is rw` out-parameters
-    /// back to a caller *slot* (there is no `CompiledCode` here to address one);
-    /// it writes them into `env` and records the name, which the enclosing VM
-    /// frame drains on return.
-    pub(crate) fn try_dispatch_native_by_name(
-        &mut self,
-        name: &str,
-        args: &[Value],
-    ) -> Result<Option<Value>, RuntimeError> {
-        let Some(mut spec) = self.resolve_native_call_spec(name) else {
-            return Ok(None);
-        };
-        self.resolve_native_ret_struct(&mut spec);
-        let call_args: Vec<Value> = args
-            .iter()
-            .filter(|a| !Self::is_callsite_line_marker(a))
-            .cloned()
-            .collect();
-        let (result, out_args) =
-            crate::runtime::nativecall::call_native_with_out_args(self, &spec, &call_args)?;
-        for (idx, val) in out_args {
-            if let ValueView::VarRef { name, .. } = call_args[idx].view() {
-                let n = name.resolve().to_string();
-                self.env_mut().insert(n.clone(), val);
-                self.pending_rw_writeback_sources.push(n);
-            }
-        }
-        Ok(Some(result))
-    }
-
     /// A `^lookup`/`^find_method`/`.can` result for a *multi* method is a
     /// dispatcher-shaped Sub: its env carries `__mutsu_lookup_class` /
     /// `__mutsu_lookup_method` but no `__mutsu_lookup_candidate_idx` (a
@@ -335,6 +184,60 @@ impl Interpreter {
         }
     }
 
+    /// Whether `captured` -- the candidates a multi dispatcher code value
+    /// carries -- are exactly the ones the family `name` resolves to right now.
+    // Cost: O(c), c = candidates in the family.
+    pub(crate) fn captured_candidates_are_live(&self, name: &str, captured: &[Value]) -> bool {
+        let live = self.resolve_all_multi_candidates(name);
+        live.len() == captured.len()
+            && live.iter().zip(captured).all(|(live, captured)| {
+                matches!(
+                    captured.view(),
+                    ValueView::Sub(data)
+                        if data.package == live.package && data.name == live.name
+                )
+            })
+    }
+
+    /// Whether `v` is a multi dispatcher code value of the family `name`.
+    // Cost: O(1).
+    pub(crate) fn is_family_dispatcher_of(v: &Value, name: &str) -> bool {
+        let ValueView::Sub(data) = v.view() else {
+            return false;
+        };
+        matches!(
+            data.env.get("__mutsu_multi_dispatch_name").map(Value::view),
+            Some(ValueView::Str(family)) if family.as_ref() == name
+        )
+    }
+
+    /// A multi dispatcher code value of the family `name` that calling would
+    /// send straight back into resolution of `name` (`&trait_mod:<is>`
+    /// exported by `sub EXPORT`): either its captured candidates are the live
+    /// ones, or a by-name call is already running through a dispatcher of that
+    /// family. A by-name call that found no candidate to bind must not retry
+    /// through it: the retry resolves the same family again, forever.
+    // Cost: O(c), c = candidates in the family.
+    pub(crate) fn is_live_family_dispatcher(&self, v: &Value, name: &str) -> bool {
+        if !Self::is_family_dispatcher_of(v, name) {
+            return false;
+        }
+        let ValueView::Sub(data) = v.view() else {
+            return false;
+        };
+        if self
+            .dispatch
+            .family_dispatchers_in_flight
+            .contains(&Symbol::intern(name))
+        {
+            return true;
+        }
+        data.env
+            .get("__mutsu_multi_dispatch_candidates")
+            .cloned()
+            .and_then(Value::into_array)
+            .is_some_and(|(candidates, _)| self.captured_candidates_are_live(name, &candidates))
+    }
     pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
@@ -380,19 +283,6 @@ impl Interpreter {
             },
             _ => func,
         };
-        // NativeCall: a sub declared `is native(...)` has a `{ * }` stub for a
-        // body, so reaching that body at all is a bug — it must be dispatched
-        // over C FFI instead. The two VM call opcodes check `native_call_specs`
-        // by name, but a call through a code object (`my &f = &dlsym; f(|c)`,
-        // which is how `NativeLibs` picks between the dyncall and libffi symbol
-        // lookups) resolves the callee as a value and never consulted them, so
-        // it ran the stub and returned `*`.
-        if !self.module.native_call_specs.is_empty()
-            && let Some(name) = Self::callable_value_name(&func)
-            && let Some(result) = self.try_dispatch_native_by_name(&name, &args)?
-        {
-            return Ok(result);
-        }
         if let ValueView::Routine {
             package,
             name,
@@ -678,17 +568,7 @@ impl Interpreter {
                 if let Some(ValueView::Str(name)) =
                     data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
                 {
-                    let same_live_candidates = self.resolve_all_multi_candidates(&name);
-                    let captured_match = same_live_candidates.len() == candidates.len()
-                        && same_live_candidates.iter().zip(candidates.iter()).all(
-                            |(live, captured)| {
-                                matches!(
-                                    captured.view(),
-                                    ValueView::Sub(data)
-                                        if data.package == live.package && data.name == live.name
-                                )
-                            },
-                        );
+                    let captured_match = self.captured_candidates_are_live(&name, &candidates);
                     // A live single routine of that name is the same family
                     // only when it is one of the captured candidates: a
                     // same-named routine imported later into the caller
@@ -762,6 +642,17 @@ impl Interpreter {
                     {
                         return self.call_sub_value(candidate.clone(), call_args, false);
                     }
+                }
+                // None of the captured candidates accepts the call. For a family
+                // that is X::Multi::NoMatch, not the first candidate's own
+                // binding error: a caller that treats "no candidate" as "try
+                // something else" (a trait application through an imported
+                // `&trait_mod:<is>`) tells the two apart by it.
+                if candidates.len() > 1
+                    && let Some(ValueView::Str(family)) =
+                        data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+                {
+                    return Err(self.multi_no_match_error(&family, &call_args));
                 }
                 if let Some(candidate) = candidates.first() {
                     return self.call_sub_value(candidate.clone(), call_args, false);

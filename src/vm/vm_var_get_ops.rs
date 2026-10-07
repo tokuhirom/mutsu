@@ -274,12 +274,18 @@ impl Interpreter {
         }
         // A bareword with a type smiley whose base is a bound generic type
         // parameter (`T:D` inside a role method where `T` -> `Int`) resolves to
-        // the parameterized type with the smiley applied (`Int:D`). Plain
-        // built-in types like `Int:D` are NOT env-bound, so they fall through to
-        // the normal resolution below and are unaffected.
+        // the parameterized type with the smiley applied (`Int:D`). The same
+        // goes for a constant aliasing a type (`my constant CArray = NativeCall::
+        // Types::CArray`), which is stored under its term key rather than its
+        // name. Plain built-in types like `Int:D` are neither, so they fall
+        // through to the normal resolution below and are unaffected.
         if let (base, Some(smiley)) = crate::runtime::types::strip_type_smiley(name)
             && !base.is_empty()
-            && let Some(v) = self.env().get(base)
+            && let Some(v) = self
+                .env()
+                .get(base)
+                .cloned()
+                .or_else(|| self.term_binding(base))
             && let ValueView::Package(pkg) = v.view()
         {
             let resolved = format!("{}{}", pkg.resolve(), smiley);
@@ -774,9 +780,6 @@ impl Interpreter {
                 && !self.has_multi_function(name)
                 && !self.has_function(last_seg)
                 && !self.has_multi_function(last_seg)
-                // `NativeCall::Types::size_t` is a type with a lowercase name,
-                // not a sub call (#12031).
-                && crate::value::nativecall_registry_name(name).is_none()
                 // A lowercase last segment usually means a qualified sub call,
                 // but it can equally name a lowercase *package*: `my $foo::bar
                 // = 1` creates the package `foo`, and `OUR::foo` must resolve
@@ -802,13 +805,7 @@ impl Interpreter {
                 {
                     Value::package(Symbol::intern(self.resolve_core_type_alias(bare)))
                 } else {
-                    // A NativeCall type's qualified spelling denotes the type
-                    // its imported short name does, and that type object
-                    // carries the registry key (ADR-0056): `CArray ===
-                    // NativeCall::Types::CArray` (#12031).
-                    Value::package(Symbol::intern(
-                        crate::value::nativecall_registry_name(name).unwrap_or(name),
-                    ))
+                    Value::package(Symbol::intern(name))
                 }
             }
         } else if name.chars().count() == 1 && !self.is_name_suppressed(name) {

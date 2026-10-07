@@ -886,7 +886,8 @@ impl Interpreter {
         let callable_from_plain = self.env.get(name).cloned();
         if let Some(callable) = callable_from_code_sigil
             .filter(|v| {
-                matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                (matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                    && !self.is_live_family_dispatcher(v, name))
                     || (matches!(v.view(), ValueView::Routine { .. })
                         && !is_dead_end_self_referential_routine(v, name))
                     // A `&name` bound to a `Callable` object (`for @its -> &it
@@ -901,13 +902,27 @@ impl Interpreter {
             })
             .or_else(|| {
                 callable_from_plain.filter(|v| {
-                    matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                    (matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                        && !self.is_live_family_dispatcher(v, name))
                         || (matches!(v.view(), ValueView::Routine { .. })
                             && !is_dead_end_self_referential_routine(v, name))
                 })
             })
         {
-            return self.eval_call_on_value(callable, args.to_vec());
+            // Running a family's dispatcher re-enters resolution of the family:
+            // note it, so a nested call that finds no candidate does not come
+            // back through it (`is_live_family_dispatcher`).
+            let through_dispatcher = Self::is_family_dispatcher_of(&callable, name);
+            if through_dispatcher {
+                self.dispatch
+                    .family_dispatchers_in_flight
+                    .push(Symbol::intern(name));
+            }
+            let result = self.eval_call_on_value(callable, args.to_vec());
+            if through_dispatcher {
+                self.dispatch.family_dispatchers_in_flight.pop();
+            }
+            return result;
         }
         // A qualified call to a multi declared in a package nested in an
         // enclosing package of the running code (`Q::k` in a method of `M::C`
@@ -1256,35 +1271,6 @@ impl Interpreter {
                 return self.call_function(&real, args.to_vec());
             }
             return Err(self.no_such_qualified_symbol(package.as_str(), short_name.as_str()));
-        }
-
-        // The three `__mutsu_`-prefixed NativeCall helpers the VM's call
-        // opcode resolves through its own fallback chain
-        // (`dispatch_func_call_inner`). They are reachable here too, because
-        // `call_function` is what every by-name caller that is not a `CallFunc`
-        // opcode goes through — a TRIR body's generic call among them, which
-        // is how `nativecast()` started reporting "Unknown function:
-        // __mutsu_nativecast". The names are reserved (the user-visible
-        // `nativecast`/`nativesizeof`/`cglobal` are `our sub`s in the
-        // NativeCall prelude that forward to these), so no user routine can
-        // be shadowed by matching them.
-        if let Some(result) = self.try_nativecast(name, args) {
-            return result;
-        }
-        if let Some(result) = self.try_nativesizeof(name, args) {
-            return result;
-        }
-        if let Some(result) = self.try_cglobal_fetch(name, args) {
-            return result;
-        }
-
-        // NativeCall's `explicitly-manage($str)` marks a value's C-side buffer
-        // as caller-managed so the GC will not free it while a native call holds
-        // the pointer. mutsu copies each `Str` argument into an owned `CString`
-        // that lives for the duration of the call, so there is nothing to pin —
-        // treat it as an identity no-op returning its argument.
-        if name == "explicitly-manage" {
-            return Ok(args.first().cloned().unwrap_or(Value::NIL));
         }
 
         // A sub declared lexically in a block, called from a closure that

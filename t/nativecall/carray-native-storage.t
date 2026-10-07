@@ -19,10 +19,10 @@ ok $u.WHERE > 0,                     'and has a real body address';
 isnt $u.WHERE, $u.WHERE + 1,         'sanity: WHERE is a number';
 is $u.WHERE, $u.WHERE,               'the body address is stable';
 
-# Element types that are *references* keep the boxed representation, and go on
-# under-reporting `P6opaque` — an honest name is a promise that a body exists.
-is CArray[Str].new('a').REPR, 'P6opaque',
-    'a reference-element CArray keeps under-reporting its REPR';
+# Element types that are *references* report the same REPR: it is the class's
+# (`is repr('CArray')`), not the element type's.
+is CArray[Str].new('a').REPR, 'CArray',
+    'a reference-element CArray reports the CArray REPR too';
 
 # --- Elements round-trip at the declared width, signedness and kind ---
 is CArray[int8].new(-1)[0], -1,      'signed elements read back signed';

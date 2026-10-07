@@ -31,6 +31,34 @@ impl Interpreter {
     // env probes.
     pub(crate) fn declared_type_alias_target(&self, spelling: &str) -> Option<String> {
         let (base, smiley) = crate::runtime::types::strip_type_smiley(spelling);
+        // `CArray[int32]` / `Pointer[void]`: the base and each type argument
+        // are looked up where the routine is declared, like any other type.
+        if let Some((head, args)) = Self::parse_parametric_type_name(base) {
+            // The parser above splits on every comma, so an argument with a
+            // nested comma comes back unbalanced: leave that spelling as written.
+            if args
+                .iter()
+                .any(|a| a.matches('[').count() != a.matches(']').count())
+            {
+                return None;
+            }
+            let new_head = self.declared_type_alias_target(&head);
+            let new_args: Vec<Option<String>> = args
+                .iter()
+                .map(|a| self.declared_type_alias_target(a))
+                .collect();
+            if new_head.is_none() && new_args.iter().all(Option::is_none) {
+                return None;
+            }
+            let args = args
+                .iter()
+                .zip(new_args)
+                .map(|(old, new)| new.unwrap_or_else(|| old.clone()))
+                .collect::<Vec<_>>()
+                .join(",");
+            let head = new_head.unwrap_or(head);
+            return Some(format!("{head}[{args}]{}", smiley.unwrap_or("")));
+        }
         // An alias is declared under a plain identifier, and a spelling nobody
         // interned cannot be bound to anything.
         let sym = crate::symbol::Symbol::lookup(base)?;
@@ -43,7 +71,11 @@ impl Interpreter {
         if target.contains('\u{0}')
             || !(self.has_type(&target)
                 || self.native_decl(&target).is_some()
-                || crate::runtime::utils::is_known_type_constraint(&target))
+                || crate::runtime::utils::is_known_type_constraint(&target)
+                // `constant OidArray = CArray[Oid]` names a parameterization
+                // of a registered type.
+                || Self::parse_parametric_type_name(&target)
+                    .is_some_and(|(head, _)| self.has_type(&head)))
         {
             return None;
         }

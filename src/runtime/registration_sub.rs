@@ -1228,6 +1228,12 @@ impl Interpreter {
         {
             effective_param_defs = defs;
         }
+        // An alias of a parameterization (`constant OidArray = CArray[Oid]`)
+        // only shows its `C[T]` spelling now.
+        self.resolve_decl_parameterizations(
+            &effective_param_defs,
+            effective_return_type.as_deref(),
+        );
         self.validate_static_default_typechecks(&effective_param_defs)?;
         let deprecated_message = custom_traits.iter().find_map(|(t, _)| {
             if t == "DEPRECATED" {
@@ -1402,7 +1408,12 @@ impl Interpreter {
         let shadows_outer_eval_name = is_in_eval && is_outer_amp_name(&code_var_key);
         if let Some(existing) = self.env.get(&code_var_key) {
             // Mixin values in &name come from trait_mod and should not block registration.
+            // So does the dispatcher of the very family a `multi` joins: an
+            // imported `&trait_mod:<is>` (NativeCall's `sub EXPORT`) is not a
+            // plain `sub` that the new candidate would redeclare, however many
+            // module levels it travelled through to reach this scope.
             if !matches!(existing.view(), ValueView::Mixin(..))
+                && !(multi && Self::is_family_dispatcher_of(existing, name))
                 && !shadows_outer_eval_name
                 && !allow_lexical_shadow
                 && !imported_routine_alias
@@ -1436,7 +1447,17 @@ impl Interpreter {
                         .canonical_signature_param_types(&existing.param_defs)
                         .is_some());
             redeclares_hoisted_twin = refines_aliases;
-            let same = same_decl && !refines_aliases && existing.return_type == new_def.return_type;
+            // The installed def carries the alias-resolved return type (the
+            // in-sequence pass rewrites `--> Pointer` to the type the constant
+            // names), so a hoist pass that re-arrives with the written spelling
+            // (a parametric role body running again for another
+            // parameterization) is the same declaration.
+            let same_return = existing.return_type == new_def.return_type
+                || new_def.return_type.as_deref().is_some_and(|rt| {
+                    self.declared_type_alias_target(rt)
+                        .is_some_and(|target| existing.return_type.as_deref() == Some(&*target))
+                });
+            let same = same_decl && !refines_aliases && same_return;
             // The identical declaration already installed here may have been
             // installed *without* a compiled body (a forward-declaration or
             // prelude pass registers from a source declaration and carries no
@@ -1874,15 +1895,6 @@ impl Interpreter {
             self.env
                 .insert(MetaNs::MethodValue.owned_key_for_str(name), Value::TRUE);
         }
-        // An `is native(...)` sub routes calls through NativeCall (libffi)
-        // instead of its body. The bytecode registration path
-        // (`vm_register_sub_ops`) records the C-FFI descriptor; the interpreter
-        // path (used by EVAL'd source, e.g. zef's `!native-library-is-installed`
-        // probe) must do the same, and must NOT reject `native`/`symbol`/… as
-        // unknown user traits.
-        if custom_traits.iter().any(|(t, _)| t == "native") {
-            self.register_native_call_sub(name, param_defs, return_type, custom_traits)?;
-        }
         // Apply custom trait_mod:<is> for each non-builtin trait
         let has_trait_mod = self.has_trait_mod_handler("trait_mod:<is>");
         {
@@ -1911,9 +1923,6 @@ impl Interpreter {
                     // routine trait now recorded on the def via
                     // `is_implementation_detail` (`Code.is-implementation-detail`).
                     && *t != "implementation-detail"
-                    // NativeCall traits are consumed by `register_native_call_sub`
-                    // above, not by `trait_mod:<is>`.
-                    && !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded")
             }) {
                 if !has_trait_mod {
                     // `test-assertion` is a builtin trait (mutsu's parser

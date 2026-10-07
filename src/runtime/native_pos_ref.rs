@@ -110,6 +110,18 @@ pub(crate) fn native_pos_ref(holder: Value, idx: i64, kind: NativeRefKind) -> Va
     )
 }
 
+/// Whether `v` is one of these references (`IntPosRef`, `UIntPosRef`,
+/// `NumPosRef`).
+// Cost: O(1).
+pub(crate) fn is_native_pos_ref(v: &Value) -> bool {
+    v.is_proxy_value()
+        && matches!(
+            v.view(),
+            ValueView::Proxy { subclass: Some((name, _)), .. }
+                if NativeRefKind::of_type_name(name.as_str()).is_some()
+        )
+}
+
 /// The storage holder, index and kind a native reference addresses.
 // Cost: O(1).
 fn parts(proxy: &Value) -> Result<(Value, i64, NativeRefKind), RuntimeError> {

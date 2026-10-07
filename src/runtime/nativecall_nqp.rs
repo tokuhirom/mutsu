@@ -269,16 +269,6 @@ impl Interpreter {
                 unsafe { crate::value::gc_contents_mut(&array) }.promote_native_storage(elem_type);
             }
         }
-        // `nativecast(:(num64 --> num64), $ptr)` — cast a raw C function pointer
-        // to a *signature*, yielding something callable. This is how a symbol
-        // looked up at runtime becomes a usable routine (`NativeLibs`'
-        // `Loader.symbol($name, :(num64 --> num64))`), so there is no `is native`
-        // declaration and no symbol name to bind — only the address.
-        if let ValueView::Instance { class_name, id, .. } = target.view()
-            && class_name.resolve() == "Signature"
-        {
-            return self.native_callable_from_signature(id, source);
-        }
         let addr = self.carray_element_address(source);
         // Upstream's `Pointer[T]` / `CArray[T]` are mixin type objects, and a
         // class declared `is repr('CArray')` boxes a CArray over the address
@@ -305,57 +295,5 @@ impl Interpreter {
         // Rakudo defines as `nativecast(self.of, self)` — see
         // `runtime::nativecall_cast`.
         Ok(self.nativecast_address(&target, addr))
-    }
-
-    /// The native provider's `__mutsu_nativesizeof($obj-or-type)`.
-    ///
-    /// The user-visible `nativesizeof` is an `our sub` in the NativeCall prelude
-    /// (`NATIVECALL_SUB_PRELUDES`) that calls this. It is spelled `__mutsu_`
-    /// here precisely so that it is *not* an ambient builtin: Rakudo exports
-    /// `nativesizeof` from `NativeCall.rakumod`, so it must arrive with the
-    /// module and be `&`-callable, not be visible to every program.
-    pub(crate) fn try_nativesizeof(
-        &mut self,
-        name: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if name != "__mutsu_nativesizeof" {
-            return None;
-        }
-        if args.len() != 1 {
-            return Some(Err(RuntimeError::new(format!(
-                "nativesizeof() expects 1 argument, got {}",
-                args.len()
-            ))));
-        }
-        let arg = crate::runtime::types::unwrap_varref_value(args[0].clone());
-        Some(self.native_sizeof_value(&arg))
-    }
-
-    /// The native provider's `__mutsu_nativecast($target-type, $source)`.
-    ///
-    /// As with `try_nativesizeof`, the user-visible `nativecast` is an `our sub`
-    /// in the NativeCall prelude; this half is `__mutsu_`-prefixed so it is not
-    /// an ambient builtin.
-    pub(crate) fn try_nativecast(
-        &mut self,
-        name: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if name != "__mutsu_nativecast" {
-            return None;
-        }
-        let args: Vec<Value> = args
-            .iter()
-            .cloned()
-            .map(crate::runtime::types::unwrap_varref_value)
-            .collect();
-        if args.len() != 2 {
-            return Some(Err(RuntimeError::new(format!(
-                "nativecast() expects 2 arguments, got {}",
-                args.len()
-            ))));
-        }
-        Some(self.nativecast_value(&args[0], &args[1]))
     }
 }

@@ -208,6 +208,22 @@ impl Interpreter {
                         self.typed_scalar_nil_seed_value_with_base(&constraint, base)
                     }
                 };
+                // The seed of a block-entry hoist is a declaration's own first
+                // value, not a write to a variable of that name in an enclosing
+                // scope: while the cross-thread store is active, mask the name
+                // exactly as `SetVarDynamic` does, or a worker running a routine
+                // with `my int $n` (upstream NativeCall's `CArray` code) would
+                // publish its seed under the bare name and `await` would pull it
+                // back over the caller's own `$n`.
+                if hoisted
+                    && self.threads.shared_vars_active
+                    && Self::thread_decl_masks_name(code, name)
+                {
+                    self.threads
+                        .thread_redeclared_vars
+                        .borrow_mut()
+                        .insert(name.to_string());
+                }
                 self.set_env_with_main_alias_sym(name, Some(name_sym), init_val.clone());
                 // A declaration's SetVarDynamic directly precedes this op.
                 // Its slot is authoritative when an inner `my` shadows an

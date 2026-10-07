@@ -489,6 +489,24 @@ impl Interpreter {
         }
     }
 
+    /// Whether storing `new` over `old` is provably not a change, for the
+    /// immutable scalars only: an aggregate may be mutated in place behind an
+    /// unchanged pointer, so writing the same container back is how a worker
+    /// announces an element update and must keep marking the name dirty.
+    // Cost: O(1).
+    pub(crate) fn is_unchanged_scalar_write(old: &Value, new: &Value) -> bool {
+        matches!(
+            old.view(),
+            ValueView::Int(_)
+                | ValueView::Num(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(..)
+                | ValueView::Package(_)
+                | ValueView::Nil
+                | ValueView::Str(_)
+        ) && crate::vm::vm_method_dispatch::cheaply_unchanged(old, new)
+    }
+
     pub(crate) fn mark_shared_var_dirty(&self, key: &str) {
         if self
             .threads
@@ -583,6 +601,24 @@ impl Interpreter {
                 }
             }
             if self.threads.shared_vars.contains_key(key) {
+                // A write that leaves a scalar as the store already has it
+                // changes nothing, so there is nothing to propagate -- and
+                // marking the name dirty anyway makes the next `await`'s
+                // `sync_shared_vars_to_env` pull the store's copy over a
+                // binding of the awaiting thread that has moved on without
+                // publishing (a `for` loop variable). A worker frame mirrors
+                // every local it seeded from its spawn-time env at teardown
+                // (`sync_env_from_locals`), so a worker with a local named like
+                // the caller's loop variable pinned the caller's `$i` to the
+                // value it had at that spawn (Cro::HTTP::Client round trips).
+                if self
+                    .threads
+                    .shared_vars
+                    .get(key)
+                    .is_some_and(|current| Self::is_unchanged_scalar_write(&current, &value))
+                {
+                    return;
+                }
                 // ADR-0010: resolves to the lineage that owns the name, so a
                 // child's write to a lexical its parent shared reaches the parent.
                 self.threads.shared_vars.set(key, value);

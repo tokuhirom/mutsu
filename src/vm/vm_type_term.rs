@@ -15,11 +15,14 @@ impl Interpreter {
     // Cost: O(1) expected: one env probe.
     pub(crate) fn imported_type_term(&self, name: &str) -> Option<Value> {
         let value = self.term_value(name)?;
-        matches!(
-            value.view(),
-            ValueView::Package(_) | ValueView::CustomType(_)
-        )
-        .then(|| value.clone())
+        let is_type_object = match value.view() {
+            ValueView::Package(_) | ValueView::CustomType(_) => true,
+            // `constant OidArray = CArray[Oid]`: a parameterization is a mixin
+            // type object.
+            ValueView::Mixin(..) => !crate::runtime::types::value_is_defined(value),
+            _ => false,
+        };
+        is_type_object.then(|| value.clone())
     }
 
     /// The type object `name` denotes in the current scope when that differs

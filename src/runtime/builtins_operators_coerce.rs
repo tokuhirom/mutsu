@@ -34,6 +34,16 @@ impl Interpreter {
             return self.coerce_infix_operand_numeric(ev.to_value());
         }
         if !matches!(value.view(), ValueView::Instance { .. }) {
+            // A role mixin over an object whose class (or whose role) defines
+            // `Numeric` numifies through it, like the bare object does.
+            if self.mixin_role_has_method(&value, "Numeric")
+                || self.mixin_inner_instance_has_user_method(&value, "Numeric")
+            {
+                return self
+                    .call_method_with_values(value.clone(), "Numeric", vec![])
+                    .or_else(|_| self.call_method_with_values(value.clone(), "Bridge", vec![]))
+                    .or(Ok(value));
+            }
             return Ok(value);
         }
         // A subclass of native Version stores its comparable payload in the

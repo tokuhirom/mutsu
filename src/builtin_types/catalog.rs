@@ -115,26 +115,21 @@ static CATALOG: &[BuiltinTypeInfo] = &[
         roles: ["Positional", "Iterable"],
         owner: "Array",
     ),
-    // `array`/`CArray` are the NativeCall-facing typed-array bases (lower-case
-    // `array` for `array[int32]` etc., `CArray` for `nativecast`ed C arrays).
-    // Neither was previously in this catalog OR in `registry.rs`'s separate
-    // `builtin_mro_table`, so a value/type-object of a parametrized name like
-    // `Array[Int]`/`array[int32]`/`CArray[uint8]` fell all the way through
-    // both tables' fallbacks to `[name]` or `[name, Any, Mu]` -- never
-    // reaching this row's own ancestry, even though `Array[Int]` itself
-    // already had a row (ADR-0019 E2b twelfth slice: the fallback that
-    // strips a `Base[T]` name and splices `Base`'s catalog chain is what
-    // actually reaches it, in `receiver_class.rs`/`registry.rs`). raku:
-    // `array.^mro` is `array, Cool, Any, Mu`; `CArray.^mro` is (short-named,
-    // dropping the real `NativeCall::Types::` package prefix mutsu does not
-    // model) `CArray, Any, Mu`.
+    // `array` is the typed-array base (`array[int32]`, ...). It was not in this
+    // catalog OR in `registry.rs`'s separate `builtin_mro_table`, so a
+    // parametrized name like `array[int32]` fell all the way through both
+    // tables' fallbacks to `[name]` or `[name, Any, Mu]` -- never reaching this
+    // row's own ancestry (ADR-0019 E2b twelfth slice: the fallback that strips
+    // a `Base[T]` name and splices `Base`'s catalog chain is what actually
+    // reaches it, in `receiver_class.rs`/`registry.rs`). raku: `array.^mro` is
+    // `array, Cool, Any, Mu`. (`CArray` is NativeCall's, declared by the
+    // upstream module, not a core type.)
     row!(
         "array",
         mro: ["array", "Cool", "Any", "Mu"],
         roles: ["Positional"],
         owner: "",
     ),
-    row!("CArray", mro: ["CArray", "Any", "Mu"], roles: ["Positional"], owner: ""),
     row!(
         "List",
         mro: ["List", "Cool", "Any", "Mu"],
@@ -880,19 +875,14 @@ mod tests {
     }
 
     #[test]
-    fn native_array_bases_match_raku_exactly() {
-        // ADR-0019 E2b (twelfth slice, 2026-08-10): `array`/`CArray` are the
-        // NativeCall-facing typed-array bases; confirmed against
-        // `array.^mro`/`CArray.^mro` (short-named -- the real
-        // `NativeCall::Types::CArray` package prefix is not modeled here).
+    fn native_array_base_matches_raku_exactly() {
+        // ADR-0019 E2b (twelfth slice, 2026-08-10): `array` is the typed-array
+        // base; confirmed against `array.^mro`.
         assert_eq!(
             builtin_type_info("array").unwrap().mro,
             &["array", "Cool", "Any", "Mu"]
         );
-        assert_eq!(
-            builtin_type_info("CArray").unwrap().mro,
-            &["CArray", "Any", "Mu"]
-        );
+        assert!(builtin_type_info("CArray").is_none());
     }
 
     #[test]

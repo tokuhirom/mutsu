@@ -5135,22 +5135,6 @@ impl DeclTraitArg {
 /// plus its optional argument.
 pub(crate) type DeclTraits = [(String, Option<DeclTraitArg>)];
 
-/// Adapt AST-shaped custom traits for a registration path that has not been
-/// migrated to declaration plans yet.
-pub(crate) fn decl_traits_from_ast(
-    traits: &[(String, Option<Expr>)],
-) -> Vec<(String, Option<DeclTraitArg>)> {
-    traits
-        .iter()
-        .map(|(name, arg)| {
-            (
-                name.clone(),
-                arg.clone().map(|e| DeclTraitArg::Ast(Box::new(e))),
-            )
-        })
-        .collect()
-}
-
 /// Pair a declaration's trait names with the arguments the compiler lowered for
 /// them. `lowered` is index-aligned with `custom_traits`; a lowering site may
 /// append an argument-less marker trait (`__lexical_hoist`) after building the

@@ -113,6 +113,10 @@ impl Interpreter {
         {
             effective_param_defs = defs;
         }
+        // A `C[T]` parameter type is evaluated once, here, so the method's
+        // `Signature` reports the type object it denotes (`.REPR`, `.of`): an
+        // `is native` method's trait handler reads exactly that.
+        self.resolve_decl_parameterizations(&effective_param_defs, decl.return_type.as_deref());
         // Raku methods never get an implicit `*@_` (unlike subs) -- a
         // signature-less method body that reads a bare `@_` directly (ADR-
         // 0019 D3-9's precomputed `uses_bare_positional_args`, so this reads
@@ -304,23 +308,6 @@ impl Interpreter {
                 &effective_param_defs,
                 tags,
             );
-        }
-        // An `is native(...)` method routes calls through NativeCall
-        // instead of its `{ * }` body, exactly as an `is native` sub
-        // does — with the invocant as the first C argument. This is
-        // how a whole C API is usually bound (`DBDish::mysql::Native`
-        // declares every one of its ~40 entry points this way).
-        if decl.custom_traits.iter().any(|(t, _)| t == "native") {
-            // Class/role method declarations still register from the
-            // source declaration (ADR-0019 phase D), so their trait
-            // arguments arrive as expressions.
-            self.register_native_call_method(
-                cx.name,
-                &resolved_method_name,
-                &decl.param_defs,
-                decl.return_type.as_ref(),
-                &crate::opcode::decl_traits_from_ast(&decl.custom_traits),
-            )?;
         }
         // Apply custom trait_mod:<is> for each non-builtin trait on methods.
         // `__`-prefixed entries are internal parser markers (the

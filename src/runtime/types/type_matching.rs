@@ -1100,42 +1100,7 @@ impl Interpreter {
                 true
             };
         }
-        // An *unparameterized* `CArray` constraint accepts any `CArray[T]`: the
-        // parameterization only narrows the type (`isa-ok $au, CArray` and
-        // `sub carray-is-managed(CArray:D \arr)` in NativeHelpers::Blob both
-        // spell it bare). The value side is either a native Array carrying a
-        // `CArray[...]` declared type or a `nativecast`ed handle whose element
-        // type lives in its class name; neither reduces to the `&'static`
-        // `value_type_name` ("Array" / the class name) the generic tail compares.
-        if constraint == "CArray" {
-            // The upstream NativeCall module spells it `my constant CArray =
-            // NativeCall::Types::CArray`: an imported alias of a namespaced
-            // class. "CArray" is a known type name, so the alias walk skips it
-            // (`type_alias_target`) and the name checks below would compare the
-            // instance's `UNC::Types::CArray[uint8]` against the bare spelling.
-            // Follow the alias first, as for any other constant type alias --
-            // this is the path a `CArray:D` parameter reaches once its smiley
-            // is stripped.
-            if let Some(bound) = self.type_name_binding(constraint)
-                && let ValueView::Package(target) = bound.view()
-                && target != *constraint
-            {
-                return self.type_matches_value_why(&target.resolve(), value, why);
-            }
-            if let ValueView::Instance { class_name, .. } = value.view() {
-                let cn = class_name.resolve();
-                return cn == "CArray" || cn.starts_with("CArray[");
-            }
-            if matches!(value.view(), ValueView::Array(..)) {
-                return self.container_type_metadata(value).is_some_and(|m| {
-                    m.declared_type
-                        .as_deref()
-                        .is_some_and(|d| d == "CArray" || d.starts_with("CArray["))
-                });
-            }
-        }
-        // A *bare* `array` constraint accepts any native `array[T]` value, the
-        // same way the bare `CArray` case above accepts any `CArray[T]`: the
+        // A *bare* `array` constraint accepts any native `array[T]` value: the
         // parameterization only narrows, and `NativeHelpers::Blob`'s
         // `pointer-to` overload spells its native-array candidate exactly this
         // way (`(array:D \arr, $typed)`). A plain (non-native) `Array` must
@@ -1190,69 +1155,6 @@ impl Interpreter {
                         );
                     }
                     return false;
-                }
-                // NativeCall `CArray[T]`: a C buffer backed by a native Array
-                // carrying a `CArray[...]` declared type and `T` value type.
-                "CArray" => {
-                    if let ValueView::Array(..) = value.view()
-                        && let Some(metadata) = self.container_type_metadata(value)
-                        && metadata
-                            .declared_type
-                            .as_deref()
-                            .is_some_and(|declared| declared.starts_with("CArray["))
-                    {
-                        return self.type_matches_value(
-                            inner,
-                            &Value::package(Symbol::intern(&metadata.value_type)),
-                        );
-                    }
-                    // A `nativecast(CArray[T], $ptr)` handle is an Instance
-                    // carrying a bare C address, not a backed Array — its element
-                    // type lives in its class name. Compare the two element
-                    // types, resolving a `constant` type alias on the declared
-                    // side (`CArray[intptr]` vs the handle's `CArray[uint64]`).
-                    if let ValueView::Instance { class_name, .. } = value.view()
-                        && let Some((value_base, value_inner)) =
-                            Self::parse_generic_constraint(&class_name.resolve())
-                        && value_base == "CArray"
-                    {
-                        let want = self.resolved_type_capture_name(inner);
-                        let want = self.type_alias_target(&want).unwrap_or(want);
-                        return want == value_inner || Self::type_matches(&want, value_inner);
-                    }
-                    return false;
-                }
-                // NativeCall `Pointer[T]`: the parameterisation is NOT in the
-                // class name — a typed pointer stays an ordinary `Pointer`
-                // instance and remembers `T` in an `of` attribute, so that every
-                // `Pointer` method keeps working (see `try_nativecast`). So the
-                // element type is read from there, resolving a `constant` alias on
-                // the declared side exactly as the `CArray` arm does.
-                // `NativeHelpers::Pointer`'s pointer arithmetic returns these, and
-                // `isa-ok $p.succ, Pointer[uint16]` is what checks them.
-                "Pointer" => {
-                    let ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } = value.view()
-                    else {
-                        return false;
-                    };
-                    if crate::qualified::last_segment(class_name).as_str() != "Pointer" {
-                        return false;
-                    }
-                    let Some(of) = attributes.as_map().get("of").map(|v| match v.view() {
-                        ValueView::Package(n) => n.resolve(),
-                        _ => v.to_string_value(),
-                    }) else {
-                        // An untyped `Pointer` is `Pointer[void]`; it matches a
-                        // parameterised constraint only when that asks for `void`.
-                        return self.resolved_type_capture_name(inner) == "void";
-                    };
-                    let want = self.resolved_type_capture_name(inner);
-                    let want = self.type_alias_target(&want).unwrap_or(want);
-                    return want == of || Self::type_matches(&want, &of);
                 }
                 "Array" | "List" | "Positional" => {
                     if let ValueView::Array(items, ..) = value.view() {

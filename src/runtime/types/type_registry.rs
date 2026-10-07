@@ -1,5 +1,15 @@
 use super::*;
 
+/// Whether the lexical type key `key` -- which starts with `Name\u{0}`, that
+/// prefix being `prefix_len` bytes -- names a curried specialization of the
+/// declaration (`R\u{0}<id>[Str]`) rather than the declaration (`R\u{0}<id>`).
+// Cost: O(|key| - prefix_len).
+fn is_curried_lexical_key(key: &str, prefix_len: usize) -> bool {
+    key[prefix_len..]
+        .trim_start_matches(|c: char| c.is_ascii_digit())
+        .starts_with('[')
+}
+
 /// The built-in roles mutsu models natively rather than as a registered
 /// `RoleDef`. They are still roles: in Rakudo each carries a
 /// `ParametricRoleGroupHOW`, is composable with `but`/`does`, and shows up in
@@ -487,14 +497,20 @@ impl Interpreter {
         // without the guard `my _ $x` would accept `_` as a type name.
         // A sigil-less `constant Bar = Foo::Bar` alias lives in the term
         // namespace (#9962) and is consulted first.
-        if !crate::env::is_magic_sigilless_key(name)
-            && let Some(ValueView::Package(target)) = self
-                .term_value(name)
-                .or_else(|| self.env.get(name))
-                .map(Value::view)
-        {
-            let resolved = target.resolve();
-            if resolved != name && self.has_type_direct(&resolved) {
+        if !crate::env::is_magic_sigilless_key(name) {
+            let alias = self.term_value(name).or_else(|| self.env.get(name));
+            if let Some(ValueView::Package(target)) = alias.map(Value::view) {
+                let resolved = target.resolve();
+                if resolved != name && self.has_type_direct(&resolved) {
+                    return true;
+                }
+            }
+            // `constant OidArray = CArray[Oid]`: a parameterization is an
+            // undefined mixin type object, a type like any class.
+            if let Some(term) = self.term_value(name)
+                && matches!(term.view(), ValueView::Mixin(..))
+                && !crate::runtime::types::value_is_defined(term)
+            {
                 return true;
             }
         }
@@ -793,16 +809,8 @@ impl Interpreter {
     /// `class Cursor { … }` is its own type (#11705). A `my`-scoped one is
     /// registered under a mangled key and reached through the `env` binding
     /// of its short name, so that binding counts as a declaration too.
-    ///
-    /// A NativeCall type's qualified spelling (`NativeCall::Types::CArray`) is
-    /// the same type as its imported short one, whose bare name is the registry
-    /// key (ADR-0056), so it resolves to that key (#12031).
-    // Cost: O(1) hash probes, plus O(k) for the NativeCall name table (k = 10)
-    // when `name` starts with `NativeCall::Types::`.
+    // Cost: O(1) hash probes.
     pub(crate) fn resolve_core_type_alias<'a>(&self, name: &'a str) -> &'a str {
-        if let Some(bare) = crate::value::nativecall_registry_name(name) {
-            return bare;
-        }
         match name {
             "Cursor"
                 if !self.has_type_direct(name)
@@ -911,13 +919,23 @@ impl Interpreter {
             return None;
         }
         let prefix = format!("{qualified}\u{0}");
-        reg.classes
-            .keys()
-            .find(|key| key.starts_with(&prefix))
-            .or_else(|| reg.roles.keys().find(|key| key.starts_with(&prefix)))
-            .or_else(|| reg.enum_types.keys().find(|key| key.starts_with(&prefix)))
-            .or_else(|| reg.subsets.keys().find(|key| key.starts_with(&prefix)))
-            .cloned()
+        // The declaration itself, never one of its curried specializations: a
+        // lexical `my role R[::T]` curried with `Str` registers a class
+        // `R\u{0}<id>[Str]` beside the role, and the classes are searched first.
+        let find = |declared_only: bool| {
+            let matches = |key: &&String| {
+                key.starts_with(&prefix)
+                    && !(declared_only && is_curried_lexical_key(key, prefix.len()))
+            };
+            reg.classes
+                .keys()
+                .find(matches)
+                .or_else(|| reg.roles.keys().find(matches))
+                .or_else(|| reg.enum_types.keys().find(matches))
+                .or_else(|| reg.subsets.keys().find(matches))
+                .cloned()
+        };
+        find(true).or_else(|| find(false))
     }
 
     /// The storage key of the only lexical type (`Name\u{0}<decl-id>`) whose
@@ -933,7 +951,7 @@ impl Interpreter {
             .chain(reg.roles.keys())
             .chain(reg.enum_types.keys())
             .chain(reg.subsets.keys())
-            .filter(|key| key.starts_with(&prefix))
+            .filter(|key| key.starts_with(&prefix) && !is_curried_lexical_key(key, prefix.len()))
         {
             match found {
                 Some(prev) if prev != key => return None,
@@ -1573,6 +1591,14 @@ impl Interpreter {
                 .or_else(|| self.get_env_with_main_alias(&current))
                 .and_then(|value| match value.view() {
                     crate::value::ValueView::Package(target) => Some(target.resolve()),
+                    // `constant OidArray = CArray[Oid]`: a parameterization is
+                    // an undefined mixin type object, which names itself by
+                    // what its `^parameterize` gave `.^set_name`.
+                    crate::value::ValueView::Mixin(_, mixins) if !value_is_defined(&value) => {
+                        mixins
+                            .get("__mutsu_type_name__")
+                            .map(Value::to_string_value)
+                    }
                     _ => None,
                 });
             match next {

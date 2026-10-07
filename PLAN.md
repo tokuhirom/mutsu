@@ -214,11 +214,6 @@ work; see `docs/mzef-install-pipeline.md`. The **REPL** (`--repl`,
       full-corpus sample, not a specific open ticket. Per bug: minimal repro → general fix → `t/`
       pin → PR. **Standing rule when reading a sweep**: verify any non-`missing_dep` bucket against
       `raku -I lib` before treating it as a mutsu bug — most turn out not to be.
-- [ ] **NativeCall → vendored upstream** ([ADR-11203](docs/adr/11203-nativecall-runs-upstream-via-the-backend-neutral-path.md),
-      tracking issue [#11203](https://github.com/tokuhirom/mutsu/issues/11203)). Upstream's QAST
-      import is dead and its dispatcher is optional, so the vendored files
-      (`modules/Rakudo-Core/lib/NativeCall*`) need interpreter growth only. Next: #11528 (`Native!setup`'s INIT lock reads Nil), #11530, #11529,
-      #11209 (REPRs, incl. `is box_target`); measure the switch on `exp/11203-nativecall-interception-off` and with `scripts/nativecall-upstream-trial.sh`.
 - [ ] Other open module-compat findings are individual `todo:ticket` / `todo:deep` issues.
 
 ---

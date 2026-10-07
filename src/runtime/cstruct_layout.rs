@@ -241,6 +241,13 @@ fn set_holds_class(set: &rustc_hash::FxHashSet<String>, name: &str, base: &str) 
         })
 }
 
+/// Whether `type_name` spells `Pointer` or `Pointer[T]`, qualified or not.
+// Cost: O(n), n = chars in the spelling.
+fn is_pointer_spelling(type_name: &str) -> bool {
+    let short = short_base_name(type_name);
+    short == "Pointer" || short.starts_with("Pointer[")
+}
+
 /// The element type of a parameterised `Pointer[T]` spelling, or `None` for a
 /// plain `Pointer`. The base may be qualified (`NativeCall::Types::Pointer[T]`);
 /// the parameter is returned exactly as written, since every consumer resolves
@@ -460,7 +467,7 @@ impl crate::runtime::Interpreter {
     /// `nativesizeof(MYSQL_BIND)` failed, which in turn killed the
     /// `LinearArray[MYSQL_BIND]` parameterisation that computes its stride from
     /// it. Signatures already follow these aliases
-    /// ([`Self::resolve_native_type_alias`]); fields now do too.
+    /// ([`Self::resolve_native_type_alias_for_owner`]); fields now do too.
     ///
     /// Only a name that is *not* already marshallable is followed, so a field
     /// typed with a real C type or with a class held by reference keeps its
@@ -700,8 +707,10 @@ impl crate::runtime::Interpreter {
         // it does in Rakudo. This is distinct from `Pointer.new(0)`, which is
         // a defined pointer value. A parameterised field keeps its parameter
         // on non-NULL values, so `.of` / `.deref` work on the value that comes
-        // out.
-        if declared == "Pointer" || declared.starts_with("Pointer[") {
+        // out. The declared spelling may be qualified
+        // (`NativeCall::Types::Pointer`): a constant alias of the type,
+        // resolved against the declaring scope.
+        if is_pointer_spelling(&declared) {
             if addr == 0 {
                 return self.constraint_type_value(&declared);
             }
@@ -770,7 +779,7 @@ impl crate::runtime::Interpreter {
         if matches!(value.view(), ValueView::Int(_))
             && matches!(field.ty, FieldType::Pointer | FieldType::Embedded { .. })
             && let Some(declared) = self.get_attr_type_constraint(&registered, name)
-            && !(declared == "Pointer" || declared.starts_with("Pointer["))
+            && !is_pointer_spelling(&declared)
         {
             return Err(self.type_check_assignment_failure(
                 &format!("$!{name}"),
@@ -1054,7 +1063,13 @@ impl crate::runtime::Interpreter {
             Some("CStr")
         } else {
             drop(reg);
-            self.is_carray_repr_class(name).then_some("CArray")
+            // A parameterised spelling (`CArray[T]`, `CArray[CArray[uint8]]`) is
+            // a mixin of the class that holds the REPR, so it is judged by its
+            // base, as `is_native_handle_class` does for a struct field. A
+            // signature's nested parameterisation reaches here as the bare
+            // spelling, and upstream's `validnctype` reads its `.REPR`.
+            let base = name.split_once('[').map_or(name, |(base, _)| base);
+            self.is_carray_repr_class(base).then_some("CArray")
         }
     }
 }

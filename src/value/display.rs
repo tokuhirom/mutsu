@@ -86,22 +86,16 @@ fn anon_type_display_name(name: &str) -> Option<String> {
 pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
     // `:_` is the "either" smiley — it constrains nothing, and Rakudo does not
     // keep it in the type object's name (`(Int:_).^name` is `Int`, while `:D`
-    // and `:U` ARE kept). Normalising it here — a display-only site, like the
-    // NativeCall qualification below — leaves constraint matching, which reads
-    // the real name through `strip_type_smiley`, untouched.
+    // and `:U` ARE kept). Normalising it here — a display-only site — leaves
+    // constraint matching, which reads the real name through
+    // `strip_type_smiley`, untouched.
     if let Some(base) = name.strip_suffix(":_") {
         return std::borrow::Cow::Owned(user_facing_type_name(base).into_owned());
     }
     if !name.contains('\u{0}') {
-        // Fast path: nothing mangled anywhere, no allocation needed. NativeCall
-        // type names never carry the `\u{0}` lexical-scope mangling (they are
-        // not `my`-scoped user declarations), so this is also the only branch
-        // that needs the NativeCall qualification check below.
+        // Fast path: nothing mangled anywhere, no allocation needed.
         if let Some(display) = anon_type_display_name(name) {
             return std::borrow::Cow::Owned(display);
-        }
-        if let Some(qualified) = qualify_nativecall_type_name(name) {
-            return std::borrow::Cow::Owned(qualified);
         }
         // A package-scoped enum is registered under its qualified identity
         // but displays under its declared name (#9654, `enum_display.rs`).
@@ -133,7 +127,8 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
 
 /// Strip the internal `\u{0}...` suffix from one name segment. Everything
 /// from the first `\u{0}` on is internal, except the argument list of a
-/// curried lexical role: `R\u{0}<id>[Int]` displays as `R[Int]`.
+/// curried lexical role (`R\u{0}<id>[Int]` displays as `R[Int]`) and a
+/// definiteness smiley (`Foo\u{0}<id>:D` displays as `Foo:D`).
 fn strip_site_keys(segment: &str) -> String {
     let Some((short, rest)) = segment.split_once('\u{0}') else {
         return segment.to_string();
@@ -141,140 +136,10 @@ fn strip_site_keys(segment: &str) -> String {
     let rest = rest.trim_start_matches(|c: char| c.is_ascii_digit());
     if rest.starts_with('[') {
         format!("{short}{}", strip_site_keys(rest))
+    } else if matches!(rest, ":D" | ":U") {
+        format!("{short}{rest}")
     } else {
         short.to_string()
-    }
-}
-
-/// The bare registry names NativeCall's builtin types are kept under. Real
-/// Rakudo registers `Pointer`, `CArray`, `void`, and the seven C-width
-/// integer aliases (`long`, `ulong`, `longlong`, `ulonglong`, `size_t`,
-/// `ssize_t`, `bool`) under the `NativeCall::Types` package, so `.^name`
-/// reports the qualified path. mutsu deliberately keeps the *registry* key
-/// bare (see `docs/adr/0056-nativecall-types-display-only-qualification.md`):
-/// `Pointer[T]`/`CArray[T]` parametrization re-stringifies the already
-/// *resolved* symbol at `vm_var_index_ops.rs`, so a qualified registry key
-/// would make ordinary `use NativeCall; Pointer[uint8]` code evaluate to a
-/// name that roughly fifteen literal-string comparison sites (allow-lists,
-/// `===`/`.isa`, alias resolution) do not `::`-strip before matching --
-/// breaking everyday parametrized-type usage, not just qualified spellings.
-/// This list therefore only controls what a *human* sees: `.^name`, `.raku`,
-/// and error-message type naming. Identity/dispatch comparisons must keep
-/// reading the real (bare) registry key, so nothing in `value/types_isa.rs`
-/// or the exact-match sites listed in the ADR should route through this.
-///
-/// `OpaquePointer` is not listed: it is `constant OpaquePointer = Pointer`
-/// (an alias, not a separate registry key), so it already resolves to
-/// `"Pointer"` before this function ever sees it. `NativeCall::CStr` is not
-/// listed either -- it is registered under its real qualified key already.
-const NATIVECALL_TYPE_NAMES: &[&str] = &[
-    "Pointer",
-    "CArray",
-    "void",
-    "long",
-    "ulong",
-    "longlong",
-    "ulonglong",
-    "size_t",
-    "ssize_t",
-    "bool",
-];
-
-/// Qualify a NativeCall builtin type's display name, preserving a `[T]`
-/// parametrization suffix (`Pointer[uint8]` -> `NativeCall::Types::Pointer[uint8]`).
-/// Returns `None` for any name outside `NATIVECALL_TYPE_NAMES`.
-fn qualify_nativecall_type_name(base: &str) -> Option<String> {
-    // A definiteness smiley belongs to the type it follows, so the type is
-    // qualified and the smiley put back: `CArray:D` is
-    // `NativeCall::Types::CArray:D` (#11871). (`:_` is dropped before this
-    // runs, see `user_facing_type_name`.)
-    for smiley in [":D", ":U"] {
-        if let Some(inner) = base.strip_suffix(smiley)
-            && !inner.is_empty()
-            && !inner.ends_with(':')
-        {
-            return qualify_nativecall_type_name(inner)
-                .map(|qualified| format!("{qualified}{smiley}"));
-        }
-    }
-    let split_at = base.find('[').unwrap_or(base.len());
-    let (head, rest) = base.split_at(split_at);
-    let slot = NATIVECALL_TYPE_NAMES.iter().position(|n| *n == head)?;
-    if user_declared_nativecall_name(slot) {
-        // The program declared its OWN type under this name, so the name is
-        // that type's, not NativeCall's: rakudo reports `class void { }` as
-        // `void`. See `note_user_declared_type_name`.
-        return None;
-    }
-    // The type PARAMETER is a type name too, so it gets the same treatment:
-    // Rakudo renders `Pointer[void]` as
-    // `NativeCall::Types::Pointer[NativeCall::Types::void]` while leaving a
-    // core type (`Pointer[Str]`) alone.
-    let rest = match rest.strip_prefix('[').and_then(|r| r.strip_suffix(']')) {
-        Some(param) => format!("[{}]", user_facing_type_name(param)),
-        None => rest.to_string(),
-    };
-    Some(format!("NativeCall::Types::{head}{rest}"))
-}
-
-/// The registry key a NativeCall type's QUALIFIED spelling denotes: the inverse
-/// of [`qualify_nativecall_type_name`], as a slice of `name`
-/// (`NativeCall::Types::CArray` -> `CArray`, `NativeCall::Types::Pointer:D` ->
-/// `Pointer:D`). `None` for any other name, for a NativeCall name followed by a
-/// further `::` segment, and for a name the program declared a type of its own
-/// under (`class void { }` is that class, not NativeCall's).
-///
-/// ADR-0056 keeps ONE registry key per NativeCall type, the bare one, and only
-/// qualifies it for a human. A type object built from the qualified spelling
-/// must therefore carry that same key, or `CArray === NativeCall::Types::CArray`,
-/// their `.WHICH`, `eqv` and object-hash keys compare two different names
-/// (#12031).
-// Cost: O(k), k = the fixed number of NativeCall type names (10).
-pub(crate) fn nativecall_registry_name(name: &str) -> Option<&str> {
-    let bare = name.strip_prefix("NativeCall::Types::")?;
-    let head_end = bare.find(['[', ':']).unwrap_or(bare.len());
-    let (head, rest) = bare.split_at(head_end);
-    if !(rest.is_empty() || rest.starts_with('[') || matches!(rest, ":D" | ":U" | ":_")) {
-        return None;
-    }
-    let slot = NATIVECALL_TYPE_NAMES.iter().position(|n| *n == head)?;
-    (!user_declared_nativecall_name(slot)).then_some(bare)
-}
-
-/// Which entries of [`NATIVECALL_TYPE_NAMES`] the running program has declared
-/// a type of its own under, as a bitmask (bit `i` is `NATIVECALL_TYPE_NAMES[i]`).
-///
-/// The qualification above is purely name-keyed, so without this a user
-/// `class void { }` reported `NativeCall::Types::void` in a program that never
-/// mentions NativeCall. It is process-global rather than interpreter state
-/// because [`user_facing_type_name`] is a pure function with no interpreter
-/// context -- the same reason ADR-0056 put the qualification here in the first
-/// place. Ten names fit a `u16`, so a declaration costs one relaxed `fetch_or`
-/// and a render costs one relaxed load; the mask is zero in every program that
-/// does not declare one of these names.
-static USER_DECLARED_NATIVECALL_NAMES: std::sync::atomic::AtomicU16 =
-    std::sync::atomic::AtomicU16::new(0);
-
-fn user_declared_nativecall_name(slot: usize) -> bool {
-    USER_DECLARED_NATIVECALL_NAMES.load(std::sync::atomic::Ordering::Relaxed) & (1 << slot) != 0
-}
-
-/// Record that the program declared its own type called `name`, so a name that
-/// collides with a NativeCall builtin stops rendering under
-/// `NativeCall::Types::`.
-///
-/// Called from the class / role / subset / enum registration ops for a
-/// declaration written at the *top level* under its bare name. NativeCall's own
-/// prelude spells its types `class GLOBAL::Pointer` / `class GLOBAL::void`, so
-/// passing the SOURCE-written name (not the resolved one) is what keeps the
-/// prelude out of this set; a nested `module M { class void { } }` registers
-/// `M::void`, which never collides in the first place.
-pub(crate) fn note_user_declared_type_name(name: &str) {
-    if crate::qualified::is_qualified(crate::symbol::Symbol::intern(name)) {
-        return;
-    }
-    if let Some(slot) = NATIVECALL_TYPE_NAMES.iter().position(|n| *n == name) {
-        USER_DECLARED_NATIVECALL_NAMES.fetch_or(1 << slot, std::sync::atomic::Ordering::Relaxed);
     }
 }
 

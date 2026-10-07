@@ -36,10 +36,26 @@ pub(crate) const CSTR_ADDRESS: &str = "__mutsu_cstr_address";
 #[cfg(feature = "libffi")]
 const MANAGED_STRING_ATTR: &str = "cstr";
 
+/// Copy `bytes` plus a terminating NUL into an allocation that is intentionally
+/// never freed, and return its address.
+///
+/// The leak is the feature: this is the one place in mutsu where memory is
+/// handed to C permanently, and `nativecall.rakudoc` says so outright -- "all
+/// memory management for explicitly managed strings must be handled by the C
+/// library itself".
+// Cost: O(n), n = bytes.
+fn leak_c_string(bytes: &[u8]) -> usize {
+    let mut owned = Vec::with_capacity(bytes.len() + 1);
+    owned.extend_from_slice(bytes);
+    owned.push(0);
+    // Leaking is the whole contract; the C library owns this buffer now.
+    Box::leak(owned.into_boxed_slice()).as_ptr() as usize
+}
+
 impl Interpreter {
     /// `nqp::box_s($str, $class)` for a `$class` declared `is repr<CStr>`: an
     /// object that owns a NUL-terminated UTF-8 copy of `s`, leaked on purpose
-    /// (the C library manages it from now on, see `nativecall_manage`).
+    /// (the C library manages it from now on).
     // Cost: O(n), n = bytes of the string (copied, and never freed).
     pub(crate) fn box_str_into_cstr(
         &mut self,
@@ -47,7 +63,7 @@ impl Interpreter {
         s: &str,
     ) -> Result<Value, RuntimeError> {
         let object = self.nqp_create(class.clone())?;
-        let addr = super::nativecall_manage::leak_c_string(s.as_bytes());
+        let addr = leak_c_string(s.as_bytes());
         Self::nqp_bindattr_value("bindattr_i", &object, CSTR_ADDRESS, Value::int(addr as i64))?;
         Ok(object)
     }

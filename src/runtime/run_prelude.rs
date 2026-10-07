@@ -1,7 +1,6 @@
 use super::run::{
     ENUMERATION_ROLE_PRELUDE, IO_SOCKET_ROLE_PRELUDE, METAMODEL_ROLE_PRELUDE,
-    NATIVECALL_POINTER_PRELUDE, NATIVECALL_SUB_PRELUDES, RATIONAL_ROLE_PRELUDE,
-    TRAIT_MOD_DOES_PRELUDE, TRAIT_MOD_IS_DEFAULT_PRELUDE, TRAIT_MOD_IS_NATIVECALL_PRELUDE,
+    RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE, TRAIT_MOD_IS_DEFAULT_PRELUDE,
     X_WRAPPER_ROLE_PRELUDE,
 };
 use super::source_code_text::CodeText;
@@ -37,96 +36,6 @@ impl Interpreter {
         *stmts = combined;
     }
 
-    /// Prepend NativeCall's type objects (`Pointer`, `void`, `OpaquePointer`,
-    /// `NativeCall::CStr`) to a program that uses NativeCall. Parsed once and
-    /// cached, like [`Self::inject_prelude_roles`].
-    ///
-    /// The gate is `use NativeCall` alone, deliberately: keying it on the
-    /// source also naming `Pointer` meant `use NativeCall; say void.^name` --
-    /// or any of the other three -- saw an undeclared bareword, since only one
-    /// of the four names gated all of them.
-    ///
-    /// It reads a [`CodeText`], so `# use NativeCall` in a comment no longer
-    /// counts; a real `use` anywhere in the compunit -- inside a block, inside
-    /// a module body -- still does, because the prelude is a whole-compunit
-    /// splice.
-    pub(super) fn inject_nativecall_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
-        if !source.mentions_module("NativeCall")
-            || source.contains("class Pointer")
-            || source.contains("class void")
-            || source.contains("class OpaquePointer")
-        {
-            return;
-        }
-        use std::sync::OnceLock;
-        static POINTER_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
-        let prelude = POINTER_STMTS.get_or_init(|| {
-            crate::runtime::prelude_source::parse_prelude_source(NATIVECALL_POINTER_PRELUDE)
-                .map(|(s, _)| s)
-                .unwrap_or_default()
-        });
-        if prelude.is_empty() {
-            return;
-        }
-        let mut combined = prelude.clone();
-        combined.append(stmts);
-        *stmts = combined;
-    }
-
-    /// Prepend NativeCall's exported helper routines — cglobal, nativecast,
-    /// nativesizeof, explicitly-manage, refresh, guess_library_name — to a
-    /// program that uses NativeCall and calls them.
-    ///
-    /// None of the six is a Raku builtin: Rakudo exports them from
-    /// `NativeCall.rakumod`, and mutsu's working agreement puts a routine in the
-    /// builtin set only if `Language/perl-func.rakudoc` lists it. Injecting them
-    /// as ordinary `our sub`s is what makes them importable rather than ambient,
-    /// and what gives each a real `&` to take, pass or wrap.
-    ///
-    /// Each entry is gated on its own name, so a program that declares its own
-    /// `sub refresh` (a common enough name) still receives the other four.
-    ///
-    /// Each declaration is stamped with the internal `__mutsu_prelude` trait,
-    /// which registers it under `GLOBAL` instead of the host compunit's package
-    /// and keeps it out of that module's export map. Without the stamp a module
-    /// that merely *uses* NativeCall would re-export the helper to its own
-    /// importers, and the re-exported copy collides with the importer's own
-    /// injected copy as an `X::Redeclaration` (see [`NATIVECALL_SUB_PRELUDES`]).
-    pub(super) fn inject_nativecall_subs_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
-        if !source.mentions_module("NativeCall") {
-            return;
-        }
-        let test_tag_requested = source.contains("use NativeCall :TEST");
-        use std::sync::OnceLock;
-        static SUB_STMTS: OnceLock<Vec<Vec<Stmt>>> = OnceLock::new();
-        let parsed = SUB_STMTS.get_or_init(|| {
-            NATIVECALL_SUB_PRELUDES
-                .iter()
-                .map(|(_, src)| {
-                    let mut stmts = crate::runtime::prelude_source::parse_prelude_source(src)
-                        .map(|(s, _)| s)
-                        .unwrap_or_default();
-                    Self::mark_prelude_subs(&mut stmts);
-                    stmts
-                })
-                .collect()
-        });
-        let mut prelude: Vec<Stmt> = Vec::new();
-        for ((name, _), decl) in NATIVECALL_SUB_PRELUDES.iter().zip(parsed) {
-            if source.contains(name)
-                && (*name != "guess_library_name" || test_tag_requested)
-                && !Self::declares_toplevel_sub(stmts, name)
-            {
-                prelude.extend(decl.iter().cloned());
-            }
-        }
-        if prelude.is_empty() {
-            return;
-        }
-        prelude.append(stmts);
-        *stmts = prelude;
-    }
-
     /// Stamp every routine declaration in a parsed prelude with the internal
     /// `__mutsu_prelude` trait. Marker traits are `__`-prefixed by convention
     /// (`__our_scoped`, `__lexical_hoist`) so registration can tell them from a
@@ -137,31 +46,6 @@ impl Interpreter {
                 custom_traits.push((crate::runtime::PRELUDE_SUB_TRAIT.to_string(), None));
             }
         }
-    }
-
-    /// Whether `stmts` already declares a mainline `sub <name>`, which an
-    /// injected prelude of the same name would collide with.
-    ///
-    /// Asked of the parsed statements rather than of the source text: a
-    /// `source.contains("sub refresh")` check also matches the phrase in a
-    /// comment, and a file *documenting* what it exercises then silently lost
-    /// the routine it was testing. Only the unit's own scope is considered
-    /// (through `SyntheticBlock` groups and a `unit module` wrapper), because
-    /// that is the only scope an injected top-level `our sub` can clash with. A
-    /// `proto sub` declares the name as much as a `sub` does.
-    // Cost: O(n), n = number of statements in the unit's own scope.
-    fn declares_toplevel_sub(stmts: &[Stmt], name: &str) -> bool {
-        crate::ast::scope_members(stmts)
-            .through_unit_package()
-            .any(|s| match s {
-                Stmt::SubDecl { name: n, .. }
-                | Stmt::ProtoDecl {
-                    name: n,
-                    is_method: false,
-                    ..
-                } => n.resolve() == name,
-                _ => false,
-            })
     }
 
     /// Prepend the builtin `IO::Socket` role when a module/program composes it
@@ -187,63 +71,9 @@ impl Interpreter {
         *stmts = combined;
     }
 
-    /// Prepend the `trait_mod:<does>` CORE.setting candidates when the source
-    /// calls it as a plain function (`trait_mod:<does>(v, role)`, the
-    /// `Hash::Restricted`/`Injector` idiom for mixing a role into a declared
-    /// variable at `is`-trait time). Gated on the literal name appearing in the
-    /// compunit's CODE, like the other preludes in this file — a program that
-    /// never mentions it pays nothing, and a comment that mentions it is prose,
-    /// not a mention. Not gated on "does the source already declare its own
-    /// candidate": Rakudo's builtin coexists with (and can
-    /// collide with) a user-declared candidate of the same name, and that
-    /// collision is exactly what proves the builtin is registered correctly
-    /// (see `TRAIT_MOD_DOES_PRELUDE`'s doc comment).
-    /// Prepend NativeCall's `trait_mod:<is>` candidates (see
-    /// [`TRAIT_MOD_IS_NATIVECALL_PRELUDE`]) to a program that both uses
-    /// NativeCall and names `trait_mod:<is>` itself.
-    ///
-    /// Both halves of that gate matter. Without `use NativeCall` the candidates
-    /// do not exist in Rakudo either, so injecting them would be wrong. And
-    /// naming `trait_mod:<is>` is what tells this apart from the overwhelmingly
-    /// common case of a program that merely *declares* `is native` routines:
-    /// there the candidates are unobservable (mutsu applies those traits
-    /// natively), while their mere presence would flip
-    /// `has_proto`/`has_multi_candidates` and route every other unknown `is`
-    /// trait in the file through custom dispatch.
-    ///
-    /// A file that declares its own `trait_mod:<is>` keeps it: injecting
-    /// alongside it would be a redeclaration, and the user's handler is the one
-    /// that should win.
-    pub(super) fn inject_trait_mod_is_prelude(source: &CodeText<'_>, stmts: &mut Vec<Stmt>) {
-        if !source.contains("trait_mod:<is>")
-            || !source.mentions_module("NativeCall")
-            || Self::declares_toplevel_sub(stmts, "trait_mod:<is>")
-        {
-            return;
-        }
-        use std::sync::OnceLock;
-        static TRAIT_MOD_IS_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
-        let prelude = TRAIT_MOD_IS_STMTS.get_or_init(|| {
-            let mut stmts = crate::runtime::prelude_source::parse_prelude_source(
-                TRAIT_MOD_IS_NATIVECALL_PRELUDE,
-            )
-            .map(|(s, _)| s)
-            .unwrap_or_default();
-            Self::mark_prelude_subs(&mut stmts);
-            stmts
-        });
-        if prelude.is_empty() {
-            return;
-        }
-        let mut combined = prelude.clone();
-        combined.append(stmts);
-        *stmts = combined;
-    }
-
     /// Prepend CORE's `trait_mod:<is>(Attribute:D $attr, :$default!)` candidate
     /// (see [`TRAIT_MOD_IS_DEFAULT_PRELUDE`]) to a program that names
-    /// `trait_mod:<is>` at all — unlike [`Self::inject_trait_mod_is_prelude`],
-    /// not gated on a `use NativeCall`/no-self-declaration check: this
+    /// `trait_mod:<is>` at all. This
     /// candidate's `:default!` shape is CORE.setting's own and is vanishingly
     /// unlikely to collide with a distribution's own candidate for some other
     /// named trait (`ASN::Types` declares four `trait_mod:<is>` candidates of
@@ -713,23 +543,5 @@ mod tests {
             "preregistration must attach compiled bytecode instead of leaving \
              the first call to compile the body on demand"
         );
-    }
-
-    /// The prelude clash check reads the unit's own scope: through a
-    /// `unit module` wrapper and a `SyntheticBlock` group, never into a block
-    /// (where a routine is a lexical of its own and cannot clash), and a
-    /// `proto sub` declares the name too.
-    #[test]
-    fn declares_toplevel_sub_reads_the_unit_scope() {
-        let declares = |src: &str| {
-            let (stmts, _) = crate::parse_dispatch::parse_source(src).expect("parse");
-            Interpreter::declares_toplevel_sub(&stmts, "refresh")
-        };
-        assert!(declares("sub refresh($x) { $x }"));
-        assert!(declares("unit module Foo; sub refresh($x) { $x }"));
-        assert!(declares("proto sub refresh(|) {*}"));
-        assert!(declares("sub refresh($x) { $x }(1);"));
-        assert!(!declares("{ sub refresh($x) { $x } }"));
-        assert!(!declares("module Foo { sub refresh($x) { $x } }"));
     }
 }

@@ -431,13 +431,29 @@ impl Interpreter {
         // normally uses the ambient composer package; recover the method's
         // lexical package for `sub`/`proto` declarations so a bare call from
         // the composed method can find the helper.
+        //
+        // `role.methods` is a `HashMap`, so which method comes first differs
+        // from run to run, and a method the runtime synthesizes (a `handles`
+        // delegate) carries GLOBAL as its lexical package. Take the first
+        // method BY NAME that was declared in some package, and GLOBAL only
+        // when every method is: otherwise the body's `sub` declarations ran
+        // under GLOBAL on some runs, where the role's own imports (upstream
+        // NativeCall's trait candidates) are not in scope.
         let role_lexical_package = (!role_arg_values.is_empty())
             .then(|| {
-                role.methods
-                    .values()
-                    .flat_map(|methods| methods.iter())
-                    .next()
-                    .map(|method| method.lexical_package.resolve())
+                let global = crate::symbol::wk::global_package();
+                let mut methods: Vec<(&String, &MethodDef)> = role
+                    .methods
+                    .iter()
+                    .flat_map(|(name, defs)| defs.iter().map(move |def| (name, def)))
+                    .collect();
+                methods.sort_by(|a, b| a.0.cmp(b.0));
+                methods
+                    .iter()
+                    .map(|(_, def)| def.lexical_package)
+                    .find(|package| *package != global)
+                    .or_else(|| methods.first().map(|(_, def)| def.lexical_package))
+                    .map(|package| package.resolve())
             })
             .flatten();
         // A class declared inside a *parametric* role body becomes

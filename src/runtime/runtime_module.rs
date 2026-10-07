@@ -749,22 +749,8 @@ impl Interpreter {
         let package_symbols_before = self.module.module_toplevel.package_symbols.clone();
         let func_keys_before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
 
-        // NativeCall loads no Raku module here (the machinery is in the VM), but
-        // its export list is a real introspectable surface that other modules
-        // read and re-export — see `register_nativecall_exports`.
-        if module == "NativeCall" {
-            self.register_nativecall_exports();
-        }
-        // The other native providers need the same treatment, and for the same
-        // reason: their exports are a real introspectable surface
-        // (`Mod::EXPORT::DEFAULT`), and nothing else populates `exported_subs`
-        // for a module that runs no `is export` declarations.
-        // `Test` used to be registered here too; it loads rakudo's own
-        // `Test.rakumod` now (#7566), which runs its own `is export`
-        // declarations. The native `JSON::Fast` provider's `to-json`/
-        // `from-json` have no code-var form, so registering their names would
-        // build a stash whose entries resolve to `Nil` -- worse than not
-        // having it. See the ticket for that residue.
+        // `Test` and `NativeCall` load rakudo's own `.rakumod` (#7566, #11203),
+        // which run their own `is export` declarations.
         let result = if matches!(
             module,
             "strict"
@@ -789,12 +775,6 @@ impl Interpreter {
                     | "fatal"
                     | "oo"
                     | "class"
-                    // NativeCall: the `is native(...)` trait machinery and the
-                    // NativeCall::Types declarations are built into the VM
-                    // (see runtime/nativecall.rs); these uses only need to be
-                    // recognized no-ops.
-                    | "NativeCall"
-                    | "NativeCall::Types"
         ) {
             // Track MONKEY-TYPING pragma
             if module == "MONKEY-TYPING" || module == "MONKEY" {

@@ -225,11 +225,10 @@ impl Interpreter {
                 ),
                 ConstructionPhaseStep::Class { mro_class, pinned } => {
                     // The pinned direct run must stay equivalent to full
-                    // dispatch: a wrap chain or a NativeCall method descriptor
-                    // registered after plan build re-routes through the full
-                    // path (both are runtime-global prefilters there too).
+                    // dispatch: a wrap chain registered after plan build
+                    // re-routes through the full path (a runtime-global
+                    // prefilter there too).
                     let r = if let Some(def) = pinned
-                        && self.module.native_call_specs.is_empty()
                         && !self.has_any_wrap_chains()
                     {
                         self.push_method_samewith_context(

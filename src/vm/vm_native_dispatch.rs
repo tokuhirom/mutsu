@@ -36,6 +36,34 @@ impl Interpreter {
         if let Err(e) = self.reify_map_grep_seq_args(args) {
             return Some(Err(e));
         }
+        // A native method takes its arguments by value, so the reference an
+        // element of a native `CArray` answers (`$c[0]` is an `IntPosRef`) is
+        // read before the number in it reaches pure Rust:
+        // `$blob.subbuf(0, $c[0])`. Only these references: reading one has no
+        // effect, so a method this call does not handle natively -- which then
+        // binds the original argument and reads it again -- cannot tell. Any
+        // other `Proxy` is read once by the parameter that binds it (a bound
+        // `Mu $test` of `grep`), and a bind keeps the container.
+        // Cost: O(n) tag probes, n = arguments; no allocation unless one is a reference.
+        if args
+            .iter()
+            .any(crate::runtime::native_pos_ref::is_native_pos_ref)
+            && !method_sym.as_str().starts_with("BIND")
+            && !method_sym.as_str().starts_with("bind")
+        {
+            let mut fetched = Vec::with_capacity(args.len());
+            for arg in args {
+                if crate::runtime::native_pos_ref::is_native_pos_ref(arg) {
+                    match self.auto_fetch_proxy(arg) {
+                        Ok(value) => fetched.push(value),
+                        Err(e) => return Some(Err(e)),
+                    }
+                } else {
+                    fetched.push(arg.clone());
+                }
+            }
+            return self.try_native_method(target, method_sym, &fetched);
+        }
         // The built-in method table (ADR-11276, #8888). For a plain receiver
         // of a shape it covers, a row is the method's implementation, and no
         // probe between here and the family cascade can claim the call: each

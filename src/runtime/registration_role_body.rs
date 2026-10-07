@@ -608,7 +608,6 @@ impl Interpreter {
                 continue;
             }
             let resolved_name = name.resolve();
-            crate::value::note_user_declared_type_name(&resolved_name);
             self.register_subset_decl(
                 &resolved_name,
                 base,

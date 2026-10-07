@@ -13,10 +13,6 @@ pub(crate) type ExportTagTable =
     rustc_hash::FxHashMap<String, rustc_hash::FxHashMap<String, rustc_hash::FxHashSet<String>>>;
 
 pub(crate) struct ModuleState {
-    /// NativeCall (`is native`) sub descriptors, keyed by sub name. Populated at
-    /// declaration; a call to a name present here is routed through C FFI
-    /// instead of running the (`{ * }`) Raku body.
-    pub(crate) native_call_specs: std::sync::Arc<HashMap<String, nativecall::NativeCallSpec>>,
     /// Operator sub names (infix:<..>, prefix:<..>, etc.) that have been
     /// imported into the current lexical scope via `use Module`. Used to
     /// preseed the parser when EVAL is called so that imported operators
@@ -507,7 +503,6 @@ pub(crate) struct ModuleState {
 impl ModuleState {
     pub(crate) fn new() -> Self {
         Self {
-            native_call_specs: Default::default(),
             imported_operator_names: Default::default(),
             operator_import_units: Default::default(),
             operator_import_gen: 0,
@@ -584,7 +579,6 @@ impl ModuleState {
     /// and handoff state of an in-flight `use` start empty.
     pub(crate) fn fork_for_thread(&self) -> Self {
         Self {
-            native_call_specs: self.native_call_specs.clone(),
             imported_operator_names: self.imported_operator_names.clone(),
             operator_import_units: self.operator_import_units.clone(),
             operator_import_gen: self.operator_import_gen,

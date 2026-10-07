@@ -205,6 +205,12 @@ pub(crate) struct DispatchState {
     /// `builtins_dispatch_next_core`. Keyed by receiver identity so a nested
     /// call on another receiver still reaches the user method.
     pub(crate) native_base_bypass: Option<(usize, Symbol, u64)>,
+    /// The multi families whose dispatcher code value (`&trait_mod:<is>`
+    /// exported by `sub EXPORT`) a by-name call is running right now. That
+    /// call re-enters resolution of the family, so a nested by-name call of
+    /// the same family that found no candidate must not retry through the
+    /// dispatcher again: see `Interpreter::is_live_family_dispatcher`.
+    pub(crate) family_dispatchers_in_flight: Vec<Symbol>,
 }
 
 impl DispatchState {
