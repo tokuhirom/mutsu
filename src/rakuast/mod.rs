@@ -10,7 +10,6 @@
 //! maps to/from the internal AST. See docs/adr/0011 for the full design and
 //! phasing (construction, EVAL, macros are later phases).
 
-mod word_quote;
 mod anon_state;
 mod atomic_op;
 mod attribute;
@@ -63,6 +62,7 @@ mod type_args;
 mod type_call;
 mod type_lower;
 mod use_stmt;
+mod word_quote;
 
 pub use formatter::formatter_ast;
 pub use lower::lower;
