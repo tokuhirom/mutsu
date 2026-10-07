@@ -11,8 +11,8 @@
 //! interpreter's context), so those rows decline it.
 
 use super::{Handler, MethodRow, RowFlags};
-use crate::value::raku_repr::{escape_raku_str, raku_value};
 use crate::builtins::methods_0arg::which::which_of;
+use crate::value::raku_repr::{escape_raku_str, raku_value};
 use crate::value::{RuntimeError, Value, ValueView};
 
 macro_rules! rows {
