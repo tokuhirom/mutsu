@@ -201,7 +201,6 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             target,
             index,
             value,
-            is_positional: _,
             ..
         } => {
             v.visit_expr_mut(target);
