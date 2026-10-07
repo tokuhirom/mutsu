@@ -1710,6 +1710,7 @@ t/io/role-method-implicit-named-slurpy.t
 t/io/routine-handle-wrap.t
 t/io/seektype-enum.t
 t/io/seq-cache-makes-io-lines-repeatable.t
+t/io/signature-accepts-slurpy-where.t
 t/io/slurp-spurt-io-path-captured-cwd.t
 t/io/slurp-spurt.t
 t/io/slurpy-builtin-arity.t
