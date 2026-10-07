@@ -331,6 +331,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Array", "shift", 8, 58),
     ("Array", "unshift", 8, 26),
     ("Array", "splice", 8, 26),
+    ("Array", "grab", 8, 26),
     ("Array", "append", 8, 26),
     ("Array", "prepend", 8, 26),
     ("Array", "classify", 8, 2),
@@ -887,7 +888,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // (`Set(_, true)`) falls through to the slow path instead (same as
     // `BagHash`/`MixHash` above), so `SetHash` deliberately has no `grab`
     // row here (defaults to `N`/`SPECIAL`).
-    ("Set", "grab", 3, 16),
+    ("Set", "grab", 8, 18),
     ("Set", "pick", 3, 16),
     ("Set", "roll", 3, 16),
     ("Set", "WHICH", 1, 16),
@@ -898,7 +899,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Set", "antipairs", 1, 16),
     ("Set", "default", 1, 48),
     ("Set", "fmt", 7, 16),
-    ("Set", "grabpairs", 3, 16),
+    ("Set", "grabpairs", 8, 18),
     ("Set", "hash", 1, 16),
     ("Set", "of", 1, 48),
     ("Set", "pickpairs", 1, 16),
@@ -918,6 +919,10 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("SetHash", "pick", 3, 16),
     ("SetHash", "roll", 3, 16),
     ("SetHash", "WHICH", 1, 0),
+    ("SetHash", "set", 8, 58),
+    ("SetHash", "unset", 8, 58),
+    ("SetHash", "grab", 8, 26),
+    ("SetHash", "grabpairs", 8, 26),
     ("SetHash", "ACCEPTS", 2, 16),
     ("SetHash", "AT-KEY", 2, 16),
     ("SetHash", "Capture", 1, 48),
@@ -943,7 +948,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Bag", "Array", 1, 0),
     ("Bag", "total", 1, 48),
     ("Bag", "Numeric", 1, 48),
-    ("Bag", "grab", 3, 16),
+    ("Bag", "grab", 8, 18),
     ("Bag", "pick", 3, 16),
     ("Bag", "roll", 3, 16),
     ("Bag", "WHICH", 1, 16),
@@ -954,7 +959,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Bag", "antipairs", 1, 16),
     ("Bag", "default", 1, 48),
     ("Bag", "fmt", 7, 16),
-    ("Bag", "grabpairs", 3, 16),
+    ("Bag", "grabpairs", 8, 18),
     ("Bag", "hash", 1, 16),
     ("Bag", "invert", 1, 16),
     ("Bag", "kxxv", 1, 16),
@@ -981,6 +986,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // Confirmed by probe: `native_method_arities` returns 0 for a `BagHash`
     // sample. SPECIAL, not omitted, to keep the choice explicit.
     ("BagHash", "grab", 8, 20),
+    ("BagHash", "grabpairs", 8, 26),
     // `add`/`remove` are declared on `BagHash` itself in rakudo (NOT on the
     // `Baggy` role), so only this owner gets them. Served by the Tier-A
     // mutable-method path (`vm/vm_call_method_mut_ops.rs`), hence
@@ -1017,7 +1023,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Mix", "Array", 1, 0),
     ("Mix", "total", 1, 48),
     ("Mix", "Numeric", 1, 48),
-    ("Mix", "grab", 3, 16),
+    ("Mix", "grab", 8, 18),
     ("Mix", "pick", 3, 16),
     ("Mix", "roll", 3, 16),
     ("Mix", "WHICH", 1, 16),
@@ -1028,7 +1034,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Mix", "antipairs", 1, 16),
     ("Mix", "default", 1, 48),
     ("Mix", "fmt", 7, 16),
-    ("Mix", "grabpairs", 3, 16),
+    ("Mix", "grabpairs", 8, 18),
     ("Mix", "hash", 1, 16),
     ("Mix", "invert", 1, 16),
     ("Mix", "kxxv", 1, 16),
@@ -1051,6 +1057,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // Same as `BagHash`'s `grab` above: the mutable `MixHash` variant's
     // `grab` is slow-path-only, not pure-cascade-recognized.
     ("MixHash", "grab", 8, 20),
+    ("MixHash", "grabpairs", 8, 26),
     ("MixHash", "pick", 3, 16),
     ("MixHash", "roll", 3, 16),
     ("MixHash", "WHICH", 1, 0),
