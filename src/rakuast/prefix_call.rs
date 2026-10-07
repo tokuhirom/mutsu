@@ -19,7 +19,7 @@
 use super::convert::{block_node, convert_expr, node_field, statement_expression};
 use super::lower::{lower_block, lower_expr, named_child, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
-use crate::ast::{Expr, Stmt, make_anon_sub};
+use crate::ast::{Expr, make_anon_sub};
 use crate::value::RuntimeError;
 
 fn prefix_class(name: &str) -> Option<RakuAstClass> {
@@ -77,16 +77,12 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let blorst = named_child_or_positional(node)?;
     let arg = match blorst.class {
         RakuAstClass::Block => make_anon_sub(lower_block(blorst)?),
-        RakuAstClass::StatementExpression => {
-            let expr = lower_expr(named_child(blorst, "expression")?)?;
-            // `start EXPR` runs the expression in a block of its own; the
-            // other two take the expression itself.
-            if node.class == RakuAstClass::StatementPrefixStart {
-                make_anon_sub(vec![Stmt::Expr(expr)])
-            } else {
-                expr
-            }
+        // `start STATEMENT` (`start react { ... }`, a loop): the statement is the body.
+        _ if node.class == RakuAstClass::StatementPrefixStart => {
+            make_anon_sub(vec![super::lower::lower_stmt(blorst)?])
         }
+        // `quietly EXPR` / `sink EXPR` take the expression itself.
+        RakuAstClass::StatementExpression => lower_expr(named_child(blorst, "expression")?)?,
         _ => return Err(unsupported(node)),
     };
     Ok(Expr::Call {

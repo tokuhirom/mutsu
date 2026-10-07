@@ -10,7 +10,7 @@
 //! ```
 //!
 //! A spelling-keeping parse marks the bare form with `Spelling::BareStatement`;
-//! [`convert`] renders the prefix the usual way and takes the block off again.
+//! [`bare_statement_node`] renders the prefix the usual way and takes the block off again.
 //! `lower` needs no marker: [`lower_body`] reads either child.
 
 use super::lower::{lower_block, lower_stmt};
@@ -21,7 +21,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// `prefix` (already converted, holding the block of its one statement) with
 /// the statement in place of the block.
 // Cost: O(1), the nodes are moved, not copied.
-pub(super) fn convert(inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn bare_statement_node(inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
     // `do STATEMENT`: the statement under `StatementPrefix::Do`, whatever it is
     // (the converter's own `DoStmt` arm only takes loops and conditionals).
     if let Expr::DoStmt(stmt) = inner {
@@ -62,10 +62,12 @@ fn sole_statement(block: &RakuAstFieldValue) -> Option<Value> {
     let blockoid = child(&named(block, Some("body"))?.value)?;
     let list = child(&named(blockoid, None)?.value)?;
     match list.fields.as_slice() {
-        [RakuAstField {
-            value: value @ RakuAstFieldValue::Node(statement),
-            ..
-        }] if child(value).is_some() => Some(statement.clone()),
+        [
+            RakuAstField {
+                value: value @ RakuAstFieldValue::Node(statement),
+                ..
+            },
+        ] if child(value).is_some() => Some(statement.clone()),
         _ => None,
     }
 }
