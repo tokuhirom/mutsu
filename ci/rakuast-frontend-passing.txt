@@ -99,6 +99,7 @@ t/collections/for-single-element-topic-writeback.t
 t/collections/for-topic-element-writeback.t
 t/collections/gist-element-cap.t
 t/collections/given-element-topic-bind-self.t
+t/collections/given-element-topic-nested-local.t
 t/collections/given-element-topic-readonly-writeback.t
 t/collections/given-element-topic.t
 t/collections/group-of.t
@@ -791,6 +792,8 @@ t/collections/uni-methods-return-seq.t
 t/collections/var-on-itemized-list-element.t
 t/collections/with-element-topic.t
 t/collections/with-else-topic-writes-element.t
+t/collections/with-pointy-element-source-not-leaked-to-callee.t
+t/collections/with-resources-pseudo-var-element.t
 t/collections/with-statement-modifier-element-writeback.t
 t/concurrency/concurrency-basic.t
 t/concurrency/concurrent-array-index-assign.t
@@ -1092,6 +1095,7 @@ t/concurrency/thread-lock/thread-uncaptured-container-lane.t
 t/concurrency/thread-lock/thread-yield.t
 t/concurrency/thread-lock/thread.t
 t/concurrency/thread-lock/timer-heap-threads.t
+t/concurrency/thread-lock/virtual-scheduler-await-ordering.t
 t/concurrency/thread-lock/worker-thread-array-push-visible-to-lexical-sub.t
 t/control/bare-block-caller-topic-rw.t
 t/control/bare-block-followed-by-word-infix.t
@@ -1173,6 +1177,7 @@ t/control/if-block-args-string-literal.t
 t/control/if-body-let-resolution.t
 t/control/if-elsif-condition-without-whitespace.t
 t/control/if-given-value-propagation.t
+t/control/if-topic-binding-value.t
 t/control/immutable-topic-receiver-oracle.t
 t/control/init-check-class-in-code-timing.t
 t/control/init-check-lift-positions.t
@@ -1258,6 +1263,7 @@ t/control/with-lvalue-evaluated-once.t
 t/control/with-orwith-in-loop.t
 t/control/with-statement-tail-value.t
 t/control/with-topic-alias.t
+t/control/with-topic-and-gather-scope.t
 t/control/with-topic-gist-ascii.t
 t/control/with-without.t
 t/control/with-writable-topic-under-loop.t
@@ -2072,6 +2078,7 @@ t/modules/closure-package-nested-class.t
 t/modules/code-file-module-package-suffix.t
 t/modules/compound-declared-type-does-not-shadow-core-in-module.t
 t/modules/compunit/builtin-distribution-role.t
+t/modules/compunit/compunit-can-install.t
 t/modules/compunit/compunit-filesystem-meta6-provides.t
 t/modules/compunit/compunit-loader-source-file.t
 t/modules/compunit/compunit-need-protocol.t
@@ -3864,6 +3871,7 @@ t/rakuast/rakuast-vardecl-scoped.t
 t/rakuast/rakuast-variable-container-traits.t
 t/rakuast/rakuast-when-modifier.t
 t/rakuast/rakuast-where-parameter.t
+t/rakuast/rakuast-with-pointy-block.t
 t/rakuast/rakuast-with-without-block.t
 t/rakuast/rakuast-with-without-modifier.t
 t/rakuast/rakuast-yada-stubs.t
@@ -5547,6 +5555,7 @@ t/vm/binding/constant-shadow.t
 t/vm/binding/constant-statement-modifier-value-kept.t
 t/vm/binding/constant-twigil-nyi.t
 t/vm/binding/constant-type-alias.t
+t/vm/binding/decl-as-expression.t
 t/vm/binding/decl-block-init-not-stmt-modifier.t
 t/vm/binding/decl-marker-fusion.t
 t/vm/binding/declarator-trailing-after-earlier-sub.t

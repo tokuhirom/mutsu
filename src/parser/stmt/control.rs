@@ -471,6 +471,7 @@ pub(super) use react::react_stmt;
 pub(crate) use react::whenever_stmt;
 pub(super) use while_until::{until_stmt, while_stmt};
 pub(super) use with_stmt::with_stmt;
+pub(crate) use with_stmt::with_then_branch;
 
 // Cross-submodule helpers: originally private `fn`s in the if/unless block that
 // are also called from `with_stmt` (for `orwith` elsif-chain lowering). Bumped

@@ -350,7 +350,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 _ => Err(unsupported("source form")),
             },
             // Only the on-demand lambda opens with a supply record.
-            Some(crate::ast::SourceForm::SupplyBlock(_)) | None => Err(unsupported("source form")),
+            Some(
+                crate::ast::SourceForm::SupplyBlock(_) | crate::ast::SourceForm::WithPointy { .. },
+            )
+            | None => Err(unsupported("source form")),
         },
         // `use` / `no` statements: `RakuAST::Pragma`, `Statement::Use` or
         // `Statement::LanguageVersion`. `:if(...)` (the `if` distribution's
@@ -3077,7 +3080,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 super::method_assign_decl::convert(decl)
             }
             // Only the on-demand lambda opens with a supply record.
-            Some(crate::ast::SourceForm::SupplyBlock(_) | crate::ast::SourceForm::BarePhaser)
+            Some(
+                crate::ast::SourceForm::SupplyBlock(_)
+                | crate::ast::SourceForm::BarePhaser
+                | crate::ast::SourceForm::WithPointy { .. },
+            )
             | None => Err(unsupported("source form")),
         },
         // `()` -> `Circumfix::Parentheses(SemiList.new)`: no statement inside.
@@ -4033,11 +4040,12 @@ fn with_block_node(
         Some("condition"),
         convert_expr(with_block_condition(kind, cond)?)?,
     );
-    let Some(body) = topic_given_body(then_branch) else {
-        // A pointy body (`with X -> $a { }`) binds its parameter inside the same
-        // `given`, which raku spells as a `PointyBlock` rather than an
-        // implicit-topic `Block`; report the boundary rather than drop it.
-        return Err(unsupported("with/without block with an explicit signature"));
+    // A pointy body (`with X -> $a { }`) binds its parameter inside the same
+    // `given`, which raku spells as a `PointyBlock` rather than an
+    // implicit-topic `Block`; the parser records the written parameter and body.
+    let block = match topic_given_body(then_branch) {
+        Some(body) => topic_block_node(body)?,
+        None => with_pointy_block(then_branch)?,
     };
     match kind {
         // `without` takes no `else`/`orwith`/`elsif` (rakudo rejects them at
@@ -4049,11 +4057,11 @@ fn with_block_node(
             }
             Ok(RakuAstNode {
                 class: RakuAstClass::StatementWithout,
-                fields: vec![condition, node_field(Some("body"), topic_block_node(body)?)],
+                fields: vec![condition, node_field(Some("body"), block)],
             })
         }
         WithBlockKind::With => {
-            let mut fields = vec![condition, node_field(Some("then"), topic_block_node(body)?)];
+            let mut fields = vec![condition, node_field(Some("then"), block)];
             fields.extend(conditional_chain_fields(else_branch)?);
             Ok(RakuAstNode {
                 class: RakuAstClass::StatementWith,
@@ -4064,6 +4072,26 @@ fn with_block_node(
         // conditional it continues.
         WithBlockKind::Orwith => Err(unsupported("`orwith` outside a conditional chain")),
     }
+}
+
+/// The `PointyBlock` of `with X -> PARAM { BODY }`, from the record the parser
+/// leaves at the head of the then-branch.
+// Cost: O(n), n = size of the body.
+fn with_pointy_block(then_branch: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let Some(Stmt::SourceForm(form)) = then_branch.iter().find(|s| !matches!(s, Stmt::SetLine(_)))
+    else {
+        return Err(unsupported("with/without block with an explicit signature"));
+    };
+    let crate::ast::SourceForm::WithPointy {
+        param_def, body, ..
+    } = form.as_ref()
+    else {
+        return Err(unsupported("with/without block with an explicit signature"));
+    };
+    let Some(param_def) = param_def else {
+        return Err(unsupported("with/without block with an explicit signature"));
+    };
+    pointy_block(std::slice::from_ref(param_def), body, None)
 }
 
 /// One `orwith` clause -> `Statement::Orwith(condition, then => topic Block)`.

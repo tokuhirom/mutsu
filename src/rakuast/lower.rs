@@ -630,7 +630,31 @@ fn lower_with_block(node: &RakuAstNode, kind: WithBlockKind) -> Result<Stmt, Run
             lower_conditional_chain(node, Some(Expr::Var(tmp_name.clone())))?,
         )
     };
-    let body = lower_block(named_child(node, body_field)?)?;
+    let block = named_child(node, body_field)?;
+    if block.class == RakuAstClass::PointyBlock {
+        // `with X -> PARAM { … }`: the parser's own expansion binds the
+        // parameter to the tested value.
+        let (mut names, mut defs) = signature_positional_params(block)?;
+        name_for_unpack_params(&mut names, &mut defs);
+        if defs.len() != 1 {
+            return Err(unsupported(node));
+        }
+        let (Some(name), Some(def)) = (names.pop(), defs.pop()) else {
+            return Err(unsupported(node));
+        };
+        let body = lower_block(block)?;
+        let tmp_var = Expr::Var(tmp_name.clone());
+        let then_branch =
+            crate::parser::with_then_branch(&cond_expr, &tmp_var, &Some(name), &Some(def), body);
+        return Ok(crate::with_desugar::with_conditional_branch(
+            kind,
+            &tmp_name,
+            cond_expr,
+            then_branch,
+            else_branch,
+        ));
+    }
+    let body = lower_block(block)?;
     Ok(crate::with_desugar::with_conditional(
         kind,
         &tmp_name,
@@ -4217,6 +4241,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::StatementFor
         | RakuAstClass::StatementGiven
         | RakuAstClass::StatementIf
+        | RakuAstClass::StatementWith
+        | RakuAstClass::StatementWithout
         | RakuAstClass::StatementUnless
         | RakuAstClass::StatementLoopWhile
         | RakuAstClass::StatementLoopUntil

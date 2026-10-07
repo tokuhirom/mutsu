@@ -22,6 +22,13 @@ pub(crate) enum SourceForm {
     /// its `emit` / `done` onto the on-demand emitter. It opens the emitter
     /// lambda's body.
     SupplyBlock(Vec<Stmt>),
+    /// `with COND -> PARAM { BODY }`: the written parameter and body, which
+    /// open the then-branch of the expansion `with_then_branch` builds.
+    WithPointy {
+        param_name: String,
+        param_def: Option<super::ParamDef>,
+        body: Vec<Stmt>,
+    },
     /// `BEGIN say 1`: a phaser written over a bare statement (ADR-12199). It
     /// opens a one-statement expansion whose second statement is the phaser;
     /// only a spelling-keeping parse builds it.
