@@ -1593,38 +1593,6 @@ fn nqp_op(name: &str) -> Option<&str> {
     (!op.is_empty() && !crate::qualified::is_qualified_str(op)).then_some(op)
 }
 
-/// `Num(EXPR)` / `Hash[Int](...)`: calling a type name is a call on the type
-/// term, `ApplyPostfix(Type::Simple, Call::Term(args))`, not a `Call::Name`
-/// (measured on 2026.09); `args` is absent for `Int()`.
-// Cost: O(k + n), k = length of `name`, n = size of the arguments.
-fn type_call(name: &str, args: &[Expr]) -> Result<Option<RakuAstNode>, RuntimeError> {
-    if !name.starts_with(char::is_uppercase) {
-        return Ok(None);
-    }
-    let Some(base) = bareword::convert(name) else {
-        return Ok(None);
-    };
-    if base.class != RakuAstClass::TypeSimple {
-        return Ok(None);
-    }
-    let mut call_term = RakuAstNode {
-        class: RakuAstClass::CallTerm,
-        fields: Vec::new(),
-    };
-    if !args.is_empty() {
-        call_term
-            .fields
-            .push(node_field(Some("args"), arg_list(args)?));
-    }
-    Ok(Some(RakuAstNode {
-        class: RakuAstClass::ApplyPostfix,
-        fields: vec![
-            node_field(Some("operand"), base),
-            node_field(Some("postfix"), call_term),
-        ],
-    }))
-}
-
 /// `$x = EXPR` -> `ApplyInfix(left => Var::Lexical, infix => Assignment, right)`.
 /// The `Assignment` node carries `:item` for scalar (`$`) targets; the list form
 /// (`@`/`%`) has no adverb.
@@ -2636,7 +2604,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 }
                 return Err(desugared(name.as_str()));
             }
-            if let Some(coercion) = type_call(name.as_str(), args)? {
+            if let Some(coercion) = super::type_call::convert(name.as_str(), args)? {
                 return Ok(coercion);
             }
             if let Some(op) = nqp_op(name.as_str()) {

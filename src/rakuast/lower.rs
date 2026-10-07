@@ -2533,7 +2533,7 @@ fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
 
 /// The lowered positional arguments of a call node's `args` (`ArgList`) child, or
 /// an empty vec when there are none.
-fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
+pub(super) fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
     match node.fields.iter().find(|f| f.name == Some("args")) {
         Some(f) => arg_list_exprs(child_node(&f.value)?),
         None => Ok(Vec::new()),
@@ -4550,6 +4550,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 }),
                 // `$f(EXPR)` / `Type.(EXPR)` -> Call::Term(args) -> a call on the
                 // operand term.
+                RakuAstClass::CallTerm
+                    if let Some(call) = super::type_call::lower(&operand, postfix)? =>
+                {
+                    Ok(call)
+                }
                 RakuAstClass::CallTerm => Ok(Expr::CallOn {
                     target: Box::new(operand),
                     args: arg_exprs(postfix)?,

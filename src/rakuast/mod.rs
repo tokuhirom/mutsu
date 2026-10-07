@@ -57,6 +57,7 @@ mod substitution;
 mod symbolic_deref;
 mod temporize;
 mod type_args;
+mod type_call;
 mod type_lower;
 mod use_stmt;
 
