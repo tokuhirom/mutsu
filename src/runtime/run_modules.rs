@@ -809,8 +809,28 @@ impl Interpreter {
             .unwrap_or(super::end_order::RUNTIME);
         self.control.module_load_order.push(order);
         let saved_suppress = std::mem::replace(&mut self.module.suppress_exports, true);
+        let func_keys_before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
         let result = self.load_module_inner(module, Some((source_path, None)));
         self.module.suppress_exports = saved_suppress;
+        if result.is_ok() {
+            // Same bookkeeping as `use_module_with_tags_inner`: the routines the
+            // module's own body registered (its definitions and what its nested
+            // `use`s imported into its package) belong to the module, which stays
+            // loaded. Without recording them, a registry restore on leaving the
+            // block the load ran in (`CompUnit::Repository::FileSystem.need`
+            // inside a bare block) dropped e.g. `Gen::helper`, and a later call
+            // into the module died with "Unknown function".
+            let module_funcs: Vec<Symbol> = self
+                .registry()
+                .functions
+                .keys()
+                .filter(|k| !func_keys_before.contains(k))
+                .filter(|k| crate::qualified::is_qualified_str(k.as_str()))
+                .copied()
+                .collect();
+            crate::runtime::cow_table_mut(&mut self.module.module_registered_functions)
+                .extend(module_funcs);
+        }
         self.control.module_load_order.pop();
         result
     }
