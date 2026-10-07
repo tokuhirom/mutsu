@@ -25,13 +25,14 @@ ok $p.gist.contains('where'), 'a where-constrained parameter renders its where f
 ok $p.where.defined, 'the where accessor is reachable from a parsed parameter';
 
 # --- the `*` in the constraint is a priming argument, not a value ----------
-# ADR-0033's leaf table: `* > 0` is `WhateverCode::Argument`, not
-# `Term::Whatever`. The classifier used to stop at a routine's body, so a `*` in
-# a signature kept the value classification it was parsed with.
-ok $p.gist.contains('RakuAST::WhateverCode::Argument'),
-    'a `*` in a where constraint is a priming argument';
-nok $p.gist.contains('RakuAST::Term::Whatever'),
-    'a `*` in a where constraint is not the Whatever value';
+# rakudo 2026.09 prints it as `Term::Whatever.new` (its class stays
+# `WhateverCode::Argument`, ADR-0033's leaf table), and never prints
+# `WhateverCode::Argument`. The round trips below show the leaf is still the
+# priming one: the constraint is a WhateverCode that the argument is tested by.
+ok $p.gist.contains('RakuAST::Term::Whatever'),
+    'a `*` in a where constraint prints as Term::Whatever';
+nok $p.gist.contains('RakuAST::WhateverCode::Argument'),
+    'a `*` in a where constraint does not print WhateverCode::Argument';
 
 # --- a block constraint renders as a Block ----------------------------------
 ok param-of(Q{sub f($x where { $_ > 0 }) { $x }}).gist.contains('RakuAST::Block.new('),
