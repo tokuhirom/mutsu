@@ -109,6 +109,12 @@ pub(crate) fn atomic_lane_entries_exist() -> bool {
 #[derive(Debug)]
 pub(crate) struct SharedStore {
     own: RwLock<HashMap<String, Value>>,
+    /// Names whose entry in `own` was written by a thread (`set`,
+    /// `with_entry_mut`) since it was last seeded or declared. A seeded entry is
+    /// only a snapshot of the spawning binding, not a value any thread
+    /// published, and must not be pulled over another thread's own binding of
+    /// the same bare name (#12204).
+    written: Mutex<rustc_hash::FxHashSet<String>>,
     parent: Option<Arc<SharedStore>>,
     /// The root of the chain. `None` when this store *is* the root.
     root: Option<Arc<SharedStore>>,
@@ -134,6 +140,7 @@ impl SharedStore {
     fn detached(parent: Option<Arc<Self>>, root: Option<Arc<Self>>) -> Self {
         Self {
             own: RwLock::new(HashMap::default()),
+            written: Mutex::new(Default::default()),
             parent,
             root,
             redirects: RwLock::new(HashMap::default()),
@@ -251,6 +258,7 @@ impl SharedStore {
         note_inserted_key(key);
         let target = self.owner_of(key).unwrap_or_else(|| self.scope_for(key));
         target.own.write().unwrap().insert(key.to_string(), value);
+        target.written.lock().unwrap().insert(key.to_string());
     }
 
     /// Bind the name into THIS lineage, shadowing any ancestor entry. Used by
@@ -262,11 +270,20 @@ impl SharedStore {
     pub(crate) fn declare(&self, key: &str, value: Value) {
         self.retire_binding(key);
         note_inserted_key(key);
-        self.scope_for(key)
-            .own
-            .write()
-            .unwrap()
-            .insert(key.to_string(), value);
+        let target = self.scope_for(key);
+        target.own.write().unwrap().insert(key.to_string(), value);
+        target.written.lock().unwrap().remove(key);
+    }
+
+    /// True when the entry `key` resolves to is a mere seed: the spawning
+    /// binding's snapshot, which no thread has written since (#12204). Such a
+    /// value says nothing about what another thread's own `key` binding holds.
+    // Cost: O(d), d = chain depth (spawn nesting).
+    pub(crate) fn is_unwritten_seed(&self, key: &str) -> bool {
+        match self.owner_of(key) {
+            Some(Holder::Chain(h)) => !h.written.lock().unwrap().contains(key),
+            _ => false,
+        }
     }
 
     /// Seed a name only if neither this lineage nor an ancestor already has it.
@@ -337,7 +354,11 @@ impl SharedStore {
     ) -> Option<R> {
         let target = self.owner_of(key)?;
         let mut guard = target.own.write().unwrap();
-        guard.get_mut(key).map(f)
+        let r = guard.get_mut(key).map(f);
+        if r.is_some() {
+            target.written.lock().unwrap().insert(key.to_string());
+        }
+        r
     }
 
     pub(crate) fn remove(&self, key: &str) {
