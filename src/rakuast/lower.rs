@@ -244,9 +244,9 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
 /// The calls `lower_stmt_inner` turns into statements of their own, which a
 /// routine of the same name declared in the unit takes back.
 ///
-const SHADOWABLE_STATEMENTS: [&str; 12] = [
-    "say", "put", "print", "note", "die", "fail", "take", "return", "last", "next", "redo",
-    "proceed",
+const SHADOWABLE_STATEMENTS: [&str; 14] = [
+    "say", "put", "print", "note", "die", "fail", "take", "take-rw", "return", "last", "next",
+    "redo", "proceed", "succeed",
 ];
 
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
@@ -490,10 +490,14 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 "fail" => Ok(Stmt::Fail(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
-                "take" => Ok(Stmt::Take(
+                "take" | "take-rw" => Ok(Stmt::Take(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
-                    false,
+                    name == "take-rw",
                 )),
+                // Without arguments these are the control-flow statements;
+                // `proceed |c` / `succeed EXPR` stay calls, as the parser has them.
+                "proceed" if args.is_empty() => Ok(Stmt::Proceed),
+                "succeed" if args.is_empty() => Ok(Stmt::Succeed),
                 _ => Ok(Stmt::Expr(lower_expr(node)?)),
             }
         }
@@ -2531,6 +2535,34 @@ pub(super) fn call_name_str(node: &RakuAstNode) -> Result<String, RuntimeError> 
 fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let name = call_name_str(node)?;
     let mut args = arg_exprs(node)?;
+    // `last` / `next` / `redo` in expression position are the parser's
+    // `ControlFlow` unless the unit declares a routine of that name.
+    let kind = match name.as_str() {
+        "last" => Some(crate::ast::ControlFlowKind::Last),
+        "next" => Some(crate::ast::ControlFlowKind::Next),
+        "redo" => Some(crate::ast::ControlFlowKind::Redo),
+        _ => None,
+    };
+    if let Some(kind) = kind
+        && !super::declared_routines::is_declared(&name)
+    {
+        let flow = |label, value| Expr::ControlFlow {
+            kind,
+            label,
+            value,
+            take_value: false,
+        };
+        match args.as_slice() {
+            [] => return Ok(flow(None, None)),
+            [Expr::BareWord(label)] => return Ok(flow(Some(label.clone()), None)),
+            [_] if name != "redo" => {
+                if let Some(expr) = crate::parser::loop_control_expr(&name, args.clone()) {
+                    return Ok(expr);
+                }
+            }
+            _ => {}
+        }
+    }
     if let Some(line) = super::origin::current_line() {
         if args.is_empty() && super::declared_routines::is_declared(&name) {
             args.push(crate::parser::callsite_line_arg(line));

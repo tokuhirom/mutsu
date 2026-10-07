@@ -17,6 +17,7 @@ pub(in crate::parser) use listop::{
     colon_starts_colonpair, export_term_or_call, expr_is_colonpair, make_call_expr,
     parse_expr_listop_args, try_adjacent_colonpair_arg, try_parse_no_paren_invocant_colon_call,
 };
+pub(crate) use loop_control::loop_control_expr;
 pub(in crate::parser) use loop_control::{control_flow_slip_args, loop_control_listop_arg_start};
 pub(in crate::parser) use predicates::{is_infix_word_op, is_keyword};
 pub(super) use term_literals::{class_literal, declared_term_symbol, keyword_literal, whatever};

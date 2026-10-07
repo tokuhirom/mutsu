@@ -411,16 +411,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             "fail",
             std::slice::from_ref(expr),
         )?))),
-        // `take EXPR` is a bare call too; `take-rw` stays the boundary.
-        Stmt::Take(expr, is_rw) => {
-            if *is_rw {
-                return Err(unsupported("take-rw"));
-            }
-            Ok(Some(statement_expression(control_call(
-                "take",
-                std::slice::from_ref(expr),
-            )?)))
-        }
+        // `take EXPR` / `take-rw EXPR` are bare calls too.
+        Stmt::Take(expr, is_rw) => Ok(Some(statement_expression(control_call(
+            if *is_rw { "take-rw" } else { "take" },
+            std::slice::from_ref(expr),
+        )?))),
+        // `proceed` / `succeed` without arguments are bare calls as well.
+        Stmt::Proceed => Ok(Some(statement_expression(control_call("proceed", &[])?))),
+        Stmt::Succeed => Ok(Some(statement_expression(control_call("succeed", &[])?))),
         // `my $x = 5 if COND`: the parser's split of the declaration and the
         // gated assignment is rakudo's one statement with a modifier.
         Stmt::SyntheticBlock(_)
@@ -2573,6 +2571,26 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // A CORE term keyword the parser left shadowable (#9047) is the same
         // node as the plain keyword; lowering decides again whether it is.
         Expr::ShadowableTermKeyword { value, .. } => convert_literal(value),
+        // `last` / `next` / `redo` in expression position (`COND or next`):
+        // the same bare call as the statement form, over the label or value.
+        Expr::ControlFlow {
+            kind,
+            label,
+            value,
+            take_value: false,
+        } => {
+            let name = match kind {
+                crate::ast::ControlFlowKind::Last => "last",
+                crate::ast::ControlFlowKind::Next => "next",
+                crate::ast::ControlFlowKind::Redo => "redo",
+            };
+            match (label, value) {
+                (Some(label), None) => Ok(labelled_control_call(name, label)),
+                (None, Some(value)) => control_call(name, std::slice::from_ref(value.as_ref())),
+                (None, None) => control_call(name, &[]),
+                (Some(_), Some(_)) => Err(unsupported("a labelled loop control with a value")),
+            }
+        }
         // `{*}` in a proto body.
         _ if expr.is_onlystar_dispatch() => Ok(RakuAstNode {
             class: RakuAstClass::OnlyStar,
