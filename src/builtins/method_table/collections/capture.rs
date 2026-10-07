@@ -41,7 +41,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Capture", "pairs", pairs),
     row!("Capture", "antipairs", antipairs),
     row!("Capture", "hash", hash),
-    row!("Capture", "Hash", hash_coerce),
     row!("Capture", "list", list),
     row!("Capture", "elems", elems),
     row!("Capture", "Numeric", elems),
