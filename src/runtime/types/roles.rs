@@ -308,6 +308,11 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        if let Some(cell) = self.method_object_cell(&left) {
+            return self.does_on_method_object(&cell, left, |this, view| {
+                this.eval_does_values(view, right)
+            });
+        }
         if let Some((role_name, args, _)) = self.extract_role_application(&right)
             && let Some(reblessed) = self.does_rebless_instance(&left, &[(role_name, args)])?
         {
@@ -327,6 +332,11 @@ impl Interpreter {
         left: Value,
         roles: &[Value],
     ) -> Result<Value, RuntimeError> {
+        if let Some(cell) = self.method_object_cell(&left) {
+            return self.does_on_method_object(&cell, left, |this, view| {
+                this.eval_does_values_list(view, roles)
+            });
+        }
         let applications: Vec<(String, Vec<Value>)> = roles
             .iter()
             .filter_map(|role| self.extract_role_application(role))
