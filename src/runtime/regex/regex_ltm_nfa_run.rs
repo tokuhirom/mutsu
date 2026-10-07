@@ -285,12 +285,13 @@ impl LtmNfa {
                         }
                     },
                     NfaNode::WsLead {
+                        lead,
                         atom,
                         pkg,
                         ic,
                         next,
                     } => {
-                        if pos != 0 {
+                        if pos != 0 || !*lead {
                             out.fate_at(stacks.origin(stack), pos);
                         } else if matches!(**atom, RegexAtom::WsRule) {
                             if let Some(end) =

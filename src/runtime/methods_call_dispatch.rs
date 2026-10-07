@@ -2028,6 +2028,11 @@ impl Interpreter {
             }
             return Err(make_multi_no_match_error(method));
         }
+        // `Str.subst-mutate` binds its invocant as a writable container; a
+        // literal receiver (no variable, so no `Mut` row) matches no candidate.
+        if method == "subst-mutate" && matches!(target.view(), ValueView::Str(_)) {
+            return Err(make_multi_no_match_error(method));
+        }
         // IO::Special.new("<STDOUT>")
         if let ValueView::Package(name) = target.view()
             && name.resolve() == "IO::Special"

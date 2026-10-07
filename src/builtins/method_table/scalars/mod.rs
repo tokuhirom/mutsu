@@ -17,6 +17,7 @@ pub(crate) mod numify;
 mod rational;
 pub(crate) mod real;
 pub(crate) mod real_misc;
+pub(crate) mod render;
 pub(crate) mod str;
 pub(crate) mod str_iter;
 pub(crate) mod str_search;
@@ -87,4 +88,5 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     unicode::INT_ROWS,
     unicode::UNI_ROWS,
     uni::ROWS,
+    render::ROWS,
 ];

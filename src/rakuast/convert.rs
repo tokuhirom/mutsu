@@ -66,6 +66,7 @@ pub(super) fn block_statements(stmts: &[Stmt]) -> Result<Vec<RakuAstNode>, Runti
 }
 
 fn statement_list_inner(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let _block = bareword::BlockScope::enter(stmts);
     let mut fields = Vec::new();
     // The line of the statement about to be converted: the `SetLine` marker
     // in front of it becomes the node's hidden origin (see `origin`).

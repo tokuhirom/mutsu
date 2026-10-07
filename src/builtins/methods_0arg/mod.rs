@@ -15,6 +15,7 @@ pub(crate) mod dispatch_core_range;
 mod dispatch_core_repr;
 mod dispatch_core_str;
 mod dispatch_core_unicode;
+pub(crate) mod which;
 pub(crate) use crate::value::match_helpers;
 pub(crate) use crate::value::raku_repr;
 pub(crate) mod temporal;
