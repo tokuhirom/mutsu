@@ -41,6 +41,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Capture", "pairs", pairs),
     row!("Capture", "antipairs", antipairs),
     row!("Capture", "hash", hash),
+    row!("Capture", "Hash", hash_coerce),
     row!("Capture", "list", list),
     row!("Capture", "elems", elems),
     row!("Capture", "Numeric", elems),
@@ -185,6 +186,19 @@ pub(crate) fn hash(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     data.declared_type = Some("Map".to_string());
     data.bare_values = true;
     Some(Ok(Value::hash_with_data(crate::gc::Gc::new(data))))
+}
+
+/// `.Hash`: the named part, as a mutable `Hash` (unlike `.hash`, which is a `Map`).
+// Cost: O(n), n = named arguments.
+pub(crate) fn hash_coerce(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Capture { named, .. } = target.view() else {
+        return None;
+    };
+    let mut map = ValueMap::default();
+    for (k, v) in named {
+        map.insert(k.clone(), v.clone());
+    }
+    Some(Ok(Value::hash(map)))
 }
 
 /// `.list`: the positional part.
