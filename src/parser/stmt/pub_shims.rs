@@ -136,6 +136,12 @@ pub(crate) fn loop_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::loop_stmt(input)
 }
 
+/// Public accessor for the `repeat` statement parser (used by the term parser so
+/// `(repeat { ... } while COND)` works as an expression, like `(loop ...)`).
+pub(crate) fn repeat_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::repeat_stmt(input)
+}
+
 /// Public accessor for the `with`/`without` statement parser (used by the term parser
 /// so `(with $x { ... })` works as an expression, like `(for ...)` already does).
 pub(crate) fn with_stmt_pub(input: &str) -> PResult<'_, Stmt> {

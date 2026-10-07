@@ -3545,6 +3545,7 @@ impl Compiler {
                 repeat,
                 label,
                 is_until,
+                ..
             } if *repeat => {
                 let (pre_stmts, loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref(), false);

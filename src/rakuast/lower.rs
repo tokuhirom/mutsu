@@ -324,6 +324,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 repeat: true,
                 label: node_label(node)?,
                 is_until,
+                is_bare_term: false,
             })
         }
         RakuAstClass::StatementFor => lower_for(node),
@@ -2232,6 +2233,7 @@ fn lower_cstyle_loop(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         repeat: false,
         label: node_label(node)?,
         is_until: false,
+        is_bare_term: false,
     })
 }
 
@@ -4196,6 +4198,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::StatementLoopWhile
         | RakuAstClass::StatementLoopUntil
         | RakuAstClass::StatementLoop
+        | RakuAstClass::StatementLoopRepeatWhile
+        | RakuAstClass::StatementLoopRepeatUntil
         | RakuAstClass::StatementWhenever
         | RakuAstClass::StatementWhen
         | RakuAstClass::StatementDefault => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),

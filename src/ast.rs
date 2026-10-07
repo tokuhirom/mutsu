@@ -2292,6 +2292,10 @@ pub(crate) enum Stmt {
         /// `cond` holds the parser's synthetic `!` wrapper and ADR-0048 D4
         /// binds the written condition's value.
         is_until: bool,
+        /// True for a `loop` / `repeat` written as a term in parentheses
+        /// (`(loop { ... })`), as opposed to `do loop ...`; see
+        /// [`Stmt::While::is_bare_term`]. The compiler ignores it.
+        is_bare_term: bool,
     },
     React {
         body: Vec<Stmt>,
@@ -2949,7 +2953,10 @@ impl Expr {
     pub(crate) fn is_bare_loop_term(&self) -> bool {
         matches!(
             self,
-            Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::While { is_bare_term: true, .. })
+            Expr::DoStmt(stmt) if matches!(
+                stmt.as_ref(),
+                Stmt::While { is_bare_term: true, .. } | Stmt::Loop { is_bare_term: true, .. }
+            )
         )
     }
 

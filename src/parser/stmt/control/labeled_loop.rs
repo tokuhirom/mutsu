@@ -121,6 +121,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             body,
             repeat,
             is_until,
+            is_bare_term: false,
             ..
         } = stmt
         {
@@ -134,6 +135,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                     repeat,
                     label: Some(label),
                     is_until,
+                    is_bare_term: false,
                 },
             ));
         }
@@ -151,6 +153,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             body,
             repeat,
             is_until,
+            is_bare_term: false,
             ..
         } = stmt
         {
@@ -164,6 +167,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                     repeat,
                     label: Some(label),
                     is_until,
+                    is_bare_term: false,
                 },
             ));
         }

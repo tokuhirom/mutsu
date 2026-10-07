@@ -241,6 +241,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
             repeat: _,
             label: _,
             is_until: _,
+            is_bare_term: _,
         } => {
             if let Some(i) = init {
                 v.visit_stmt_mut(i);

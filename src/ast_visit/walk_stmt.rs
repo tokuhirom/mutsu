@@ -278,6 +278,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             repeat: _,
             label,
             is_until: _,
+            is_bare_term: _,
         } => {
             if let Some(i) = init {
                 v.visit_stmt(i);
