@@ -645,7 +645,7 @@ impl Interpreter {
         } else {
             None
         };
-        let ran_undo = !Self::should_run_success_queue(&body_result, body_value);
+        let ran_undo = !Self::should_run_success_queue(&body_result, body_value.clone());
 
         // Set $! before LEAVE/UNDO phasers run so they can see the exception
         if let Err(ref e) = body_result
@@ -683,11 +683,15 @@ impl Interpreter {
         // Set $! to the exception if the body threw one
         if post_start < end {
             let post_topic = match &body_result {
-                Ok(()) => self
-                    .topic_state
-                    .last_topic_value
-                    .clone()
-                    .unwrap_or(Value::NIL),
+                // An implicit routine result is left on the value stack; it
+                // does not update `last_topic_value` like an explicit return.
+                // `body_value` captures either form before LEAVE phasers run.
+                Ok(()) => body_value.clone().unwrap_or_else(|| {
+                    self.topic_state
+                        .last_topic_value
+                        .clone()
+                        .unwrap_or(Value::NIL)
+                }),
                 Err(e) => e.return_value.clone().unwrap_or(Value::NIL),
             };
             self.env_mut().insert("_".to_string(), post_topic.clone());
