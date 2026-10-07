@@ -808,6 +808,26 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
                     // Final identifier (no :: after it)
                     parts.push(normalize_raku_identifier(ident));
                     pos += ident.len();
+                    // `&Pkg::infix:<op>`: a package-qualified operator
+                    // reference carries its `:<op>` suffix after the category.
+                    if parts.len() >= 2
+                        && matches!(
+                            ident,
+                            "infix"
+                                | "prefix"
+                                | "postfix"
+                                | "term"
+                                | "circumfix"
+                                | "postcircumfix"
+                                | "trait_mod"
+                        )
+                        && let Some((r, OperatorCodeRefSuffix::Static(op_name))) =
+                            parse_operator_code_ref_suffix(ident, &input[pos..])
+                    {
+                        parts.pop();
+                        parts.push(op_name);
+                        return Ok((r, Expr::CodeVar(parts.join("::"))));
+                    }
                     if parts.len() >= 2 {
                         let qualified = parts.join("::");
                         return Ok((&input[pos..], Expr::CodeVar(qualified)));
@@ -1010,7 +1030,7 @@ fn parse_operator_code_ref_suffix<'a>(
 /// double-negation check: a word infix's own name can never be a term, so
 /// `!!eq`/`!!and`/`!!div` etc. are illegal (`X::Syntax::Confused`), not
 /// double negation of a bareword call.
-pub(in crate::parser) fn is_known_word_infix(name: &str) -> bool {
+pub(crate) fn is_known_word_infix(name: &str) -> bool {
     matches!(
         name,
         "div"

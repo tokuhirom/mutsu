@@ -772,6 +772,9 @@ pub(crate) struct NestedMethodCaptureSpec {
     /// The per-package-body index shared with the hoisted method's
     /// `CompiledMethodDecl::nested_capture_index`.
     pub(crate) index: u32,
+    /// The index of the first method hoisted from the same block; filed in
+    /// the capture so the block's methods can share their writes.
+    pub(crate) group: u32,
     /// The routines the enclosing blocks declare.
     pub(crate) routines: Vec<Symbol>,
 }

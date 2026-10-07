@@ -18,6 +18,46 @@ use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
 impl Interpreter {
+    /// A method hoisted out of a nested block of its package body reads the
+    /// block's lexicals from its `captured_env`, which every call installs
+    /// afresh. A write the call made to one of them (`my $i; method m { $i++ }`)
+    /// has to outlive the call, or the next call starts from the declaration's
+    /// value again: store the written values back into the registered method.
+    // Cost: O(w + m * w), w = the captured variables the call wrote, m = the
+    // package's methods (only when it wrote one).
+    pub(super) fn persist_nested_capture_writes(
+        &mut self,
+        owner: Symbol,
+        method_def: &crate::runtime::MethodDef,
+        writes: Vec<(Symbol, Value)>,
+    ) {
+        let group_key = Symbol::intern("__mutsu_nested_capture_group");
+        let Some(captured) = method_def.captured_env.as_ref() else {
+            return;
+        };
+        let Some(group) = captured.get_sym(group_key).cloned() else {
+            return;
+        };
+        let writes: Vec<(Symbol, Value)> = writes
+            .into_iter()
+            .filter(|(sym, _)| *sym != group_key)
+            .collect();
+        if writes.is_empty() {
+            return;
+        }
+        self.registry_mut().map_user_methods_in_place(owner, |def| {
+            if let Some(env) = def.captured_env.as_mut()
+                && env.get_sym(group_key).is_some_and(|g| *g == group)
+            {
+                for (sym, v) in &writes {
+                    if env.contains_key_sym(*sym) {
+                        env.insert_sym(*sym, v.clone());
+                    }
+                }
+            }
+        });
+    }
+
     // Cost: O(e + f + n * r + m), e = the closure's env entries, f = the
     // body's free variables, n = the enclosing blocks' routines, r = the cost
     // of one `&name` resolution (`resolve_code_var`), m = the package's
@@ -37,15 +77,27 @@ impl Interpreter {
         if let Some(code) = &data.compiled_code {
             let mut reads: rustc_hash::FxHashSet<Symbol> =
                 code.free_var_syms.iter().copied().collect();
+            // A variable the body only writes (`$n++`, `$n = 5`) is just as
+            // much the block's variable as one it reads.
+            reads.extend(code.free_var_writes.iter().copied());
             let compiler = crate::compiler::Compiler::new();
             reads.extend(compiler.decl_time_param_free_var_syms(&data.param_defs));
+            // A typed lexical's `__mutsu_type::<name>` constraint travels with
+            // it: without it the call sees the *caller's* same-named
+            // constraint (`my Str $x` there, `my Foo $x` in the block).
+            let type_keys: rustc_hash::FxHashSet<Symbol> = reads
+                .iter()
+                .filter(|sym| env.contains_key_sym(**sym))
+                .map(|sym| Interpreter::type_meta_key_for_sym(*sym))
+                .collect();
             env.retain(|sym, _| {
-                reads.contains(sym)
-                    && sym.with_str(|name| {
-                        crate::env::is_plain_user_lexical(name)
-                            || (name.starts_with(['@', '%', '&', '$'])
-                                && crate::env::is_user_variable_key(name))
-                    })
+                type_keys.contains(sym)
+                    || (reads.contains(sym)
+                        && sym.with_str(|name| {
+                            crate::env::is_plain_user_lexical(name)
+                                || (name.starts_with(['@', '%', '&', '$'])
+                                    && crate::env::is_user_variable_key(name))
+                        }))
             });
         }
         // The block's `sub`s and `proto`s are captured too, as the `&name`
@@ -65,6 +117,10 @@ impl Interpreter {
         env.insert_sym(
             Symbol::intern("__mutsu_declared_method_capture"),
             Value::int(1),
+        );
+        env.insert_sym(
+            Symbol::intern("__mutsu_nested_capture_group"),
+            Value::int(i64::from(spec.group)),
         );
         let Some(owner) = self.lexicals.nested_capture_owners.last().copied() else {
             // Not a package-body walk: the marker sits in the body of a

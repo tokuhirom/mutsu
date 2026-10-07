@@ -1971,6 +1971,10 @@ pub(crate) enum Stmt {
     /// while it is live. See `parser::stmt::nested_block_methods`.
     NestedMethodCapture {
         index: u32,
+        /// The `index` of the first method hoisted from the same statement
+        /// list: the methods of one block share the block's lexicals, so a
+        /// write one of them makes is visible to its siblings.
+        group: u32,
         closure: Box<Expr>,
         routines: Vec<Symbol>,
     },

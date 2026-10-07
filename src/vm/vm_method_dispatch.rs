@@ -1239,16 +1239,19 @@ impl Interpreter {
                 locals: cc.locals_syms(),
             };
             let carried = self.carried_runtime_name_writes(&current_env, &is_method_local);
-            let (mut merged_env, wrote_caller, changed_caller_locals) = merge_method_env(
-                frame.saved_env,
-                current_env,
-                &frame_syms,
-                &is_method_local,
-                &is_unwritten_capture,
-            );
+            let (mut merged_env, wrote_caller, changed_caller_locals, capture_writes) =
+                merge_method_env(
+                    frame.saved_env,
+                    current_env,
+                    &frame_syms,
+                    &is_method_local,
+                    &is_unwritten_capture,
+                    method_def.captured_env.as_ref(),
+                );
             for (name, v) in carried {
                 merged_env.insert(name, v);
             }
+            self.persist_nested_capture_writes(owner_sym, &method_def, capture_writes);
             // Precise dirty signal (Slice 6.3): the caller only needs an
             // env->locals re-sync when this method actually merged a
             // caller-visible write (captured-outer var, global, &sub) or wrote
@@ -2707,16 +2710,19 @@ impl Interpreter {
                     locals: cc.locals_syms(),
                 };
                 let carried = self.carried_runtime_name_writes(&current_env, &is_method_local);
-                let (mut merged, wrote_caller, changed_caller_locals) = merge_method_env(
-                    frame.saved_env,
-                    current_env,
-                    &frame_syms,
-                    &is_method_local,
-                    &is_unwritten_capture,
-                );
+                let (mut merged, wrote_caller, changed_caller_locals, capture_writes) =
+                    merge_method_env(
+                        frame.saved_env,
+                        current_env,
+                        &frame_syms,
+                        &is_method_local,
+                        &is_unwritten_capture,
+                        method_def.captured_env.as_ref(),
+                    );
                 for (name, v) in carried {
                     merged.insert(name, v);
                 }
+                self.persist_nested_capture_writes(owner_sym, &method_def, capture_writes);
                 // Precise dirty signal (Slice 6.3): re-sync the caller's locals
                 // only when the method merged a caller-visible write.
                 self.dispatch.method_dispatch_pure = !wrote_caller;
@@ -2950,7 +2956,8 @@ fn merge_method_env(
     frame_syms: &MethodFrameSyms<'_>,
     is_method_local: &dyn Fn(&str) -> bool,
     is_unwritten_capture: &dyn Fn(Symbol, &Value) -> bool,
-) -> (Env, bool, Vec<Symbol>) {
+    captured: Option<&Env>,
+) -> (Env, bool, Vec<Symbol>, Vec<(Symbol, Value)>) {
     // A full method dispatch in the body flattens the frame's scoped env
     // (`flatten_scoped_env`), after which "the overlay" is the whole visible
     // scope -- every caller lexical and global -- rather than the frame's own
@@ -2967,6 +2974,10 @@ fn merge_method_env(
         ),
         None => Box::new(current.overlay_iter()),
     };
+    // The writes the frame made to the method's own captured lexicals, kept
+    // whether or not the caller has a binding of that name to merge into: the
+    // method closes over its own variable (`persist_nested_capture_writes`).
+    let mut capture_writes: Vec<(Symbol, Value)> = Vec::new();
     let writes: Vec<(Symbol, Value)> = entries
         .filter_map(|(k, v)| {
             // The frame's own fixtures, parameters and compiled locals, by
@@ -2989,6 +3000,9 @@ fn merge_method_env(
             // mutates its captured outer lexical" propagation is untouched.
             if is_unwritten_capture(*k, v) {
                 return None;
+            }
+            if captured.is_some_and(|c| c.contains_key_sym(*k)) {
+                capture_writes.push((*k, v.clone()));
             }
             // An entry the callee overlay merely *inherited* would merge back a
             // value the caller already holds. A nested method call flattens the
@@ -3100,7 +3114,7 @@ fn merge_method_env(
     for (k, v) in writes {
         saved.insert_sym(k, v);
     }
-    (saved, wrote, changed_caller_locals)
+    (saved, wrote, changed_caller_locals, capture_writes)
 }
 
 #[cfg(test)]

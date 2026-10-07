@@ -61,6 +61,15 @@ impl<'a> RakudoInstanceEqv<'a> {
         mode
     }
 
+    // Cost: O(d), d = MRO depth of `class`.
+    fn is_exception_class(&mut self, class: Symbol) -> bool {
+        let exception = Symbol::intern("Exception");
+        self.interp
+            .class_mro(class.as_str())
+            .iter()
+            .any(|c| *c == exception)
+    }
+
     /// `$value.raku` through the compiled user method; `None` when the
     /// method has no bytecode dispatch (the caller then compares structurally).
     fn user_raku(&mut self, value: &Value) -> Option<String> {
@@ -147,6 +156,32 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
         {
             vivify_public_attrs(a, private);
             vivify_public_attrs(b, private);
+        }
+        // A built-in exception declares no attribute metadata here, yet carries
+        // hidden state (`$!bt`, `$!ex`) a thrown one has and a constructed one
+        // lacks: compare what its default `.raku` renders, as Rakudo does.
+        if let (Some(private), ValueView::Instance { class_name: cb, .. }) = (&mode, b.view())
+            && private.is_empty()
+            && cb == class_name
+            && self.is_exception_class(class_name)
+        {
+            let render = |hook: &mut Self, value: &Value| match hook.interp.call_method_with_values(
+                value.clone(),
+                "raku",
+                vec![],
+            ) {
+                Ok(rendered) => Some(rendered.to_string_value()),
+                Err(err) => {
+                    hook.error.get_or_insert(err);
+                    None
+                }
+            };
+            if let Some(ra) = render(self, a)
+                && let Some(rb) = render(self, b)
+            {
+                return InstanceEqv::Rendered(ra == rb);
+            }
+            return InstanceEqv::Decided(false);
         }
         match mode {
             Some(private) if private.is_empty() => InstanceEqv::Structural,

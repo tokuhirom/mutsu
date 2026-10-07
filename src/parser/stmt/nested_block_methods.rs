@@ -54,6 +54,7 @@ pub(crate) fn hoist(body: &mut Vec<Stmt>) {
     let mut hoister = Hoister {
         routines: Vec::new(),
         hoisted: Vec::new(),
+        groups: Vec::new(),
     };
     for stmt in body.iter_mut() {
         // A top-level statement is already a package-body statement; only
@@ -79,13 +80,18 @@ struct Hoister {
     /// closes over.
     routines: Vec<Symbol>,
     hoisted: Vec<Stmt>,
+    /// One slot per statement list being walked: the index of the first
+    /// method hoisted from it (see `Stmt::NestedMethodCapture::group`).
+    groups: Vec<Option<u32>>,
 }
 
 impl crate::ast_visit::VisitMut for Hoister {
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
         let depth = self.routines.len();
         collect_block_routines(body, &mut self.routines);
+        self.groups.push(None);
         crate::ast_visit::walk_stmts_mut(self, body);
+        self.groups.pop();
         self.routines.truncate(depth);
     }
 
@@ -121,11 +127,16 @@ impl crate::ast_visit::VisitMut for Hoister {
         // copy share the rewritten body.
         crate::ast_visit::walk_stmt_mut(self, stmt);
         let index = self.hoisted.len() as u32;
+        let group = match self.groups.last_mut() {
+            Some(slot) => *slot.get_or_insert(index),
+            None => index,
+        };
         let closure = capture_closure(stmt);
         let mut decl = std::mem::replace(
             stmt,
             Stmt::NestedMethodCapture {
                 index,
+                group,
                 closure: Box::new(closure),
                 routines: self.routines.clone(),
             },
