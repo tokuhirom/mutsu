@@ -305,12 +305,13 @@ impl Interpreter {
         let Some(scope) = self.topic_state.loop_local_saved_env.last() else {
             return;
         };
-        if scope.contains_key(name) {
+        let sym = crate::symbol::Symbol::intern(name);
+        if scope.contains_key(&sym) {
             return;
         }
-        let prev = self.env().get(name).cloned();
+        let prev = self.env().get_sym(sym).cloned();
         if let Some(scope) = self.topic_state.loop_local_saved_env.last_mut() {
-            scope.insert(name.to_string(), prev);
+            scope.insert(sym, prev);
         }
     }
 

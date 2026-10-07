@@ -674,15 +674,21 @@ pub(crate) fn gist_value(value: &Value) -> String {
         // An `is Hash`/`is Map` subclass instance gists as its backing hash
         // entries (`Bar.new(a=>1).gist` → `{a => 1}`), not the generic
         // `Class.new` — mirrors the `is Array` arm above.
-        ValueView::Instance { attributes, .. }
-            if attributes.contains_key("__mutsu_hash_storage") =>
-        {
-            gist_value(
-                &attributes
-                    .as_map()
-                    .get("__mutsu_hash_storage")
-                    .cloned()
-                    .unwrap_or_else(|| crate::value::Value::hash(ValueMap::default())),
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if attributes.contains_key("__mutsu_hash_storage") => {
+            let storage = attributes
+                .as_map()
+                .get("__mutsu_hash_storage")
+                .cloned()
+                .unwrap_or_else(|| crate::value::Value::hash(ValueMap::default()));
+            // An `is Map` subclass names itself (`V3.new((a => 1))`).
+            crate::value::raku_repr::rename_map_subclass_repr(
+                &class_name.resolve(),
+                &storage,
+                gist_value(&storage),
             )
         }
         // A QuantHash (`is Bag`/`is SetHash`/...) subclass instance gists as its

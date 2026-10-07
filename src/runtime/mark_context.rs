@@ -115,6 +115,21 @@ impl MarkContextState {
         self.flags.get() & Self::CONSUMED_BY_STORE == 0
     }
 
+    /// Whether the pending marks are exactly those of a plain scalar
+    /// DECLARATION's store: `vardecl`, optionally with the explicit-initializer,
+    /// declaration-typechecked and array-share marks the declaring ops set, and
+    /// no bind, rebind, `constant`, shaped or raw-param flavour. One load and
+    /// two tests; leaves the word alone, like [`Self::store_flags_clear`].
+    #[inline]
+    pub(crate) fn only_declaration_marks(&self) -> bool {
+        const ALLOWED: u16 = bit::VARDECL
+            | bit::EXPLICIT_INITIALIZER
+            | bit::DECL_TYPECHECKED
+            | bit::ARRAY_SHARE;
+        let pending = self.flags.get() & Self::CONSUMED_BY_STORE;
+        pending & bit::VARDECL != 0 && pending & !ALLOWED == 0
+    }
+
     /// Snapshot the flag word and clear everything a store consumes, in one
     /// load and one store. See [`MarkFlags`].
     #[inline]

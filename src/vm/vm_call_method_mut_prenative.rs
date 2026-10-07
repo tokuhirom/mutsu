@@ -59,7 +59,7 @@ impl Interpreter {
     ///    of either opcode is stolen.
     /// 2. **Text output to a native `IO::Handle`** (`print`/`put`/`say`/
     ///    `printf`/`print-nl` on an exact `IO::Handle` instance, no augmented
-    ///    override). `try_native_io_handle_output` writes handle-table state
+    ///    override). the `IO::Handle` row writes handle-table state
     ///    and renders its arguments; it neither captures nor iterates the
     ///    caller's env. A user subclass has a different class name and keeps
     ///    the full path (its `WRITE` override is what `try_user_io_handle_method`
@@ -108,8 +108,20 @@ impl Interpreter {
             && class_name == "IO::Handle"
             && matches!(method, "print" | "put" | "say" | "printf" | "print-nl")
             && !self.has_user_method_sym("IO::Handle", method_sym)
+            && self
+                .builtin_method_wrap_chain("IO::Handle", method)
+                .is_none()
         {
-            let result = self.try_native_io_handle_output(target, method, args)?;
+            // The row by shape, with the call's interned name: no interning
+            // per call (`named_call_intern_budget`).
+            let receiver = crate::builtins::method_table::Receiver::of(target)?;
+            let id = crate::builtins::method_table::resolve(receiver, method_sym, args.len())?;
+            if args.iter().any(Value::is_string_pair_value)
+                || !crate::builtins::method_table::admits(id, args)
+            {
+                return None;
+            }
+            let result = crate::builtins::method_table::invoke_in(id, self, target, args)?;
             // Same bookkeeping as the general path's user-dispatch completion
             // this used to reach: the rendering may run user `gist` code, so
             // the dispatch is not assumed env-pure.

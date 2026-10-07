@@ -198,6 +198,7 @@ fn build() -> Table {
                 let row = table.all[idx];
                 // A row past `u16::MAX` stays unreachable through the table.
                 if row.owner == owner.as_str()
+                    && !row.flags.contains(RowFlags::OWNER_ONLY)
                     && let Ok(id) = u16::try_from(idx)
                 {
                     table.register(shape, row, RowId(id));

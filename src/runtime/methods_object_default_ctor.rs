@@ -449,7 +449,8 @@ impl Interpreter {
         // provided/defaulted value that fails its `where` is rejected here, and a
         // later BUILD/TWEAK that would "fix" it never runs. `class_attrs` is the
         // same `ClassAttributeDef` slice the interpreter uses.
-        let has_where = class_attrs.iter().any(|a| a.where_constraint.is_some());
+        let has_where =
+            plan.has_subset_attr || class_attrs.iter().any(|a| a.where_constraint.is_some());
         if has_where
             && let Err(e) =
                 self.enforce_attribute_where_constraints(cn_resolved, class_attrs, &attrs)

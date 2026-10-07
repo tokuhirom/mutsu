@@ -151,6 +151,12 @@ impl Interpreter {
         let Some(base) = type_constraint.map(str::to_string) else {
             return Ok(());
         };
+        // A user `subset` is a refinement checked when the instance is built
+        // (its `where` may even depend on the run-time environment, e.g.
+        // `subset DevicePath of Str where { .IO ~~ :e }`), never at declaration.
+        if self.constraint_is_user_subset(&base) {
+            return Ok(());
+        }
         let smiley = type_smiley.unwrap_or("_");
         if smiley != "U" && self.type_matches_value(&base, val) {
             return Ok(());

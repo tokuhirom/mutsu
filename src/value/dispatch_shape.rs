@@ -126,13 +126,20 @@ pub(crate) enum DispatchShape {
     IoSpecCygwin,
     /// `IO::Spec::QNX`: its own rows and those of `IO::Spec::Unix`.
     IoSpecQnx,
+    /// An `IO::Handle`, the built-in class and not a user subclass of it
+    /// (closed): a file, a standard stream or a socket-less pipe end whose live
+    /// state is in the interpreter's handle table. A handler reads the instance
+    /// only for its `handle` id and the attributes the handle was made with; a
+    /// subclass (`IO::Socket::INET`, `IO::Pipe`, a user class) has another
+    /// class name and reaches the rows through its owner (`invoke_owner`).
+    IoHandle,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 31] = [
+    pub(crate) const ALL: [DispatchShape; 32] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -164,6 +171,7 @@ impl DispatchShape {
         DispatchShape::IoSpecWin32,
         DispatchShape::IoSpecCygwin,
         DispatchShape::IoSpecQnx,
+        DispatchShape::IoHandle,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -202,6 +210,7 @@ impl DispatchShape {
             DispatchShape::IoSpecWin32 => "IO::Spec::Win32",
             DispatchShape::IoSpecCygwin => "IO::Spec::Cygwin",
             DispatchShape::IoSpecQnx => "IO::Spec::QNX",
+            DispatchShape::IoHandle => "IO::Handle",
         }
     }
 
@@ -228,6 +237,8 @@ impl DispatchShape {
     pub(crate) fn reaches(self, owner: &str) -> bool {
         self.inherits()
             || owner == self.type_name()
+            // `IO::Handle` renders itself (`Mu.raku`) through a `Mu` row of its own.
+            || (self == DispatchShape::IoHandle && owner == "Mu")
             || (matches!(
                 self,
                 DispatchShape::IoSpecWin32 | DispatchShape::IoSpecCygwin | DispatchShape::IoSpecQnx
@@ -281,8 +292,8 @@ impl DispatchShape {
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned
 /// class name: a compare of two ids, not of two strings.
-fn instance_shapes() -> &'static [(Symbol, DispatchShape); 10] {
-    static SHAPES: OnceLock<[(Symbol, DispatchShape); 10]> = OnceLock::new();
+fn instance_shapes() -> &'static [(Symbol, DispatchShape); 11] {
+    static SHAPES: OnceLock<[(Symbol, DispatchShape); 11]> = OnceLock::new();
     SHAPES.get_or_init(|| {
         [
             (Symbol::intern("Date"), DispatchShape::Date),
@@ -295,6 +306,7 @@ fn instance_shapes() -> &'static [(Symbol, DispatchShape); 10] {
             (Symbol::intern("IO::Path::Win32"), DispatchShape::IoPath),
             (Symbol::intern("IO::Path::Cygwin"), DispatchShape::IoPath),
             (Symbol::intern("IO::Path::QNX"), DispatchShape::IoPath),
+            (Symbol::intern("IO::Handle"), DispatchShape::IoHandle),
         ]
     })
 }

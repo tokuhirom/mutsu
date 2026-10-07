@@ -1,10 +1,11 @@
 use Test;
+use lib 't/lib';
 
 # `use` / `no` statements and bare blocks across the RakuAST boundary
 # (ADR-10723 Stage 0). Shapes measured against rakudo 2026.09; this file
 # passes under both mutsu and raku.
 
-plan 23;
+plan 26;
 
 # Read direction: the three node kinds a `use` statement can be.
 {
@@ -38,6 +39,17 @@ plan 23;
 
 # Write direction: a converted program runs the same as the source.
 is EVAL(Q[use Test; my $r = (ok 1, "inner"); $r].AST), True, 'use Test round-trips and its routines are callable';
+
+{
+    my $ast = Q[use RakuASTExportedType; ExportedType].AST;
+    isa-ok $ast.statements[1].expression, RakuAST::Type::Simple,
+        'plain .AST scans bundled module exports';
+    is EVAL($ast).^name, 'RakuASTExportedType::ExportedType',
+        'an exported type round-trips through .AST';
+    isa-ok Q[use RakuASTExportedType; ExportedType].AST(:compunit)
+        .statement-list.statements[1].expression,
+        RakuAST::Type::Simple, '.AST(:compunit) scans module exports too';
+}
 
 {
     my $out = '';

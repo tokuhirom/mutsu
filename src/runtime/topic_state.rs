@@ -140,7 +140,7 @@ pub(crate) struct TopicState {
     /// as an env key, which is how `HTTP::HPACK`'s Huffman-table `my int $i`
     /// stayed visible process-wide and was later merged over an unrelated frame's
     /// loop variable.
-    pub(crate) loop_local_saved_env: ScopeStack<rustc_hash::FxHashMap<String, Option<Value>>>,
+    pub(crate) loop_local_saved_env: ScopeStack<rustc_hash::FxHashMap<crate::symbol::Symbol, Option<Value>>>,
     pub(crate) loop_cond_active: bool,
 }
 

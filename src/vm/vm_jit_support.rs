@@ -189,5 +189,16 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::StateVarInit(..)
             // Always-throwing terminator (records its own resume point)
             | OpCode::Die { .. }
+            // A native-int `+`/`-`/`*` (`my int $a = $b + $c`): fallible only
+            // on a non-Int operand, straight-line (`ip += 1`). Rejecting it
+            // left every typed-native loop body on the interpreter (#12151).
+            | OpCode::NativeIntArithmetic { .. }
+            // Loop control. Both only ever raise the control signal (no `Ok`
+            // path at all), which `step` parks like any other error, so the
+            // loop that owns the body receives exactly what the interpreter
+            // would have returned. Without them a `last if ...` body stayed on
+            // the interpreter.
+            | OpCode::Last(_)
+            | OpCode::Next(_)
     )
 }

@@ -126,6 +126,22 @@ impl Interpreter {
         // `as_str`, not `resolve`: see `native_method_0arg`. An owned copy of
         // an already-`&'static str` per native method call.
         let method_name: &str = method_sym.as_str();
+        // `Str.AST` needs the interpreter's module search paths to scan names
+        // exported by modules used in the parsed source.
+        if method_name == "AST"
+            && let ValueView::Str(source) = target.view()
+            && (args.is_empty()
+                || (args.len() == 1
+                    && matches!(args[0].view(), ValueView::Pair(key, _)
+                        if key.as_str() == "compunit")))
+        {
+            let compunit = matches!(
+                args.first().map(Value::view),
+                Some(ValueView::Pair(key, value))
+                    if key.as_str() == "compunit" && value.truthy()
+            );
+            return Some(self.str_ast_with_paths(&source, compunit));
+        }
         // `X::Promise::Broken` / `X::React::Died` (composed into the exception
         // `Promise.result` / a dying `react` rethrows) override `gist` alone. The role carries no method
         // table, so the native exception-gist arm below would answer with the
