@@ -187,7 +187,7 @@ pub(in crate::parser) fn is_stmt_modifier_after_trailing_comma(input: &str) -> b
 }
 
 /// The statement-modifier keyword at the start of `input`, if any.
-fn leading_modifier_keyword(input: &str) -> Option<&'static str> {
+pub(crate) fn leading_modifier_keyword(input: &str) -> Option<&'static str> {
     [
         "if", "unless", "for", "while", "until", "given", "when", "with", "without",
     ]

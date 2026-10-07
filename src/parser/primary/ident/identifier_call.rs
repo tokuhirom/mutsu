@@ -778,8 +778,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     ),
                 ));
             }
-            // Statement modifiers (for, if, etc.) bind outside try,
-            // so we parse an expression, not a full statement.
+            // `try` takes a statement, so a trailing modifier (`try foo if $c`,
+            // `try foo for @x`) binds inside it, as in raku. The statement is
+            // an expression here because a full statement parse would also
+            // swallow the terminator.
             let (r, expr) = expression(r)?;
             // `try retry { ... }`: the statement after `try` may be a call to a
             // post-declared routine taking a block (Pakku).
@@ -790,11 +792,24 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Some(call) => call,
                 None => (r, expr),
             };
+            // Only a same-line modifier: `try f;` then `if ...` on the next
+            // line is two statements.
+            let same_line = ws(r)
+                .map(|(r_ws, _)| {
+                    !r[..r.len() - r_ws.len()].contains(['\n', '\r'])
+                        && crate::parser::stmt::modifier::leading_modifier_keyword(r_ws).is_some()
+                })
+                .unwrap_or(false);
+            let (r, stmt) = if same_line {
+                crate::parser::stmt::modifier::parse_statement_modifier(r, Stmt::Expr(expr))?
+            } else {
+                (r, Stmt::Expr(expr))
+            };
             return Ok((
                 r,
                 Expr::spelled(
                     Expr::Try {
-                        body: vec![Stmt::Expr(expr)],
+                        body: vec![stmt],
                         catch: None,
                     },
                     || Spelling::BareStatement,
@@ -1505,8 +1520,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         }
         "sink" => {
             let (r, _) = ws(rest)?;
-            // sink expr — evaluate expression and discard result
-            let (r, expr) = expression(r)?;
+            // sink expr — evaluate expression and discard result. The prefix
+            // covers the whole comma list (`sink $i++, $i++` sinks both).
+            let (r, expr) = crate::parser::stmt::assign::parse_comma_or_expr(r)?;
             return Ok((
                 r,
                 Expr::Call {
