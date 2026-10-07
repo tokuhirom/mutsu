@@ -357,7 +357,9 @@ fn grow_in_place(
     if written.is_some() {
         // The same node every holder shares.
         return match place.slot(interp).map(|slot| slot.view()) {
-            Some(ValueView::Array(arc_items, kind)) => Value::array_with_kind(arc_items, kind),
+            Some(ValueView::Array(arc_items, kind)) => {
+                Value::array_with_kind(crate::gc::Gc::clone(&arc_items), kind)
+            }
             _ => target.clone(),
         };
     }

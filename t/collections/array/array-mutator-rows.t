@@ -8,7 +8,7 @@ use Test;
 # a scalar that holds an array, a by-value array, an `is Array` instance and the
 # array a mixin wraps.
 
-plan 78;
+plan 81;
 
 # --- the six simple mutators on an `@` variable ---------------------------------
 my @a = 1, 2;
@@ -36,6 +36,15 @@ is-deeply @e.push, [], 'push of nothing is the array';
 isa-ok @e.pop, Failure, 'pop of an empty array is a Failure';
 isa-ok @e.shift, Failure, 'shift of an empty array is a Failure';
 is @e.pop.exception.message, 'Cannot pop from an empty Array', 'whose message names the container';
+
+# a call longer than any mask goes (a spread argument)
+my @long;
+@long.push(|(1..20));
+is @long.elems, 20, 'push takes a spread list of twenty';
+@long.unshift(1, 2, 3, 4, 5, 6, 7, 8, 9);
+is @long.elems, 29, 'unshift takes nine arguments';
+@long.append(|(1..10), 11);
+is @long.elems, 40, 'append takes eleven';
 
 # --- argument errors ---------------------------------------------------------------
 throws-like { @a.pop(1) }, X::AdHoc, message => /'Too many positionals'/, 'pop takes no argument';

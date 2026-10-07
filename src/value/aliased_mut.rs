@@ -91,32 +91,3 @@ pub(crate) fn gc_data_mut<T: crate::gc::Trace + Clone + 'static>(
         crate::gc::Gc::make_mut(gc)
     }
 }
-
-impl super::Value {
-    /// Run `f` on this Array's backing data **in place**, through the shared
-    /// node, so every holder of the same container observes the mutation.
-    /// `None` when `self` is not an Array.
-    ///
-    /// This is the structural-mutation sibling of `array_push_in_place`: a
-    /// scalar holding an Array taken from an element (`my $row = @grid[0];
-    /// $row.splice(...)`) mutates that element's array, as in Raku, instead
-    /// of a detached copy rebound under the scalar's name.
-    ///
-    /// # Safety (inherited)
-    ///
-    /// Same contract as [`crate::gc::gc_contents_mut`]: `f` must not re-enter
-    /// the VM or keep a borrow into the node alive past its return.
-    // Cost: O(1) plus whatever `f` does.
-    pub(crate) fn with_array_data_in_place<R>(
-        &self,
-        f: impl FnOnce(&mut super::ArrayData) -> R,
-    ) -> Option<R> {
-        let super::ValueView::Array(arc, _) = self.view() else {
-            return None;
-        };
-        // SAFETY: aliased in-place container write per this module's contract;
-        // `f` holds the only live borrow into the node for its duration.
-        let data = unsafe { super::gc_contents_mut(&arc) };
-        Some(f(data))
-    }
-}
