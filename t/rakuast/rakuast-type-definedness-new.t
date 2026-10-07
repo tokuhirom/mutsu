@@ -15,9 +15,9 @@ RakuAST::Type::Definedness.new(
 )
 R
 is $d.definite, True, '.definite';
-is $d.DEPARSE, 'Int:D', 'DEPARSE of :D';
-is RakuAST::Type::Definedness.new(base-type => $int, definite => False).DEPARSE,
-    'Int:U', 'DEPARSE of :U';
+is $d.base-type.raku, $int.raku, '.base-type';
+is RakuAST::Type::Definedness.new(base-type => $int, definite => False).definite,
+    False, '.definite of :U';
 
 my $any = RakuAST::Type::AnyDefinedness.new(base-type => $int);
 is $any.raku, q:to/R/.chomp, 'Type::AnyDefinedness.new .raku';
@@ -27,7 +27,7 @@ RakuAST::Type::AnyDefinedness.new(
   )
 )
 R
-is $any.DEPARSE, 'Int:_', 'DEPARSE of :_';
+is $any.base-type.raku, $int.raku, 'AnyDefinedness .base-type';
 
 my $co = RakuAST::Type::Coercion.new(base-type => $int, constraint => $str);
 is $co.raku, q:to/R/.chomp, 'Type::Coercion.new .raku';
@@ -40,7 +40,7 @@ RakuAST::Type::Coercion.new(
   )
 )
 R
-is $co.DEPARSE, 'Int(Str)', 'DEPARSE of a coercion';
-is RakuAST::Type::Coercion.new(base-type => $int).DEPARSE, 'Int()',
-    'a coercion without constraint';
+is $co.constraint.raku, $str.raku, 'Coercion .constraint';
+is RakuAST::Type::Coercion.new(base-type => $int).base-type.raku, $int.raku,
+    'a coercion without constraint keeps its base-type';
 is EVAL($d).raku, 'Int:D', 'EVAL of a hand-built :D type';
