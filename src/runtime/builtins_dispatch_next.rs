@@ -46,6 +46,55 @@ enum DispatchFrameKind {
     Multi,
 }
 
+/// The native base candidates a deferral chain can end in (ADR-11276 slice 4):
+/// none of them is a `MethodDef`, so the user MRO walk never reaches them.
+/// Each variant is one `native_*_next_candidate` bridge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeBase {
+    GrammarParse,
+    GrammarBuiltinRule,
+    MuBase,
+    ArrayStorage,
+    HashStorage,
+    BaggyStorage,
+    AnyBase,
+    MixinBase,
+    CoreType,
+    Metamodel,
+}
+
+/// The user MRO of a method frame is exhausted.
+const NATIVE_BASE_EXHAUSTED: &[NativeBase] = &[
+    NativeBase::GrammarParse,
+    NativeBase::GrammarBuiltinRule,
+    NativeBase::MuBase,
+    NativeBase::ArrayStorage,
+    NativeBase::HashStorage,
+    NativeBase::BaggyStorage,
+    NativeBase::AnyBase,
+    NativeBase::MixinBase,
+    NativeBase::CoreType,
+    NativeBase::Metamodel,
+];
+
+/// A multi method's candidates are exhausted.
+const NATIVE_BASE_MULTI: &[NativeBase] = &[
+    NativeBase::GrammarBuiltinRule,
+    NativeBase::BaggyStorage,
+    NativeBase::HashStorage,
+    NativeBase::ArrayStorage,
+    NativeBase::CoreType,
+];
+
+/// A method that pushed no dispatch frame of its own.
+const NATIVE_BASE_NO_FRAME: &[NativeBase] = &[
+    NativeBase::ArrayStorage,
+    NativeBase::HashStorage,
+    NativeBase::AnyBase,
+    NativeBase::MixinBase,
+    NativeBase::CoreType,
+];
+
 impl Interpreter {
     /// Return the built-in implementation of an infix operator for the final
     /// leg of a `callsame` chain.  Core operators are not represented as
@@ -80,6 +129,34 @@ impl Interpreter {
             return None;
         };
         self.core_prefix_op(op, arg)
+    }
+
+    /// The first of `order` that supplies a native base candidate for the
+    /// deferral in progress; the one place the bridges are enumerated.
+    // Cost: O(|order|) probes, each O(1) in the receiver.
+    fn native_base_next_candidate(
+        &mut self,
+        order: &[NativeBase],
+        override_args: Option<&[Value]>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        for base in order {
+            let res = match base {
+                NativeBase::GrammarParse => self.native_grammar_parse_next_candidate(override_args),
+                NativeBase::GrammarBuiltinRule => self.native_grammar_builtin_rule_next_candidate(),
+                NativeBase::MuBase => self.native_mu_base_next_candidate(override_args),
+                NativeBase::ArrayStorage => self.native_array_storage_next_candidate(override_args),
+                NativeBase::HashStorage => self.native_hash_storage_next_candidate(override_args),
+                NativeBase::BaggyStorage => self.native_baggy_storage_next_candidate(override_args),
+                NativeBase::AnyBase => self.native_any_base_next_candidate(override_args),
+                NativeBase::MixinBase => self.native_mixin_base_next_candidate(override_args),
+                NativeBase::CoreType => self.native_core_type_next_candidate(override_args),
+                NativeBase::Metamodel => self.native_metamodel_next_candidate(override_args),
+            };
+            if res.is_some() {
+                return res;
+            }
+        }
+        None
     }
 
     /// ADR-0019 E9b-0: `wrap_dispatch_stack`, `method_dispatch_stack`, and
@@ -1076,42 +1153,10 @@ impl Interpreter {
                         self.dispatch.method_dispatch_stack[frame_idx].role_qualified;
                     let result = if role_qualified {
                         Value::NIL
-                    } else if let Some(res) =
-                        self.native_grammar_parse_next_candidate(override_args.as_deref())
-                    {
-                        res?
-                    } else if let Some(res) = self.native_grammar_builtin_rule_next_candidate() {
-                        res?
-                    } else if let Some(res) =
-                        self.native_mu_base_next_candidate(override_args.as_deref())
-                    {
-                        res?
-                    } else if let Some(res) =
-                        self.native_array_storage_next_candidate(override_args.as_deref())
-                    {
-                        res?
-                    } else if let Some(res) =
-                        self.native_hash_storage_next_candidate(override_args.as_deref())
-                    {
-                        res?
-                    } else if let Some(res) =
-                        self.native_baggy_storage_next_candidate(override_args.as_deref())
-                    {
-                        res?
-                    } else if let Some(res) =
-                        self.native_any_base_next_candidate(override_args.as_deref())
-                    {
-                        res?
-                    } else if let Some(res) =
-                        self.native_mixin_base_next_candidate(override_args.as_deref())
-                    {
-                        res?
-                    } else if let Some(res) =
-                        self.native_core_type_next_candidate(override_args.as_deref())
-                    {
-                        res?
                     } else {
-                        match self.native_metamodel_next_candidate(override_args.as_deref()) {
+                        match self
+                            .native_base_next_candidate(NATIVE_BASE_EXHAUSTED, override_args.as_deref())
+                        {
                             Some(res) => res?,
                             None => Value::NIL,
                         }
@@ -1649,19 +1694,7 @@ impl Interpreter {
                 // path above does — without it the deferral answered Nil and
                 // the write was silently dropped.
                 let native_base = self
-                    .native_grammar_builtin_rule_next_candidate()
-                    .or_else(|| {
-                        self.native_baggy_storage_next_candidate(override_for_native.as_deref())
-                    })
-                    .or_else(|| {
-                        self.native_hash_storage_next_candidate(override_for_native.as_deref())
-                    })
-                    .or_else(|| {
-                        self.native_array_storage_next_candidate(override_for_native.as_deref())
-                    })
-                    .or_else(|| {
-                        self.native_core_type_next_candidate(override_for_native.as_deref())
-                    });
+                    .native_base_next_candidate(NATIVE_BASE_MULTI, override_for_native.as_deref());
                 if let Some(result) = native_base {
                     let result = result?;
                     if tail_call {
@@ -1819,49 +1852,13 @@ impl Interpreter {
             }
         }
         // A method invoked through a direct path without a method dispatch
-        // frame can still reach this fallback. An `is Array` subclass's
-        // Positional override (`method AT-POS($i) { nextwith $i.round }`)
-        // defers to the native behavior on its backing storage.
-        if let Some(res) = self.native_array_storage_next_candidate(override_args.as_deref()) {
-            let result = res?;
-            if tail_call {
-                return Err(RuntimeError::return_signal(result));
-            }
-            return Ok(result);
-        }
-        // Same direct-call shape as above, for an `is Hash`/`is Map` subclass's
-        // Associative override (`method AT-KEY($k) { nextwith $k.lc }`).
-        if let Some(res) = self.native_hash_storage_next_candidate(override_args.as_deref()) {
-            let result = res?;
-            if tail_call {
-                return Err(RuntimeError::return_signal(result));
-            }
-            return Ok(result);
-        }
-        // Same direct-call shape as above, for a `gist`/`Str`/`raku` override
-        // (`method gist() { "custom+" ~ callsame }`) with no wrap/multi/role
-        // complications.
-        if let Some(res) = self.native_any_base_next_candidate(override_args.as_deref()) {
-            let result = res?;
-            if tail_call {
-                return Err(RuntimeError::return_signal(result));
-            }
-            return Ok(result);
-        }
-        // A role mixed directly into a native builtin value (`%h does R`)
-        // pushes no `method_dispatch_stack` frame either — the native method
-        // on the mixin's inner value is the correct base candidate.
-        if let Some(res) = self.native_mixin_base_next_candidate(override_args.as_deref()) {
-            let result = res?;
-            if tail_call {
-                return Err(RuntimeError::return_signal(result));
-            }
-            return Ok(result);
-        }
-        // A method `augment`ed onto a core type (`augment class Array { method
-        // sort(|c) { callsame } }`) likewise pushes no frame of its own; the
-        // builtin method of the receiver's type is its base candidate.
-        if let Some(res) = self.native_core_type_next_candidate(override_args.as_deref()) {
+        // frame can still reach this fallback: an `is Array`/`is Hash`
+        // subclass's Positional/Associative override, a `gist`/`Str`/`raku`
+        // override, a role mixed directly into a native builtin value, or a
+        // method `augment`ed onto a core type.
+        if let Some(res) =
+            self.native_base_next_candidate(NATIVE_BASE_NO_FRAME, override_args.as_deref())
+        {
             let result = res?;
             if tail_call {
                 return Err(RuntimeError::return_signal(result));
