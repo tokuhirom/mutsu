@@ -287,10 +287,20 @@ impl Interpreter {
         // Only an `is rw` parameter was handed a container, so only then do
         // the arguments need keeping for the read-back below.
         let kept = (rw_mask != 0).then(|| args.clone());
+        // #11275: an lvalue-method builtin writes its target back by name, so
+        // a file-scope lexical this routine captured (one of its free
+        // variables) must be bound to its compunit cell for the call, or the
+        // write lands on the caller's same-named variable.
+        let unit_redirect = Self::lvalue_writeback_arg_index(&name, args.len())
+            .and_then(|i| args.get(i))
+            .map(Value::to_string_value)
+            .filter(|target| chunk.outers.iter().any(|o| o.name.as_str() == target.as_str()))
+            .and_then(|target| self.bind_lvalue_unit_redirect(&target));
         let result = match self.trir_declared_amp_callable(chunk, call.name) {
             Some(callable) => self.vm_call_sub_value(callable, args, false),
             None => self.call_function(&name, args),
         };
+        self.end_lvalue_unit_redirect(unit_redirect);
         self.trir_gen_settle(chunk, site, armed);
         self.literal_native_args = saved;
         self.static_call_args = saved_static;
