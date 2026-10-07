@@ -18,6 +18,7 @@ struct Legacy {
 
 fn legacy() -> Legacy {
     let all: Vec<&'static MethodRow> = all_rows().collect();
+    assert!(all.len() < usize::from(u16::MAX));
     let mut t = Legacy {
         rows: FxHashMap::default(),
         owners: FxHashMap::default(),
@@ -27,7 +28,7 @@ fn legacy() -> Legacy {
         type_shapes: FxHashMap::default(),
     };
     for (idx, row) in all.iter().enumerate() {
-        let id = RowId::from_bits(u16::try_from(idx).unwrap());
+        let id = RowId::from_bits(idx as u16);
         let owner = Symbol::intern(row.owner);
         let name = Symbol::intern(row.name);
         for arity in row.arities() {
@@ -50,7 +51,7 @@ fn legacy() -> Legacy {
                 if row.owner != owner.as_str() || row.flags.contains(RowFlags::OWNER_ONLY) {
                     continue;
                 }
-                let id = RowId::from_bits(u16::try_from(idx).unwrap());
+                let id = RowId::from_bits(idx as u16);
                 let name = Symbol::intern(row.name);
                 for arity in row.arities() {
                     if shape.has_instances() {
