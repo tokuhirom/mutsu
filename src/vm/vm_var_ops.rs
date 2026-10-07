@@ -391,6 +391,13 @@ impl Interpreter {
         if let Some(def) = self.container_default(target) {
             return def;
         }
+        // An immutable `Map` has no containers to default, so a missing key
+        // reads as `Nil` (raku: `Map.new((:a))<b>` is `Nil`, whereas a plain
+        // `Hash` answers `Any`). This matters in a smartmatch: `'id' ~~ Any`
+        // is true but `'id' ~~ Nil` is not, as in `when %constant-map{$_}`.
+        if target.is_immutable_map() {
+            return Value::NIL;
+        }
         if let Some(info) = self.container_type_metadata(target) {
             // Native typed arrays default their elements to the native type's
             // zero value rather than the (uninstantiable) type object:

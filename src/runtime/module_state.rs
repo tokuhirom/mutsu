@@ -178,6 +178,11 @@ pub(crate) struct ModuleState {
     /// is missing from here instead.
     pub(crate) module_package_globals: std::sync::Arc<HashMap<String, Vec<(Symbol, Value)>>>,
     pub(crate) need_hidden_classes: std::sync::Arc<HashSet<String>>,
+    /// Per loaded module, the classes and roles registered while it loaded
+    /// (its own declarations plus those of the modules it pulled in). The
+    /// stash-hiding pass subtracts these, for every *other* module, to tell a
+    /// module's own declarations from its transitive dependencies'.
+    pub(crate) module_registered_types: std::sync::Arc<HashMap<String, HashSet<String>>>,
     /// CompUnit::Repository::Installation state (`.loaded` units and the symbols
     /// pulled in by `.need` but not yet merged into GLOBAL).
     ///
@@ -527,6 +532,7 @@ impl ModuleState {
             prelude_declaring_units: Default::default(),
             module_package_globals: Default::default(),
             need_hidden_classes: Default::default(),
+            module_registered_types: Default::default(),
             cur_repo: Box::new(CurRepoState::default()),
             chain_declared_packages: Default::default(),
             module_toplevel: Default::default(),
@@ -603,6 +609,7 @@ impl ModuleState {
             prelude_declaring_units: self.prelude_declaring_units.clone(),
             module_package_globals: self.module_package_globals.clone(),
             need_hidden_classes: self.need_hidden_classes.clone(),
+            module_registered_types: self.module_registered_types.clone(),
             cur_repo: self.cur_repo.clone(),
             chain_declared_packages: self.chain_declared_packages.clone(),
             module_toplevel: self.module_toplevel.for_thread(),

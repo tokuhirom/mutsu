@@ -895,30 +895,52 @@ impl Interpreter {
                 let chain_has_package_decl =
                     self.module.chain_declared_packages.contains(namespace);
                 if !module_declares_own_class && !chain_has_package_decl {
-                    // Hide newly registered classes/roles from the namespace stash
+                    // Hide newly registered classes/roles from the namespace
+                    // stash -- except the ones this module's own file declares
+                    // (`class Foo::p {}` inside `Foo::Tags`): those are its
+                    // direct contribution to the namespace, only a dependency's
+                    // are transitive.
+                    let transitive = |name: &String| {
+                        self.module
+                            .module_registered_types
+                            .iter()
+                            .any(|(m, types)| m != module && types.contains(name))
+                    };
                     let class_names: Vec<String> =
                         self.registry().classes.keys().cloned().collect();
-                    for class_name in &class_names {
-                        if !class_snapshot.contains(class_name)
-                            && class_name.starts_with(namespace)
-                            && class_name.get(namespace.len()..namespace.len() + 2) == Some("::")
-                        {
-                            crate::runtime::cow_table_mut(&mut self.types.package_stash_hidden)
-                                .insert(class_name.clone());
-                        }
-                    }
                     let role_names: Vec<String> = self.registry().roles.keys().cloned().collect();
-                    for role_name in &role_names {
-                        if !role_snapshot.contains(role_name)
-                            && role_name.starts_with(namespace)
-                            && role_name.get(namespace.len()..namespace.len() + 2) == Some("::")
-                        {
-                            crate::runtime::cow_table_mut(&mut self.types.package_stash_hidden)
-                                .insert(role_name.clone());
-                        }
+                    let hide: Vec<String> = class_names
+                        .iter()
+                        .filter(|n| !class_snapshot.contains(*n))
+                        .chain(role_names.iter().filter(|n| !role_snapshot.contains(*n)))
+                        .filter(|n| {
+                            n.starts_with(namespace)
+                                && n.get(namespace.len()..namespace.len() + 2) == Some("::")
+                                && transitive(n)
+                        })
+                        .cloned()
+                        .collect();
+                    for name in hide {
+                        crate::runtime::cow_table_mut(&mut self.types.package_stash_hidden)
+                            .insert(name);
                     }
                 }
             }
+            let registered: HashSet<String> = self
+                .registry()
+                .classes
+                .keys()
+                .filter(|n| !class_snapshot.contains(*n))
+                .chain(
+                    self.registry()
+                        .roles
+                        .keys()
+                        .filter(|n| !role_snapshot.contains(*n)),
+                )
+                .cloned()
+                .collect();
+            crate::runtime::cow_table_mut(&mut self.module.module_registered_types)
+                .insert(module.to_string(), registered);
             // Record which packages were declared during this module's chain
             // so they can be propagated when the module is re-used.
             if !self.module.chain_declared_packages.is_empty() {
