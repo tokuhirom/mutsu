@@ -3423,6 +3423,14 @@ impl Interpreter {
             self.stack.push(stored);
             return Ok(());
         }
+        if stash_name == "CALLER::LEXICAL::" {
+            let raw_key = Self::const_str(code, key_name_idx);
+            let name = raw_key.strip_prefix('$').unwrap_or(raw_key).to_string();
+            let val = self.stack.pop().unwrap_or(Value::NIL);
+            loan_env!(self, set_caller_lexical_var(&name, 1, val.clone()))?;
+            self.stack.push(val);
+            return Ok(());
+        }
         if stash_name != "MY::" {
             return Err(RuntimeError::new(format!(
                 "Unsupported pseudo-stash assignment target {stash_name}"

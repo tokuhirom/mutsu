@@ -261,6 +261,29 @@ impl Interpreter {
         Ok(())
     }
 
+    /// `CALLER::LEXICAL::<$x> = v`: [`Self::set_caller_var`] without the
+    /// dynamic-variable requirement (`LEXICAL::` reaches any lexical).
+    // Cost: O(1).
+    pub(crate) fn set_caller_lexical_var(
+        &mut self,
+        name: &str,
+        depth: usize,
+        value: Value,
+    ) -> Result<(), RuntimeError> {
+        // `caller_env_stack` omits light/inlined call paths while each CALLER
+        // component counts a semantic routine frame, so validate against
+        // `routine_stack` and let the runtime-name carrier cross the physical
+        // frames (the same scheme as `CALLER::<$x> := v`, `bind_stash_key`).
+        if depth == 0 || depth > self.routine_stack.len() {
+            return Err(RuntimeError::new(format!(
+                "Cannot access caller variable '${name}' - not enough caller frames"
+            )));
+        }
+        self.env_mut().insert(name.to_string(), value);
+        self.record_runtime_name_write(name);
+        Ok(())
+    }
+
     /// Record a by-name env write to a caller-frame lexical (retain-on-miss list).
     /// The owning local slot may live several frames up — the writer can make an
     /// intervening deeper call before returning to the owner — so the source is

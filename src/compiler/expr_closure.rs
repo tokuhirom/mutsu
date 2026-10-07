@@ -1134,7 +1134,10 @@ impl Compiler {
             return;
         }
         if let Expr::PseudoStash(stash_name) = target
-            && (stash_name == "MY::" || stash_name == "PROCESS::")
+            && matches!(
+                stash_name.as_str(),
+                "MY::" | "PROCESS::" | "CALLER::LEXICAL::"
+            )
             && let Expr::Literal(lit) = index
             && let Some(key_name) = lit.as_str()
         {
