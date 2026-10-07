@@ -126,7 +126,6 @@ mod vm_amp_var_scope;
 mod vm_arith_int_ops;
 mod vm_arith_ops;
 mod vm_baggy_subclass_delegate;
-mod vm_baghash_mutators;
 mod vm_bitwise_ops;
 mod vm_call_atomic;
 mod vm_call_autothread;

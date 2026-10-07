@@ -3012,7 +3012,7 @@ impl Interpreter {
             .map(|slot| self.locals[slot].clone())
     }
 
-    pub(super) fn locals_set_by_name(&mut self, code: &CompiledCode, name: &str, val: Value) {
+    pub(crate) fn locals_set_by_name(&mut self, code: &CompiledCode, name: &str, val: Value) {
         if let Some(slot) = self.find_local_slot(code, name) {
             self.locals[slot] = val;
         }

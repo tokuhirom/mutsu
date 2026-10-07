@@ -1952,35 +1952,46 @@ impl Interpreter {
             self.exit_readonly_frame(saved_readonly);
             return Ok(Value::str(rendered.to_string_value()));
         }
-        // Immutable List/Range: the six mutators rakudo DOES define on them
-        // throw X::Immutable. `splice` is not among them -- rakudo declares it
-        // on Array only, so a List/Range invocant resolves no candidate at all
-        // and raises X::Multi::NoMatch instead ("Cannot resolve caller
-        // splice(List:D, Int:D, Int:D); Routine does not have any candidates."),
-        // which is the spelling Crane's CATCH maps to X::Crane::Add::RO.
+        // A receiver-mutating built-in method answered from its row
+        // (ADR-11276 §9.23), on a receiver the call holds by value
+        // (`$obj.bag.grab`, `f().unset('x')`): the row writes through the
+        // receiver's shared node, which every holder of the container sees.
+        // Probed by receiver kind first, so a call on any other receiver
+        // pays one tag probe and no interning.
+        if crate::builtins::method_table::mut_owners_of(&target, false).is_some() {
+            let mut detached = target.clone();
+            let mut place = crate::builtins::method_table::ReceiverPlace::detached(&mut detached);
+            if let Some(result) = crate::builtins::method_table::invoke_mut(
+                self,
+                &mut place,
+                Symbol::intern(method),
+                &args,
+            ) {
+                return result;
+            }
+        }
+        // Immutable Range: the six mutators rakudo DOES define on a `Range`
+        // throw X::Immutable, and `splice` -- declared on Array only -- resolves
+        // no candidate at all and raises X::Multi::NoMatch instead ("Cannot
+        // resolve caller splice(Range:D, Int:D, Int:D); Routine does not have
+        // any candidates."), which is the spelling Crane's CATCH maps to
+        // X::Crane::Add::RO. (An immutable `List` is answered by the
+        // `List` rows of the method table above.)
         if matches!(
             method,
             "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-        ) {
-            let is_immutable = match target.view() {
-                ValueView::Array(_, kind) => !kind.is_real_array(),
-                ValueView::Range(..)
+        ) && matches!(
+            target.view(),
+            ValueView::Range(..)
                 | ValueView::RangeExcl(..)
                 | ValueView::RangeExclStart(..)
                 | ValueView::RangeExclBoth(..)
-                | ValueView::GenericRange { .. } => true,
-                _ => false,
-            };
-            if is_immutable {
-                if method == "splice" {
-                    return Err(make_no_candidates_error(method, &target, &args));
-                }
-                let typename = match target.view() {
-                    ValueView::Array(..) => "List",
-                    _ => "Range",
-                };
-                return Err(make_x_immutable_error(method, typename));
+                | ValueView::GenericRange { .. }
+        ) {
+            if method == "splice" {
+                return Err(make_no_candidates_error(method, &target, &args));
             }
+            return Err(make_x_immutable_error(method, "Range"));
         }
         // Any:U autovivification: calling push/append/unshift/prepend on an
         // undefined value (Nil or type object Any) creates a new Array.
@@ -2016,169 +2027,6 @@ impl Interpreter {
                 return Err(make_method_not_found_error(method, type_name, false));
             }
             return Err(make_multi_no_match_error(method));
-        }
-        // Mutating array methods on Array values (non-container path)
-        if matches!(
-            method,
-            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-        ) && matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array())
-        {
-            // ADR-0070: this block runs in front of the arity cascade and reads
-            // `args` positionally, so an adverb none of these methods accepts
-            // would be spliced in as an element or counted as a positional
-            // (`[1,2,3].pop(:zzz)` died with an arity error; raku pops).
-            let args = crate::builtins::strip_undeclared_nameds(method, &args).unwrap_or(args);
-            // Check element type constraints from container metadata (e.g., typed attribute arrays)
-            // `append`/`prepend` flatten a single iterable argument (the
-            // one-arg rule), so check the elements that will actually land,
-            // not the argument list: `$o.s.append(@more)` on `has Str @.s`.
-            if matches!(method, "push" | "unshift") {
-                self.check_array_value_element_types(&target, &args)?;
-            } else if matches!(method, "append" | "prepend") {
-                let landing = crate::runtime::flatten_append_args(args.clone());
-                self.check_array_value_element_types(&target, &landing)?;
-            }
-            // splice's start/elems positions take `Int` (plus `Whatever`/
-            // `Callable`) — a `Num`/`Str`/`Array` there matches no candidate and
-            // must throw X::Multi::NoMatch (roast .../multi-no-match.t) rather
-            // than being coerced. Mirrors the lvalue path in methods_mut_dispatch.
-            // A from-the-end start/count (`*-1`) arrives as a `WhateverCode`;
-            // resolve it against the invocant's length before anything reads
-            // those positions as integers. The lvalue path does the same (see
-            // `resolve_splice_callable_args`).
-            let args = if method == "splice"
-                && args
-                    .iter()
-                    .take(2)
-                    .any(|v| matches!(v.view(), ValueView::Sub(..) | ValueView::WeakSub(..)))
-            {
-                let arr_len = match target.view() {
-                    ValueView::Array(items, ..) => items.len(),
-                    _ => 0,
-                };
-                self.resolve_splice_callable_args(arr_len, &args)
-            } else {
-                args
-            };
-            if method == "splice" {
-                fn is_valid_splice_index(v: &Value) -> bool {
-                    match v.view() {
-                        ValueView::Whatever | ValueView::Sub(..) | ValueView::WeakSub(..) => true,
-                        ValueView::Mixin(inner, _) => is_valid_splice_index(inner),
-                        _ => crate::runtime::utils::is_integer_value(v),
-                    }
-                }
-                for v in args.iter().take(2) {
-                    if !is_valid_splice_index(v) {
-                        return Err(make_multi_no_match_error("splice"));
-                    }
-                }
-                // Bounds are checked before the write, exactly as the lvalue
-                // path does: an offset outside `0..len` and a negative size are
-                // X::OutOfRange in rakudo, not a clamped splice at the end.
-                let arr_len = match target.view() {
-                    ValueView::Array(items, ..) => items.len(),
-                    _ => 0,
-                };
-                Self::validate_splice_range(arr_len, &args)?;
-            }
-            // Splice replacements land in the shared node in place now, so
-            // type-check them up front (flattened like do_splice flattens).
-            if method == "splice" && args.len() > 2 {
-                let mut replacement: Vec<Value> = Vec::new();
-                for arg in args.iter().skip(2) {
-                    match arg.view() {
-                        ValueView::Array(items, ..) => replacement.extend(items.iter().cloned()),
-                        ValueView::Seq(items) => replacement.extend(items.iter().cloned()),
-                        ValueView::Slip(items) => replacement.extend(items.iter().cloned()),
-                        _ => replacement.push(arg.clone()),
-                    }
-                }
-                self.check_array_value_element_types(&target, &replacement)?;
-            }
-            return self.array_mutate_copy(target, method, args);
-        }
-        // push/append on Hash: merge Pairs into the hash.
-        // In Raku, %h.push: (k => v) inserts the pair; if the key exists,
-        // it creates an itemized array of both values.
-        if matches!(method, "push" | "append") && matches!(target.view(), ValueView::Hash(_)) {
-            // ADR-0070, as in the Array block above: `%h.push(:zzz)` inserted a
-            // `zzz` key where raku's `Hash.push(+new)` swallows the adverb into
-            // `%_` and leaves the hash alone. A *positional* `Pair`
-            // (`%h.push((k => 1))`) carries the other flavour and survives.
-            let args = crate::builtins::strip_undeclared_nameds(method, &args).unwrap_or(args);
-            // Type check values being pushed against container type metadata
-            if let Some(info) = self.container_type_metadata(&target) {
-                let constraint = &info.value_type;
-                if constraint != "Mu" && constraint != "Any" {
-                    for arg in &args {
-                        let val = match arg.view() {
-                            ValueView::ValuePair(_, v) => v.clone(),
-                            _ => continue,
-                        };
-                        if !self.type_matches_value(constraint, &val) {
-                            return Err(crate::runtime::RuntimeError::new(format!(
-                                "Type check failed for an element of %_; expected {} but got {}",
-                                constraint,
-                                crate::runtime::utils::value_type_name(&val),
-                            )));
-                        }
-                    }
-                }
-            }
-            // Build the updated hash by merging pairs.
-            //
-            // This is the by-value twin of the `%`-sigiled lvalue arm in
-            // `methods_mut_dispatch.rs`, and it must implement the SAME
-            // semantics: it used to hand-roll a version that only understood a
-            // bare `ValuePair` argument and applied push semantics to `append`
-            // as well. Everything else silently vanished -- an alternating
-            // `'k', $v` list, a parenthesised list / `Seq` / `Slip` / `Hash`
-            // argument, `append`'s array flattening, and the element
-            // itemization at the store. That was invisible until
-            // `try_native_hash_mut_bound` started routing `%h.push` on a
-            // variable boxed into a shared `ContainerRef` cell (which passing
-            // it to any Raku-level routine does) through here. Delegate to the
-            // shared `hash_push_collect_pairs` / `hash_push_insert` helpers so
-            // the two implementations cannot drift apart again.
-            let ValueView::Hash(arc) = target.view() else {
-                unreachable!()
-            };
-            let is_push = method == "push";
-            let value_type = self
-                .container_type_metadata(&target)
-                .map(|info| info.value_type);
-            let pairs = Self::hash_push_collect_pairs(args);
-            // Check if we can mutate in-place (shared reference)
-            if crate::gc::Gc::strong_count_of(&arc) > 1 {
-                // SAFETY: aliased in-place mutation of a shared hash (guarded by
-                // strong_count > 1, the exact case that needs the shared write);
-                // see `gc_contents_mut`. No borrow into the map is live across
-                // each insert.
-                let data = unsafe { crate::value::gc_contents_mut(&arc) };
-                for (k, v) in pairs {
-                    Self::hash_push_insert_typed(
-                        &mut data.map,
-                        k,
-                        v,
-                        is_push,
-                        value_type.as_deref(),
-                    );
-                }
-                return Ok(target);
-            }
-            // Not shared: build a new hash
-            let mut new_data: crate::value::HashData = (**arc).clone();
-            for (k, v) in pairs {
-                Self::hash_push_insert_typed(
-                    &mut new_data.map,
-                    k,
-                    v,
-                    is_push,
-                    value_type.as_deref(),
-                );
-            }
-            return Ok(Value::hash_with_data(Value::hash_arc(new_data)));
         }
         // IO::Special.new("<STDOUT>")
         if let ValueView::Package(name) = target.view()

@@ -1,4 +1,5 @@
-//! `BagHash.add` / `BagHash.remove` — the two named per-key count mutators.
+//! `BagHash.add` / `BagHash.remove` — the two named per-key count mutators
+//! (ADR-11276 §9.23).
 //!
 //! Rakudo declares BOTH methods on `BagHash` itself, **not** on the `Baggy`
 //! role (verified against the reference implementation:
@@ -25,39 +26,71 @@
 //! The counts are adjusted **in place** through the bag's shared `Gc` node (the
 //! mechanism `$b<k>++` already uses), so every alias of the BagHash observes the
 //! mutation and an invocant with no variable name to write back through
-//! (`$obj.bag.add(...)`, `@a[0].remove(...)`) works the same way.
+//! (`$obj.bag.add(...)`, `@a[0].remove(...)`) works the same way. The place's
+//! only job is to re-seat the same, mutated value in both halves of the dual
+//! store, so a later locals-to-env sync cannot resurrect a stale snapshot of
+//! the bag (`my %b is BagHash` reproduced exactly that).
 
+use crate::builtins::method_table::{Handler, MethodRow, Named, ReceiverPlace, RowFlags};
+use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value, ValueView};
 
-/// The mutable-`BagHash` receiver behind `target`, seeing through a `Scalar`
-/// container, or `None` when this method does not apply to this invocant.
-pub(crate) fn baghash_mutator_receiver<'a>(target: &'a Value, method: &str) -> Option<&'a Value> {
-    if !matches!(method, "add" | "remove") {
-        return None;
-    }
-    let inner = match target.view() {
-        ValueView::Scalar(inner) => inner,
-        _ => target,
-    };
-    matches!(inner.view(), ValueView::Bag(_, true)).then_some(inner)
+/// `add` and `remove` take one positional argument, but the row is slurpy from
+/// zero so that a call with another count reaches the handler, which raises
+/// Rakudo's arity error (`method add(BagHash:D: \to-add, *%_)`) instead of the
+/// call falling through to "No such method". The row declares no named
+/// argument: the guard step drops them (`BagHash.new(1,2,2).add(1, :zzz)` is
+/// `Nil` in Rakudo, where mutsu used to die with "Too many positionals").
+pub(super) static ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "BagHash",
+        name: "add",
+        arity: 0,
+        handler: Handler::Mut(add_row),
+        flags: RowFlags::SLURPY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "BagHash",
+        name: "remove",
+        arity: 0,
+        handler: Handler::Mut(remove_row),
+        flags: RowFlags::SLURPY,
+        named: &[],
+    },
+];
+
+/// `BagHash.add`.
+// Cost: O(n), n = elements the argument yields.
+fn add_row(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    Some(adjust(interp, place, true, args))
 }
 
-/// Apply `add`/`remove` to `receiver` (which must have come from
-/// [`baghash_mutator_receiver`]). Returns the method's `Nil` result, or the
-/// arity error rakudo's `method add(BagHash:D: \to-add)` raises.
-pub(crate) fn apply_baghash_mutator(
-    receiver: &Value,
-    method: &str,
+/// `BagHash.remove`.
+// Cost: O(n), n = elements the argument yields.
+fn remove_row(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    Some(adjust(interp, place, false, args))
+}
+
+/// Move each element of the one argument's count by one, in place through the
+/// bag's shared node, and answer `Nil`.
+// Cost: O(n) bag updates, n = elements the argument yields.
+fn adjust(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    adding: bool,
     args: &[Value],
 ) -> Result<Value, RuntimeError> {
-    // This helper is a pre-dispatch interceptor: it runs *before* the builtin
-    // arity cascade, so ADR-0070's declaration has to be honoured here too or
-    // the arity check below counts an adverb as a positional. Rakudo's
-    // `method add(BagHash:D: \to-add, *%_)` accepts no named at all, so
-    // `BagHash.new(1,2,2).add(1, :zzz)` is `Nil` there, where mutsu died with
-    // "Too many positionals passed; expected 2 arguments but got 3".
-    let stripped = crate::builtins::strip_undeclared_nameds(method, args);
-    let args: &[Value] = stripped.as_deref().unwrap_or(args);
     if args.len() != 1 {
         let word = if args.is_empty() { "few" } else { "many" };
         return Err(RuntimeError::new(format!(
@@ -65,11 +98,11 @@ pub(crate) fn apply_baghash_mutator(
             args.len() + 1
         )));
     }
-    let adding = method == "add";
     let items = crate::runtime::utils::value_to_list(&args[0]);
     // Own a handle on the shared node before mutating: the write goes through
     // `gc_data_mut`, which for an aliased node writes the contents in place.
-    let mut bag = receiver.clone();
+    let mut bag = place.value().descalarize().clone();
+    debug_assert!(matches!(bag.view(), ValueView::Bag(_, true)));
     bag.with_bag_mut(|gc, _| {
         let data = crate::value::gc_data_mut(gc);
         for item in &items {
@@ -95,5 +128,6 @@ pub(crate) fn apply_baghash_mutator(
             }
         }
     });
+    place.reseat(interp);
     Ok(Value::NIL)
 }

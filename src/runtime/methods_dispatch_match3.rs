@@ -314,7 +314,6 @@ impl Interpreter {
             }
             "slice" => Some(self.dispatch_slice_method(target, args)),
             "grab" => self.dispatch_grab_method(target, args),
-            "grabpairs" => self.dispatch_grabpairs_method(target, args),
             "skip" => Some(self.dispatch_skip_method(target, args)),
             "run" if args.is_empty() => {
                 // `Thread.run` starts a `Thread.new`-constructed thread. Handled
@@ -436,7 +435,8 @@ impl Interpreter {
         }
     }
 
-    /// Dispatch the "grab" method (Supply.grab, MixHash.grab).
+    /// Dispatch the "grab" method (`Supply.grab`; the QuantHash `grab` is a
+    /// `Handler::Mut` row, ADR-11276 §9.23).
     fn dispatch_grab_method(
         &mut self,
         target: Value,
@@ -458,186 +458,7 @@ impl Interpreter {
                 "Cannot call .grab on a Supply type object",
             )));
         }
-        // MixHash.grab: select and remove random element(s)
-        if let ValueView::Mix(mix, ..) = target.view() {
-            let count = if args.is_empty() {
-                1usize
-            } else {
-                match args[0].view() {
-                    ValueView::Whatever => mix.len(),
-                    _ => args[0].to_f64().max(0.0) as usize,
-                }
-            };
-            if mix.is_empty() || count == 0 {
-                return Some(Ok(Value::NIL));
-            }
-            use crate::builtins::rng::builtin_rand;
-            let mut grabbed = Vec::new();
-            let mut remaining = (**mix).clone();
-            for _ in 0..count {
-                if remaining.is_empty() {
-                    break;
-                }
-                let ks: Vec<String> = remaining.keys().cloned().collect();
-                let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
-                let key = ks[idx].clone();
-                remaining.remove(&key);
-                grabbed.push(mix.typed_key(&key));
-            }
-            return Some(Ok(if grabbed.len() == 1 && args.is_empty() {
-                grabbed.into_iter().next().unwrap()
-            } else {
-                Value::seq(grabbed)
-            }));
-        }
-        // BagHash.grab: select and remove random element(s)
-        if let ValueView::Bag(bag, true) = target.view() {
-            return Some(self.dispatch_bag_grab(&bag, &args));
-        }
         None
-    }
-
-    /// Dispatch the "grabpairs" method (MixHash.grabpairs, BagHash.grabpairs).
-    fn dispatch_grabpairs_method(
-        &mut self,
-        target: Value,
-        args: Vec<Value>,
-    ) -> Option<Result<Value, RuntimeError>> {
-        // BagHash.grabpairs
-        if let ValueView::Bag(bag, true) = target.view() {
-            return Some(self.dispatch_bag_grabpairs(&bag, &args));
-        }
-        let ValueView::Mix(mix, ..) = target.view() else {
-            return None;
-        };
-        let count = if args.is_empty() {
-            1usize
-        } else {
-            match args[0].view() {
-                ValueView::Whatever => mix.len(),
-                _ => args[0].to_f64().max(0.0) as usize,
-            }
-        };
-        if mix.is_empty() || count == 0 {
-            return Some(Ok(Value::seq(Vec::new())));
-        }
-        use crate::builtins::rng::builtin_rand;
-        let mut grabbed = Vec::new();
-        let mut remaining = (**mix).clone();
-        for _ in 0..count {
-            if remaining.is_empty() {
-                break;
-            }
-            let ks: Vec<String> = remaining.keys().cloned().collect();
-            let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
-            let key = ks[idx].clone();
-            let weight = remaining.remove(&key).unwrap_or(0.0);
-            let weight_val = crate::value::mix_weight_to_value(weight);
-            // ADR-0021 I2: data-minted pairs default positional.
-            grabbed.push(Value::value_pair(mix.typed_key(&key), weight_val));
-        }
-        // TODO: compile to bytecode - should mutate the original variable
-        Some(Ok(Value::seq(grabbed)))
-    }
-
-    /// Helper for BagHash.grab (works on a clone, does not mutate the original).
-    fn dispatch_bag_grab(
-        &mut self,
-        bag_data: &crate::value::BagData,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let bag = &bag_data.counts;
-        use crate::builtins::rng::builtin_rand;
-        use crate::runtime::utils::bigint_to_i128_sat;
-        use num_bigint::BigInt;
-        use num_traits::Signed;
-        let count = if args.is_empty() {
-            1usize
-        } else {
-            match args[0].view() {
-                ValueView::Whatever => {
-                    bigint_to_i128_sat(&bag.values().sum::<BigInt>()).max(0) as usize
-                }
-                _ => args[0].to_f64().max(0.0) as usize,
-            }
-        };
-        if bag.is_empty() || count == 0 {
-            if args.is_empty() {
-                return Ok(Value::NIL);
-            }
-            return Ok(Value::seq(Vec::new()));
-        }
-        let mut grabbed = Vec::new();
-        let mut remaining = bag.clone();
-        for _ in 0..count {
-            if remaining.is_empty() {
-                break;
-            }
-            let total: i128 = remaining.values().map(bigint_to_i128_sat).sum();
-            if total <= 0 {
-                break;
-            }
-            let r = (builtin_rand() * total as f64) as i128;
-            let mut cumulative = 0i128;
-            let mut chosen_key = String::new();
-            for (k, v) in &remaining {
-                cumulative += bigint_to_i128_sat(v);
-                if r < cumulative {
-                    chosen_key = k.clone();
-                    break;
-                }
-            }
-            if let Some(c) = remaining.get_mut(&chosen_key) {
-                *c -= BigInt::from(1);
-                if !c.is_positive() {
-                    remaining.remove(&chosen_key);
-                }
-            }
-            grabbed.push(bag_data.typed_key(&chosen_key));
-        }
-        Ok(if grabbed.len() == 1 && args.is_empty() {
-            grabbed.into_iter().next().unwrap()
-        } else {
-            Value::seq(grabbed)
-        })
-    }
-
-    /// Helper for BagHash.grabpairs (works on a clone, does not mutate the original).
-    fn dispatch_bag_grabpairs(
-        &mut self,
-        bag_data: &crate::value::BagData,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let bag = &bag_data.counts;
-        use crate::builtins::rng::builtin_rand;
-        let count = if args.is_empty() {
-            1usize
-        } else {
-            match args[0].view() {
-                ValueView::Whatever => bag.len(),
-                _ => args[0].to_f64().max(0.0) as usize,
-            }
-        };
-        if bag.is_empty() || count == 0 {
-            return Ok(Value::seq(Vec::new()));
-        }
-        let mut grabbed = Vec::new();
-        let mut remaining = bag.clone();
-        for _ in 0..count {
-            if remaining.is_empty() {
-                break;
-            }
-            let ks: Vec<String> = remaining.keys().cloned().collect();
-            let idx = (builtin_rand() * ks.len() as f64) as usize % ks.len();
-            let key = ks[idx].clone();
-            let val = remaining.remove(&key).unwrap_or_default();
-            // ADR-0021 I2: data-minted pairs default positional.
-            grabbed.push(Value::value_pair(
-                bag_data.typed_key(&key),
-                Value::from_bigint(val),
-            ));
-        }
-        Ok(Value::seq(grabbed))
     }
 
     /// Dispatch the "skip" method.

@@ -358,7 +358,11 @@ macro_rules! for_each_registration {
                         while k < hi {
                             let $id = OWNER_ORDER[k];
                             let $row = ROWS[$id as usize];
-                            if !$row.flags.contains(RowFlags::OWNER_ONLY) {
+                            // A `Mut` row is registered by its owner only (ADR-11276
+                            // §9.23): no shape reaches it, so no pure entry, call-site
+                            // lane or cross-check can run a handler that has effects.
+                            if !$row.flags.contains(RowFlags::OWNER_ONLY) && !$row.handler.is_mut()
+                            {
                                 $body
                             }
                             k += 1;
@@ -464,6 +468,28 @@ const fn register() -> Registered {
 
 const REGISTERED: Registered = register();
 
+/// Per name, one bit per arity some `Mut` row takes. Those rows are registered
+/// by owner only, so they never set a bit of [`ARITIES`]; a mutating call tests
+/// this mask before it looks anything up. A slurpy row sets every bit up to 7,
+/// and bit 7 stands for every longer call too.
+const fn mut_arities() -> [u8; U] {
+    let mut out = [0u8; U];
+    let mut id = 0;
+    while id < N {
+        let row = ROWS[id];
+        if row.handler.is_mut() {
+            let name = NAME_INDEX.row_name[id] as usize;
+            let mut arity = row.arity;
+            while arity <= arity_hi(row) {
+                out[name] |= 1 << arity;
+                arity += 1;
+            }
+        }
+        id += 1;
+    }
+    out
+}
+
 /// The number of resolved `(receiver, name, arity)` entries.
 const M: usize = REGISTERED.len;
 
@@ -481,6 +507,8 @@ const fn truncate<const L: usize>(src: &[u16; G]) -> [u16; L] {
 
 /// Per name, one bit per arity (0..8) some registered row takes.
 pub(super) static ARITIES: [u8; U] = REGISTERED.arities;
+/// The same bits for the `Mut` rows, which are not registered by shape.
+pub(super) static MUT_ARITIES: [u8; U] = mut_arities();
 /// Per name, one bit per [`DispatchShape`] some registered row answers on an instance.
 pub(super) static SHAPES: [u64; U] = REGISTERED.shapes;
 /// The same bits for a type object receiver.

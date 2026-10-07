@@ -52,6 +52,7 @@ mod dispatch;
 mod instances;
 mod io_concurrency;
 mod mutating;
+mod place;
 mod row;
 mod scalars;
 mod table;
@@ -73,10 +74,16 @@ pub(crate) use scalars::{
 
 #[cfg(test)]
 pub(crate) use dispatch::try_dispatch;
-pub(crate) use dispatch::{admits, answer, invoke, invoke_in, invoke_owner, try_dispatch_in};
+pub(crate) use dispatch::{
+    admits, answer, invoke, invoke_in, invoke_mut, invoke_owner, try_dispatch_in,
+};
+pub(crate) use mutating::owners_of as mut_owners_of;
+pub(crate) use place::ReceiverPlace;
 pub(crate) use row::{Handler, MethodRow, Named, RowFlags};
 #[cfg(test)]
 use table::all_rows;
+#[cfg(test)]
+pub(crate) use table::names_a_mut_row;
 pub(crate) use table::{Receiver, RowId, names_a_row, owner_row, resolve, row, shape_has_row};
 
 #[cfg(test)]

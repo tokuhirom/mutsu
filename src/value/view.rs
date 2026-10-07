@@ -551,7 +551,7 @@ impl Value {
     /// An unchanged flag keeps the same node (container identity: a
     /// `SetHash.SetHash` is the same object). A flip hands back a node no
     /// other holder shares — the mutable kinds mutate in place
-    /// (`builtins::quanthash_mutators`), so a `SetHash` sharing its node with
+    /// (`method_table::mutating::quanthash`), so a `SetHash` sharing its node with
     /// a `Set` would change that `Set` too. A node only this value holds (a
     /// freshly coerced result) is reused rather than copied. Any other value
     /// is returned unchanged.

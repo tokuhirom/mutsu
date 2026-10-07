@@ -2257,93 +2257,34 @@ impl Interpreter {
                     self.stack.push(result);
                     return Ok(());
                 }
-                // `BagHash.add` / `.remove` reached through the non-mutating
-                // (CallMethod) opcode: an invocant with no simple variable name
-                // to write back through, e.g. `$obj.bag.add('x')` or
-                // `@bags[0].remove('x')`. Same container-identity story as the
-                // shift/pop fast path just below — the per-key count adjustment
-                // goes through the bag's SHARED backing node, so the holder
-                // observes it. `vm_call_method_mut_ops.rs` runs the same helper
-                // for the named-variable form (and re-seats the dual store).
-                if let Some(receiver) =
-                    crate::vm::vm_baghash_mutators::baghash_mutator_receiver(&target, method)
-                {
-                    let result = crate::vm::vm_baghash_mutators::apply_baghash_mutator(
-                        receiver, method, &args,
-                    )?;
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "baghash-add-remove",
-                    );
-                    self.stack.push(result);
-                    return Ok(());
+                // A receiver-mutating built-in method on an invocant with no
+                // simple variable name to write back through, e.g.
+                // `$obj.bag.add('x')` or `@bags[0].remove('x')`, answered from
+                // its row (ADR-11276 §9.23; `BagHash.add`/`remove` and the QuantHash
+                // mutators so far: `$obj.q.grab`, `@sets[0].unset('x')`).
+                // Container identity (§3): the row writes through the
+                // receiver's SHARED backing node, so the holder observes it.
+                if crate::builtins::method_table::mut_owners_of(&target, false).is_some() {
+                    self.dispatch.method_dispatch_pure = false;
+                    let mut detached = target.descalarize().clone();
+                    let mut place =
+                        crate::builtins::method_table::ReceiverPlace::detached(&mut detached);
+                    if let Some(result) = crate::builtins::method_table::invoke_mut(
+                        self, &mut place, method_sym, &args,
+                    ) {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethod",
+                            "mut-row",
+                        );
+                        self.stack.push(result?);
+                        return Ok(());
+                    }
                 }
-                // `SetHash.set`/`.unset` and the QuantHash `.grab`/`.grabpairs`
-                // on an invocant with no variable name (`$obj.q.grab`,
-                // `@sets[0].unset('x')`): the mutation goes through the shared
-                // node (`builtins::quanthash_mutators`), so the holder sees it.
-                if let Some(receiver) =
-                    crate::builtins::quanthash_mutators::quanthash_mutator_receiver(&target, method)
-                {
-                    let receiver = receiver.clone();
-                    let args = crate::builtins::quanthash_mutators::resolve_callable_count(
-                        &receiver,
-                        method,
-                        args.clone(),
-                        |f, a| self.vm_call_sub_value(f, a, false),
-                    )?;
-                    let result = self.apply_quanthash_mutator_keyed(&receiver, method, &args)?;
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethod",
-                        "quanthash-mutator",
-                    );
-                    self.stack.push(result);
-                    return Ok(());
-                }
-                // Fast path for shift/pop on array values in the non-mutating
-                // (CallMethod) path. Handles value invocants with no simple
-                // variable name to write back through: literals ([1,2,3].shift),
-                // function results (f().pop), element reads. Container identity
-                // (§3.2): the removal goes through the SHARED backing node (no
-                // COW), so when the invocant aliases a live container (`f()`
-                // returning `@a[0]`) the holder observes the removal, matching
-                // Raku. A literal's node has no other holder, so the in-place
-                // write is unobservable there.
                 // Slice 6.3: assume the dispatch dirties the caller env; only a
                 // proven-pure compiled method path clears this (sets it true),
                 // letting the opcode tail skip the env_dirty mark + per-call pull.
                 self.dispatch.method_dispatch_pure = false;
-                let call_result = if matches!(method, "shift" | "pop")
-                    && args.is_empty()
-                    && matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array())
-                {
-                    // Native array node mutation on a by-value target: env-pure
-                    // (no named binding is written).
-                    self.dispatch.method_dispatch_pure = true;
-                    crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "shift-pop");
-                    if let ValueView::Array(_, kind) = target.view()
-                        && kind.is_lazy()
-                    {
-                        return Err(RuntimeError::cannot_lazy(method));
-                    }
-                    let mut invocant = target.clone();
-                    let removed = invocant.with_array_mut(|arc_items, _| {
-                        if arc_items.is_empty() {
-                            crate::runtime::make_empty_array_failure(method)
-                        } else {
-                            // SAFETY: audited aliased in-place container write
-                            // (see value::aliased_mut); no other borrow into
-                            // this node is live across the mutation below.
-                            let items = unsafe { crate::value::gc_contents_mut(arc_items) };
-                            if method == "shift" {
-                                items.remove(0)
-                            } else {
-                                items.pop().unwrap_or(Value::NIL)
-                            }
-                        }
-                    });
-                    Ok(removed.unwrap_or(Value::NIL))
-                } else if !skip_native {
+                let call_result = if !skip_native {
                     // .Slip on arrays with `is default(X)`: fill holes with
                     // the default value instead of leaving Package("Any").
                     if method == "Slip"

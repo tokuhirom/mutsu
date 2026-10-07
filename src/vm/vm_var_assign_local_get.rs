@@ -729,7 +729,7 @@ impl Interpreter {
     /// shape), so a nested named sub that mutates the container by name and the
     /// owner that reads it by name observe one cell. The mutating-method and
     /// element-assign write-back paths already descend through the cell
-    /// (`try_native_array_mut` / `try_native_hash_mut_bound` / `env_root_descended_mut`),
+    /// (the `Array`/`Hash` mutator rows through `ReceiverPlace::slot`, which is `env_root_descended_mut`),
     /// and `GetArrayVar`/`GetHashVar` `into_deref()` the cell on read.
     ///
     /// `unvouched_capture` marks the ADR-0055 unvouched-escaping-capture trigger

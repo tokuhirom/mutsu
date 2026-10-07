@@ -11,13 +11,14 @@ impl Interpreter {
     /// Cost: O(k * e) worst case, k = inserted elements and e = existing
     /// elements; push, append, pop and shift are O(k) amortized or O(1).
     pub(crate) fn native_mixin_array_mutation(
+        &mut self,
         invocant: &Value,
         inner: &Value,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let mut storage = inner.clone();
-        let result = Self::native_array_storage_mut(&mut storage, method, args)?;
+        let result = self.native_array_storage_mut(&mut storage, method, args)?;
         Some(result.map(|value| {
             if matches!(method, "push" | "append" | "prepend" | "unshift") {
                 invocant.clone()
@@ -899,7 +900,7 @@ impl Interpreter {
                     | "STORE"
             )
             && let Some(result) =
-                Self::native_mixin_array_mutation(target, inner.as_ref(), method, &args)
+                self.native_mixin_array_mutation(target, inner.as_ref(), method, &args)
         {
             return Some(result);
         }

@@ -820,10 +820,8 @@ mod tests {
     /// `MixHash` rows, hand-probed against real values constructed via the
     /// interpreter (`set(...)`/`SetHash.new(...)`/etc.) -- none of the six
     /// owners has a `builtin_type_method_names` entry, same situation as
-    /// `Pair`/`Seq`/`Match`. `grab` (weighted removal) is deliberately absent
-    /// from `Set`/`SetHash`: those have no weights, and the probe confirmed
-    /// the cascade does not recognize it there while it does for the other
-    /// four.
+    /// `Pair`/`Seq`/`Match`. The mutators (`grab`, `grabpairs`) are rows of the
+    /// method table, so their recognition rows are skipped here.
     #[test]
     fn setbagmix_rows_are_backed_by_the_cascade() {
         let mut interp = crate::runtime::Interpreter::new();
@@ -866,23 +864,18 @@ mod tests {
                 }
             }
         }
-        // Immutable `Set.grab` IS recognized by the pure cascade (it always
-        // errors "immutable", but `Some` still counts) -- the mutable
-        // `SetHash` variant is not, same as `BagHash`/`MixHash` above.
-        assert!(
-            native_method_row("Set", "grab")
-                .0
-                .contains(NativeArityMask::A0)
-        );
+        // `grab` and `grabpairs` write their receiver, so each owner's is a `Mut`
+        // row of the method table (ADR-11276 §9.23), not an arm of the pure
+        // cascade: even the immutable `Set.grab`, which only ever throws.
+        assert_eq!(native_method_row("Set", "grab").0, NativeArityMask::N);
         assert_eq!(native_method_row("SetHash", "grab").0, NativeArityMask::N);
-        assert_ne!(
-            native_method_arities(&interp.env().get("set").cloned().unwrap(), "grab"),
-            0
-        );
-        assert_eq!(
-            native_method_arities(&interp.env().get("sethash").cloned().unwrap(), "grab"),
-            0
-        );
+        for var in ["set", "sethash", "bag", "baghash", "mix", "mixhash"] {
+            assert_eq!(
+                native_method_arities(&interp.env().get(var).cloned().unwrap(), "grab"),
+                0,
+                "the pure cascade recognizes grab on a {var}"
+            );
+        }
     }
 
     /// ADR-0019 E2b (sixth slice): `RakuAST::StatementList`/

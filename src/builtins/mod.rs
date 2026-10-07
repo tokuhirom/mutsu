@@ -35,7 +35,6 @@ pub(crate) mod pack;
 pub(crate) mod parse_base;
 pub(crate) mod primality;
 pub(crate) mod quanthash_coerce;
-pub(crate) mod quanthash_mutators;
 pub(crate) mod range_bounds_int;
 pub(crate) mod rng;
 pub(crate) mod seq_coerce;

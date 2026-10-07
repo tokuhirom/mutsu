@@ -1600,16 +1600,6 @@ pub(crate) fn native_method_1arg(
             }
             None
         }
-        "grab" | "grabpairs" => match target.view() {
-            ValueView::Bag(_, false) => Some(Err(RuntimeError::immutable("Bag", method))),
-            ValueView::Set(_, false) => Some(Err(RuntimeError::immutable("Set", method))),
-            ValueView::Mix(_, false) => Some(Err(RuntimeError::immutable("Mix", method))),
-            // NaN check for grab/grabpairs on mutable types
-            ValueView::Set(_, true) | ValueView::Bag(_, true) | ValueView::Mix(_, true) if matches!(arg.view(), ValueView::Num(f) if f.is_nan()) => {
-                Some(Err(RuntimeError::new("Cannot convert NaN to Int")))
-            }
-            _ => None,
-        },
         // Cost: O(k), k = elements rolled, on an Array, a List, a reified Seq or an
         // integer Range; O(e + k) on any other list-like, e = elements (decomposed
         // into the sampling pool first). `.roll(*)` copies the pool once, O(e).
