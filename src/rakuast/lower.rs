@@ -1142,9 +1142,9 @@ pub(super) fn lower_package_body(mut body: Vec<Stmt>) -> Vec<Stmt> {
 /// lowered here can carry them either.
 fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let head = package_head(node, crate::parser::next_anon_class_name)?;
-    let body = lower_package_body(lower_block(named_child(node, "body")?)?);
+    let mut body = lower_package_body(lower_block(named_child(node, "body")?)?);
     let ClassTraits {
-        parents,
+        mut parents,
         does_parents,
         parent_args,
         is_rw: class_is_rw,
@@ -1152,6 +1152,10 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         hidden_parents,
         custom_traits: written_traits,
     } = class_traits(node)?;
+    let mut body_parents = Vec::new();
+    for parent in super::role::take_also_is_parents(&mut body) {
+        crate::parser::push_also_is_parent(&mut parents, &mut body_parents, &mut false, parent);
+    }
     let repr = match node.fields.iter().find(|f| f.name == Some("repr")) {
         Some(_) => Some(leaf_str(node, "repr")?),
         None => None,
@@ -1181,7 +1185,7 @@ fn lower_class(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // under a name mangled with it, which is what keeps it lexical.
         decl_id: crate::ast::next_class_decl_id(),
         parent_args,
-        body_parents: Vec::new(),
+        body_parents,
     })
 }
 
@@ -1197,6 +1201,8 @@ pub(super) struct PackageHead {
     /// Written with the empty name (`class :: { }`): an `anon` scope over the
     /// name `::`. The parser marks such a declaration, so lowering does too.
     pub colons: bool,
+    /// Written `class ::Name`: the name's leading empty part.
+    pub leading_colons: bool,
 }
 
 impl PackageHead {
@@ -1204,6 +1210,8 @@ impl PackageHead {
     pub(super) fn custom_traits(&self) -> Vec<(String, Option<Expr>)> {
         if self.colons {
             vec![(crate::parser::ANON_COLONS_TRAIT.to_string(), None)]
+        } else if self.leading_colons {
+            vec![(crate::parser::LEADING_COLONS_TRAIT.to_string(), None)]
         } else {
             Vec::new()
         }
@@ -1226,6 +1234,7 @@ pub(super) fn package_head(
                 is_lexical: false,
                 is_unit: false,
                 colons: true,
+                leading_colons: false,
             }),
             _ => Err(unsupported(node)),
         },
@@ -1238,6 +1247,17 @@ pub(super) fn package_head(
             is_lexical: scope.as_deref() == Some("my"),
             is_unit: scope.as_deref() == Some("unit"),
             colons: false,
+            leading_colons: node
+                .fields
+                .iter()
+                .find(|f| f.name == Some("name"))
+                .is_some_and(|f| match &f.value {
+                    RakuAstFieldValue::Node(v) => matches!(
+                        v.view(),
+                        ValueView::RakuAst(n) if name_parts::has_leading_empty(n)
+                    ),
+                    _ => false,
+                }),
         }),
         Some(_) => Err(unsupported(node)),
     }
@@ -2119,6 +2139,7 @@ fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         label: node_label(node)?,
         is_statement_modifier: false,
         is_until,
+        is_bare_term: false,
     })
 }
 

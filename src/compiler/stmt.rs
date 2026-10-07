@@ -2730,6 +2730,7 @@ impl Compiler {
                 label,
                 is_statement_modifier,
                 is_until,
+                is_bare_term: _,
             } => {
                 let (pre_stmts, loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref(), false);

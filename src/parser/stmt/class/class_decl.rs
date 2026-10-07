@@ -162,6 +162,12 @@ pub(crate) fn push_export_tags(after_export: &str, export_tags: &mut Vec<String>
 /// that cannot see an export statement (a role body) can still publish it.
 pub(crate) const EXPORT_TYPE_MARKER: &str = "__mutsu_export_type";
 
+/// The `custom_traits` marker of a class declared as `class ::Name { }`. The
+/// leading `::` does not change the declaration; the marker only lets the
+/// RakuAST conversion render the name with its leading empty part, as rakudo
+/// does. Internal (`__`-prefixed), so never dispatched as a trait.
+pub(crate) const LEADING_COLONS_TRAIT: &str = "__leading_colons";
+
 pub(crate) fn export_type_marker(tags: &[String]) -> (String, Option<Expr>) {
     let tags = tags
         .iter()
@@ -433,6 +439,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
 
 /// Parse the body of a class declaration (after `class` keyword and whitespace).
 pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
+    let mut leading_colons = false;
     let (rest, name, name_expr) = if let Some(after_colons) = input.strip_prefix("::") {
         // Check if this is `::Ident` (forward stub) or `::(expr)` (indirect name)
         if after_colons.starts_with('(') {
@@ -441,6 +448,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         } else {
             // `class ::F { ... }` — forward declaration stub, name is just the identifier
             let (rest, name) = qualified_ident(after_colons)?;
+            leading_colons = true;
             (rest, name, None)
         }
     } else {
@@ -460,6 +468,9 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     let mut parent_args: Vec<(String, Vec<Expr>)> = Vec::new();
     let mut is_repr: Option<String> = None;
     let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
+    if leading_colons {
+        custom_traits.push((LEADING_COLONS_TRAIT.to_string(), None));
+    }
     let mut is_export = false;
     let mut export_tags: Vec<String> = Vec::new();
     let mut r = rest;

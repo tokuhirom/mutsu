@@ -26,7 +26,9 @@ pub(crate) use primary::{
     ANON_COLONS_TRAIT, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
     prepend_does_header,
 };
-pub(crate) use stmt::class::{EXPORT_TYPE_MARKER, export_type_marker};
+pub(crate) use stmt::class::{
+    EXPORT_TYPE_MARKER, LEADING_COLONS_TRAIT, export_type_marker, push_also_is_parent,
+};
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::handle_specs_from_term;
 pub(crate) use stmt::modifier::for_modifier_loop_params;

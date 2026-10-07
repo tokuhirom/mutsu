@@ -84,6 +84,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 label: Some(label),
                 is_statement_modifier: false,
                 is_until: false,
+                is_bare_term: false,
             },
         ));
     }
@@ -104,6 +105,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 label: Some(label),
                 is_statement_modifier: false,
                 is_until: true,
+                is_bare_term: false,
             },
         ));
     }

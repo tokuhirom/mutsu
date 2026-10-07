@@ -86,6 +86,7 @@ pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
         label: None,
         is_statement_modifier: false,
         is_until: false,
+        is_bare_term: false,
     };
     if let Some(decl) = hoisted_decl {
         return Ok((rest, Stmt::Block(vec![decl, while_stmt])));
@@ -187,6 +188,7 @@ pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
         label: None,
         is_statement_modifier: false,
         is_until: true,
+        is_bare_term: false,
     };
     if let Some(decl) = hoisted_decl {
         return Ok((rest, Stmt::Block(vec![decl, while_stmt])));

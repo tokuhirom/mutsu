@@ -45,7 +45,11 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
     let user_traits: Vec<(String, Option<crate::ast::Expr>)> = role
         .custom_traits
         .iter()
-        .filter(|(t, _)| t != MY_SCOPED && t != crate::parser::ANON_COLONS_TRAIT)
+        .filter(|(t, _)| {
+            t != MY_SCOPED
+                && t != crate::parser::ANON_COLONS_TRAIT
+                && t != crate::parser::LEADING_COLONS_TRAIT
+        })
         .cloned()
         .collect();
     // Rakudo drops `is repr<...>` from a role's traits, so it cannot come back.
@@ -287,7 +291,94 @@ pub(super) fn lower_also(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 also: true,
             })
         }
+        // `also is Parent;`: only a class body folds it into its parents
+        // (`lower_class` takes these markers out of the body again).
+        ValueView::RakuAst(t) if t.class == RakuAstClass::TraitIs => {
+            let Stmt::DoesDecl { name, args, .. } =
+                parent_clause(node, named_child(t, "type")?, true)?
+            else {
+                unreachable!("parent_clause builds a DoesDecl");
+            };
+            Ok(Stmt::DoesDecl {
+                name,
+                args,
+                from_is: true,
+                also: true,
+            })
+        }
         _ => Err(unsupported_node(node)),
+    }
+}
+
+/// The class parents a lowered body spells as `also is Parent;`, taken out of
+/// `body` in source order.
+// Cost: O(n), n = number of statements in the body.
+pub(super) fn take_also_is_parents(body: &mut Vec<Stmt>) -> Vec<String> {
+    let mut parents = Vec::new();
+    body.retain(|stmt| match stmt {
+        Stmt::DoesDecl {
+            name,
+            from_is: true,
+            also: true,
+            ..
+        } => {
+            parents.push(name.resolve());
+            false
+        }
+        _ => true,
+    });
+    parents
+}
+
+/// `also is P;` statements (one per parent) put in front of a class body's
+/// `Block`: the parser lifts them out of the body into the class's parents and
+/// does not keep where they stood, so they lead it.
+// Cost: O(n), n = number of statements in the body.
+pub(super) fn with_leading_statements(
+    mut block: RakuAstNode,
+    statements: Vec<RakuAstNode>,
+) -> RakuAstNode {
+    fn child(node: &mut RakuAstNode, name: Option<&str>) -> Option<RakuAstNode> {
+        let field = node.fields.iter_mut().find(|f| f.name == name)?;
+        match &field.value {
+            RakuAstFieldValue::Node(v) => match v.view() {
+                ValueView::RakuAst(n) => Some(n.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    fn put(node: &mut RakuAstNode, name: Option<&str>, value: RakuAstNode) {
+        if let Some(field) = node.fields.iter_mut().find(|f| f.name == name) {
+            field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(value)));
+        }
+    }
+    let Some(mut blockoid) = child(&mut block, Some("body")) else {
+        return block;
+    };
+    let Some(mut list) = child(&mut blockoid, None) else {
+        return block;
+    };
+    let mut fields: Vec<RakuAstField> = statements
+        .into_iter()
+        .map(|s| node_field(None, s))
+        .collect();
+    fields.append(&mut list.fields);
+    list.fields = fields;
+    put(&mut blockoid, None, list);
+    put(&mut block, Some("body"), blockoid);
+    block
+}
+
+/// `also is P;` -> `Statement::Also(traits => (Trait::Is(type => P),))`.
+// Cost: O(k), k = length of the parent's spelling.
+pub(super) fn also_is_statement(trait_node: Value) -> RakuAstNode {
+    RakuAstNode {
+        class: RakuAstClass::StatementAlso,
+        fields: vec![RakuAstField {
+            name: Some("traits"),
+            value: RakuAstFieldValue::List(vec![trait_node]),
+        }],
     }
 }
 
