@@ -2968,6 +2968,15 @@ impl Interpreter {
                         );
                         Ok(Value::make_instance(name, attrs))
                     }
+                    // `Metamodel::ClassHOW.new` is a HOW instance (RedFactory:
+                    // `Metamodel::ClassHOW.new.new_type: :name(..)`); the
+                    // metamethods resolve on it as on the type object.
+                    // Cost: O(1).
+                    n if (n.starts_with("Metamodel::") || n.starts_with("Perl6::Metamodel::"))
+                        && n.ends_with("HOW") =>
+                    {
+                        Ok(Value::make_instance(name, HashMap::new()))
+                    }
                     _ => {
                         // A qualified type nobody ever declared (`Foo::Bar.new`
                         // where `Foo` was never a class/role/module/package)

@@ -3208,6 +3208,18 @@ impl Interpreter {
                 };
                 self.metamodel_new_type(&how_class, &args)
             }
+            // `Metamodel::ClassHOW.new.new_type(...)`: a builtin HOW instance
+            // mints the same type its type object does.
+            "new_type"
+                if matches!(target.view(), ValueView::Instance { class_name, .. }
+                    if Self::is_metamodel_class_name(&class_name.resolve())) =>
+            {
+                let how_class = match target.view() {
+                    ValueView::Instance { class_name, .. } => class_name.resolve(),
+                    _ => unreachable!("guarded by the match above"),
+                };
+                self.metamodel_new_type(&how_class, &args)
+            }
             // Metamodel::Primitives static methods
             _ if matches!(target.view(), ValueView::Package(n) if n == "Metamodel::Primitives") => {
                 self.metamodel_primitives_dispatch(method, args)

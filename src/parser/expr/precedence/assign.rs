@@ -98,8 +98,8 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             // `$x`.
             let target_var_name =
                 crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
-            let method_name = if modifier == Some('!') {
-                format!("!{}", name.resolve())
+            let method_name = if let Some(m @ ('!' | '^')) = modifier {
+                format!("{m}{}", name.resolve())
             } else {
                 name.resolve()
             };

@@ -358,8 +358,8 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
                     crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(
                         &target,
                     );
-                let method_name = if modifier == Some('!') {
-                    format!("!{}", name.resolve())
+                let method_name = if let Some(m @ ('!' | '^')) = modifier {
+                    format!("{m}{}", name.resolve())
                 } else {
                     name.resolve()
                 };

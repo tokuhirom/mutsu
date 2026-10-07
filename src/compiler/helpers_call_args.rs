@@ -173,6 +173,17 @@ impl Compiler {
             || self.constant_value(name).is_some()
     }
 
+    /// The bare `$` of `method m is rw { $ }` is the implicit `state` variable
+    /// `__ANON_STATE_<id>__` (a real per-closure cell, unlike the method frame's
+    /// reserved `__ANON_STATE__` slot that aliases `self`), so it is a location
+    /// the rw routine can hand back.
+    // Cost: O(n), n = name length.
+    fn is_minted_anon_state_name(name: &str) -> bool {
+        name.strip_prefix("__ANON_STATE_")
+            .and_then(|r| r.strip_suffix("__"))
+            .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+    }
+
     /// Deliberately narrow. `@`/`%`/`&`-sigiled names, twigils, attributes and
     /// package-qualified names are excluded: their containers are reached by
     /// their own machinery, and boxing them into a scalar cell here would leak a
@@ -180,7 +191,7 @@ impl Compiler {
     /// chokepoints.
     fn return_rw_container_name(&self, arg: &Expr) -> Option<String> {
         if let Some(name) = Self::scalar_container_alias_name(arg)
-            && Self::is_plain_lexical_name(name)
+            && (Self::is_plain_lexical_name(name) || Self::is_minted_anon_state_name(name))
         {
             return Some(name.to_string());
         }
