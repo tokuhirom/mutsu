@@ -1827,7 +1827,13 @@ pub(super) fn signature_positional_params(
 // Cost: O(n), n = size of the parameter list.
 fn lower_fake_signature(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let sig = child_node(&node.fields.first().ok_or_else(|| unsupported(node))?.value)?;
-    let defs = lower_signature_parameters(sig, node)?;
+    let mut defs = lower_signature_parameters(sig, node)?;
+    // The literal is a value, so `lower`'s program-wide curry pass never sees
+    // the parameters' `where` clauses inside it; run it here so a
+    // `where *.foo` becomes the WhateverCode closure the binder expects.
+    crate::whatever_curry::with_all_scopes(|| {
+        crate::whatever_curry::mark::mark_param_defs(&mut defs)
+    });
     let returns = match sig.fields.iter().find(|f| f.name == Some("returns")) {
         Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
         None => None,
