@@ -70,6 +70,12 @@ impl Interpreter {
             // Cost: O(1).
             "time" => Ok(Value::int(Self::epoch_nanos())),
 
+            // nqp::time_i / nqp::time_n — the wall clock as whole seconds
+            // (int) and as fractional seconds (num) since the epoch.
+            // Cost: O(1).
+            "time_i" => Ok(Value::int(Self::epoch_nanos().div_euclid(1_000_000_000))),
+            "time_n" => Ok(Value::num(Self::epoch_nanos() as f64 / 1e9)),
+
             // nqp::eqaddr($a, $b) — object identity as an int 0/1: the same
             // object, never a `.WHICH` comparison (`values_same_object`).
             // Cost: O(1).

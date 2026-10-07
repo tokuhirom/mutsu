@@ -974,6 +974,7 @@ impl Compiler {
             }
             Stmt::NestedMethodCapture {
                 index,
+                group,
                 closure,
                 routines,
             } => {
@@ -981,6 +982,7 @@ impl Compiler {
                 self.code.emit(OpCode::CaptureNestedMethodEnv(Box::new(
                     crate::opcode::NestedMethodCaptureSpec {
                         index: *index,
+                        group: *group,
                         routines: routines.clone(),
                     },
                 )));

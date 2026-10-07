@@ -63,6 +63,7 @@ pub(crate) fn walk_stmt_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut Stmt) {
         Stmt::LoopExitGuardEnd => {}
         Stmt::NestedMethodCapture {
             index: _,
+            group: _,
             closure,
             routines: _,
         } => v.visit_expr_mut(closure),

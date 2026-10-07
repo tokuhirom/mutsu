@@ -94,6 +94,8 @@ pub(crate) use stmt::nested_block_methods::{
     NESTED_BLOCK_METHOD_TRAIT, hoist as hoist_nested_methods, unhoist as unhoist_nested_methods,
 };
 
+pub(crate) use primary::var::is_known_word_infix;
+
 pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }

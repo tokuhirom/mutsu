@@ -210,6 +210,36 @@ impl Interpreter {
                 ));
             }
         }
+        // `&infix:<word>` for a word-shaped operator nothing declares: the
+        // by-name operator reference resolves for ANY spelling, but rakudo
+        // rejects an undeclared one (`EVAL '&infix:<not-an-op>'` throws, which
+        // Test::Stream's `cmp-ok` relies on to report "Could not use ...").
+        // Symbolic operators are not checked: the builtin table is not an
+        // exhaustive oracle for them.
+        if !val.is_nil()
+            && !name_is_qualified
+            && matches!(
+                self.env().get("__mutsu_in_eval").map(Value::view),
+                Some(ValueView::Bool(true))
+            )
+            && let Some(word) = name
+                .strip_prefix("infix:<")
+                .and_then(|rest| rest.strip_suffix('>'))
+            && !word.is_empty()
+            && word.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+            && !crate::parser::is_known_word_infix(word)
+            && !self.env().contains_key(&format!("&{name}"))
+            && self.resolve_function(name).is_none()
+            && !self.has_proto(name)
+            && !self.has_multi_candidates_unindexed(name)
+        {
+            let suggestions = self.suggest_routine_names(name);
+            return Err(RuntimeError::undeclared_routine_symbols(
+                name,
+                format!("Undeclared routine:\n    &{} used at line 1", name),
+                suggestions,
+            ));
+        }
         // A package-qualified `&Pkg::name` that resolves to nothing is the `Any`
         // type object in raku, not `Nil` — a package's symbol table simply has
         // no such entry, which is a different thing from "explicitly absent".
