@@ -725,6 +725,7 @@ pub(crate) fn native_object_where(payload: usize) -> usize {
 /// `Pointer` method and the marshalling layer's `address` read keep working.
 /// A NULL address is still a defined object here: unlike an opaque CStruct
 /// handle, `Pointer.new(0)` is a legitimate value in Rakudo too.
+#[cfg(feature = "libffi")]
 pub(crate) fn make_typed_pointer(addr: usize, of: &str) -> Value {
     let ptr = make_pointer_object(addr);
     if let ValueView::Instance { attributes, .. } = ptr.view() {
@@ -767,6 +768,7 @@ pub(crate) fn pointer_display_suffix(target: &Value) -> Option<String> {
 /// a legitimate value in Rakudo, unlike the NULL *return* of a native call,
 /// which is the declared class's type object so the caller's `unless defined`
 /// guard fires ([`make_native_handle`]).
+#[cfg(feature = "libffi")]
 pub(crate) fn make_pointer_object(addr: usize) -> Value {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("address".to_string(), Value::int(addr as i64));
