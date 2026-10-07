@@ -16,9 +16,9 @@ is P1.new(x => 21).twice, 42, 'single-candidate method returns correctly';
 
 # 2. samewith re-dispatches the same single method with new args.
 class Fact {
-    method f($n) { $n <= 1 ?? 1 !! $n * samewith($n - 1) }
+    method f($n) { $n <= 1 ?? 1 !! $n * samewith(self, $n - 1) }
 }
-is Fact.f(5), 120, 'samewith works with a single candidate';
+is Fact.new.f(5), 120, 'samewith works with a single candidate';
 
 # 3. nextsame across an inheritance chain (multiple candidates) still chains.
 class Base {
