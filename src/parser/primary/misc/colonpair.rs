@@ -137,6 +137,36 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             && let Ok((r3, _)) = ws(r3)
             && let Ok((r3, _)) = parse_char(r3, ')')
         {
+            // A custom parameter trait (`:(Int $x is tagged)`) is applied by a
+            // user `trait_mod:<is>` when the signature is built, and its effect
+            // (`$param does Role`) cannot exist in a constant parsed here. Build
+            // the signature at run time from a routine carrying the same
+            // parameters -- the path a `sub`'s parameters already take.
+            if has_custom_param_trait(&param_defs) {
+                let params = param_defs.iter().map(|p| p.name.clone()).collect();
+                let routine = Expr::AnonSubParams {
+                    params,
+                    param_defs,
+                    return_type,
+                    body: Vec::new(),
+                    is_rw: false,
+                    is_raw: false,
+                    custom_traits: Default::default(),
+                    is_whatever_code: false,
+                    declarator: crate::ast::RoutineDeclarator::Sub,
+                };
+                return Ok((
+                    r3,
+                    Expr::MethodCall {
+                        target: Box::new(routine),
+                        name: Symbol::intern("signature"),
+                        args: Vec::new(),
+                        modifier: None,
+                        quoted: false,
+                        sugar: false,
+                    },
+                ));
+            }
             let sig_info = param_defs_to_sig_info(&param_defs, return_type);
             // No interpreter is available at parse time, so a user-declared
             // subset parameter type in a bare `:(...)` signature literal is
@@ -874,4 +904,17 @@ fn parse_object_hash_body(input: &str) -> PResult<'_, Expr> {
             rest = r;
         }
     }
+}
+
+/// Whether any parameter (or sub-signature parameter) carries a trait the
+/// signature machinery does not know, i.e. one a user `trait_mod:<is>` may handle.
+fn has_custom_param_trait(params: &[crate::ast::ParamDef]) -> bool {
+    params.iter().any(|p| {
+        p.traits
+            .iter()
+            .any(|t| !crate::parser::is_builtin_param_trait(t))
+            || p.sub_signature
+                .as_deref()
+                .is_some_and(|s| has_custom_param_trait(s))
+    })
 }
