@@ -64,15 +64,49 @@ fn which(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
     }
 }
 
+/// Whether a quant hash holds an element that may carry a user-defined
+/// `gist`/`raku` (an instance, a custom type or a type object). The pure
+/// renderers would print its default form, so the row declines and the call
+/// takes the interpreter path that dispatches the element's own method.
+// Cost: O(n), n = elements.
+fn has_object_element(target: &Value) -> bool {
+    fn any_object<'a>(
+        mut keys: impl Iterator<Item = &'a String>,
+        typed: impl Fn(&String) -> Value,
+    ) -> bool {
+        keys.any(|k| {
+            matches!(
+                typed(k).view(),
+                ValueView::Instance { .. }
+                    | ValueView::CustomType(..)
+                    | ValueView::CustomTypeInstance(_)
+                    | ValueView::Package(..)
+            )
+        })
+    }
+    match target.view() {
+        ValueView::Set(s, _) => any_object(s.iter(), |k| s.typed_key(k)),
+        ValueView::Bag(b, _) => any_object(b.iter().map(|(k, _)| k), |k| b.typed_key(k)),
+        ValueView::Mix(m, _) => any_object(m.iter().map(|(k, _)| k), |k| m.typed_key(k)),
+        _ => false,
+    }
+}
+
 /// A quant hash's `.gist`: `Set(a b)`, `Bag(a(2))`, `Mix(a(0.5))`.
 // Cost: O(n log n), n = elements (the keys are sorted).
 pub(crate) fn quant_gist(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if has_object_element(target) {
+        return None;
+    }
     setbagmix_gist(target).map(|s| Ok(Value::str(s)))
 }
 
 /// A quant hash's `.raku`: `Set.new("a","b")`, `("a"=>2).Bag`.
 // Cost: O(n log n), n = elements (the keys are sorted).
 pub(crate) fn quant_raku(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if has_object_element(target) {
+        return None;
+    }
     setbagmix_raku(target).map(|s| Ok(Value::str(s)))
 }
 
