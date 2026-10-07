@@ -546,6 +546,7 @@ impl Value {
             source_file: None,
             owned_captures: Vec::new(),
             authoritative_captures: Vec::new(),
+            own_cell_captures: Vec::new(),
             upvalues: Vec::new(),
             captured_fatal_mode: false,
             param_name_syms_cache: std::sync::OnceLock::new(),

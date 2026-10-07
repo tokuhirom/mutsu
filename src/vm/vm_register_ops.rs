@@ -1046,41 +1046,51 @@ impl Interpreter {
     /// and must NOT be propagated as authoritative (a reader thread would freeze a
     /// stale snapshot — `roast/S17-lowlevel/lock.t`'s condition-variable busy-wait).
     ///
-    /// Also listed: a free var that is the creating routine's OWN written `my`
-    /// (`needs_cell_unvouched_*`), captured as a live shared cell. The cell is
-    /// the lexically nearest binding, so it must beat a same-named package-body
-    /// `my` (`package_scope_lexical`) when an inline `.map` block reads it
-    /// (#11718). Installing it with overwrite is harmless: it is the very cell
-    /// the caller env already holds, never a by-value snapshot.
+    /// Returns `(authoritative, own_cell)`. `own_cell` is the cell-valued part
+    /// (`SubData::own_cell_captures`): the free vars that are the creating
+    /// routine's OWN written `my`s boxed as live shared cells
+    /// (`needs_cell_unvouched_*`), plus a vouched name whose captured value is a
+    /// cell. Such a name is lexically nearer than a same-named package-body
+    /// `my`, but it is written, so it must stay out of `authoritative` (whose
+    /// members are installed with overwrite and suppress write-back) (#11718).
     // Cost: O(f * (v + u)), f = the closure's free vars, v = vouched names, u =
     // the creator's unvouched own locals.
     pub(super) fn compute_authoritative_captures(
         &self,
         code: &CompiledCode,
         compiled_code: &Option<std::sync::Arc<CompiledCode>>,
-    ) -> Vec<Symbol> {
+    ) -> (Vec<Symbol>, Vec<Symbol>) {
         let own_cells = !code.needs_cell_unvouched_locals.is_empty()
             || !code.needs_cell_unvouched_containers.is_empty();
         if self.frame_authoritative.is_empty() && !own_cells {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         }
         let Some(cc) = compiled_code else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
-        cc.free_var_syms
-            .iter()
-            .filter(|sym| {
-                self.frame_authoritative.contains(sym)
-                    || (own_cells
-                        && (code.needs_cell_unvouched_locals.contains(sym)
-                            || code.needs_cell_unvouched_containers.contains(sym))
-                        && matches!(
-                            self.env().get_sym(**sym).map(Value::view),
-                            Some(ValueView::ContainerRef(_))
-                        ))
-            })
-            .copied()
-            .collect()
+        let is_cell = |sym: &Symbol| {
+            matches!(
+                self.env().get_sym(*sym).map(Value::view),
+                Some(ValueView::ContainerRef(_))
+            )
+        };
+        let mut authoritative = Vec::new();
+        let mut own_cell = Vec::new();
+        for sym in &cc.free_var_syms {
+            let vouched = self.frame_authoritative.contains(sym);
+            let own = own_cells
+                && (code.needs_cell_unvouched_locals.contains(sym)
+                    || code.needs_cell_unvouched_containers.contains(sym));
+            if !(vouched || own) {
+                continue;
+            }
+            if is_cell(sym) {
+                own_cell.push(*sym);
+            } else if vouched {
+                authoritative.push(*sym);
+            }
+        }
+        (authoritative, own_cell)
     }
 
     /// Capture the closure's environment as an *upvalue snapshot* (single-store
