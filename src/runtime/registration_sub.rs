@@ -1328,10 +1328,21 @@ impl Interpreter {
         // real multi candidates remain part of the check.
         let has_multi = {
             let functions = &self.registry().functions;
+            // A `MAIN` family another compunit exported into a lexical scope
+            // (`{ use App::Stouch; }` ahead of the script's own `BEGIN sub
+            // MAIN(|) { }`, as App::Stouch's tests do) is lexical to that
+            // scope, so it is no redeclaration of this compunit's `MAIN`.
+            let this_unit =
+                self.unit_of_source_sym(new_def.source_file.as_deref().map(Symbol::intern));
+            let foreign_main = name == "MAIN";
             functions.family_keys(single_key_sym.as_str()).iter().any(|k| {
-                functions
-                    .get(k)
-                    .is_some_and(|def| def.declarator != crate::ast::RoutineDeclarator::Method)
+                functions.get(k).is_some_and(|def| {
+                    def.declarator != crate::ast::RoutineDeclarator::Method
+                        && !(foreign_main
+                            && self.unit_of_source_sym(
+                                def.source_file.as_deref().map(Symbol::intern),
+                            ) != this_unit)
+                })
             })
         };
         let has_proto = self.registry().proto_subs_contains(&single_key);

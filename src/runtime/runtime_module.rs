@@ -417,7 +417,18 @@ impl Interpreter {
                 .copied()
                 .collect();
             let module_keys = std::mem::take(&mut self.module.module_registered_functions);
-            self.registry_mut().functions_mut().retain(|key, _| {
+            let program_path = self.io.program_path_sym;
+            self.registry_mut().functions_mut().retain(|key, def| {
+                // A `GLOBAL::MAIN` candidate a module declared is lexical to the
+                // block that imported it even when a parse-time `use` already
+                // registered it before the block opened (and so into
+                // `func_snapshot`): only the program's own `MAIN` stays.
+                if let Some(file) = def.source_file.as_deref().map(Symbol::intern)
+                    && Some(file) != program_path
+                    && Self::is_global_main_key(key.as_str())
+                {
+                    return false;
+                }
                 if func_snapshot.contains(key) {
                     return true;
                 }
@@ -447,9 +458,18 @@ impl Interpreter {
             // but its candidates share the importing package's flat registry
             // keys. Restore any enclosing definitions that the first import in
             // this scope hid before leaving the scope.
-            self.registry_mut()
-                .functions_mut()
-                .extend(shadowed_functions);
+            self.registry_mut().functions_mut().extend(
+                shadowed_functions.into_iter().filter(|(key, def)| {
+                    // ...and what the import hid is not the program's `MAIN`
+                    // either when a module declared it.
+                    !(Self::is_global_main_key(key.as_str())
+                        && def
+                            .source_file
+                            .as_deref()
+                            .map(Symbol::intern)
+                            .is_some_and(|file| Some(file) != program_path))
+                }),
+            );
             self.module.module_registered_functions = module_keys;
             // Same exception for classes: a module's own package-qualified
             // classes (`ScanCacheHelper::ScanCacheThing`) persist as long as the

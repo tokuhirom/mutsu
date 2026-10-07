@@ -154,6 +154,26 @@ impl Interpreter {
         self.constant_marker_visible(name)
     }
 
+    /// Whether the `'` at `at` sits inside a `"..."` literal of the pattern
+    /// (`"method '" $m "' must"`), where it is plain text rather than the opener
+    /// of a single-quoted literal.
+    // Cost: O(n), n = `at`.
+    fn regex_quote_in_dq(chars: &[char], at: usize) -> bool {
+        let (mut in_sq, mut in_dq, mut esc) = (false, false, false);
+        for &c in &chars[..at] {
+            if esc {
+                esc = false;
+            } else if c == '\\' {
+                esc = true;
+            } else if c == '\'' && !in_dq {
+                in_sq = !in_sq;
+            } else if c == '"' && !in_sq {
+                in_dq = !in_dq;
+            }
+        }
+        in_dq
+    }
+
     pub(super) fn interpolate_regex_scalars(&self, pattern: &str) -> Result<String, RuntimeError> {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();
@@ -180,6 +200,28 @@ impl Interpreter {
                     .expect("comment marker was checked");
                 out.extend(chars[i..end].iter());
                 i = end;
+                continue;
+            }
+            // A single-quoted literal (`'{{'`) is copied verbatim: its braces are
+            // text, not a code block, so a `$var` after it must still be
+            // interpolated. Not an apostrophe in an identifier, an escaped
+            // quote, or a quote inside a `<[ ... ]>` class (no `]` between).
+            if ch == '\''
+                && !Self::regex_quote_in_dq(&chars, i)
+                && !(i > 0 && (chars[i - 1].is_alphanumeric() || matches!(chars[i - 1], '\\' | '[')))
+                && let Some(len) = chars[i + 1..]
+                    .iter()
+                    .scan(false, |esc, &c| {
+                        let stop = !*esc && c == '\'';
+                        let bad = c == ']';
+                        *esc = !*esc && c == '\\';
+                        Some((stop, bad))
+                    })
+                    .position(|(stop, bad)| stop || bad)
+                && chars[i + 1 + len] == '\''
+            {
+                out.extend(chars[i..=i + 1 + len].iter());
+                i += len + 2;
                 continue;
             }
             // Skip code blocks { ... } — don't interpolate variables inside them

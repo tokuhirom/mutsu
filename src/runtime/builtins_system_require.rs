@@ -549,6 +549,16 @@ impl Interpreter {
                 if !ks.contains("MAIN") || before_keys.contains(*k) {
                     return false;
                 }
+                // A `MAIN` keyed under a named package (`unit module Foo;
+                // multi sub MAIN` -> `Foo::MAIN/..`) is that package's routine,
+                // reached as `Foo::MAIN(...)`; it can never become the
+                // program's MAIN, so only package-less / `GLOBAL::` keys leak.
+                let head = ks.split('/').next().unwrap_or(ks);
+                if crate::qualified::is_qualified_str(
+                    head.strip_prefix("GLOBAL::").unwrap_or(head),
+                ) {
+                    return false;
+                }
                 let after_pkg = crate::qualified::last_segment(**k).as_str();
                 let short = after_pkg.split(['/', ':']).next().unwrap_or(after_pkg);
                 if short != "MAIN" {
@@ -559,6 +569,7 @@ impl Interpreter {
             })
             .copied()
             .collect();
+
         for k in leaked {
             functions.remove(&k);
         }
