@@ -4,7 +4,7 @@ use Test;
 # declaration of the name is, not on a unit-wide table. Every row was checked
 # against `raku` first; this file must pass under both `raku` and `mutsu`.
 
-plan 6;
+plan 7;
 
 sub kinds(Str $code) {
     $code.AST.gist.subst(/\s+/, ' ', :g).comb(/'Term::Name' | 'Type::Simple'/).join(',')
@@ -27,3 +27,4 @@ is kinds(Q|my constant E = Metamodel::EnumHOW.new_type(:name<E>, :base_type(Int)
     'a constant holding a MOP-created type is a type';
 
 is Q|my constant Foo = 5; Foo|.AST.EVAL, 5, 'a term constant evaluates';
+is Q|my enum E <a b>; E::b.value|.AST.EVAL, 1, 'a lexical enum round-trips through lowering';

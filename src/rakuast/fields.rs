@@ -281,7 +281,11 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
         ],
         TypeSimple | TypeSetting | TypeCapture => &[("name", Absent::Required)],
-        TypeEnum => &[("name", Absent::Required), ("term", Absent::Required)],
+        TypeEnum => &[
+            ("scope", Absent::Str("our")),
+            ("name", Absent::Required),
+            ("term", Absent::Required),
+        ],
         QuotedRegex => &[
             ("match-immediately", Absent::False),
             ("body", Absent::Required),
