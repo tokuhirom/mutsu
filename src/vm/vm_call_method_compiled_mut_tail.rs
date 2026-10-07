@@ -50,8 +50,22 @@ impl Interpreter {
             _ => None,
         };
         let class_name = class_sym_opt.map(|s| s.as_str());
+        // A quoted or run-time name (`$obj."street"()`) reaches this tail where
+        // the plain name is answered by the accessor lane. A class's own
+        // `has $.street` accessor outranks a role-composed `method street`
+        // (S14-roles/attributes.t "Class prioritization"), so when the
+        // accessor wins the per-level race the resolver below must not hand
+        // back the role's method.
+        let accessor_wins = matches!(target.view(), ValueView::Instance { .. })
+            && class_name.is_some_and(|cn| {
+                matches!(
+                    self.resolve_user_method_or_accessor_sym(cn, method_sym),
+                    Some(crate::runtime::UserMethodOrAccessor::Accessor)
+                )
+            });
         if let Some(cn) = class_name
             && let Some(class_sym) = class_sym_opt
+            && !accessor_wins
             && let Some((owner_class, method_def)) =
                 self.resolve_method_cached(cn, method, class_sym, method_sym, &args, &target)
         {
