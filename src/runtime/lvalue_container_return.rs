@@ -191,7 +191,12 @@ impl Interpreter {
         if !matches!(target.view(), ValueView::Package(_)) {
             return Ok(None);
         }
-        if !self.method_lvalue_returns_container(&target, method, method_args) {
+        // A metamethod (`Type.^model = v`) lives on the HOW, which
+        // `method_lvalue_returns_container` does not search; run it and let
+        // the write half decide whether it handed back a location.
+        if !method.starts_with('^')
+            && !self.method_lvalue_returns_container(&target, method, method_args)
+        {
             return self.type_object_non_rw_method_lvalue(&target, method, method_args, value);
         }
         let was_lvalue = self.in_lvalue_assignment;
@@ -203,7 +208,35 @@ impl Interpreter {
         // invocant into the method's first parameter. This call site supplies
         // values, not source names.
         let saved_sources = self.take_pending_call_arg_sources();
-        let result = self.call_method_with_values(target.clone(), method, method_args.to_vec());
+        let result = if let Some(meta) = method.strip_prefix('^').filter(|m| !m.is_empty()) {
+            // `Foo.^bar` is `Foo.HOW.bar(Foo, ...)`: the invocant travels as
+            // the first argument, as in the rvalue metamethod dispatch.
+            let user_class = match target.view() {
+                ValueView::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            // A user-declared `method ^bar` stays on the type's own method
+            // table and takes the invocant as its first argument.
+            if user_class
+                .as_deref()
+                .is_some_and(|cn| self.has_user_method(cn, method))
+            {
+                let mut user_args = Vec::with_capacity(method_args.len() + 1);
+                user_args.push(target.clone());
+                user_args.extend(method_args.iter().cloned());
+                self.call_method_with_values(target.clone(), method, user_args)
+            } else {
+                self.call_method_with_values(target.clone(), "HOW", Vec::new())
+                    .and_then(|how| {
+                    let mut how_args = Vec::with_capacity(method_args.len() + 1);
+                    how_args.push(target.clone());
+                    how_args.extend(method_args.iter().cloned());
+                    self.call_method_with_values(how, meta, how_args)
+                    })
+            }
+        } else {
+            self.call_method_with_values(target.clone(), method, method_args.to_vec())
+        };
         self.set_pending_call_arg_sources(saved_sources);
         self.in_lvalue_assignment = was_lvalue;
         // A method that fails when called is not necessarily a failed

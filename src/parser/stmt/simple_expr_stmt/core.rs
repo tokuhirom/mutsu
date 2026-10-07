@@ -56,8 +56,8 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
                 };
             }
             let target_var_name = method_lvalue_target_name(&target);
-            let method_name = if modifier == Some('!') {
-                format!("!{}", name.resolve())
+            let method_name = if let Some(m @ ('!' | '^')) = modifier {
+                format!("{m}{}", name.resolve())
             } else {
                 name.resolve()
             };
@@ -716,8 +716,8 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         } = &target_expr
         {
             let target_var_name = method_lvalue_target_name(target);
-            let method_name = if *modifier == Some('!') {
-                format!("!{}", name.resolve())
+            let method_name = if let Some(m @ ('!' | '^')) = *modifier {
+                format!("{m}{}", name.resolve())
             } else {
                 name.resolve()
             };
@@ -874,8 +874,8 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 return parse_statement_modifier(r, stmt);
             }
             let target_var_name = method_lvalue_target_name(target);
-            let method_name = if *modifier == Some('!') {
-                format!("!{}", name.resolve())
+            let method_name = if let Some(m @ ('!' | '^')) = *modifier {
+                format!("{m}{}", name.resolve())
             } else {
                 name.resolve()
             };
@@ -1316,8 +1316,8 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             } else {
                 "_".to_string()
             };
-            let method_name = if *modifier == Some('!') {
-                format!("!{}", name.resolve())
+            let method_name = if let Some(m @ ('!' | '^')) = *modifier {
+                format!("{m}{}", name.resolve())
             } else {
                 name.resolve()
             };
@@ -1446,8 +1446,8 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             } else {
                 "_".to_string()
             };
-            let method_name = if *modifier == Some('!') {
-                format!("!{}", name.resolve())
+            let method_name = if let Some(m @ ('!' | '^')) = *modifier {
+                format!("{m}{}", name.resolve())
             } else {
                 name.resolve()
             };
