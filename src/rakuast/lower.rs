@@ -1530,6 +1530,28 @@ fn word_quote_content(node: &RakuAstNode) -> Result<Option<(bool, bool, String)>
     }
 }
 
+/// `Some(val)` for a `quotewords` string whose segments are not one literal
+/// run: an interpolating word quote (see `word_quote`).
+// Cost: O(p), p = processors of the node.
+fn interpolating_words(
+    node: &RakuAstNode,
+    segments: &[Value],
+) -> Result<Option<bool>, RuntimeError> {
+    if !node.fields.iter().any(|f| f.name == Some("processors")) {
+        return Ok(None);
+    }
+    let processors = list_field(node, "processors")?;
+    let names: Vec<_> = processors.iter().filter_map(|p| p.as_str()).collect();
+    let val = match names.as_slice() {
+        ["quotewords", "val"] => true,
+        ["quotewords"] => false,
+        _ => return Ok(None),
+    };
+    let one_literal = matches!(segments, [s]
+        if matches!(s.view(), ValueView::RakuAst(seg) if seg.class == RakuAstClass::StrLiteral));
+    Ok((!one_literal).then_some(val))
+}
+
 fn lower_enum_word_term(term: &RakuAstNode) -> Result<LoweredEnumVariants, RuntimeError> {
     let processors = list_field(term, "processors")?;
     let processor_names = processors
@@ -3794,6 +3816,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // terminator line, which the lowered string no longer has.
         RakuAstClass::QuotedString | RakuAstClass::Heredoc => {
             let segments = list_field(node, "segments")?;
+            if let Some(val) = interpolating_words(node, segments)? {
+                return super::word_quote::lower(node, val);
+            }
             if let Some((quotewords, val, content)) = word_quote_content(node)? {
                 // `<…>` keeps its own lowering (a lone numeric word is a
                 // literal term there).

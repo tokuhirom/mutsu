@@ -62,6 +62,7 @@ mod type_args;
 mod type_call;
 mod type_lower;
 mod use_stmt;
+mod word_quote;
 
 pub use formatter::formatter_ast;
 pub use lower::lower;
@@ -231,6 +232,8 @@ pub enum RakuAstClass {
     Feed,
     StatementPrefixEager,
     TermCapture,
+    // `<<"a b">>`: a quoted word inside a `quotewords` string.
+    QuoteWordsAtom,
     MetaInfixReverse,
     MetaInfixCross,
     MetaInfixZip,
@@ -580,6 +583,7 @@ impl RakuAstClass {
             Feed => "RakuAST::Feed",
             StatementPrefixEager => "RakuAST::StatementPrefix::Eager",
             TermCapture => "RakuAST::Term::Capture",
+            QuoteWordsAtom => "RakuAST::QuoteWordsAtom",
             MetaInfixReverse => "RakuAST::MetaInfix::Reverse",
             MetaInfixCross => "RakuAST::MetaInfix::Cross",
             MetaInfixZip => "RakuAST::MetaInfix::Zip",
@@ -1430,6 +1434,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Feed,
     RakuAstClass::StatementPrefixEager,
     RakuAstClass::TermCapture,
+    RakuAstClass::QuoteWordsAtom,
     RakuAstClass::MetaInfixReverse,
     RakuAstClass::MetaInfixCross,
     RakuAstClass::MetaInfixZip,
@@ -3119,6 +3124,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Feed", "new") => RakuAstClass::Feed,
         ("RakuAST::StatementPrefix::Eager", "new") => RakuAstClass::StatementPrefixEager,
         ("RakuAST::Term::Capture", "new") => RakuAstClass::TermCapture,
+        ("RakuAST::QuoteWordsAtom", "new") => RakuAstClass::QuoteWordsAtom,
         ("RakuAST::MetaInfix::Reverse", "new") => RakuAstClass::MetaInfixReverse,
         ("RakuAST::MetaInfix::Cross", "new") => RakuAstClass::MetaInfixCross,
         ("RakuAST::MetaInfix::Zip", "new") => RakuAstClass::MetaInfixZip,
@@ -3510,6 +3516,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Feed
             | RakuAstClass::StatementPrefixEager
             | RakuAstClass::TermCapture
+            | RakuAstClass::QuoteWordsAtom
             | RakuAstClass::MetaInfixReverse
             | RakuAstClass::MetaInfixCross
             | RakuAstClass::MetaInfixZip

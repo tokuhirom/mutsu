@@ -53,9 +53,8 @@ pub(crate) fn double_angle_term(input: &str) -> PResult<'_, Expr> {
     spelled_quotewords(input, "<<", ">>", double_angle_list(input)?)
 }
 
-/// Keep the raw text of an interpolation-free `«…»` / `<<…>>` list as
-/// `processors => <quotewords val>`. A list that interpolates or quotes a word
-/// is left plain: its segments are not carried yet.
+/// Keep the raw text of a `«…»` / `<<…>>` list as `processors => <quotewords
+/// val>`; one that interpolates or quotes a word also has segments.
 fn spelled_quotewords<'a>(
     input: &'a str,
     open: &str,
@@ -64,7 +63,13 @@ fn spelled_quotewords<'a>(
 ) -> PResult<'a, Expr> {
     let content = &input[open.len()..input.len() - rest.len() - close.len()];
     if !crate::parser::primary::string::word_quote_text_is_plain(content) {
-        return Ok((rest, expr));
+        return Ok((
+            rest,
+            Expr::spelled(expr, || Spelling::InterpolatingWords {
+                val: true,
+                text: content.into(),
+            }),
+        ));
     }
     Ok((
         rest,

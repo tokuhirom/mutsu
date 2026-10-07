@@ -163,7 +163,13 @@ parsers (`spell_word_quote`, `french_quote_term`, `double_angle_term`) wrap only
 text is plain (`word_quote_text_is_plain`: no interpolation, inner quote, nesting or escape).
 `french_quote_list`/`double_angle_list` stay unwrapped for the subscript and colonpair callers,
 as `angle_list` does. The lowering of every processor list is `parser::word_quote_expr`. The
-interpolating forms (`<<a $b>>`, `«a "b c"»`) need segment nodes and remain refused.
+interpolating forms (`<<a $b>>`, `«a "b c"»`, `qqww`) are carried by
+`Spelling::InterpolatingWords { val, text }` ([#12233](https://github.com/tokuhirom/mutsu/issues/12233)):
+the raw text is kept, `convert` re-derives rakudo's segments from it (every unquoted run
+interpolated as one `qq` string, each quoted word a `QuoteWordsAtom` over its own `QuotedString`;
+`src/rakuast/word_quote.rs`), and `lower` splits the segments back into words for
+`parser::quotewords_from_words`, the lowering the quote parsers use too. `:v` on a plain quote
+(`qw:v/1 2/`) is the ordinary `WordQuote` with `val`.
 
 **What remains** is the closed slice list in
 [#12199](https://github.com/tokuhirom/mutsu/issues/12199) (measured 2026-10-07 on a 766-file,

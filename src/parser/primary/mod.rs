@@ -329,7 +329,9 @@ pub(crate) fn angle_word_value(word: &str) -> Value {
 }
 
 pub(crate) use container::{angle_word_is_numeric_literal, angle_words_expr};
-pub(crate) use string::word_quote_expr;
+pub(crate) use string::{
+    QuoteWordsPart, quotewords_from_words, quotewords_spelled_parts, word_quote_expr,
+};
 
 /// Compute the 1-based line number of `input` within the original source.
 pub(in crate::parser) fn current_line_number(input: &str) -> i64 {

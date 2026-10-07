@@ -45,11 +45,11 @@ pub(in crate::parser) use interp_content::{
 };
 pub(in crate::parser) use qx::qx_string;
 
-pub(crate) use helpers::word_quote_expr;
 pub(crate) use helpers::{
     count_repeated_bracket, process_q_escapes, quote_delimiters, read_delimited_content,
     read_delimited_content_interpolating, read_multi_bracketed, unicode_bracket_close,
 };
+pub(crate) use helpers::{quotewords_from_words, word_quote_expr};
 pub(crate) use heredoc::parse_to_heredoc_with_flags;
 pub(crate) use interp_content::parse_single_quote_qq;
 pub(crate) use interp_content::try_embedded_qw;
@@ -58,3 +58,4 @@ pub(crate) use interp_helpers::{
     try_parse_interp_call, try_parse_interp_method_call, try_parse_interp_self_accessor_call,
 };
 pub(crate) use quotewords::parse_quotewords_items;
+pub(crate) use quotewords::{QuoteWordsPart, quotewords_spelled_parts};
