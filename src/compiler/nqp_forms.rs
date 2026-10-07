@@ -391,6 +391,7 @@ impl Compiler {
                 repeat: true,
                 label: None,
                 is_until,
+                is_bare_term: false,
             }
         } else {
             Stmt::While {

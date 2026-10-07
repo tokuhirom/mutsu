@@ -272,6 +272,7 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 repeat: false,
                 label: None,
                 is_until: false,
+                is_bare_term: false,
             },
         ));
     }
@@ -303,6 +304,7 @@ pub(crate) fn loop_stmt(input: &str) -> PResult<'_, Stmt> {
             repeat: false,
             label: None,
             is_until: false,
+            is_bare_term: false,
         },
     ))
 }
@@ -361,6 +363,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 repeat: true,
                 label: None,
                 is_until: false,
+                is_bare_term: false,
             },
         ));
     }
@@ -416,6 +419,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 repeat: true,
                 label: None,
                 is_until: true,
+                is_bare_term: false,
             },
         ));
     }
@@ -438,6 +442,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 repeat: true,
                 label: None,
                 is_until: false,
+                is_bare_term: false,
             },
         ));
     }
@@ -460,6 +465,7 @@ pub(crate) fn repeat_stmt(input: &str) -> PResult<'_, Stmt> {
                 repeat: true,
                 label: None,
                 is_until: true,
+                is_bare_term: false,
             },
         ));
     }

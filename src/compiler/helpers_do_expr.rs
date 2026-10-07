@@ -257,6 +257,7 @@ impl Compiler {
             repeat: false,
             label: label.clone(),
             is_until,
+            is_bare_term: false,
         };
         let gather_expr = AExpr::Gather(vec![inner]);
         self.compile_expr(&gather_expr);

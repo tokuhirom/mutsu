@@ -1065,6 +1065,7 @@ impl Compiler {
                 repeat,
                 label,
                 is_until,
+                ..
             } if !*repeat => {
                 self.compile_do_loop_expr(init, cond, step, body, label, *is_until);
             }
