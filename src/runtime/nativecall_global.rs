@@ -84,7 +84,11 @@ impl Interpreter {
             if let Some(built) = self.native_pointer_of_declared(target, held, false) {
                 return built;
             }
-            return Ok(crate::runtime::nativecall::make_pointer_object(held));
+            // No upstream type resolves: `Pointer` comes from `use NativeCall`,
+            // which is also what exports `cglobal`.
+            return Err(RuntimeError::new(format!(
+                "cglobal: '{target}' is not a pointer type NativeCall can build"
+            )));
         }
         // A CStruct/CUnion/CPointer target: the variable holds a pointer to the
         // struct, and the handle is that address wrapped as the declared class.

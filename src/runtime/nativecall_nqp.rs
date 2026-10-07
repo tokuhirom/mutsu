@@ -180,7 +180,12 @@ impl Interpreter {
         // A pointer return is boxed as `$rettype` itself when that is a
         // CPointer class or a mixin type (upstream's `Pointer`, `Pointer[T]`,
         // `CArray[T]`); NULL is the type object.
-        if spec.ret == crate::runtime::nativecall::CType::Pointer && spec.ret_struct.is_none() {
+        if spec.ret == crate::runtime::nativecall::CType::Pointer
+            && spec
+                .ret_struct
+                .as_deref()
+                .is_none_or(|n| crate::runtime::cstruct_layout::pointer_parameter(n).is_some())
+        {
             let addr = crate::runtime::nativecall::value_c_address(&result);
             if let Some(boxed) = self.native_object_of_type(&rettype, addr) {
                 return if addr == 0 { Ok(rettype) } else { boxed };
