@@ -43,6 +43,7 @@ mod prefix_call;
 mod proto;
 mod react;
 mod regex_char_class;
+mod phaser_condition;
 mod regex_code;
 mod regex_enumeration;
 mod regex_extension;

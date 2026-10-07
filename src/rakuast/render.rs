@@ -236,6 +236,7 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || super::type_call::is_marker(field)
                 || node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")
                 || super::regex_code::is_source(node, field)
+                || super::phaser_condition::is_source(node, field)
                 || node.class == RakuAstClass::RegexAssertionNamedRegexArg
                     && field.name == Some("capturing"))
         })

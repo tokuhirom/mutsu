@@ -329,6 +329,12 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         | RakuAstClass::StatementPrefixPhaserLast
         | RakuAstClass::StatementPrefixPhaserQuit
         | RakuAstClass::StatementPrefixPhaserClose => lower_phaser(node),
+        RakuAstClass::StatementPrefixPhaserPre => {
+            super::phaser_condition::lower(node, crate::ast::PhaserKind::Pre)
+        }
+        RakuAstClass::StatementPrefixPhaserPost => {
+            super::phaser_condition::lower(node, crate::ast::PhaserKind::Post)
+        }
         RakuAstClass::StatementTrusts => Ok(Stmt::TrustsDecl {
             name: crate::symbol::Symbol::intern(&simple_type_name(
                 node,

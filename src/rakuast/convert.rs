@@ -171,7 +171,7 @@ fn is_modifier_statement(stmt: &Stmt) -> bool {
 
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
-fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
+pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     match stmt {
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
@@ -480,8 +480,10 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             condition,
             ..
         } => {
-            if condition.is_some() {
-                return Err(unsupported("PRE/POST phaser condition"));
+            if let Some(condition) = condition {
+                return super::phaser_condition::convert(kind, body, condition)?
+                    .map(Some)
+                    .ok_or_else(|| unsupported("PRE/POST phaser condition"));
             }
             let class = match phaser_class(kind) {
                 Some(c) => c,
