@@ -792,7 +792,8 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Some(call) => call,
                 None => (r, expr),
             };
-            let (r, stmt) = crate::parser::stmt::modifier::parse_statement_modifier(r, Stmt::Expr(expr))?;
+            let (r, stmt) =
+                crate::parser::stmt::modifier::parse_statement_modifier(r, Stmt::Expr(expr))?;
             return Ok((
                 r,
                 Expr::spelled(
