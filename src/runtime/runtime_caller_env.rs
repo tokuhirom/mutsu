@@ -279,8 +279,20 @@ impl Interpreter {
                 "Cannot access caller variable '${name}' - not enough caller frames"
             )));
         }
-        self.env_mut().insert(name.to_string(), value);
-        self.record_runtime_name_write(name);
+        if name == "_" {
+            // The topic is per-frame, so a general runtime-name write would
+            // replay the callee's topic through every intervening frame. Write
+            // directly into this call frame's saved caller env instead; the
+            // caller-var drain below updates its authoritative local slot once
+            // when this frame returns.
+            if let Some(frame) = self.call_frames.last_mut() {
+                frame.saved_env.insert(name.to_string(), value);
+                self.record_caller_var_writeback(name);
+            }
+        } else {
+            self.env_mut().insert(name.to_string(), value);
+            self.record_runtime_name_write(name);
+        }
         Ok(())
     }
 
