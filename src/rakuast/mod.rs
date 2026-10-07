@@ -304,6 +304,7 @@ pub enum RakuAstClass {
     StatementModifierUnless,
     StatementModifierWith,
     StatementModifierWithout,
+    StatementModifierWhen,
     // The `with`/`without`/`orwith` BLOCK forms.
     StatementWith,
     StatementWithout,
@@ -633,6 +634,7 @@ impl RakuAstClass {
             StatementModifierIf => "RakuAST::StatementModifier::If",
             StatementModifierUnless => "RakuAST::StatementModifier::Unless",
             StatementModifierWith => "RakuAST::StatementModifier::With",
+            StatementModifierWhen => "RakuAST::StatementModifier::When",
             StatementModifierWithout => "RakuAST::StatementModifier::Without",
             StatementWith => "RakuAST::Statement::With",
             StatementWithout => "RakuAST::Statement::Without",
@@ -1473,6 +1475,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementModifierIf,
     RakuAstClass::StatementModifierUnless,
     RakuAstClass::StatementModifierWith,
+    RakuAstClass::StatementModifierWhen,
     RakuAstClass::StatementModifierWithout,
     RakuAstClass::StatementWith,
     RakuAstClass::StatementWithout,

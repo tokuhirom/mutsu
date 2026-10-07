@@ -182,6 +182,19 @@ fn lower_condition_modifier(modifier: &RakuAstNode, statement: Stmt) -> Result<S
             statement,
         ));
     }
+    // `STMT when COND`: the synthetic `given $_` over a modifier `When`.
+    if modifier.class == RakuAstClass::StatementModifierWhen {
+        return Ok(Stmt::Given {
+            topic: Expr::Var("_".to_string()),
+            body: vec![Stmt::When {
+                cond: lower_expr(named_child_or_positional(modifier)?)?,
+                body: vec![statement],
+                is_statement_modifier: true,
+            }],
+            is_statement_modifier: true,
+            with_kind: None,
+        });
+    }
     let is_unless = match modifier.class {
         RakuAstClass::StatementModifierIf => false,
         RakuAstClass::StatementModifierUnless => true,
@@ -4124,7 +4137,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::StatementLoopWhile
         | RakuAstClass::StatementLoopUntil
         | RakuAstClass::StatementLoop
-        | RakuAstClass::StatementWhenever => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),
+        | RakuAstClass::StatementWhenever
+        | RakuAstClass::StatementWhen
+        | RakuAstClass::StatementDefault => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),
         // `nqp::const::NAME`: the constant as the bareword the parser keeps.
         RakuAstClass::NqpConst => match node.fields.first().map(|f| &f.value) {
             Some(RakuAstFieldValue::Node(name)) => match name.view() {
@@ -4217,6 +4232,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     | RakuAstClass::StatementLoopUntil
                     | RakuAstClass::StatementLoop
                     | RakuAstClass::StatementWhenever
+                    | RakuAstClass::StatementWhen
+                    | RakuAstClass::StatementDefault
             ) {
                 return Ok(Expr::DoStmt(Box::new(lower_stmt(block)?)));
             }

@@ -145,9 +145,37 @@ fn is_do_statement(stmt: &Stmt) -> bool {
             is_statement_modifier,
             ..
         } => !*is_statement_modifier,
-        Stmt::While { .. } | Stmt::Loop { .. } | Stmt::Whenever { .. } => true,
+        Stmt::While { .. }
+        | Stmt::Loop { .. }
+        | Stmt::Whenever { .. }
+        | Stmt::When { .. }
+        | Stmt::Default(_) => true,
         _ => false,
     }
+}
+
+/// The condition and the modified statement of `STMT when COND`, which the
+/// parser spells `given $_ { when COND { STMT } }` with the `When` flagged as a
+/// modifier. `None` for any other `given` body.
+// Cost: O(s), s = statements in `body` (SetLine markers skipped).
+fn when_modifier_parts<'a>(topic: &Expr, body: &'a [Stmt]) -> Option<(&'a Expr, &'a Stmt)> {
+    if !matches!(topic, Expr::Var(name) if name == "_") {
+        return None;
+    }
+    let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let (Some(Stmt::When {
+        cond,
+        body,
+        is_statement_modifier: true,
+    }), None) = (real.next(), real.next())
+    else {
+        return None;
+    };
+    let mut inner = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let (Some(modified), None) = (inner.next(), inner.next()) else {
+        return None;
+    };
+    Some((cond, modified))
 }
 
 /// Whether `stmt` is a statement carrying a statement modifier (`EXPR for LIST`,
@@ -791,6 +819,20 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     return Err(unsupported("with/without block with an explicit signature"));
                 }
                 None => {}
+            }
+            // `STMT when COND`: the parser's synthetic `given $_` over a
+            // modifier `When` (see `Stmt::When::is_statement_modifier`).
+            if let Some((cond, modified)) = when_modifier_parts(topic, body) {
+                let mut statement = convert_stmt(modified)?
+                    .ok_or_else(|| unsupported("empty when modifier body"))?;
+                statement.fields.push(node_field(
+                    Some("condition-modifier"),
+                    RakuAstNode {
+                        class: RakuAstClass::StatementModifierWhen,
+                        fields: vec![node_field(None, convert_expr(cond)?)],
+                    },
+                ));
+                return Ok(Some(statement));
             }
             if *is_statement_modifier {
                 let [modified] = body.as_slice() else {
