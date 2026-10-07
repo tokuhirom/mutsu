@@ -130,7 +130,7 @@ pub(crate) fn invoke_mut(
     if !super::table::names_a_mut_row(method, arity) {
         return None;
     }
-    let owners = mutating::owners_of(place.value())?;
+    let owners = mutating::owners_of(place.value(), place.name().is_some())?;
     let id = owners
         .iter()
         .find_map(|owner| super::owner_row(Symbol::intern(owner), method, arity))?;
@@ -243,6 +243,9 @@ fn dispatch(
 /// Whether the named argument `pair` is one `row` binds.
 // Cost: O(n), n = names the row declares.
 fn names_declared(row: &MethodRow, pair: &Value) -> bool {
+    if row.flags.contains(RowFlags::ANY_NAMED) {
+        return true;
+    }
     match pair.view() {
         crate::value::ValueView::Pair(key, _) => row.named.contains(&key.as_str()),
         _ => false,

@@ -70,12 +70,40 @@ impl<'a> ReceiverPlace<'a> {
         ReceiverPlace::Detached(value)
     }
 
-    /// The receiver as the call read it.
+    /// The binding's name, if the receiver has one.
+    // Cost: O(1).
+    pub(crate) fn name(&self) -> Option<&str> {
+        match self {
+            ReceiverPlace::Var { name, .. } if !name.is_empty() => Some(name),
+            _ => None,
+        }
+    }
+
+    /// The receiver as the call read it. It is a snapshot: [`Self::assign`]
+    /// does not update it.
     // Cost: O(1).
     pub(crate) fn value(&self) -> &Value {
         match self {
             ReceiverPlace::Var { value, .. } => value,
             ReceiverPlace::Detached(value) => value,
+        }
+    }
+
+    /// Replace the value the receiver holds (a method that changes the value,
+    /// not the container: `Str.subst-mutate`). A binding is written in both
+    /// halves of the dual store when the call came through the VM; a detached
+    /// container is overwritten.
+    // Cost: O(1) for the env entry, O(l) to find the local slot by name, l =
+    // local slots of the chunk.
+    pub(crate) fn assign(&mut self, interp: &mut Interpreter, new: Value) {
+        match self {
+            ReceiverPlace::Var { name, code, .. } => {
+                interp.env_mut().insert((*name).to_string(), new.clone());
+                if let Some(code) = code {
+                    interp.locals_set_by_name(code, name, new);
+                }
+            }
+            ReceiverPlace::Detached(slot) => **slot = new,
         }
     }
 

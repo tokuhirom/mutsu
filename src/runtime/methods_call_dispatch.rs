@@ -1958,7 +1958,7 @@ impl Interpreter {
         // receiver's shared node, which every holder of the container sees.
         // Probed by receiver kind first, so a call on any other receiver
         // pays one tag probe and no interning.
-        if crate::builtins::method_table::mut_owners_of(&target).is_some() {
+        if crate::builtins::method_table::mut_owners_of(&target, false).is_some() {
             let mut detached = target.clone();
             let mut place = crate::builtins::method_table::ReceiverPlace::detached(&mut detached);
             if let Some(result) = crate::builtins::method_table::invoke_mut(

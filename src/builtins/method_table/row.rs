@@ -111,6 +111,11 @@ impl RowFlags {
     /// only the mutating dispatch entries do; a shape lookup would run it on a
     /// copy. Slice 3F's `Handler::Mut` retires the flag.
     pub(crate) const OWNER_ONLY: RowFlags = RowFlags(1 << 4);
+    /// The row binds every named argument the call passes (`|c`, `*%_`), so the
+    /// guard step hands them all to the handler as [`Named`] instead of
+    /// dropping the ones the row does not list (`Str.subst-mutate`, whose
+    /// adverbs `:g`, `:i`, `:x`, ... are the pattern's, not the method's).
+    pub(crate) const ANY_NAMED: RowFlags = RowFlags(1 << 5);
 
     /// The flags of both.
     // Cost: O(1).

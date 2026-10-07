@@ -544,22 +544,23 @@ impl Interpreter {
             return Ok(());
         }
         crate::alloc_scope_end!(_sc_cmm_args);
-        // `$s.substr-rw(...)` outside an assignment: hand back the same
-        // write-through Proxy the sub form `substr-rw($s, ...)` returns, so a
-        // bound `my $r := $s.substr-rw(1, 1); $r = "Y"` splices into `$s`
-        // (#9200). A user class's own `substr-rw` method is untouched: only a
-        // `Str` receiver held by a plain scalar variable takes this path.
-        // Cost: O(n), n = chars of the receiver (the Proxy's range is resolved
-        // against it once).
-        if method == "substr-rw"
-            && modifier.is_none()
-            && !target_name.is_empty()
-            && !crate::qualified::is_qualified(code.const_sym(target_name_idx))
-            && matches!(target.descalarize().view(), ValueView::Str(_))
-        {
-            let proxy = self.make_substr_rw_proxy(target_name, &args)?;
-            self.stack.push(proxy);
-            return Ok(());
+        // A receiver-mutating built-in method answered from its row
+        // (ADR-11276 §9.23): `BagHash.add`/`remove`, the QuantHash mutators and
+        // `Str`'s `subst-mutate`/`substr-rw` so far. The row writes through the
+        // receiver's shared node (or replaces the variable's value) and
+        // re-seats the dual store itself, so there is nothing to write back
+        // here. A user class's own method of that name is untouched: the
+        // `^find_method` lookup above has already answered it.
+        if matches!(modifier, None | Some("?")) {
+            let mut place =
+                crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code);
+            if let Some(result) =
+                crate::builtins::method_table::invoke_mut(self, &mut place, method_sym, &args)
+            {
+                crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "mut-row");
+                self.stack.push(result?);
+                return Ok(());
+            }
         }
         // `$b.subbuf-rw(...)` outside an assignment: a write-through Proxy over
         // the buffer, the `Buf` counterpart of the `substr-rw` arm above
@@ -1640,56 +1641,6 @@ impl Interpreter {
             self.stack.push(value);
             return Ok(());
         }
-        // `$s.subst-mutate(pattern, replacement, ...)` substitutes in place (like
-        // `s///`) and returns the value `s///` would set in `$/`: a Match for a
-        // single hit, `Nil` when nothing matched, or a List of
-        // Matches under `:g`. Reuses the `.subst` machinery for the new string
-        // and the `.match` machinery for the return, then writes the new string
-        // back to the variable -- mirroring the `Match.make` pattern above.
-        if method == "subst-mutate" && matches!(target.view(), ValueView::Str(_)) {
-            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "subst-mutate");
-            let new_str = self.dispatch_subst(target.clone(), &args)?;
-            // `.match` takes the pattern + adverbs but not the replacement (the
-            // 2nd positional), so drop the replacement when building its args.
-            let mut match_args: Vec<Value> = Vec::new();
-            let mut positional_seen = 0;
-            for arg in &args {
-                if arg.is_string_pair_value() {
-                    match_args.push(arg.clone());
-                } else {
-                    positional_seen += 1;
-                    if positional_seen != 2 {
-                        match_args.push(arg.clone());
-                    }
-                }
-            }
-            let literal_string_pattern = args
-                .iter()
-                .find(|arg| !matches!(arg.view(), ValueView::Pair(..)))
-                .is_some_and(|arg| matches!(arg.deref_container().view(), ValueView::Str(_)));
-            let match_result = if literal_string_pattern {
-                // `dispatch_subst` already selected the grapheme-safe literal
-                // matches and published them in `$/`. Re-running them through
-                // the regex engine could accept a codepoint inside a grapheme.
-                // A failed literal `s///` leaves `$/` as `Any`; the method answers `Nil`.
-                match self.env().get("/") {
-                    Some(m) if !m.is_nil() && !matches!(m.view(), ValueView::Package(_)) => {
-                        m.clone()
-                    }
-                    _ => Value::NIL,
-                }
-            } else {
-                self.dispatch_match_method(target.clone(), &match_args)?
-            };
-            // Rakudo answers `Nil` for a miss (`:g`/`:x` answer an empty list),
-            // which is exactly what `.match` returns.
-            let ret = match_result;
-            self.env_mut()
-                .insert(target_name.to_string(), new_str.clone());
-            self.locals_set_by_name(code, target_name, new_str);
-            self.stack.push(ret);
-            return Ok(());
-        }
         // .hyper/.race with named arguments in mut path
         if matches!(method, "hyper" | "race") && !args.is_empty() {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
@@ -1887,23 +1838,6 @@ impl Interpreter {
             ),
             _ => target,
         };
-
-        // A receiver-mutating built-in method answered from its row
-        // (ADR-11276 §9.23): `BagHash.add`/`remove` and the QuantHash
-        // mutators so far. The row writes through the receiver's shared node
-        // and re-seats the dual store itself, so there is nothing to write
-        // back here.
-        {
-            let mut place =
-                crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code);
-            if let Some(result) =
-                crate::builtins::method_table::invoke_mut(self, &mut place, method_sym, &args)
-            {
-                crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "mut-row");
-                self.stack.push(result?);
-                return Ok(());
-            }
-        }
 
         // Fast paths for xxKEY methods on Hash/Set/Bag/Mix types
         match method {

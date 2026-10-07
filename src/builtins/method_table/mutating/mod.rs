@@ -15,18 +15,23 @@ use crate::value::{Value, ValueView};
 
 pub(crate) mod baghash;
 pub(crate) mod quanthash;
+pub(crate) mod text;
 
 /// Every family of this group.
-pub(super) static FAMILIES: &[&[MethodRow]] = &[baghash::ROWS, quanthash::ROWS];
+pub(super) static FAMILIES: &[&[MethodRow]] = &[baghash::ROWS, quanthash::ROWS, text::ROWS];
 
 /// The owners whose rows a mutating call on `value` may dispatch to, most
 /// derived first, or `None` when no mutating row can answer a value of that
-/// kind. A `Scalar` container is seen through. The owner is decided by what
+/// kind. `has_name` says whether the receiver is a named binding. A `Scalar`
+/// container is seen through. The owner is decided by what
 /// the value is (a `Bag` is a `BagHash` only when it is mutable), exactly the
 /// distinction each cascade arm used to make with its own receiver probe.
 // Cost: O(1), a tag probe.
-pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
+pub(crate) fn owners_of(value: &Value, has_name: bool) -> Option<&'static [&'static str]> {
     match value.descalarize().view() {
+        // A method that replaces the value (`subst-mutate`) or writes back under
+        // the binding (`substr-rw`) has nothing to write to without a name.
+        ValueView::Str(_) if has_name => Some(&["Str"]),
         ValueView::Set(_, true) => Some(&["SetHash"]),
         ValueView::Set(_, false) => Some(&["Set"]),
         ValueView::Bag(_, true) => Some(&["BagHash"]),
