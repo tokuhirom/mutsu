@@ -182,6 +182,19 @@ fn lower_condition_modifier(modifier: &RakuAstNode, statement: Stmt) -> Result<S
             statement,
         ));
     }
+    // `STMT when COND`: the synthetic `given $_` over a modifier `When`.
+    if modifier.class == RakuAstClass::StatementModifierWhen {
+        return Ok(Stmt::Given {
+            topic: Expr::Var("_".to_string()),
+            body: vec![Stmt::When {
+                cond: lower_expr(named_child_or_positional(modifier)?)?,
+                body: vec![statement],
+                is_statement_modifier: true,
+            }],
+            is_statement_modifier: true,
+            with_kind: None,
+        });
+    }
     let is_unless = match modifier.class {
         RakuAstClass::StatementModifierIf => false,
         RakuAstClass::StatementModifierUnless => true,
@@ -244,9 +257,9 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
 /// The calls `lower_stmt_inner` turns into statements of their own, which a
 /// routine of the same name declared in the unit takes back.
 ///
-const SHADOWABLE_STATEMENTS: [&str; 12] = [
-    "say", "put", "print", "note", "die", "fail", "take", "return", "last", "next", "redo",
-    "proceed",
+const SHADOWABLE_STATEMENTS: [&str; 14] = [
+    "say", "put", "print", "note", "die", "fail", "take", "take-rw", "return", "last", "next",
+    "redo", "proceed", "succeed",
 ];
 
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
@@ -329,6 +342,12 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         | RakuAstClass::StatementPrefixPhaserLast
         | RakuAstClass::StatementPrefixPhaserQuit
         | RakuAstClass::StatementPrefixPhaserClose => lower_phaser(node),
+        RakuAstClass::StatementPrefixPhaserPre => {
+            super::phaser_condition::lower(node, crate::ast::PhaserKind::Pre)
+        }
+        RakuAstClass::StatementPrefixPhaserPost => {
+            super::phaser_condition::lower(node, crate::ast::PhaserKind::Post)
+        }
         RakuAstClass::StatementTrusts => Ok(Stmt::TrustsDecl {
             name: crate::symbol::Symbol::intern(&simple_type_name(
                 node,
@@ -490,10 +509,14 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 "fail" => Ok(Stmt::Fail(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
-                "take" => Ok(Stmt::Take(
+                "take" | "take-rw" => Ok(Stmt::Take(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
-                    false,
+                    name == "take-rw",
                 )),
+                // Without arguments these are the control-flow statements;
+                // `proceed |c` / `succeed EXPR` stay calls, as the parser has them.
+                "proceed" if args.is_empty() => Ok(Stmt::Proceed),
+                "succeed" if args.is_empty() => Ok(Stmt::Succeed),
                 _ => Ok(Stmt::Expr(lower_expr(node)?)),
             }
         }
@@ -2531,6 +2554,34 @@ pub(super) fn call_name_str(node: &RakuAstNode) -> Result<String, RuntimeError> 
 fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let name = call_name_str(node)?;
     let mut args = arg_exprs(node)?;
+    // `last` / `next` / `redo` in expression position are the parser's
+    // `ControlFlow` unless the unit declares a routine of that name.
+    let kind = match name.as_str() {
+        "last" => Some(crate::ast::ControlFlowKind::Last),
+        "next" => Some(crate::ast::ControlFlowKind::Next),
+        "redo" => Some(crate::ast::ControlFlowKind::Redo),
+        _ => None,
+    };
+    if let Some(kind) = kind
+        && !super::declared_routines::is_declared(&name)
+    {
+        let flow = |label, value| Expr::ControlFlow {
+            kind,
+            label,
+            value,
+            take_value: false,
+        };
+        match args.as_slice() {
+            [] => return Ok(flow(None, None)),
+            [Expr::BareWord(label)] => return Ok(flow(Some(label.clone()), None)),
+            [_] if name != "redo" => {
+                if let Some(expr) = crate::parser::loop_control_expr(&name, args.clone()) {
+                    return Ok(expr);
+                }
+            }
+            _ => {}
+        }
+    }
     if let Some(line) = super::origin::current_line() {
         if args.is_empty() && super::declared_routines::is_declared(&name) {
             args.push(crate::parser::callsite_line_arg(line));
@@ -2880,8 +2931,19 @@ pub(super) fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNo
 // Cost: O(1).
 fn term_identifier_expr(name: &str) -> Expr {
     match name {
-        "True" => Expr::Literal(Value::truth(true)),
-        "False" => Expr::Literal(Value::truth(false)),
+        "True" | "False" => {
+            let value = Value::truth(name == "True");
+            // In a unit that imported through a run-time `sub EXPORT` hook the
+            // parser keeps the keyword shadowable (#9047); so does lowering.
+            if crate::parser::term_keywords_shadowable() {
+                Expr::ShadowableTermKeyword {
+                    name: crate::symbol::Symbol::intern(name),
+                    value,
+                }
+            } else {
+                Expr::Literal(value)
+            }
+        }
         // The math constants are the numeric literals the parser folds them to,
         // unless the unit declares a term of that name.
         "pi" | "\u{3c0}" if !super::shadowed_terms::is_shadowed(name) => {
@@ -4074,7 +4136,20 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::StatementUnless
         | RakuAstClass::StatementLoopWhile
         | RakuAstClass::StatementLoopUntil
-        | RakuAstClass::StatementLoop => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),
+        | RakuAstClass::StatementLoop
+        | RakuAstClass::StatementWhenever
+        | RakuAstClass::StatementWhen
+        | RakuAstClass::StatementDefault => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),
+        // `nqp::const::NAME`: the constant as the bareword the parser keeps.
+        RakuAstClass::NqpConst => match node.fields.first().map(|f| &f.value) {
+            Some(RakuAstFieldValue::Node(name)) => match name.view() {
+                ValueView::Str(name) => {
+                    Ok(Expr::BareWord(format!("nqp::const::{}", name.as_str())))
+                }
+                _ => Err(unsupported(node)),
+            },
+            _ => Err(unsupported(node)),
+        },
         // `nqp::op(ARGS)`: the first positional is the op, the rest its arguments.
         RakuAstClass::Nqp => {
             let mut fields = node.fields.iter();
@@ -4158,6 +4233,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     | RakuAstClass::StatementLoopWhile
                     | RakuAstClass::StatementLoopUntil
                     | RakuAstClass::StatementLoop
+                    | RakuAstClass::StatementWhenever
+                    | RakuAstClass::StatementWhen
+                    | RakuAstClass::StatementDefault
             ) {
                 return Ok(Expr::DoStmt(Box::new(lower_stmt(block)?)));
             }

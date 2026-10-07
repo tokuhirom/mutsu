@@ -12,6 +12,7 @@ pub(crate) use expr::{
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
 pub(crate) use primary::decimal_literal_value;
+pub(crate) use primary::ident::loop_control_expr;
 pub(crate) use primary::ident::supply_block;
 pub(crate) use primary::ident::{
     TEST_CALLSITE_LINE_KEY, callsite_line_arg, stamp_call_site_markers,
@@ -162,7 +163,7 @@ pub(crate) use stmt::simple::is_user_declared_enum_value;
 /// `subset` (or class/role/grammar/enum) as a type constraint rather than a
 /// definite return value, independent of runtime sub-hoisting order (#8657).
 pub(crate) use stmt::simple::is_user_declared_type;
-pub(crate) use stmt::simple::{DeclaredNameKind, declared_name_kind};
+pub(crate) use stmt::simple::{DeclaredNameKind, declared_name_kind, term_keywords_shadowable};
 
 /// Snapshot parse-time type facts that affect compiling a module's cached AST.
 /// The parser normally leaves these in its thread-local scope; precompilation

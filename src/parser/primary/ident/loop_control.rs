@@ -128,6 +128,15 @@ fn v6e_loop_values() -> bool {
         .is_some_and(|letter| letter >= 'e')
 }
 
+/// The expression the parser builds for the call form `last(ARGS)` /
+/// `next(ARGS)`, for the RakuAST lowering of the same call. `None` when the
+/// compile-time check refuses the arguments (the parser reports that as an
+/// error; the lowering leaves the call to run time).
+// Cost: O(a), a = number of arguments.
+pub(crate) fn loop_control_expr(name: &str, args: Vec<Expr>) -> Option<Expr> {
+    loop_control_with_args(name, args, "").ok()
+}
+
 /// Build the node for `name` applied to `args` (`at` is where the argument
 /// list starts, for the compile-time diagnostic's position).
 fn loop_control_with_args(name: &str, args: Vec<Expr>, at: &str) -> Result<Expr, PError> {

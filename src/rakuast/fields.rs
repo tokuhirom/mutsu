@@ -396,6 +396,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         | StatementModifierIf
         | StatementModifierUnless
         | StatementModifierWith
+        | StatementModifierWhen
         | StatementModifierWithout => &[("expression", Absent::Required)],
         _ => &[],
     }
@@ -457,6 +458,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         | StatementModifierIf
         | StatementModifierUnless
         | StatementModifierWith
+        | StatementModifierWhen
         | StatementModifierWithout => "expression",
         // Every statement prefix wraps its block-or-statement ("blorst")
         // positionally, and rakudo names it `.blorst` (#9761).
