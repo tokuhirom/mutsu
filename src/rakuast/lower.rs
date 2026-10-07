@@ -997,7 +997,7 @@ pub(super) fn lower_dotty_assign(
 ) -> Result<Expr, RuntimeError> {
     let target = lower_expr(named_child(node, "left")?)?;
     let call = named_child(node, "right")?;
-    if call.class != RakuAstClass::CallMethod {
+    if !is_method_call(call) {
         return Err(unsupported(node));
     }
     let name = crate::symbol::Symbol::intern(&call_name_str(call)?);
@@ -2373,7 +2373,7 @@ fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
 fn method_call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     let left = named_child(node, "left")?;
     if left.class != RakuAstClass::ApplyPostfix
-        || !named_child(left, "postfix").is_ok_and(|p| p.class == RakuAstClass::CallMethod)
+        || !named_child(left, "postfix").is_ok_and(is_method_call)
     {
         return Ok(None);
     }
@@ -3984,7 +3984,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // compiles to.
         RakuAstClass::TermTopicCall => {
             let call = named_child_or_positional(node)?;
-            if call.class != RakuAstClass::CallMethod {
+            if !is_method_call(call) {
                 return Err(unsupported(node));
             }
             Ok(Expr::MethodCall {
@@ -4453,21 +4453,16 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let operand = lower_expr(named_child(node, "operand")?)?;
             let postfix = named_child(node, "postfix")?;
             match postfix.class {
-                RakuAstClass::CallMethod => Ok(Expr::MethodCall {
-                    target: Box::new(operand),
-                    name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
-                    args: arg_exprs(postfix)?,
-                    modifier: dispatch_modifier(postfix)?,
-                    quoted: false,
-                }),
-                // `self!priv(...)` -> a method call with the `!` modifier.
-                RakuAstClass::CallPrivateMethod => Ok(Expr::MethodCall {
-                    target: Box::new(operand),
-                    name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
-                    args: arg_exprs(postfix)?,
-                    modifier: Some('!'),
-                    quoted: false,
-                }),
+                // `self!priv(...)` carries the `!` modifier, as a class of its own.
+                RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod => {
+                    Ok(Expr::MethodCall {
+                        target: Box::new(operand),
+                        name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
+                        args: arg_exprs(postfix)?,
+                        modifier: dispatch_modifier(postfix)?,
+                        quoted: false,
+                    })
+                }
                 // `$x."name"()` -> Call::QuotedMethod, whose `name` is a
                 // QuotedString rather than a Name. An interpolated name lowers
                 // to the existing DynamicMethodCall execution path.
@@ -4514,7 +4509,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         return super::dynamic_method::lower_hyper(operand, inner);
                     }
                     let (name, quoted) = match inner.class {
-                        RakuAstClass::CallMethod => (call_name_str(inner)?, false),
+                        RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod => {
+                            (call_name_str(inner)?, false)
+                        }
                         RakuAstClass::CallQuotedMethod => (quoted_method_name(inner)?, true),
                         _ => return Err(unsupported(node)),
                     };
@@ -4636,10 +4633,23 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     }
 }
 
+/// Whether a node is a method call: `Call::Method`, or the private
+/// `Call::PrivateMethod`.
+fn is_method_call(node: &RakuAstNode) -> bool {
+    matches!(
+        node.class,
+        RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod
+    )
+}
+
 /// The `.?` / `.+` / `.*` dispatch modifier of a `Call::Method`, as the single
 /// character mutsu's `MethodCall.modifier` keeps. The field is absent for a
 /// plain `.method`.
 fn dispatch_modifier(node: &RakuAstNode) -> Result<Option<char>, RuntimeError> {
+    // `self!priv(...)` is a class of its own, with no `dispatch` string.
+    if node.class == RakuAstClass::CallPrivateMethod {
+        return Ok(Some('!'));
+    }
     let Some(f) = node.fields.iter().find(|f| f.name == Some("dispatch")) else {
         return Ok(None);
     };
