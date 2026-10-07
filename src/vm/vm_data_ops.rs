@@ -208,6 +208,9 @@ impl Interpreter {
                 // those iteration paths, not by this literal's per-element
                 // decision).
                 ValueView::Uni(..) => elems.push(val),
+                // A Capture is not Iterable: `[\(:or[...])]` holds one Capture
+                // element, not its (possibly empty) positionals.
+                ValueView::Capture { .. } => elems.push(val),
                 // A single infinite *integer* range (`[1..Inf]`, `[1..*]`,
                 // `[^Inf]`, `[0..^*]`) keeps the `[...]` array lazy: build the
                 // same reify-on-demand lazy array `my @a = 1..Inf` produces, so
