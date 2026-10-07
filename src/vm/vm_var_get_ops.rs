@@ -71,7 +71,9 @@ impl Interpreter {
         // Read the term-namespace copy, never the plain key: that is shared
         // with a same-named `$scalar` of the reading scope or its callers.
         self.env()
-            .get_sym(crate::runtime::term_names::term_key_sym(Symbol::intern(name)))
+            .get_sym(crate::runtime::term_names::term_key_sym(Symbol::intern(
+                name,
+            )))
             .or_else(|| self.module_scope_lexical(name))
             .cloned()
     }

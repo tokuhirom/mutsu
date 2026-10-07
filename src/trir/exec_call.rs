@@ -294,7 +294,12 @@ impl Interpreter {
         let unit_redirect = Self::lvalue_writeback_arg_index(&name, args.len())
             .and_then(|i| args.get(i))
             .map(Value::to_string_value)
-            .filter(|target| chunk.outers.iter().any(|o| o.name.as_str() == target.as_str()))
+            .filter(|target| {
+                chunk
+                    .outers
+                    .iter()
+                    .any(|o| o.name.as_str() == target.as_str())
+            })
             .and_then(|target| self.bind_lvalue_unit_redirect(&target));
         let result = match self.trir_declared_amp_callable(chunk, call.name) {
             Some(callable) => self.vm_call_sub_value(callable, args, false),
