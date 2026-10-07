@@ -810,7 +810,10 @@ impl Interpreter {
                 // up for grabs — hence the `is_authoritative` escape hatch, which
                 // covers exactly the never-mutated captures where "same name" can
                 // safely be read as "the closure's own binding".
-                if merge_all && !is_authoritative(*k) {
+                if (merge_all && !is_authoritative(*k)) || k.is_dynamic_var_env_key() {
+                    // A dynamic variable resolves against the live caller chain,
+                    // never against the creator's snapshot (VM twin: the
+                    // don't-overwrite capture tier in `call_compiled_closure`).
                     new_env.entry_or_insert(k.resolve(), v.clone());
                     continue;
                 }
@@ -1220,6 +1223,12 @@ impl Interpreter {
             if persist_closure_env {
                 let mut persisted_closure_env = closure_base_env.clone();
                 for key in closure_base_env.keys() {
+                    // Dynamics belong to the live dynamic frame, not to the
+                    // closure's per-instance state: persisting one pins the
+                    // closure to the first call's value (#12279).
+                    if key.is_dynamic_var_env_key() {
+                        continue;
+                    }
                     if let Some(value) = self.env.get_sym(*key).cloned() {
                         persisted_closure_env.insert_sym(*key, value);
                     }
