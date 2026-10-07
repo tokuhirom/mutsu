@@ -136,11 +136,14 @@ is no pass to measure).
   the declarator trait-argument sugar (`is assoc<left>`) reads its result directly and RakuAST
   has its own node for it. A single numeric literal (`<1/2>`, `<1+2i>`) is a number term in
   rakudo, not a quote, and is not wrapped.
-- `Expr::peel_parens` also looks through `Spelled`. **No parse-time shape check needed a peel
-  of its own**: the shapes probed against rakudo (`for <a b>`, `use Test <plan>`,
-  `my ($x, $y) = <a b>`, `<a b>, <c d>`, `<a b> Z <c d>`, postfix calls and subscripts) and the
-  corpus produce rakudo's text unchanged. The abort criterion
-  ("more than a handful of `peel` sites") was not approached.
+- `Expr::peel_parens` also looks through `Spelled`. **One parse-time shape check needed a peel**:
+  `handle_specs_from_term` (the `handles <a b>` clause of an attribute) matched the term after
+  peeling only `Grouped`, so under a spelling-keeping parse it read no specs and the converter
+  refused the attribute. It was found by the `MUTSU_RAKUAST=1` ratchet (26 of the 5979 listed
+  files failed), not by the probes or the corpus, which is why the ratchet is a gate of this
+  step. The abort criterion ("more than a handful of `peel` sites") was not approached; the
+  shapes probed against rakudo (`for <a b>`, `use Test <plan>`, `my ($x, $y) = <a b>`,
+  `<a b>, <c d>`, `<a b> Z <c d>`, postfix calls and subscripts) and the corpus needed none.
 - `convert` renders `Spelled(Words(text))` as `QuotedString(processors => <words val>, segments
   => (StrLiteral(text),))`. `lower` already turned that node into the compiler's form
   (`angle_words_expr`), so the round trip needed nothing.
@@ -151,7 +154,7 @@ class used to claim every statement whose rakudo text contains `words val`, whic
 declared operator name (`sub infix:<foo>` is `Name.from-identifier("infix", colonpairs =>
 (QuotedString words))`); those 54 statements belong to the existing `name-parts-colonpairs` class
 and the rule now says so. No statement mutsu renders with a word quote differs from rakudo's
-(0 of 510 other-class hunks), and the `MUTSU_RAKUAST=1` ratchet is unchanged.
+(0 of 510 other-class hunks). All 5979 files of the `MUTSU_RAKUAST=1` ratchet pass.
 
 **Still open** (separate PRs, as section 4 says): heredocs (`heredoc`, `heredoc-stop`: 46 hunks
 each in this sample), the bare-statement prefixes (`statement-prefix`: 6), and `«a b»` /

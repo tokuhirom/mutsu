@@ -8,7 +8,7 @@ use Test;
 # literal (`<1/2>`) is a number term, not a quote.
 # This file passes under BOTH mutsu and raku, so raku is the oracle.
 
-plan 27;
+plan 31;
 
 sub quote-of(Str $source) {
     $source.AST.statements[0].expression;
@@ -56,6 +56,17 @@ isa-ok quote-of('< 1/2 >;'), RakuAST::QuotedString, 'padding makes it a quote ag
     isa-ok $call, RakuAST::ApplyPostfix, 'a postfix call';
     isa-ok $call.operand, RakuAST::QuotedString, 'on a word quote';
     is $call.operand.segments[0].value, 'a b  c', 'with the text';
+}
+
+# --- a `handles` clause reads the same term ---
+{
+    my $class = quote-of('class C { has $.x handles <a b> }');
+    my $has = $class.body.body.statement-list.statements[0].expression;
+    my $handles = $has.traits[0];
+    isa-ok $handles, RakuAST::Trait::Handles, 'the clause is a Handles trait';
+    isa-ok $handles.term, RakuAST::QuotedString, 'over a word quote';
+    is $handles.term.segments[0].value, 'a b', 'with the written words';
+    is-deeply $handles.term.processors.List, <words val>, 'and the words processors';
 }
 
 # --- the whole text, against rakudo's own ---

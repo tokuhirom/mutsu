@@ -11,8 +11,9 @@ The parser used to turn the list into three one-word literals that cannot be tol
 `MUTSU_RAKUAST` round trip) now wraps the term in the new `Expr::Spelled`
 (`src/ast/spelled.rs`, [ADR-12199](../../docs/adr/12199-source-spelling-carrier-for-literal-terms.md));
 every other parse builds the plain expression it always built, so the compiler, the
-precompilation cache and the analyses never see the wrapper and no strip pass exists. No
-parse-time shape check needed a change of its own.
+precompilation cache and the analyses never see the wrapper and no strip pass exists. One
+parse-time shape check, the `handles <a b>` clause of an attribute, had to learn to look
+through it (so `class C { has $.x handles <a b> }` now matches rakudo's `.AST` too).
 
 On the `.AST` text corpus the `words-quote` class is at zero (94.7% of 11779 statements are
 identical to rakudo's). The class used to count declared operator names (`sub infix:<foo>`) as
