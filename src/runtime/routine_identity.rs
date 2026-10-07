@@ -24,6 +24,65 @@ impl Interpreter {
         }
     }
 
+    /// The composition cell of the declaration a `Method`/`Submethod` object
+    /// stands for (#12287). A lookup (`.^find_method`, `.^lookup`, `.^methods`)
+    /// builds a fresh object per call, so the object only carries the identity
+    /// (owner, name, candidate index) of its `MethodDef`; the def's
+    /// `routine_cell` is where a `does` has to land for later lookups to see it.
+    // Cost: O(c), c = candidates of the method family (clones the family).
+    pub(crate) fn method_object_cell(&self, value: &Value) -> Option<RoutineCell> {
+        let inner = match value.view() {
+            ValueView::Mixin(inner, _) => inner.clone(),
+            _ => Arc::new(value.clone()),
+        };
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = inner.view()
+        else {
+            return None;
+        };
+        let class_name = class_name.resolve();
+        if !matches!(class_name.as_str(), "Method" | "Submethod") {
+            return None;
+        }
+        let map = attributes.as_map();
+        let owner = map.get("__mutsu_lookup_class")?.to_string_value();
+        let name = map.get("__mutsu_lookup_method")?.to_string_value();
+        let idx = match map.get("__mutsu_lookup_candidate_idx").map(|v| v.view()) {
+            Some(ValueView::Int(i)) => i as usize,
+            _ => 0,
+        };
+        self.registry()
+            .user_method_overloads(&owner, &name)?
+            .get(idx)
+            .map(|def| def.routine_cell.clone())
+    }
+
+    /// `$method does R` on a method object: compose onto the declaration's
+    /// current composition and record the result in its cell, so every later
+    /// lookup of the method carries it (#12287).
+    // Cost: O(c) for the lookup of the cell, plus the composition itself.
+    pub(crate) fn does_on_method_object(
+        &mut self,
+        cell: &RoutineCell,
+        left: Value,
+        compose: impl FnOnce(&mut Self, Value) -> Result<Value, RuntimeError>,
+    ) -> Result<Value, RuntimeError> {
+        let inner = match left.view() {
+            ValueView::Mixin(inner, _) => inner.clone(),
+            _ => Arc::new(left.clone()),
+        };
+        let earlier = cell.get();
+        let view = match &earlier {
+            Some(current) => Value::mixin_parts(inner, current.clone()),
+            None => (*inner).clone(),
+        };
+        let composed = compose(self, view)?;
+        Ok(Self::store_composition(cell, composed, earlier.as_ref()))
+    }
+
     /// `value` as its routine currently is: `Mixin(inner Sub, composition)`
     /// when roles were composed into the routine and `value` does not already
     /// carry exactly that composition. `None` for a non-routine, a routine
@@ -58,10 +117,24 @@ impl Interpreter {
         composed: Value,
         earlier: Option<&crate::gc::Gc<crate::value::MixinOverrides>>,
     ) -> Value {
-        let ValueView::Mixin(inner, overrides) = composed.view() else {
+        let ValueView::Mixin(inner, _) = composed.view() else {
             return composed;
         };
         let ValueView::Sub(data) = inner.view() else {
+            return composed;
+        };
+        Self::store_composition(&data.routine_cell, composed.clone(), earlier)
+    }
+
+    /// [`Self::note_routine_composition`] for a `cell` that is not the inner
+    /// `Sub`'s own: a method object's, held by its `MethodDef` (#12287).
+    // Cost: as `note_routine_composition`.
+    pub(crate) fn store_composition(
+        cell: &RoutineCell,
+        composed: Value,
+        earlier: Option<&crate::gc::Gc<crate::value::MixinOverrides>>,
+    ) -> Value {
+        let ValueView::Mixin(inner, overrides) = composed.view() else {
             return composed;
         };
         let overrides = match earlier {
@@ -70,7 +143,7 @@ impl Interpreter {
             }
             _ => overrides.clone(),
         };
-        data.routine_cell.set(overrides.clone());
+        cell.set(overrides.clone());
         Value::mixin_parts(inner.clone(), overrides)
     }
 }
