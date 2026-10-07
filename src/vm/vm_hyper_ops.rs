@@ -56,14 +56,14 @@ impl Interpreter {
         );
         let translated_value = Value::str(translated.clone());
 
-        // tr/// (lowercase) always modifies $_; TR/// (uppercase) only modifies
-        // $_ in smartmatch context (so that $var ~~ TR/// writes back to $var).
-        if !non_destructive || self.topic_state.in_smartmatch_rhs {
+        // tr/// (lowercase) always modifies $_. TR/// (uppercase) returns the
+        // translated copy even when it appears as the RHS of smartmatch.
+        if !non_destructive {
             self.env_mut().insert("_".to_string(), translated_value);
         }
-        // Signal to the smartmatch handler that this is a transliterate result
-        // so it returns the result directly (as StrDistance) instead of comparing.
-        if self.topic_state.in_smartmatch_rhs {
+        // Signal destructive tr/// to the smartmatch handler so it returns the
+        // StrDistance result directly instead of comparing it.
+        if self.topic_state.in_smartmatch_rhs && !non_destructive {
             self.topic_state.transliterate_in_smartmatch = true;
         }
         // tr/// (destructive) returns a StrDistance object holding both the

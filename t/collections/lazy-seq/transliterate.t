@@ -16,10 +16,10 @@ my $s3 = "abcdef";
 $s3 ~~ tr/ace/ACE/;
 is $s3, 'AbCdEf', 'tr/// multiple chars';
 
-# TR/// (same as tr///)
+# TR/// is non-destructive, including under smartmatch
 my $s4 = "hello";
 $s4 ~~ TR/e/a/;
-is $s4, 'hallo', 'TR///';
+is $s4, 'hello', 'TR/// leaves the smartmatch LHS unchanged';
 
 # tr/// with to shorter than from (last char repeats)
 my $s5 = "abcde";
