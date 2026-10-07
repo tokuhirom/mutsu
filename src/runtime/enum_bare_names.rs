@@ -171,11 +171,9 @@ impl Interpreter {
         name: &str,
     ) -> Option<&'a Value> {
         let running_unit = {
-            let def_file = self
-                .routine_stack
-                .iter()
-                .rev()
-                .find_map(|frame| frame.def_file);
+            // The code that is running is the innermost frame's: a closure of
+            // the main script called from a module routine is the main unit's.
+            let def_file = self.routine_stack.last().and_then(|frame| frame.def_file);
             def_file
                 .map(|file| self.unit_of_source_sym(Some(file)))
                 .unwrap_or(self.current_unit)
@@ -191,7 +189,7 @@ impl Interpreter {
                         .chain(self.module.module_source_packages.iter())
                         .find(|(_, package)| package.as_str() == pkg)
                         .map(|(unit, _)| *unit);
-                    if pkg == candidate || owner_unit.is_none_or(|unit| unit == running_unit) {
+                    if owner_unit.is_none_or(|unit| unit == running_unit) {
                         return Some(found);
                     }
                 }
