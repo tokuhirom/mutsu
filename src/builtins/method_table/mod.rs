@@ -77,6 +77,7 @@ pub(crate) use dispatch::try_dispatch;
 pub(crate) use dispatch::{
     admits, answer, invoke, invoke_in, invoke_mut, invoke_owner, try_dispatch_in,
 };
+pub(crate) use mutating::owners_of as mut_owners_of;
 pub(crate) use place::ReceiverPlace;
 pub(crate) use row::{Handler, MethodRow, Named, RowFlags};
 #[cfg(test)]

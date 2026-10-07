@@ -14,9 +14,10 @@ use super::MethodRow;
 use crate::value::{Value, ValueView};
 
 pub(crate) mod baghash;
+pub(crate) mod quanthash;
 
 /// Every family of this group.
-pub(super) static FAMILIES: &[&[MethodRow]] = &[baghash::ROWS];
+pub(super) static FAMILIES: &[&[MethodRow]] = &[baghash::ROWS, quanthash::ROWS];
 
 /// The owners whose rows a mutating call on `value` may dispatch to, most
 /// derived first, or `None` when no mutating row can answer a value of that
@@ -24,9 +25,14 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[baghash::ROWS];
 /// the value is (a `Bag` is a `BagHash` only when it is mutable), exactly the
 /// distinction each cascade arm used to make with its own receiver probe.
 // Cost: O(1), a tag probe.
-pub(super) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
+pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
     match value.descalarize().view() {
+        ValueView::Set(_, true) => Some(&["SetHash"]),
+        ValueView::Set(_, false) => Some(&["Set"]),
         ValueView::Bag(_, true) => Some(&["BagHash"]),
+        ValueView::Bag(_, false) => Some(&["Bag"]),
+        ValueView::Mix(_, true) => Some(&["MixHash"]),
+        ValueView::Mix(_, false) => Some(&["Mix"]),
         _ => None,
     }
 }

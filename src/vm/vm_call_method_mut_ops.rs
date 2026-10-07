@@ -1889,9 +1889,10 @@ impl Interpreter {
         };
 
         // A receiver-mutating built-in method answered from its row
-        // (ADR-11276 §9.23): `BagHash.add`/`remove` so far. The row writes
-        // through the receiver's shared node and re-seats the dual store
-        // itself, so there is nothing to write back here.
+        // (ADR-11276 §9.23): `BagHash.add`/`remove` and the QuantHash
+        // mutators so far. The row writes through the receiver's shared node
+        // and re-seats the dual store itself, so there is nothing to write
+        // back here.
         {
             let mut place =
                 crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code);
@@ -2454,35 +2455,6 @@ impl Interpreter {
                         return Err(RuntimeError::bind(name));
                     }
                     _ => {}
-                }
-            }
-            // `SetHash.set`/`.unset` and the QuantHash `.grab`/`.grabpairs`:
-            // like `add`/`remove` above they mutate the shared node in place
-            // (`builtins::quanthash_mutators`), so an attribute (`$!q.grab`)
-            // sees the change too; the writeback only re-seats the dual store.
-            "set" | "unset" | "grab" | "grabpairs" => {
-                if let Some(receiver) =
-                    crate::builtins::quanthash_mutators::quanthash_mutator_receiver(&target, method)
-                {
-                    let receiver = receiver.clone();
-                    let args = crate::builtins::quanthash_mutators::resolve_callable_count(
-                        &receiver,
-                        method,
-                        args.clone(),
-                        |f, a| self.vm_call_sub_value(f, a, false),
-                    )?;
-                    let result = self.apply_quanthash_mutator_keyed(&receiver, method, &args)?;
-                    if !target_name.is_empty() {
-                        self.env_mut()
-                            .insert(target_name.to_string(), target.clone());
-                        self.update_local_if_exists(code, target_name, &target);
-                    }
-                    crate::vm::vm_stats::record_dispatch_entry_intercept(
-                        "callmethodmut",
-                        "quanthash-mutator",
-                    );
-                    self.stack.push(result);
-                    return Ok(());
                 }
             }
             // `@a.BIND-POS($i, $x)` binds element `$i` to the caller variable

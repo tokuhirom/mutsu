@@ -69,6 +69,8 @@ impl Interpreter {
                 | "grabpairs"
                 | "add"
                 | "remove"
+                | "set"
+                | "unset"
                 | "pick"
                 | "pickpairs"
                 | "roll"

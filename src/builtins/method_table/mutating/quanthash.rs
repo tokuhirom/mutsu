@@ -1,47 +1,180 @@
-//! `SetHash.set` / `.unset` and `SetHash`/`BagHash`/`MixHash` `.grab` /
-//! `.grabpairs` — the QuantHash mutators that remove or add whole keys.
+//! `SetHash.set` / `.unset` and the QuantHash `.grab` / `.grabpairs` — the
+//! mutators that remove or add whole keys (ADR-11276 §9.23).
 //!
-//! Like `BagHash.add`/`.remove` (`method_table::mutating::baghash`), every mutation here
-//! goes **in place** through the QuantHash's shared `Gc` node. A mutable
-//! QuantHash is a reference type in Raku: `my $b = $a` aliases it, and a
-//! `SetHash` held in an attribute, returned by an accessor or stored in an
-//! element is the same object every holder sees. The previous implementation
-//! rebuilt a fresh node and re-bound the invocant's *variable name*, which only
-//! reached a plain lexical: for `$!q.grab` the rebind landed on an env key no
-//! attribute read consults, and `$obj.q.grab` had no name at all (#9609).
+//! Like `BagHash.add`/`.remove` (`baghash`), every mutation here goes **in
+//! place** through the QuantHash's shared `Gc` node. A mutable QuantHash is a
+//! reference type in Raku: `my $b = $a` aliases it, and a `SetHash` held in an
+//! attribute, returned by an accessor or stored in an element is the same object
+//! every holder sees. The previous implementation rebuilt a fresh node and
+//! re-bound the invocant's *variable name*, which only reached a plain lexical:
+//! for `$!q.grab` the rebind landed on an env key no attribute read consults, and
+//! `$obj.q.grab` had no name at all (#9609).
 //!
 //! The `Set`/`Bag`/`Mix` coercions never let a mutable node be shared with an
 //! immutable one (see [`Value::quanthash_with_mutability`]), so writing through
 //! the node can never change a `Set` value behind its holder's back.
+//!
+//! The immutable owners (`Set`, `Bag`, `Mix`) declare `grab` and `grabpairs`
+//! too, and their rows throw `X::Immutable`, as Rakudo's do. `SetHash` has
+//! `set`/`unset` and no other QuantHash does. A row is slurpy from zero
+//! arguments: the count is optional (`$s.grab`, `$s.grab(2)`, `$s.grab(*)`,
+//! `$s.grab(* div 2)`), and a call with another shape is answered as it was
+//! before the rows (the extra argument is ignored). `set`/`unset` take exactly
+//! one positional, as Rakudo's do, and raise its arity error for any other count.
 
+use crate::builtins::method_table::{Handler, MethodRow, Named, ReceiverPlace, RowFlags};
+use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::Signed;
 
-/// The mutable QuantHash receiver behind `target`, seeing through a `Scalar`
-/// container, or `None` when `method` is not one of these mutators for this
-/// invocant (an immutable `Set` keeps falling through to its own error path).
-pub(crate) fn quanthash_mutator_receiver<'a>(target: &'a Value, method: &str) -> Option<&'a Value> {
-    if !matches!(method, "set" | "unset" | "grab" | "grabpairs") {
-        return None;
-    }
-    let inner = match target.view() {
-        ValueView::Scalar(inner) => inner,
-        _ => target,
-    };
-    let applies = match inner.view() {
-        ValueView::Set(_, true) => true,
-        ValueView::Bag(_, true) | ValueView::Mix(_, true) => {
-            matches!(method, "grab" | "grabpairs")
+macro_rules! row {
+    ($owner:literal, $name:literal, $handler:ident) => {
+        MethodRow {
+            owner: $owner,
+            name: $name,
+            arity: 0,
+            handler: Handler::Mut($handler),
+            flags: RowFlags::SLURPY,
+            named: &[],
         }
-        _ => false,
     };
-    applies.then_some(inner)
+}
+
+pub(super) static ROWS: &[MethodRow] = &[
+    row!("SetHash", "set", set_row),
+    row!("SetHash", "unset", unset_row),
+    row!("SetHash", "grab", grab_row),
+    row!("SetHash", "grabpairs", grabpairs_row),
+    row!("BagHash", "grab", grab_row),
+    row!("BagHash", "grabpairs", grabpairs_row),
+    row!("MixHash", "grab", mixhash_grab_row),
+    row!("MixHash", "grabpairs", grabpairs_row),
+    row!("Set", "grab", immutable_grab_row),
+    row!("Set", "grabpairs", immutable_grabpairs_row),
+    row!("Bag", "grab", immutable_grab_row),
+    row!("Bag", "grabpairs", immutable_grabpairs_row),
+    row!("Mix", "grab", immutable_grab_row),
+    row!("Mix", "grabpairs", immutable_grabpairs_row),
+];
+
+/// `SetHash.set`.
+// Cost: O(k), k = keys named by the arguments (one user `WHICH` call each).
+fn set_row(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    Some(run(interp, place, "set", args))
+}
+
+/// `SetHash.unset`.
+// Cost: O(k), k = keys named by the arguments (one user `WHICH` call each).
+fn unset_row(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    Some(run(interp, place, "unset", args))
+}
+
+/// `SetHash.grab`, `BagHash.grab`.
+// Cost: see `apply`.
+fn grab_row(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    Some(run(interp, place, "grab", args))
+}
+
+/// `SetHash.grabpairs`, `BagHash.grabpairs`, `MixHash.grabpairs`.
+// Cost: see `apply`.
+fn grabpairs_row(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    Some(run(interp, place, "grabpairs", args))
+}
+
+/// `MixHash.grab`: Rakudo declares it and refuses it (a grabbed element of a
+/// weighted bag has no one-unit meaning), with an `X::AdHoc`.
+// Cost: O(1).
+fn mixhash_grab_row(
+    _interp: &mut Interpreter,
+    _place: &mut ReceiverPlace<'_>,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    Some(Err(RuntimeError::new(
+        ".grab is not supported on a MixHash",
+    )))
+}
+
+/// `Set.grab`, `Bag.grab`, `Mix.grab`: immutable, so `X::Immutable`.
+// Cost: O(1).
+fn immutable_grab_row(
+    _interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    Some(Err(immutable(place.value(), "grab")))
+}
+
+/// `Set.grabpairs`, `Bag.grabpairs`, `Mix.grabpairs`: immutable, so `X::Immutable`.
+// Cost: O(1).
+fn immutable_grabpairs_row(
+    _interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    Some(Err(immutable(place.value(), "grabpairs")))
+}
+
+/// The `X::Immutable` of calling `method` on an immutable `Set`, `Bag` or `Mix`.
+// Cost: O(1).
+fn immutable(receiver: &Value, method: &str) -> RuntimeError {
+    let typename = match receiver.descalarize().view() {
+        ValueView::Set(..) => "Set",
+        ValueView::Bag(..) => "Bag",
+        _ => "Mix",
+    };
+    RuntimeError::immutable(typename, method)
+}
+
+/// Resolve a Callable count, user `WHICH` keys and the mutation itself, then
+/// re-seat the receiver's dual store.
+// Cost: O(k + m), k = keys passed (one user `WHICH` call each for `set` and
+// `unset`), m = the mutator's own cost (see `apply`).
+fn run(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    method: &str,
+    args: &[Value],
+) -> Result<Value, RuntimeError> {
+    let receiver = place.value().descalarize().clone();
+    let args = resolve_callable_count(&receiver, method, args.to_vec(), |f, a| {
+        interp.call_sub_value(f, a, false)
+    })?;
+    if matches!(method, "set" | "unset") {
+        // Key each object by its user `WHICH`, which the pure mutator cannot run.
+        interp.warm_which_identity_all(&args);
+    }
+    let result = apply(&receiver, method, &args)?;
+    place.reseat(interp);
+    Ok(result)
 }
 
 /// The value a Callable count argument (`$s.grab(* div 2)`) is invoked with:
 /// the number of distinct keys for `grabpairs` (and for any `SetHash` form),
-/// the total weight for a `BagHash`/`MixHash` `grab`.
+/// the total weight for a `BagHash` `grab`.
 // Cost: O(k), k = distinct keys (the total is a sum over the weights).
 fn callable_count_input(receiver: &Value, method: &str) -> Value {
     match receiver.view() {
@@ -50,9 +183,6 @@ fn callable_count_input(receiver: &Value, method: &str) -> Value {
             Value::from_bigint(data.counts.values().sum::<BigInt>())
         }
         ValueView::Bag(data, _) => Value::int(data.counts.len() as i64),
-        ValueView::Mix(data, _) if method == "grab" => {
-            crate::value::mix_weight_to_value(data.weights.values().sum::<f64>())
-        }
         ValueView::Mix(data, _) => Value::int(data.weights.len() as i64),
         _ => Value::int(0),
     }
@@ -71,7 +201,7 @@ fn callable_count_to_int(count: Value) -> Value {
 /// Resolve a Callable count argument (`$s.grab(* div 2)`) to its `Int`
 /// count by invoking it through `call` with [`callable_count_input`]; any
 /// other argument list is returned unchanged.
-pub(crate) fn resolve_callable_count(
+fn resolve_callable_count(
     receiver: &Value,
     method: &str,
     args: Vec<Value>,
@@ -85,27 +215,20 @@ pub(crate) fn resolve_callable_count(
     Ok(vec![callable_count_to_int(count)])
 }
 
-/// Apply `method` to `receiver` (which must have come from
-/// [`quanthash_mutator_receiver`]), mutating its shared node in place. A
+/// Apply `method` to `receiver` (which is a mutable QuantHash), mutating its shared node in place. A
 /// Callable count argument must already have been resolved to an `Int` by the
 /// caller (it needs the interpreter; see [`callable_count_input`]).
 // Cost: O(a) for set/unset, a = keys named by the arguments; O(k + g) for a
 // SetHash/MixHash grab, k = distinct keys, g = keys grabbed; O(k·g) for a
 // BagHash grab (a weighted pick rescans the counts per draw).
-pub(crate) fn apply_quanthash_mutator(
-    receiver: &Value,
-    method: &str,
-    args: &[Value],
-) -> Result<Value, RuntimeError> {
+fn apply(receiver: &Value, method: &str, args: &[Value]) -> Result<Value, RuntimeError> {
     // Own a handle on the shared node before mutating: with two holders the
     // write goes through `gc_data_mut`'s aliased branch, i.e. in place.
     let mut node = receiver.clone();
     match receiver.view() {
         ValueView::Set(..) if matches!(method, "set" | "unset") => {
             // Rakudo declares `method set(SetHash:D: \to-set, *%_)`: exactly one
-            // positional, and no named parameter is accepted.
-            let stripped = crate::builtins::strip_undeclared_nameds(method, args);
-            let args: &[Value] = stripped.as_deref().unwrap_or(args);
+            // positional; `invoke_mut` has already dropped the named arguments.
             if args.len() != 1 {
                 let word = if args.is_empty() { "few" } else { "many" };
                 return Err(RuntimeError::new(format!(
@@ -118,8 +241,8 @@ pub(crate) fn apply_quanthash_mutator(
         }
         ValueView::Set(..) => grab_set(&mut node, method, args),
         ValueView::Bag(..) => grab_bag(&mut node, method, args),
-        ValueView::Mix(..) => grab_mix(&mut node, method, args),
-        _ => unreachable!("quanthash_mutator_receiver admitted a non-QuantHash"),
+        ValueView::Mix(..) => grabpairs_mix(&mut node, args),
+        _ => unreachable!("a QuantHash row was dispatched to a non-QuantHash"),
     }
 }
 
@@ -296,7 +419,8 @@ fn grab_bag(node: &mut Value, method: &str, args: &[Value]) -> Result<Value, Run
     Ok(grab_result(grabbed, single))
 }
 
-fn grab_mix(node: &mut Value, method: &str, args: &[Value]) -> Result<Value, RuntimeError> {
+/// `MixHash.grabpairs`: `MixHash.grab` is refused (see `mixhash_grab_row`).
+fn grabpairs_mix(node: &mut Value, args: &[Value]) -> Result<Value, RuntimeError> {
     let single = args.is_empty();
     let grabbed = node.with_mix_mut(|gc, _| {
         let data = crate::value::gc_data_mut(gc);
@@ -310,14 +434,10 @@ fn grab_mix(node: &mut Value, method: &str, args: &[Value]) -> Result<Value, Run
             if let Some(originals) = data.original_keys.as_mut() {
                 originals.remove(&key);
             }
-            grabbed.push(if method == "grabpairs" {
-                crate::runtime::utils::quanthash_typed_pair(
-                    elem,
-                    crate::value::mix_weight_to_value(weight),
-                )
-            } else {
-                elem
-            });
+            grabbed.push(crate::runtime::utils::quanthash_typed_pair(
+                elem,
+                crate::value::mix_weight_to_value(weight),
+            ));
         }
         grabbed
     });

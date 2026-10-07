@@ -1952,6 +1952,24 @@ impl Interpreter {
             self.exit_readonly_frame(saved_readonly);
             return Ok(Value::str(rendered.to_string_value()));
         }
+        // A receiver-mutating built-in method answered from its row
+        // (ADR-11276 §9.23), on a receiver the call holds by value
+        // (`$obj.bag.grab`, `f().unset('x')`): the row writes through the
+        // receiver's shared node, which every holder of the container sees.
+        // Probed by receiver kind first, so a call on any other receiver
+        // pays one tag probe and no interning.
+        if crate::builtins::method_table::mut_owners_of(&target).is_some() {
+            let mut detached = target.clone();
+            let mut place = crate::builtins::method_table::ReceiverPlace::detached(&mut detached);
+            if let Some(result) = crate::builtins::method_table::invoke_mut(
+                self,
+                &mut place,
+                Symbol::intern(method),
+                &args,
+            ) {
+                return result;
+            }
+        }
         // Immutable List/Range: the six mutators rakudo DOES define on them
         // throw X::Immutable. `splice` is not among them -- rakudo declares it
         // on Array only, so a List/Range invocant resolves no candidate at all

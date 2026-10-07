@@ -43,6 +43,17 @@ pub(crate) enum ReceiverPlace<'a> {
 
 impl<'a> ReceiverPlace<'a> {
     /// A binding named `name` whose value the call read as `value`, for a call
+    /// that did not come through the VM (the interpreter's by-name entries).
+    // Cost: O(1).
+    pub(crate) fn var(name: &'a str, value: &'a Value) -> Self {
+        ReceiverPlace::Var {
+            name,
+            value,
+            code: None,
+        }
+    }
+
+    /// A binding named `name` whose value the call read as `value`, for a call
     /// that came through the VM, whose chunk `code` maps `name` to a local slot.
     // Cost: O(1).
     pub(crate) fn var_in(name: &'a str, value: &'a Value, code: &'a CompiledCode) -> Self {
@@ -70,13 +81,16 @@ impl<'a> ReceiverPlace<'a> {
 
     /// Re-seat the receiver, already mutated through its shared node, in both
     /// halves of the dual store (the env entry and the VM's local slot), so a
-    /// later locals-to-env sync cannot resurrect a stale snapshot of it. A
-    /// receiver with no name has nothing to re-seat.
+    /// later locals-to-env sync cannot resurrect a stale snapshot of it. Only a
+    /// call that came through the VM (a place built with [`Self::var_in`]) has
+    /// a dual store to re-seat; any other receiver has nothing to do.
     // Cost: O(1) for the env entry, O(l) to find the local slot by name, l =
     // local slots of the chunk.
     pub(crate) fn reseat(&self, interp: &mut Interpreter) {
         let ReceiverPlace::Var {
-            name, value, code, ..
+            name,
+            value,
+            code: Some(code),
         } = self
         else {
             return;
@@ -87,8 +101,6 @@ impl<'a> ReceiverPlace<'a> {
         interp
             .env_mut()
             .insert((*name).to_string(), (*value).clone());
-        if let Some(code) = code {
-            interp.update_local_if_exists(code, name, value);
-        }
+        interp.update_local_if_exists(code, name, value);
     }
 }

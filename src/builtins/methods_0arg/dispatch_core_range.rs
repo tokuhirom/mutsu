@@ -352,12 +352,6 @@ pub(super) fn dispatch(
             }
             _ => None,
         }),
-        "grab" | "grabpairs" => Some(match target.view() {
-            ValueView::Bag(_, false) => Some(Err(RuntimeError::immutable("Bag", method))),
-            ValueView::Set(_, false) => Some(Err(RuntimeError::immutable("Set", method))),
-            ValueView::Mix(_, false) => Some(Err(RuntimeError::immutable("Mix", method))),
-            _ => None,
-        }),
         "first" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::NIL))),
             _ => None,

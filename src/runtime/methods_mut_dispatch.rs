@@ -580,24 +580,25 @@ impl Interpreter {
             return Ok(result);
         }
 
-        // SetHash.set/.unset and the QuantHash .grab/.grabpairs mutate the
-        // shared node in place (`builtins::quanthash_mutators`), so there is
-        // no variable to write back: every holder already sees the change.
-        if let Some(receiver) =
-            crate::builtins::quanthash_mutators::quanthash_mutator_receiver(&target, method)
+        // A receiver-mutating built-in method answered from its row
+        // (ADR-11276 §9.23): `BagHash.add`/`remove` and the QuantHash mutators
+        // (`SetHash.set`/`unset`, `.grab`, `.grabpairs`) write the shared node
+        // in place, so there is no variable to write back: every holder
+        // already sees the change.
         {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmutwithvalues",
-                "quanthash-mutator",
-            );
-            let receiver = receiver.clone();
-            let args = crate::builtins::quanthash_mutators::resolve_callable_count(
-                &receiver,
-                method,
-                args,
-                |f, a| self.call_sub_value(f, a, false),
-            )?;
-            return self.apply_quanthash_mutator_keyed(&receiver, method, &args);
+            let mut place = crate::builtins::method_table::ReceiverPlace::var(target_var, &target);
+            if let Some(result) = crate::builtins::method_table::invoke_mut(
+                self,
+                &mut place,
+                Symbol::intern(method),
+                &args,
+            ) {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "mut-row",
+                );
+                return result;
+            }
         }
 
         if let ValueView::Instance {
