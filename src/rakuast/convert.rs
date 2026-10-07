@@ -1590,7 +1590,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
 // Cost: O(k), k = length of `name`.
 fn nqp_op(name: &str) -> Option<&str> {
     let op = name.strip_prefix("nqp::")?;
-    (!op.is_empty() && !op.contains("::")).then_some(op)
+    (!op.is_empty() && !crate::qualified::is_qualified_str(op)).then_some(op)
 }
 
 /// `Num(EXPR)` / `Hash[Int](...)`: calling a type name is a call on the type
@@ -2502,14 +2502,11 @@ pub(super) fn subscript_dims_node(
         && assignee.is_none()
         && colonpairs.is_empty()
         && let [dim] = dims
-        && let Expr::BareWord(_) = target
+        && target.as_bare_word().is_some()
         && let base = convert_expr(target)?
         && base.class == RakuAstClass::TypeSimple
     {
-        let items = match dim {
-            Expr::ArrayLiteral(items) => items.as_slice(),
-            other => std::slice::from_ref(other),
-        };
+        let items = dim.comma_items();
         let mut args = Vec::with_capacity(items.len());
         for item in items {
             args.push(node_field(None, convert_expr(item)?));

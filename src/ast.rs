@@ -2867,6 +2867,25 @@ impl Expr {
         expr
     }
 
+    /// The bareword a term is, or `None` for any other expression.
+    // Cost: O(1).
+    pub(crate) fn as_bare_word(&self) -> Option<&str> {
+        match self {
+            Expr::BareWord(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    /// The elements of a comma list: the items of an `ArrayLiteral`, or the
+    /// expression itself as a one-element list.
+    // Cost: O(1).
+    pub(crate) fn comma_items(&self) -> &[Expr] {
+        match self {
+            Expr::ArrayLiteral(items) => items,
+            other => std::slice::from_ref(other),
+        }
+    }
+
     /// The operand a postfix (`.method`, `[...]`, `++`, `(...)`) sits on in
     /// RakuAST: raku drops ONE level of the parentheses around it, so
     /// `(1, 2).elems` is the list itself and `((1, 2)).elems` keeps the inner

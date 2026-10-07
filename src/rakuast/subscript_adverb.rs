@@ -17,7 +17,9 @@
 //! expansion back with `ast::subscript_adverb::adverbs`, and lowering rebuilds
 //! it with `ast::subscript_adverb::expand`.
 
-use super::convert::{colonpair_value_expr, leaf_field, subscript_dims_node};
+use super::convert::{
+    angle_key_text, angle_subscript_node, colonpair_value_expr, leaf_field, subscript_dims_node,
+};
 use super::lower::{list_field, lower_expr, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
@@ -41,15 +43,13 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
             index,
             is_positional: false,
             spelling: crate::ast::IndexSpelling::Angle,
-        } if super::convert::angle_key_text(index).is_some() => {
+        } if angle_key_text(index).is_some() => {
             return Some(
                 adverbs
                     .iter()
                     .map(colonpair)
                     .collect::<Result<Vec<_>, _>>()
-                    .and_then(|colonpairs| {
-                        super::convert::angle_subscript_node(target, index, colonpairs)
-                    }),
+                    .and_then(|colonpairs| angle_subscript_node(target, index, colonpairs)),
             );
         }
         Expr::Index {
