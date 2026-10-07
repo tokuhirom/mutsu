@@ -6,7 +6,7 @@ use Test;
 # (a wrapper like IO::MiddleMan) reaches the same rows by its owner, and a
 # `.wrap` of a built-in handle method still runs the wrapper first.
 
-plan 69;
+plan 80;
 
 my $dir = $*TMPDIR.add("mutsu-io-handle-rows-{$*PID}");
 $dir.mkdir;
@@ -157,3 +157,26 @@ $wfh.print("w2");
 $wfh.close;
 is-deeply @seen, ["w1"], 'once unwrapped the wrapper is not called';
 is $out.slurp, "w2", 'and the print still writes';
+
+# --- the primitives READ and WRITE ---------------------------------------------
+# Rakudo's `READ(Int:D)` and `WRITE(Blob:D)` are the raw read and write a
+# handle's own methods are built on; they work on a real handle and bind
+# their argument strictly.
+$out.spurt("ABCDEF");
+my $rfh = $out.open;
+my $chunk = $rfh.READ(2);
+isa-ok $chunk, Buf, 'READ answers a Buf';
+is-deeply $chunk.list, (65, 66), 'READ reads the requested bytes';
+is-deeply $rfh.READ(3).list, (67, 68, 69), 'the next READ continues where the last stopped';
+is-deeply $rfh.READ(10).list, (70,), 'READ at the end answers what is left';
+is-deeply $rfh.READ(1).list, (), 'READ after the end answers an empty Buf';
+throws-like { $rfh.READ("x") }, X::TypeCheck::Binding::Parameter, 'READ binds an Int';
+$rfh.close;
+
+my $wfh2 = $out.open(:w);
+ok $wfh2.WRITE(Buf.new(72, 105)), 'WRITE answers True';
+ok $wfh2.WRITE(Blob.new(33)), 'WRITE takes a Blob too';
+throws-like { $wfh2.WRITE("x") }, X::TypeCheck::Binding::Parameter, 'WRITE binds a Blob';
+$wfh2.close;
+is $out.slurp, "Hi!", 'WRITE wrote the raw bytes';
+ok IO::Handle.^can('READ') && IO::Handle.^can('WRITE'), '.^can sees both';
