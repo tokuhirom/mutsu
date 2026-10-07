@@ -98,7 +98,11 @@ fn method_object_do_slot(obj: &Value, name: &str) -> Option<(String, String, usi
     if name != "$!do" {
         return None;
     }
-    let obj = Interpreter::unwrap_callable_mixin(obj.clone());
+    // Roles mixed into the method object (`$m does R`) wrap the instance.
+    let obj = match obj.view() {
+        ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+        _ => obj.clone(),
+    };
     let ValueView::Instance { attributes, .. } = obj.view() else {
         return None;
     };
