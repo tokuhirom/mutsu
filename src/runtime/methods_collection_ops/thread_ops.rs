@@ -171,7 +171,7 @@ impl Interpreter {
     }
 
     /// Thread.finish -- join the thread (block until it completes)
-    pub(in crate::runtime) fn dispatch_thread_finish(
+    pub(crate) fn dispatch_thread_finish(
         &mut self,
         attributes: &AttrMap,
     ) -> Result<Value, RuntimeError> {

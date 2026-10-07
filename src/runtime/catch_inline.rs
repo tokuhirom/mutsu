@@ -313,7 +313,20 @@ impl Interpreter {
                 None
             } else {
                 if routine_depth > 0 && routine_len > routine_depth {
-                    let frame = self.routine_stack[routine_depth - 1];
+                    let mut frame = self.routine_stack[routine_depth - 1];
+                    // The frame at the installing depth is often the `try`
+                    // block's own, which carries no `def_file`. Left bare, the
+                    // executing-unit walk skips it and lands on the dying
+                    // routine's frames, so the handler resolved its imports
+                    // against the throw site's compunit (`Unknown function`).
+                    // Stamp the installing unit's file from the nearest
+                    // enclosing frame that has one.
+                    if frame.def_file.is_none() {
+                        frame.def_file = self.routine_stack[..routine_depth]
+                            .iter()
+                            .rev()
+                            .find_map(|f| f.def_file);
+                    }
                     self.routine_stack.push(frame);
                 }
                 (self.types.method_class_stack.len() > method_depth)

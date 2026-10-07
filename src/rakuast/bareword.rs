@@ -325,6 +325,23 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         Some(core_term_names::TermKind::Name) => return Some(term_name(name)),
         None => {}
     }
+    // `nqp::const::NAME` -> `Nqp::Const`; an `nqp::op` written without
+    // parentheses is the same `Nqp` node as `nqp::op()`.
+    if let Some(constant) = name.strip_prefix("nqp::const::")
+        && !constant.is_empty()
+        && !crate::qualified::is_qualified_str(constant)
+    {
+        return Some(RakuAstNode {
+            class: RakuAstClass::NqpConst,
+            fields: vec![leaf_field(None, Value::str(constant.to_string()))],
+        });
+    }
+    if let Some(op) = super::convert::nqp_op(name) {
+        return Some(RakuAstNode {
+            class: RakuAstClass::Nqp,
+            fields: vec![leaf_field(None, Value::str(op.to_string()))],
+        });
+    }
     if REDISPATCH_CALLS.contains(&name) {
         return Some(RakuAstNode {
             class: RakuAstClass::CallNameWithoutParentheses,

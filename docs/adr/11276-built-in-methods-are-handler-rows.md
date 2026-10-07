@@ -1322,6 +1322,32 @@ rows, so the list and the table cannot drift. Not done: a bare `class H is IO::H
 Rakudo's `H.new.READ(1)` dies with an `X::AdHoc` about `MVMOSHandle`; mutsu answers `X::Method::NotFound`
 because only the exact class `IO::Handle` is asked, as before.
 
+### 9.22 Slice 3E, part 4: `IO::Special`, `Semaphore`, `Thread` (2026-10-07)
+
+Branch `refactor/11276-3e-concurrency-primitives`. The first owners the oracle snapshot lacked: the three
+classes gain recognition rows (`native_method_row_table.rs`) and snapshot lines
+(`raku scripts/gen-rakudo-method-tables.raku`), then 29 rows are registered (996 -> 1025): `IO::Special`'s
+17 declared methods plus `Mu.gist`, `Semaphore`'s `acquire`/`try_acquire`/`release`, and `Thread`'s `id`,
+`Numeric`, `name`, `is-initial-thread`, `app_lifetime`, `Str`, `gist` and `finish`. None of the three has a
+shape (an `IO::Special` is an instance of one class with a `what` attribute, a `Semaphore` and a `Thread`
+carry an id into runtime tables), so every row is `RowFlags::OWNER_ONLY` and `native_io_special`,
+`native_semaphore` and `native_thread` are `invoke_owner` plus the names the owner does not declare
+(`new`, `Bool`, `defined`, `WHAT`, which are the constructor and `Mu`'s). `Semaphore`'s three methods are
+one `Interpreter` method each (`semaphore_*_method`), and the hand-written name lists of `IO::Special`,
+`Thread` and `IO::Handle` in `class_introspection.rs` ask the table (`owner_declares_row`).
+
+Behaviour change toward Rakudo, pinned in `t/concurrency/thread-lock/semaphore-thread-method-rows.t` and
+`t/io/io-special-method-rows.t`: `IO::Special.gist` is `Mu.gist`, the `raku` form, instead of the stream's
+name; `Thread.gist` is `Immortal Thread #id (name)` (no `Immortal ` for an `app_lifetime` thread, no name
+for an anonymous one) instead of `Str`'s `Thread<id>(name)`.
+
+Not done: `Thread.finish` answers `True` where Rakudo answers the thread; `Thread`'s `join`/`run`/`start`/
+`usage`/`yield` and the three constructors stay on their own paths (3G for `new`). The rest of the 3E
+remainder (`IO::CatHandle`, `IO::Pipe`, the sockets, `Proc::Async`, `Promise`, `Channel`, `Supply`, the
+schedulers, `Lock`) is unchanged: `IO::Pipe` and `IO::CatHandle` mix modes in one `match` (a pipe's
+behaviour depends on whether it holds a child's stdin or stdout), and `Lock` is reached from six VM and
+runtime blocks that name its methods.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -82,7 +82,8 @@ impl RowFlags {
     /// owner lookup (`invoke_owner`).
     pub(crate) const SLURPY: RowFlags = RowFlags(1 << 3);
     /// The row is reached only through its owner (`invoke_owner`), never by a
-    /// receiver's shape. The method writes its result back over the receiver
+    /// receiver's shape: either the class has no shape (`IO::Special`, `Thread`)
+    /// or the method writes its result back over the receiver
     /// (`IO::Handle.open` answers `self` with the opened handle's state), which
     /// only the mutating dispatch entries do; a shape lookup would run it on a
     /// copy. Slice 3F's `Handler::Mut` retires the flag.

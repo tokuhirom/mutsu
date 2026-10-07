@@ -145,9 +145,40 @@ fn is_do_statement(stmt: &Stmt) -> bool {
             is_statement_modifier,
             ..
         } => !*is_statement_modifier,
-        Stmt::While { .. } | Stmt::Loop { .. } => true,
+        Stmt::While { .. }
+        | Stmt::Loop { .. }
+        | Stmt::Whenever { .. }
+        | Stmt::When { .. }
+        | Stmt::Default(_) => true,
         _ => false,
     }
+}
+
+/// The condition and the modified statement of `STMT when COND`, which the
+/// parser spells `given $_ { when COND { STMT } }` with the `When` flagged as a
+/// modifier. `None` for any other `given` body.
+// Cost: O(s), s = statements in `body` (SetLine markers skipped).
+fn when_modifier_parts<'a>(topic: &Expr, body: &'a [Stmt]) -> Option<(&'a Expr, &'a Stmt)> {
+    if !matches!(topic, Expr::Var(name) if name == "_") {
+        return None;
+    }
+    let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let (
+        Some(Stmt::When {
+            cond,
+            body,
+            is_statement_modifier: true,
+        }),
+        None,
+    ) = (real.next(), real.next())
+    else {
+        return None;
+    };
+    let mut inner = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+    let (Some(modified), None) = (inner.next(), inner.next()) else {
+        return None;
+    };
+    Some((cond, modified))
 }
 
 /// Whether `stmt` is a statement carrying a statement modifier (`EXPR for LIST`,
@@ -171,7 +202,7 @@ fn is_modifier_statement(stmt: &Stmt) -> bool {
 
 /// Convert one statement. Returns `Ok(None)` for non-semantic bookkeeping
 /// statements (e.g. `SetLine`) that carry no RakuAST representation.
-fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
+pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     match stmt {
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
@@ -411,16 +442,14 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             "fail",
             std::slice::from_ref(expr),
         )?))),
-        // `take EXPR` is a bare call too; `take-rw` stays the boundary.
-        Stmt::Take(expr, is_rw) => {
-            if *is_rw {
-                return Err(unsupported("take-rw"));
-            }
-            Ok(Some(statement_expression(control_call(
-                "take",
-                std::slice::from_ref(expr),
-            )?)))
-        }
+        // `take EXPR` / `take-rw EXPR` are bare calls too.
+        Stmt::Take(expr, is_rw) => Ok(Some(statement_expression(control_call(
+            if *is_rw { "take-rw" } else { "take" },
+            std::slice::from_ref(expr),
+        )?))),
+        // `proceed` / `succeed` without arguments are bare calls as well.
+        Stmt::Proceed => Ok(Some(statement_expression(control_call("proceed", &[])?))),
+        Stmt::Succeed => Ok(Some(statement_expression(control_call("succeed", &[])?))),
         // `my $x = 5 if COND`: the parser's split of the declaration and the
         // gated assignment is rakudo's one statement with a modifier.
         Stmt::SyntheticBlock(_)
@@ -482,8 +511,10 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             condition,
             ..
         } => {
-            if condition.is_some() {
-                return Err(unsupported("PRE/POST phaser condition"));
+            if let Some(condition) = condition {
+                return super::phaser_condition::convert(kind, body, condition)?
+                    .map(Some)
+                    .ok_or_else(|| unsupported("PRE/POST phaser condition"));
             }
             let class = match phaser_class(kind) {
                 Some(c) => c,
@@ -791,6 +822,20 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                     return Err(unsupported("with/without block with an explicit signature"));
                 }
                 None => {}
+            }
+            // `STMT when COND`: the parser's synthetic `given $_` over a
+            // modifier `When` (see `Stmt::When::is_statement_modifier`).
+            if let Some((cond, modified)) = when_modifier_parts(topic, body) {
+                let mut statement = convert_stmt(modified)?
+                    .ok_or_else(|| unsupported("empty when modifier body"))?;
+                statement.fields.push(node_field(
+                    Some("condition-modifier"),
+                    RakuAstNode {
+                        class: RakuAstClass::StatementModifierWhen,
+                        fields: vec![node_field(None, convert_expr(cond)?)],
+                    },
+                ));
+                return Ok(Some(statement));
             }
             if *is_statement_modifier {
                 let [modified] = body.as_slice() else {
@@ -1611,7 +1656,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
 /// any other name, including a constant (`nqp::const::CCLASS_WORD`, which raku
 /// has a node of its own for).
 // Cost: O(k), k = length of `name`.
-fn nqp_op(name: &str) -> Option<&str> {
+pub(super) fn nqp_op(name: &str) -> Option<&str> {
     let op = name.strip_prefix("nqp::")?;
     (!op.is_empty() && !crate::qualified::is_qualified_str(op)).then_some(op)
 }
@@ -2601,6 +2646,29 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             math_constant_spelling(v, None).unwrap_or_default(),
         )),
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
+        // A CORE term keyword the parser left shadowable (#9047) is the same
+        // node as the plain keyword; lowering decides again whether it is.
+        Expr::ShadowableTermKeyword { value, .. } => convert_literal(value),
+        // `last` / `next` / `redo` in expression position (`COND or next`):
+        // the same bare call as the statement form, over the label or value.
+        Expr::ControlFlow {
+            kind,
+            label,
+            value,
+            take_value: false,
+        } => {
+            let name = match kind {
+                crate::ast::ControlFlowKind::Last => "last",
+                crate::ast::ControlFlowKind::Next => "next",
+                crate::ast::ControlFlowKind::Redo => "redo",
+            };
+            match (label, value) {
+                (Some(label), None) => Ok(labelled_control_call(name, label)),
+                (None, Some(value)) => control_call(name, std::slice::from_ref(value.as_ref())),
+                (None, None) => control_call(name, &[]),
+                (Some(_), Some(_)) => Err(unsupported("a labelled loop control with a value")),
+            }
+        }
         // `{*}` in a proto body.
         _ if expr.is_onlystar_dispatch() => Ok(RakuAstNode {
             class: RakuAstClass::OnlyStar,
@@ -2646,7 +2714,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             if let Some(op) = nqp_op(name.as_str()) {
                 let mut fields = vec![leaf_field(None, Value::str(op.to_string()))];
-                for arg in args {
+                for arg in args.iter().filter(|a| !is_injected_named_arg(a)) {
                     fields.push(node_field(None, convert_expr(arg)?));
                 }
                 return Ok(RakuAstNode {

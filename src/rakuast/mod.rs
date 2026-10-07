@@ -38,6 +38,7 @@ mod name_parts;
 mod named_param;
 mod origin;
 mod package_header;
+mod phaser_condition;
 mod placeholder;
 mod prefix_call;
 mod proto;
@@ -303,6 +304,7 @@ pub enum RakuAstClass {
     StatementModifierUnless,
     StatementModifierWith,
     StatementModifierWithout,
+    StatementModifierWhen,
     // The `with`/`without`/`orwith` BLOCK forms.
     StatementWith,
     StatementWithout,
@@ -386,6 +388,8 @@ pub enum RakuAstClass {
     StatementTrusts,
     StatementPrefixOnce,
     Nqp,
+    /// `nqp::const::NAME`, a constant of the nqp backend.
+    NqpConst,
     StatementPrefixStart,
     StatementPrefixQuietly,
     StatementPrefixSink,
@@ -630,6 +634,7 @@ impl RakuAstClass {
             StatementModifierIf => "RakuAST::StatementModifier::If",
             StatementModifierUnless => "RakuAST::StatementModifier::Unless",
             StatementModifierWith => "RakuAST::StatementModifier::With",
+            StatementModifierWhen => "RakuAST::StatementModifier::When",
             StatementModifierWithout => "RakuAST::StatementModifier::Without",
             StatementWith => "RakuAST::Statement::With",
             StatementWithout => "RakuAST::Statement::Without",
@@ -676,6 +681,7 @@ impl RakuAstClass {
             StatementTrusts => "RakuAST::Statement::Trusts",
             StatementPrefixOnce => "RakuAST::StatementPrefix::Once",
             Nqp => "RakuAST::Nqp",
+            NqpConst => "RakuAST::Nqp::Const",
             StatementPrefixStart => "RakuAST::StatementPrefix::Start",
             StatementPrefixQuietly => "RakuAST::StatementPrefix::Quietly",
             StatementPrefixSink => "RakuAST::StatementPrefix::Sink",
@@ -988,7 +994,7 @@ impl RakuAstClass {
                 "RakuAST::Expression",
             ],
             Mixin => &["RakuAST::Infix", "RakuAST::Infixish"],
-            Nqp => EXPR,
+            Nqp | NqpConst => EXPR,
             VarAttribute => &[
                 "RakuAST::Var",
                 "RakuAST::Term",
@@ -1469,6 +1475,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementModifierIf,
     RakuAstClass::StatementModifierUnless,
     RakuAstClass::StatementModifierWith,
+    RakuAstClass::StatementModifierWhen,
     RakuAstClass::StatementModifierWithout,
     RakuAstClass::StatementWith,
     RakuAstClass::StatementWithout,
@@ -1515,6 +1522,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementTrusts,
     RakuAstClass::StatementPrefixOnce,
     RakuAstClass::Nqp,
+    RakuAstClass::NqpConst,
     RakuAstClass::StatementPrefixStart,
     RakuAstClass::StatementPrefixQuietly,
     RakuAstClass::StatementPrefixSink,
