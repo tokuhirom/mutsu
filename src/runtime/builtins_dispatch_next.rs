@@ -57,7 +57,6 @@ enum NativeBase {
     ArrayStorage,
     HashStorage,
     BaggyStorage,
-    MixinBase,
     Metamodel,
 }
 
@@ -69,7 +68,6 @@ const NATIVE_BASE_EXHAUSTED: &[NativeBase] = &[
     NativeBase::ArrayStorage,
     NativeBase::HashStorage,
     NativeBase::BaggyStorage,
-    NativeBase::MixinBase,
     NativeBase::Metamodel,
 ];
 
@@ -85,7 +83,6 @@ const NATIVE_BASE_MULTI: &[NativeBase] = &[
 const NATIVE_BASE_NO_FRAME: &[NativeBase] = &[
     NativeBase::ArrayStorage,
     NativeBase::HashStorage,
-    NativeBase::MixinBase,
 ];
 
 impl Interpreter {
@@ -140,7 +137,6 @@ impl Interpreter {
                 NativeBase::ArrayStorage => self.native_array_storage_next_candidate(override_args),
                 NativeBase::HashStorage => self.native_hash_storage_next_candidate(override_args),
                 NativeBase::BaggyStorage => self.native_baggy_storage_next_candidate(override_args),
-                NativeBase::MixinBase => self.native_mixin_base_next_candidate(override_args),
                 NativeBase::Metamodel => self.native_metamodel_next_candidate(override_args),
             };
             if res.is_some() {
@@ -697,41 +693,15 @@ impl Interpreter {
             self.try_native_method(storage, method_sym, &args)
         })?
     }
-
-    /// When a role mixed directly into a native builtin value (`%h does R`,
-    /// `@a does R`, `"x" does R`, ...) overrides a method and calls
-    /// `nextsame`/`nextwith` (or `callsame`/`callwith`), the NATIVE method on
-    /// the mixin's inner value is the final base candidate. This mirrors
-    /// [`Self::native_array_storage_next_candidate`], but for a plain `Mixin` over
-    /// a builtin `Value` rather than an `is Array` subclass's synthesized
-    /// `__mutsu_array_storage` attribute.
-    ///
-    /// `dispatch_mixin_method_call` (`runtime::methods_mixin_dispatch`) only
-    /// pushes a `method_dispatch_stack` frame with real "next candidate"
-    /// entries when the mixin's inner value is a user-declared `Instance`
-    /// (its `base_class`/`resolve_all_methods_with_owner` lookup needs a
-    /// registered class name) — a native `Hash`/`Array`/`Str`/... inner value
-    /// has no `MethodDef`s to find, so that frame is empty and `nextsame`
-    /// previously fell through to the generic "exhausted MRO" `Nil` at the
-    /// end of [`Self::dispatch_next_candidate`] instead of reaching the real
-    /// native implementation (`Hash::AT-KEY`, ...). Verified against
-    /// `Hash::Restricted`'s `restrict-current`/`restrict-given` roles, whose
-    /// `AT-KEY`/`ASSIGN-KEY`/`BIND-KEY`/`STORE` overrides all `nextsame`/
-    /// `callsame` to the real `Hash` behavior once the allowed-keys check
-    /// passes.
-    fn native_mixin_base_next_candidate(
+    /// The builtin of a `Mixin`'s native inner value, the last candidate behind
+    /// a role's method (`DeferralEntry::Native`). `None` when the inner value
+    /// is a user `Instance`, whose MRO is all `MethodDef`s.
+    fn mixin_base_native_entry(
         &mut self,
-        override_args: Option<&[Value]>,
+        invocant: &Value,
+        method_name: &str,
+        args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let ctx = self.dispatch.samewith_context_stack.last().cloned();
-        let method_name = ctx.as_ref().map(|c| c.name.clone())?;
-        let invocant = self
-            .dispatch
-            .method_dispatch_stack
-            .last()
-            .map(|f| f.invocant.clone())
-            .or_else(|| ctx.as_ref().and_then(|c| c.invocant.clone()))
-            .or_else(|| self.env.get("self").cloned())?;
         let ValueView::Mixin(inner, _) = invocant.view() else {
             return None;
         };
@@ -741,16 +711,6 @@ impl Interpreter {
         if matches!(inner.view(), ValueView::Instance { .. }) {
             return None;
         }
-        let args: Vec<Value> = match override_args {
-            Some(a) => a.to_vec(),
-            None => self
-                .dispatch
-                .method_dispatch_stack
-                .last()
-                .map(|f| f.args.clone())
-                .or_else(|| ctx.as_ref().and_then(|c| c.args.clone()))
-                .unwrap_or_default(),
-        };
         // `ASSIGN-KEY`/`DELETE-KEY` mutate the hash in place, which
         // `try_native_method` below cannot do (it dispatches pure `&Value`
         // native methods with no mutation story for a bare `Hash`). Write
@@ -762,11 +722,11 @@ impl Interpreter {
         // A role's `STORE` that `callsame`s reaches the native one, which
         // re-initializes the inner container in place and keeps the Mixin.
         if method_name == "STORE"
-            && let Some(stored) = self.native_container_store(&invocant, &args)
+            && let Some(stored) = self.native_container_store(invocant, args)
         {
             return Some(stored);
         }
-        if matches!(method_name.as_str(), "ASSIGN-KEY" | "DELETE-KEY")
+        if matches!(method_name, "ASSIGN-KEY" | "DELETE-KEY")
             && !args.is_empty()
             && let ValueView::Hash(gc_ref) = inner.view()
         {
@@ -789,7 +749,7 @@ impl Interpreter {
         }
         if matches!(inner.view(), ValueView::Array(..))
             && matches!(
-                method_name.as_str(),
+                method_name,
                 "push"
                     | "append"
                     | "prepend"
@@ -806,11 +766,11 @@ impl Interpreter {
                     | "STORE"
             )
             && let Some(result) =
-                self.native_mixin_array_mutation(&invocant, inner.as_ref(), &method_name, &args)
+                self.native_mixin_array_mutation(invocant, inner.as_ref(), method_name, args)
         {
             return Some(result);
         }
-        self.try_native_method(inner, Symbol::intern(&method_name), &args)
+        self.try_native_method(inner, Symbol::intern(method_name), args)
     }
 
     /// The default `gist`/`raku`/`Str` of an instance, the last candidate of a
@@ -1278,6 +1238,10 @@ impl Interpreter {
                     };
                     let result = if matches!(invocant.view(), ValueView::Instance { .. }) {
                         self.any_base_native_entry(&invocant, &name, &args)?
+                    } else if matches!(invocant.view(), ValueView::Mixin(..)) {
+                        self.mixin_base_native_entry(&invocant, &name, &args)
+                            .transpose()?
+                            .unwrap_or(Value::NIL)
                     } else {
                         self.run_core_type_builtin(invocant, &name, args)?
                     };
