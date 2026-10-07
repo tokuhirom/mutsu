@@ -1741,6 +1741,15 @@ pub(crate) enum OpCode {
     /// identity. Consumed (and unconditionally cleared) at CallMethod entry, so
     /// it cannot leak past the one dispatch it was emitted for.
     MarkAccessorRefContext,
+    /// Emitted immediately before the `CallMethod`/`CallMethodMut` of an
+    /// explicit zero-argument `.list` call (not the `@$s` contextualizer, which
+    /// reaches the VM as the same method name). When the invocant on top of the
+    /// stack is a `Seq` whose body is already reified and not yet taken, it is
+    /// consumed: the body is marked taken and replaced by a fresh `Seq` over its
+    /// elements, so `$s.list; $s.List` throws `X::Seq::Consumed` as in raku
+    /// (#9930). Any other invocant is left untouched; a still-deferred source is
+    /// consumed by the method dispatch itself.
+    ConsumeReifiedSeq,
     /// ADR-0067, the E6 producer: [`Self::MarkAccessorRefContext`] emitted
     /// before the *invocant* of an lvalue method call (`$c.v.snitch = 9`), and
     /// honoured only when the program could actually have a raw-invocant

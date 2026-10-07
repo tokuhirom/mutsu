@@ -700,8 +700,31 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
-                    sugar: false,
+                    sugar: kind.method() == "list",
                 });
+            }
+            // An explicit `.list` call consumes a `Seq` (raku: `$s.list; $s.List`
+            // throws `X::Seq::Consumed`), while the `@$s` / `@($s)` contextualizer
+            // (parsed with `sugar: true`) re-reads one. Both reach the VM as the
+            // same method name, so mark the explicit call for the VM
+            // (`OpCode::ConsumeReifiedSeq`, #9930).
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier: None,
+                quoted: false,
+                sugar: false,
+            } if args.is_empty() && name == "list" => {
+                self.compile_expr(&Expr::MethodCall {
+                    target: target.clone(),
+                    name: *name,
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                    sugar: true,
+                });
+                self.insert_accessor_ref_marker(OpCode::ConsumeReifiedSeq);
             }
             // `(EXPR).method` is exactly `EXPR.method`. Parentheses in Raku are
             // pure grouping: they never introduce a container and never strip
@@ -717,7 +740,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
-                ..
+                sugar,
             } if matches!(target.as_ref(), Expr::Grouped(_)) => {
                 let Expr::Grouped(inner) = target.as_ref() else {
                     unreachable!()
@@ -728,7 +751,7 @@ impl Compiler {
                     args: args.clone(),
                     modifier: *modifier,
                     quoted: *quoted,
-                    sugar: false,
+                    sugar: *sugar,
                 };
                 self.compile_expr(&peeled);
             }

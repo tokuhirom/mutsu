@@ -1195,7 +1195,7 @@ impl Compiler {
         ) || matches!(arg, Expr::Var(name) if crate::value::attr_twigil_base(name).is_some())
     }
 
-    fn insert_accessor_ref_marker(&mut self, marker: OpCode) {
+    pub(super) fn insert_accessor_ref_marker(&mut self, marker: OpCode) {
         let mut i = self.code.ops.len();
         while i > 0 {
             match &self.code.ops[i - 1] {

@@ -48,7 +48,7 @@ pub(super) fn contextualized_self_call<'a>(
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
-                sugar: false,
+                sugar: context == "list",
             },
         )
     }))
