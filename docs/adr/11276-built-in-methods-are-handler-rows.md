@@ -193,7 +193,9 @@ slice merges. ADR-0019 G3's "cache-hit dispatch remains generation-checked O(1)"
 ## 8. Open questions
 
 - `ReceiverPlace`'s exact shape: a slot, an env name, or an attribute cell. ADR-0097's binding
-  descriptor is the likely answer.
+  descriptor is the likely answer. **Decided in slice 3F (§9.23):** an env name plus the receiver
+  as the call read it (`Var`), or a detached container (`Detached`); ADR-0097's descriptor replaces
+  the name lookups under the place, not the handlers.
 - Whether a row's `shape` carries a full signature (for Rakudo-style bind errors on built-ins) or
   only an arity mask, with the handler raising the error. Slice 3A settled named arguments
   (§9.15: a row declares the names it binds); positional binding stays an arity plus the
@@ -1347,6 +1349,86 @@ remainder (`IO::CatHandle`, `IO::Pipe`, the sockets, `Proc::Async`, `Promise`, `
 schedulers, `Lock`) is unchanged: `IO::Pipe` and `IO::CatHandle` mix modes in one `match` (a pipe's
 behaviour depends on whether it holds a child's stdin or stdout), and `Lock` is reached from six VM and
 runtime blocks that name its methods.
+
+### 9.23 Slice 3F: receiver-mutating methods (2026-10-07)
+
+Branch `refactor/11276-3f-mutating`. This subsection records the survey and the decision of §8.1
+first (the slice's first commit); what landed is appended below it as each family merges.
+
+**What a mutator writes through.** The survey of the rows the recognition table flags
+`MUTATES_RECEIVER` (`scripts/method-rows-report.py --inventory List,Array,Hash,BagHash,Str`) and of
+every cascade site that names them found four kinds of receiver, not one:
+
+1. **A shared node, no name needed.** `SetHash`/`BagHash`/`MixHash` `grab`/`grabpairs`/`set`/`unset`
+   and `BagHash.add`/`remove` (`builtins/quanthash_mutators.rs`, `vm/vm_baghash_mutators.rs`) already
+   write through the container's `Gc` node in place (container identity, §3: a mutable quant hash is a
+   reference type), so a call needs only the value. They have three call sites each (`CallMethodMut`,
+   `CallMethod`, the baggy-subclass delegate) and no state of their own.
+2. **A named binding.** `@a.push`, `%h.push`, `$r.splice` where `$r` holds an array, `@!items.pop`.
+   The array and hash mutators write the node in place too, but they key a second set of facts on the
+   *name*: the declared element type (`var_type_constraint`) and `is default`, the thread-shared store
+   (`push_to_shared_var`, `shared_array_extend`, the atomic lanes in `exec_call_method_mut_op_impl`), a
+   compunit's unit-lexical cell and an `our` package array (`env_root_descended_mut`), a `:=`-bound cell,
+   the native-integer element wrap, and a detached-rebuild fallback that writes a fresh container back
+   under the name when the name does not resolve to one. `Str`'s `subst-mutate` and `substr-rw` replace
+   the value and so must write it back under the name.
+3. **The backing storage of an `is Array` instance** (`__mutsu_array_storage`): a plain untyped array
+   with no name, mutated by `native_array_storage_mut` and written back into the instance.
+4. **A by-value receiver** (`f().push(1)`, `[1,2].pop`, an element): `array_mutate_copy`, which writes
+   the shared node in place (the node has no other holder when the receiver is a literal).
+
+The same six array mutators are written **six times**: the `@`-sigil arm and the sigil-less arm of
+`call_method_mut_with_values` (which differ in how they type-check and in the native-integer wrap),
+`try_native_array_mut` and `try_native_array_splice` (the VM's fast path in front of that function),
+`native_array_storage_mut`, `array_mutate_copy`, and the thread-shared lanes of the VM. `Hash`'s
+`push`/`append` is written three times (the `%` arm, `try_native_hash_mut_bound`, the by-value arm).
+Their answers differ where the copies drifted (an empty `pop` on a by-value array answers a plain
+`Failure`, on a named native array one that names `array[num]`).
+
+**Decision, §8.1: `ReceiverPlace` is an env name plus the receiver as the call read it, or a detached
+container.**
+
+```rust
+pub(crate) enum ReceiverPlace<'a> {
+    /// The call named a binding: `@a.push`, `$r.splice`, `%h.push`, `@!items.pop`.
+    Var { name: &'a str, value: &'a Value },
+    /// A container with no binding: an `is Array` instance's storage, a by-value receiver.
+    Detached(&'a mut Value),
+}
+
+pub(crate) type MutFn = fn(&mut Interpreter, &mut ReceiverPlace<'_>, &[Value], Named<'_>)
+    -> Option<Result<Value, RuntimeError>>;
+```
+
+- *Why not ADR-0097's binding descriptor.* It is `Proposed` and unbuilt, and the facts the mutators
+  read about a binding (declared type, `is default`, the shared store, unit-lexical and `our` cells,
+  a `:=` cell) are looked up **by name** by the interpreter's env helpers today. The place exposes
+  them through accessors (`place.slot(interp)` is `env_root_descended_mut(name)`;
+  `place.check_element_types(interp, values)` is the name-keyed check for a `Var` and the
+  metadata-only check for a `Detached`), so the handlers are written once against the place. When the
+  descriptor lands, those accessors change and the handlers do not.
+- *Why the place is small.* Container identity (§3) already moved the array, hash and quant-hash
+  writes to the shared node. What is left for the place is the residue: the name-keyed facts above,
+  the cell descent, assigning a replacement value (`place.assign`: a `Str`'s `subst-mutate`, an
+  `IO::Handle`'s `open`, which retires `RowFlags::OWNER_ONLY`) and the detached fallback.
+- *The guard step does not change for pure rows.* A `Handler::Mut` row is registered in the owner
+  map only (never in the per-shape map), so no shape lookup, call-site lane or `try_dispatch` finds
+  it, and the debug cross-check never re-runs it (a second run would apply the mutation twice). It
+  is reached by one new entry, `invoke_mut(interp, place, method, args)`, which looks the row up
+  along the owner chain of the receiver's value kind (`Array` then `List`, `Hash` then `Map`, ...),
+  splits the named arguments as `invoke_owner` does, and runs the handler. A handler returns `None`
+  to decline and the call takes the cascades exactly as before, so a family migrates whole or not at
+  all.
+- *Where the entry is called.* The mutating dispatch entry (`call_method_mut_with_values`) at the
+  position of the arms it replaces, so every receiver guard in front of it (immutable list, user
+  override, augment, Proxy, tied container, `ContainerRef` cell) keeps its order; the VM's fast
+  paths and thread-shared lanes at their own positions with their own preconditions; the by-value
+  entry and the `is Array` storage path with a `Detached` place.
+
+**Families, one commit each, in order** (a family that cannot be made green is deferred whole):
+the quant-hash mutators (a shared node: the mechanism's proof), `Str.subst-mutate` and `substr-rw`
+(`assign`), `Hash.push`/`append`, `Array`'s `push`/`append`/`unshift`/`prepend`/`pop`/`shift` with
+`List`'s immutable rows, `Array.splice`, `Blob`/`Buf`'s mutators, and `IO::Handle.open`.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
