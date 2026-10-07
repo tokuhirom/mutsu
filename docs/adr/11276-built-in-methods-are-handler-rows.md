@@ -1818,3 +1818,23 @@ subclass receivers have no shape), `Mu`'s `new`/`BUILDALL`/`POPULATE`/`clone` ro
 `GrammarHOW`/`ClassHOW` rows (done in 3G part 1) and the grammar `parse` rows. Slice 4 is therefore finished
 when those owners have rows; the resolver then asks "is there a row for this owner on the storage value?" in
 `resolve_sequence`, and `NATIVE_BASE_EXHAUSTED` and `NATIVE_BASE_NO_FRAME` are deleted by slice 5.
+
+### 9.30 The rendering and identity names, scalar owners (2026-10-07)
+
+Remainder item 1 of the plan (`refactor/11276-rendering-identity-rows`). The shared `match` that §9.16 and §9.17
+deferred is split by owner group, not all at once: this step does the scalar owners, whose shapes are open and
+whose answers need no interpreter.
+
+- `WHICH` is one function now (`methods_0arg/which.rs::which_of`, with `has_value_identity`), moved out of
+  `dispatch_core_coerce`; the cascade arm is a call to it and the rows call the same function.
+- `gist`, `raku` and `Bool.Str` are `scalars/render.rs` handlers (`Handler::Narrow`) with 18 rows:
+  `Int`/`Num`/`Rat`/`Complex`/`Str` (`gist`, `raku`, `WHICH`) and `Bool` (`gist`, `raku`, `Str`). The cascade's
+  `Bool`, `Rat` and `Str` arms in `dispatch_core_repr` call the handlers; a rational with a zero denominator
+  stays in the cascade (its error needs the interpreter's context), so the handlers decline it.
+- Not registered, because Rakudo does not declare them on these owners: `Int.perl`, `Str.perl` (the table keeps
+  them as recognition rows) and `Bool.WHICH`; and `fmt`, which takes a format and is the text-methods-with-arguments
+  family.
+- Left in the shared `match` for the next steps: the collections (`Array`, `List`, `Hash`, `Map`, `Pair`, `Range`,
+  `Seq`, `Set`/`Bag`/`Mix` and their hash forms), `Version`, `Blob`, `Capture`, `Nil` and the objects group
+  (`Exception`, `Failure`, `Code`, `Signature`, `Backtrace`), `Cool`/`Any`/`Mu`, and `clone`/`fmt` everywhere.
+  Finding: `(5 but "x").gist` answers `5` in mutsu and `x` in Rakudo; the mixin path does not take the rows.
