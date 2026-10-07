@@ -173,6 +173,7 @@ pub(crate) fn list_infix_top(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     left: Box::new(left),
                     op,
                     right: Box::new(right),
+                    form: Default::default(),
                 },
             );
             current_assoc_key = Some(op_str.to_string());

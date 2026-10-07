@@ -241,6 +241,7 @@ fn parse_list_infix_loop_impl<'a>(
                             left: Box::new(left.clone()),
                             op: tk,
                             right: Box::new(right),
+                            form: Default::default(),
                         }
                     } else {
                         Expr::InfixFunc {
@@ -253,6 +254,7 @@ fn parse_list_infix_loop_impl<'a>(
                     *left = Expr::Unary {
                         op: TokenKind::Bang,
                         expr: Box::new(binary),
+                        word: false,
                     };
                     rest = r;
                     continue;
@@ -275,6 +277,7 @@ fn parse_list_infix_loop_impl<'a>(
                             left: Box::new(left.clone()),
                             right: Box::new(right),
                         }),
+                        word: false,
                     };
                     rest = r;
                     continue;
@@ -297,6 +300,7 @@ fn parse_list_infix_loop_impl<'a>(
                             right: vec![right],
                             modifier: None,
                         }),
+                        word: false,
                     };
                     rest = r;
                     continue;
@@ -328,6 +332,7 @@ fn parse_list_infix_loop_impl<'a>(
                             left: Box::new(left.clone()),
                             op: tk,
                             right: Box::new(right),
+                            form: Default::default(),
                         };
                     } else {
                         // Unknown plain op: treat as user-defined infix
@@ -384,6 +389,7 @@ fn parse_list_infix_loop_impl<'a>(
                                     left: Box::new(right),
                                     op: TokenKind::SmartMatch,
                                     right: Box::new(rhs_expr),
+                                    form: Default::default(),
                                 },
                             )
                         } else {
@@ -545,6 +551,7 @@ fn parse_list_infix_loop_impl<'a>(
                             left: Box::new(right),
                             op: TokenKind::SmartMatch,
                             right: Box::new(rhs_expr),
+                            form: Default::default(),
                         },
                     )
                 } else {

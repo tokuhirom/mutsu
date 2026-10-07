@@ -103,7 +103,7 @@ pub(crate) fn walk_param_mut<V: VisitMut + ?Sized>(v: &mut V, p: &mut ParamDef) 
 pub(crate) fn walk_call_arg_mut<V: VisitMut + ?Sized>(v: &mut V, arg: &mut CallArg) {
     match arg {
         CallArg::Positional(e) | CallArg::Slip(e) | CallArg::Invocant(e) => v.visit_expr_mut(e),
-        CallArg::Named { name: _, value } => {
+        CallArg::Named { name: _, value, .. } => {
             if let Some(e) = value {
                 v.visit_expr_mut(e);
             }

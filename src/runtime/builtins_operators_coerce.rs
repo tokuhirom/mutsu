@@ -140,8 +140,8 @@ impl Interpreter {
                 expr: Box::new(Expr::Binary {
                     left: Box::new(Expr::Literal(left)),
                     op: TokenKind::SetElem,
-                    right: Box::new(Expr::Literal(right)),
-                }),
+                    right: Box::new(Expr::Literal(right)), form: Default::default(),
+                }), word: false,
             };
         }
         if op == "∌" {
@@ -150,8 +150,8 @@ impl Interpreter {
                 expr: Box::new(Expr::Binary {
                     left: Box::new(Expr::Literal(left)),
                     op: TokenKind::SetCont,
-                    right: Box::new(Expr::Literal(right)),
-                }),
+                    right: Box::new(Expr::Literal(right)), form: Default::default(),
+                }), word: false,
             };
         }
         if let Some(inner) = op.strip_prefix("![")
@@ -159,7 +159,7 @@ impl Interpreter {
         {
             return Expr::Unary {
                 op: TokenKind::Bang,
-                expr: Box::new(Self::build_infix_expr(inner, left, right)),
+                expr: Box::new(Self::build_infix_expr(inner, left, right)), word: false,
             };
         }
         if let Some(inner) = op.strip_prefix('!')
@@ -167,37 +167,37 @@ impl Interpreter {
         {
             return Expr::Unary {
                 op: TokenKind::Bang,
-                expr: Box::new(Self::build_infix_expr(inner, left, right)),
+                expr: Box::new(Self::build_infix_expr(inner, left, right)), word: false,
             };
         }
         if op == "⊈" {
             return Expr::Unary {
                 op: TokenKind::Bang,
-                expr: Box::new(Self::build_infix_expr("⊆", left, right)),
+                expr: Box::new(Self::build_infix_expr("⊆", left, right)), word: false,
             };
         }
         if op == "⊉" {
             return Expr::Unary {
                 op: TokenKind::Bang,
-                expr: Box::new(Self::build_infix_expr("⊇", left, right)),
+                expr: Box::new(Self::build_infix_expr("⊇", left, right)), word: false,
             };
         }
         if op == "⊄" {
             return Expr::Unary {
                 op: TokenKind::Bang,
-                expr: Box::new(Self::build_infix_expr("⊂", left, right)),
+                expr: Box::new(Self::build_infix_expr("⊂", left, right)), word: false,
             };
         }
         if op == "⊅" {
             return Expr::Unary {
                 op: TokenKind::Bang,
-                expr: Box::new(Self::build_infix_expr("⊃", left, right)),
+                expr: Box::new(Self::build_infix_expr("⊃", left, right)), word: false,
             };
         }
         Expr::Binary {
             left: Box::new(Expr::Literal(left)),
             op: Self::infix_token(op),
-            right: Box::new(Expr::Literal(right)),
+            right: Box::new(Expr::Literal(right)), form: Default::default(),
         }
     }
 

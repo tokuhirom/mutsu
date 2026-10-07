@@ -38,7 +38,7 @@ impl Interpreter {
                 Expr::HashVar(name) if name.starts_with('!') && name.len() > 1 => {
                     Some((name[1..].to_string(), '%'))
                 }
-                Expr::Call { name, args } if name == "return-rw" && args.len() == 1 => {
+                Expr::Call { name, args, .. } if name == "return-rw" && args.len() == 1 => {
                     match &args[0] {
                         Expr::Var(attr) if attr.starts_with('!') && attr.len() > 1 => {
                             Some((attr[1..].to_string(), '$'))
@@ -343,13 +343,13 @@ impl Interpreter {
         };
         // Unwrap `return-rw EXPR`.
         let expr = match expr {
-            Expr::Call { name, args } if name == "return-rw" && args.len() == 1 => &args[0],
+            Expr::Call { name, args, .. } if name == "return-rw" && args.len() == 1 => &args[0],
             other => other,
         };
         if let Expr::Index {
             target,
             index,
-            is_positional,
+            is_positional, ..
         } = expr
             && let Expr::Var(param) = index.as_ref()
         {
@@ -378,13 +378,13 @@ impl Interpreter {
             _ => return None,
         };
         let expr = match expr {
-            Expr::Call { name, args } if name == "return-rw" && args.len() == 1 => &args[0],
+            Expr::Call { name, args, .. } if name == "return-rw" && args.len() == 1 => &args[0],
             other => other,
         };
         if let Expr::Index {
             target,
             index,
-            is_positional,
+            is_positional, ..
         } = expr
             && matches!(target.as_ref(), Expr::BareWord(w) | Expr::Var(w) if w == "self")
         {

@@ -7,6 +7,7 @@ pub(crate) fn assignment_ro_expr(lhs: Expr, rhs: Expr) -> Expr {
         Stmt::Expr(Expr::Call {
             name: Symbol::intern("__mutsu_assignment_ro"),
             args: Vec::new(),
+            listop: false,
         }),
     ])
 }
@@ -44,11 +45,14 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             target,
             index,
             is_positional,
+            spelling,
+            ..
         } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(value),
             is_positional,
+            spelling,
         },
         Expr::MultiDimIndex {
             target,
@@ -70,7 +74,7 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             name,
             args,
             modifier,
-            quoted: _,
+            ..
         } => {
             if name == "AT-POS"
                 && args.len() == 1
@@ -81,6 +85,7 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
                     index: Box::new(args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL))),
                     value: Box::new(value),
                     is_positional: true,
+                    spelling: Default::default(),
                 };
             }
             // Match the expression-context lowering in `paren.rs` (NOT the
@@ -128,12 +133,13 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
                 value,
             )
         }
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             crate::parser::stmt::assign::named_sub_lvalue_assign_expr(name.resolve(), args, value)
         }
         Expr::CallOn { target, args } => Expr::Call {
             name: Symbol::intern("__mutsu_assign_callable_lvalue"),
             args: vec![*target, Expr::ArrayLiteral(args), value],
+            listop: false,
         },
         // A compound assignment is transparent to the execution AST marker.
         // When its result is itself used as an lvalue (for example the RHS of
@@ -249,18 +255,21 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => {
             let lhs_expr = Expr::Index {
                 target: target.clone(),
                 index: index.clone(),
                 is_positional,
+                spelling: Default::default(),
             };
             Expr::IndexAssign {
                 target,
                 index,
                 value: Box::new(compound_assigned_value_expr(lhs_expr, op, value)),
                 is_positional: true,
+                spelling,
             }
         }
         Expr::MultiDimIndex {
@@ -317,11 +326,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
             }
         }
         Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
+            target, name, args, ..
         } if name == "AT-POS" && args.len() == 1 => {
             let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL));
             build_compound_assign_target_expr(
@@ -329,6 +334,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
                     target,
                     index: Box::new(index),
                     is_positional: true,
+                    spelling: Default::default(),
                 },
                 op_name,
                 value,
@@ -389,11 +395,14 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
             target,
             index,
             is_positional,
+            spelling,
+            ..
         } => Some(Expr::IndexAssign {
             target,
             index,
             value: Box::new(rhs),
             is_positional,
+            spelling,
         }),
         _ => None,
     }
@@ -431,6 +440,7 @@ pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Opt
         target: Box::new(rhs.clone()),
         index: Box::new(Expr::Literal(Value::int(pos as i64))),
         is_positional: true,
+        spelling: Default::default(),
     };
     Some(match target {
         Expr::Var(name) => Expr::AssignExpr {
@@ -446,6 +456,7 @@ pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Opt
                     args: vec![Expr::Literal(Value::int(pos as i64))],
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 }
             } else {
                 rhs
@@ -455,6 +466,7 @@ pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Opt
                 expr: Box::new(Expr::Call {
                     name: Symbol::intern("__mutsu_star_lvalue_rhs"),
                     args: vec![Expr::Literal(Value::str(format!("@{}", name))), array_rhs],
+                    listop: false,
                 }),
                 is_bind: false,
             }
@@ -468,11 +480,14 @@ pub(crate) fn single_target_list_lvalue_expr(items: Vec<Expr>, rhs: Expr) -> Opt
             target,
             index,
             is_positional,
+            spelling,
+            ..
         } => Expr::IndexAssign {
             target,
             index,
             value: Box::new(extracted_rhs),
             is_positional,
+            spelling,
         },
         _ => return None,
     })

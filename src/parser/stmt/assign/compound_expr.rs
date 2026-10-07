@@ -32,6 +32,7 @@ where
         target: Box::new(target.clone()),
         index: Box::new(tmp_idx_expr.clone()),
         is_positional: compound_read_is_positional(&target, is_positional),
+        spelling: Default::default(),
     };
     let mut body = vec![Stmt::VarDecl {
         name: tmp_idx,
@@ -54,6 +55,7 @@ where
         index: Box::new(tmp_idx_expr),
         value: Box::new(value),
         is_positional,
+        spelling: Default::default(),
     };
     body.push(Stmt::Expr(store(build_assigned_value(lhs_expr))));
     Expr::desugar_block(body)
@@ -95,12 +97,14 @@ fn compound_index_assign_op_expr(
         target: Box::new(target.clone()),
         index: Box::new(tmp_idx_expr.clone()),
         is_positional: compound_read_is_positional(&target, is_positional),
+        spelling: Default::default(),
     };
     let store = move |value: Expr| Expr::IndexAssign {
         target: Box::new(target),
         index: Box::new(tmp_idx_expr),
         value: Box::new(value),
         is_positional,
+        spelling: Default::default(),
     };
     let tail = short_circuit_subscript_assign(keep, lhs_expr, rhs, &mut body, store);
     body.push(Stmt::Expr(tail));
@@ -231,6 +235,7 @@ pub(crate) fn build_compound_assign_expr(
             target,
             index,
             is_positional,
+            ..
         } => {
             return Ok(compound_index_assign_op_expr(
                 *target,
@@ -300,11 +305,7 @@ pub(crate) fn build_compound_assign_expr(
             Expr::desugar_block(body)
         }
         Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
+            target, name, args, ..
         } if name == "AT-POS" && args.len() == 1 => {
             let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL));
             return Ok(compound_index_assign_expr(
@@ -315,11 +316,7 @@ pub(crate) fn build_compound_assign_expr(
             ));
         }
         Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
+            target, name, args, ..
         } => {
             let target_var_name =
                 crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
@@ -329,6 +326,7 @@ pub(crate) fn build_compound_assign_expr(
                 args: args.clone(),
                 modifier: None,
                 quoted: false,
+                sugar: false,
             };
             let assigned_value = compound_assigned_value_expr(current_value, op, rhs);
             method_lvalue_roundtrip_assign_expr(
@@ -352,12 +350,13 @@ pub(crate) fn build_compound_assign_expr(
         // immutable value" even though the plain `f() = v` form worked.
         // `__mutsu_assign_named_sub_lvalue` resolves the routine at runtime and
         // raises "sub is not rw" when it is not rw-capable.
-        Expr::Call { ref name, ref args }
-            if !name.with_str(|n| n.starts_with("__mutsu_") || n.starts_with("nqp::")) =>
-        {
+        Expr::Call {
+            ref name, ref args, ..
+        } if !name.with_str(|n| n.starts_with("__mutsu_") || n.starts_with("nqp::")) => {
             let read_back = Expr::Call {
                 name: *name,
                 args: args.clone(),
+                listop: false,
             };
             let assign_through = |value: Expr| Expr::Call {
                 name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
@@ -366,6 +365,7 @@ pub(crate) fn build_compound_assign_expr(
                     Expr::ArrayLiteral(args.clone()),
                     value,
                 ],
+                listop: false,
             };
             // A short-circuit `op=` must not assign at all when it short-circuits
             // (`$a //= $b` is `$a // ($a = $b)`), so keep the assignment inside
@@ -388,6 +388,7 @@ pub(crate) fn build_compound_assign_expr(
                     left: Box::new(read_back),
                     op: op.token_kind(),
                     right: Box::new(assign_through(rhs)),
+                    form: Default::default(),
                 }
             } else {
                 assign_through(compound_assigned_value_expr(read_back, op, rhs))
@@ -397,6 +398,7 @@ pub(crate) fn build_compound_assign_expr(
             left: Box::new(Expr::BracketArray(items, tc)),
             op: op.token_kind(),
             right: Box::new(rhs),
+            form: Default::default(),
         },
         // `(EXPR if COND) op= rhs`: a statement-modifier conditional whose body is
         // an lvalue (`($s = $x.chop if $s) ~= $y`, from P5reset). Push the compound
@@ -484,6 +486,7 @@ pub(crate) fn build_compound_assign_expr(
                     Expr::ArrayLiteral(Vec::new()),
                     assigned_value,
                 ],
+                listop: false,
             }
         }
         // `@a[i]:v += x`, `%h<k>:v ~= x`: an internal `__mutsu_*` call lowers a
@@ -494,6 +497,7 @@ pub(crate) fn build_compound_assign_expr(
             let assign_through = |value: Expr| Expr::Call {
                 name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                 args: vec![lhs.clone(), Expr::ArrayLiteral(Vec::new()), value],
+                listop: false,
             };
             if matches!(
                 op,
@@ -510,6 +514,7 @@ pub(crate) fn build_compound_assign_expr(
                     left: Box::new(lhs.clone()),
                     op: op.token_kind(),
                     right: Box::new(assign_through(rhs)),
+                    form: Default::default(),
                 }
             } else {
                 assign_through(compound_assigned_value_expr(lhs.clone(), op, rhs))
@@ -539,8 +544,10 @@ pub(crate) fn build_compound_assign_expr(
                         Stmt::Expr(Expr::Call {
                             name: Symbol::intern("__mutsu_assignment_ro"),
                             args: Vec::new(),
+                            listop: false,
                         }),
                     ])),
+                    form: Default::default(),
                 }
             } else {
                 Expr::desugar_block(vec![
@@ -549,6 +556,7 @@ pub(crate) fn build_compound_assign_expr(
                     Stmt::Expr(Expr::Call {
                         name: Symbol::intern("__mutsu_assignment_ro"),
                         args: Vec::new(),
+                        listop: false,
                     }),
                 ])
             }
@@ -668,6 +676,7 @@ pub(crate) fn build_custom_compound_assign_expr(
             target,
             index,
             is_positional,
+            ..
         } => {
             return Ok(compound_index_assign_expr(
                 *target,
@@ -689,7 +698,7 @@ pub(crate) fn build_custom_compound_assign_expr(
             name,
             args,
             modifier: None,
-            quoted: _,
+            ..
         } if name != "AT-POS" => {
             let target_var_name =
                 crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
@@ -699,6 +708,7 @@ pub(crate) fn build_custom_compound_assign_expr(
                 args: args.clone(),
                 modifier: None,
                 quoted: false,
+                sugar: false,
             };
             let assigned_value = Expr::InfixFunc {
                 name: op_name,
@@ -750,6 +760,7 @@ pub(crate) fn build_meta_assign_expr(
         let zip_call = Expr::Call {
             name: Symbol::intern("__mutsu_zip_assign"),
             args: vec![lhs, rhs],
+            listop: false,
         };
         return Ok(Expr::AssignExpr {
             name,
@@ -792,12 +803,14 @@ pub(crate) fn build_meta_assign_expr(
             target,
             index,
             is_positional,
+            spelling,
             ..
         } => {
             let lhs_expr = Expr::Index {
                 target: target.clone(),
                 index: index.clone(),
                 is_positional,
+                spelling: Default::default(),
             };
             Expr::IndexAssign {
                 target,
@@ -809,6 +822,7 @@ pub(crate) fn build_meta_assign_expr(
                     right: Box::new(rhs),
                 }),
                 is_positional,
+                spelling,
             }
         }
         _ => return Err(PError::expected("assignment expression")),

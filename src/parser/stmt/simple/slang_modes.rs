@@ -171,7 +171,7 @@ mod tests {
     fn spaced_call_mode_parses_identifier_ws_paren_as_call() {
         let stmts = parse_with_modes(TUXIC, "foo (1, 2);").unwrap();
         match first_expr(&stmts) {
-            Expr::Call { name, args } => {
+            Expr::Call { name, args, .. } => {
                 assert_eq!(name.as_str(), "foo");
                 assert_eq!(
                     args.len(),
@@ -187,7 +187,7 @@ mod tests {
     fn spaced_call_off_keeps_listop_semantics() {
         let stmts = parse_with_modes(SlangModes::default(), "foo (1, 2);").unwrap();
         match first_expr(&stmts) {
-            Expr::Call { name, args } => {
+            Expr::Call { name, args, .. } => {
                 assert_eq!(name.as_str(), "foo");
                 assert_eq!(
                     args.len(),

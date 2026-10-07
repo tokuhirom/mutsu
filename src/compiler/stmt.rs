@@ -366,6 +366,7 @@ impl Compiler {
             left,
             op: TokenKind::FatArrow,
             right,
+            ..
         } = expr
             && matches!(
                 left.as_ref(),
@@ -439,6 +440,7 @@ impl Compiler {
             target: container,
             index,
             is_positional,
+            ..
         } = target.as_ref()
         else {
             return None;
@@ -464,6 +466,7 @@ impl Compiler {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                sugar: false,
             },
             type_constraint: None,
             is_state: false,
@@ -489,6 +492,7 @@ impl Compiler {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                sugar: false,
             };
         }
 
@@ -503,12 +507,14 @@ impl Compiler {
                 op: crate::token_kind::TokenKind::SmartMatch,
                 left: Box::new(element),
                 right: Box::new(Expr::BareWord("Array".to_string())),
+                form: Default::default(),
             },
             then_branch: vec![Stmt::Expr(Expr::IndexAssign {
                 target: container.clone(),
                 index: index.clone(),
                 value: Box::new(Expr::ArrayVar(tmp)),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             })],
             else_branch: Vec::new(),
             binding_var: None,
@@ -601,6 +607,7 @@ impl Compiler {
             target: container,
             index,
             is_positional,
+            ..
         } = iterable
         else {
             return None;
@@ -645,6 +652,7 @@ impl Compiler {
             target: container.clone(),
             index: Box::new(idx_var.clone()),
             is_positional: *is_positional,
+            spelling: Default::default(),
         };
 
         // Preserve the subscript's existing itemization when snapshotting it.
@@ -665,6 +673,7 @@ impl Compiler {
                 op: crate::token_kind::TokenKind::SmartMatch,
                 left: Box::new(idx_var.clone()),
                 right: Box::new(Expr::BareWord("Iterable".to_string())),
+                form: Default::default(),
             }
         };
         let element_is_not_scalar = Expr::Binary {
@@ -675,8 +684,10 @@ impl Compiler {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                sugar: false,
             }),
             right: Box::new(Expr::BareWord("Scalar".to_string())),
+            form: Default::default(),
         };
         let slice_decl = Self::init_decl(
             &slice_tmp,
@@ -684,6 +695,7 @@ impl Compiler {
                 op: crate::token_kind::TokenKind::OrOr,
                 left: Box::new(index_is_iterable),
                 right: Box::new(element_is_not_scalar),
+                form: Default::default(),
             },
         );
         // A `Slip` in a scalar flattens when iterated, a plain value does not
@@ -700,6 +712,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 }),
                 else_expr: Box::new(element),
             },
@@ -713,6 +726,7 @@ impl Compiler {
                 index: Box::new(idx_var),
                 value: Box::new(Expr::Var(tmp)),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             })],
             binding_var: None,
             is_statement_modifier: false,
@@ -893,7 +907,7 @@ impl Compiler {
     fn is_list_assign_call(expr: &Expr) -> bool {
         matches!(
             expr,
-            Expr::Call { name, args }
+            Expr::Call { name, args, .. }
                 if name.resolve() == "__mutsu_assign_callable_lvalue"
                     && args.len() == 3
                     && matches!(&args[0], Expr::ArrayLiteral(targets) if targets.iter().all(|t| {
@@ -2821,6 +2835,7 @@ impl Compiler {
                     target,
                     index,
                     is_positional: true,
+                    ..
                 } = iterable
                     && matches!(index.as_ref(), Expr::Whatever)
                     && Self::for_single_array_source(target).is_some()
@@ -2836,7 +2851,7 @@ impl Compiler {
                 // and aliases the same value containers (`clip-to 0, $_, 255 for
                 // values %r` writes through). Normalize it to the method form so
                 // it reuses the values-alias write-back path.
-                if let Expr::Call { name, args } = iterable
+                if let Expr::Call { name, args, .. } = iterable
                     && name.resolve() == "values"
                     && args.len() == 1
                     && matches!(args[0], Expr::HashVar(_) | Expr::ArrayVar(_))
@@ -2849,6 +2864,7 @@ impl Compiler {
                             args: Vec::new(),
                             modifier: None,
                             quoted: false,
+                            sugar: false,
                         };
                     }
                     self.compile_stmt(&rewritten);
@@ -2958,7 +2974,7 @@ impl Compiler {
                     self.compile_stmt(s);
                 }
             }
-            Stmt::Call { name, args } => {
+            Stmt::Call { name, args, .. } => {
                 // Check for invocant colon syntax: foo($obj:) → $obj.foo()
                 if let Some(method_call) = Self::invocant_colon_method_call(*name, args) {
                     self.compile_expr(&method_call);
@@ -2991,6 +3007,7 @@ impl Compiler {
                     let call_expr = Expr::Call {
                         name: *name,
                         args: Self::call_args_to_expr_args(args),
+                        listop: false,
                     };
                     self.compile_expr(&call_expr);
                     // Sink context: a bare call statement sinks its value (see
@@ -3034,6 +3051,7 @@ impl Compiler {
                             CallArg::Slip(expr) => Some(Expr::Unary {
                                 op: crate::token_kind::TokenKind::Pipe,
                                 expr: Box::new(expr.clone()),
+                                word: false,
                             }),
                             _ => None,
                         })
@@ -3041,6 +3059,7 @@ impl Compiler {
                     let call_expr = Expr::Call {
                         name: *name,
                         args: expr_args,
+                        listop: false,
                     };
                     self.compile_expr(&call_expr);
                     // Sink context: a bare call statement sinks its value, so a
@@ -3065,6 +3084,7 @@ impl Compiler {
                 let call_expr = Expr::Call {
                     name: *name,
                     args: Self::call_args_to_expr_args(&rewritten_args),
+                    listop: false,
                 };
                 self.compile_expr(&call_expr);
                 // Sink context, exactly as the normalized path above.
@@ -3645,6 +3665,7 @@ impl Compiler {
                         args: vec![Expr::Literal(Value::str(
                             "Useless generation of accessor method in mainline".to_string(),
                         ))],
+                        listop: false,
                     };
                     self.compile_expr(&warn_call);
                     self.code.emit(OpCode::Pop);
@@ -3742,6 +3763,7 @@ impl Compiler {
                     let call = Expr::Call {
                         name: Symbol::intern("take"),
                         args: vec![expr.clone()],
+                        listop: false,
                     };
                     self.compile_expr(&call);
                     self.code.emit(OpCode::Pop);
@@ -4968,6 +4990,7 @@ impl Compiler {
                             target,
                             index: key,
                             is_positional,
+                            ..
                         } => {
                             self.compile_let_save_elem(target, key, *is_positional, *is_temp, None);
                             return;
@@ -4991,6 +5014,7 @@ impl Compiler {
                         index: key.clone(),
                         value: val_expr.clone(),
                         is_positional,
+                        spelling: Default::default(),
                     });
                     self.compile_let_save_elem(
                         &target_expr,
@@ -5075,6 +5099,7 @@ impl Compiler {
                         value,
                         Expr::Literal(Value::str(var_name.clone())),
                     ],
+                    listop: false,
                 };
                 self.compile_expr(&assign_expr);
                 self.code.emit(OpCode::Pop);
@@ -5128,7 +5153,7 @@ impl Compiler {
                 // Tail expression escapes the frame (implicit result).
                 self.with_escape(true, |c| c.with_stmt_root(|c| c.compile_expr(expr)));
             }
-            Stmt::Call { name, args } => {
+            Stmt::Call { name, args, .. } => {
                 self.compile_tail_stmt_call_value(*name, args);
             }
             Stmt::If {

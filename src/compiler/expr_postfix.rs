@@ -21,7 +21,7 @@ impl Compiler {
         inc: bool,
         prefix: bool,
     ) -> bool {
-        let Expr::Call { name, args } = expr else {
+        let Expr::Call { name, args, .. } = expr else {
             return false;
         };
         if name.with_str(|n| n.starts_with("__mutsu_") || n.starts_with("nqp::")) {
@@ -40,6 +40,7 @@ impl Compiler {
                 Expr::ArrayLiteral(args.clone()),
                 Expr::Literal(Value::str_from(op_label)),
             ],
+            listop: false,
         });
         true
     }
@@ -108,6 +109,7 @@ impl Compiler {
                 Expr::Var(tmp_value_name.clone()),
                 Expr::Literal(Value::str(target_var)),
             ],
+            listop: false,
         };
         self.compile_expr(&assign_expr);
         self.code.emit(OpCode::Pop);
@@ -180,6 +182,7 @@ impl Compiler {
                 self.compile_expr(&Expr::Call {
                     name: Symbol::intern("__mutsu_incdec_nomatch"),
                     args: vec![Expr::Literal(Value::str_from("postfix:<++>"))],
+                    listop: false,
                 });
             }
         } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
@@ -214,11 +217,7 @@ impl Compiler {
                 self.compile_nested_postfix_incdec(expr, true);
             }
         } else if let Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
+            target, name, args, ..
         } = expr
         {
             // Extract the invocant target from Var/ArrayVar/HashVar/BareWord
@@ -257,6 +256,7 @@ impl Compiler {
                         Expr::Var(tmp_value_name),
                         Expr::Literal(Value::str(target_var)),
                     ],
+                    listop: false,
                 };
                 self.compile_expr(&assign_expr);
                 self.code.emit(OpCode::Pop);
@@ -265,12 +265,14 @@ impl Compiler {
                 self.compile_expr(&Expr::Call {
                     name: Symbol::intern("__mutsu_incdec_nomatch"),
                     args: vec![Expr::Literal(Value::str_from("postfix:<++>"))],
+                    listop: false,
                 });
             }
         } else if !self.compile_incdec_named_sub_lvalue(expr, true, false) {
             self.compile_expr(&Expr::Call {
                 name: Symbol::intern("__mutsu_incdec_nomatch"),
                 args: vec![Expr::Literal(Value::str_from("postfix:<++>"))],
+                listop: false,
             });
         }
     }
@@ -307,6 +309,7 @@ impl Compiler {
                 self.compile_expr(&Expr::Call {
                     name: Symbol::intern("__mutsu_incdec_nomatch"),
                     args: vec![Expr::Literal(Value::str_from("postfix:<-->"))],
+                    listop: false,
                 });
             }
         } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
@@ -337,11 +340,7 @@ impl Compiler {
                 self.compile_nested_postfix_incdec(expr, false);
             }
         } else if let Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
+            target, name, args, ..
         } = expr
         {
             // Extract the invocant target from Var/ArrayVar/HashVar/BareWord
@@ -378,6 +377,7 @@ impl Compiler {
                         Expr::Var(tmp_value_name),
                         Expr::Literal(Value::str(target_var)),
                     ],
+                    listop: false,
                 };
                 self.compile_expr(&assign_expr);
                 self.code.emit(OpCode::Pop);
@@ -386,12 +386,14 @@ impl Compiler {
                 self.compile_expr(&Expr::Call {
                     name: Symbol::intern("__mutsu_incdec_nomatch"),
                     args: vec![Expr::Literal(Value::str_from("postfix:<-->"))],
+                    listop: false,
                 });
             }
         } else if !self.compile_incdec_named_sub_lvalue(expr, false, false) {
             self.compile_expr(&Expr::Call {
                 name: Symbol::intern("__mutsu_incdec_nomatch"),
                 args: vec![Expr::Literal(Value::str_from("postfix:<-->"))],
+                listop: false,
             });
         }
     }
@@ -437,6 +439,7 @@ impl Compiler {
                     target: target.clone(),
                     index: Box::new(Expr::Var(tmp_key)),
                     is_positional: *is_positional,
+                    spelling: Default::default(),
                 };
                 return self.compile_nested_postfix_incdec_hoisted(&hoisted, increment);
             }
@@ -482,6 +485,7 @@ impl Compiler {
                 index: index.clone(),
                 value: Box::new(Expr::Var(tmp_val)),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             };
             self.compile_expr(&assign_expr);
             self.code.emit(OpCode::Pop);

@@ -434,6 +434,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         let neg_cond = Expr::Unary {
             op: TokenKind::Bang,
             expr: Box::new(cond),
+            word: false,
         };
         if let Some(split) = try_split_decl_modifier(&then_stmt, &neg_cond, true) {
             return Ok(Some((r, split)));
@@ -666,6 +667,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 cond: Expr::Unary {
                     op: TokenKind::Bang,
                     expr: Box::new(cond),
+                    word: false,
                 },
                 body: vec![while_modifier_operand(stmt)],
                 label: None,
@@ -738,7 +740,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         }
         let mut stmt_for_branch = stmt.clone();
         let mut r_tail = r;
-        if let Stmt::Call { name, args } = &stmt_for_branch {
+        if let Stmt::Call { name, args, listop } = &stmt_for_branch {
             let mut call_args = args.clone();
             loop {
                 let (r_ws, _) = ws(r_tail)?;
@@ -755,6 +757,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             stmt_for_branch = Stmt::Call {
                 name: *name,
                 args: call_args,
+                listop: *listop,
             };
         }
         // `stmt with expr` is like `given expr { if .defined { stmt } }`.
@@ -771,6 +774,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 },
                 then_branch: vec![stmt_for_branch],
                 else_branch: Vec::new(),
@@ -805,6 +809,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 },
                 then_branch: stmt_for_branch.into_iter().collect(),
                 else_branch: Vec::new(),
@@ -831,7 +836,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         }
         let mut stmt_for_branch = stmt.clone();
         let mut r_tail = r;
-        if let Stmt::Call { name, args } = &stmt_for_branch {
+        if let Stmt::Call { name, args, listop } = &stmt_for_branch {
             let mut call_args = args.clone();
             loop {
                 let (r_ws, _) = ws(r_tail)?;
@@ -848,6 +853,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             stmt_for_branch = Stmt::Call {
                 name: *name,
                 args: call_args,
+                listop: *listop,
             };
         }
         // `stmt without expr` is like `given expr { unless .defined { stmt } }`.
@@ -860,7 +866,9 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                sugar: false,
             }),
+            word: false,
         };
         let modified_stmt = rewrite_placeholder_block_modifier_stmt(stmt_for_branch, &cond);
         if matches!(stmt, Stmt::Expr(_)) {

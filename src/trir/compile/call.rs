@@ -180,7 +180,7 @@ impl TrirCompiler<'_> {
             }
             // `f(++$pos)` — Raku's `++` yields the container, so this binds
             // the variable too. Emit the increment, then pass the variable.
-            if let Expr::Unary { op, expr } = a
+            if let Expr::Unary { op, expr, .. } = a
                 && matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
                 && let Expr::Var(n) = expr.as_ref()
                 && let Some(arg) = self.slot_arg(n)

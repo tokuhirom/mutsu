@@ -45,6 +45,7 @@ impl Compiler {
                 self.compile_expr(&Expr::Call {
                     name: Symbol::intern("return"),
                     args: vec![value.clone()],
+                    listop: false,
                 });
                 true
             }
@@ -57,6 +58,7 @@ impl Compiler {
                     args: vec![Expr::Unary {
                         op: crate::token_kind::TokenKind::Pipe,
                         expr: Box::new(list.clone()),
+                        word: false,
                     }],
                 });
                 true
@@ -81,11 +83,13 @@ impl Compiler {
                 target,
                 index,
                 is_positional,
+                ..
             } => Expr::IndexAssign {
                 target: target.clone(),
                 index: index.clone(),
                 value,
                 is_positional: *is_positional,
+                spelling: Default::default(),
             },
             other => Expr::MethodCall {
                 target: Box::new(other.clone()),
@@ -93,6 +97,7 @@ impl Compiler {
                 args: vec![*value],
                 modifier: None,
                 quoted: false,
+                sugar: false,
             },
         }
     }

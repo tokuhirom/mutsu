@@ -53,12 +53,14 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } => Expr::MethodCall {
                 target: Box::new(Self::subst_topic_var(target, var)),
                 name: *name,
                 args: args.clone(),
                 modifier: *modifier,
                 quoted: *quoted,
+                sugar: false,
             },
             Expr::DynamicMethodCall {
                 target,
@@ -97,11 +99,12 @@ impl Compiler {
                 is_bind: false,
             },
             Expr::Grouped(inner) => Expr::Grouped(Box::new(Self::retarget_chain_rhs(inner, root))),
-            Expr::Binary { left, op, right }
-                if matches!(
-                    op,
-                    TokenKind::AndThen | TokenKind::OrElse | TokenKind::NotAndThen
-                ) =>
+            Expr::Binary {
+                left, op, right, ..
+            } if matches!(
+                op,
+                TokenKind::AndThen | TokenKind::OrElse | TokenKind::NotAndThen
+            ) =>
             {
                 let left_new = Self::retarget_chain_rhs(left, root);
                 let right_root =
@@ -111,6 +114,7 @@ impl Compiler {
                     left: Box::new(left_new),
                     op: op.clone(),
                     right: Box::new(right_new),
+                    form: Default::default(),
                 }
             }
             other => other.clone(),
@@ -146,6 +150,7 @@ impl Compiler {
                 index,
                 value,
                 is_positional,
+                ..
             } = left
         {
             // Apply the same bareword auto-quote the expression parser does
@@ -160,12 +165,14 @@ impl Compiler {
                 left: Box::new(key),
                 op: TokenKind::FatArrow,
                 right: Box::new(right.clone()),
+                form: Default::default(),
             };
             self.compile_expr(&Expr::IndexAssign {
                 target: target.clone(),
                 index: index.clone(),
                 value: Box::new(pair),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             });
             return;
         }
@@ -192,6 +199,7 @@ impl Compiler {
                 target,
                 index,
                 is_positional: false,
+                ..
             } = right
             && let Expr::BareWord(role) = target.as_ref()
             && Self::is_literal_angle_key(index)
@@ -199,6 +207,7 @@ impl Compiler {
             role_value_right = Expr::Call {
                 name: crate::symbol::Symbol::intern(role),
                 args: vec![index.as_ref().clone()],
+                listop: false,
             };
             &role_value_right
         } else {
@@ -238,6 +247,7 @@ impl Compiler {
                     left: inner_left,
                     op: inner_op,
                     right: inner_right,
+                    ..
                 } = current
                 {
                     if inner_op != op {
@@ -323,6 +333,7 @@ impl Compiler {
                     args,
                     modifier,
                     quoted,
+                    ..
                 } = left
                 {
                     if matches!(target.as_ref(), Expr::Var(v) if v == "_") {
@@ -337,6 +348,7 @@ impl Compiler {
                             args: args.clone(),
                             modifier: *modifier,
                             quoted: *quoted,
+                            sugar: false,
                         }
                     } else {
                         left.clone()
@@ -388,6 +400,7 @@ impl Compiler {
             let slip_marker = Expr::Unary {
                 op: TokenKind::Pipe,
                 expr: Box::new(right.clone()),
+                word: false,
             };
             let arg_sources_idx = self.add_arg_sources_constant(std::slice::from_ref(&slip_marker));
             self.compile_expr(right);
@@ -563,6 +576,7 @@ impl Compiler {
                         target,
                         index,
                         is_positional,
+                        ..
                     } = left
                     && matches!(
                         target.as_ref(),
@@ -1043,6 +1057,7 @@ impl Compiler {
             target: Box::new(target.clone()),
             index: Box::new(Expr::Var(idx_name.clone())),
             is_positional,
+            spelling: Default::default(),
         });
         self.code.emit(OpCode::Dup);
         self.code.emit(OpCode::SetLocal(orig_slot));
@@ -1077,6 +1092,7 @@ impl Compiler {
             index: Box::new(Expr::Var(idx_name)),
             value: Box::new(Expr::Var(val_name)),
             is_positional,
+            spelling: Default::default(),
         });
         self.code.emit(OpCode::Pop);
         let jump_end = self.code.emit(OpCode::Jump(0));
@@ -1117,6 +1133,7 @@ impl Compiler {
             Expr::Unary {
                 op: TokenKind::MetaAssignIdentity(_),
                 expr,
+                ..
             } => self.native_int_operand_signedness(expr),
             Expr::Var(name) => self
                 .expr_native_int_type(expr.peel_parens())

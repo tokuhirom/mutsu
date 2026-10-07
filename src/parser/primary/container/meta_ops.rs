@@ -194,12 +194,12 @@ fn lift_minmax_in_paren_list(items: &[Expr]) -> Option<Expr> {
 
 pub(crate) fn normalize_sequence_waypoints(expr: Expr) -> Expr {
     match expr {
-        Expr::Binary { left, op, right }
-            if matches!(
-                op,
-                crate::token_kind::TokenKind::DotDotDot
-                    | crate::token_kind::TokenKind::DotDotDotCaret
-            ) =>
+        Expr::Binary {
+            left, op, right, ..
+        } if matches!(
+            op,
+            crate::token_kind::TokenKind::DotDotDot | crate::token_kind::TokenKind::DotDotDotCaret
+        ) =>
         {
             let right = match *right {
                 Expr::ArrayLiteral(items) => Expr::ArrayLiteral(
@@ -212,6 +212,7 @@ pub(crate) fn normalize_sequence_waypoints(expr: Expr) -> Expr {
                                     crate::token_kind::TokenKind::DotDotDot
                                     | crate::token_kind::TokenKind::DotDotDotCaret,
                                 right,
+                                ..
                             } => Expr::ArrayLiteral(vec![*left, *right]),
                             other => other,
                         })
@@ -223,6 +224,7 @@ pub(crate) fn normalize_sequence_waypoints(expr: Expr) -> Expr {
                 left,
                 op,
                 right: Box::new(right),
+                form: Default::default(),
             }
         }
         other => other,
@@ -263,11 +265,13 @@ pub(crate) fn normalize_chained_zip_meta(expr: Expr) -> Expr {
                         left: Box::new(Expr::Literal(Value::str_from("with"))),
                         op: TokenKind::FatArrow,
                         right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
+                        form: Default::default(),
                     });
                 }
                 return Expr::Call {
                     name: Symbol::intern("zip"),
                     args,
+                    listop: false,
                 };
             }
             let left = normalize_chained_zip_meta(*left);
@@ -310,11 +314,13 @@ pub(crate) fn normalize_chained_zip_meta(expr: Expr) -> Expr {
                         left: Box::new(Expr::Literal(Value::str_from("with"))),
                         op: TokenKind::FatArrow,
                         right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
+                        form: Default::default(),
                     });
                 }
                 return Expr::Call {
                     name: Symbol::intern("zip"),
                     args,
+                    listop: false,
                 };
             }
 
@@ -396,11 +402,13 @@ fn lift_meta_ops_in_paren_list(items: Vec<Expr>) -> Vec<Expr> {
                     left: Box::new(Expr::Literal(Value::str_from("with"))),
                     op: TokenKind::FatArrow,
                     right: Box::new(Expr::CodeVar(format!("infix:<{}>", op))),
+                    form: Default::default(),
                 });
             }
             Expr::Call {
                 name: Symbol::intern("zip"),
                 args,
+                listop: false,
             }
         } else {
             // Left-fold the columns into a nested meta-op chain. This handles X
@@ -485,6 +493,7 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
                         crate::token_kind::TokenKind::DotDotDot
                         | crate::token_kind::TokenKind::DotDotDotCaret,
                     right,
+                    ..
                 } => Expr::ArrayLiteral(vec![*left, *right]),
                 other => other,
             };
@@ -516,6 +525,7 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
             left: Box::new(left),
             op,
             right: Box::new(right_expr),
+            form: Default::default(),
         };
         // Left-exclusive sequence: drop the first generated element (stays lazy).
         let seq = if is_left_excl {
@@ -525,6 +535,7 @@ pub(crate) fn try_parse_sequence_in_paren<'a>(
                 args: vec![Expr::Literal(crate::value::Value::int(1))],
                 modifier: None,
                 quoted: false,
+                sugar: false,
             }
         } else {
             seq
@@ -670,6 +681,7 @@ fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr>
                 left,
                 op: TokenKind::DotDotDot | TokenKind::DotDotDotCaret,
                 right,
+                ..
             } => Expr::ArrayLiteral(vec![*left, *right]),
             other => other,
         };
@@ -697,6 +709,7 @@ fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr>
         left: Box::new(left),
         op,
         right: Box::new(right),
+        form: Default::default(),
     };
     // `^...` / `^...^` drop the seed element from the generated series.
     let seq = if is_left_excl {
@@ -706,6 +719,7 @@ fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr>
             args: vec![Expr::Literal(crate::value::Value::int(1))],
             modifier: None,
             quoted: false,
+            sugar: false,
         }
     } else {
         seq

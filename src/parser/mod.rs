@@ -1082,7 +1082,7 @@ mod tests {
         let stmts = filter_setline(stmts);
         assert_eq!(stmts.len(), 2);
         match &stmts[1] {
-            Stmt::Expr(Expr::Call { name, args }) => {
+            Stmt::Expr(Expr::Call { name, args, .. }) => {
                 assert_eq!(name, "f");
                 assert_eq!(args.len(), 3);
                 assert!(
@@ -1117,7 +1117,7 @@ mod tests {
         let items = match expr {
             Expr::ArrayLiteral(items) => items,
             // The reserved spelling a word list lowers to; see `make_list_expr`.
-            Expr::Call { name, args } if name.resolve() == "__mutsu_word_list" => args,
+            Expr::Call { name, args, .. } if name.resolve() == "__mutsu_word_list" => args,
             _ => panic!("expected list expression"),
         };
         assert_eq!(items.len(), 7);
@@ -1271,10 +1271,12 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
         let (stmts, _) = parse_program(src).unwrap();
         let stmts = filter_setline(stmts);
         match &stmts[1] {
-            Stmt::Expr(Expr::Binary { left, op, right }) => {
+            Stmt::Expr(Expr::Binary {
+                left, op, right, ..
+            }) => {
                 assert_eq!(*op, crate::token_kind::TokenKind::AndWord);
                 match left.as_ref() {
-                    Expr::Call { name, args } => {
+                    Expr::Call { name, args, .. } => {
                         assert_eq!(name.resolve(), "isfive");
                         assert_eq!(args.len(), 1);
                         assert!(
@@ -1284,7 +1286,7 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
                     other => panic!("expected lhs call, got {other:?}"),
                 }
                 match right.as_ref() {
-                    Expr::Call { name, args } => {
+                    Expr::Call { name, args, .. } => {
                         assert_eq!(name.resolve(), "isfive");
                         assert_eq!(args.len(), 1);
                         assert!(
@@ -1304,7 +1306,7 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
         let (stmts, _) = parse_program(src).unwrap();
         let stmts = filter_setline(stmts);
         match &stmts[1] {
-            Stmt::Expr(Expr::Call { name, args }) => {
+            Stmt::Expr(Expr::Call { name, args, .. }) => {
                 assert_eq!(name.resolve(), "foo");
                 assert_eq!(args.len(), 1);
                 assert!(matches!(
@@ -1325,7 +1327,7 @@ is_run q<use lib '> ~ $pkg-path ~ q<'; use GH2897-B; (^3).map( { my-counter } ).
         let (stmts, _) = parse_program(src).unwrap();
         let stmts = filter_setline(stmts);
         match &stmts[0] {
-            Stmt::Expr(Expr::Call { name, args }) => {
+            Stmt::Expr(Expr::Call { name, args, .. }) => {
                 assert_eq!(name.resolve(), "uc");
                 assert_eq!(args.len(), 1);
                 assert!(matches!(
@@ -1352,10 +1354,12 @@ is (1 + 2 § 3), 1, "x";
         let (stmts, _) = parse_program(src).unwrap();
         let stmts = filter_setline(stmts);
         match &stmts[2] {
-            Stmt::Expr(Expr::Call { name, args }) => {
+            Stmt::Expr(Expr::Call { name, args, .. }) => {
                 assert_eq!(name.resolve(), "is");
                 match args[0].peel_parens() {
-                    Expr::Binary { left, op, right } => {
+                    Expr::Binary {
+                        left, op, right, ..
+                    } => {
                         assert!(
                             matches!(left.as_ref(), Expr::Literal(v) if matches!(v.view(), ValueView::Int(1)))
                         );

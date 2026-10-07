@@ -93,6 +93,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
                 args: vec![mapper],
                 modifier: None,
                 quoted: false,
+                sugar: false,
             })],
             is_rw: false,
             is_raw: false,
@@ -246,6 +247,7 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
                 | TokenKind::CaretDotDotCaret,
             left,
             right,
+            ..
         } => {
             let lc = if contains_whatever(left) && !is_whatever(left) {
                 count_whatever(left)
@@ -273,6 +275,7 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
             op: TokenKind::SmartMatch | TokenKind::BangTilde,
             left,
             right,
+            ..
         } => count_whatever(left) + usize::from(is_whatever(right)),
         Expr::Binary { left, right, .. } => count_whatever(left) + count_whatever(right),
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => count_whatever(expr),

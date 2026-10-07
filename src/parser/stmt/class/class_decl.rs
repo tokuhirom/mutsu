@@ -181,6 +181,7 @@ pub(crate) fn meta_setter_stmt(type_name: &str, key: &str, value: Expr) -> Stmt 
             Expr::Literal(Value::str(key.to_string())),
             value,
         ],
+        listop: false,
     })
 }
 
@@ -425,6 +426,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
     let unregister = Stmt::Expr(Expr::Call {
         name: Symbol::intern("__MUTSU_UNREGISTER_CLASS__"),
         args: vec![Expr::Literal(Value::str(user_name))],
+        listop: false,
     });
     Ok((rest, Stmt::Block(vec![class_decl, unregister])))
 }

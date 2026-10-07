@@ -47,7 +47,7 @@ impl VisitMut for Marker {
                     mark_value_leaf(a);
                 }
             }
-            Stmt::Call { args, name } => {
+            Stmt::Call { args, name, .. } => {
                 // ADR-0115's CORE type fold; see `parser::core_type_fold`.
                 crate::parser::core_type_fold::fold_nqp_call_args(*name, args);
                 for a in args {

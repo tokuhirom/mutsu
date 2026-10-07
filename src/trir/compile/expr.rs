@@ -119,15 +119,18 @@ impl TrirCompiler<'_> {
                 self.ops.push(TrOp::ConcatN(parts.len() as u16));
                 Some(TrKind::Obj)
             }
-            Expr::Unary { op, expr } => self.compile_unary(op, expr, false),
-            Expr::Binary { left, op, right } => self.compile_binary(left, op, right),
-            Expr::Call { name, args } => self.compile_call(&name.resolve(), args),
+            Expr::Unary { op, expr, .. } => self.compile_unary(op, expr, false),
+            Expr::Binary {
+                left, op, right, ..
+            } => self.compile_binary(left, op, right),
+            Expr::Call { name, args, .. } => self.compile_call(&name.resolve(), args),
             Expr::MethodCall {
                 target,
                 name,
                 args,
                 modifier: None,
                 quoted: false,
+                ..
             } => self.compile_method_call(target, &name.resolve(), args),
             Expr::AssignExpr {
                 name,
@@ -170,7 +173,7 @@ impl TrirCompiler<'_> {
         if let Expr::Grouped(inner) = e {
             return self.compile_expr_sink(inner);
         }
-        if let Expr::Unary { op, expr } = e
+        if let Expr::Unary { op, expr, .. } = e
             && matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
         {
             self.compile_unary(op, expr, true)?;
@@ -178,7 +181,7 @@ impl TrirCompiler<'_> {
         }
         // A control form in sink position leaves nothing, rather than a
         // value on each arm that the join then drops: the arms are sunk too.
-        if let Expr::Call { name, args } = e {
+        if let Expr::Call { name, args, .. } = e {
             let name = name.resolve();
             match name.as_str() {
                 "nqp::if" | "nqp::unless" if args.len() == 2 || args.len() == 3 => {

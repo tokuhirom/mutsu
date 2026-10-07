@@ -324,7 +324,9 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
         Expr::ArrayLiteral(elems) if elems.is_empty() => Some("()".to_string()),
         Expr::BareWord(s) if is_type_name(s) => Some(format!("constant value {}", s)),
-        Expr::Binary { left, op, right } => {
+        Expr::Binary {
+            left, op, right, ..
+        } => {
             let sym = pure_op_symbol(op)?;
             // Only flag when both operands are themselves useless (no side
             // effects), e.g. `1 + 2` but not `$x + foo()`.
@@ -333,7 +335,9 @@ fn describe_useless(expr: &Expr) -> Option<String> {
             let rendered = render_source(expr)?;
             Some(format!("\"{}\" in expression \"{}\"", sym, rendered))
         }
-        Expr::Unary { op, expr: inner } => {
+        Expr::Unary {
+            op, expr: inner, ..
+        } => {
             let sym = pure_prefix_symbol(op)?;
             // Only flag when the operand itself is useless (no side effects),
             // e.g. `-5` / `?5` / `-$x` but not `-foo()`.
@@ -394,11 +398,15 @@ fn render_source(expr: &Expr) -> Option<String> {
         Expr::LiteralSrc(_, src) => Some(src.to_string()),
         Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
         Expr::BareWord(s) => Some(s.clone()),
-        Expr::Unary { op, expr: inner } => {
+        Expr::Unary {
+            op, expr: inner, ..
+        } => {
             let sym = pure_prefix_symbol(op)?;
             Some(format!("{}{}", sym, render_source(inner)?))
         }
-        Expr::Binary { left, op, right } => {
+        Expr::Binary {
+            left, op, right, ..
+        } => {
             let sym = pure_op_symbol(op)?;
             let l = render_source(left)?;
             let r = render_source(right)?;

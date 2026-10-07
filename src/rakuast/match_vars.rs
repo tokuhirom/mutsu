@@ -72,6 +72,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             args: Vec::new(),
             modifier: None,
             quoted: false,
+            sugar: false,
         }),
         _ => Err(unsupported(node)),
     }
@@ -104,6 +105,7 @@ pub(super) fn convert_interpolated(expr: &Expr) -> Option<RakuAstNode> {
         target,
         index,
         is_positional: true,
+        ..
     } = expr
     else {
         return None;

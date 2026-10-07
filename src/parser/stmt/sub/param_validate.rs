@@ -242,7 +242,7 @@ pub(crate) fn negate_literal_value(value: &Value) -> Option<Value> {
 pub(crate) fn literal_value_from_expr(expr: &Expr) -> Option<Value> {
     match expr {
         Expr::Literal(v) => Some(v.clone()),
-        Expr::Unary { op, expr } => {
+        Expr::Unary { op, expr, .. } => {
             let inner = literal_value_from_expr(expr)?;
             match op {
                 TokenKind::Plus => Some(inner),

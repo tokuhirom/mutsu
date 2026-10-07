@@ -211,6 +211,7 @@ impl Compiler {
             Expr::Unary {
                 op: TokenKind::Bang,
                 expr,
+                ..
             } if is_until => expr,
             other => other,
         }

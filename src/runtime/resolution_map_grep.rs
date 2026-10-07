@@ -178,20 +178,20 @@ fn call_arg_to_expr(arg: &crate::ast::CallArg) -> crate::ast::Expr {
         CallArg::Positional(e) | CallArg::Invocant(e) => e.clone(),
         CallArg::Named {
             name,
-            value: Some(e),
+            value: Some(e), ..
         } => Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(name.clone()))),
             op: TokenKind::FatArrow,
-            right: Box::new(e.clone()),
+            right: Box::new(e.clone()), form: Default::default(),
         },
-        CallArg::Named { name, value: None } => Expr::Binary {
+        CallArg::Named { name, value: None, .. } => Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(name.clone()))),
             op: TokenKind::FatArrow,
-            right: Box::new(Expr::Literal(Value::TRUE)),
+            right: Box::new(Expr::Literal(Value::TRUE)), form: Default::default(),
         },
         CallArg::Slip(e) => Expr::Unary {
             op: TokenKind::Pipe,
-            expr: Box::new(e.clone()),
+            expr: Box::new(e.clone()), word: false,
         },
     }
 }
@@ -222,12 +222,12 @@ pub(super) fn normalize_tail_stmt_for_value(body: &[crate::ast::Stmt]) -> Vec<cr
         return body.to_vec();
     };
     match &body[last_idx] {
-        Stmt::Call { name, args } => {
+        Stmt::Call { name, args, .. } => {
             let expr_args = args.iter().map(call_arg_to_expr).collect();
             let mut out = body.to_vec();
             out[last_idx] = Stmt::Expr(Expr::Call {
                 name: *name,
-                args: expr_args,
+                args: expr_args, listop: false,
             });
             out
         }

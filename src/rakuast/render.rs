@@ -12,6 +12,16 @@ use super::{Constructor, RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstN
 use crate::value::{Value, ValueView};
 
 pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
+    // rakudo 2026.09 prints a priming `*` (its `WhateverCode::Argument`, still
+    // the node's `.^name`) as `RakuAST::Term::Whatever.new`, exactly like a
+    // `*` value.
+    if node.class == RakuAstClass::WhateverCodeArgument {
+        let shown = RakuAstNode {
+            class: RakuAstClass::TermWhatever,
+            fields: node.fields.clone(),
+        };
+        return render_node(&shown, indent);
+    }
     if node.class == RakuAstClass::VarDeclarationSimple
         && let Some(shown) = super::attribute::without_implicit_traits(node)
     {
@@ -65,12 +75,18 @@ pub(super) fn render_node(node: &RakuAstNode, indent: usize) -> String {
     // (`Assignment.new(:item)`); any named field, child node, or list forces
     // the multi-line form.
     let fields = rendered_fields(node);
-    // Rakudo renders a char-class `Character`, a `Var::Dynamic` and a regex
-    // back-reference on their own lines all the same.
+    // Rakudo renders a char-class `Character`, a `Var::Dynamic`, a
+    // `Var::Attribute`, a placeholder and a regex back-reference on their own
+    // lines all the same.
     if !matches!(
         node.class,
         RakuAstClass::RegexCharClassEnumerationElementCharacter
             | RakuAstClass::VarDynamic
+            | RakuAstClass::VarAttribute
+            | RakuAstClass::VarDeclarationPlaceholderPositional
+            | RakuAstClass::VarDeclarationPlaceholderNamed
+            | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
+            | RakuAstClass::VarDeclarationPlaceholderSlurpyHash
             | RakuAstClass::RegexBackReferenceNamed
             | RakuAstClass::RegexBackReferencePositional
     ) && fields
@@ -217,6 +233,7 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
         .iter()
         .filter(|field| {
             !(super::origin::is_origin(field)
+                || super::type_call::is_marker(field)
                 || node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")
                 || super::regex_code::is_source(node, field)
                 || node.class == RakuAstClass::RegexAssertionNamedRegexArg
@@ -303,12 +320,12 @@ fn render_field_value(fv: &RakuAstFieldValue, indent: usize) -> String {
 }
 
 /// A parenthesised, trailing-comma list — every element gets a trailing comma
-/// (so a single element reads `( x, )`). An *empty* list is the itemized empty
-/// list `$( )`, exactly as raku's gist prints it (e.g. the `parameters` of a
-/// parameter-less `RakuAST::Signature`).
+/// (so a single element reads `( x, )`). An *empty* list is `()`, as raku
+/// 2026.09's gist prints it (e.g. the `parameters` of a parameter-less
+/// `RakuAST::Signature`); older rakudo printed the itemized `$( )`.
 fn render_paren_list(items: &[Value], indent: usize) -> String {
     if items.is_empty() {
-        return "$( )".to_string();
+        return "()".to_string();
     }
     let child_indent = indent + 2;
     let pad = " ".repeat(child_indent);

@@ -118,7 +118,7 @@ impl Interpreter {
                 Expr::Binary {
                     left,
                     op: TokenKind::Tilde,
-                    right,
+                    right, ..
                 } => {
                     pending.push(left);
                     pending.push(right);

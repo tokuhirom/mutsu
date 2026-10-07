@@ -123,7 +123,7 @@ impl Interpreter {
             name: Symbol::intern(read_method),
             args: window(),
             modifier: None,
-            quoted: false,
+            quoted: false, sugar: false,
         })];
         let fetcher = Value::make_sub(
             Symbol::intern(""),
@@ -141,7 +141,7 @@ impl Interpreter {
                 Expr::Literal(Value::str(rw_routine.to_string())),
                 Expr::ArrayLiteral([vec![target], window()].concat()),
                 Expr::Var(STORE_VALUE_VAR.to_string()),
-            ],
+            ], listop: false,
         })];
         if track_len {
             store_body.push(Stmt::Assign {
@@ -151,7 +151,7 @@ impl Interpreter {
                     name: Symbol::intern("chars"),
                     args: Vec::new(),
                     modifier: None,
-                    quoted: false,
+                    quoted: false, sugar: false,
                 },
                 op: AssignOp::Assign,
                 target_is_sigilless: false,

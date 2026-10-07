@@ -22,7 +22,7 @@ impl Compiler {
     ///
     /// Any other operand compiles as an ordinary expression.
     pub(super) fn compile_mixin_rhs(&mut self, rhs: &Expr) {
-        let Expr::Call { name, args } = rhs else {
+        let Expr::Call { name, args, .. } = rhs else {
             self.compile_expr(rhs);
             return;
         };

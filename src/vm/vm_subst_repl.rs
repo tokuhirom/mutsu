@@ -88,6 +88,7 @@ fn capture_parts_of(expr: &Expr) -> Option<Vec<ReplPart>> {
                 target,
                 index,
                 is_positional,
+                ..
             } => {
                 let Expr::Var(t) = target.as_ref() else {
                     return None;

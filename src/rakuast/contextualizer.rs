@@ -37,6 +37,11 @@ pub(super) fn convert(kind: ContextKind, inner: &Expr) -> Result<RakuAstNode, Ru
     // otherwise the child is a `StatementSequence` of the parenthesized contents.
     let contents = match inner {
         Expr::Grouped(contents) => contents.as_ref(),
+        // `%(a => 1)`: the parser marks the parenthesized pair positional.
+        Expr::PositionalPair(pair) => match pair.as_ref() {
+            Expr::Grouped(contents) => contents.as_ref(),
+            other => other,
+        },
         other => other,
     };
     let target = match contents {
@@ -74,9 +79,19 @@ pub(super) fn lower(node: &RakuAstNode, kind: ContextKind) -> Result<Expr, Runti
         RakuAstClass::ContextualizerList => lower(target, ContextKind::List)?,
         RakuAstClass::ContextualizerHash => lower(target, ContextKind::Hash)?,
         // `$@a` / `$%h` / `$[1, 2]`: the item contextualizer over the term.
-        RakuAstClass::VarLexical | RakuAstClass::CircumfixArrayComposer
+        RakuAstClass::CircumfixArrayComposer | RakuAstClass::CircumfixHashComposer
             if kind == ContextKind::Item =>
         {
+            return Ok(Expr::MethodCall {
+                target: Box::new(lower_expr(target)?),
+                name: crate::symbol::Symbol::intern("item"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+                sugar: true,
+            });
+        }
+        RakuAstClass::VarLexical if kind == ContextKind::Item => {
             let term = lower_expr(target)?;
             if !matches!(
                 term,
@@ -116,6 +131,17 @@ pub(super) fn convert_itemize(inner: &Expr) -> Result<RakuAstNode, RuntimeError>
     ) {
         return Err(super::convert::unsupported(&format!("Itemize({inner:?})")));
     }
+    Ok(RakuAstNode {
+        class: RakuAstClass::ContextualizerItem,
+        fields: vec![node_field(None, convert_expr(inner)?)],
+    })
+}
+
+/// The item contextualizer of a brace or bracket composer (`${ a => 1 }`,
+/// `$[1, 2]`) as `Contextualizer::Item` over the composer, which holds no
+/// `StatementSequence`; the parser spells it as an `.item` call.
+// Cost: O(n), n = nodes of the composer.
+pub(super) fn convert_item_call(inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::ContextualizerItem,
         fields: vec![node_field(None, convert_expr(inner)?)],

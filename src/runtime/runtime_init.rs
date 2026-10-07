@@ -2912,7 +2912,7 @@ impl Interpreter {
             {
                 let stub_body = vec![Stmt::Expr(Expr::Call {
                     name: Symbol::intern("__mutsu_stub_die"),
-                    args: vec![],
+                    args: vec![], listop: false,
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
                     syms: Default::default(),
@@ -2978,7 +2978,7 @@ impl Interpreter {
             {
                 let stub_body = vec![Stmt::Expr(Expr::Call {
                     name: Symbol::intern("__mutsu_stub_die"),
-                    args: vec![],
+                    args: vec![], listop: false,
                 })];
                 let stub_method = |body: Vec<Stmt>| MethodDef {
                     syms: Default::default(),

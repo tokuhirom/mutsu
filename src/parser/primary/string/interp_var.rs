@@ -104,6 +104,7 @@ fn obsolete_p5_deref_throw(sigil: char, inner: &str) -> Expr {
     Expr::Call {
         name: Symbol::intern("die"),
         args: vec![Expr::Literal(payload)],
+        listop: false,
     }
 }
 
@@ -140,6 +141,7 @@ pub(crate) fn try_interpolate_var<'a>(
                     target: Box::new(target),
                     index: Box::new(index),
                     is_positional: false,
+                    spelling: Default::default(),
                 },
                 &after_dlt[end + 2..],
             );
@@ -155,6 +157,7 @@ pub(crate) fn try_interpolate_var<'a>(
                     target: Box::new(target),
                     index: Box::new(index),
                     is_positional: false,
+                    spelling: Default::default(),
                 },
                 &after_guillemet[end + '\u{00BB}'.len_utf8()..],
             );
@@ -182,6 +185,7 @@ pub(crate) fn try_interpolate_var<'a>(
                     target: Box::new(target),
                     index: Box::new(index),
                     is_positional: false,
+                    spelling: Default::default(),
                 },
                 &after_lt[end + 1..],
             );
@@ -222,6 +226,7 @@ pub(crate) fn try_interpolate_var<'a>(
                     target: Box::new(target),
                     index: Box::new(index),
                     is_positional: true,
+                    spelling: Default::default(),
                 },
                 &after_bracket[end + 1..],
             );
@@ -278,6 +283,7 @@ pub(crate) fn try_interpolate_var<'a>(
                                 target: Box::new(target),
                                 index: Box::new(index),
                                 is_positional: false,
+                                spelling: Default::default(),
                             },
                             &after_brace[end + 1..],
                         );
@@ -356,6 +362,7 @@ pub(crate) fn try_interpolate_var<'a>(
                 target: Box::new(Expr::Var("/".to_string())),
                 index: Box::new(Expr::Literal(Value::int(index_val))),
                 is_positional: true,
+                spelling: Default::default(),
             };
             // A numbered capture is a Match, so a trailing subscript accesses its
             // nested captures: `$0[0]` (positional sub-capture) / `$0<name>` /

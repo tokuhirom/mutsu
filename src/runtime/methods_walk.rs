@@ -245,10 +245,10 @@ impl Interpreter {
             name: qualified,
             args: vec![Expr::Unary {
                 op: crate::token_kind::TokenKind::Pipe,
-                expr: Box::new(Expr::ArrayVar("__walk_args".to_string())),
+                expr: Box::new(Expr::ArrayVar("__walk_args".to_string())), word: false,
             }],
             modifier: None,
-            quoted: false,
+            quoted: false, sugar: false,
         })];
         let inst_param = walk_param("__walk_inst", false);
         let slurpy_param = walk_param("@__walk_args", true);

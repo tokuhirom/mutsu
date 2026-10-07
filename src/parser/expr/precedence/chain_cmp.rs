@@ -5,11 +5,13 @@ pub(crate) fn make_chain_cmp(left: Expr, op: TokenKind, right: Expr, negated: bo
         left: Box::new(left),
         op,
         right: Box::new(right),
+        form: Default::default(),
     };
     if negated {
         Expr::Unary {
             op: TokenKind::Bang,
             expr: Box::new(cmp),
+            word: false,
         }
     } else {
         cmp
@@ -23,6 +25,7 @@ pub(crate) fn wrap_smartmatch_rhs(right: Expr) -> Expr {
             left,
             op: TokenKind::FatArrow,
             right,
+            ..
         } => {
             let value =
                 if contains_whatever(&right) && !crate::parser::expr::is_whatever_operand(&right) {
@@ -34,6 +37,7 @@ pub(crate) fn wrap_smartmatch_rhs(right: Expr) -> Expr {
                 left,
                 op: TokenKind::FatArrow,
                 right: Box::new(value),
+                form: Default::default(),
             }
         }
         other => {
@@ -241,6 +245,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: TokenKind::CaretDotDotCaret,
                 right: Box::new(right),
+                form: Default::default(),
             },
         ));
     }
@@ -258,6 +263,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: TokenKind::CaretDotDot,
                 right: Box::new(right),
+                form: Default::default(),
             },
         ));
     }
@@ -274,6 +280,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: TokenKind::DotDotCaret,
                 right: Box::new(right),
+                form: Default::default(),
             },
         ));
     }
@@ -291,6 +298,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: TokenKind::DotDot,
                 right: Box::new(right),
+                form: Default::default(),
             },
         ));
     }

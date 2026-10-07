@@ -1790,7 +1790,7 @@ impl Interpreter {
             // `self.AT-POS($i) = value` is a single
             // `__mutsu_assign_method_lvalue(...)` call rather than a literal
             // MethodCall AST node.
-            Stmt::Expr(Expr::Call { name, args })
+            Stmt::Expr(Expr::Call { name, args, .. })
                 if name.as_str() == "__mutsu_assign_method_lvalue"
                     && args.len() >= 3
                     && matches!(args[2], Expr::ArrayLiteral(_)) =>

@@ -143,6 +143,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
                 left: Box::new(expr),
                 op: op.token_kind(),
                 right: Box::new(rhs),
+                form: Default::default(),
             };
             // Apply WhateverCode wrapping (e.g., `* *= 2` -> WhateverCode lambda)
             if crate::parser::expr::should_wrap_whatevercode(&compound_expr) {

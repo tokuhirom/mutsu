@@ -11,6 +11,8 @@ mod tests;
 #[cfg(test)]
 mod tests_errors;
 #[cfg(test)]
+mod tests_forms;
+#[cfg(test)]
 mod tests_meta;
 #[cfg(test)]
 mod tests_postfix;
@@ -126,6 +128,7 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: TokenKind::FatArrow,
                 right: Box::new(value),
+                form: Default::default(),
             };
             // Non-bareword keys (quoted strings, expressions) produce positional pairs,
             // not named arguments. Bareword keys (a => 3) are named arguments.
@@ -201,6 +204,7 @@ fn absorb_colonpair_adverbs<'a>(input: &str, rest: &'a str, first: Expr) -> PRes
             target: Box::new(Expr::ArrayLiteral(pairs)),
             index: Box::new(Expr::Literal(Value::int(0))),
             is_positional: true,
+            spelling: Default::default(),
         },
     ))
 }
@@ -237,6 +241,7 @@ pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> 
             left: Box::new(left),
             op: TokenKind::FatArrow,
             right: Box::new(value),
+            form: Default::default(),
         };
         let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
@@ -298,6 +303,7 @@ pub(in crate::parser) fn expression_no_word_logical(input: &str) -> PResult<'_, 
             left: Box::new(left),
             op: TokenKind::FatArrow,
             right: Box::new(value),
+            form: Default::default(),
         };
         let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
@@ -350,6 +356,7 @@ pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr
             left: Box::new(left),
             op: TokenKind::FatArrow,
             right: Box::new(value),
+            form: Default::default(),
         };
         let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
@@ -460,6 +467,7 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
             left: Box::new(left),
             op: TokenKind::FatArrow,
             right: Box::new(value),
+            form: Default::default(),
         };
         let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
@@ -528,6 +536,7 @@ pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
             left: Box::new(left),
             op: TokenKind::FatArrow,
             right: Box::new(value),
+            form: Default::default(),
         };
         let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
@@ -602,6 +611,7 @@ fn reassociate_fat_arrow(pair: Expr) -> Expr {
         left,
         op: TokenKind::FatArrow,
         right,
+        ..
     } = pair
     else {
         return pair;
@@ -620,6 +630,7 @@ fn reassociate_fat_arrow(pair: Expr) -> Expr {
             left,
             op: TokenKind::FatArrow,
             right,
+            form: Default::default(),
         };
     }
 
@@ -628,10 +639,13 @@ fn reassociate_fat_arrow(pair: Expr) -> Expr {
 
 fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
     match left {
-        Expr::Binary { left, op, right } if is_loose_word_logical(&op) => Expr::Binary {
+        Expr::Binary {
+            left, op, right, ..
+        } if is_loose_word_logical(&op) => Expr::Binary {
             left,
             op,
             right: Box::new(reassociate_fat_arrow_operand(*right, value)),
+            form: Default::default(),
         },
         Expr::AssignExpr {
             name,
@@ -649,8 +663,9 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
             index,
             value: bind,
             is_positional,
+            ..
         } if is_bind_index_value(&bind) => {
-            let Expr::Call { name, mut args } = *bind else {
+            let Expr::Call { name, mut args, .. } = *bind else {
                 unreachable!("is_bind_index_value checked the shape");
             };
             let rhs = reassociate_fat_arrow_operand(args.remove(0), value);
@@ -662,8 +677,10 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
                 value: Box::new(Expr::Call {
                     name,
                     args: vec![rhs, source_meta],
+                    listop: false,
                 }),
                 is_positional,
+                spelling: Default::default(),
             }
         }
         left => reassociated_fat_arrow_pair(left, value),
@@ -671,7 +688,7 @@ fn reassociate_fat_arrow_operand(left: Expr, value: Expr) -> Expr {
 }
 
 fn is_bind_index_value(value: &Expr) -> bool {
-    matches!(value, Expr::Call { name, args }
+    matches!(value, Expr::Call { name, args, .. }
         if name.resolve() == "__mutsu_bind_index_value" && args.len() == 2)
 }
 
@@ -689,6 +706,7 @@ fn reassociated_fat_arrow_pair(left: Expr, value: Expr) -> Expr {
         left: Box::new(left),
         op: TokenKind::FatArrow,
         right: Box::new(value),
+        form: Default::default(),
     };
     if is_bareword {
         pair
@@ -716,6 +734,7 @@ pub(in crate::parser) fn parse_fat_arrow_value(input: &str) -> PResult<'_, Expr>
                 left: Box::new(value),
                 op: TokenKind::FatArrow,
                 right: Box::new(right),
+                form: Default::default(),
             },
         ));
     }

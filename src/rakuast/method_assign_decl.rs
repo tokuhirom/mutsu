@@ -48,14 +48,19 @@ pub(super) fn call_method(
     args: &[Expr],
     modifier: Option<char>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let name_node = RakuAstNode {
-        class: RakuAstClass::Name,
-        fields: vec![leaf_field(None, Value::str(name.to_string()))],
-    };
+    let name_node = super::convert::name_from_identifier(name);
     // Field order matches raku: name, args, dispatch.
     let mut fields = vec![node_field(Some("name"), name_node)];
     if !args.is_empty() {
         fields.push(node_field(Some("args"), arg_list(args)?));
+    }
+    // `self!priv(...)`: raku has a class of its own for the private call, and
+    // no `dispatch` string.
+    if modifier == Some('!') {
+        return Ok(RakuAstNode {
+            class: RakuAstClass::CallPrivateMethod,
+            fields,
+        });
     }
     if let Some(m) = modifier {
         // `.?` / `.+` / `.*` become a `dispatch` string.

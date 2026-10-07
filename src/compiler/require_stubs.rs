@@ -95,7 +95,7 @@ impl<'ast> Visit<'ast> for ScopeRequires {
     fn visit_param(&mut self, _param: &'ast crate::ast::ParamDef) {}
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
-        if let Expr::Call { name, args } = expr
+        if let Expr::Call { name, args, .. } = expr
             && name.resolve() == "require"
             && let Some(Expr::Literal(target)) = args.first()
             && let ValueView::Package(module) = target.view()

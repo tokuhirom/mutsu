@@ -180,7 +180,7 @@ impl Compiler {
             // block's value. Without this arm it fell to statement compilation
             // and the block yielded Nil (`with ptr { blob-from-pointer(...) }`
             // inside a module — the NativeHelpers::Blob shape — returned Nil).
-            Stmt::Call { name, args } => {
+            Stmt::Call { name, args, .. } => {
                 self.compile_tail_stmt_call_value(*name, args);
                 true
             }
@@ -386,7 +386,7 @@ impl Compiler {
                         self.pop_dynamic_scope_lexical(saved);
                         return;
                     }
-                    Stmt::Call { name, args } => {
+                    Stmt::Call { name, args, .. } => {
                         // Tail statement call is the block's value — including
                         // named/slip args (compile_tail_stmt_call_value).
                         self.compile_tail_stmt_call_value(*name, args);

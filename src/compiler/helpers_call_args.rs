@@ -270,9 +270,10 @@ impl Compiler {
                     positional_index += 1;
                     CallArg::Positional(rewritten)
                 }
-                CallArg::Named { name, value } => CallArg::Named {
+                CallArg::Named { name, value, form } => CallArg::Named {
                     name: name.clone(),
                     value: value.clone(),
+                    form: *form,
                 },
                 CallArg::Slip(expr) => CallArg::Slip(expr.clone()),
                 CallArg::Invocant(expr) => CallArg::Invocant(expr.clone()),
@@ -1105,7 +1106,7 @@ impl Compiler {
                 name,
                 args,
                 modifier: None,
-                quoted: false,
+                quoted: false, ..
             } if args.len() == 1
                 && matches!(**target, Expr::ArrayVar(_))
                 && name.with_str(|n| n == "AT-POS")
@@ -1121,6 +1122,7 @@ impl Compiler {
                     target: target.clone(),
                     index: Box::new(args[0].clone()),
                     is_positional: true,
+                    spelling: Default::default(),
                 }
             }
             other => other.clone(),
@@ -1435,7 +1437,7 @@ impl Compiler {
     /// `my int $x`, or a non-native `$p is rw`, both of which rakudo also
     /// rejects). Keeping those on the existing value path preserves the error.
     pub(super) fn native_rw_param_incdec_operand(&self, arg: &Expr) -> Option<String> {
-        let Expr::Unary { op, expr } = arg else {
+        let Expr::Unary { op, expr, .. } = arg else {
             return None;
         };
         if !matches!(

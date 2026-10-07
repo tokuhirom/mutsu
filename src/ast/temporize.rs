@@ -64,6 +64,7 @@ pub(crate) fn element_expr(name: &str, index: &Expr) -> Expr {
         target: Box::new(variable_expr(name)),
         index: Box::new(index.clone()),
         is_positional,
+        spelling: Default::default(),
     }
 }
 
@@ -146,11 +147,13 @@ pub(crate) fn recognize(stmt: &Stmt) -> Option<Temporized> {
                         index: key,
                         value: assigned_value,
                         is_positional,
+                        ..
                     } => {
                         target = Target::Element(Expr::Index {
                             target: container.clone(),
                             index: key.clone(),
                             is_positional: *is_positional,
+                            spelling: Default::default(),
                         });
                         assigned = Assigned::Plain((**assigned_value).clone());
                     }

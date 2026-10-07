@@ -111,7 +111,7 @@ impl Interpreter {
             name: Symbol::intern("__mutsu_scheduled_run_cue"),
             args: Vec::new(),
             modifier: None,
-            quoted: false,
+            quoted: false, sugar: false,
         })];
         Value::sub_value(crate::gc::Gc::new(crate::value::SubData {
             package: Symbol::intern("GLOBAL"),

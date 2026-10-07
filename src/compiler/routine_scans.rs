@@ -93,11 +93,13 @@ impl<'ast> Visit<'ast> for NonNilReturnScan {
             return;
         }
         match expr {
-            Expr::Call { name, args } if name == "return" && args.len() <= 1 => {
+            Expr::Call { name, args, .. } if name == "return" && args.len() <= 1 => {
                 self.check(args.first())
             }
             // `return 1, 2` returns a list: never Nil.
-            Expr::Call { name, args } if name == "return" && args.len() > 1 => self.found = true,
+            Expr::Call { name, args, .. } if name == "return" && args.len() > 1 => {
+                self.found = true
+            }
             _ => walk_expr(self, expr),
         }
     }

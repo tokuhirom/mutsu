@@ -580,6 +580,7 @@ pub(crate) fn sub_decl_body(
                 crate::ast::CallArg::Slip(e) => Some(Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,
                     expr: Box::new(e),
+                    word: false,
                 }),
                 _ => None,
             })
@@ -587,6 +588,7 @@ pub(crate) fn sub_decl_body(
         let call_expr = Stmt::Expr(Expr::Call {
             name: sub_name_sym,
             args: positional_args,
+            listop: false,
         });
         return Ok((r, Stmt::SyntheticBlock(vec![sub_decl, call_expr])));
     }

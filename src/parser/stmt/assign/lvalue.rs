@@ -83,6 +83,7 @@ fn method_lvalue_assign_expr_with_intent(
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_method_lvalue"),
         args,
+        listop: false,
     }
 }
 
@@ -95,10 +96,12 @@ fn force_positional_pairs(expr: Expr) -> Expr {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
             right,
+            ..
         } => Expr::PositionalPair(Box::new(Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
             right,
+            form: Default::default(),
         })),
         Expr::ArrayLiteral(items) => {
             Expr::ArrayLiteral(items.into_iter().map(force_positional_pairs).collect())
@@ -138,6 +141,7 @@ pub(crate) fn dynamic_method_lvalue_assign_expr(
             left: Box::new(Expr::Literal(Value::str_from("!"))),
             op: crate::token_kind::TokenKind::Tilde,
             right: Box::new(name_expr),
+            form: Default::default(),
         }
     } else {
         name_expr
@@ -155,6 +159,7 @@ pub(crate) fn dynamic_method_lvalue_assign_expr(
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_method_lvalue"),
         args,
+        listop: false,
     }
 }
 
@@ -177,6 +182,7 @@ pub(crate) fn named_sub_lvalue_assign_expr(
             Expr::Call {
                 name: Symbol::intern(&name),
                 args: call_args,
+                listop: false,
             },
             Vec::new(),
             value,
@@ -211,6 +217,7 @@ pub(crate) fn named_sub_lvalue_assign_expr(
                     index: Box::new(index),
                     value: Box::new(value),
                     is_positional,
+                    spelling: Default::default(),
                 }
             };
         }
@@ -222,6 +229,7 @@ pub(crate) fn named_sub_lvalue_assign_expr(
             Expr::ArrayLiteral(call_args),
             value,
         ],
+        listop: false,
     }
 }
 
@@ -229,12 +237,13 @@ pub(crate) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, va
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_callable_lvalue"),
         args: vec![target, Expr::ArrayLiteral(call_args), value],
+        listop: false,
     }
 }
 
 pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Option<Expr> {
     fn subscript_parts(expr: &Expr) -> Option<(Expr, Expr, String)> {
-        let Expr::Call { name, args } = expr else {
+        let Expr::Call { name, args, .. } = expr else {
             return None;
         };
         if name != "__mutsu_subscript_adverb" || args.len() < 3 {
@@ -249,11 +258,7 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
 
     match lhs {
         Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
+            target, name, args, ..
         } if name == "value" && args.is_empty() => {
             if let Some((base_target, base_index, mode)) = subscript_parts(target.as_ref())
                 && (mode == "p" || mode == "not-p")
@@ -263,6 +268,7 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
                     index: Box::new(base_index),
                     value: Box::new(rhs),
                     is_positional: true,
+                    spelling: Default::default(),
                 });
             }
             None
@@ -302,6 +308,7 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
         target: Box::new(rhs.clone()),
         index: Box::new(Expr::Literal(Value::int(pos as i64))),
         is_positional: true,
+        spelling: Default::default(),
     };
     match target {
         Expr::Var(name) => Some(Expr::AssignExpr {
@@ -318,6 +325,7 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
                     args: vec![Expr::Literal(Value::int(pos as i64))],
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 }
             } else {
                 rhs
@@ -337,11 +345,14 @@ pub(crate) fn list_lvalue_assign_expr(items: Vec<Expr>, rhs: Expr) -> Option<Exp
             target,
             index,
             is_positional,
+            spelling,
+            ..
         } => Some(Expr::IndexAssign {
             target,
             index,
             value: Box::new(extracted_rhs),
             is_positional,
+            spelling,
         }),
         _ => None,
     }

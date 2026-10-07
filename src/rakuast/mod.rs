@@ -39,6 +39,7 @@ mod named_param;
 mod origin;
 mod package_header;
 mod placeholder;
+mod prefix_call;
 mod proto;
 mod react;
 mod regex_char_class;
@@ -56,6 +57,7 @@ mod substitution;
 mod symbolic_deref;
 mod temporize;
 mod type_args;
+mod type_call;
 mod type_lower;
 mod use_stmt;
 
@@ -383,6 +385,17 @@ pub enum RakuAstClass {
     /// `trusts B` in a class body.
     StatementTrusts,
     StatementPrefixOnce,
+    Nqp,
+    StatementPrefixStart,
+    StatementPrefixQuietly,
+    StatementPrefixSink,
+    StatementPrefixLazy,
+    StatementPrefixHyper,
+    StatementPrefixRace,
+    Mixin,
+    VarAttribute,
+    VarAttributePublic,
+    CallPrivateMethod,
     StatementPrefixPhaserBegin,
     StatementPrefixPhaserCheck,
     StatementPrefixPhaserInit,
@@ -662,6 +675,17 @@ impl RakuAstClass {
             TraitHides => "RakuAST::Trait::Hides",
             StatementTrusts => "RakuAST::Statement::Trusts",
             StatementPrefixOnce => "RakuAST::StatementPrefix::Once",
+            Nqp => "RakuAST::Nqp",
+            StatementPrefixStart => "RakuAST::StatementPrefix::Start",
+            StatementPrefixQuietly => "RakuAST::StatementPrefix::Quietly",
+            StatementPrefixSink => "RakuAST::StatementPrefix::Sink",
+            StatementPrefixLazy => "RakuAST::StatementPrefix::Lazy",
+            StatementPrefixHyper => "RakuAST::StatementPrefix::Hyper",
+            StatementPrefixRace => "RakuAST::StatementPrefix::Race",
+            Mixin => "RakuAST::Mixin",
+            VarAttribute => "RakuAST::Var::Attribute",
+            VarAttributePublic => "RakuAST::Var::Attribute::Public",
+            CallPrivateMethod => "RakuAST::Call::PrivateMethod",
             StatementPrefixPhaserBegin => "RakuAST::StatementPrefix::Phaser::Begin",
             StatementPrefixPhaserCheck => "RakuAST::StatementPrefix::Phaser::Check",
             StatementPrefixPhaserInit => "RakuAST::StatementPrefix::Phaser::Init",
@@ -702,6 +726,7 @@ impl RakuAstClass {
         matches!(
             self,
             RakuAstClass::Assignment
+                | RakuAstClass::CallTerm
                 | RakuAstClass::DottyInfixCallAssign
                 | RakuAstClass::TermWhatever
                 | RakuAstClass::WhateverCodeArgument
@@ -939,6 +964,43 @@ impl RakuAstClass {
                 "RakuAST::Termish",
                 "RakuAST::Expression",
             ],
+            StatementPrefixStart => &[
+                "RakuAST::StatementPrefix::Blorst",
+                "RakuAST::StatementPrefix",
+                "RakuAST::Term",
+                "RakuAST::Termish",
+                "RakuAST::Expression",
+            ],
+            StatementPrefixQuietly => &[
+                "RakuAST::StatementPrefix",
+                "RakuAST::Term",
+                "RakuAST::Termish",
+                "RakuAST::Expression",
+            ],
+            StatementPrefixSink
+            | StatementPrefixLazy
+            | StatementPrefixHyper
+            | StatementPrefixRace => &[
+                "RakuAST::StatementPrefix::CallMethod",
+                "RakuAST::StatementPrefix",
+                "RakuAST::Term",
+                "RakuAST::Termish",
+                "RakuAST::Expression",
+            ],
+            Mixin => &["RakuAST::Infix", "RakuAST::Infixish"],
+            Nqp => EXPR,
+            VarAttribute => &[
+                "RakuAST::Var",
+                "RakuAST::Term",
+                "RakuAST::Termish",
+                "RakuAST::Expression",
+            ],
+            VarAttributePublic => &[
+                "RakuAST::Term",
+                "RakuAST::Termish",
+                "RakuAST::Expression",
+            ],
+            CallPrivateMethod => &["RakuAST::Call::Methodish", "RakuAST::Postfixish"],
             StatementPrefixReact | StatementPrefixSupply => &[
                 "RakuAST::StatementPrefix::Wheneverable",
                 "RakuAST::StatementPrefix::Blorst",
@@ -1452,6 +1514,17 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TraitHides,
     RakuAstClass::StatementTrusts,
     RakuAstClass::StatementPrefixOnce,
+    RakuAstClass::Nqp,
+    RakuAstClass::StatementPrefixStart,
+    RakuAstClass::StatementPrefixQuietly,
+    RakuAstClass::StatementPrefixSink,
+    RakuAstClass::StatementPrefixLazy,
+    RakuAstClass::StatementPrefixHyper,
+    RakuAstClass::StatementPrefixRace,
+    RakuAstClass::Mixin,
+    RakuAstClass::VarAttribute,
+    RakuAstClass::VarAttributePublic,
+    RakuAstClass::CallPrivateMethod,
     RakuAstClass::StatementPrefixPhaserBegin,
     RakuAstClass::StatementPrefixPhaserCheck,
     RakuAstClass::StatementPrefixPhaserInit,
@@ -3050,6 +3123,14 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
             RakuAstClass::StatementPrefixPhaserBegin
         }
         ("RakuAST::StatementPrefix::Once", "new") => RakuAstClass::StatementPrefixOnce,
+        ("RakuAST::StatementPrefix::Start", "new") => RakuAstClass::StatementPrefixStart,
+        ("RakuAST::StatementPrefix::Quietly", "new") => RakuAstClass::StatementPrefixQuietly,
+        ("RakuAST::StatementPrefix::Sink", "new") => RakuAstClass::StatementPrefixSink,
+        ("RakuAST::StatementPrefix::Lazy", "new") => RakuAstClass::StatementPrefixLazy,
+        ("RakuAST::StatementPrefix::Hyper", "new") => RakuAstClass::StatementPrefixHyper,
+        ("RakuAST::StatementPrefix::Race", "new") => RakuAstClass::StatementPrefixRace,
+        ("RakuAST::Mixin", "new") => RakuAstClass::Mixin,
+        ("RakuAST::Var::Attribute", "new") => RakuAstClass::VarAttribute,
         ("RakuAST::StatementPrefix::React", "new") => RakuAstClass::StatementPrefixReact,
         ("RakuAST::StatementPrefix::Supply", "new") => RakuAstClass::StatementPrefixSupply,
         ("RakuAST::StatementPrefix::Phaser::Check", "new") => {

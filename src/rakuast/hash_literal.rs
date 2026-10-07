@@ -153,6 +153,7 @@ fn literal_pair(item: Expr) -> Option<(String, Option<Expr>)> {
         left,
         op: TokenKind::FatArrow,
         right,
+        ..
     } = item
     else {
         return None;

@@ -80,11 +80,13 @@ pub(crate) fn make_chain_cmp(left: Expr, op: TokenKind, right: Expr, negated: bo
         left: Box::new(left),
         op,
         right: Box::new(right),
+        form: Default::default(),
     };
     if negated {
         Expr::Unary {
             op: TokenKind::Bang,
             expr: Box::new(cmp),
+            word: false,
         }
     } else {
         cmp
@@ -130,6 +132,7 @@ fn build_chain_cmp_expr(
             left: Box::new(cmp),
             op: TokenKind::AndAnd,
             right: Box::new(rest),
+            form: Default::default(),
         }),
     ])
 }

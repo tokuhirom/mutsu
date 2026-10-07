@@ -844,6 +844,7 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
                     Stmt::Call {
                         name: Symbol::intern("emit"),
                         args: vec![crate::ast::CallArg::Positional(value)],
+                        listop: false,
                     },
                     Stmt::ReactDone,
                 ]),
@@ -888,6 +889,9 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     // the parenthesized contents bind as the argument list.
     let spaced_paren_call =
         had_ws && rest.starts_with('(') && crate::parser::stmt::simple::slang_spaced_call();
+    // `foo(1)` / `foo()` spell their parentheses; `foo 1`, `foo (1)` and a bare
+    // `foo` do not (raku's `Call::Name::WithoutParentheses`).
+    let listop = !(rest.starts_with('(') && (!had_ws || spaced_paren_call));
     let (rest, args) = if had_ws && !spaced_paren_call {
         parse_stmt_call_args_no_paren(rest).map_err(|err| PError {
             messages: merge_expected_messages("expected known call arguments", &err.messages),
@@ -923,6 +927,7 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
             value: Some(Expr::Literal(Value::int(
                 crate::parser::primary::current_line_number(input),
             ))),
+            form: Default::default(),
         });
     }
     // A trailing low-precedence word infix (`ok(...) or say "NO"`) means the
@@ -962,6 +967,7 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         Stmt::Call {
             name: Symbol::intern(&name),
             args,
+            listop,
         }
     };
     parse_statement_modifier(rest, stmt)

@@ -59,6 +59,7 @@ pub(super) fn method_lvalue_assign_expr(
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_method_lvalue"),
         args,
+        listop: false,
     }
 }
 
@@ -74,6 +75,7 @@ pub(super) fn callable_lvalue_assign_expr(target: Expr, call_args: Vec<Expr>, va
     Expr::Call {
         name: Symbol::intern("__mutsu_assign_callable_lvalue"),
         args: vec![target, Expr::ArrayLiteral(call_args), value],
+        listop: false,
     }
 }
 
@@ -109,6 +111,7 @@ pub(crate) fn bind_index_value(rhs: Expr) -> Expr {
     Expr::Call {
         name: Symbol::intern("__mutsu_bind_index_value"),
         args: vec![rhs, source_meta],
+        listop: false,
     }
 }
 
@@ -119,6 +122,7 @@ pub(crate) fn index_bind_expr(
     target: Box<Expr>,
     index: Box<Expr>,
     is_positional: bool,
+    spelling: crate::ast::IndexSpelling,
     rhs: Expr,
 ) -> Expr {
     Expr::IndexAssign {
@@ -126,6 +130,7 @@ pub(crate) fn index_bind_expr(
         index,
         value: Box::new(bind_index_value(rhs)),
         is_positional,
+        spelling,
     }
 }
 
@@ -175,6 +180,7 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
         target: Box::new(rhs.clone()),
         index: Box::new(Expr::Literal(Value::int(pos as i64))),
         is_positional: true,
+        spelling: Default::default(),
     };
     Some(match target {
         Expr::Var(name) => Stmt::Assign {
@@ -196,6 +202,7 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
                     args: vec![Expr::Literal(Value::int(pos as i64))],
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 }
             } else {
                 rhs
@@ -205,6 +212,7 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
                 expr: Expr::Call {
                     name: Symbol::intern("__mutsu_star_lvalue_rhs"),
                     args: vec![Expr::Literal(Value::str(format!("@{}", name))), array_rhs],
+                    listop: false,
                 },
                 op: AssignOp::Assign,
                 target_is_sigilless: false,
@@ -220,11 +228,14 @@ pub(super) fn single_target_list_lvalue_stmt(lhs: Expr, rhs: Expr) -> Option<Stm
             target,
             index,
             is_positional,
+            spelling,
+            ..
         } => Stmt::Expr(Expr::IndexAssign {
             target,
             index,
             value: Box::new(extracted_rhs),
             is_positional,
+            spelling,
         }),
         _ => return None,
     })

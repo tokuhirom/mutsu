@@ -325,6 +325,7 @@ fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Ex
                         left: Box::new(left),
                         op: op.token_kind(),
                         right: Box::new(right),
+                        form: Default::default(),
                     };
                     return Ok((r, Expr::WhateverCurry(Box::new(sm_expr))));
                 }
@@ -348,6 +349,7 @@ fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Ex
                         left: Box::new(left),
                         op: op.token_kind(),
                         right: Box::new(right),
+                        form: Default::default(),
                     };
                     return Ok((r, Expr::WhateverCurry(Box::new(sm_expr))));
                 }
@@ -366,6 +368,7 @@ fn comparison_tail(rest: &str, mut left: Expr, mode: ExprMode) -> PResult<'_, Ex
                         left: Box::new(left),
                         op: op.token_kind(),
                         right: Box::new(right),
+                        form: Default::default(),
                     };
                     return Ok((r, Expr::WhateverCurry(Box::new(sm_expr))));
                 }

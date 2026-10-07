@@ -64,6 +64,7 @@ impl Compiler {
             c.compile_expr(&Expr::Call {
                 name: crate::symbol::Symbol::intern(raku_form),
                 args: args.to_vec(),
+                listop: false,
             });
         });
         true

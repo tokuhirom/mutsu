@@ -204,7 +204,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
         Stmt::Say(items) | Stmt::Put(items) | Stmt::Print(items) | Stmt::Note(items) => {
             exprs(v, items)
         }
-        Stmt::Call { name, args } => {
+        Stmt::Call { name, args, .. } => {
             v.visit_name(name.as_str(), NameKind::Call);
             for a in args {
                 walk_call_arg(v, a);

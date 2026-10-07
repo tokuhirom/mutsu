@@ -63,7 +63,7 @@ impl<'ast> crate::ast_visit::Visit<'ast> for ExportedTypeNames {
     }
 
     fn visit_expr(&mut self, expr: &'ast crate::ast::Expr) {
-        if let crate::ast::Expr::Call { name, args } = expr
+        if let crate::ast::Expr::Call { name, args, .. } = expr
             && name.resolve() == "__MUTSU_EXPORT_TYPE__"
             && let Some(crate::ast::Expr::Literal(value)) = args.first()
         {

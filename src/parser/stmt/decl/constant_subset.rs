@@ -160,6 +160,7 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             args,
             modifier: None,
             quoted: false,
+            sugar: false,
         };
         let (r, _) = ws(r)?;
         // Leave a trailing `;` for the caller: `my_decl_dispatch.rs`'s "my

@@ -5,7 +5,7 @@ fn parse_hash_literal_with_hash_spread_expr() {
     let (rest, expr) = expression("{year => 1984, %args}").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "hash");
             assert_eq!(args.len(), 2);
         }
@@ -47,7 +47,7 @@ fn parse_slip_prefix_with_topic_method_call() {
         expr,
         Expr::Unary {
             op: TokenKind::Pipe,
-            expr
+            expr, ..
         } if matches!(*expr, Expr::MethodCall { .. })
     ));
 }
@@ -129,7 +129,7 @@ fn parse_slip_prefix_with_space_before_french_quote_list() {
         expr,
         Expr::Unary {
             op: TokenKind::Pipe,
-            expr
+            expr, ..
         } if matches!(
             *expr,
             Expr::ArrayLiteral(ref items) if items.len() == 2
@@ -137,7 +137,7 @@ fn parse_slip_prefix_with_space_before_french_quote_list() {
             *expr,
             // A word list lowers to the RESERVED `__mutsu_word_list`, not to a
             // plain `list` call a user's own `sub list` could capture.
-            Expr::Call { ref name, ref args }
+            Expr::Call { ref name, ref args, .. }
                 if name.resolve() == "__mutsu_word_list" && args.len() == 2
         )
     ));
@@ -151,7 +151,7 @@ fn parse_slip_prefix_with_space_before_var() {
         expr,
         Expr::Unary {
             op: TokenKind::Pipe,
-            expr
+            expr, ..
         } if matches!(*expr, Expr::ArrayVar(ref name) if name == "cmd")
     ));
 }
@@ -164,6 +164,7 @@ fn parse_prefix_boolify_codevar_method_call() {
         Expr::Unary {
             op: TokenKind::Question,
             expr,
+            ..
         } => match *expr {
             Expr::MethodCall { target, .. } => {
                 assert!(matches!(*target, Expr::CodeVar(ref name) if name == "foo"));
@@ -179,7 +180,7 @@ fn parse_hyper_prefix_metaop_negate() {
     let (rest, expr) = expression("-« ([1, 2], 3)").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "__mutsu_hyper_prefix");
             assert_eq!(args.len(), 2);
             assert!(
@@ -265,7 +266,7 @@ fn parse_whatever_with_unicode_set_union_infix() {
         Expr::WhateverCurry(body)
             if matches!(
                 body.as_ref(),
-                Expr::Binary { op: TokenKind::SetUnion, left, right }
+                Expr::Binary { op: TokenKind::SetUnion, left, right, .. }
                     if matches!(left.as_ref(), Expr::Whatever)
                         && matches!(right.as_ref(), Expr::Whatever)
             )

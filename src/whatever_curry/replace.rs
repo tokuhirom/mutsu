@@ -134,6 +134,7 @@ impl VisitMut for Replacer<'_> {
                 left,
                 op: TokenKind::SmartMatch | TokenKind::BangTilde,
                 right,
+                ..
             } => {
                 self.visit_expr_mut(left);
                 if is_whatever(right) {

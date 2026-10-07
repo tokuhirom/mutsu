@@ -15,7 +15,8 @@ is Q[if 1 {2} elsif 3 {4}].AST.gist, q:to/END/.chomp, 'if/elsif -> elsifs list';
       RakuAST::Statement::If.new(
         condition => RakuAST::IntLiteral.new(1),
         then      => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::IntLiteral.new(2)
@@ -27,7 +28,8 @@ is Q[if 1 {2} elsif 3 {4}].AST.gist, q:to/END/.chomp, 'if/elsif -> elsifs list';
           RakuAST::Statement::Elsif.new(
             condition => RakuAST::IntLiteral.new(3),
             then      => RakuAST::Block.new(
-              body => RakuAST::Blockoid.new(
+              may-have-signature => True,
+              body               => RakuAST::Blockoid.new(
                 RakuAST::StatementList.new(
                   RakuAST::Statement::Expression.new(
                     expression => RakuAST::IntLiteral.new(4)
@@ -47,7 +49,8 @@ is Q[if 1 {2} elsif 3 {4} else {5}].AST.gist, q:to/END/.chomp, 'if/elsif/else ->
       RakuAST::Statement::If.new(
         condition => RakuAST::IntLiteral.new(1),
         then      => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::IntLiteral.new(2)
@@ -59,7 +62,8 @@ is Q[if 1 {2} elsif 3 {4} else {5}].AST.gist, q:to/END/.chomp, 'if/elsif/else ->
           RakuAST::Statement::Elsif.new(
             condition => RakuAST::IntLiteral.new(3),
             then      => RakuAST::Block.new(
-              body => RakuAST::Blockoid.new(
+              may-have-signature => True,
+              body               => RakuAST::Blockoid.new(
                 RakuAST::StatementList.new(
                   RakuAST::Statement::Expression.new(
                     expression => RakuAST::IntLiteral.new(4)
@@ -70,7 +74,8 @@ is Q[if 1 {2} elsif 3 {4} else {5}].AST.gist, q:to/END/.chomp, 'if/elsif/else ->
           ),
         ),
         else      => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::IntLiteral.new(5)

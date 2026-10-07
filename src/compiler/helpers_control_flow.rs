@@ -36,6 +36,7 @@ impl Compiler {
                 left: args(),
                 op: crate::token_kind::TokenKind::SmartMatch,
                 right: Box::new(Expr::BareWord("Positional".to_string())),
+                form: Default::default(),
             }),
             then_expr: args(),
             else_expr: Box::new(Expr::BracketArray(Vec::new(), false)),
@@ -268,7 +269,7 @@ impl Compiler {
                     // so `do for ^2 { imported_sub() }` collected `Nil` per
                     // iteration while the parenthesized form — which parses as
                     // `Stmt::Expr` — collected correctly.
-                    Stmt::Call { name, args } => {
+                    Stmt::Call { name, args, .. } => {
                         self.compile_tail_stmt_call_value(*name, args);
                     }
                     // `BEGIN` runs at compile time but is still an ordinary
@@ -369,6 +370,7 @@ impl Compiler {
                     left: Box::new(source.clone()),
                     op: crate::token_kind::TokenKind::SmartMatch,
                     right: Box::new(Expr::BareWord("Seq".to_string())),
+                    form: Default::default(),
                 }),
                 then_expr: Box::new(Expr::MethodCall {
                     target: Box::new(source.clone()),
@@ -376,6 +378,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 }),
                 else_expr: Box::new(source.clone()),
             }
@@ -1218,7 +1221,7 @@ impl Compiler {
                         main_leaves_value = true;
                         tail_is_bare_container_read = Self::stmt_value_is_bare_container_read(expr);
                         continue;
-                    } else if let Stmt::Call { name, args } = stmt {
+                    } else if let Stmt::Call { name, args, .. } = stmt {
                         self.compile_tail_stmt_call_value(*name, args);
                         main_leaves_value = true;
                         continue;
@@ -1347,6 +1350,7 @@ impl Compiler {
         self.compile_expr(&Expr::Call {
             name,
             args: Self::call_args_to_expr_args(&rewritten_args),
+            listop: false,
         });
     }
 

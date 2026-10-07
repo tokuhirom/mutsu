@@ -204,7 +204,7 @@ fn known_call_stmt_parses_unicode_and_ascii_minus_angle_complex_args() {
         simple::known_call_stmt("is-deeply −<42+2i>, -<42+2i>, 'prefix, Complex'").unwrap();
     assert_eq!(rest, "");
     match stmt {
-        Stmt::Call { name, args } => {
+        Stmt::Call { name, args, .. } => {
             assert_eq!(name, "is-deeply");
             assert!(args.len() >= 2);
             assert!(matches!(
@@ -232,7 +232,7 @@ fn known_call_stmt_keeps_chained_assignment_as_single_argument() {
     let (rest, stmt) = simple::known_call_stmt("is $x = $y = $z, 18;").unwrap();
     assert_eq!(rest, "");
     match stmt {
-        Stmt::Call { name, args } => {
+        Stmt::Call { name, args, .. } => {
             assert_eq!(name, "is");
             assert!(matches!(
                 args.first(),
@@ -257,7 +257,7 @@ fn known_call_stmt_splits_assignment_from_following_test_args() {
     .unwrap();
     assert_eq!(rest, "");
     match stmt {
-        Stmt::Call { name, args } => {
+        Stmt::Call { name, args, .. } => {
             assert_eq!(name, "is");
             assert!(matches!(
                 args.first(),

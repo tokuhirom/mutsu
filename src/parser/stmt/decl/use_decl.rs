@@ -23,11 +23,15 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, _) = ws(r)?;
         let _ = opt_char(r, ';');
         let (r, _) = opt_char(r, ';');
+        // The statement keeps the version as written (`use v6` is `6`, not
+        // `6.d`): the RakuAST boundary renders `LanguageVersion.new(v6)`. The
+        // normalized revision is already in effect for the rest of the parse.
+        let written = version_token.strip_prefix('v').unwrap_or(version_token);
         return Ok((
             r,
             Stmt::Use {
                 module: "v6".to_string(),
-                arg: Some(Expr::Literal(Value::str(version))),
+                arg: Some(Expr::Literal(Value::str(written.to_string()))),
                 tags: Vec::new(),
                 condition: None,
                 if_imports: Vec::new(),

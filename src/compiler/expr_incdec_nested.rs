@@ -39,6 +39,7 @@ fn with_elem_chain_root(expr: &Expr, root: &Expr) -> Expr {
                 target,
                 index,
                 is_positional,
+                ..
             } => {
                 subscripts.push((index, *is_positional));
                 expr = target;
@@ -54,6 +55,7 @@ fn with_elem_chain_root(expr: &Expr, root: &Expr) -> Expr {
             target: Box::new(target),
             index: index.clone(),
             is_positional,
+            spelling: Default::default(),
         })
 }
 
@@ -139,6 +141,7 @@ impl Compiler {
         if self.compile_incdec_through_bound_root(expr, |elem| Expr::Unary {
             op,
             expr: Box::new(elem),
+            word: false,
         }) {
             return;
         }
@@ -160,6 +163,7 @@ impl Compiler {
                     target: target.clone(),
                     index: Box::new(Expr::Var(tmp_key)),
                     is_positional: *is_positional,
+                    spelling: Default::default(),
                 };
                 return self.compile_nested_prefix_incdec_hoisted(&hoisted, increment);
             }
@@ -203,6 +207,7 @@ impl Compiler {
                 index: index.clone(),
                 value: Box::new(Expr::Var(tmp_val)),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             };
             self.compile_expr(&assign_expr);
             self.code.emit(OpCode::Pop);

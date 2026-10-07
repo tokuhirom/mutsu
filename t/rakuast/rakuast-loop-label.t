@@ -17,13 +17,12 @@ is Q[LABEL: while 1 { 2 }].AST.gist, q:to/END/.chomp, 'labelled while -> labels 
     RakuAST::StatementList.new(
       RakuAST::Statement::Loop::While.new(
         labels    => (
-          RakuAST::Label.new(
-            name => "LABEL"
-          ),
+          RakuAST::Label.new("LABEL"),
         ),
         condition => RakuAST::IntLiteral.new(1),
         body      => RakuAST::Block.new(
-          body => RakuAST::Blockoid.new(
+          may-have-signature => True,
+          body               => RakuAST::Blockoid.new(
             RakuAST::StatementList.new(
               RakuAST::Statement::Expression.new(
                 expression => RakuAST::IntLiteral.new(2)
@@ -39,11 +38,10 @@ is Q[LABEL: while 1 { 2 }].AST.gist, q:to/END/.chomp, 'labelled while -> labels 
 my $for = Q[my @a; LOOP: for @a { 1 }].AST.gist;
 ok $for.contains('RakuAST::Statement::For.new(')
     && $for.contains('labels => (')
-    && $for.contains('RakuAST::Label.new(')
-    && $for.contains('name => "LOOP"')
+    && $for.contains('RakuAST::Label.new("LOOP")')
     && $for.index('labels') < $for.index('mode'),
     'labelled for -> labels before mode';
 
 # --- labelled bare loop -----------------------------------------------------
-is Q[L: loop { 1 }].AST.gist.contains('name => "L"'), True,
+is Q[L: loop { 1 }].AST.gist.contains('RakuAST::Label.new("L")'), True,
     'labelled bare loop carries its Label';

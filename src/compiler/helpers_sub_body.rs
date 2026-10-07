@@ -134,6 +134,7 @@ impl Compiler {
             args: method_args,
             modifier: None,
             quoted: false,
+            sugar: false,
         })
     }
 
@@ -151,19 +152,25 @@ impl Compiler {
                 crate::ast::CallArg::Named {
                     name,
                     value: Some(e),
+                    ..
                 } => Expr::Binary {
                     left: Box::new(Expr::Literal(Value::str(name.clone()))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(e.clone()),
+                    form: Default::default(),
                 },
-                crate::ast::CallArg::Named { name, value: None } => Expr::Binary {
+                crate::ast::CallArg::Named {
+                    name, value: None, ..
+                } => Expr::Binary {
                     left: Box::new(Expr::Literal(Value::str(name.clone()))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(Expr::Literal(Value::TRUE)),
+                    form: Default::default(),
                 },
                 crate::ast::CallArg::Slip(e) => Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,
                     expr: Box::new(e.clone()),
+                    word: false,
                 },
             })
             .collect()
@@ -956,7 +963,7 @@ impl Compiler {
                     }
                     // Stmt::Call as last statement: convert to expression-level
                     // Expr::Call so the return value is left on the stack.
-                    Stmt::Call { name, args } => {
+                    Stmt::Call { name, args, .. } => {
                         // An invocant colon makes this a method call, not a sub
                         // call (`warn $x:` is `$x.warn`); the arg-list mapping
                         // below cannot carry that, so check it first.
@@ -968,6 +975,7 @@ impl Compiler {
                         sub_compiler.compile_expr(&Expr::Call {
                             name: *name,
                             args: expr_args,
+                            listop: false,
                         });
                         continue;
                     }
@@ -1522,7 +1530,7 @@ impl Compiler {
                     sub_compiler.with_escape(true, |c| c.compile_routine_tail_expr(expr));
                     continue;
                 }
-                if is_value && let Stmt::Call { name, args } = stmt {
+                if is_value && let Stmt::Call { name, args, .. } = stmt {
                     let positional: Option<Vec<Expr>> = args
                         .iter()
                         .map(|arg| match arg {
@@ -1534,6 +1542,7 @@ impl Compiler {
                         sub_compiler.compile_expr(&Expr::Call {
                             name: *name,
                             args: positional_args,
+                            listop: false,
                         });
                         continue;
                     }
@@ -1695,7 +1704,7 @@ impl Compiler {
                         // `sub_compiler.compile_stmt(stmt)` would sink the
                         // value and return Nil instead
                         // (t/tail-stmt-call-named-value.t's role-method case).
-                        Stmt::Call { name, args } => {
+                        Stmt::Call { name, args, .. } => {
                             sub_compiler.compile_tail_stmt_call_value(*name, args);
                             continue;
                         }

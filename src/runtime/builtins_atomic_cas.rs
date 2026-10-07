@@ -132,7 +132,7 @@ impl Interpreter {
             if let ValueView::Sub(sub) = code.view()
                 && sub.params.len() == 1
                 && effective_body.len() == 1
-                && let Stmt::Expr(Expr::Binary { left, op, right }) = effective_body[0]
+                && let Stmt::Expr(Expr::Binary { left, op, right, .. }) = effective_body[0]
                 && *op == TokenKind::Plus
             {
                 let param = &sub.params[0];
@@ -177,7 +177,7 @@ impl Interpreter {
             if let ValueView::Sub(sub) = code.view()
                 && sub.params.is_empty()
                 && effective_body.len() == 1
-                && let Stmt::Expr(Expr::Binary { left, op, right }) = effective_body[0]
+                && let Stmt::Expr(Expr::Binary { left, op, right, .. }) = effective_body[0]
                 && *op == TokenKind::Plus
             {
                 let delta_expr = match (left.as_ref(), right.as_ref()) {

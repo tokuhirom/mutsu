@@ -55,7 +55,7 @@ fn parse_ok_call_with_named() {
     let (rest, stmts) = program("use Test;\nok 0, :todo(1);").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 2);
-    if let Stmt::Call { name, args } = &stmts[1] {
+    if let Stmt::Call { name, args, .. } = &stmts[1] {
         assert_eq!(name, "ok");
         assert!(args.len() >= 2);
         assert!(
@@ -73,7 +73,7 @@ fn parse_is_deeply_unicode_ascii_minus_complex_args() {
     let (rest, stmts) = program(src).unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 2);
-    if let Stmt::Call { name, args } = &stmts[1] {
+    if let Stmt::Call { name, args, .. } = &stmts[1] {
         assert_eq!(name, "is-deeply");
         assert!(args.len() >= 2);
         assert!(matches!(
@@ -171,7 +171,7 @@ fn parse_plan_skip_all() {
     let (rest, stmts) = program("use Test;\nplan skip-all => \"msg\";").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 2);
-    if let Stmt::Call { name, args } = &stmts[1] {
+    if let Stmt::Call { name, args, .. } = &stmts[1] {
         assert_eq!(name, "plan");
         assert!(matches!(&args[0], CallArg::Named { name, .. } if name == "skip-all"));
     } else {
@@ -314,7 +314,7 @@ fn parse_user_prefix_sub_with_looser_trait_as_full_rhs_expression() {
             assert_eq!(args.len(), 1);
             assert!(matches!(
                 &args[0],
-                Expr::Call { name, args }
+                Expr::Call { name, args, .. }
                     if name == "prefix:<pIO>"
                         && args.len() == 1
                         && matches!(

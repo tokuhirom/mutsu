@@ -31,6 +31,7 @@ pub(crate) fn auto_invoke_bareword_method_target(expr: Expr) -> Expr {
         let call = Expr::Call {
             name: Symbol::intern(&name),
             args: Vec::new(),
+            listop: false,
         };
         return crate::parser::primary::ident::export_term_or_call(&name, call);
     }
@@ -168,6 +169,7 @@ fn parse_bracket_indices_body(input: &str) -> PResult<'_, ParsedBracketIndex> {
                     op @ (crate::token_kind::TokenKind::DotDotDot
                     | crate::token_kind::TokenKind::DotDotDotCaret),
                 right,
+                ..
             } = next
             {
                 let mut seed = std::mem::take(&mut current_dim);
@@ -176,6 +178,7 @@ fn parse_bracket_indices_body(input: &str) -> PResult<'_, ParsedBracketIndex> {
                     left: Box::new(Expr::ArrayLiteral(seed)),
                     op,
                     right,
+                    form: Default::default(),
                 }];
             } else {
                 current_dim.push(next);

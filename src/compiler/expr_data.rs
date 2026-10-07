@@ -132,6 +132,7 @@ impl Compiler {
                     Expr::Literal(Value::NIL),
                     Expr::Literal(Value::TRUE),
                 ],
+                listop: false,
             });
             return;
         }
@@ -294,6 +295,7 @@ impl Compiler {
             let call = Expr::Call {
                 name: crate::symbol::Symbol::intern("__mutsu_multidim_exists_adverb"),
                 args: call_args,
+                listop: false,
             };
             self.compile_expr(&call);
             return;
@@ -898,10 +900,12 @@ impl Compiler {
                         Expr::Literal(Value::str(" ".to_string())),
                         Expr::ArrayVar(name.clone()),
                     ],
+                    listop: false,
                 }),
                 Expr::HashVar(name) => self.compile_expr(&Expr::Unary {
                     op: crate::token_kind::TokenKind::Tilde,
                     expr: Box::new(Expr::HashVar(name.clone())),
+                    word: false,
                 }),
                 // A `{ … }` closure part is its own Raku call frame
                 // (`"{callframe(0).code.^name}"` is `Block`, the enclosing

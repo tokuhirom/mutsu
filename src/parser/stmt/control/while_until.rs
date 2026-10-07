@@ -181,6 +181,7 @@ pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
         cond: Expr::Unary {
             op: TokenKind::Bang,
             expr: Box::new(cond_expr),
+            word: false,
         },
         body,
         label: None,

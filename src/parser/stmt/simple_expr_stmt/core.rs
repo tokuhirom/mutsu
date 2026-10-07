@@ -41,7 +41,7 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
             name,
             args,
             modifier,
-            quoted: _,
+            ..
         } => {
             if name == "AT-POS"
                 && args.len() == 1
@@ -52,6 +52,7 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
                     index: Box::new(args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL))),
                     value: Box::new(rhs),
                     is_positional: true,
+                    spelling: Default::default(),
                 };
             }
             let target_var_name = method_lvalue_target_name(&target);
@@ -84,7 +85,7 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
                 rhs,
             )
         }
-        Expr::Call { name, args } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
+        Expr::Call { name, args, .. } => named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
         Expr::CallOn { target, args } => callable_lvalue_assign_expr(*target, args, rhs),
         other => callable_lvalue_assign_expr(other, Vec::new(), rhs),
     }
@@ -99,6 +100,7 @@ pub(crate) fn topic_dot_assign(method_call: Expr) -> Expr {
     let expanded = Expr::Call {
         name: Symbol::intern("__mutsu_topic_dotassign"),
         args: vec![method_call.clone()],
+        listop: false,
     };
     crate::parser::stmt::assign::dotty_assign_marker(
         Expr::Var("_".to_string()),
@@ -146,6 +148,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             args,
             modifier: None,
             quoted: false,
+            sugar: false,
         };
         let stmt = Stmt::Expr(topic_dot_assign(call));
         return parse_statement_modifier(rest, stmt);
@@ -356,6 +359,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 target,
                 index,
                 is_positional,
+                spelling,
                 ..
             } => {
                 let tmp_idx = format!(
@@ -367,6 +371,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     target: target.clone(),
                     index: Box::new(tmp_idx_expr.clone()),
                     is_positional,
+                    spelling: Default::default(),
                 };
                 let assigned_value = make_rhs(lhs_expr);
                 let stmt = Stmt::Expr(Expr::desugar_block(vec![
@@ -387,6 +392,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         index: Box::new(tmp_idx_expr),
                         value: Box::new(assigned_value),
                         is_positional: true,
+                        spelling,
                     }),
                 ]));
                 return parse_statement_modifier(r, stmt);
@@ -472,6 +478,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             args: method_args.clone(),
             modifier: None,
             quoted: false,
+            sugar: false,
         };
         match expr {
             // `$_ .= meth`: route the topic metaop through `__mutsu_topic_dotassign`
@@ -504,6 +511,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 let stmt = Stmt::Expr(Expr::Call {
                     name: Symbol::intern("sink"),
                     args: vec![make_rhs(expr)],
+                    listop: false,
                 });
                 return parse_statement_modifier(r, stmt);
             }
@@ -541,9 +549,11 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target,
             index,
             is_positional,
+            spelling,
+            ..
         } = expr
         {
-            if let Expr::Call { name, args } = target.as_ref()
+            if let Expr::Call { name, args, .. } = target.as_ref()
                 && name == "__mutsu_subscript_adverb"
                 && args.len() >= 3
                 && matches!(index.as_ref(), Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(1)))
@@ -554,6 +564,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Box::new(args[1].clone()),
                     value: Box::new(value),
                     is_positional,
+                    spelling,
                 });
                 return parse_statement_modifier(rest, stmt);
             }
@@ -562,6 +573,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 index,
                 value: Box::new(value),
                 is_positional,
+                spelling,
             });
             return parse_statement_modifier(rest, stmt);
         }
@@ -570,6 +582,8 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         target,
         index,
         is_positional,
+        spelling,
+        ..
     } = expr.clone()
         && let Some(rest) = parse_hyper_assign_op(rest)
     {
@@ -587,6 +601,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             index,
             value: Box::new(value),
             is_positional,
+            spelling,
         });
         return parse_statement_modifier(rest, stmt);
     }
@@ -611,11 +626,13 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 target,
                 index,
                 is_positional,
+                spelling,
             } => {
                 let stmt = Stmt::Expr(super::lvalue::index_bind_expr(
                     target,
                     index,
                     is_positional,
+                    spelling,
                     value,
                 ));
                 return parse_statement_modifier(rest, stmt);
@@ -629,6 +646,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     target,
                     Box::new(Expr::ArrayLiteral(dimensions)),
                     true,
+                    Default::default(),
                     value,
                 ));
                 return parse_statement_modifier(rest, stmt);
@@ -694,7 +712,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             name,
             args,
             modifier,
-            quoted: _,
+            ..
         } = &target_expr
         {
             let target_var_name = method_lvalue_target_name(target);
@@ -713,7 +731,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             let stmt = Stmt::Expr(assigned);
             return parse_statement_modifier(r, stmt);
         }
-        if let Expr::Call { name, args } = &target_expr {
+        if let Expr::Call { name, args, .. } = &target_expr {
             let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
                 name.resolve(),
                 args.clone(),
@@ -838,7 +856,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             name,
             args,
             modifier,
-            quoted: _,
+            ..
         } = &expr
         {
             if name == "AT-POS"
@@ -850,6 +868,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Box::new(args[0].clone()),
                     value: Box::new(rhs),
                     is_positional: true,
+                    spelling: Default::default(),
                 };
                 let stmt = Stmt::Expr(assigned);
                 return parse_statement_modifier(r, stmt);
@@ -870,7 +889,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             let stmt = Stmt::Expr(assigned);
             return parse_statement_modifier(r, stmt);
         }
-        if let Expr::Call { name, args } = &expr {
+        if let Expr::Call { name, args, .. } = &expr {
             let stmt = Stmt::Expr(named_sub_lvalue_assign_expr(
                 name.resolve(),
                 args.clone(),
@@ -902,6 +921,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Stmt::Expr(Expr::Call {
                         name: Symbol::intern("__mutsu_assignment_ro"),
                         args: vec![lit],
+                        listop: false,
                     }),
                 ]))
             }
@@ -1031,9 +1051,11 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                                 args: Vec::new(),
                                 modifier: None,
                                 quoted: false,
+                                sugar: false,
                             }),
                             index: Box::new(Expr::Literal(Value::str(key))),
                             is_positional: false,
+                            spelling: Default::default(),
                         }
                     }
                 } else {
@@ -1043,6 +1065,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         target: Box::new(Expr::Var(tmp_name.clone())),
                         index: Box::new(Expr::Literal(Value::int(i as i64))),
                         is_positional: true,
+                        spelling: Default::default(),
                     }
                 };
                 stmts.push(Stmt::Assign {
@@ -1193,6 +1216,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         left: Box::new(var_expr),
                         op: op.token_kind(),
                         right: Box::new(rhs),
+                        form: Default::default(),
                     },
                     op: AssignOp::Assign,
                     target_is_sigilless: false,
@@ -1224,6 +1248,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target,
             index,
             is_positional,
+            spelling,
             ..
         } = &expr
         {
@@ -1236,6 +1261,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 target: target.clone(),
                 index: Box::new(tmp_idx_expr.clone()),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             };
             let assigned_value = Expr::Binary {
                 left: Box::new(crate::parser::stmt::assign::autoviv_set_compound_lhs(
@@ -1243,6 +1269,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 )),
                 op: set_tok,
                 right: Box::new(rhs),
+                form: Default::default(),
             };
             let stmt = Stmt::Expr(Expr::desugar_block(vec![
                 Stmt::VarDecl {
@@ -1262,6 +1289,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Box::new(tmp_idx_expr),
                     value: Box::new(assigned_value),
                     is_positional: *is_positional,
+                    spelling: *spelling,
                 }),
             ]));
             return parse_statement_modifier(r, stmt);
@@ -1281,6 +1309,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 )),
                 op: set_tok,
                 right: Box::new(rhs),
+                form: Default::default(),
             };
             let topic_name = if let Expr::Var(ref v) = **target {
                 v.clone()
@@ -1302,6 +1331,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::Literal(crate::value::Value::str(topic_name)),
                     Expr::Literal(crate::value::Value::truth(true)),
                 ],
+                listop: false,
             });
             return parse_statement_modifier(r, stmt);
         }
@@ -1312,6 +1342,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             )),
             op: set_tok,
             right: Box::new(rhs),
+            form: Default::default(),
         });
         return parse_statement_modifier(r, stmt);
     }
@@ -1335,6 +1366,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             target,
             index,
             is_positional,
+            spelling,
             ..
         } = &expr
         {
@@ -1347,6 +1379,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 target: target.clone(),
                 index: Box::new(tmp_idx_expr.clone()),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             };
             let marker_rhs = rhs.clone();
             let assigned_value = if matches!(op, CompoundAssignOp::DefinedOr) {
@@ -1354,6 +1387,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     cond: Box::new(Expr::Call {
                         name: Symbol::intern("defined"),
                         args: vec![lhs_expr.clone()],
+                        listop: false,
                     }),
                     then_expr: Box::new(lhs_expr),
                     else_expr: Box::new(rhs),
@@ -1363,6 +1397,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     left: Box::new(lhs_expr),
                     op: op.token_kind(),
                     right: Box::new(rhs),
+                    form: Default::default(),
                 }
             };
             let expanded = Expr::desugar_block(vec![
@@ -1383,6 +1418,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     index: Box::new(tmp_idx_expr),
                     value: Box::new(assigned_value),
                     is_positional: true,
+                    spelling: *spelling,
                 }),
             ]);
             let stmt = Stmt::Expr(compound_assign_marker(
@@ -1425,6 +1461,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::Literal(crate::value::Value::str(topic_name)),
                     Expr::Literal(crate::value::Value::truth(true)),
                 ],
+                listop: false,
             };
             let stmt = Stmt::Expr(compound_assign_marker(
                 expr.clone(),
@@ -1450,6 +1487,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     left: Box::new(expr),
                     op: op.token_kind(),
                     right: Box::new(rhs),
+                    form: Default::default(),
                 })
             } else if matches!(
                 op,
@@ -1472,8 +1510,10 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         Stmt::Expr(Expr::Call {
                             name: Symbol::intern("__mutsu_assignment_ro"),
                             args: Vec::new(),
+                            listop: false,
                         }),
                     ])),
+                    form: Default::default(),
                 })
             } else {
                 Stmt::Expr(Expr::desugar_block(vec![
@@ -1482,6 +1522,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Stmt::Expr(Expr::Call {
                         name: Symbol::intern("__mutsu_assignment_ro"),
                         args: Vec::new(),
+                        listop: false,
                     }),
                 ]))
             };

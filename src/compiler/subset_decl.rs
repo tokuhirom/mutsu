@@ -59,6 +59,7 @@ impl Compiler {
                             left: Box::new(Expr::Var("_".to_string())),
                             op: crate::token_kind::TokenKind::SmartMatch,
                             right: Box::new(pred.clone()),
+                            form: Default::default(),
                         })],
                         is_whatever_code: false,
                         param_sigilless: false,

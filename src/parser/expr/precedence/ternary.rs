@@ -195,6 +195,7 @@ pub(crate) fn structural_comparison_expr_mode(input: &str, mode: ExprMode) -> PR
         left: Box::new(left),
         op: op.token_kind(),
         right: Box::new(right),
+        form: Default::default(),
     };
     let (r2, _) = ws(r)?;
     if let Some((next_op, _)) = parse_comparison_op(r2)
@@ -371,6 +372,7 @@ pub(crate) fn ternary_trailing_assignment<'a>(
             Expr::Call {
                 name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                 args: vec![ternary_expr.clone(), Expr::ArrayLiteral(Vec::new()), rhs],
+                listop: false,
             },
         )));
     }
@@ -482,7 +484,10 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 &spelled_assign_operator(else_src),
             ));
         }
-        let ternary_expr = if let Expr::Binary { left, op, right } = cond {
+        let ternary_expr = if let Expr::Binary {
+            left, op, right, ..
+        } = cond
+        {
             // The loose word-logicals (`and`/`andthen`/`notandthen`/`or`/`orelse`)
             // are LOOSER than the conditional `?? !!`, so when one was greedily
             // folded into the condition the ternary must re-associate to bind
@@ -507,10 +512,16 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                         then_expr: Box::new(then_expr),
                         else_expr: Box::new(else_expr),
                     }),
+                    form: Default::default(),
                 }
             } else {
                 Expr::Ternary {
-                    cond: Box::new(Expr::Binary { left, op, right }),
+                    cond: Box::new(Expr::Binary {
+                        left,
+                        op,
+                        right,
+                        form: Default::default(),
+                    }),
                     then_expr: Box::new(then_expr),
                     else_expr: Box::new(else_expr),
                 }

@@ -307,6 +307,7 @@ pub(in crate::parser) fn process_content_with_flags(content: &str, flags: &Quote
                     parts.push(Expr::Call {
                         name: Symbol::intern("__mutsu_unknown_backslash_escape"),
                         args: vec![Expr::Literal(Value::str(c.to_string()))],
+                        listop: false,
                     });
                     let _ = after_escape;
                     return finalize_interpolation(parts, current);
@@ -761,6 +762,7 @@ fn try_interpolate_function<'a>(
     parts.push(Expr::Call {
         name: Symbol::intern(name),
         args,
+        listop: false,
     });
 
     Some(after_paren)

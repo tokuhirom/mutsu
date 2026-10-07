@@ -17,6 +17,7 @@ fn parse_strict_not_equal_operator() {
         Expr::Unary {
             op: TokenKind::Bang,
             expr,
+            ..
         } => match *expr {
             Expr::Binary {
                 op: TokenKind::EqEqEq,
@@ -36,6 +37,7 @@ fn parse_negated_comparison_meta_operators() {
         Expr::Unary {
             op: TokenKind::Bang,
             expr,
+            ..
         } => match *expr {
             Expr::Binary {
                 op: TokenKind::EqEq,
@@ -52,6 +54,7 @@ fn parse_negated_comparison_meta_operators() {
         Expr::Unary {
             op: TokenKind::Bang,
             expr,
+            ..
         } => match *expr {
             Expr::Binary {
                 op: TokenKind::Ident(op),
@@ -71,6 +74,7 @@ fn parse_container_not_equal_operator() {
         Expr::Unary {
             op: TokenKind::Bang,
             expr,
+            ..
         } => match *expr {
             Expr::Binary {
                 op: TokenKind::Ident(op),
@@ -243,7 +247,7 @@ fn parse_postfix_call_adverb_block_as_arg() {
     let (rest, expr) = expression("foo():{ 42 }").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "foo");
             assert_eq!(args.len(), 2);
             assert!(args.iter().any(|arg| matches!(arg, Expr::AnonSub { .. })));
@@ -262,7 +266,7 @@ fn parse_postfix_call_adverb_colonpairs_as_args() {
     let (rest, expr) = expression("fiddle():x(\"a\"):y").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "fiddle");
             assert_eq!(args.len(), 3);
             assert!(
@@ -286,7 +290,7 @@ fn parse_subscript_adverb_does_not_become_call_adverb() {
     let (rest, expr) = expression("say @a[0]:p").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "say");
             assert_eq!(args.len(), 1);
             assert!(
@@ -302,7 +306,7 @@ fn parse_hash_subscript_adverb_does_not_become_call_adverb() {
     let (rest, expr) = expression("say %h<a>:kv").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "say");
             assert_eq!(args.len(), 1);
             assert!(
@@ -372,7 +376,7 @@ fn parse_indir_with_hyphenated_call_arg_and_block() {
     let (rest, expr) = expression("indir make-temp-dir, { 42 }").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "indir");
             assert_eq!(args.len(), 2);
         }

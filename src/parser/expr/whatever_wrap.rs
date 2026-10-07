@@ -10,7 +10,12 @@ use crate::whatever_curry::make_wc_param;
 
 pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
     match expr {
-        Expr::Binary { left, op, right } => {
+        Expr::Binary {
+            left,
+            op,
+            right,
+            form,
+        } => {
             let left = wrap_composition_operands(*left);
             let right = wrap_composition_operands(*right);
             if matches!(&op, TokenKind::Ident(name) if name == "o") {
@@ -48,6 +53,7 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                         left: Box::new(left_expr),
                         op,
                         right: Box::new(right_expr),
+                        form: Default::default(),
                     };
                     if params.len() == 1 {
                         return Expr::Lambda {
@@ -83,18 +89,21 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                     left: Box::new(left_wrapped),
                     op,
                     right: Box::new(right_wrapped),
+                    form,
                 }
             } else {
                 Expr::Binary {
                     left: Box::new(left),
                     op,
                     right: Box::new(right),
+                    form,
                 }
             }
         }
-        Expr::Unary { op, expr } => Expr::Unary {
+        Expr::Unary { op, expr, word } => Expr::Unary {
             op,
             expr: Box::new(wrap_composition_operands(*expr)),
+            word,
         },
         Expr::MethodCall {
             target,
@@ -102,12 +111,14 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
             args,
             modifier,
             quoted,
+            sugar,
         } => Expr::MethodCall {
             target: Box::new(wrap_composition_operands(*target)),
             name,
             args: args.into_iter().map(wrap_composition_operands).collect(),
             modifier,
             quoted,
+            sugar,
         },
         Expr::CallOn { target, args } => Expr::CallOn {
             target: Box::new(wrap_composition_operands(*target)),
@@ -117,11 +128,12 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
             target,
             index,
             is_positional,
-            ..
+            spelling,
         } => Expr::Index {
             target: Box::new(wrap_composition_operands(*target)),
             index: Box::new(wrap_composition_operands(*index)),
             is_positional,
+            spelling,
         },
         other => other,
     }
@@ -142,6 +154,7 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
             args,
             modifier,
             quoted,
+            ..
         } if !args.iter().any(contains_whatever) => {
             match target.as_ref() {
                 // Direct: MethodCall -> CallOn -> Whatever-containing target
@@ -162,6 +175,7 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
                         args: args.clone(),
                         modifier: *modifier,
                         quoted: *quoted,
+                        sugar: false,
                     })
                 }
                 // Recursive: MethodCall -> MethodCall -> ... -> CallOn
@@ -173,6 +187,7 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
                         args: args.clone(),
                         modifier: *modifier,
                         quoted: *quoted,
+                        sugar: false,
                     })
                 }
                 _ => None,

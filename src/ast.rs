@@ -990,6 +990,41 @@ pub(crate) enum HashSpelling {
     Contextualizer,
 }
 
+/// The source form of an [`Expr::Binary`] (see its `form` field).
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub(crate) enum BinaryForm {
+    /// An ordinary infix: `a OP b`, `a => b`.
+    #[default]
+    Infix,
+    /// `:a(EXPR)`: raku's `ColonPair::Value`, over the parenthesized value.
+    ColonPairValue,
+    /// `:a<x>`, `:a[1]`, `:a«x»`: raku's `ColonPair::Value` over the bracketed
+    /// value itself, with no parentheses around it.
+    ColonPairBracketed,
+    /// `:a`: raku's `ColonPair::True`.
+    ColonPairTrue,
+    /// `:!a`: raku's `ColonPair::False`.
+    ColonPairFalse,
+    /// `:$a` / `:@a` / `:%a` / `:&a`: raku's `ColonPair::Variable`.
+    ColonPairVariable,
+    /// `^EXPR`, the prefix spelling of the range `0 ..^ EXPR`.
+    CaretPrefix,
+}
+
+/// The brackets of an associative [`Expr::Index`] (see its `spelling` field).
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub(crate) enum IndexSpelling {
+    /// `{...}`, or `[...]` for a positional index.
+    #[default]
+    Subscript,
+    /// `<...>`: a literal word-list key.
+    Angle,
+}
+
 /// Which contextualizer an [`Expr::Contextualizer`] spells.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum ContextKind {
@@ -1012,6 +1047,7 @@ impl Expr {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                sugar: false,
             },
             other => other,
         }
@@ -1224,6 +1260,12 @@ pub(crate) enum Expr {
         /// True when the method name was quoted (e.g. `."DEFINITE"()`),
         /// which bypasses pseudo-method macros like .DEFINITE, .WHAT, etc.
         quoted: bool,
+        /// True for a call written as sugar, without a `.name` of its own:
+        /// a method call on the topic (`.say`, raku's `Term::TopicCall`, whose
+        /// `target` is then `$_`), the item contextualizer (`$[1, 2]`, `${...}`)
+        /// and the `lazy` / `hyper` / `race` statement prefixes. The compiler
+        /// does not read it.
+        sugar: bool,
     },
     DynamicMethodCall {
         target: Box<Expr>,
@@ -1352,6 +1394,9 @@ pub(crate) enum Expr {
         /// true when this index was written with `[...]` (positional subscript);
         /// false when written with `{...}` or `<...>` (associative subscript).
         is_positional: bool,
+        /// Which brackets wrote an associative subscript: `%h<a>` is raku's
+        /// `Postcircumfix::LiteralHashIndex`, `%h{'a'}` its `HashIndex`.
+        spelling: IndexSpelling,
     },
     /// Multi-dimensional indexing with semicolons: @a[$x;$y;$z]
     MultiDimIndex {
@@ -1383,6 +1428,10 @@ pub(crate) enum Expr {
         /// `%h<key>[42] = 17`.
         #[serde(default = "default_is_positional")]
         is_positional: bool,
+        /// How the subscript was written (`%h<a>` / `%h{'a'}`); the compiler
+        /// does not read it.
+        #[serde(default)]
+        spelling: IndexSpelling,
     },
     Ternary {
         cond: Box<Expr>,
@@ -1415,6 +1464,10 @@ pub(crate) enum Expr {
     Unary {
         op: TokenKind,
         expr: Box<Expr>,
+        /// True when `?` / `!` was written as the loose word prefix `so` /
+        /// `not`; the compiler does not read it.
+        #[serde(default)]
+        word: bool,
     },
     PostfixOp {
         op: TokenKind,
@@ -1424,6 +1477,11 @@ pub(crate) enum Expr {
         left: Box<Expr>,
         op: TokenKind,
         right: Box<Expr>,
+        /// The source form of a binary the compiler treats as the plain infix
+        /// `left OP right`: a colonpair (`:a(1)`) is the same `=>` pair as
+        /// `a => 1`, and `^N` is `0 ..^ N`. [`BinaryForm::Infix`] for every
+        /// other binary, and for one the parser or compiler synthesizes.
+        form: BinaryForm,
     },
     /// A chained comparison `a OP1 b OP2 c ...` (e.g. `1 < 2 < 3`,
     /// `a !before b before c`). `operands.len() == ops.len() + 1`; `ops[i]`
@@ -1447,6 +1505,13 @@ pub(crate) enum Expr {
     Call {
         name: Symbol,
         args: Vec<Expr>,
+        /// `true` when the source wrote the call as a listop, without
+        /// parentheses (`foo 1, 2`, `foo :a`, a bare `foo`); `false` for
+        /// `foo(1, 2)`, `foo()` and for a call the parser or compiler
+        /// synthesizes. The compiler ignores it; the RakuAST boundary renders
+        /// the node raku has for it (`Call::Name::WithoutParentheses` for a
+        /// listop, `Call::Name` otherwise).
+        listop: bool,
     },
     Try {
         body: Vec<Stmt>,
@@ -1647,6 +1712,10 @@ pub(crate) enum CallArg {
     Named {
         name: String,
         value: Option<Expr>,
+        /// How the pair was written (`:a(1)`, `:a`, `:!a`, `:$a`, `a => 1`);
+        /// the compiler does not read it.
+        #[serde(default)]
+        form: BinaryForm,
     },
     /// Capture slip: `|c` — flatten a capture variable into the argument list
     Slip(Expr),
@@ -2086,6 +2155,8 @@ pub(crate) enum Stmt {
     Call {
         name: Symbol,
         args: Vec<CallArg>,
+        /// Written as a listop, without parentheses; see [`Expr::Call`].
+        listop: bool,
     },
     Use {
         module: String,
@@ -2753,13 +2824,14 @@ impl Expr {
         Expr::Call {
             name: Symbol::intern("__PROTO_DISPATCH__"),
             args: Vec::new(),
+            listop: false,
         }
     }
 
     /// Whether this is the onlystar dispatch [`Expr::onlystar_dispatch`] builds.
     // Cost: O(1).
     pub(crate) fn is_onlystar_dispatch(&self) -> bool {
-        matches!(self, Expr::Call { name, args } if args.is_empty() && name.as_str() == "__PROTO_DISPATCH__")
+        matches!(self, Expr::Call { name, args, .. } if args.is_empty() && name.as_str() == "__PROTO_DISPATCH__")
     }
 
     /// Whether this expression is one of the syntactic empty import lists
@@ -2811,6 +2883,70 @@ impl Expr {
             expr = inner;
         }
         expr
+    }
+
+    /// The bareword a term is, or `None` for any other expression.
+    // Cost: O(1).
+    pub(crate) fn as_bare_word(&self) -> Option<&str> {
+        match self {
+            Expr::BareWord(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    /// The elements of a comma list: the items of an `ArrayLiteral`, or the
+    /// expression itself as a one-element list.
+    // Cost: O(1).
+    pub(crate) fn comma_items(&self) -> &[Expr] {
+        match self {
+            Expr::ArrayLiteral(items) => items,
+            other => std::slice::from_ref(other),
+        }
+    }
+
+    /// The operand a postfix (`.method`, `[...]`, `++`, `(...)`) sits on in
+    /// RakuAST: raku drops ONE level of the parentheses around it, so
+    /// `(1, 2).elems` is the list itself and `((1, 2)).elems` keeps the inner
+    /// parentheses. The empty `()` keeps its own (measured on 2026.09).
+    // Cost: O(1).
+    pub(crate) fn postfix_operand(&self) -> &Expr {
+        match self {
+            Expr::Grouped(inner)
+                if !matches!(inner.as_ref(), Expr::ArrayLiteral(items) if items.is_empty())
+                    && !inner.is_modified_statement() =>
+            {
+                inner
+            }
+            other => other,
+        }
+    }
+
+    /// Whether this is a statement carrying a statement modifier
+    /// (`EXPR for LIST`, `EXPR if COND`, `EXPR with TOPIC`) in expression
+    /// position. `(EXPR for LIST).join` keeps the parentheses: the modified
+    /// statement is the content of a semilist, not an operand.
+    // Cost: O(1).
+    pub(crate) fn is_modified_statement(&self) -> bool {
+        let Expr::DoStmt(stmt) = self else {
+            return false;
+        };
+        match stmt.as_ref() {
+            Stmt::For {
+                is_statement_modifier: true,
+                ..
+            }
+            | Stmt::If {
+                is_statement_modifier: true,
+                ..
+            }
+            | Stmt::Given {
+                is_statement_modifier: true,
+                ..
+            } => true,
+            // `EXPR with TOPIC` is wrapped once more, to keep expression semantics.
+            Stmt::Expr(inner) => inner.is_modified_statement(),
+            _ => false,
+        }
     }
 }
 
@@ -3080,6 +3216,7 @@ mod env_only_decl_tests {
             cond: Expr::Unary {
                 op: crate::token_kind::TokenKind::Bang,
                 expr: Box::new(Expr::DoStmt(Box::new(vardecl("@needed")))),
+                word: false,
             },
             then_branch: vec![Stmt::Next(None)],
             else_branch: vec![],

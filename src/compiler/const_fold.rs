@@ -248,8 +248,10 @@ impl Compiler {
             Expr::Literal(v) | Expr::LiteralSrc(v, _) => const_scalar(v).then(|| v.clone()),
             Expr::RegexLiteral { value, .. } => const_scalar(value).then(|| value.clone()),
             Expr::Grouped(inner) => self.const_operand_mode(inner, begin_time),
-            Expr::Unary { op, expr } => self.fold_unary_mode(op, expr, begin_time),
-            Expr::Binary { left, op, right } => {
+            Expr::Unary { op, expr, .. } => self.fold_unary_mode(op, expr, begin_time),
+            Expr::Binary {
+                left, op, right, ..
+            } => {
                 let l = self.const_operand_mode(left, begin_time)?;
                 let r = self.const_operand_mode(right, begin_time)?;
                 fold_values(op, l, r)
@@ -505,6 +507,7 @@ mod tests {
             left: Box::new(l),
             op,
             right: Box::new(r),
+            form: Default::default(),
         }
     }
 
@@ -525,6 +528,7 @@ mod tests {
         let expr = Expr::Unary {
             op: TokenKind::Minus,
             expr: Box::new(int(7)),
+            word: false,
         };
         assert_eq!(
             Compiler::new().const_operand(&expr).unwrap().as_int(),

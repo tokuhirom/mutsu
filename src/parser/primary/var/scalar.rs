@@ -67,6 +67,7 @@ fn concat_exprs(left: Expr, right: Expr) -> Expr {
         left: Box::new(left),
         op: TokenKind::Tilde,
         right: Box::new(right),
+        form: Default::default(),
     }
 }
 
@@ -159,6 +160,7 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
                         args: vec![],
                         modifier: None,
                         quoted: false,
+                        sugar: false,
                     },
                 ));
             }
@@ -292,6 +294,7 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
                 target: Box::new(Expr::PseudoStash("::".to_string())),
                 index: Box::new(key_expr),
                 is_positional: false,
+                spelling: Default::default(),
             },
         ));
     }
@@ -306,6 +309,7 @@ pub(crate) fn scalar_var(input: &str) -> PResult<'_, Expr> {
                     target: Box::new(Expr::PseudoStash("::".to_string())),
                     index: Box::new(Expr::Literal(Value::str(symbol.to_string()))),
                     is_positional: false,
+                    spelling: Default::default(),
                 },
             ));
         }

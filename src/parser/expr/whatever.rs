@@ -95,6 +95,7 @@ pub(crate) fn should_wrap_whatevercode(expr: &Expr) -> bool {
             op: TokenKind::Ident(name),
             left,
             right,
+            ..
         } if ((name == "x" || name == "xx") && is_whatever(right))
             || (name == "xx" && is_whatever(left)) =>
         {
@@ -229,6 +230,7 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
                 | TokenKind::CaretDotDotCaret,
             left,
             right,
+            ..
         } => {
             fn endpoint_has_compound_whatever(e: &Expr) -> bool {
                 contains_whatever(e) && !is_whatever(e)
@@ -271,6 +273,7 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
             op: TokenKind::Ident(name),
             left,
             right,
+            ..
         } if name == "xx" => contains_whatever(left) || contains_whatever(right),
         Expr::Binary { left, right, .. } => {
             contains_whatever(left)

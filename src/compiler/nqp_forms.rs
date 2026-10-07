@@ -184,6 +184,7 @@ impl Compiler {
                             args: vec![Expr::Literal(Value::str_from(
                                 "First child of a 'bind' op must be a variable",
                             ))],
+                            listop: false,
                         });
                         return true;
                     }
@@ -231,6 +232,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 };
                 self.compile_expr(&call);
                 true
@@ -250,6 +252,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 };
                 self.try_compile_nqp_value_op(name, std::slice::from_ref(&var))
             }
@@ -374,6 +377,7 @@ impl Compiler {
             Expr::Unary {
                 op: TokenKind::Bang,
                 expr: Box::new(cond.clone()),
+                word: false,
             }
         } else {
             cond.clone()

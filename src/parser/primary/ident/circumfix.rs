@@ -50,6 +50,7 @@ pub(crate) fn declared_circumfix_op(input: &str) -> PResult<'_, Expr> {
         Expr::Call {
             name: Symbol::intern(&name),
             args: vec![arg],
+            listop: false,
         },
     ))
 }

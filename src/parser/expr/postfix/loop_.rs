@@ -193,6 +193,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::PlusPlus,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }
@@ -206,6 +207,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::MinusMinus,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }
@@ -252,6 +254,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern(&format!("prefix:<({})>", op)),
                     args: vec![arg],
+                    listop: false,
                 },
             ));
         }
@@ -297,6 +300,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             let mut result = Expr::Call {
                 name: Symbol::intern(&name),
                 args: vec![arg],
+                listop: false,
             };
             // Apply loose postfix operators (declared `is looser(&prefix:<...>)`)
             loop {
@@ -310,6 +314,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                         result = Expr::Call {
                             name: Symbol::intern(&post_name),
                             args: vec![result],
+                            listop: false,
                         };
                         rest = after;
                         continue;
@@ -358,6 +363,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern("__mutsu_hyper_prefix"),
                     args: vec![Expr::Literal(Value::str(symbol.to_string())), arg],
+                    listop: false,
                 },
             ));
         }
@@ -404,6 +410,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                             "Precedence issue with ! and :exists, perhaps you meant :!exists?"
                                 .to_string(),
                         ))],
+                        listop: false,
                     },
                 ));
             }
@@ -426,6 +433,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::Bang,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }
@@ -442,6 +450,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::Question,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }
@@ -498,6 +507,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 args: vec![],
                 modifier: None,
                 quoted: false,
+                sugar: true,
             },
         ));
     }
@@ -521,6 +531,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                sugar: true,
             },
         ));
     }
@@ -544,6 +555,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                sugar: true,
             },
         ));
     }
@@ -571,6 +583,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::int(0))),
                 op: TokenKind::DotDotCaret,
                 right: Box::new(expr.clone()),
+                form: crate::ast::BinaryForm::CaretPrefix,
             };
             // ^* is WhateverCode: given N, returns ^N (unlike 0..^* which is a Range)
             if crate::parser::expr::contains_whatever(&expr)
@@ -600,6 +613,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::Pipe,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }
@@ -619,6 +633,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             Expr::Unary {
                 op: TokenKind::Pipe,
                 expr: Box::new(expr),
+                word: false,
             },
         ));
     }
@@ -818,6 +833,7 @@ fn parse_zen_angle(expr: Expr, rest: &str) -> (Expr, &str) {
             args: Vec::new(),
             modifier: None,
             quoted: false,
+            sugar: false,
         },
     };
     let zen_adverb = [
@@ -838,6 +854,7 @@ fn parse_zen_angle(expr: Expr, rest: &str) -> (Expr, &str) {
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                sugar: false,
             },
             &rest[adv.len()..],
         );
@@ -958,6 +975,7 @@ fn postfix_expr_loop_from(
                 target: Box::new(Expr::Var("/".to_string())),
                 index: Box::new(Expr::Literal(Value::str(name.clone()))),
                 is_positional: false,
+                spelling: Default::default(),
             };
             if let Some((r, exists_expr)) = try_parse_exists_adverb(rest, target) {
                 expr = exists_expr;
@@ -976,6 +994,7 @@ fn postfix_expr_loop_from(
                 left: Box::new(expr),
                 op: crate::token_kind::TokenKind::StarStar,
                 right: Box::new(Expr::Literal(Value::int(exp))),
+                form: Default::default(),
             };
             continue;
         }
@@ -1232,6 +1251,7 @@ fn postfix_expr_loop_from(
                 expr = Expr::Call {
                     name: Symbol::intern(&format!("prefix:<{op_name}>")),
                     args: vec![expr],
+                    listop: false,
                 };
                 rest = r_after;
                 continue;
@@ -1269,6 +1289,7 @@ fn postfix_expr_loop_from(
                             args,
                             modifier,
                             quoted: false,
+                            sugar: false,
                         };
                         rest = r3;
                         continue;
@@ -1280,6 +1301,7 @@ fn postfix_expr_loop_from(
                         args: Vec::new(),
                         modifier,
                         quoted: false,
+                        sugar: false,
                     };
                     rest = r2;
                     continue;
@@ -1365,6 +1387,7 @@ fn postfix_expr_loop_from(
                         args,
                         modifier,
                         quoted: false,
+                        sugar: false,
                     };
                     rest = r;
                     continue;
@@ -1393,6 +1416,7 @@ fn postfix_expr_loop_from(
                                 args: vec![seq],
                                 modifier,
                                 quoted: false,
+                                sugar: false,
                             };
                             rest = r_seq;
                             continue;
@@ -1488,6 +1512,7 @@ fn postfix_expr_loop_from(
                         args: crate::parser::primary::lift_list_infix_in_arg_list(args),
                         modifier,
                         quoted: false,
+                        sugar: false,
                     };
                     rest = r_inner;
                     continue;
@@ -1499,6 +1524,7 @@ fn postfix_expr_loop_from(
                     args: Vec::new(),
                     modifier,
                     quoted: false,
+                    sugar: false,
                 };
                 if let Some(op) = trailing_postfix {
                     method_expr = Expr::PostfixOp {
@@ -1532,6 +1558,7 @@ fn postfix_expr_loop_from(
                             args,
                             modifier,
                             quoted: true,
+                            sugar: false,
                         };
                     }
                     QuotedMethodName::Dynamic(name_expr) => {
@@ -1617,6 +1644,7 @@ fn postfix_expr_loop_from(
                     expr = Expr::Call {
                         name: Symbol::intern(&format!("postfix:<{op}>")),
                         args: vec![expr],
+                        listop: false,
                     };
                     rest = after;
                     continue;
@@ -1660,6 +1688,7 @@ fn postfix_expr_loop_from(
                         args,
                         modifier: Some('!'),
                         quoted: false,
+                        sugar: false,
                     };
                     rest = r;
                     continue;
@@ -1706,6 +1735,7 @@ fn postfix_expr_loop_from(
                         args: crate::parser::primary::lift_list_infix_in_arg_list(args),
                         modifier: Some('!'),
                         quoted: false,
+                        sugar: false,
                     };
                     rest = r_inner;
                     continue;
@@ -1716,6 +1746,7 @@ fn postfix_expr_loop_from(
                     args: Vec::new(),
                     modifier: Some('!'),
                     quoted: false,
+                    sugar: false,
                 };
                 rest = r;
                 continue;
@@ -1737,6 +1768,7 @@ fn postfix_expr_loop_from(
                             args,
                             modifier: Some('!'),
                             quoted: true,
+                            sugar: false,
                         };
                     }
                     QuotedMethodName::Dynamic(name_expr) => {
@@ -1766,11 +1798,13 @@ fn postfix_expr_loop_from(
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                sugar: false,
             };
             expr = Expr::Index {
                 target: Box::new(who),
                 index: Box::new(key_expr),
                 is_positional: false,
+                spelling: Default::default(),
             };
             rest = r;
             continue;
@@ -1814,6 +1848,7 @@ fn postfix_expr_loop_from(
                 expr = Expr::Call {
                     name: Symbol::intern(&name),
                     args,
+                    listop: false,
                 };
                 rest = after;
                 continue;
@@ -1889,6 +1924,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr),
                         index: Box::new(Expr::Literal(Value::WHATEVER)),
                         is_positional: true,
+                        spelling: Default::default(),
                     };
                     rest = after;
                     continue;
@@ -1956,6 +1992,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr),
                         index: Box::new(index),
                         is_positional: true,
+                        spelling: Default::default(),
                     };
                 }
                 ParsedBracketIndex::MultiDim(dimensions) => {
@@ -2037,6 +2074,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr),
                         index: Box::new(index_expr),
                         is_positional: false,
+                        spelling: crate::ast::IndexSpelling::Angle,
                     },
                     r,
                 )
@@ -2069,6 +2107,7 @@ fn postfix_expr_loop_from(
                                 crate::parser::primary::angle_words_subscript_index_expr(content),
                             ),
                             is_positional: false,
+                            spelling: Default::default(),
                         },
                         r,
                     )
@@ -2105,6 +2144,7 @@ fn postfix_expr_loop_from(
                                 crate::parser::primary::angle_words_subscript_index_expr(content),
                             ),
                             is_positional: false,
+                            spelling: Default::default(),
                         },
                         r,
                     )
@@ -2153,6 +2193,7 @@ fn postfix_expr_loop_from(
                 args,
                 modifier: None,
                 quoted: false,
+                sugar: false,
             };
             rest = r;
             continue;
@@ -2272,6 +2313,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr),
                         index: Box::new(Expr::Whatever),
                         is_positional: false,
+                        spelling: Default::default(),
                     };
                     rest = r;
                     continue;
@@ -2304,6 +2346,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr.clone()),
                         index: Box::new(index.clone()),
                         is_positional: false,
+                        spelling: Default::default(),
                     };
                     if let Some((r_after, exists_expr)) = try_parse_exists_adverb(r_adv, indexed) {
                         expr = exists_expr;
@@ -2316,6 +2359,7 @@ fn postfix_expr_loop_from(
                             target: Box::new(expr.clone()),
                             index: Box::new(index.clone()),
                             is_positional: false,
+                            spelling: Default::default(),
                         };
                         if let Some((r_after, exists_expr)) =
                             try_parse_exists_adverb(r_after_delete, indexed_expr.clone())
@@ -2336,6 +2380,7 @@ fn postfix_expr_loop_from(
                                     args: vec![],
                                     modifier: None,
                                     quoted: false,
+                                    sugar: false,
                                 };
                             }
                             DeleteAdverb::Delete(Some(cond)) => {
@@ -2345,6 +2390,7 @@ fn postfix_expr_loop_from(
                                     args: vec![],
                                     modifier: None,
                                     quoted: false,
+                                    sugar: false,
                                 };
                                 expr = Expr::Ternary {
                                     cond: Box::new(cond),
@@ -2359,6 +2405,7 @@ fn postfix_expr_loop_from(
                         target: Box::new(expr),
                         index: Box::new(index),
                         is_positional: false,
+                        spelling: Default::default(),
                     };
                 }
             }
@@ -2402,7 +2449,9 @@ fn postfix_expr_loop_from(
                 && !has_ternary_else_after(r_after_adv)
             {
                 // If expr already has a subscript adverb, detect conflict
-                if let Expr::Call { ref name, ref args } = expr
+                if let Expr::Call {
+                    ref name, ref args, ..
+                } = expr
                     && *name == Symbol::intern("__mutsu_subscript_adverb")
                     && args.len() >= 3
                 {
@@ -2487,12 +2536,17 @@ fn postfix_expr_loop_from(
                             expr = Expr::Call {
                                 name: Symbol::intern(multidim_delete_fn(is_positional, dims_len)),
                                 args,
+                                listop: false,
                             };
-                        } else if let Expr::Call { name, mut args } = expr {
+                        } else if let Expr::Call { name, mut args, .. } = expr {
                             if name == "__mutsu_subscript_adverb" {
                                 // Inject delete flag into the subscript adverb call
                                 args.push(delete_flag());
-                                expr = Expr::Call { name, args };
+                                expr = Expr::Call {
+                                    name,
+                                    args,
+                                    listop: false,
+                                };
                             } else if name == "__mutsu_multidim_subscript_adverb" {
                                 // `@a[i;j;k]:k:delete` (static delete combined with a
                                 // :k/:kv/:p/:v adverb). Convert the static multidim
@@ -2516,9 +2570,14 @@ fn postfix_expr_loop_from(
                                 expr = Expr::Call {
                                     name: Symbol::intern("__mutsu_multidim_subscript_adverb_dyn"),
                                     args: new_args,
+                                    listop: false,
                                 };
                             } else {
-                                expr = delete_key(Expr::Call { name, args });
+                                expr = delete_key(Expr::Call {
+                                    name,
+                                    args,
+                                    listop: false,
+                                });
                             }
                         } else {
                             expr = delete_key(expr);
@@ -2541,6 +2600,7 @@ fn postfix_expr_loop_from(
                             let delete_expr = Expr::Call {
                                 name: Symbol::intern(delete_fn),
                                 args,
+                                listop: false,
                             };
                             // When the subscript form has no `:delete` candidate at
                             // all, the adverb's VALUE never gets to decide anything:
@@ -2558,9 +2618,13 @@ fn postfix_expr_loop_from(
                         } else if matches!(&original_expr, Expr::Call { name, .. } if name == "__mutsu_subscript_adverb")
                         {
                             // Inject conditional delete into subscript adverb call
-                            if let Expr::Call { name, mut args } = original_expr.clone() {
+                            if let Expr::Call { name, mut args, .. } = original_expr.clone() {
                                 args.push(delete_flag());
-                                let delete_expr = Expr::Call { name, args };
+                                let delete_expr = Expr::Call {
+                                    name,
+                                    args,
+                                    listop: false,
+                                };
                                 expr = conditional_delete(cond, delete_expr, original_expr);
                             }
                         } else if matches!(&original_expr, Expr::Call { name, .. } if name == "__mutsu_multidim_subscript_adverb")
@@ -2585,6 +2649,7 @@ fn postfix_expr_loop_from(
                                 let delete_expr = Expr::Call {
                                     name: Symbol::intern("__mutsu_multidim_subscript_adverb_dyn"),
                                     args: new_args,
+                                    listop: false,
                                 };
                                 expr = Expr::Ternary {
                                     cond: Box::new(cond),
@@ -2625,6 +2690,7 @@ fn postfix_expr_loop_from(
                     let delete_expr = Expr::Call {
                         name: Symbol::intern(delete_fn),
                         args: del_args,
+                        listop: false,
                     };
                     // See the `:delete($cond)` lowering: when the subscript form
                     // has no `:delete` candidate, the runtime flag never gets to
@@ -2653,6 +2719,7 @@ fn postfix_expr_loop_from(
                     if let Expr::Call {
                         name: inner_name,
                         mut args,
+                        ..
                     } = expr
                     {
                         // Original args: [target_expr, adverb_name, dim0, dim1, ...]
@@ -2675,6 +2742,7 @@ fn postfix_expr_loop_from(
                         let delete_expr = Expr::Call {
                             name: Symbol::intern(fn_name),
                             args: new_args,
+                            listop: false,
                         };
                         expr = Expr::Ternary {
                             cond: Box::new(Expr::Var(adverb_var.to_string())),
@@ -2722,6 +2790,7 @@ fn postfix_expr_loop_from(
                         let delete_expr = Expr::Call {
                             name: Symbol::intern("__mutsu_multidim_exists_adverb_dyn"),
                             args: new_args,
+                            listop: false,
                         };
                         expr = Expr::Ternary {
                             cond: Box::new(Expr::Var(adverb_var.to_string())),
@@ -2736,6 +2805,7 @@ fn postfix_expr_loop_from(
                                 Expr::Literal(Value::str(adverb_var.to_string())),
                                 Expr::Var(adverb_var.to_string()),
                             ],
+                            listop: false,
                         };
                     }
                 } else {
@@ -2746,6 +2816,7 @@ fn postfix_expr_loop_from(
                             Expr::Literal(Value::str(adverb_var.to_string())),
                             Expr::Var(adverb_var.to_string()),
                         ],
+                        listop: false,
                     };
                 }
                 rest = r_after;
@@ -2767,6 +2838,7 @@ fn postfix_expr_loop_from(
                         args: vec![],
                         modifier: None,
                         quoted: false,
+                        sugar: false,
                     };
                 }
                 DeleteAdverb::Delete(Some(cond)) => {
@@ -2776,6 +2848,7 @@ fn postfix_expr_loop_from(
                         args: vec![],
                         modifier: None,
                         quoted: false,
+                        sugar: false,
                     };
                     expr = Expr::Ternary {
                         cond: Box::new(cond),
@@ -3407,6 +3480,7 @@ fn postfix_expr_loop_from(
                 expr = Expr::Call {
                     name: Symbol::intern(&format!("postfix:<{}>", symbol)),
                     args: vec![expr],
+                    listop: false,
                 };
                 continue;
             }
@@ -3450,6 +3524,7 @@ fn postfix_expr_loop_from(
                     expr = Expr::Call {
                         name: Symbol::intern(&name),
                         args: vec![expr],
+                        listop: false,
                     };
                     rest = after;
                     continue;
@@ -3463,6 +3538,7 @@ fn postfix_expr_loop_from(
                 expr = Expr::Call {
                     name: Symbol::intern(&format!("postfix:<{op}>")),
                     args: vec![expr],
+                    listop: false,
                 };
                 rest = after;
                 continue;
@@ -3516,6 +3592,7 @@ fn postfix_expr_loop_from(
             expr = Expr::Call {
                 name: Symbol::intern("postfix:<i>"),
                 args: vec![expr],
+                listop: false,
             };
             continue;
         }
@@ -3524,6 +3601,7 @@ fn postfix_expr_loop_from(
             expr = Expr::Call {
                 name: Symbol::intern("postfix:<i>"),
                 args: vec![expr],
+                listop: false,
             };
             continue;
         }
@@ -3535,6 +3613,7 @@ fn postfix_expr_loop_from(
                 left: Box::new(expr),
                 op: crate::token_kind::TokenKind::StarStar,
                 right: Box::new(Expr::Literal(Value::int(exp))),
+                form: Default::default(),
             };
             continue;
         }

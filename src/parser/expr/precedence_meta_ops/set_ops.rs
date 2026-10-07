@@ -192,6 +192,7 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: TokenKind::Ident("but".to_string()),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -211,6 +212,7 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: TokenKind::Ident("does".to_string()),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -226,6 +228,7 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: TokenKind::Ident("S&".to_string()),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -253,7 +256,9 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
                     left: Box::new(left),
                     op: tok,
                     right: Box::new(right),
+                    form: Default::default(),
                 }),
+                word: false,
             };
             rest = r;
             continue;
@@ -288,6 +293,7 @@ pub(crate) fn structural_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: tok,
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;

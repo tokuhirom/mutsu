@@ -142,7 +142,10 @@ impl Compiler {
         {
             return false;
         }
-        let Expr::Binary { left, op, right } = expr else {
+        let Expr::Binary {
+            left, op, right, ..
+        } = expr
+        else {
             return false;
         };
         if !matches!(op, TokenKind::Tilde) {
@@ -155,6 +158,7 @@ impl Compiler {
             Expr::Unary {
                 op: TokenKind::MetaAssignIdentity(crate::token_kind::MetaAssignIdentity::EmptyStr),
                 expr: left,
+                ..
             } => (left.as_ref(), true),
             other => (other, false),
         };
@@ -189,7 +193,10 @@ impl Compiler {
         {
             return false;
         }
-        let Expr::Binary { left, op, right } = expr else {
+        let Expr::Binary {
+            left, op, right, ..
+        } = expr
+        else {
             return false;
         };
         // `$x OP= rhs` wraps its LHS in the METAOP_ASSIGN identity seed; carry it
@@ -199,6 +206,7 @@ impl Compiler {
             Expr::Unary {
                 op: TokenKind::MetaAssignIdentity(identity),
                 expr,
+                ..
             } => (expr.as_ref(), Some(*identity)),
             other => (other, None),
         };
@@ -361,6 +369,7 @@ impl Compiler {
                 target,
                 index,
                 is_positional: true,
+                ..
             } => {
                 // If target is an ArrayLiteral and index is a literal Int,
                 // resolve the element at that index.
@@ -391,6 +400,7 @@ impl Compiler {
                     target: inner_target,
                     index: inner_index,
                     is_positional: true,
+                    ..
                 } = target.peel_parens()
                     && let Expr::ArrayLiteral(elements) = inner_target.peel_parens()
                     && let Expr::ArrayLiteral(indices) = inner_index.peel_parens()
@@ -649,6 +659,7 @@ impl Compiler {
                 target: Box::new(Expr::Var("/".to_string())),
                 index: Box::new(Expr::Literal(Value::int(n))),
                 is_positional: true,
+                spelling: Default::default(),
             });
             return;
         }

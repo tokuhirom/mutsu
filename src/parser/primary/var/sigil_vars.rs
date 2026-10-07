@@ -97,6 +97,7 @@ fn parse_leading_colon_qualified(input: &str) -> Option<(&str, String, Option<Ex
                     left: Box::new(prev),
                     op: crate::token_kind::TokenKind::Tilde,
                     right: Box::new(Expr::Literal(Value::str("::".to_string()))),
+                    form: Default::default(),
                 },
                 None => Expr::Literal(Value::str(format!("{}::", full_name))),
             };
@@ -104,6 +105,7 @@ fn parse_leading_colon_qualified(input: &str) -> Option<(&str, String, Option<Ex
                 left: Box::new(base),
                 op: crate::token_kind::TokenKind::Tilde,
                 right: Box::new(seg),
+                form: Default::default(),
             });
             r = r3;
         } else if let Ok((r2b, part)) = parse_ident_with_hyphens(r2) {
@@ -113,6 +115,7 @@ fn parse_leading_colon_qualified(input: &str) -> Option<(&str, String, Option<Ex
                     left: Box::new(old),
                     op: crate::token_kind::TokenKind::Tilde,
                     right: Box::new(Expr::Literal(Value::str(format!("::{}", part)))),
+                    form: Default::default(),
                 };
             } else {
                 full_name = format!("{}::{}", full_name, part);
@@ -149,6 +152,7 @@ fn brace_list_contextualizer(input: &str) -> PResult<'_, Expr> {
             args: vec![],
             modifier: None,
             quoted: false,
+            sugar: false,
         },
     ))
 }
@@ -273,6 +277,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                 args: vec![],
                 modifier: None,
                 quoted: false,
+                sugar: false,
             },
         ));
     }
@@ -289,6 +294,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                     args: vec![],
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 },
             ));
         }
@@ -309,6 +315,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                     args: vec![],
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 },
             ));
         }
@@ -351,6 +358,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                     args: vec![],
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 },
             ));
         }
@@ -458,6 +466,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
                 args: vec![],
                 modifier: None,
                 quoted: false,
+                sugar: false,
             },
         ));
     }
@@ -473,6 +482,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
             Expr::Call {
                 name: crate::symbol::Symbol::intern("hash"),
                 args: vec![inner],
+                listop: false,
             },
         ));
     }
@@ -494,6 +504,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
                     args: vec![],
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 },
             ));
         }
@@ -527,6 +538,7 @@ pub(crate) fn hash_var(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: crate::symbol::Symbol::intern("__mutsu_undeclared_var_die"),
                     args: vec![Expr::Literal(Value::str_from("%"))],
+                    listop: false,
                 },
             ));
         }
@@ -588,6 +600,7 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
                 args,
                 modifier: None,
                 quoted: false,
+                sugar: false,
             },
         ));
     }
@@ -693,6 +706,7 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
             left: Box::new(Expr::Literal(Value::str(format!("{}::", parts.join("::"))))),
             op: crate::token_kind::TokenKind::Tilde,
             right: Box::new(key_expr),
+            form: Default::default(),
         };
         let (rest, combined) = crate::parser::primary::var::scalar::parse_symbolic_deref_segments(
             after_expr, combined,
@@ -867,9 +881,11 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
                         left: Box::new(Expr::Literal(Value::str(format!("{name}:<")))),
                         op: crate::token_kind::TokenKind::Tilde,
                         right: Box::new(name_expr),
+                        form: Default::default(),
                     }),
                     op: crate::token_kind::TokenKind::Tilde,
                     right: Box::new(Expr::Literal(Value::str(">".to_string()))),
+                    form: Default::default(),
                 }),
             },
         };

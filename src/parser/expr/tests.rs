@@ -268,6 +268,7 @@ fn parse_fat_arrow_chains_right_associatively() {
                 op: TokenKind::FatArrow,
                 left,
                 right,
+                ..
             } => {
                 assert!(
                     matches!(*left, Expr::Literal(ref v) if matches!(v.view(), ValueView::Int(1)))
@@ -277,6 +278,7 @@ fn parse_fat_arrow_chains_right_associatively() {
                         op: TokenKind::FatArrow,
                         left: right_left,
                         right: right_right,
+                        ..
                     } => {
                         assert!(
                             matches!(*right_left, Expr::Literal(ref v) if matches!(v.view(), ValueView::Int(2)))
@@ -286,6 +288,7 @@ fn parse_fat_arrow_chains_right_associatively() {
                                 op: TokenKind::FatArrow,
                                 left: tail_left,
                                 right: tail_right,
+                                ..
                             } => {
                                 assert!(
                                     matches!(*tail_left, Expr::Literal(ref v) if matches!(v.view(), ValueView::Int(3)))
@@ -311,7 +314,7 @@ fn parse_fat_arrow_chain_in_call_arguments() {
     let (rest, expr) = expression("is($list, 1 => 2 => 3 => 4, \"x\")").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Call { name, args } => {
+        Expr::Call { name, args, .. } => {
             assert_eq!(name, "is");
             assert!(args.len() >= 3);
             // Non-bareword key => outermost PositionalPair wrapping
@@ -345,7 +348,9 @@ fn parse_upto_with_infinity_literal() {
     let (rest, expr) = expression("^∞").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Binary { left, op, right } => {
+        Expr::Binary {
+            left, op, right, ..
+        } => {
             assert!(matches!(*left, Expr::Literal(ref v) if matches!(v.view(), ValueView::Int(0))));
             assert!(matches!(op, TokenKind::DotDotCaret));
             assert!(matches!(
@@ -365,7 +370,9 @@ fn parse_upto_with_negative_literal() {
     let (rest, expr) = expression("^-1").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::Binary { left, op, right } => {
+        Expr::Binary {
+            left, op, right, ..
+        } => {
             assert!(matches!(*left, Expr::Literal(ref v) if matches!(v.view(), ValueView::Int(0))));
             assert!(matches!(op, TokenKind::DotDotCaret));
             assert!(matches!(

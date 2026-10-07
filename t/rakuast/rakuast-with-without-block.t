@@ -35,9 +35,9 @@ is Q[without Nil { say 2 }].AST.statements[0].body.^name, 'RakuAST::Block',
     'without: the block is the `body` slot';
 
 # The block itself topicalizes, with a *required* topic.
-like Q[with 1 { say 2 }].AST.gist, /'implicit-topic => True'/,
+like Q[with 1 { say 2 }].AST.gist, /'implicit-topic     => True'/,
     'the with block is marked implicit-topic';
-like Q[with 1 { say 2 }].AST.gist, /'required-topic => 1'/,
+like Q[with 1 { say 2 }].AST.gist, /'required-topic     => True'/,
     'the with block takes a required topic';
 
 # No `given` survives the boundary: the topicalizer of the desugar is the
@@ -62,7 +62,7 @@ is Q[if 1 { say 1 } orwith 2 { say 2 }].AST.statements[0].elsifs[0].^name,
 # An `else` continuing a topicalizing clause topicalizes; one continuing an
 # `elsif` does not.
 like Q[with 1 { say 2 } orwith 2 { say 3 } else { say 4 }].AST.gist,
-    /'else' .* 'implicit-topic => True'/,
+    /'else' .* 'implicit-topic     => True'/,
     'the else after an orwith topicalizes';
 unlike Q[with 1 { say 2 } elsif 0 { say 3 } else { say 4 }].AST.statements[0].else.gist,
     /'implicit-topic'/,

@@ -17,7 +17,7 @@
 //! and a quoted name is a `Call::QuotedMethod` (see `convert.rs`).
 
 use super::convert::{
-    arg_list, convert_expr, leaf_field, name_from_identifier, node_field,
+    arg_list, convert_expr, leaf_field, name_from_identifier, node_field, postfix_operand,
     unsupported as unsupported_expr,
 };
 use super::lower::{arg_list_exprs, call_name_str, lower_expr, named_child, unsupported};
@@ -73,7 +73,7 @@ pub(super) fn convert(
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyPostfix,
         fields: vec![
-            node_field(Some("operand"), convert_expr(target)?),
+            node_field(Some("operand"), postfix_operand(target)?),
             node_field(Some("postfix"), postfix(name_expr, args, modifier)?),
         ],
     })
@@ -94,7 +94,7 @@ pub(super) fn convert_hyper(
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyPostfix,
         fields: vec![
-            node_field(Some("operand"), convert_expr(target)?),
+            node_field(Some("operand"), postfix_operand(target)?),
             node_field(Some("postfix"), hyper),
         ],
     })

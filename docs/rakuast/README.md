@@ -57,3 +57,20 @@ slow path for RakuAST.
 
 The reusable agent procedure for this work is in
 `.agents/skills/rakuast-implementation/SKILL.md`.
+
+## Measuring `.AST` text parity
+
+`scripts/ast-text-corpus.sh` measures how close mutsu's `.AST` text is to
+rakudo's over a sample of the test suite (every 8th `t/**/*.t`): rakudo and mutsu
+each render `slurp($file).AST`, one `.raku` text per top-level statement, and the
+statements are compared. `compare` prints the share of identical statements and
+the differing ones by class; `show CLASS` prints example hunks. A file mutsu
+refuses to convert is not compared (its message is in `tmp/ast-text/mutsu/*.err`).
+
+The distinctions the parser discards (`foo 1` vs `foo(1)`, `:a(1)` vs `a => 1`,
+`^5` vs `0 ..^ 5`, `.say` vs `$_.say`, `%h<a>` vs `%h{'a'}`, `so` vs `?`) are kept
+in fields the compiler ignores: `listop` on `Expr::Call` / `Stmt::Call`,
+`Binary.form`, `MethodCall.sugar`, `Index.spelling`, `IndexAssign.spelling`,
+`CallArg::Named.form` and `Unary.word`. A pass that rebuilds one of these nodes
+must carry the field through (`wrap_composition_operands` once dropped them all).
+

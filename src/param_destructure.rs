@@ -102,6 +102,7 @@ fn apply_coercion(sub: &crate::ast::ParamDef, value: Expr) -> Expr {
         args: Vec::new(),
         modifier: None,
         quoted: false,
+        sugar: false,
     }
 }
 
@@ -138,11 +139,13 @@ pub(crate) fn destructure_binds(
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                sugar: false,
             };
             let hash_lookup = Expr::Index {
                 target: Box::new(Expr::Var(target_name.to_string())),
                 index: Box::new(Expr::Literal(Value::str(lookup_name.clone()))),
                 is_positional: false,
+                spelling: Default::default(),
             };
             let method_result = Expr::Ternary {
                 cond: Box::new(Expr::MethodCall {
@@ -151,6 +154,7 @@ pub(crate) fn destructure_binds(
                     args: vec![Expr::Literal(Value::str(lookup_name.clone()))],
                     modifier: Some('^'),
                     quoted: false,
+                    sugar: false,
                 }),
                 then_expr: Box::new(method_call),
                 else_expr: Box::new(hash_lookup),
@@ -167,16 +171,19 @@ pub(crate) fn destructure_binds(
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
+                        sugar: false,
                     }),
                     name: Symbol::intern("hash"),
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 }),
                 name: Symbol::intern("EXISTS-KEY"),
                 args: vec![Expr::Literal(Value::str(lookup_name.clone()))],
                 modifier: None,
                 quoted: false,
+                sugar: false,
             };
             if sub.required {
                 bind_stmts.push(Stmt::Expr(Expr::Ternary {
@@ -187,6 +194,7 @@ pub(crate) fn destructure_binds(
                         args: vec![Expr::Literal(Value::str(format!(
                             "Required named argument '{lookup_name}' not passed in sub-signature"
                         )))],
+                        listop: false,
                     }),
                 }));
             }
@@ -231,6 +239,7 @@ pub(crate) fn destructure_binds(
                         args: Vec::new(),
                         modifier: None,
                         quoted: false,
+                        sugar: false,
                     }
                 } else {
                     method_result
@@ -246,13 +255,16 @@ pub(crate) fn destructure_binds(
                     left: Box::new(Expr::Literal(Value::int(positional_index as i64))),
                     op: crate::token_kind::TokenKind::DotDot,
                     right: Box::new(Expr::Whatever),
+                    form: Default::default(),
                 }),
                 is_positional: true,
+                spelling: Default::default(),
             };
             let capture_expr = Expr::CaptureLiteral(
                 vec![Expr::Unary {
                     op: crate::token_kind::TokenKind::Pipe,
                     expr: Box::new(slice_expr),
+                    word: false,
                 }],
                 true,
             );
@@ -269,11 +281,13 @@ pub(crate) fn destructure_binds(
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 }),
                 name: Symbol::intern("hash"),
                 args: Vec::new(),
                 modifier: None,
                 quoted: false,
+                sugar: false,
             };
             bind_stmts.push(decl_stmt(sub.name.clone(), named_part));
             let taken: Vec<Expr> = sub_params
@@ -287,11 +301,13 @@ pub(crate) fn destructure_binds(
                         target: Box::new(Expr::HashVar(sub.name[1..].to_string())),
                         index: Box::new(Expr::ArrayLiteral(taken)),
                         is_positional: false,
+                        spelling: Default::default(),
                     }),
                     name: Symbol::intern("DELETE-KEY"),
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 }));
             }
         } else if sub.is_variadic() && sub.name.starts_with('@') {
@@ -303,8 +319,10 @@ pub(crate) fn destructure_binds(
                     left: Box::new(Expr::Literal(Value::int(positional_index as i64))),
                     op: crate::token_kind::TokenKind::DotDot,
                     right: Box::new(Expr::Whatever),
+                    form: Default::default(),
                 }),
                 is_positional: true,
+                spelling: Default::default(),
             };
             bind_stmts.push(decl_stmt(sub.name.clone(), rest_slice));
         } else {
@@ -312,6 +330,7 @@ pub(crate) fn destructure_binds(
                 target: Box::new(Expr::Var(target_name.to_string())),
                 index: Box::new(Expr::Literal(Value::int(positional_index as i64))),
                 is_positional: false,
+                spelling: Default::default(),
             };
             let element_expr = apply_coercion(sub, element_expr);
             // A container-sigil sub-parameter binds the element's aggregate,
@@ -347,9 +366,11 @@ pub(crate) fn destructure_binds(
                             args: Vec::new(),
                             modifier: None,
                             quoted: false,
+                            sugar: false,
                         }),
                         op: crate::token_kind::TokenKind::Gt,
                         right: Box::new(Expr::Literal(Value::int(positional_index as i64))),
+                        form: Default::default(),
                     }),
                     then_expr: Box::new(element_expr),
                     else_expr: Box::new(fallback),

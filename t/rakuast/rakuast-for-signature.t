@@ -23,5 +23,5 @@ is Q[my @a; for @a -> $a, $b { $a }].AST.gist.comb(/'RakuAST::Parameter.new'/).e
     'for -> $a, $b -> two Parameters in the signature';
 
 # --- implicit-topic for (no signature) is unchanged -------------------------
-is Q[for 1..3 { $_ }].AST.gist.contains('implicit-topic => True'), True,
+is Q[for 1..3 { $_ }].AST.gist.contains('implicit-topic     => True'), True,
     'implicit-topic for still uses a topic Block, not a PointyBlock';

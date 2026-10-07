@@ -430,6 +430,7 @@ fn method_call(target: Expr, name: &str) -> Expr {
         args: Vec::new(),
         modifier: None,
         quoted: false,
+        sugar: false,
     }
 }
 

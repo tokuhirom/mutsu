@@ -84,7 +84,7 @@ impl Interpreter {
             name: Symbol::intern("keep"),
             args: vec![crate::ast::Expr::Literal(Value::TRUE)],
             modifier: None,
-            quoted: false,
+            quoted: false, sugar: false,
         })];
         Self::synthesized_thunk(body)
     }

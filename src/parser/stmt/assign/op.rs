@@ -181,6 +181,7 @@ fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
     Expr::Unary {
         op: TokenKind::MetaAssignIdentity(identity),
         expr: Box::new(lhs),
+        word: false,
     }
 }
 
@@ -202,6 +203,7 @@ pub(crate) fn autoviv_set_compound_lhs(lhs: Expr, op: &TokenKind) -> Expr {
     Expr::Unary {
         op: TokenKind::MetaAssignIdentity(identity),
         expr: Box::new(lhs),
+        word: false,
     }
 }
 
@@ -235,6 +237,7 @@ pub(crate) fn short_circuit_test(keep: ShortCircuitKeep, lhs: Expr) -> (Expr, bo
             Expr::Call {
                 name: Symbol::intern("defined"),
                 args: vec![lhs],
+                listop: false,
             },
             true,
         ),
@@ -276,6 +279,7 @@ pub(crate) fn short_circuit_compound_assign_expr(
         ShortCircuitKeep::Defined => Expr::Call {
             name: Symbol::intern("defined"),
             args: vec![tmp_var.clone()],
+            listop: false,
         },
         ShortCircuitKeep::True | ShortCircuitKeep::False => tmp_var.clone(),
     };
@@ -314,6 +318,7 @@ pub(crate) fn short_circuit_compound_assign_expr(
         cond: Box::new(Expr::Call {
             name: Symbol::intern("__mutsu_var_is_writable"),
             args: vec![Expr::Literal(Value::str(name.to_string()))],
+            listop: false,
         }),
         then_expr: Box::new(Expr::Var(name.to_string())),
         else_expr: Box::new(Expr::desugar_block(vec![Stmt::Expr(tmp_var)])),
@@ -354,6 +359,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
                 Stmt::Expr(Expr::Call {
                     name: Symbol::intern("defined"),
                     args: vec![tmp_var.clone()],
+                    listop: false,
                 }),
             ])),
             then_expr: Box::new(tmp_var),
@@ -389,6 +395,7 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
                 Stmt::Expr(Expr::Call {
                     name: Symbol::intern("defined"),
                     args: vec![tmp_var],
+                    listop: false,
                 }),
             ])),
             then_expr: Box::new(then_branch),
@@ -419,12 +426,14 @@ pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs:
         Expr::Call {
             name: Symbol::intern(&user_op_name),
             args: vec![lhs, rhs],
+            listop: false,
         }
     } else {
         Expr::Binary {
             left: Box::new(autoviv_compound_lhs(lhs, op)),
             op: op.token_kind(),
             right: Box::new(rhs),
+            form: Default::default(),
         }
     }
 }

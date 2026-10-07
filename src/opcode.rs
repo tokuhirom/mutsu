@@ -5045,6 +5045,7 @@ fn attr_declared_shape(default: Option<&Expr>) -> (Option<Vec<usize>>, bool) {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
             right,
+            ..
         } = arg
             && let Expr::Literal(lit) = left.as_ref()
             && let ValueView::Str(key) = lit.view()

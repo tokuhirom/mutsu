@@ -214,11 +214,13 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
         args: Vec::new(),
         modifier: None,
         quoted: false,
+        sugar: false,
     };
     let cond = if matches!(kind, GivenWithKind::Without) {
         Expr::Unary {
             op: crate::token_kind::TokenKind::Bang,
             expr: Box::new(defined),
+            word: false,
         }
     } else {
         defined
@@ -499,8 +501,8 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
 }
 
-/// The label of a loop node: the name in its `labels => (Label(name => "…"),)`
-/// field, which the converter writes first. An unlabelled loop has none.
+/// The label of a loop node: the name in its `labels => (Label("…"),)` field,
+/// which the converter writes first. An unlabelled loop has none.
 // Cost: O(l), l = labels of the node (one in practice).
 fn node_label(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
     let Some(field) = node.fields.iter().find(|f| f.name == Some("labels")) else {
@@ -510,7 +512,9 @@ fn node_label(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
         return Err(unsupported(node));
     };
     match items.first().and_then(rakuast_node_of) {
-        Some(label) if label.class == RakuAstClass::Label => leaf_str(label, "name").map(Some),
+        Some(label) if label.class == RakuAstClass::Label => {
+            Ok(Some(positional_leaf(label)?.to_string_value()))
+        }
         Some(_) => Err(unsupported(node)),
         None => Ok(None),
     }
@@ -995,7 +999,7 @@ pub(super) fn lower_dotty_assign(
 ) -> Result<Expr, RuntimeError> {
     let target = lower_expr(named_child(node, "left")?)?;
     let call = named_child(node, "right")?;
-    if call.class != RakuAstClass::CallMethod {
+    if !is_method_call(call) {
         return Err(unsupported(node));
     }
     let name = crate::symbol::Symbol::intern(&call_name_str(call)?);
@@ -1007,6 +1011,7 @@ pub(super) fn lower_dotty_assign(
         args: args.clone(),
         modifier,
         quoted: false,
+        sugar: false,
     };
     if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
         return Ok(crate::parser::topic_dot_assign(method_call(target)));
@@ -1525,7 +1530,10 @@ fn lower_enum_pair_term(term: &RakuAstNode) -> Result<LoweredEnumVariants, Runti
     };
     let mut variants = Vec::with_capacity(body.len());
     for item in body {
-        let Expr::Binary { left, op, right } = item else {
+        let Expr::Binary {
+            left, op, right, ..
+        } = item
+        else {
             return Err(unsupported(term));
         };
         if op != crate::token_kind::TokenKind::FatArrow {
@@ -1845,6 +1853,15 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         "self".to_string()
     } else if let Some(type_capture) = &type_capture {
         format!("__type_capture__{type_capture}")
+    } else if parameter.fields.iter().any(|f| f.name == Some("type"))
+        && !parameter.fields.iter().any(|f| f.name == Some("slurpy"))
+        && !parameter
+            .fields
+            .iter()
+            .any(|f| f.name == Some("sub-signature"))
+    {
+        // `sub f(Int)`: a parameter of a bare type, which the parser names so.
+        super::convert::TYPE_ONLY_PARAM.to_string()
     } else if parameter.fields.iter().any(|f| {
         f.name == Some("slurpy")
             && matches!(&f.value, RakuAstFieldValue::Node(v)
@@ -2113,6 +2130,7 @@ fn negate_if(cond: Expr, is_until: bool) -> Expr {
         Expr::Unary {
             op: crate::token_kind::TokenKind::Bang,
             expr: Box::new(cond),
+            word: false,
         }
     } else {
         cond
@@ -2255,6 +2273,7 @@ fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         target,
         index,
         is_positional,
+        spelling,
     } = lower_expr(named_child(node, "left")?)?
     else {
         return Err(unsupported(node));
@@ -2264,6 +2283,7 @@ fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         target,
         index,
         is_positional,
+        spelling,
         rhs,
     ))
 }
@@ -2352,6 +2372,7 @@ fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
         target,
         index,
         is_positional,
+        spelling,
     } = lowered
     else {
         return Ok(None);
@@ -2361,6 +2382,7 @@ fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
         index,
         value: Box::new(lower_expr(named_child(node, "right")?)?),
         is_positional,
+        spelling,
     }))
 }
 
@@ -2371,7 +2393,7 @@ fn subscript_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
 fn method_call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     let left = named_child(node, "left")?;
     if left.class != RakuAstClass::ApplyPostfix
-        || !named_child(left, "postfix").is_ok_and(|p| p.class == RakuAstClass::CallMethod)
+        || !named_child(left, "postfix").is_ok_and(is_method_call)
     {
         return Ok(None);
     }
@@ -2463,11 +2485,16 @@ fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// how the parser names a package-qualified variable.
 fn variable_spelling(node: &RakuAstNode) -> Result<String, RuntimeError> {
     match node.class {
-        RakuAstClass::VarLexical | RakuAstClass::VarDynamic => {
+        RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute => {
             match positional_leaf(node)?.view() {
                 ValueView::Str(s) => Ok(s.to_string()),
                 _ => Err(unsupported(node)),
             }
+        }
+        // `$.x` -> the whole spelling is the `name`; the `$.x(1)` form (an
+        // `args` field) is a method call, which the parser keeps elsewhere.
+        RakuAstClass::VarAttributePublic if !node.fields.iter().any(|f| f.name == Some("args")) => {
+            leaf_str(node, "name")
         }
         RakuAstClass::VarPackage => {
             let sigil = leaf_str(node, "sigil")?;
@@ -2513,12 +2540,13 @@ fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     Ok(Expr::Call {
         name: crate::symbol::Symbol::intern(&name),
         args,
+        listop: false,
     })
 }
 
 /// The lowered positional arguments of a call node's `args` (`ArgList`) child, or
 /// an empty vec when there are none.
-fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
+pub(super) fn arg_exprs(node: &RakuAstNode) -> Result<Vec<Expr>, RuntimeError> {
     match node.fields.iter().find(|f| f.name == Some("args")) {
         Some(f) => arg_list_exprs(child_node(&f.value)?),
         None => Ok(Vec::new()),
@@ -3275,6 +3303,7 @@ fn hash_composer_source(pairs: &[(String, Option<Expr>)]) -> Option<String> {
                 left: Box::new(Expr::Literal(Value::str(key.clone()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value.clone()?),
+                form: Default::default(),
             };
             crate::regex_tree::expression_source(&pair)
         })
@@ -3813,6 +3842,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // position as a `DoStmt`.
         RakuAstClass::VarDeclarationSimple
         | RakuAstClass::VarDeclarationTerm
+        | RakuAstClass::VarDeclarationConstant
         | RakuAstClass::TypeEnum
         | RakuAstClass::Method
         | RakuAstClass::Submethod => Ok(Expr::DoStmt(Box::new(lower_stmt_inner(node)?))),
@@ -3910,6 +3940,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // single-statement form is handled.
         RakuAstClass::CircumfixParentheses => {
             let semilist = named_child_or_positional(node)?;
+            // `()`: a semilist with no statement at all.
+            if semilist.fields.is_empty() {
+                return Ok(Expr::ArrayLiteral(Vec::new()));
+            }
             let inner = named_child_or_positional(semilist)?;
             // The contents of `(...)` are a semilist of *statements*: a
             // declaration written there (`(my $x = 9) given 2`) is a statement,
@@ -3956,6 +3990,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // single `Statement::Expression` (a comma list, or a lone element).
         RakuAstClass::CircumfixArrayComposer => {
             let semilist = named_child_or_positional(node)?;
+            // `[]`: a semilist with no statement at all.
+            if semilist.fields.is_empty() {
+                return Ok(Expr::BracketArray(Vec::new(), false));
+            }
             let inner = named_child_or_positional(semilist)?;
             // A one-operand comma list is `[$x,]`: the trailing comma that keeps
             // a lone array element from flattening.
@@ -3976,16 +4014,24 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // compiles to.
         RakuAstClass::TermTopicCall => {
             let call = named_child_or_positional(node)?;
-            if call.class != RakuAstClass::CallMethod {
-                return Err(unsupported(node));
+            match lower_method_postfix(Expr::Var("_".to_string()), call)? {
+                Expr::MethodCall {
+                    target,
+                    name,
+                    args,
+                    modifier,
+                    quoted,
+                    sugar: _,
+                } => Ok(Expr::MethodCall {
+                    target,
+                    name,
+                    args,
+                    modifier,
+                    quoted,
+                    sugar: true,
+                }),
+                other => Ok(other),
             }
-            Ok(Expr::MethodCall {
-                target: Box::new(Expr::Var("_".to_string())),
-                name: crate::symbol::Symbol::intern(&call_name_str(call)?),
-                args: arg_exprs(call)?,
-                modifier: dispatch_modifier(call)?,
-                quoted: false,
-            })
         }
         // `[+] @a` / `[\\+] @a` -> a reduction over a single argument. mutsu's
         // `Expr::Reduction` keeps the triangle form in the operator string
@@ -4029,6 +4075,55 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::StatementLoopWhile
         | RakuAstClass::StatementLoopUntil
         | RakuAstClass::StatementLoop => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),
+        // `nqp::op(ARGS)`: the first positional is the op, the rest its arguments.
+        RakuAstClass::Nqp => {
+            let mut fields = node.fields.iter();
+            let op = match fields.next() {
+                Some(super::RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Node(op),
+                }) => match op.view() {
+                    ValueView::Str(op) => op.to_string(),
+                    _ => return Err(unsupported(node)),
+                },
+                _ => return Err(unsupported(node)),
+            };
+            let mut args = Vec::new();
+            for field in fields {
+                args.push(lower_expr(child_node(&field.value)?)?);
+            }
+            Ok(Expr::Call {
+                name: crate::symbol::Symbol::intern(&format!("nqp::{op}")),
+                args,
+                listop: false,
+            })
+        }
+        // `Array[Int]` / `Hash[Str, Int]` -> a positional subscript on the type
+        // name, as the parser spells a type application in an expression.
+        RakuAstClass::TypeParameterized => {
+            let base = lower_expr(named_child(node, "base-type")?)?;
+            let mut args = arg_exprs(node)?;
+            let index = if args.len() == 1 {
+                args.remove(0)
+            } else {
+                Expr::ArrayLiteral(args)
+            };
+            Ok(Expr::Index {
+                target: Box::new(base),
+                index: Box::new(index),
+                is_positional: true,
+                spelling: Default::default(),
+            })
+        }
+        // `start` / `quietly` / `sink` -> the call the parser spells them as.
+        RakuAstClass::StatementPrefixStart
+        | RakuAstClass::StatementPrefixQuietly
+        | RakuAstClass::StatementPrefixSink => super::prefix_call::lower(node),
+        // `lazy EXPR` / `hyper EXPR` / `race EXPR` -> the method call the
+        // parser spells them as.
+        RakuAstClass::StatementPrefixLazy
+        | RakuAstClass::StatementPrefixHyper
+        | RakuAstClass::StatementPrefixRace => super::prefix_call::lower_method(node),
         // `once { … }` -> a once expression over the lowered block body.
         RakuAstClass::StatementPrefixOnce => Ok(Expr::Once {
             body: lower_block(named_child_or_positional(node)?)?,
@@ -4117,15 +4212,32 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 left: Box::new(Expr::Literal(Value::str(key.to_string()))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(Expr::Literal(value)),
+                form: if node.class == RakuAstClass::ColonPairTrue {
+                    crate::ast::BinaryForm::ColonPairTrue
+                } else {
+                    crate::ast::BinaryForm::ColonPairFalse
+                },
             })
         }
         RakuAstClass::ColonPairVariable | RakuAstClass::ColonPairValue => {
             let key = leaf_str(node, "key")?;
-            let value = lower_expr(named_child(node, "value")?)?;
+            let value_node = named_child(node, "value")?;
+            let value = lower_expr(value_node)?;
             Ok(Expr::Binary {
                 left: Box::new(Expr::Literal(Value::str(key))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
+                form: if node.class == RakuAstClass::ColonPairVariable {
+                    crate::ast::BinaryForm::ColonPairVariable
+                } else if matches!(
+                    value_node.class,
+                    RakuAstClass::CircumfixArrayComposer | RakuAstClass::QuotedString
+                ) {
+                    // `:a[1, 2]` / `:a<x y>`: no parentheses around the value.
+                    crate::ast::BinaryForm::ColonPairBracketed
+                } else {
+                    crate::ast::BinaryForm::ColonPairValue
+                },
             })
         }
         RakuAstClass::FatArrow => {
@@ -4135,6 +4247,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 left: Box::new(Expr::Literal(Value::str(key))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
+                form: Default::default(),
             })
         }
         // A bare type name `Int` (a `Type::Simple`) in expression position -> a
@@ -4155,6 +4268,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             ValueView::Str(s) if s.as_str() == "now" => Ok(Expr::Call {
                 name: Symbol::intern("now"),
                 args: vec![],
+                listop: false,
             }),
             _ => Err(unsupported(node)),
         },
@@ -4171,6 +4285,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(Expr::Call {
                 name: crate::symbol::Symbol::intern(name),
                 args: arg_exprs(node)?,
+                listop: false,
             })
         }
         // `True`/`False` -> the Bool literal; any other setting enum value
@@ -4181,7 +4296,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
         RakuAstClass::VarPackage if let Some(deref) = super::symbolic_deref::lower(node) => deref,
-        RakuAstClass::VarLexical | RakuAstClass::VarPackage | RakuAstClass::VarDynamic => {
+        RakuAstClass::VarLexical
+        | RakuAstClass::VarPackage
+        | RakuAstClass::VarDynamic
+        | RakuAstClass::VarAttribute
+        | RakuAstClass::VarAttributePublic => {
             let name = variable_spelling(node)?;
             let (sigil, bare) = name.split_at(name.chars().next().map_or(0, char::len_utf8));
             Ok(match sigil {
@@ -4304,6 +4423,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 left: Box::new(left),
                 op,
                 right: Box::new(right),
+                form: Default::default(),
             };
             // `=>` as an ordinary infix is raku's node for a non-bareword key
             // (`"a" => 1`, `$k => 1`), which is a POSITIONAL pair rather than a
@@ -4327,10 +4447,43 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Ok(chain);
             }
             let operand = lower_expr(named_child(node, "operand")?)?;
-            let op = prefix_token(named_child(node, "prefix")?)?;
+            let prefix = named_child(node, "prefix")?;
+            // `so EXPR` / `not EXPR`: the loose word prefixes, which the parser
+            // folds into `?` / `!`.
+            let word_op = match positional_leaf(prefix)?.view() {
+                ValueView::Str(s) if s.as_str() == "so" => {
+                    Some(crate::token_kind::TokenKind::Question)
+                }
+                ValueView::Str(s) if s.as_str() == "not" => {
+                    Some(crate::token_kind::TokenKind::Bang)
+                }
+                _ => None,
+            };
+            if let Some(op) = word_op {
+                return Ok(Expr::Unary {
+                    op,
+                    expr: Box::new(operand),
+                    word: true,
+                });
+            }
+            let op = prefix_token(prefix)?;
+            // `^N` is the range `0 ..^ N` as the parser spells it; a Whatever
+            // operand (`^*`) is a WhateverCode and stays the unary.
+            if op == crate::token_kind::TokenKind::Caret
+                && !crate::parser::contains_whatever(&operand)
+                && !crate::parser::is_whatever(&operand)
+            {
+                return Ok(Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::int(0))),
+                    op: crate::token_kind::TokenKind::DotDotCaret,
+                    right: Box::new(operand),
+                    form: crate::ast::BinaryForm::CaretPrefix,
+                });
+            }
             Ok(Expr::Unary {
                 op,
                 expr: Box::new(operand),
+                word: false,
             })
         }
         // `COND ?? THEN !! ELSE` -> the ternary expression.
@@ -4386,6 +4539,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 left: Box::new(left),
                 op: token.clone(),
                 right: Box::new(right),
+                form: Default::default(),
             }))
         }
         // A postfix method call (`$x.abs`, `$x.?abs`, `$x."abs"()`), a hyper
@@ -4396,51 +4550,13 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let operand = lower_expr(named_child(node, "operand")?)?;
             let postfix = named_child(node, "postfix")?;
             match postfix.class {
-                RakuAstClass::CallMethod => Ok(Expr::MethodCall {
-                    target: Box::new(operand),
-                    name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
-                    args: arg_exprs(postfix)?,
-                    modifier: dispatch_modifier(postfix)?,
-                    quoted: false,
-                }),
-                // `$x."name"()` -> Call::QuotedMethod, whose `name` is a
-                // QuotedString rather than a Name. An interpolated name lowers
-                // to the existing DynamicMethodCall execution path.
-                RakuAstClass::CallQuotedMethod => {
-                    let name_expr = lower_expr(named_child(postfix, "name")?)?;
-                    match name_expr {
-                        Expr::Literal(value) if matches!(value.view(), ValueView::Str(_)) => {
-                            Ok(Expr::MethodCall {
-                                target: Box::new(operand),
-                                name: crate::symbol::Symbol::intern(&value.to_string_value()),
-                                args: arg_exprs(postfix)?,
-                                modifier: None,
-                                quoted: true,
-                            })
-                        }
-                        name_expr => Ok(Expr::DynamicMethodCall {
-                            target: Box::new(operand),
-                            name_expr: Box::new(name_expr),
-                            args: arg_exprs(postfix)?,
-                            modifier: None,
-                            quoted: true,
-                        }),
-                    }
-                }
-                // `.^name` -> a metamethod call. Its `name` is a plain string,
-                // not a `Name` node, and mutsu keeps the `^` in the same
-                // `modifier` slot the dispatch modifiers use.
-                RakuAstClass::CallMetaMethod => Ok(Expr::MethodCall {
-                    target: Box::new(operand),
-                    name: crate::symbol::Symbol::intern(&leaf_str(postfix, "name")?),
-                    args: arg_exprs(postfix)?,
-                    modifier: Some('^'),
-                    quoted: false,
-                }),
-                // `$o.$name(1)` / `$o.&f(1)`.
-                RakuAstClass::CallTermAsMethod | RakuAstClass::CallNameAsMethod => {
-                    super::dynamic_method::lower(operand, postfix)
-                }
+                // `.method`, `self!priv`, `."name"`, `.^name`, `.$name` / `.&f`.
+                RakuAstClass::CallMethod
+                | RakuAstClass::CallPrivateMethod
+                | RakuAstClass::CallQuotedMethod
+                | RakuAstClass::CallMetaMethod
+                | RakuAstClass::CallTermAsMethod
+                | RakuAstClass::CallNameAsMethod => lower_method_postfix(operand, postfix),
                 // `@a>>.abs` -> MetaPostfix::Hyper wrapping the ordinary
                 // method-call postfix.
                 RakuAstClass::MetaPostfixHyper => {
@@ -4449,7 +4565,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                         return super::dynamic_method::lower_hyper(operand, inner);
                     }
                     let (name, quoted) = match inner.class {
-                        RakuAstClass::CallMethod => (call_name_str(inner)?, false),
+                        RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod => {
+                            (call_name_str(inner)?, false)
+                        }
                         RakuAstClass::CallQuotedMethod => (quoted_method_name(inner)?, true),
                         _ => return Err(unsupported(node)),
                     };
@@ -4479,7 +4597,13 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     op: postfix_token(postfix)?,
                     expr: Box::new(operand),
                 }),
-                // `$f(EXPR)` -> Call::Term(args) -> a call on the operand term.
+                // `$f(EXPR)` / `Type.(EXPR)` -> Call::Term(args) -> a call on the
+                // operand term.
+                RakuAstClass::CallTerm
+                    if let Some(call) = super::type_call::lower(&operand, postfix)? =>
+                {
+                    Ok(call)
+                }
                 RakuAstClass::CallTerm => Ok(Expr::CallOn {
                     target: Box::new(operand),
                     args: arg_exprs(postfix)?,
@@ -4544,6 +4668,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                             index: Box::new(index),
                             value: Box::new(lower_expr(assignee)?),
                             is_positional,
+                            // `%h<a> = 1` keeps its brackets.
+                            spelling: if postfix.class
+                                == RakuAstClass::PostcircumfixLiteralHashIndex
+                            {
+                                crate::ast::IndexSpelling::Angle
+                            } else {
+                                Default::default()
+                            },
                         });
                     }
                     super::subscript_adverb::lower(
@@ -4551,6 +4683,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                             target: Box::new(operand),
                             index: Box::new(index),
                             is_positional,
+                            // `%h<a>` keeps its brackets.
+                            spelling: if postfix.class
+                                == RakuAstClass::PostcircumfixLiteralHashIndex
+                            {
+                                crate::ast::IndexSpelling::Angle
+                            } else {
+                                Default::default()
+                            },
                         },
                         postfix,
                     )
@@ -4562,10 +4702,80 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     }
 }
 
+/// A method-call postfix (`.name`, `!name`, `."name"`, `.^name`, `.$name`,
+/// `.&name`) applied to `operand`.
+fn lower_method_postfix(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    match postfix.class {
+        // `self!priv(...)` carries the `!` modifier, as a class of its own.
+        RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod => Ok(Expr::MethodCall {
+            target: Box::new(operand),
+            name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
+            args: arg_exprs(postfix)?,
+            modifier: dispatch_modifier(postfix)?,
+            quoted: false,
+            sugar: false,
+        }),
+        // `$x."name"()` -> Call::QuotedMethod, whose `name` is a QuotedString
+        // rather than a Name. An interpolated name lowers to the existing
+        // DynamicMethodCall execution path.
+        RakuAstClass::CallQuotedMethod => {
+            let name_expr = lower_expr(named_child(postfix, "name")?)?;
+            match name_expr {
+                Expr::Literal(value) if matches!(value.view(), ValueView::Str(_)) => {
+                    Ok(Expr::MethodCall {
+                        target: Box::new(operand),
+                        name: crate::symbol::Symbol::intern(&value.to_string_value()),
+                        args: arg_exprs(postfix)?,
+                        modifier: None,
+                        quoted: true,
+                        sugar: false,
+                    })
+                }
+                name_expr => Ok(Expr::DynamicMethodCall {
+                    target: Box::new(operand),
+                    name_expr: Box::new(name_expr),
+                    args: arg_exprs(postfix)?,
+                    modifier: None,
+                    quoted: true,
+                }),
+            }
+        }
+        // `.^name` -> a metamethod call. Its `name` is a plain string, not a
+        // `Name` node, and mutsu keeps the `^` in the same `modifier` slot the
+        // dispatch modifiers use.
+        RakuAstClass::CallMetaMethod => Ok(Expr::MethodCall {
+            target: Box::new(operand),
+            name: crate::symbol::Symbol::intern(&leaf_str(postfix, "name")?),
+            args: arg_exprs(postfix)?,
+            modifier: Some('^'),
+            quoted: false,
+            sugar: false,
+        }),
+        // `$o.$name(1)` / `$o.&f(1)`.
+        RakuAstClass::CallTermAsMethod | RakuAstClass::CallNameAsMethod => {
+            super::dynamic_method::lower(operand, postfix)
+        }
+        _ => Err(unsupported(postfix)),
+    }
+}
+
+/// Whether a node is a method call: `Call::Method`, or the private
+/// `Call::PrivateMethod`.
+fn is_method_call(node: &RakuAstNode) -> bool {
+    matches!(
+        node.class,
+        RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod
+    )
+}
+
 /// The `.?` / `.+` / `.*` dispatch modifier of a `Call::Method`, as the single
 /// character mutsu's `MethodCall.modifier` keeps. The field is absent for a
 /// plain `.method`.
 fn dispatch_modifier(node: &RakuAstNode) -> Result<Option<char>, RuntimeError> {
+    // `self!priv(...)` is a class of its own, with no `dispatch` string.
+    if node.class == RakuAstClass::CallPrivateMethod {
+        return Ok(Some('!'));
+    }
     let Some(f) = node.fields.iter().find(|f| f.name == Some("dispatch")) else {
         return Ok(None);
     };

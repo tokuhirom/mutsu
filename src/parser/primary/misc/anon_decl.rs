@@ -481,6 +481,7 @@ pub(crate) fn indirect_method_call(input: &str) -> PResult<'_, Expr> {
             args,
             modifier: None,
             quoted: false,
+            sugar: false,
         },
     ))
 }

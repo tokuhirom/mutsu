@@ -77,7 +77,7 @@ impl TrirCompiler<'_> {
 
     /// Compile a sunk `nqp::` loop form; `None` when `e` is not one.
     pub(super) fn compile_nqp_loop_sink(&mut self, e: &Expr) -> Option<Option<()>> {
-        let Expr::Call { name, args } = e else {
+        let Expr::Call { name, args, .. } = e else {
             return None;
         };
         if args.len() != 2 {

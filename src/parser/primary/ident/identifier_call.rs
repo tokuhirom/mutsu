@@ -14,7 +14,7 @@ use crate::parser::primary::ident::anon_sub::{
 use crate::parser::primary::ident::circumfix::parse_raw_braced_regex_body;
 use crate::parser::primary::ident::listop::{
     callsite_line_arg, export_term_or_call, make_call_expr, make_call_expr_from_listop_args,
-    operator_term_call, parse_expr_listop_args, parse_listop_arg,
+    make_listop_expr, operator_term_call, parse_expr_listop_args, parse_listop_arg,
     try_parse_no_paren_invocant_colon_call,
 };
 use crate::parser::primary::ident::loop_control::loop_control_call_form;
@@ -387,6 +387,7 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
             ))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(Expr::Literal(Value::str(dist_selectors))),
+            form: Default::default(),
         });
     }
 
@@ -426,6 +427,7 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
             ))),
             op: crate::token_kind::TokenKind::FatArrow,
             right: Box::new(file_expr),
+            form: Default::default(),
         });
         rest = r;
     }
@@ -471,6 +473,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             left: Box::new(Expr::Literal(Value::str(format!("{head}::")))),
             op: crate::token_kind::TokenKind::Tilde,
             right: Box::new(key_expr),
+            form: Default::default(),
         };
         let (rest, combined) =
             crate::parser::primary::var::parse_symbolic_deref_segments(rest, combined)?;
@@ -577,6 +580,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         left: Box::new(Expr::BareWord(name)),
                         op: crate::token_kind::TokenKind::FatArrow,
                         right: Box::new(value),
+                        form: Default::default(),
                     })),
                 ));
             }
@@ -586,6 +590,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     left: Box::new(Expr::Literal(Value::str(name))),
                     op: crate::token_kind::TokenKind::FatArrow,
                     right: Box::new(value),
+                    form: Default::default(),
                 },
             ));
         }
@@ -608,6 +613,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         Expr::Call {
                             name: full_name,
                             args: vec![],
+                            listop: false,
                         },
                     ));
                 }
@@ -621,6 +627,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     Expr::Call {
                         name: full_name,
                         args,
+                        listop: false,
                     },
                 ));
             }
@@ -676,6 +683,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                                 Expr::Call {
                                     name: full_name,
                                     args: vec![],
+                                    listop: false,
                                 },
                             ));
                         }
@@ -689,6 +697,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             Expr::Call {
                                 name: full_name,
                                 args,
+                                listop: false,
                             },
                         ));
                     }
@@ -724,6 +733,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             Expr::Call {
                                 name: full_name,
                                 args: vec![],
+                                listop: false,
                             },
                         ));
                     }
@@ -737,6 +747,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         Expr::Call {
                             name: full_name,
                             args,
+                            listop: false,
                         },
                     ));
                 }
@@ -867,6 +878,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         cond: Expr::Unary {
                             op: crate::token_kind::TokenKind::Bang,
                             expr: Box::new(cond),
+                            word: false,
                         },
                         then_branch: body,
                         else_branch: Vec::new(),
@@ -1444,6 +1456,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     Expr::Call {
                         name: sym_name,
                         args: vec![],
+                        listop: !rest.starts_with('('),
                     },
                 ));
             }
@@ -1453,6 +1466,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: sym_name,
                     args: vec![arg],
+                    listop: !rest.starts_with('('),
                 },
             ));
         }
@@ -1468,6 +1482,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern(&name),
                     args: vec![expr],
+                    listop: true,
                 },
             ));
         }
@@ -1480,6 +1495,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern(&name),
                     args: vec![expr],
+                    listop: true,
                 },
             ));
         }
@@ -1500,6 +1516,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     Expr::Call {
                         name: Symbol::intern(&name),
                         args,
+                        listop: true,
                     },
                 ));
             }
@@ -1508,6 +1525,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 Expr::Call {
                     name: Symbol::intern(&name),
                     args: vec![],
+                    listop: true,
                 },
             ));
         }
@@ -1520,6 +1538,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     Expr::Call {
                         name: Symbol::intern("start"),
                         args: vec![make_anon_sub(body)],
+                        listop: true,
                     },
                 ));
             }
@@ -1532,6 +1551,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                     Expr::Call {
                         name: Symbol::intern("start"),
                         args: vec![make_anon_sub(vec![stmt])],
+                        listop: true,
                     },
                 ));
             }
@@ -1646,6 +1666,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         target: Box::new(Expr::PseudoStash(stash_name)),
                         index: Box::new(key_expr),
                         is_positional: false,
+                        spelling: Default::default(),
                     },
                 ));
             }
@@ -1663,6 +1684,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             target: Box::new(Expr::PseudoStash(stash_name)),
                             index: Box::new(stash_angle_index(symbol)),
                             is_positional: false,
+                            spelling: Default::default(),
                         },
                     ));
                 }
@@ -1679,6 +1701,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             target: Box::new(Expr::PseudoStash(stash_name)),
                             index: Box::new(stash_angle_index(symbol)),
                             is_positional: false,
+                            spelling: Default::default(),
                         },
                     ));
                 }
@@ -1711,6 +1734,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             target: Box::new(Expr::PseudoStash(stash_name)),
                             index: Box::new(Expr::Literal(Value::str(symbol))),
                             is_positional: false,
+                            spelling: Default::default(),
                         },
                     ));
                 }
@@ -1839,6 +1863,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             args: vec![],
                             modifier: None,
                             quoted: false,
+                            sugar: false,
                         },
                     ));
                 }
@@ -1857,6 +1882,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                             args: method_args,
                             modifier: None,
                             quoted: false,
+                            sugar: false,
                         },
                     ));
                 }
@@ -1872,6 +1898,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         args: method_args,
                         modifier: None,
                         quoted: false,
+                        sugar: false,
                     },
                 ));
             }
@@ -1951,6 +1978,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(Expr::Literal(Value::str(name))),
                 op: crate::token_kind::TokenKind::FatArrow,
                 right: Box::new(value),
+                form: Default::default(),
             },
         ));
     }
@@ -1999,7 +2027,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // `foo 1, 2,` does: the listop takes just the block
             // (DB::Migration::Declare's tests wrap `check { ... },` in a block).
             if is_comma && (r3.is_empty() || r3.starts_with([';', '}', ')', ']'])) {
-                return Ok((r3, make_call_expr(name, input, vec![block_expr])));
+                return Ok((r3, make_listop_expr(name, input, vec![block_expr])));
             }
             let mut method_args = Vec::new();
             let (mut r3, first_arg) = expression(r3)?;
@@ -2030,13 +2058,14 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         args: method_args,
                         modifier: None,
                         quoted: false,
+                        sugar: false,
                     },
                 ));
             }
             // Comma separator: `name { block }, args` → `name(block, args)`
             let mut args = vec![block_expr];
             args.extend(method_args);
-            return Ok((r3, make_call_expr(name, input, args)));
+            return Ok((r3, make_listop_expr(name, input, args)));
         }
         // Block without trailing comma — return as separate expressions
         // Fall through to BareWord
@@ -2046,7 +2075,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // e.g., `my $x = BEGIN uc 'moin'` should parse as `my $x = BEGIN(uc('moin'))`
     if matches!(name.as_str(), "BEGIN" | "CHECK" | "INIT") && !r.starts_with('{') {
         let (r2, expr) = expression(r)?;
-        return Ok((r2, make_call_expr(name, input, vec![expr])));
+        return Ok((r2, make_listop_expr(name, input, vec![expr])));
     }
 
     // `supply whenever EXPR { ... }` shorthand for `supply { whenever EXPR { ... } }`
@@ -2153,7 +2182,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let (r2, seq) = result?;
                 let (r2_ws, _) = ws(r2)?;
                 if !r2_ws.starts_with(':') || r2_ws.starts_with("::") {
-                    return Ok((r2, make_call_expr(name, input, vec![seq])));
+                    return Ok((r2, make_listop_expr(name, input, vec![seq])));
                 }
             }
             let parse_arg = |input| {
@@ -2227,7 +2256,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // neighbouring element; lift it across the full argument list,
             // mirroring `make_call_expr_from_listop_args`.
             let args = crate::parser::primary::lift_list_infix_in_arg_list(args);
-            return Ok((rest_after, make_call_expr(name, input, args)));
+            return Ok((rest_after, make_listop_expr(name, input, args)));
         }
     }
 
@@ -2354,7 +2383,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             && starts_glued_prefix_arg(r);
         if is_user_prefix_sub {
             if let Ok((r2, arg)) = expression_no_sequence(r) {
-                return Ok((r2, make_call_expr(call_name, input, vec![arg])));
+                return Ok((r2, make_listop_expr(call_name, input, vec![arg])));
             }
         } else if is_user_sub
             && let Ok((r2, expr)) = make_call_expr_from_listop_args(r, input, call_name.clone())
@@ -2440,7 +2469,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // For user subs, collect comma-separated args
             if is_user_prefix_sub {
                 let (r2, arg) = expression_no_sequence(r)?;
-                return Ok((r2, make_call_expr(call_name, input, vec![arg])));
+                return Ok((r2, make_listop_expr(call_name, input, vec![arg])));
             }
             if is_user_sub || is_imported_sub || hyphen_forward_call {
                 return make_call_expr_from_listop_args(r, input, call_name);
@@ -2451,7 +2480,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 && !hyphen_forward_call
                 && crate::parser::stmt::simple::is_known_call(&name)
             {
-                return Ok((r2, make_call_expr(call_name, input, vec![arg])));
+                return Ok((r2, make_listop_expr(call_name, input, vec![arg])));
             }
             let mut args = vec![arg];
             let mut rest_after = r2;
@@ -2486,7 +2515,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 args.push(next_arg);
                 rest_after = r3;
             }
-            return Ok((rest_after, make_call_expr(call_name, input, args)));
+            return Ok((rest_after, make_listop_expr(call_name, input, args)));
         }
     }
 
@@ -2517,7 +2546,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 && !name.starts_with(char::is_uppercase)))
     {
         let args = vec![callsite_line_arg(current_line_number(input))];
-        let call = make_call_expr(name.clone(), input, args);
+        let call = make_listop_expr(name.clone(), input, args);
         return Ok((rest, export_term_or_call(&name, call)));
     }
 
@@ -2536,7 +2565,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && is_zero_arg_callable_builtin(&name)
         && !crate::parser::stmt::simple::is_user_declared_enum_value(&name)
     {
-        return Ok((rest, make_call_expr(name, input, vec![])));
+        return Ok((rest, make_listop_expr(name, input, vec![])));
     }
 
     // set/bag/mix without arguments or parens is a parse error in Raku
@@ -2553,7 +2582,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // set/bag/mix followed by '.' is a zero-arg call (method chain on result)
     if matches!(name.as_str(), "set" | "bag" | "mix") && rest_trimmed.starts_with('.') {
-        return Ok((rest, make_call_expr(name, input, vec![])));
+        return Ok((rest, make_listop_expr(name, input, vec![])));
     }
 
     // The same rescue, but UNGATED: these four must compile to a zero-arg call
@@ -2570,7 +2599,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         name.as_str(),
         "callframe" | "caller" | "return" | "return-rw"
     ) {
-        return Ok((rest, make_call_expr(name, input, vec![])));
+        return Ok((rest, make_listop_expr(name, input, vec![])));
     }
 
     // Perl 5 unary functions used bare (no argument). `ord`/`chr`/`lc`/`uc`/`abs`
@@ -2588,7 +2617,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && rest_trimmed[1..].starts_with(crate::parser::helpers::is_raku_identifier_start)
         && let Ok((r2, arg)) = parse_listop_arg(rest_trimmed)
     {
-        return Ok((r2, make_call_expr(name, input, vec![arg])));
+        return Ok((r2, make_listop_expr(name, input, vec![arg])));
     }
     if is_terminator_or_dot && is_perl5_unary {
         return Err(PError::obsolete(
@@ -2658,6 +2687,7 @@ fn slip_arg_count(slip: Expr) -> Expr {
         args: Vec::new(),
         modifier: None,
         quoted: false,
+        sugar: false,
     }
 }
 

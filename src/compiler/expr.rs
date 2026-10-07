@@ -32,17 +32,20 @@ impl Compiler {
                 target,
                 index,
                 is_positional,
+                ..
             } => Expr::IndexAssign {
                 target,
                 index,
                 value: Box::new(value),
                 is_positional,
+                spelling: Default::default(),
             },
             // Any other lvalue shape: fall back to the generic named-sub lvalue
             // assignment helper (mirrors the parser's `assign_to_target_expr`).
             other => Expr::Call {
                 name: crate::symbol::Symbol::intern("__mutsu_assign_callable_lvalue"),
                 args: vec![other, Expr::ArrayLiteral(Vec::new()), value],
+                listop: false,
             },
         }
     }
@@ -453,10 +456,12 @@ impl Compiler {
                     self.code.emit(OpCode::GetPseudoStash(name_idx));
                 }
             }
-            Expr::Unary { op, expr } => {
+            Expr::Unary { op, expr, .. } => {
                 self.compile_expr_unary(op, expr);
             }
-            Expr::Binary { left, op, right } => {
+            Expr::Binary {
+                left, op, right, ..
+            } => {
                 self.compile_expr_binary(expr, left, op, right);
             }
             Expr::Ternary {
@@ -569,7 +574,7 @@ impl Compiler {
                         // captures the variable's container too, so `$c<a>` aliases
                         // `$a`. Compile key + value, tag the value with WrapVarRef,
                         // then MakePair; MakeCapture boxes the named local.
-                        if let Expr::Binary { op, left, right } = item
+                        if let Expr::Binary { op, left, right, .. } = item
                             && *op == crate::token_kind::TokenKind::FatArrow
                             && let Expr::Var(name) = right.as_ref()
                             && !name.contains("::")
@@ -610,7 +615,7 @@ impl Compiler {
             // result, then `TopicDotAssign` (assigns `$_` bypassing the
             // whole-container read-only mark and writes through to a container
             // topic source). See `parser::expr::postfix::dot_assign` / `topic_method_call`.
-            Expr::Call { name, args }
+            Expr::Call { name, args, .. }
                 if name.resolve() == "__mutsu_topic_dotassign" && args.len() == 1 =>
             {
                 self.compile_expr(&args[0]);
@@ -622,7 +627,7 @@ impl Compiler {
             // reserved special form handled by the compiler, so lower the call to
             // an ordinary assignment (which binds arg0 as an lvalue and applies
             // type checks). Same for the bind form `infix:<:=>`.
-            Expr::Call { name, args }
+            Expr::Call { name, args, .. }
                 if args.len() == 2
                     && matches!(name.resolve().as_str(), "infix:<=>" | "infix:<:=>") =>
             {
@@ -660,9 +665,10 @@ impl Compiler {
                     args: args.clone(),
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 });
             }
-            Expr::Call { name, args } => {
+            Expr::Call { name, args, .. } => {
                 // `f(@a.AT-POS($i))` hands the callee the element's container
                 // exactly as `f(@a[$i])` does (List::MoreUtils `pairwise`
                 // binds `is rw` parameters this way), so spell it as the
@@ -687,6 +693,7 @@ impl Compiler {
                     args: Vec::new(),
                     modifier: None,
                     quoted: false,
+                    sugar: false,
                 });
             }
             // `(EXPR).method` is exactly `EXPR.method`. Parentheses in Raku are
@@ -703,6 +710,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if matches!(target.as_ref(), Expr::Grouped(_)) => {
                 let Expr::Grouped(inner) = target.as_ref() else {
                     unreachable!()
@@ -713,6 +721,7 @@ impl Compiler {
                     args: args.clone(),
                     modifier: *modifier,
                     quoted: *quoted,
+                    sugar: false,
                 };
                 self.compile_expr(&peeled);
             }
@@ -723,6 +732,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if name == "VAR"
                 && args.is_empty()
                 && modifier.is_none()
@@ -753,10 +763,12 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if name == "return-rw" && args.is_empty() && modifier.is_none() && !quoted => {
                 let call = Expr::Call {
                     name: *name,
                     args: vec![(**target).clone()],
+                    listop: false,
                 };
                 self.compile_expr(&call);
             }
@@ -766,6 +778,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if name == "VAR"
                 && args.is_empty()
                 && modifier.is_none()
@@ -795,6 +808,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if matches!(
                 target.as_ref(),
                 Expr::Var(_)
@@ -813,6 +827,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if self.is_mutating_method_on_index(target, name) => {
                 self.compile_expr_method_on_index(target, name, args, modifier, *quoted);
             }
@@ -855,6 +870,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } if Self::is_nested_mutating_method_on_index(target, name) => {
                 self.compile_expr_nested_method_on_index(target, name, args, modifier, *quoted);
             }
@@ -883,6 +899,7 @@ impl Compiler {
                 args,
                 modifier,
                 quoted,
+                ..
             } => {
                 self.compile_expr_method_generic(target, name, args, modifier, *quoted);
             }
@@ -1116,11 +1133,13 @@ impl Compiler {
                             left: Box::new(pair[0].clone()),
                             op: TokenKind::Ident("=:=".to_string()),
                             right: Box::new(pair[1].clone()),
+                            form: Default::default(),
                         };
                         if negate {
                             cmp = Expr::Unary {
                                 op: TokenKind::Bang,
                                 expr: Box::new(cmp),
+                                word: false,
                             };
                         }
                         acc = Some(match acc {
@@ -1129,6 +1148,7 @@ impl Compiler {
                                 left: Box::new(prev),
                                 op: TokenKind::AndAnd,
                                 right: Box::new(cmp),
+                                form: Default::default(),
                             },
                         });
                     }
@@ -1380,6 +1400,7 @@ impl Compiler {
                 index,
                 value,
                 is_positional,
+                ..
             } => {
                 self.compile_expr_index_assign(target, index, value, *is_positional);
             }
@@ -1795,12 +1816,14 @@ impl Compiler {
                     new_body.push(Stmt::Expr(Expr::Call {
                         name: crate::symbol::Symbol::intern("take"),
                         args: vec![inner_expr],
+                        listop: false,
                     }));
                 }
             } else {
                 new_body.push(Stmt::Expr(Expr::Call {
                     name: crate::symbol::Symbol::intern("take"),
                     args: vec![Expr::Var("_".to_string())],
+                    listop: false,
                 }));
             }
             let gather_body = vec![Stmt::For {

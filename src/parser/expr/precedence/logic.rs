@@ -27,6 +27,7 @@ pub(crate) fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -56,6 +57,7 @@ pub(crate) fn or_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_,
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -111,6 +113,7 @@ fn and_chain_seeded(input: &str, seed: Expr) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -138,6 +141,7 @@ fn or_chain_continue(input: &str, left0: Expr) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -178,6 +182,7 @@ pub(crate) fn and_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -204,6 +209,7 @@ pub(crate) fn and_expr_no_assign_mode(input: &str, mode: ExprMode) -> PResult<'_
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -370,6 +376,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     target,
                     index,
                     is_positional,
+                    spelling,
                 } if matches!(
                     target.as_ref(),
                     // A pseudo-stash target is the `Pkg::<@a> := v` spelling
@@ -401,7 +408,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     // reached before the statement-level indexed-bind parser.
                     return Ok((
                         r2,
-                        crate::parser::index_bind_expr(target, index, is_positional, rhs),
+                        crate::parser::index_bind_expr(target, index, is_positional, spelling, rhs),
                     ));
                 }
                 _ => {}
@@ -514,6 +521,8 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             target,
             index,
             is_positional,
+            spelling,
+            ..
         } => Ok((
             r,
             Expr::IndexAssign {
@@ -521,9 +530,10 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 index,
                 value: Box::new(rhs),
                 is_positional,
+                spelling,
             },
         )),
-        Expr::Call { name, args } => Ok((
+        Expr::Call { name, args, .. } => Ok((
             r,
             crate::parser::stmt::assign::named_sub_lvalue_assign_expr(name.resolve(), args, rhs),
         )),
@@ -578,18 +588,21 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                         Expr::Call {
                             name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                             args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                            listop: false,
                         }
                     }
                 } else {
                     Expr::Call {
                         name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                         args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                        listop: false,
                     }
                 }
             } else {
                 Expr::Call {
                     name: Symbol::intern("__mutsu_assign_callable_lvalue"),
                     args: vec![*target, Expr::ArrayLiteral(args), rhs],
+                    listop: false,
                 }
             },
         )),
@@ -637,6 +650,7 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                         Expr::ArrayLiteral(Vec::new()),
                         rhs,
                     ],
+                    listop: false,
                 },
             },
         )),

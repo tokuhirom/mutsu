@@ -88,6 +88,7 @@ impl Expr {
             target,
             index,
             is_positional,
+            ..
         } = expr
         {
             path.push((index, *is_positional));
@@ -136,7 +137,7 @@ impl Expr {
                 op: TokenKind::AndThen | TokenKind::OrElse | TokenKind::NotAndThen,
                 ..
             } if peel.has(LvaluePeel::TOPIC_CHAIN) => left.lvalue_root(peel),
-            Expr::Call { name, args } if peel.has(LvaluePeel::TEMP) && name == "temp" => {
+            Expr::Call { name, args, .. } if peel.has(LvaluePeel::TEMP) && name == "temp" => {
                 args.first()?.lvalue_root(peel)
             }
             _ => None,
@@ -267,6 +268,7 @@ mod tests {
             target: Box::new(target),
             index: Box::new(Expr::Literal(crate::value::Value::int(i))),
             is_positional: pos,
+            spelling: Default::default(),
         };
         let e = idx(idx(arr("a"), 0, true), 1, false);
         let mut path = Vec::new();
@@ -293,6 +295,7 @@ mod tests {
         let temp = Expr::Call {
             name: crate::symbol::Symbol::intern("temp"),
             args: vec![arr("a")],
+            listop: false,
         };
         assert_eq!(temp.lvalue_root(LvaluePeel::ASSIGN), None);
         assert_eq!(

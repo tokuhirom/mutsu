@@ -173,11 +173,13 @@ impl Compiler {
                 target,
                 index,
                 is_positional,
+                ..
             } => Some(Expr::IndexAssign {
                 target: target.clone(),
                 index: index.clone(),
                 value: Box::new(value.clone()),
                 is_positional: *is_positional,
+                spelling: Default::default(),
             }),
             Expr::Grouped(inner) => Self::assign_expr_for_lvalue(inner, value),
             // Nested selector on a branch, e.g. `cond1 ?? (cond2 ?? $a !! $b) !! $c`.
@@ -212,6 +214,7 @@ impl Compiler {
                 Stmt::Expr(Expr::Call {
                     name: crate::symbol::Symbol::intern("__mutsu_assignment_ro"),
                     args: Vec::new(),
+                    listop: false,
                 }),
             ])
         })
@@ -347,6 +350,7 @@ impl Compiler {
             target: inner_target,
             index: inner_index,
             is_positional: inner_is_positional,
+            ..
         } = target
             && let Some(name) = self.index_assign_target_name(inner_target)
         {

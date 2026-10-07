@@ -73,6 +73,7 @@ pub(crate) fn scan_subscript_named_adverbs(input: &str) -> Option<(&str, Vec<Exp
                 left: Box::new(Expr::Literal(Value::str(canonical.clone()))),
                 op,
                 right,
+                form: Default::default(),
             }
         } else {
             pair
@@ -112,6 +113,7 @@ pub(crate) fn lower_subscript_named_adverbs(subscript: &Expr, pairs: Vec<Expr>) 
             target,
             index,
             is_positional,
+            ..
         } => {
             // A zen slice (`@a[]:foo` / `%h{}:foo`) is modelled as a Whatever
             // index by the empty-subscript paths; only its error descriptor
@@ -151,6 +153,7 @@ pub(crate) fn lower_subscript_named_adverbs(subscript: &Expr, pairs: Vec<Expr>) 
         return Some(Expr::Call {
             name: Symbol::intern(op_name),
             args,
+            listop: false,
         });
     }
     let mut args = vec![
@@ -163,5 +166,6 @@ pub(crate) fn lower_subscript_named_adverbs(subscript: &Expr, pairs: Vec<Expr>) 
     Some(Expr::Call {
         name: Symbol::intern("__mutsu_subscript_named_adverbs"),
         args,
+        listop: false,
     })
 }

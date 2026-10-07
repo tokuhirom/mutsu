@@ -50,6 +50,7 @@ fn lower_hyper_assign_target(target: Expr, source: Expr) -> Expr {
                             target: Box::new(source.clone()),
                             index: Box::new(Expr::Literal(crate::value::Value::int(index as i64))),
                             is_positional: true,
+                            spelling: Default::default(),
                         },
                     ))
                 })
@@ -268,6 +269,7 @@ pub(crate) fn concat_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;
@@ -300,6 +302,7 @@ pub(super) fn replication_expr(input: &str) -> PResult<'_, Expr> {
                 left: Box::new(left),
                 op: op.token_kind(),
                 right: Box::new(right),
+                form: Default::default(),
             };
             rest = r;
             continue;

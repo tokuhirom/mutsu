@@ -174,6 +174,7 @@ impl Compiler {
             args: Vec::new(),
             modifier: None,
             quoted: false,
+            sugar: false,
         };
         self.compile_expr(&lazy_expr);
     }
