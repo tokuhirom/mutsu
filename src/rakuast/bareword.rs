@@ -71,8 +71,90 @@ impl Drop for DeclaredNames {
     }
 }
 
+/// What a `constant` renders as when named later. Rakudo evaluates the
+/// initializer at compile time, so a constant holding a type object is a type
+/// (`my constant E = Metamodel::EnumHOW.new_type(...)`, `constant T = Int`) and
+/// any other constant a term. Only the initializers whose value is visibly a
+/// type object are recognised: a type name, or the MOP `new_type` constructor.
+fn constant_kind(init: &Expr) -> DeclaredKind {
+    let type_valued = match init {
+        Expr::BareWord(n) => is_known_type_constraint(n) || core_type_names::contains(n),
+        Expr::MethodCall { name, target, .. } => {
+            name.resolve() == "new_type"
+                && matches!(target.as_ref(), Expr::BareWord(n)
+                    if n.starts_with("Metamodel::") || n.ends_with("HOW"))
+        }
+        _ => false,
+    };
+    if type_valued {
+        DeclaredKind::Type
+    } else {
+        DeclaredKind::Term
+    }
+}
+
+/// The declarations of the blocks being converted, innermost last. Each holds
+/// only the names its own statement list declares: a lexical enum variable
+/// shadows a class of the same name declared further out, which the unit-wide
+/// [`DECLARED_NAMES`] (one entry per name) cannot express.
+#[derive(Default)]
+struct Scopes(Vec<HashMap<String, DeclaredKind>>);
+
+thread_local! {
+    static SCOPES: RefCell<Scopes> = RefCell::new(Scopes::default());
+}
+
+/// RAII guard for one block's own declarations (see [`SCOPES`]).
+pub(super) struct BlockScope;
+
+impl BlockScope {
+    // Cost: O(m), m = number of statements in the list (direct children only).
+    pub(super) fn enter(stmts: &[Stmt]) -> Self {
+        let mut own = HashMap::new();
+        for stmt in stmts {
+            match stmt {
+                Stmt::EnumDecl { name, variants, .. } => {
+                    own.insert(name.resolve(), DeclaredKind::Type);
+                    for (variant, _) in variants {
+                        own.insert(variant.clone(), DeclaredKind::Term);
+                    }
+                }
+                Stmt::ClassDecl { name, .. }
+                | Stmt::RoleDecl { name, .. }
+                | Stmt::SubsetDecl { name, .. }
+                | Stmt::Package { name, .. } => {
+                    own.insert(name.resolve(), DeclaredKind::Type);
+                }
+                Stmt::VarDecl {
+                    name,
+                    custom_traits,
+                    expr,
+                    ..
+                } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
+                    own.insert(name.clone(), constant_kind(expr));
+                }
+                _ => {}
+            }
+        }
+        SCOPES.with(|s| s.borrow_mut().0.push(own));
+        Self
+    }
+}
+
+impl Drop for BlockScope {
+    fn drop(&mut self) {
+        SCOPES.with(|s| {
+            s.borrow_mut().0.pop();
+        });
+    }
+}
+
+fn scoped_kind(name: &str) -> Option<DeclaredKind> {
+    SCOPES.with(|s| s.borrow().0.iter().rev().find_map(|m| m.get(name).copied()))
+}
+
 fn declared_kind(name: &str) -> Option<DeclaredKind> {
-    DECLARED_NAMES.with(|d| d.borrow().get(name).copied())
+    scoped_kind(name).or_else(|| DECLARED_NAMES.with(|d| d.borrow().get(name).copied()))
 }
 
 /// Whether `name` names a type at parse time: a builtin type or one the unit
@@ -175,9 +257,10 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 Stmt::VarDecl {
                     name,
                     custom_traits,
+                    expr,
                     ..
                 } if custom_traits.iter().any(|(n, _)| n == "__constant") => {
-                    self.0.insert(name.clone(), DeclaredKind::Term);
+                    self.0.insert(name.clone(), constant_kind(expr));
                     // A `constant` is `our`-scoped: `M::c` reaches it too.
                     for composed in self.compositions(Symbol::intern(name)).into_iter().skip(1) {
                         self.0.insert(composed.resolve(), DeclaredKind::Term);
@@ -264,6 +347,12 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
             class: RakuAstClass::TermSelf,
             fields: Vec::new(),
         });
+    }
+    // The innermost block's own declaration wins over everything outside it.
+    match scoped_kind(name) {
+        Some(DeclaredKind::Type) => return Some(simple_type_node(name)),
+        Some(DeclaredKind::Term) => return Some(term_name(name)),
+        Some(DeclaredKind::Routine) | None => {}
     }
     // A bare type name used as a term (`Int`, `X::AdHoc`) -> `Type::Simple`.
     if is_known_type_constraint(name) || core_type_names::contains(name) {
