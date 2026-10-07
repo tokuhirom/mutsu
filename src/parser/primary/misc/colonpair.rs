@@ -915,6 +915,6 @@ fn has_custom_param_trait(params: &[crate::ast::ParamDef]) -> bool {
             .any(|t| !crate::parser::is_builtin_param_trait(t))
             || p.sub_signature
                 .as_deref()
-                .is_some_and(|s| has_custom_param_trait(s))
+                .is_some_and(has_custom_param_trait)
     })
 }
