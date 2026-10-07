@@ -2880,8 +2880,19 @@ pub(super) fn named_child_or_positional(node: &RakuAstNode) -> Result<&RakuAstNo
 // Cost: O(1).
 fn term_identifier_expr(name: &str) -> Expr {
     match name {
-        "True" => Expr::Literal(Value::truth(true)),
-        "False" => Expr::Literal(Value::truth(false)),
+        "True" | "False" => {
+            let value = Value::truth(name == "True");
+            // In a unit that imported through a run-time `sub EXPORT` hook the
+            // parser keeps the keyword shadowable (#9047); so does lowering.
+            if crate::parser::term_keywords_shadowable() {
+                Expr::ShadowableTermKeyword {
+                    name: crate::symbol::Symbol::intern(name),
+                    value,
+                }
+            } else {
+                Expr::Literal(value)
+            }
+        }
         // The math constants are the numeric literals the parser folds them to,
         // unless the unit declares a term of that name.
         "pi" | "\u{3c0}" if !super::shadowed_terms::is_shadowed(name) => {

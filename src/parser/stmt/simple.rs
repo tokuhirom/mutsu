@@ -96,7 +96,7 @@ pub(in crate::parser) use pragma_preseed::{
     register_imported_value_term, register_user_enum_type, register_user_enum_value,
     register_user_type, register_user_type_verbatim, reset_package_path, set_attributes_pragma,
     set_eval_operator_assoc_preseed, set_eval_operator_preseed, set_eval_user_sub_preseed,
-    set_eval_user_type_preseed, set_eval_user_value_term_preseed, term_keywords_shadowable,
+    set_eval_user_type_preseed, set_eval_user_value_term_preseed,
 };
 /// Crate-wide (not just `pub(in crate::parser)` like its siblings above): the
 /// compiler's `is_definite_return_spec` twin needs this parse-time enum-value
@@ -118,6 +118,7 @@ pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapsho
 pub(crate) use slang_use::apply_slang_overrides;
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
 pub(crate) use user_ops::{DeclaredNameKind, declared_name_kind};
+pub(crate) use pragma_preseed::term_keywords_shadowable;
 pub(in crate::parser) use user_ops::{
     is_circumfix_close_delimiter, is_circumfix_close_delimiter_word, is_declared_symbol_name,
     is_user_declared_postfix_sub, is_user_declared_prefix_sub, is_user_declared_value_term,

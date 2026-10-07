@@ -2570,6 +2570,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             math_constant_spelling(v, None).unwrap_or_default(),
         )),
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
+        // A CORE term keyword the parser left shadowable (#9047) is the same
+        // node as the plain keyword; lowering decides again whether it is.
+        Expr::ShadowableTermKeyword { value, .. } => convert_literal(value),
         // `{*}` in a proto body.
         _ if expr.is_onlystar_dispatch() => Ok(RakuAstNode {
             class: RakuAstClass::OnlyStar,
