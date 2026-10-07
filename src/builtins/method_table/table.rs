@@ -172,13 +172,23 @@ fn build() -> Table {
     // per shape, so it must not rescan every row to find them.
     let mut names: Vec<Symbol> = Vec::with_capacity(table.all.len());
     let mut by_owner: FxHashMap<&'static str, Vec<usize>> = FxHashMap::default();
+    // Rows of one owner sit together, so the owner symbol is interned once
+    // per run of rows rather than once per row.
+    let mut last_owner: Option<(&'static str, Symbol)> = None;
     for (idx, row) in table.all.iter().enumerate() {
         let name = Symbol::intern(row.name);
         names.push(name);
         by_owner.entry(row.owner).or_default().push(idx);
         // A row past `u16::MAX` stays unreachable through the table.
         if let Ok(id) = u16::try_from(idx) {
-            let owner = Symbol::intern(row.owner);
+            let owner = match last_owner {
+                Some((text, sym)) if text == row.owner => sym,
+                _ => {
+                    let sym = Symbol::intern(row.owner);
+                    last_owner = Some((row.owner, sym));
+                    sym
+                }
+            };
             for arity in row.arities() {
                 table
                     .owners
