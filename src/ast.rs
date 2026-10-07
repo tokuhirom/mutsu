@@ -1125,10 +1125,9 @@ pub(crate) enum Expr {
     /// inner expression — but the chain-flattener stops at Grouped
     /// boundaries to prevent incorrect junction flattening.
     Grouped(Box<Expr>),
-    /// A term and the way it was spelled, for RakuAST (ADR-12199). Built by
-    /// the parser and stripped by [`spelled::strip_spelling`] before the
-    /// compiler, the precompilation cache or any analysis runs, so none of
-    /// them ever sees it; only the `.AST` entry points keep it.
+    /// A term and the way it was spelled, for RakuAST (ADR-12199). Only a
+    /// parse that was asked to keep spellings builds it (see [`spelled`]), so
+    /// the compiler, the precompilation cache and the analyses never see it.
     Spelled(Box<spelled::Spelled>),
     Whatever,
     /// A `*` that participates in Whatever-priming (an "argument" `*`, in
