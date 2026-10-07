@@ -7,6 +7,7 @@
 
 use super::MethodRow;
 
+mod io_handle;
 mod io_path_content;
 mod io_path_ctx;
 mod io_path_cwd;
@@ -25,4 +26,5 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     io_path_fs::ROWS,
     io_path_misc::ROWS,
     io_spec::ROWS,
+    io_handle::ROWS,
 ];

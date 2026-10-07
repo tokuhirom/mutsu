@@ -1059,7 +1059,7 @@ suite (`cargo test --lib method_table native_method_row`):
   the coercions (`Date`, `DateTime`, `Instant`, `Int`, `Numeric`, `Real`), `WHICH`, `raku`, `Str`,
   `gist`. A value with a `:formatter` is rendered by running that Callable, which only the
   interpreter can do: the `Str`/`gist` rows decline it and the interpreter's path answers.
-- [x] *`Instant` and `Duration`* (`instances/instant.rs`, 50 rows): two new instance-class shapes.
+- [x] *`Instant` and `Duration`* (`instances/instant.rs`, 51 rows): two new instance-class shapes.
   Both do `Real` and hold their seconds in one number, so a handler asks the question of that number
   and wraps the answer only where the method keeps the type (`abs`, `succ`, `pred`): `Bool`,
   `Bridge`, `Int`, `Num`, `Rat` and `FatRat` (with and without an epsilon), `Complex`, `Numeric`,
@@ -1237,6 +1237,73 @@ the path ([#12149](https://github.com/tokuhirom/mutsu/issues/12149); `starts-wit
   owners (it is generated from the owners the recognition table names), so each needs recognition
   rows first; their methods live in `runtime/native_methods/*.rs`, one `match` per class, with
   receivers that carry live OS state.
+
+### 9.20 Slice 3E, part 2: `IO::Handle` (2026-10-06)
+
+Branch `refactor/11276-3e-io-handle`. Owner: `IO::Handle`, the first of the slice's remainder (§9.19). 51 rows
+registered (943 -> 994): the state methods (`DESTROY`, `path`, `IO`, `Str`, `gist`, `raku`, `nl-in`, `nl-out`,
+`chomp`, `out-buffer`, `encoding`, `opened`, `t`, `tell`, `eof`, `seek`, `lock`, `unlock`, `flush`,
+`close`, `native-descriptor`, ), the reads (`get`, `getc`, `readchars`, `lines`, `words`,
+`read`, `slurp`, `slurp-rest`, `split`, `comb`, `Supply`), the writes (`print`, `put`, `say`, `printf`,
+`print-nl`, `write`, `spurt`) and `open`. Of the 39 declared rows the inventory listed, 37 are
+registered; `READ` and `WRITE` are Rakudo's stubs for a subclass to override and no cascade ever had an
+arm for them.
+
+**The decision the §9.19 deferral asked for.** A handle's methods existed three times: the interpreter's
+`native_io_handle`, the VM's four per-method fast paths (`try_native_io_handle_{method,output,
+byte_output,read}`, File and UTF-8 targets only, each declining the rest) and the user-subclass overlay
+(`try_user_io_handle_method`, which routes `print`/`get`/... through a user `WRITE`/`READ`).
+
+- **The interpreter's implementation is the one kept.** The ~800-line `match` of `native_io_handle` is
+  one `Interpreter::io_handle_<name>` method per row (`runtime/native_io/io_handle_{state,read,write,
+  open}.rs`), and `native_io_handle` itself is `invoke_owner` over `IO::Handle`'s rows. The sites that
+  call it with attributes (`IO::CatHandle`, `IO::Path.spurt`, the subclass `open`) are unchanged.
+- **The four VM fast paths are deleted**, with their ten call sites and the `IoHandleState` helpers
+  only they used (`native_text_write`, `slurp_string_native`, `read_line_native`, ...). Each answered
+  from handle state the interpreter's methods read through the same `IoHandleState` methods, so there
+  was nothing to move. The env-pure branch of `try_env_pure_mut_dispatch` (the vendored `Test`
+  module's `$output.say`) calls the `print`/`put`/`say`/`printf`/`print-nl` rows through
+  `invoke_owner`; it keeps its guard and gains the built-in `.wrap` check below. What they did for a
+  File target, the row does for every target: Stdout and Stderr no longer fall through to a second
+  implementation.
+- **The user-subclass overlay stays.** It is not a built-in method: it is Raku's own contract that an
+  `IO::Handle` subclass with `WRITE`/`READ` has its text methods built on them, and its receivers have
+  no handle in the table. It runs first, as before.
+
+**Shape and handler.** `IoHandle` is a closed shape for the class `IO::Handle` itself. `IO::Socket::INET`,
+`IO::Pipe` and user subclasses have other class names and reach the rows through their owner
+(`invoke_owner`). Every row is `Handler::Interp` over `Interpreter::io_handle_*`, which take the receiver
+and one argument list (positional first, the named `Pair`s after), so a body is the arm it was cut
+from. Rows that take an argument are `ANY_ARGS`; `print`/`put`/`say`/`printf`/`split`/`comb` are
+`SLURPY` from arity 0.
+
+**What the work taught.**
+
+- **`open` writes back over the receiver, and a shape lookup runs the handler on a copy.** `$fh.open`
+  answers `self` with the opened handle's state; only the mutating dispatch entries
+  (`native_io_handle_mut`) write the result back. The lane and `try_native_method` found the row
+  first, and the receiver stayed closed. `RowFlags::OWNER_ONLY` registers a row for the owner lookup
+  only; slice 3F's `Handler::Mut` retires it.
+- **The "augmented or wrapped?" gate saw `Any` for an instance.** `native_lever_a_user_override_sym`
+  keys on `value_type_name`, which is `Any` for every instance, so a `.wrap` of a built-in instance
+  method (`$*OUT.^find_method('print').wrap`, `t/io/builtin-method-wrap-io-handle-print.t`) was invisible to
+  it and the new row answered first. It now looks up the wrap chain by the instance's class (one bool
+  while nothing is wrapped). An `augment` of an instance class is still keyed on `Any`: the same gate
+  is wrong for it, and no test reaches it yet.
+- **A fast path that declined a target hid the other implementation's bugs.** The VM paths decoded
+  `slurp` through the shared NFC decoder, the interpreter arm through a strict UTF-8 one; the
+  interpreter arm now uses the shared decoder (`t/io/io-handle-read-one-decoder-parity.t` caught it).
+  A wrapper subclass's `nl-out` getter (`IO::MiddleMan`) was also answered by a fast path before it
+  reached the interpreter; the row answers it when the receiver has no handle of its own.
+
+Behaviour changes: none that a script can see beyond what `t/io/io-handle-method-rows.t` pins (the `.wrap`
+and subclass cases above keep their old answers). Found, not fixed: `words(N)` on a handle that was
+read with `get` leaves its last word buffered across a `seek(0)`, so the next `words` starts with a
+stale word ([#12186](https://github.com/tokuhirom/mutsu/issues/12186)).
+
+**Deferred.** `IO::CatHandle`, `IO::Pipe`, `IO::Special`, the sockets, `Proc::Async`, `Promise`, `Channel`,
+`Supply`, the schedulers, `Lock`, `Semaphore` and `Thread` (§9.19: the snapshot lists none of the owners,
+so each needs recognition rows first), and `IO::Handle`'s `READ`/`WRITE` stubs.
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 

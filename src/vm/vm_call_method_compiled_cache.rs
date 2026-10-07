@@ -516,6 +516,21 @@ impl Interpreter {
         if self.native_base_bypass_hit(target, method_sym) {
             return false;
         }
+        // A `.wrap` of a built-in method (`$*OUT.^find_method('print').wrap`)
+        // lands in the registry's wrap chains, like an `augment`, and takes the
+        // call from the native row the same way: the wrapper runs first, and
+        // its `callsame` re-dispatches to the native method. An instance's
+        // type name here is `Any`, so the chain is looked up by its class; the
+        // answer is not cached, but it costs one bool while nothing is wrapped.
+        if self.registry().has_any_method_wrap_chains()
+            && let ValueView::Instance { class_name, .. } = target.view()
+            && self
+                .registry()
+                .method_wrap_chain(class_name.as_str(), method_sym.as_str(), 0)
+                .is_some()
+        {
+            return true;
+        }
         if let Some(&hit) = self.caches.native_lever_a_override_cache.get(&key) {
             return hit;
         }

@@ -54,7 +54,7 @@
 //!   use, cleared in `refresh_method_caches_for_generation`;
 //! * **per-instance state** is ruled out by refusing to install for the three
 //!   class families whose probes read the *instance* rather than the class: an
-//!   `IO::Handle`/`IO::Path` in the MRO (`try_native_io_handle_method` keys on
+//!   `IO::Handle`/`IO::Path` in the MRO (the former IO::Handle fast paths keyed on
 //!   the live `handle` attribute), a CStruct class (fields live in native
 //!   memory, not the attribute map), and any class the program did not declare
 //!   itself.

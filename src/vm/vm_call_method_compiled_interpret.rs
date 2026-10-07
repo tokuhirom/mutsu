@@ -281,27 +281,6 @@ impl Interpreter {
             if let Some(result) = self.try_user_io_handle_method(&target, method, &args) {
                 return result;
             }
-            if let Some(result) = self.try_native_io_handle_method(&target, method, &args) {
-                return result;
-            }
-            // Interpreter-native text output to a File+UTF8 `IO::Handle` (print/put/say/
-            // print-nl): the write touches only handle state (PR-D Tier-2a).
-            // Stdout/Stderr (need emit_output) and non-UTF8 File fall through.
-            if let Some(result) = self.try_native_io_handle_output(&target, method, &args) {
-                return result;
-            }
-            // Interpreter-native raw byte output to a File `IO::Handle` (write/spurt):
-            // raw file write, no buffering/encoding (PR-D Tier-2c). Stdout/Stderr
-            // and a non-UTF8 spurt of a Str fall through.
-            if let Some(result) = self.try_native_io_handle_byte_output(&target, method, &args) {
-                return result;
-            }
-            // Interpreter-native line read from a File+UTF8 `IO::Handle` (get): reads via
-            // the handle's record reader (PR-D read side). ArgFiles/Stdin/non-UTF8
-            // (which need @*ARGS / decode) fall through.
-            if let Some(result) = self.try_native_io_handle_read(&target, method, &args) {
-                return result;
-            }
             // `IO::Path.watch` and `IO::Notification::Change.IO`/`.gist` (#9586).
             // Single impls shared with the interpreter's native-class dispatch.
             if let Some(result) = self.try_io_notification_instance_method(&target, method) {
