@@ -16,7 +16,10 @@ impl Interpreter {
         // Set again below only when this check fully matched the value, so the
         // declaration store right after it can skip a second match.
         self.decl_typechecked_context().set(false);
-        if !bind_mode && self.type_check_plain_scalar_fast(code, tc_idx, var_name)? {
+        if !bind_mode
+            && (self.type_check_native_scalar_fast(code, tc_idx, var_name)
+                || self.type_check_plain_scalar_fast(code, tc_idx, var_name)?)
+        {
             return Ok(());
         }
         // A `use variables :D/:U` smiley is already part of the constraint:
@@ -543,6 +546,36 @@ impl Interpreter {
     /// by the general path. Every `value.view()` of the preamble it skips
     /// costs a refcount round trip on a `Str` (#11467).
     // Cost: O(1) on a memo hit, plus the match itself.
+    /// The native counterpart of [`Self::type_check_plain_scalar_fast`]: a
+    /// plain `int`/`int64`/`str`/`num`/`num64` scalar declaration whose value
+    /// already carries exactly that tag. The general path validates the width
+    /// (a `BigInt` or a narrower type could fail) and returns without vouching;
+    /// for these constraints and an `Int`/`Str`/`Num` payload there is nothing
+    /// to validate, so the check is the tag test (#12151). Anything else,
+    /// including every mismatch, falls to the general path and its errors.
+    // Cost: O(1) on a memo hit.
+    fn type_check_native_scalar_fast(
+        &self,
+        code: &CompiledCode,
+        tc_idx: u32,
+        var_name: Option<&str>,
+    ) -> bool {
+        if !var_name.is_some_and(|n| n.starts_with('$')) {
+            return false;
+        }
+        let constraint = Self::const_str(code, tc_idx);
+        let Some(value) = self.stack.last() else {
+            return false;
+        };
+        matches!(
+            (constraint, value.view()),
+            ("int" | "int64", ValueView::Int(_))
+                | ("str", ValueView::Str(_))
+                | ("num" | "num64", ValueView::Num(_))
+        ) && self.registry().subsets.is_empty()
+            && self.type_decl_constraint_is_plain_builtin(code, tc_idx, constraint)
+    }
+
     fn type_check_plain_scalar_fast(
         &mut self,
         code: &CompiledCode,

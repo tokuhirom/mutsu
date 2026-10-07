@@ -494,7 +494,7 @@ impl Interpreter {
     /// caller wants the term included, which is what
     /// [`Self::set_local_scalar_fast_metadata_clear`] above is.
     #[inline]
-    fn slot_type_constraint_possible(code: &CompiledCode, idx: usize) -> bool {
+    pub(super) fn slot_type_constraint_possible(code: &CompiledCode, idx: usize) -> bool {
         match code.locals_sym.get(idx).copied() {
             Some(sym) => Self::env_type_constraint_seen_for(sym),
             None => Self::env_type_constraint_seen(),
@@ -523,6 +523,20 @@ impl Interpreter {
         if !self.mark_ctx.store_flags_clear() {
             return false;
         }
+        self.set_local_scalar_metadata_lanes_clear(code, idx, desc)
+    }
+
+    /// The metadata-lane half of [`Self::set_local_scalar_fast_metadata_clear_except_type`],
+    /// without the pending-flag question, so the declaration lane
+    /// (`vm_decl_lane.rs`) asks the very same list instead of keeping a copy
+    /// that could drift.
+    #[inline]
+    pub(super) fn set_local_scalar_metadata_lanes_clear(
+        &self,
+        code: &CompiledCode,
+        idx: usize,
+        desc: &crate::binding_desc::BindingDesc,
+    ) -> bool {
         // Every metadata lane the store would otherwise consult, in the order
         // the full path consults them. All are monotonic "has this program ever
         // done X" latches or empty-collection tests, so the common program
@@ -633,7 +647,7 @@ impl Interpreter {
     /// The narrower widths (`int8`, `uint32`, `num32`, ...) are deliberately
     /// NOT here: each wraps or truncates, so the store is not the identity and
     /// the cascade has real work to do.
-    fn native_typed_store_is_identity(
+    pub(super) fn native_typed_store_is_identity(
         &self,
         code: &CompiledCode,
         idx: usize,
@@ -804,6 +818,11 @@ impl Interpreter {
         // The hot `$x = <scalar>` store, decided up front so it pays for none of
         // the cascade below or in `exec_set_local_op_inner`. See its doc comment.
         if self.exec_set_local_scalar_fast(code, idx) {
+            return Ok(());
+        }
+        // The same for a plain `my $x = <scalar>` declaration whose slot is its
+        // variable's only home (see `exec_set_local_decl_fast`).
+        if self.exec_set_local_decl_fast(code, idx) {
             return Ok(());
         }
         // A re-assignment to a tied container (`my %h is Foo; %h = ...`, Foo
@@ -2496,7 +2515,24 @@ impl Interpreter {
                     binding.then(|| val.deref_container())
                 };
                 let check_val = bind_derefed.as_ref().unwrap_or(&val);
-                if !decl_typechecked
+                // A plain `int`/`str`/`num` constraint met by a value already
+                // carrying that tag: the match, the coercion and the native
+                // wrap below are all the identity for it (the proof is
+                // `native_typed_store_is_identity`'s, minus the slot's baked
+                // constraint, which this path reads from the env instead), and
+                // `TypeCheck` does not vouch native declarations, so
+                // `decl_typechecked` never spares them. ~420 instructions per
+                // `my int $x = ...` (#12151).
+                let native_identity = !binding
+                    && matches!(
+                        (constraint, val.view()),
+                        ("int" | "int64", ValueView::Int(_))
+                            | ("str", ValueView::Str(_))
+                            | ("num" | "num64", ValueView::Num(_))
+                    )
+                    && self.registry().subsets.is_empty();
+                if !native_identity
+                    && !decl_typechecked
                     && (!check_val.is_nil() || binding && val.is_proxy_value())
                     && !self.type_matches_value(constraint, check_val)
                 {
@@ -2509,13 +2545,17 @@ impl Interpreter {
                 // The adjacent `TypeCheck` that vouched for the value
                 // (`decl_typechecked`) already ran this coercion on it as its
                 // last step, and stored the result we just popped.
-                if !(decl_typechecked || val.is_nil() || binding && val.is_proxy_value()) {
+                if !(native_identity
+                    || decl_typechecked
+                    || val.is_nil()
+                    || binding && val.is_proxy_value())
+                {
                     val = loan_env!(self, try_coerce_value_for_constraint(constraint, val))?;
                 }
                 // Wrap native integer values on assignment (overflow wrapping).
                 // A vouched-for declaration is never native: `TypeCheck`'s
                 // native arms validate and return without vouching.
-                if !decl_typechecked {
+                if !native_identity && !decl_typechecked {
                     val = Self::wrap_native_int_by_constraint(constraint, val)?;
                 }
             }
@@ -3691,6 +3731,46 @@ impl Interpreter {
         if !self.lexicals.readonly_vars.borrow().is_empty() {
             self.unmark_readonly_sym(name_sym);
         }
+        // A scalar declaration whose slot is its variable's only home keeps
+        // nothing in env and no per-scope bookkeeping: see
+        // `env_free_decl_slot`.
+        if let Some(slot) =
+            self.env_free_decl_slot(code, name, dynamic, bind_declaration, local_slot)
+        {
+            // A cell an earlier scope (an `is rw` binding, a shared lexical)
+            // left in env under this name must not outlive the fresh binding:
+            // the slot no longer holds it (ADR-0097 §15 env/slot invariant).
+            // Same replacement the generic declaration store makes.
+            if let Some(sym) = code.locals_sym.get(slot).copied()
+                && matches!(
+                    self.env().get_sym(sym).map(Value::view),
+                    Some(ValueView::ContainerRef(_) | ValueView::Proxy { .. })
+                )
+            {
+                if self
+                    .lexicals
+                    .our_scalar_cell_names
+                    .contains(&code.locals[slot])
+                {
+                    self.env_mut().remove_sym(sym);
+                } else {
+                    self.env_mut().insert_sym(sym, Value::NIL);
+                }
+            }
+            // An untyped declaration still drops a stale same-named constraint.
+            if !type_follows {
+                self.vm_set_var_type_constraint_for(name, Some(name_sym), None);
+            }
+            if reset != crate::opcode::DeclReset::Keep {
+                self.locals[slot] = if type_follows {
+                    // The `SetVarType` that follows seeds the declared type.
+                    Value::NIL
+                } else {
+                    Value::package(crate::symbol::wk::any())
+                };
+            }
+            return;
+        }
         // A `my $*name` is this frame's own binding of the dynamic, not the
         // process-level one `PROCESS::<$name>` reports (`process_stash_entries`).
         if dynamic && (name.starts_with('*') || name.starts_with("@*") || name.starts_with("%*")) {
@@ -3801,9 +3881,9 @@ impl Interpreter {
                 !code.local_slots_of(name_sym).is_empty() && !code.is_state_name(name);
             if is_body_local
                 && let Some(saved) = self.topic_state.loop_local_saved_env.last_mut()
-                && !saved.contains_key(name)
+                && !saved.contains_key(&name_sym)
             {
-                saved.insert(name.to_string(), None);
+                saved.insert(name_sym, None);
             }
         }
         if !self.topic_state.loop_cond_active
@@ -3841,9 +3921,9 @@ impl Interpreter {
             });
             if has_coherent_slot
                 && let Some(saved) = self.topic_state.loop_local_saved_env.last_mut()
-                && !saved.contains_key(name)
+                && !saved.contains_key(&name_sym)
             {
-                saved.insert(name.to_string(), Some(prev));
+                saved.insert(name_sym, Some(prev));
             }
         }
         // Pre-initialize the variable in the env with a default value so that
@@ -3856,7 +3936,6 @@ impl Interpreter {
         // look like a routine redeclaration instead of producing a callable to
         // bind into `my &name = ...`.
         if reset != crate::opcode::DeclReset::Keep && !name.starts_with('&') {
-            let had_binding = self.env().contains_key_sym(name_sym);
             // The first execution of a body-local declaration leaves an outer
             // same-named binding in place while the initializer runs, unless
             // the initializer reads the new binding (`DeclReset::Shadow`,
@@ -3870,8 +3949,13 @@ impl Interpreter {
             // shadows an outer binding: SetVarType must see this declaration's
             // Nil seed, not the outer value, before the initializer runs.
             let seed_declared_type = type_follows && !bind_declaration;
-            let reset_existing = reset == crate::opcode::DeclReset::Shadow
-                || reset == crate::opcode::DeclReset::Fresh && seed_declared_type
+            // `had_binding` is only asked when the cheaper terms did not already
+            // decide to reset: a typed scalar (the hot loop-body `my int $x`)
+            // resets unconditionally, so it skips the env probe (#12151).
+            let reset_decided = reset == crate::opcode::DeclReset::Shadow
+                || reset == crate::opcode::DeclReset::Fresh && seed_declared_type;
+            let had_binding = !reset_decided && self.env().contains_key_sym(name_sym);
+            let reset_existing = reset_decided
                 || reset == crate::opcode::DeclReset::Fresh
                     && had_binding
                     && self

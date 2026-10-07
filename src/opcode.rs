@@ -9526,7 +9526,7 @@ impl CompiledCode {
                 | OpCode::SymbolicDeref { .. }
                 | OpCode::SymbolicDerefStore(_)
                 | OpCode::IndirectCodeLookup(_) => true,
-                // `EVAL`/`EVALFILE` are reflective whichever call shape the
+                // `EVAL`/`EVALFILE`/`repl` are reflective whichever call shape the
                 // call site compiled to. A statement-position call once had
                 // its own opcodes (`ExecCall`/`ExecCallPairs`, since retired);
                 // missing those here left the READ side of EVAL's caller-lexical
@@ -9543,7 +9543,8 @@ impl CompiledCode {
                 OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncNamed { name_idx, .. } => {
                     matches!(
                         self.constants.get(*name_idx as usize).map(Value::view),
-                        Some(ValueView::Str(name)) if name.as_str() == "EVAL" || name.as_str() == "EVALFILE"
+                        Some(ValueView::Str(name))
+                            if matches!(name.as_str(), "EVAL" | "EVALFILE" | "repl")
                     )
                 }
                 // The method form `$code.EVAL` resolves the caller's lexicals
