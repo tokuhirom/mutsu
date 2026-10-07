@@ -141,7 +141,10 @@ impl Interpreter {
             self.unmark_readonly_sym(sym);
         }
         if !self.lexicals.constant_var_names_seen.is_empty()
-            && self.lexicals.constant_var_names_seen.contains(name.as_str())
+            && self
+                .lexicals
+                .constant_var_names_seen
+                .contains(name.as_str())
         {
             self.clear_constant_marker(name);
         }
