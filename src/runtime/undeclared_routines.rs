@@ -18,8 +18,9 @@
 
 use crate::ast::{CallArg, Expr, ParamDef, Stmt, UndeclaredRoutineCall};
 use crate::ast_visit::{
-    NameKind, Visit, walk_call_arg, walk_expr, walk_param, walk_stmt, walk_stmts,
+    NameKind, Visit, walk_call_arg, walk_expr, walk_param, walk_regex_node, walk_stmt, walk_stmts,
 };
+use crate::regex_tree::RegexNode;
 use crate::value::{RuntimeError, RuntimeErrorCode};
 use std::collections::HashSet;
 
@@ -186,6 +187,28 @@ impl<'ast> Visit<'ast> for Scan {
             self.record_call(name);
         }
         walk_expr(self, expr);
+    }
+
+    fn visit_regex_node(&mut self, node: &'ast RegexNode) {
+        // `<value:sym<number>>` names a proto candidate: the parser keeps the
+        // `sym<number>` tail as a subscript on the bareword `sym`, which is
+        // the adverb's name, not a call to a routine called `sym`.
+        if let RegexNode::Subrule {
+            name,
+            args: Some(args),
+            ..
+        }
+        | RegexNode::SubruleAlias {
+            name,
+            args: Some(args),
+            ..
+        } = node
+            && args.source.as_deref().is_some_and(|s| s.starts_with("sym<"))
+        {
+            self.visit_name(name, NameKind::Regex);
+            return;
+        }
+        walk_regex_node(self, node);
     }
 
     fn visit_param(&mut self, param: &'ast ParamDef) {
