@@ -59,7 +59,6 @@ enum NativeBase {
     BaggyStorage,
     AnyBase,
     MixinBase,
-    CoreType,
     Metamodel,
 }
 
@@ -73,7 +72,6 @@ const NATIVE_BASE_EXHAUSTED: &[NativeBase] = &[
     NativeBase::BaggyStorage,
     NativeBase::AnyBase,
     NativeBase::MixinBase,
-    NativeBase::CoreType,
     NativeBase::Metamodel,
 ];
 
@@ -83,7 +81,6 @@ const NATIVE_BASE_MULTI: &[NativeBase] = &[
     NativeBase::BaggyStorage,
     NativeBase::HashStorage,
     NativeBase::ArrayStorage,
-    NativeBase::CoreType,
 ];
 
 /// A method that pushed no dispatch frame of its own.
@@ -92,7 +89,6 @@ const NATIVE_BASE_NO_FRAME: &[NativeBase] = &[
     NativeBase::HashStorage,
     NativeBase::AnyBase,
     NativeBase::MixinBase,
-    NativeBase::CoreType,
 ];
 
 impl Interpreter {
@@ -149,7 +145,6 @@ impl Interpreter {
                 NativeBase::BaggyStorage => self.native_baggy_storage_next_candidate(override_args),
                 NativeBase::AnyBase => self.native_any_base_next_candidate(override_args),
                 NativeBase::MixinBase => self.native_mixin_base_next_candidate(override_args),
-                NativeBase::CoreType => self.native_core_type_next_candidate(override_args),
                 NativeBase::Metamodel => self.native_metamodel_next_candidate(override_args),
             };
             if res.is_some() {
@@ -1290,6 +1285,33 @@ impl Interpreter {
                                 )
                             })?,
                     };
+                    if tail_call {
+                        return Err(RuntimeError::return_signal(result));
+                    }
+                    return Ok(result);
+                }
+                Some(DeferralEntry::Native { name }) => {
+                    // The builtin of a core-type receiver behind an augmented
+                    // method: the frame's current invocant and args, or the
+                    // `callwith` replacement.
+                    let (invocant, args) = {
+                        let frame = &mut self.dispatch.method_dispatch_stack[frame_idx];
+                        frame.remaining.remove(0);
+                        if let Some(new_args) = override_args {
+                            if frame.in_wrapper {
+                                let mut it = new_args.into_iter();
+                                if let Some(invocant) = it.next() {
+                                    frame.invocant = invocant;
+                                }
+                                frame.args = it.collect();
+                            } else {
+                                frame.args = new_args;
+                            }
+                        }
+                        frame.in_wrapper = false;
+                        (frame.invocant.clone(), frame.args.clone())
+                    };
+                    let result = self.run_core_type_builtin(invocant, &name, args)?;
                     if tail_call {
                         return Err(RuntimeError::return_signal(result));
                     }

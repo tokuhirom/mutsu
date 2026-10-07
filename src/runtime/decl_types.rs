@@ -452,6 +452,12 @@ pub(crate) enum DeferralEntry {
     /// CURRENT invocant and args (a wrapper's `callwith($other, |c)` may have
     /// replaced both), skipping only the dispatcher chain itself.
     Redispatch { name: String },
+    /// The builtin method of a core-type receiver (a native value, not an
+    /// `Instance`) behind a method the user `augment`ed onto that type
+    /// (ADR-11276 slice 4): the last candidate of the receiver's own MRO,
+    /// which is a row and not a `MethodDef`. Advancing here runs the builtin
+    /// on the frame's current invocant with the augmentation hidden.
+    Native { name: String },
 }
 
 /// One entry of `Interpreter::samewith_context_stack` (ADR-0019 E9c-1).
