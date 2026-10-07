@@ -4085,7 +4085,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::StatementUnless
         | RakuAstClass::StatementLoopWhile
         | RakuAstClass::StatementLoopUntil
-        | RakuAstClass::StatementLoop => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),
+        | RakuAstClass::StatementLoop
+        | RakuAstClass::StatementWhenever => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),
         // `nqp::const::NAME`: the constant as the bareword the parser keeps.
         RakuAstClass::NqpConst => match node.fields.first().map(|f| &f.value) {
             Some(RakuAstFieldValue::Node(name)) => match name.view() {
@@ -4177,6 +4178,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     | RakuAstClass::StatementLoopWhile
                     | RakuAstClass::StatementLoopUntil
                     | RakuAstClass::StatementLoop
+                    | RakuAstClass::StatementWhenever
             ) {
                 return Ok(Expr::DoStmt(Box::new(lower_stmt(block)?)));
             }

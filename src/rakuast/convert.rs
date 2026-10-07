@@ -145,7 +145,7 @@ fn is_do_statement(stmt: &Stmt) -> bool {
             is_statement_modifier,
             ..
         } => !*is_statement_modifier,
-        Stmt::While { .. } | Stmt::Loop { .. } => true,
+        Stmt::While { .. } | Stmt::Loop { .. } | Stmt::Whenever { .. } => true,
         _ => false,
     }
 }
