@@ -762,22 +762,6 @@ impl Interpreter {
         // (`pending_caller_var_writeback`) instead, which carries the source up the
         // frame chain until the frame whose `code` actually has the slot drains it.
         for (key, val) in updates {
-            // The store is keyed by bare name, so a plain value it holds under
-            // `key` may belong to a *different* binding of that name (a caller's
-            // in-flight `my $response` placeholder seeded at a spawn). A binding
-            // this thread already holds as a cell has an identity of its own and
-            // every legitimate writer reaches it through the cell; replacing it
-            // with the foreign snapshot disconnects it for good (#12204: a
-            // `supply { my $response; ... }` body's cell was swapped for the
-            // awaiting caller's `Any`, so `$response.http-version = ...` died).
-            if !val.is_container_ref()
-                && self
-                    .env
-                    .get(&key)
-                    .is_some_and(|cur| cur.is_container_ref())
-            {
-                continue;
-            }
             self.pending_caller_var_writeback.insert(key.clone());
             // ADR-0024: a mainline named sub's captured free variable may be
             // reassigned from a worker thread (e.g. `$port = await
