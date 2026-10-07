@@ -2641,6 +2641,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // included, as one word-quote (ADR-12199).
         Expr::Spelled(spelled) => match &spelled.spelling {
             Spelling::Words(text) => Ok(word_quote(text)),
+            Spelling::Heredoc { stop } => heredoc_node(&spelled.expr, stop),
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
@@ -6319,6 +6320,19 @@ pub(super) fn word_quote(word: &str) -> RakuAstNode {
             },
         ],
     }
+}
+
+/// `q:to/END/`: the heredoc's text as the quoted string it evaluates to,
+/// plus the terminator line rakudo keeps as `stop`.
+fn heredoc_node(body: &Expr, stop: &str) -> Result<RakuAstNode, RuntimeError> {
+    let mut node = convert_expr(body)?;
+    if node.class != RakuAstClass::QuotedString {
+        return Err(unsupported("a heredoc that is not quoted text"));
+    }
+    node.class = RakuAstClass::Heredoc;
+    node.fields
+        .push(leaf_field(Some("stop"), Value::str(stop.to_string())));
+    Ok(node)
 }
 
 /// A string literal renders as `QuotedString.new(segments => (StrLiteral,))`.

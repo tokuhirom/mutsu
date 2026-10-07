@@ -22,6 +22,9 @@ use std::cell::Cell;
 pub(crate) enum Spelling {
     /// `<a b  c>`: the raw text between the brackets, whitespace included.
     Words(Box<str>),
+    /// `q:to/END/`: the terminator line as written, indentation and newline
+    /// included (`    END\n`).
+    Heredoc { stop: Box<str> },
 }
 
 /// A term and the way it was spelled; see the module documentation.

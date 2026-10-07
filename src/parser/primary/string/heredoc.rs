@@ -1,5 +1,5 @@
 use super::*;
-use crate::ast::Expr;
+use crate::ast::{Expr, spelled::Spelling};
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 use crate::value::ValueView;
@@ -124,6 +124,7 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
         }
     }
     if let Some(end) = content_end {
+        let (content_end_pos, terminator_end_pos) = (end, terminator_end.expect("terminator end"));
         let content = &heredoc_start[..end];
         let content = if terminator_indent == 0 {
             content.to_string()
@@ -189,6 +190,16 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
             expr
         };
 
+        // The terminator line as written (`    END\n`), for RakuAST's `stop`.
+        // `:w` splits the text, which RakuAST keeps as a processor instead.
+        let expr = if flags.words {
+            expr
+        } else {
+            Expr::spelled(expr, || Spelling::Heredoc {
+                stop: terminator_line(heredoc_start, content_end_pos, terminator_end_pos).into(),
+            })
+        };
+
         if rest_of_line.trim().is_empty() {
             return Ok((after_terminator, expr));
         }
@@ -211,6 +222,17 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
         return Ok((leaked, expr));
     }
     Err(PError::expected("heredoc terminator"))
+}
+
+/// The terminator line of a heredoc body, from its indentation through the
+/// newline that ends it (none at the end of the source).
+// Cost: O(1), the terminator line is a slice of the body.
+fn terminator_line(body: &str, line_start: usize, delimiter_end: usize) -> &str {
+    let end = match body[delimiter_end..].strip_prefix('\n') {
+        Some(_) => delimiter_end + 1,
+        None => delimiter_end,
+    };
+    &body[line_start..end]
 }
 
 /// Compute the visual column width of leading whitespace, treating tabs as
