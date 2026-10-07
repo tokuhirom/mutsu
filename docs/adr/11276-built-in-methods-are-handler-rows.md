@@ -1711,3 +1711,27 @@ unchecked slice in the issue body ([#11276](https://github.com/tokuhirom/mutsu/i
 claims it with that slice's id in the branch name (`refactor/11276-3b-numbers-text`), and
 records progress as one §9 subsection per slice. Live status (which slices are open, merged or
 deferred) is kept in the issue body, not here, so this section does not drift.
+
+### 9.24 Slice 3G: the metaobject protocol (2026-10-07)
+
+Branch `refactor/11276-3g-ctors-mop`. Inventory (`scripts/method-rows-report.py --arms`): the 58 quoted-name
+arms of `dispatch_classhow_method` (`runtime/methods_classhow_dispatch.rs`, 2,184 lines) plus the
+hand-written name list `is_classhow_method` that gated it, and the `new` of every built-in type, spread over
+about forty sites that each also ask "does the user class define `new`".
+
+**MOP family.** A mutsu `Perl6::Metamodel::*HOW` instance is one dispatcher over many HOW kinds, each call
+carrying the type object first (`how_dispatch_args`). Rakudo declares the metamethods on its HOW classes, so
+each arm is now a row of the owner that declares it: `Metamodel::ClassHOW` (46), `Metamodel::SubsetHOW`
+(`refinement`, `refinee`), `Metamodel::CoercionHOW` (`nominalize`, `coerce`), `Metamodel::ParametricRoleHOW`
+(`pretending_to_be`, `parameterize`, `set_body_block`, `pun`), `Metamodel::ParametricRoleGroupHOW`
+(`candidates`), `Metamodel::CurriedRoleHOW` (`curried_role`) and `Metamodel::NativeHOW` (`nativesize`,
+`unsigned`). The recognition table and the oracle snapshot gain the seven owners (the snapshot generator
+takes `Metamodel::*` owners as they are: their own HOW is an `NQPClassHOW`, which has no `.defined`).
+
+Mechanism: none of these has a shape, so every row is `OWNER_ONLY` and reached by `invoke_owner_raw`, which
+differs from `invoke_owner` in one respect: no argument is split off as named, because a metamethod reads its
+own flags (`.^methods(:all)`) and the row is found by the full count. A handler is one `Interpreter` method
+(`runtime/methods_classhow_arms_*.rs`; the arm's body, moved verbatim); the three arms with a residual guard
+(`rw` on a role, `candidates`, `set_body_block`) keep it as a `*_applies` predicate the row asks first. The
+gate `is_classhow_method` is the rows plus the `EnumHOW`/`DefiniteHOW` names, whose own dispatchers still
+answer before the rows. A call no row answers is `X::Method::NotFound`, as the `_` arm was.

@@ -72,10 +72,11 @@ pub(crate) use scalars::{
     str_search, succ_pred, truth, uni, unicode, version,
 };
 
+pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
 #[cfg(test)]
 pub(crate) use dispatch::try_dispatch;
 pub(crate) use dispatch::{
-    admits, answer, invoke, invoke_in, invoke_mut, invoke_owner, try_dispatch_in,
+    admits, answer, invoke, invoke_in, invoke_mut, invoke_owner, invoke_owner_raw, try_dispatch_in,
 };
 pub(crate) use mutating::owners_of as mut_owners_of;
 pub(crate) use place::ReceiverPlace;
