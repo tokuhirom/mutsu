@@ -68,8 +68,10 @@ impl Interpreter {
         // The importing scope's env first; a module routine whose own compunit
         // imported the term through a re-run hook finds it in that module's
         // scope once its load's env is gone (`module_export_terms`, #9389).
+        // Read the term-namespace copy, never the plain key: that is shared
+        // with a same-named `$scalar` of the reading scope or its callers.
         self.env()
-            .get(name)
+            .get_sym(crate::runtime::term_names::term_key_sym(Symbol::intern(name)))
             .or_else(|| self.module_scope_lexical(name))
             .cloned()
     }
