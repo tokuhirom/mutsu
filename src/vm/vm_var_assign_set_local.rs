@@ -3737,6 +3737,22 @@ impl Interpreter {
         if let Some(slot) =
             self.env_free_decl_slot(code, name, dynamic, bind_declaration, local_slot)
         {
+            // A cell an earlier scope (an `is rw` binding, a shared lexical)
+            // left in env under this name must not outlive the fresh binding:
+            // the slot no longer holds it (ADR-0097 §15 env/slot invariant).
+            // Same replacement the generic declaration store makes.
+            if let Some(sym) = code.locals_sym.get(slot).copied()
+                && matches!(
+                    self.env().get_sym(sym).map(Value::view),
+                    Some(ValueView::ContainerRef(_) | ValueView::Proxy { .. })
+                )
+            {
+                if self.lexicals.our_scalar_cell_names.contains(&code.locals[slot]) {
+                    self.env_mut().remove_sym(sym);
+                } else {
+                    self.env_mut().insert_sym(sym, Value::NIL);
+                }
+            }
             // An untyped declaration still drops a stale same-named constraint.
             if !type_follows {
                 self.vm_set_var_type_constraint_for(name, Some(name_sym), None);
