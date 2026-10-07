@@ -244,17 +244,6 @@ impl Interpreter {
                 | ValueView::LazyList(_) => {
                     items.extend(crate::runtime::utils::value_to_list(arg));
                 }
-                // `CArray` — and ONLY `CArray` — also flattens an Array/List
-                // argument into its elements: `CArray[uint8].new(@a, 3)` is 3
-                // elements, whereas `Array.new(@a, 3)` / `List.new(@a, 3)` keep
-                // `@a` as a single element (verified against rakudo). The
-                // idiomatic way to build a NUL-terminated C string depends on
-                // it — `CArray[uint8].new($path.encode.list, 0)` (OpenSSL's
-                // `use-client-ca-file`) otherwise produced a 2-element buffer
-                // and the callee saw a garbage filename.
-                ValueView::Array(..) if base_class_name == "CArray" => {
-                    items.extend(crate::runtime::utils::value_to_list(arg));
-                }
                 // `Array.new(|c)` slurps with `+@`, so the single-argument rule
                 // applies: `Array.new((1,2))`, `Array.new([1,2])` and
                 // `Array.new(@a)` are all two elements, while
@@ -302,20 +291,8 @@ impl Interpreter {
                 }
             }
         }
-        // A `CArray[T]` over a native numeric `T` is a storage-backed instance,
-        // not an `Array` of boxed elements: its bytes are the memory C is handed
-        // a pointer into, and they are what its `.WHERE` describes (ADR-0015
-        // P3). Reference-typed elements (`CArray[Str]`, `CArray[Pointer]`, a
-        // nested `CArray`) keep the boxed form — see
-        // `value::value_carray::native_elem_type`.
-        if base_class_name == "CArray"
-            && crate::value::value_carray::is_native_carray_class(&class_name.resolve())
-        {
-            return Ok(crate::value::value_carray::make_carray(class_name, items));
-        }
-        let mut result = if matches!(base_class_name, "Array" | "array" | "CArray") {
-            // A CArray is a mutable, element-assignable buffer like a native
-            // `array`, so build a real (mutable) Array, not an immutable List.
+        let mut result = if matches!(base_class_name, "Array" | "array") {
+            // Build a real (mutable) Array, not an immutable List.
             Value::real_array(items)
         } else {
             Value::array(items)
@@ -332,18 +309,6 @@ impl Interpreter {
                 } else {
                     class_name.resolve()
                 }),
-            };
-            result = self.tag_container_metadata(result, info);
-        } else if base_class_name == "CArray" {
-            // An untyped `CArray.new` is a `CArray`, not a plain `Array`: it
-            // carries the class as its declared type like the reference-element
-            // spellings (`CArray[Str]`), so `~~ CArray`, a `CArray` parameter
-            // and `.^name` see it. It has no element type: elements are `Any`,
-            // as for an untyped `Array`.
-            let info = crate::runtime::ContainerTypeInfo {
-                value_type: "Any".to_string(),
-                key_type: None,
-                declared_type: Some(class_name.resolve()),
             };
             result = self.tag_container_metadata(result, info);
         }

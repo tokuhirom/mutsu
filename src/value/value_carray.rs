@@ -15,7 +15,7 @@
 //! [`BufData`](super::BufData) node of contiguous bytes. It shares that node,
 //! its accessor layer ([`super::value_buf`]) and its element encode/decode
 //! verbatim — this module adds only what is specific to `CArray`: the class-name
-//! filter, construction, and the `CArray` REPR body.
+//! filter and the `CArray` REPR body.
 //!
 //! **Element types that are references keep the boxed representation.**
 //! `CArray[Str]`, `CArray[Pointer]`, a nested `CArray[CArray[…]]` and a CStruct
@@ -27,8 +27,7 @@
 //! §2.1's ordering rule is that an honest `.REPR` is a promise that a body exists
 //! behind `.WHERE`.
 
-use super::{InstanceAttrs, Value};
-use crate::symbol::Symbol;
+use super::InstanceAttrs;
 
 /// Whether `class_name` is a `CArray` parameterised with a native numeric
 /// element type — the arrays that get native storage.
@@ -52,15 +51,6 @@ pub(crate) fn carray_elem_type_name(class_name: &str) -> Option<&str> {
         return None;
     }
     rest.strip_suffix(']')
-}
-
-/// A fresh native-backed `CArray[T]` holding `elems`.
-///
-/// The elements are encoded at the class's element width by the same
-/// [`super::value_buf`] path a `Buf` uses, so an out-of-range or non-`Int`
-/// element is coerced exactly as it would be there.
-pub(crate) fn make_carray(class_name: Symbol, elems: Vec<Value>) -> Value {
-    super::value_buf::make_buf(class_name, elems)
 }
 
 /// The address of this array's synthesised `CArray` REPR body, which is what its
@@ -87,6 +77,8 @@ pub(crate) fn carray_storage_address(attrs: &InstanceAttrs) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::symbol::Symbol;
+    use crate::value::Value;
 
     #[test]
     fn only_native_element_types_get_storage() {
@@ -113,7 +105,10 @@ mod tests {
 
     #[test]
     fn elements_round_trip_through_the_node() {
-        let a = make_carray(Symbol::intern("CArray[int32]"), vec![Value::int(-7)]);
+        let a = crate::value::value_buf::make_buf(
+            Symbol::intern("CArray[int32]"),
+            vec![Value::int(-7)],
+        );
         let attrs = match a.view() {
             super::super::ValueView::Instance { attributes, .. } => attributes,
             _ => panic!("expected an instance"),
