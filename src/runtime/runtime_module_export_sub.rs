@@ -415,10 +415,11 @@ impl Interpreter {
             // is shared with a same-named `$scalar` (a caller's `my $t`
             // inherited into an attribute default), which would answer the
             // term read in place of the export (`t.bright-white` on an Int).
-            self.env.insert(
-                crate::runtime::term_names::term_key(&env_key),
-                value.clone(),
-            );
+            // Recorded like the plain key, so a scope that undoes its imports
+            // (an EVAL) drops this entry with it.
+            let term_key = crate::runtime::term_names::term_key(&env_key);
+            self.record_import_env_key(&term_key);
+            self.env.insert(term_key, value.clone());
         }
         // A sigilless term is also part of the LOADING module's own scope, so
         // that module's routines still find it once a re-`use` of an
