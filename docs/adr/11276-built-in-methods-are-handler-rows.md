@@ -1430,7 +1430,7 @@ the quant-hash mutators (a shared node: the mechanism's proof), `Str.subst-mutat
 (`assign`), `Hash.push`/`append`, `Array`'s `push`/`append`/`unshift`/`prepend`/`pop`/`shift` with
 `List`'s immutable rows, `Array.splice`, `Blob`/`Buf`'s mutators, and `IO::Handle.open`.
 
-**What landed (1025 -> 1068 registered rows; 45 `Mut` rows).** One commit per family, each with its
+**What landed (1025 -> 1059 registered rows, 34 of them `Mut`; the cascades' quoted-name arms 1161 -> 1125, the VM's mutation helpers' 41 -> 26).** One commit per family, each with its
 focused test and each checked against Rakudo and the roast files of its owners:
 
 - [x] *The mechanism, and `BagHash.add`/`remove`* (`mutating/baghash.rs`). `Handler::Mut`,

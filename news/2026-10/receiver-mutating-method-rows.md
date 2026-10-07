@@ -34,5 +34,3 @@ Behaviour changes toward Rakudo, each pinned in a focused test:
   an `@` variable.
 - A by-value `QuantHash` receiver (`f().unset('x')`, `$obj.q.grab`) is mutated in place; the
   slow path used to work on a copy.
-- An `augment` or `.wrap` of the receiver's type that defines the method takes the call from a
-  row (it was skipped on the VM's early paths).
