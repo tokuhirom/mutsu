@@ -140,7 +140,7 @@ def report_rows(args):
     by_group = collections.defaultdict(collections.Counter)
     for owner, _name, _arity, kind, _flags, _named in registered:
         by_group[group_of(owner)][kind] += 1
-    kinds = ["Pure", "Narrow", "Named", "Interp"]
+    kinds = ["Pure", "Narrow", "Named", "Interp", "Mut"]
     print(f"{'group':14} " + " ".join(f"{k:>7}" for k in kinds) + f" {'total':>7}")
     for group in sorted(by_group):
         counts = by_group[group]

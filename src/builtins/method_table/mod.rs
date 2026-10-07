@@ -82,6 +82,8 @@ pub(crate) use place::ReceiverPlace;
 pub(crate) use row::{Handler, MethodRow, Named, RowFlags};
 #[cfg(test)]
 use table::all_rows;
+#[cfg(test)]
+pub(crate) use table::names_a_mut_row;
 pub(crate) use table::{Receiver, RowId, names_a_row, owner_row, resolve, row, shape_has_row};
 
 #[cfg(test)]

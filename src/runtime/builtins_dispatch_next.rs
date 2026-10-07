@@ -522,7 +522,7 @@ impl Interpreter {
             "push" | "append" | "prepend" | "unshift" | "pop" | "shift"
         ) {
             let outcome = attributes.with_attr_mut("__mutsu_array_storage", |storage| {
-                Self::native_array_storage_mut(storage, &method_name, &args)
+                self.native_array_storage_mut(storage, &method_name, &args)
             })??;
             return Some(outcome.map(|value| match method_name.as_str() {
                 "push" | "append" | "prepend" | "unshift" => invocant.clone(),
@@ -738,7 +738,7 @@ impl Interpreter {
                     | "STORE"
             )
             && let Some(result) =
-                Self::native_mixin_array_mutation(&invocant, inner.as_ref(), &method_name, &args)
+                self.native_mixin_array_mutation(&invocant, inner.as_ref(), &method_name, &args)
         {
             return Some(result);
         }

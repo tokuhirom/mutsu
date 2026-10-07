@@ -39,8 +39,11 @@ This is a **bytecode VM** architecture. The VM handles ALL operations natively v
    `DispatchShape` along the declaring type's MRO, at the VM's native entry (`try_native_method`)
    ahead of the tiers below. A miss falls through to them unchanged. A row carries flags and the
    named arguments it binds, and its handler is pure (`Pure`, `Narrow`, `Named`) or needs the
-   interpreter (`Interp`); one guard step (`method_table/dispatch.rs`) admits a call's arguments
-   and splits its named ones. A shape added after the first nine is closed to ancestor rows
+   interpreter (`Interp`) or writes through its receiver (`Mut`, which takes the receiver's
+   `ReceiverPlace`: a named binding or a detached container; ADR-11276 §9.23); one guard step
+   (`method_table/dispatch.rs`) admits a call's arguments and splits its named ones, and a `Mut`
+   row has its own entry (`invoke_mut`, found along the receiver's owner chain, never by a
+   shape). A shape added after the first nine is closed to ancestor rows
    until its owner slice audits them. Methods migrate here in nine planned slices, by owner
    group (ADR-11276 §10); a new built-in method is a row, not a new cascade arm.
 1. **Fast path** — `builtins/methods_0arg/`, `builtins/methods_narg.rs`: Pure Rust native methods dispatched by arity. No AST execution needed.

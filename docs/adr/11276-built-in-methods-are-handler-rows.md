@@ -1430,6 +1430,92 @@ the quant-hash mutators (a shared node: the mechanism's proof), `Str.subst-mutat
 (`assign`), `Hash.push`/`append`, `Array`'s `push`/`append`/`unshift`/`prepend`/`pop`/`shift` with
 `List`'s immutable rows, `Array.splice`, `Blob`/`Buf`'s mutators, and `IO::Handle.open`.
 
+**What landed (1025 -> 1068 registered rows; 45 `Mut` rows).** One commit per family, each with its
+focused test and each checked against Rakudo and the roast files of its owners:
+
+- [x] *The mechanism, and `BagHash.add`/`remove`* (`mutating/baghash.rs`). `Handler::Mut`,
+  `ReceiverPlace`, `invoke_mut`, `RowFlags::ANY_NAMED`. A `Mut` row is registered in the owner map
+  and in a per-name arity mask of its own (`Table::mut_arities`), never in the per-shape map, so
+  `try_dispatch`, the call-site lane and the pure entries cannot find it and the debug cross-check
+  cannot run it twice. `invoke_mut` is the guard step of the mutating entries: a bit test on the
+  name and arity first; the owner chain of the receiver's value kind (`mutating::owners_of`); the
+  `augment`/`.wrap` veto (`native_lever_a_user_override_sym`) before the handler, which has effects;
+  named arguments the row does not declare dropped (a method's implicit `*%_`, ADR-0070), or all
+  of them handed over for an `ANY_NAMED` row. No argument is admitted or refused: a mutator reads
+  its arguments raw (`@a.push(@b)`).
+- [x] *The QuantHash mutators* (`mutating/quanthash.rs`): `SetHash.set`/`unset`, `grab` and
+  `grabpairs` on `SetHash`/`BagHash`/`MixHash`, and the `X::Immutable` rows of `Set`/`Bag`/`Mix`.
+  `builtins/quanthash_mutators.rs` and the cascades' `grab` arms (`dispatch_1arg.rs`,
+  `dispatch_core_range.rs`, the Bag and Mix halves of `dispatch_grab_method` and all of
+  `dispatch_grabpairs_method`) are gone. The Callable count (`grab(* div 2)`) is resolved by the
+  handler, which has the interpreter.
+- [x] *`Str.subst-mutate` and `substr-rw`* (`mutating/text.rs`): the first rows that need the name.
+  `place.assign` writes both halves of the VM's dual store; `substr-rw` hands back the write-through
+  `Proxy`. A receiver with no name has no `Str` row (`owners_of` is asked with `has_name`).
+- [x] *`Hash.push`/`append`* (`mutating/hash.rs`): the `%` arm of the by-name entry, the by-value
+  block and `try_native_hash_mut_bound` were three copies of one body. The typed and object-hash
+  path reads the declared key and value types off the container first and the variable second, and
+  `%_` names a hash with no variable in the type error.
+- [x] *The `Array` mutators* (`mutating/array.rs`): `push`, `append`, `unshift`, `prepend`, `pop`,
+  `shift`, `splice` and `grab` on `Array`, and `List`'s six refusals (`X::Immutable`; a `List` reaches
+  `Array.splice` through the owner chain and gets Rakudo's "no candidates"). The six copies named
+  above are one implementation, and `try_native_array_mut`, `try_native_array_splice`,
+  `array_mutate_copy`, `array_grab`, the sigil-less arm, the immutable-list reject and the E2
+  shift/pop block are deleted. `native_array_storage_mut` is now the `Detached` call of the same
+  rows, so the `is Array` storage, the mixin-wrapped array and the `nextsame` fallback share them.
+
+**Where the entry is called.** Four places, each with the position the arms it replaced had, and
+none after a guard the arms ran in front of: the VM's `CallMethodMut` (an early hook in front of the
+scoped-env flatten for the plain `Array` receiver, #9494's lane, and one at the old native fast-path
+position for every other kind); `CallMethod` (a `Detached` place, probed by receiver kind first so
+a call on any other receiver pays one tag probe); the interpreter's by-name entry
+(`call_method_mut_with_values`, a `Var` place with no chunk) and its by-value dispatcher
+(`call_method_with_values_inner`, `Detached`).
+
+**What the work taught.**
+
+- **The receiver is settled by the time a family's old arm ran, not at the top.** The VM's
+  `CallMethodMut` reifies a lazy array, vivifies an undefined receiver and unwraps `.VAR` between its
+  first line and its native fast paths, so the hook for the array rows sits where the arms sat.
+- **A fast path is a guard in front of the same body.** `try_native_array_mut` bailed for typed,
+  `is default`, shared and non-`@` receivers and for `pop`/`shift` with an argument; the row's
+  handler does each of those itself, so the guard in front of the VM's early hook shrinks to "an
+  array, no Junction argument, not a thread-shared name".
+- **The name-keyed constraint is only an element type for an `@` name.** `check_container_element_types`
+  looked up `var_type_constraint(name)` for any name; for `my Int $x = [1]` that is the variable's
+  type, not the elements'. The row asks it only of an `@` name and reads the container's metadata
+  otherwise (the scalar-held arm already did).
+- **A user subclass of a QuantHash reaches the storage through the delegate's own list**
+  (`is_baggy_storage_method`); `set` and `unset` were missing from it.
+
+Behaviour changes toward Rakudo, each pinned in a focused test (`t/collections/set-bag-mix/
+baghash-mutator-rows.t`, `quanthash-mutator-rows.t`, `t/types/string/str-mutator-rows.t`,
+`t/collections/hash/hash-push-append-rows.t`, `t/collections/array/array-mutator-rows.t`):
+`MixHash.grab` is refused; `set`/`unset` on a `SetHash` subclass work; an undeclared named
+argument is ignored by every mutator; a `Nil` pushed onto a scalar-held array decays to the element
+default; a by-value `QuantHash` is mutated in place.
+
+**Not done, and why.**
+
+- **`Blob`/`Buf`'s seven mutators** (`buf_mutate_method`, `buf_pop_shift_splice`, `buf_reallocate`
+  and the by-value block). Rakudo declares them on `Buf`, not on `Blob`, and the recognition table
+  folds `Buf`/`Blob`/`utf8` into one owner: §8.3's question, which 3B's remainder (the `Blob`/`Buf`
+  shapes) decides. The rows follow it.
+- **`IO::Handle.open`** (`RowFlags::OWNER_ONLY` stays for it). Its write-back replaces the
+  receiver's *attributes* in the instance's shared cell through
+  `call_native_instance_method_mut_in_place`, whose `AttrPublisher` is the cross-thread publish point
+  of #7923. A `Mut` row for it needs a third place kind (the attribute cell with its publisher), which
+  no array, hash or string needed.
+- **The VM's thread-shared lanes** (`shared_array_extend`, `shared_array_mutate` in front of the
+  dispatch for a plain `@name` once a thread exists) and the `ArrayPush` opcode keep their own
+  copies: they route through the name-keyed atomic store, a `Shared` place that this slice does not
+  add. The thread lanes are the remaining quoted-name arms of the array owners
+  (`vm_call_method_mut_ops.rs`); they and the opcode's body are slice 5's, with the cascades.
+- **Receivers with no row**: a `Range` (the immutable-`Range` arm in the by-value block, owned by
+  3C's `Range`), a `Seq`/`LazyList` (`vm_lazy_front_mutate`), an `Iterator` or `IterationBuffer`
+  instance, a `Proxy` subclass's attribute array (`proxy_subclass_array_mutate`) and an `Any:U`
+  (the autovivification arms), none of which has a shape.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -115,6 +115,8 @@ impl<'a> ReceiverPlace<'a> {
     // local slots of the chunk.
     pub(crate) fn assign(&mut self, interp: &mut Interpreter, new: Value) {
         match self {
+            // A receiver with no name has nowhere to be written.
+            ReceiverPlace::Var { name, .. } if name.is_empty() => {}
             ReceiverPlace::Var { name, code, .. } => {
                 interp.env_mut().insert((*name).to_string(), new.clone());
                 if let Some(code) = code {

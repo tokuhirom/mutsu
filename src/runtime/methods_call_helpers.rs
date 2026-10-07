@@ -352,85 +352,11 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Mutate an Array value in place for push/pop/shift/unshift/append/
-    /// prepend/splice on a by-value invocant (function results, element
-    /// reads, literals). Container identity (§3.2): the mutation writes
-    /// through the SHARED backing node, so any live holder of the same
-    /// container (`f()` returning `@a`, an element holding the array)
-    /// observes it; a literal's node has no other holder, so the in-place
-    /// write is unobservable there.
-    pub(super) fn array_mutate_copy(
-        &self,
-        target: Value,
-        method: &str,
-        args: Vec<Value>,
-    ) -> Result<Value, RuntimeError> {
-        let kind = match target.view() {
-            ValueView::Array(_, k) => k,
-            _ => crate::value::ArrayKind::Array,
-        };
-        match method {
-            // Cost: O(k) amortized, k = added elements, at either end (`ArrayData::extend`
-            // / `ArrayData::prepend_values`).
-            "push" | "append" | "unshift" | "prepend" => {
-                // ADR-0040 slice 1: itemize per element, after the
-                // one-arg-rule flattening decision.
-                let vals: Vec<Value> = match method {
-                    "push" | "unshift" => Self::normalize_push_args_for_copy(args),
-                    _ => flatten_append_args(args),
-                }
-                .into_iter()
-                .map(Self::itemize_value)
-                .collect();
-                let front = matches!(method, "unshift" | "prepend");
-                target.with_array_inplace(|data, _| {
-                    if front {
-                        data.prepend_values(vals);
-                    } else {
-                        data.extend(vals);
-                    }
-                });
-                Ok(target)
-            }
-            // Cost: O(1) amortized (`ArrayData::remove(0)`, #9121, / `ArrayData::pop`).
-            "pop" | "shift" => {
-                if !args.is_empty() {
-                    return Err(RuntimeError::new(format!(
-                        "Too many positionals passed; expected 1 argument but got {}",
-                        args.len() + 1
-                    )));
-                }
-                if kind.is_lazy() {
-                    return Err(RuntimeError::cannot_lazy(method));
-                }
-                let removed = target
-                    .with_array_inplace(|data, _| {
-                        if data.items().is_empty() {
-                            None
-                        } else if method == "shift" {
-                            Some(data.remove(0))
-                        } else {
-                            data.pop()
-                        }
-                    })
-                    .flatten();
-                Ok(removed
-                    .unwrap_or_else(|| crate::runtime::utils::make_empty_array_failure(method)))
-            }
-            "splice" => {
-                let removed = target
-                    .with_array_inplace(|data, _| Self::splice_array_data(data, &args))
-                    .unwrap_or_default();
-                Ok(Value::real_array(removed))
-            }
-            _ => unreachable!(),
-        }
-    }
-
     /// Apply `@a.splice($start?, $count?, *@replacement)` to an `ArrayData` in
-    /// place, returning the removed elements. Shared by the by-value invocant
-    /// path (`array_mutate_copy`) and the shared-context atomic-store path
-    /// (`shared_array_mutate` callers in the VM).
+    /// place, returning the removed elements. The shared-context atomic-store
+    /// path (`shared_array_mutate` callers in the VM) splices through it; the
+    /// `Array.splice` row has its own `splice_plan`, which also resolves the
+    /// callable and bounds checks the lane skips.
     // Cost: O(n + r + (e - s - n)), e = elements of the array, s = offset, n = removed,
     // r = replacement elements; O(n + r) amortized at the front (`ArrayData::splice_live`).
     pub(crate) fn splice_array_data(
@@ -463,17 +389,6 @@ impl Interpreter {
         let replacement =
             crate::runtime::flatten_splice_replacement_args(args.get(2..).unwrap_or(&[]));
         data.splice_live(start, end, replacement)
-    }
-
-    /// Normalize push/unshift arguments (unwrap Scalar containers, deitemize).
-    /// ADR-0040 slice 1: the by-value-invocant push/unshift counterpart of
-    /// `Interpreter::normalize_push_unshift_args` (`methods_mut.rs`) — same
-    /// reversal, same reason: itemize the stored element instead of
-    /// stripping an incoming itemization.
-    pub(super) fn normalize_push_args_for_copy(args: Vec<Value>) -> Vec<Value> {
-        args.into_iter()
-            .map(Value::itemize_for_element_store)
-            .collect()
     }
 
     pub(super) fn buf_allocate(

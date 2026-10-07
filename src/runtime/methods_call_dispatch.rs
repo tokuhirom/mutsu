@@ -1970,35 +1970,28 @@ impl Interpreter {
                 return result;
             }
         }
-        // Immutable List/Range: the six mutators rakudo DOES define on them
-        // throw X::Immutable. `splice` is not among them -- rakudo declares it
-        // on Array only, so a List/Range invocant resolves no candidate at all
-        // and raises X::Multi::NoMatch instead ("Cannot resolve caller
-        // splice(List:D, Int:D, Int:D); Routine does not have any candidates."),
-        // which is the spelling Crane's CATCH maps to X::Crane::Add::RO.
+        // Immutable Range: the six mutators rakudo DOES define on a `Range`
+        // throw X::Immutable, and `splice` -- declared on Array only -- resolves
+        // no candidate at all and raises X::Multi::NoMatch instead ("Cannot
+        // resolve caller splice(Range:D, Int:D, Int:D); Routine does not have
+        // any candidates."), which is the spelling Crane's CATCH maps to
+        // X::Crane::Add::RO. (An immutable `List` is answered by the
+        // `List` rows of the method table above.)
         if matches!(
             method,
             "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-        ) {
-            let is_immutable = match target.view() {
-                ValueView::Array(_, kind) => !kind.is_real_array(),
-                ValueView::Range(..)
+        ) && matches!(
+            target.view(),
+            ValueView::Range(..)
                 | ValueView::RangeExcl(..)
                 | ValueView::RangeExclStart(..)
                 | ValueView::RangeExclBoth(..)
-                | ValueView::GenericRange { .. } => true,
-                _ => false,
-            };
-            if is_immutable {
-                if method == "splice" {
-                    return Err(make_no_candidates_error(method, &target, &args));
-                }
-                let typename = match target.view() {
-                    ValueView::Array(..) => "List",
-                    _ => "Range",
-                };
-                return Err(make_x_immutable_error(method, typename));
+                | ValueView::GenericRange { .. }
+        ) {
+            if method == "splice" {
+                return Err(make_no_candidates_error(method, &target, &args));
             }
+            return Err(make_x_immutable_error(method, "Range"));
         }
         // Any:U autovivification: calling push/append/unshift/prepend on an
         // undefined value (Nil or type object Any) creates a new Array.
@@ -2034,87 +2027,6 @@ impl Interpreter {
                 return Err(make_method_not_found_error(method, type_name, false));
             }
             return Err(make_multi_no_match_error(method));
-        }
-        // Mutating array methods on Array values (non-container path)
-        if matches!(
-            method,
-            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-        ) && matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array())
-        {
-            // ADR-0070: this block runs in front of the arity cascade and reads
-            // `args` positionally, so an adverb none of these methods accepts
-            // would be spliced in as an element or counted as a positional
-            // (`[1,2,3].pop(:zzz)` died with an arity error; raku pops).
-            let args = crate::builtins::strip_undeclared_nameds(method, &args).unwrap_or(args);
-            // Check element type constraints from container metadata (e.g., typed attribute arrays)
-            // `append`/`prepend` flatten a single iterable argument (the
-            // one-arg rule), so check the elements that will actually land,
-            // not the argument list: `$o.s.append(@more)` on `has Str @.s`.
-            if matches!(method, "push" | "unshift") {
-                self.check_array_value_element_types(&target, &args)?;
-            } else if matches!(method, "append" | "prepend") {
-                let landing = crate::runtime::flatten_append_args(args.clone());
-                self.check_array_value_element_types(&target, &landing)?;
-            }
-            // splice's start/elems positions take `Int` (plus `Whatever`/
-            // `Callable`) — a `Num`/`Str`/`Array` there matches no candidate and
-            // must throw X::Multi::NoMatch (roast .../multi-no-match.t) rather
-            // than being coerced. Mirrors the lvalue path in methods_mut_dispatch.
-            // A from-the-end start/count (`*-1`) arrives as a `WhateverCode`;
-            // resolve it against the invocant's length before anything reads
-            // those positions as integers. The lvalue path does the same (see
-            // `resolve_splice_callable_args`).
-            let args = if method == "splice"
-                && args
-                    .iter()
-                    .take(2)
-                    .any(|v| matches!(v.view(), ValueView::Sub(..) | ValueView::WeakSub(..)))
-            {
-                let arr_len = match target.view() {
-                    ValueView::Array(items, ..) => items.len(),
-                    _ => 0,
-                };
-                self.resolve_splice_callable_args(arr_len, &args)
-            } else {
-                args
-            };
-            if method == "splice" {
-                fn is_valid_splice_index(v: &Value) -> bool {
-                    match v.view() {
-                        ValueView::Whatever | ValueView::Sub(..) | ValueView::WeakSub(..) => true,
-                        ValueView::Mixin(inner, _) => is_valid_splice_index(inner),
-                        _ => crate::runtime::utils::is_integer_value(v),
-                    }
-                }
-                for v in args.iter().take(2) {
-                    if !is_valid_splice_index(v) {
-                        return Err(make_multi_no_match_error("splice"));
-                    }
-                }
-                // Bounds are checked before the write, exactly as the lvalue
-                // path does: an offset outside `0..len` and a negative size are
-                // X::OutOfRange in rakudo, not a clamped splice at the end.
-                let arr_len = match target.view() {
-                    ValueView::Array(items, ..) => items.len(),
-                    _ => 0,
-                };
-                Self::validate_splice_range(arr_len, &args)?;
-            }
-            // Splice replacements land in the shared node in place now, so
-            // type-check them up front (flattened like do_splice flattens).
-            if method == "splice" && args.len() > 2 {
-                let mut replacement: Vec<Value> = Vec::new();
-                for arg in args.iter().skip(2) {
-                    match arg.view() {
-                        ValueView::Array(items, ..) => replacement.extend(items.iter().cloned()),
-                        ValueView::Seq(items) => replacement.extend(items.iter().cloned()),
-                        ValueView::Slip(items) => replacement.extend(items.iter().cloned()),
-                        _ => replacement.push(arg.clone()),
-                    }
-                }
-                self.check_array_value_element_types(&target, &replacement)?;
-            }
-            return self.array_mutate_copy(target, method, args);
         }
         // IO::Special.new("<STDOUT>")
         if let ValueView::Package(name) = target.view()

@@ -544,24 +544,6 @@ impl Interpreter {
             return Ok(());
         }
         crate::alloc_scope_end!(_sc_cmm_args);
-        // A receiver-mutating built-in method answered from its row
-        // (ADR-11276 §9.23): `BagHash.add`/`remove`, the QuantHash mutators and
-        // `Str`'s `subst-mutate`/`substr-rw` so far. The row writes through the
-        // receiver's shared node (or replaces the variable's value) and
-        // re-seats the dual store itself, so there is nothing to write back
-        // here. A user class's own method of that name is untouched: the
-        // `^find_method` lookup above has already answered it.
-        if matches!(modifier, None | Some("?")) {
-            let mut place =
-                crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code);
-            if let Some(result) =
-                crate::builtins::method_table::invoke_mut(self, &mut place, method_sym, &args)
-            {
-                crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "mut-row");
-                self.stack.push(result?);
-                return Ok(());
-            }
-        }
         // `$b.subbuf-rw(...)` outside an assignment: a write-through Proxy over
         // the buffer, the `Buf` counterpart of the `substr-rw` arm above
         // (#9216). A user class's own `subbuf-rw` is untouched.
@@ -1130,14 +1112,32 @@ impl Interpreter {
         // and the shared-array lane, which bails on exactly the condition the
         // helper itself bails on. So answer it before the flatten: one push per
         // parsed CSV field paid a whole-scope env clone for nothing (#9494).
+        //
+        // The array mutators are rows (ADR-11276 §9.23): the same handler answers
+        // here, in front of the flatten, for the plain array receiver, and later
+        // for every other shape. A thread-shared name keeps its lane further
+        // down, which routes it through the atomic store.
         if modifier.is_none()
+            && matches!(target.view(), ValueView::Array(..))
             && !args.iter().any(Value::is_junction_value)
-            && let Some(result) = self.try_native_array_mut(target_name, &target, method, &args)
+            && !(self.threads.shared_vars_active && !self.container_name_is_redeclared(target_name))
         {
-            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
-            self.shadow_check_native_row_candidate(&target, method, method_sym, args.len(), true);
-            self.stack.push(result?);
-            return Ok(());
+            let mut place =
+                crate::builtins::method_table::ReceiverPlace::var_in(target_name, &target, code);
+            if let Some(result) =
+                crate::builtins::method_table::invoke_mut(self, &mut place, method_sym, &args)
+            {
+                crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
+                self.shadow_check_native_row_candidate(
+                    &target,
+                    method,
+                    method_sym,
+                    args.len(),
+                    true,
+                );
+                self.stack.push(result?);
+                return Ok(());
+            }
         }
         // Beyond the pure-read accessor fast path above, full method dispatch may
         // capture/iterate the env; collapse a transient scoped overlay env to a
@@ -2591,48 +2591,38 @@ impl Interpreter {
                 }
             }
             _ => {
-                // Native fast path for mutating list methods on a plain, untyped
-                // `@`-array (ledger §1: native receiver dispatch -> Interpreter-native).
-                // Handles the common hot-loop case directly in the Interpreter, writing the
-                // mutated array back to env, instead of routing through the
-                // tree-walking interpreter bridge. Falls through (returns None) for
-                // typed/shaped/lazy/shared/constrained arrays so the interpreter
-                // keeps owning those richer semantics.
-                if modifier.is_none()
-                    && let Some(result) =
-                        self.try_native_array_mut(target_name, &target, method, &args)
-                {
-                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
-                    // ADR-0019 E6b step 1: shadow-verify the `Native` candidate
-                    // (E5b step 1's template) at each of CallMethodMut's own
-                    // native-probe completion shapes, observational only.
-                    self.shadow_check_native_row_candidate(
+                // A receiver-mutating built-in method answered from its row
+                // (ADR-11276 §9.23): `BagHash.add`/`remove`, the QuantHash
+                // mutators, `Hash.push`/`append` and `Str`'s
+                // `subst-mutate`/`substr-rw` so far. The row writes through the
+                // receiver's shared node (or replaces the variable's value) and
+                // re-seats the dual store itself, so there is nothing to write
+                // back here. By this point the receiver is settled: a lazy
+                // array reified, an undefined one vivified, a user method of the
+                // same name on an instance already answered.
+                if modifier.is_none() {
+                    let mut place = crate::builtins::method_table::ReceiverPlace::var_in(
+                        target_name,
                         &target,
-                        method,
-                        method_sym,
-                        args.len(),
-                        true,
+                        code,
                     );
-                    self.stack.push(result?);
-                    return Ok(());
-                }
-                // Native fast path for the simple (non-erroring) forms of `splice`
-                // on a plain, untyped `@`-array (ledger §1: native receiver
-                // dispatch -> Interpreter-native).
-                if modifier.is_none()
-                    && let Some(result) =
-                        self.try_native_array_splice(target_name, &target, method, &args)
-                {
-                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
-                    self.shadow_check_native_row_candidate(
-                        &target,
-                        method,
-                        method_sym,
-                        args.len(),
-                        true,
-                    );
-                    self.stack.push(result?);
-                    return Ok(());
+                    if let Some(result) = crate::builtins::method_table::invoke_mut(
+                        self, &mut place, method_sym, &args,
+                    ) {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "callmethodmut",
+                            "native",
+                        );
+                        self.shadow_check_native_row_candidate(
+                            &target,
+                            method,
+                            method_sym,
+                            args.len(),
+                            true,
+                        );
+                        self.stack.push(result?);
+                        return Ok(());
+                    }
                 }
                 // Native fast path for mutating Buf write methods on a mutable Buf
                 // instance (ledger §1: native receiver dispatch -> Interpreter-native).
@@ -2784,7 +2774,7 @@ impl Interpreter {
                         // updated storage written back, with no interpreter
                         // dispatch. Richer methods fall through below.
                         if let Some(result) =
-                            Self::native_array_storage_mut(&mut storage, method, &args)
+                            self.native_array_storage_mut(&mut storage, method, &args)
                         {
                             let result = result?;
                             let updated_instance = self.write_back_array_storage_instance(
@@ -3142,229 +3132,6 @@ impl Interpreter {
             && matches!(bytes.next(), Some(c) if c.is_ascii_alphabetic() || c == b'_')
     }
 
-    fn try_native_array_mut(
-        &mut self,
-        target_name: &str,
-        target: &Value,
-        method: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if !matches!(
-            method,
-            "push" | "append" | "prepend" | "unshift" | "pop" | "shift"
-        ) {
-            return None;
-        }
-        // A plain `@`-sigiled variable whose value is a real `[...]` array
-        // (ArrayKind::Array), excluding List/Item/Shaped/Lazy kinds — OR a scalar
-        // variable bound to a whole array container (`my $r := @a`), which holds
-        // a shared `ContainerRef` cell that `env_root_descended_mut` below
-        // unwraps so the mutation still writes through the shared array.
-        let is_bound_cell = matches!(
-            self.env().get(target_name).map(Value::view),
-            Some(ValueView::ContainerRef(_))
-        );
-        if (!target_name.starts_with('@') && !is_bound_cell)
-            || !matches!(
-                target.view(),
-                ValueView::Array(_, crate::value::ArrayKind::Array)
-            )
-        {
-            return None;
-        }
-        // Shared arrays keep their interior-mutation (Arc>1) semantics in the
-        // interpreter so bound aliases observe the change; type-constrained or
-        // metadata-bearing containers need element checks / typed empty Failures.
-        // (Shared `push`/`unshift` are intercepted earlier by the shared-array
-        // fast path in `exec_call_method_mut_op`.)
-        //
-        // A name this lineage RE-DECLARED is exempt: it is a frame-local
-        // container that deliberately gets no shared-store lane, so the
-        // shared-array fast path does not intercept it and the interpreter
-        // fallback cannot reach it either — `box_decl_local_container_cell` put
-        // a `ContainerRef` cell in the env entry and the fallback's plain
-        // `env.get_mut(..).with_array_mut(..)` does not descend cells, so it
-        // silently rebuilt a detached array (`my @a; @a.push("n");
-        // @a.append(...)` inside a `start` block lost the append). This path
-        // does descend, via `env_root_descended_mut`.
-        //
-        // ADR-0049 slice 4: also bail on a container carrying its own
-        // `is default(...)` value. `decay_nil_vec_elements` below is
-        // deliberately untyped-only (always decays a Nil arg to plain `Any`)
-        // -- correct ONLY because this guard already routes every typed/
-        // metadata-tagged target to the richer interpreter path. Without this
-        // check an `is default(...)` array (which carries neither a type
-        // constraint nor `container_type_metadata`, a separate side channel)
-        // stayed on this fast path and silently stored a bare `Any` element
-        // instead of the container's own default: `my @a is default(42) =
-        // 1,2,3; @a.append(Nil)` stored `Any`, where both push (which has its
-        // own dedicated opcode/fast path, already routed through
-        // `assign_store_nil_default`) and real raku store `42`.
-        if (self.threads.shared_vars_active && !self.container_name_is_redeclared(target_name))
-            || self.container_default(target).is_some()
-        {
-            return None;
-        }
-        // A typed container (`has Field @.fields`, `my Int @a`) takes this path
-        // for the growing mutators when no argument is `Nil` (a `Nil` element
-        // decays to the element default, which only the general path
-        // computes): the general path's element check runs here first, so an
-        // ill-typed element raises exactly what it raises there. The mutation
-        // is in place, so the container's pointer-keyed type metadata stays
-        // attached. `pop`/`shift` keep the general path, whose empty-container
-        // Failure names the element type (#9494).
-        let typed = loan_env!(self, var_type_constraint(target_name)).is_some()
-            || self.container_type_metadata(target).is_some();
-        if typed {
-            // Only an `@` variable's constraint is an ELEMENT type; a scalar
-            // bound to an array (`Positional $x`) constrains the variable.
-            if !target_name.starts_with('@')
-                || !matches!(method, "push" | "append" | "prepend" | "unshift")
-            {
-                return None;
-            }
-            let items = if matches!(method, "push" | "unshift") {
-                crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
-            } else {
-                crate::runtime::flatten_append_args(args.to_vec())
-            };
-            if items.iter().any(Value::is_nil) {
-                return None;
-            }
-            if let Err(e) = self.check_container_element_types(target_name, target, &items) {
-                return Some(Err(e));
-            }
-        }
-        // pop/shift take no positionals; let the interpreter raise the arity error.
-        if matches!(method, "pop" | "shift") && !args.is_empty() {
-            return None;
-        }
-        // The receiver must be exactly the array currently bound to this name.
-        // Container identity (§3): mutate through the SHARED backing node
-        // (`gc_contents_mut`, no COW) so every by-value holder of the same
-        // array — a `(0, @a)` capture, an element holding the array — observes
-        // the mutation. Descend through a whole-container `:=` bound cell
-        // (`my @x := @a`) so the mutation writes through the shared cell.
-        // `env_root_descended_mut` itself prefers a compunit unit-lexical
-        // container (ADR-0039 slice 1) over the raw `env` entry when
-        // `target_name` names one, so a module's/mainline-sub's own `@items`
-        // is never confused with the loading scope's same-named `env` entry.
-        // ADR-0049 slice 3: precompute the (possibly Nil-decaying) argument
-        // list BEFORE taking the mutable borrow into `self`'s env below --
-        // `decay_nil_vec_elements` needs `&mut self`, which the
-        // `with_array_mut` closure below cannot borrow (it is already
-        // running inside `self.env_root_descended_mut(..)`'s mutable
-        // borrow). This whole function bailed out above for any typed or
-        // metadata-tagged target, so the result is always the untyped `Any`
-        // default -- exactly what the old hardcoded `nil_elems_to_any` call
-        // produced here, now sourced from the one shared decay helper.
-        // ADR-0040 slice 1: itemize per element, after the one-arg-rule
-        // flattening decision (and after Nil-decay), so a single pushed
-        // aggregate becomes one itemized element.
-        let mut precomputed_args = match method {
-            // `@a.push`/`.unshift` compile to `ArrayPush`/(unshift opcode)
-            // only for a single-arg call on a *local* array; the
-            // captured-closure and multi-arg forms reach here as
-            // `CallMethodMut`. Mirror the opcode's env-bound branch
-            // (`normalize_push_unshift_args` then extend/insert).
-            "push" | "unshift" => Some(
-                self.decay_nil_vec_elements(
-                    crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec()),
-                )
-                .into_iter()
-                .map(Self::itemize_value)
-                .collect::<Vec<_>>(),
-            ),
-            "append" | "prepend" => Some(
-                self.decay_nil_vec_elements(crate::runtime::flatten_append_args(args.to_vec()))
-                    .into_iter()
-                    .map(Self::itemize_value)
-                    .collect::<Vec<_>>(),
-            ),
-            _ => None,
-        };
-        let result = self.env_root_descended_mut(target_name)?.with_array_mut(
-            move |arc_items, kind| {
-                if !matches!(*kind, crate::value::ArrayKind::Array) {
-                    return None;
-                }
-                // SAFETY: audited aliased in-place container write (see
-                // value::aliased_mut); no other borrow into this node is
-                // live across the mutation below.
-                let items = unsafe { crate::value::gc_contents_mut(arc_items) };
-                Some(match method {
-                    // Cost: O(k) amortized, k = pushed elements (in-place `Vec::extend`).
-                    "push" => {
-                        let norm = precomputed_args.take().expect("precomputed for push above");
-                        items.extend(norm);
-                        Value::array_with_kind(
-                            crate::gc::Gc::clone(arc_items),
-                            crate::value::ArrayKind::Array,
-                        )
-                    }
-                    // Cost: O(k) amortized, k = appended/prepended elements
-                    // (`ArrayData::extend` / `ArrayData::prepend_values`).
-                    "append" | "prepend" => {
-                        let flat = precomputed_args
-                            .take()
-                            .expect("precomputed for append/prepend above");
-                        if method == "append" {
-                            items.extend(flat);
-                        } else {
-                            items.prepend_values(flat);
-                        }
-                        Value::array_with_kind(
-                            crate::gc::Gc::clone(arc_items),
-                            crate::value::ArrayKind::Array,
-                        )
-                    }
-                    // Cost: O(k) amortized, k = unshifted elements (`ArrayData::prepend_values`).
-                    "unshift" => {
-                        let norm = precomputed_args
-                            .take()
-                            .expect("precomputed for unshift above");
-                        items.prepend_values(norm);
-                        Value::array_with_kind(
-                            crate::gc::Gc::clone(arc_items),
-                            crate::value::ArrayKind::Array,
-                        )
-                    }
-                    // Cost: O(1).
-                    "pop" => {
-                        if items.is_empty() {
-                            crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
-                        } else {
-                            items.pop().unwrap_or(Value::NIL)
-                        }
-                    }
-                    // Cost: O(1) amortized (`ArrayData::remove(0)` advances the front head
-                    // offset, #9121).
-                    "shift" => {
-                        if items.is_empty() {
-                            crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
-                        } else {
-                            items.remove(0)
-                        }
-                    }
-                    _ => unreachable!(),
-                })
-            },
-        )??;
-        Some(Ok(result))
-    }
-
-    /// Interpreter-native simple array mutators (push/pop/shift/unshift/append/prepend)
-    /// applied directly to an `is Array`-backed instance's backing storage
-    /// `Value` (ledger §1: array-backed instance dispatch -> Interpreter-native).
-    ///
-    /// Mirrors the interpreter's plain, non-shared env-keyed mutator branch
-    /// (`methods_mut.rs`): the `__mutsu_array_storage` value is a plain untyped
-    /// `real_array`, so `push`/`append`/`unshift`/`prepend` extend/insert the
-    /// normalized arguments and `pop`/`shift` remove an element (returning a
-    /// typed empty Failure when empty). `storage` is mutated in place and the
-    /// method's result value is returned. Returns `None` (fall through to the
-    /// interpreter) for any other method, a non-plain `ArrayKind`, or an
-    /// arity-erroring `pop`/`shift` so the interpreter owns the richer cases.
     /// Non-mutating, non-rw-view list methods that are safe to dispatch on an
     /// `is Array` instance's backing storage via `try_native_method` (which
     /// borrows the storage immutably and returns a fresh value). Excludes:
@@ -3395,113 +3162,33 @@ impl Interpreter {
         )
     }
 
+    /// The simple array mutators (`push`/`pop`/`shift`/`unshift`/`append`/`prepend`,
+    /// and `splice`) applied directly to an `is Array`-backed instance's backing
+    /// storage `Value`: the row's [`ReceiverPlace::Detached`] form, so the same
+    /// handler that answers `@a.push` answers it (ADR-11276 §9.23). `storage` is
+    /// mutated in place through its shared node and the method's result value
+    /// is returned; the caller writes the instance back.
+    ///
     /// `pub(crate)`: also reused by the `nextsame`/`callsame` synthesized native
     /// fallback (`native_array_storage_next_candidate` in
     /// `runtime/builtins_dispatch_next.rs`) so a deferred call from a user
     /// override reaches the same mutation as the direct `$a.push(...)` path,
     /// instead of silently no-op'ing through the non-mutating
     /// `try_native_method` dispatch.
+    // Cost: see the row's handler (`method_table::mutating::array`).
     pub(crate) fn native_array_storage_mut(
+        &mut self,
         storage: &mut Value,
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let result = storage.with_array_mut(|arc_items, kind| {
-            if !matches!(*kind, crate::value::ArrayKind::Array) {
-                return None;
-            }
-            Some(match method {
-                // ADR-0040 slice 1: itemize per element, after the
-                // one-arg-rule flattening decision.
-                // Cost: O(k) amortized, k = pushed elements.
-                "push" => {
-                    let norm =
-                        crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
-                            .into_iter()
-                            .map(crate::runtime::Interpreter::itemize_value)
-                            .collect::<Vec<_>>();
-                    // SAFETY: this is a container mutation; every holder of
-                    // the array must observe the same backing node.
-                    unsafe { crate::value::gc_contents_mut(arc_items) }.extend(norm);
-                    Value::array_with_kind(
-                        crate::gc::Gc::clone(arc_items),
-                        crate::value::ArrayKind::Array,
-                    )
-                }
-                // Cost: O(k) amortized, k = appended elements.
-                "append" => {
-                    let flat = crate::runtime::flatten_append_args(args.to_vec())
-                        .into_iter()
-                        .map(crate::runtime::Interpreter::itemize_value)
-                        .collect::<Vec<_>>();
-                    // SAFETY: this is a container mutation; every holder of
-                    // the array must observe the same backing node.
-                    unsafe { crate::value::gc_contents_mut(arc_items) }.extend(flat);
-                    Value::array_with_kind(
-                        crate::gc::Gc::clone(arc_items),
-                        crate::value::ArrayKind::Array,
-                    )
-                }
-                // Cost: O(k) amortized, k = unshifted elements (`ArrayData::prepend_values`).
-                "unshift" => {
-                    let norm =
-                        crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
-                            .into_iter()
-                            .map(crate::runtime::Interpreter::itemize_value)
-                            .collect::<Vec<_>>();
-                    // SAFETY: this is a container mutation; every holder of
-                    // the array must observe the same backing node.
-                    let items = unsafe { crate::value::gc_contents_mut(arc_items) };
-                    items.prepend_values(norm);
-                    Value::array_with_kind(
-                        crate::gc::Gc::clone(arc_items),
-                        crate::value::ArrayKind::Array,
-                    )
-                }
-                // Cost: O(k) amortized, k = prepended elements (`ArrayData::prepend_values`).
-                "prepend" => {
-                    let flat = crate::runtime::flatten_append_args(args.to_vec())
-                        .into_iter()
-                        .map(crate::runtime::Interpreter::itemize_value)
-                        .collect::<Vec<_>>();
-                    // SAFETY: this is a container mutation; every holder of
-                    // the array must observe the same backing node.
-                    let items = unsafe { crate::value::gc_contents_mut(arc_items) };
-                    items.prepend_values(flat);
-                    Value::array_with_kind(
-                        crate::gc::Gc::clone(arc_items),
-                        crate::value::ArrayKind::Array,
-                    )
-                }
-                // Cost: O(1).
-                "pop" => {
-                    if !args.is_empty() {
-                        return None;
-                    }
-                    if arc_items.is_empty() {
-                        crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
-                    } else {
-                        unsafe { crate::value::gc_contents_mut(arc_items) }
-                            .pop()
-                            .unwrap_or(Value::NIL)
-                    }
-                }
-                // Cost: O(1) amortized (`ArrayData::remove(0)` advances the front head
-                // offset, #9121).
-                "shift" => {
-                    if !args.is_empty() {
-                        return None;
-                    }
-                    if arc_items.is_empty() {
-                        crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
-                    } else {
-                        unsafe { crate::value::gc_contents_mut(arc_items) }.remove(0)
-                    }
-                }
-                _ => return None,
-            })
-        })??;
-        Some(Ok(result))
+        let mut place = crate::builtins::method_table::ReceiverPlace::detached(storage);
+        crate::builtins::method_table::invoke_mut(
+            self,
+            &mut place,
+            crate::symbol::Symbol::intern(method),
+            args,
+        )
     }
 
     /// Rebuild an `is Array`-backed instance with its `__mutsu_array_storage`
@@ -3531,116 +3218,6 @@ impl Interpreter {
         self.env_mut()
             .insert_through(target_name.to_string(), updated_instance.clone());
         updated_instance
-    }
-
-    /// Interpreter-native `splice` on a plain, untyped `@`-array bound to `target_name`
-    /// (ledger §1: native receiver dispatch -> Interpreter-native). Mirrors the
-    /// interpreter's `splice` branch in `methods_mut.rs` exactly (one
-    /// `ArrayData::splice_live`, returning the removed elements as a real array), so the result
-    /// is behavior-invariant.
-    ///
-    /// Conservatively handles only the simple, non-erroring forms: the offset
-    /// and count arguments must be plain non-negative `Int`s (or absent) and any
-    /// replacement values must be non-lazy. Returns `None` (fall through to the
-    /// interpreter) for every richer case the interpreter owns: a
-    /// WhateverCode/`Whatever`/`Str`/`Num` offset or count, an out-of-range
-    /// offset (`X::OutOfRange`), a lazy replacement (`X::Cannot::Lazy`), and
-    /// typed/shaped/shared/metadata-bearing arrays.
-    // Cost: O(n + r + (e - s - n)), e = elements of the array, s = offset, n =
-    // removed, r = replacement elements; O(n + r) amortized at the front
-    // (`ArrayData::splice_live`).
-    fn try_native_array_splice(
-        &mut self,
-        target_name: &str,
-        target: &Value,
-        method: &str,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if method != "splice" {
-            return None;
-        }
-        // A plain `@`-sigiled variable whose value is a real `[...]` array
-        // (ArrayKind::Array), excluding List/Item/Shaped/Lazy — OR a scalar bound
-        // to a whole array container (`my $r := @a`), unwrapped via
-        // `env_root_descended_mut` below.
-        let is_bound_cell = matches!(
-            self.env().get(target_name).map(Value::view),
-            Some(ValueView::ContainerRef(_))
-        );
-        if (!target_name.starts_with('@') && !is_bound_cell)
-            || !matches!(
-                target.view(),
-                ValueView::Array(_, crate::value::ArrayKind::Array)
-            )
-        {
-            return None;
-        }
-        // Shared / type-constrained / metadata-bearing containers need the
-        // interpreter's element checks, native-array semantics, and identity
-        // sharing; let it own those.
-        if self.threads.shared_vars_active
-            || loan_env!(self, var_type_constraint(target_name)).is_some()
-            || self.container_type_metadata(target).is_some()
-        {
-            return None;
-        }
-        // Offset (arg 0) and count (arg 1): plain non-negative `Int`, or absent.
-        // Anything else (Whatever/Str/Num/Callable) goes to the interpreter,
-        // which also owns the `X::OutOfRange` error for a negative offset/count.
-        let raw_start = match args.first().map(Value::view) {
-            None => None,
-            Some(ValueView::Int(i)) if i >= 0 => Some(i as usize),
-            _ => return None,
-        };
-        let raw_count = match args.get(1).map(Value::view) {
-            None => None,
-            Some(ValueView::Int(i)) if i >= 0 => Some(i as usize),
-            _ => return None,
-        };
-        // Replacement values (args[2..]): reject lazy values (the interpreter
-        // raises `X::Cannot::Lazy`), then apply splice's one-arg rule /
-        // itemization / Nil decay through the single shared helper the
-        // interpreter's `do_splice` uses, so the two paths cannot diverge.
-        let post = args.get(2..).unwrap_or(&[]);
-        for arg in post {
-            let lazy = match arg.view() {
-                ValueView::Array(arr, ..) => {
-                    arr.iter().any(crate::builtins::methods_0arg::is_value_lazy)
-                }
-                _ => crate::builtins::methods_0arg::is_value_lazy(arg),
-            };
-            if lazy {
-                return None;
-            }
-        }
-        let replacement = crate::runtime::flatten_splice_replacement_args(post);
-        // The receiver must be exactly the array currently bound to this name.
-        // Container identity (§3): splice through the SHARED backing node (no
-        // COW) so by-value holders of the same array observe it. Compute the
-        // splice bounds from the live binding's length (not `target`). Descend
-        // through a whole-container `:=` bound cell so the splice writes
-        // through the cell.
-        let removed =
-            self.env_root_descended_mut(target_name)?
-                .with_array_mut(|arc_items, kind| {
-                    if !matches!(*kind, crate::value::ArrayKind::Array) {
-                        return None;
-                    }
-                    let len = arc_items.len();
-                    let start = raw_start.unwrap_or(0);
-                    // An offset past the end is `X::OutOfRange` in the interpreter.
-                    if start > len {
-                        return None;
-                    }
-                    let count = raw_count.unwrap_or(len - start);
-                    let end = (start + count).min(len);
-                    // SAFETY: audited aliased in-place container write (see
-                    // value::aliased_mut); no other borrow into this node is
-                    // live across the mutation below.
-                    let items = unsafe { crate::value::gc_contents_mut(arc_items) };
-                    Some(items.splice_live(start, end, replacement))
-                })??;
-        Some(Ok(Value::real_array(removed)))
     }
 
     /// Interpreter-native mutating Buf write methods (`write-bits`/`write-ubits`/
