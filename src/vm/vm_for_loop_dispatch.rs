@@ -776,6 +776,18 @@ impl Interpreter {
         } else {
             self.try_compiled_method_or_interpret(iterable.clone(), "iterator", vec![])?
         };
+        self.drive_iterator_value_items(iterator)
+            .map(|(items, _)| items)
+    }
+
+    /// Pull every item out of `iterator` (a user `Iterator` instance) via
+    /// `pull-one` until `IterationEnd`; also returns the advanced iterator so a
+    /// caller that owns it can store the moved cursor back.
+    // Cost: O(n) pull-one calls, n = items yielded.
+    pub(crate) fn drive_iterator_value_items(
+        &mut self,
+        iterator: Value,
+    ) -> Result<(Vec<Value>, Value), RuntimeError> {
         // Drive `pull-one` through a temp *variable*, not a bare value: a user
         // `Iterator` instance keeps its cursor in its own attributes, and an
         // Instance value clone deep-copies those, so calling `pull-one` on a
@@ -797,6 +809,7 @@ impl Interpreter {
             }
             items.push(val);
         };
+        let advanced = self.get_env_with_main_alias(tmp).unwrap_or(Value::NIL);
         match saved {
             Some(v) => self.set_env_with_main_alias(tmp, v),
             None => {
@@ -804,6 +817,6 @@ impl Interpreter {
             }
         }
         result?;
-        Ok(items)
+        Ok((items, advanced))
     }
 }

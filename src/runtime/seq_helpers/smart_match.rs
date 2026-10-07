@@ -2065,6 +2065,16 @@ impl Interpreter {
                 self.call_method_with_values(left.clone(), method, vec![])
                     .is_ok_and(|v| *s == v.to_string_value())
             }
+            // Attribute ~~ Str: `Str.ACCEPTS(Any:D)` compares `.Str`, which is
+            // the attribute's name (`.^attributes.first('$!parent')`).
+            (ValueView::Instance { class_name, attributes, .. }, ValueView::Str(s))
+                if class_name == "Attribute" =>
+            {
+                attributes
+                    .as_map()
+                    .get("name")
+                    .is_some_and(|name| **s == name.to_string_value())
+            }
             // Instance ~~ Type or other: identity check (false)
             (ValueView::Instance { .. }, _) | (_, ValueView::Instance { .. }) => false,
             // Range ~~ Range: LHS is subset of RHS.

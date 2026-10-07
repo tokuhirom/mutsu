@@ -756,6 +756,13 @@ impl Interpreter {
             None => target,
         };
         let target = self.reify_or_consume_seq_target(target, method)?;
+        // A `does Sequence` class with its own `iterator`: see
+        // `vm_sequence_role_delegate.rs`.
+        if let Some(result) = self.try_sequence_role_delegate(&target, method_sym, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "native");
+            self.stack.push(result?);
+            return Ok(());
+        }
         // A user `method ^find_method` answers every call on its type
         // (`find_method_intercept`). `.+`/`.*` keep the candidate walk.
         if matches!(modifier, None | Some("?"))

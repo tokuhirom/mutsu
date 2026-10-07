@@ -325,6 +325,12 @@ impl Interpreter {
                 self.dispatch.method_dispatch_pure = true;
                 return result;
             }
+            // A `does Sequence` class with its own `iterator` — see
+            // `vm_sequence_role_delegate.rs`.
+            if let Some(result) = self.try_sequence_role_delegate(&target, method_sym, &args) {
+                self.dispatch.method_dispatch_pure = true;
+                return result;
+            }
             // A user-defined subclass of a builtin type may override an inherited
             // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
             // The user override must win, so do not take the native fork when the
