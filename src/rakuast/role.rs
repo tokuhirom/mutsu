@@ -16,7 +16,7 @@ use super::convert::{
 };
 use super::lower::{
     lower_package_body, lower_signature_parameters, lower_stmts, named_child,
-    named_child_or_positional, package_head,
+    named_child_or_positional, package_head, positional_leaf,
 };
 use super::routine_traits::IsTraits;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -294,10 +294,22 @@ pub(super) fn lower_also(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // `also is Parent;`: only a class body folds it into its parents
         // (`lower_class` takes these markers out of the body again).
         ValueView::RakuAst(t) if t.class == RakuAstClass::TraitIs => {
-            let Stmt::DoesDecl { name, args, .. } =
-                parent_clause(node, named_child(t, "type")?, true)?
-            else {
-                unreachable!("parent_clause builds a DoesDecl");
+            // `is Parent` is a `type` when the parent is a known type, a plain
+            // `name` when it is not (declared outside this unit).
+            let (name, args) = match named_child(t, "type") {
+                Ok(type_node) => {
+                    let Stmt::DoesDecl { name, args, .. } = parent_clause(node, type_node, true)?
+                    else {
+                        unreachable!("parent_clause builds a DoesDecl");
+                    };
+                    (name, args)
+                }
+                Err(_) => match positional_leaf(named_child(t, "name")?)?.view() {
+                    ValueView::Str(s) if !matches!(s.as_str(), "rw" | "hidden") => {
+                        (Symbol::intern(s.as_str()), None)
+                    }
+                    _ => return Err(unsupported_node(node)),
+                },
             };
             Ok(Stmt::DoesDecl {
                 name,
