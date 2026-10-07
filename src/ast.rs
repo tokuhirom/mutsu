@@ -3249,6 +3249,7 @@ mod env_only_decl_tests {
             label: None,
             is_statement_modifier: false,
             is_until: false,
+            is_bare_term: false,
         }])];
         let mut out = std::collections::HashSet::new();
         collect_all_my_decl_names(&body, &mut out);
