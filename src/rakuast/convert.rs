@@ -1873,6 +1873,22 @@ fn call_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr
         {
             Expr::Grouped(Box::new(target.clone()))
         }
+        // `(COND ?? $a !! $b) = v`, `($a || $b) = v`, `nqp::op(..) = v`: an
+        // lvalue expression with no call arguments is the parenthesised
+        // left side of a plain assignment (`parser::ternary` /
+        // `parser::precedence::logic`). A `do` declaration or an internal
+        // call target belongs to the compound-assignment writebacks, whose
+        // value is not the written right side, so those stay the boundary.
+        "__mutsu_assign_callable_lvalue"
+            if call_args.is_empty()
+                && matches!(
+                    target,
+                    Expr::Ternary { .. } | Expr::Binary { .. } | Expr::Call { .. }
+                )
+                && !matches!(target, Expr::Call { name, .. } if is_desugar_marker(name.as_str())) =>
+        {
+            Expr::Grouped(Box::new(target.clone()))
+        }
         "__mutsu_assign_callable_lvalue" => {
             if !matches!(target, Expr::Var(_) | Expr::CodeVar(_)) {
                 return None;
