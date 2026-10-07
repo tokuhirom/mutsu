@@ -1359,13 +1359,7 @@ impl Compiler {
             } else if matches!(&args[0], Expr::Index { target, .. } if matches!(**target, Expr::HashVar(_) | Expr::ArrayVar(_) | Expr::Var(_)))
             {
                 // undefine %hash<key> or undefine @arr[idx] -> target[index] = Nil
-                if let Expr::Index {
-                    target,
-                    index,
-                    is_positional: _,
-                    ..
-                } = &args[0]
-                {
+                if let Expr::Index { target, index, .. } = &args[0] {
                     let assign_expr = Expr::IndexAssign {
                         target: target.clone(),
                         index: index.clone(),
@@ -1733,12 +1727,7 @@ impl Compiler {
             // For array element CAS: cas(@arr[idx], $expected, $new)
             // Emit __mutsu_cas_array_elem("@arr_name", idx, expected, new)
             // Single-dim array element CAS: cas(@arr[idx], $expected, $new)
-            if let Expr::Index {
-                target,
-                index,
-                is_positional: _,
-                ..
-            } = &args[0]
+            if let Expr::Index { target, index, .. } = &args[0]
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
                 // `cas` takes any element; `nqp::cas_i` wants a native integer.
@@ -1820,12 +1809,7 @@ impl Compiler {
                         op: AssignOp::Assign,
                         target_is_sigilless: false,
                     }),
-                    Expr::Index {
-                        target,
-                        index,
-                        is_positional: _,
-                        ..
-                    } => Some(Stmt::Expr(Expr::IndexAssign {
+                    Expr::Index { target, index, .. } => Some(Stmt::Expr(Expr::IndexAssign {
                         target: target.clone(),
                         index: index.clone(),
                         value: Box::new(args[2].clone()),
@@ -1942,12 +1926,7 @@ impl Compiler {
                     is_bind: false,
                 };
                 self.compile_expr(&assign_expr);
-            } else if let Expr::Index {
-                target,
-                index,
-                is_positional: _,
-                ..
-            } = &args[0]
+            } else if let Expr::Index { target, index, .. } = &args[0]
                 && let Some(hash_name) = match target.as_ref() {
                     Expr::HashVar(n) => Some(format!("%{}", n)),
                     Expr::Var(n) if n.starts_with('%') => Some(n.clone()),
@@ -1969,12 +1948,7 @@ impl Compiler {
                     literal_native_args: 0,
                     static_arg_types: false,
                 });
-            } else if let Expr::Index {
-                target,
-                index,
-                is_positional: _,
-                ..
-            } = &args[0]
+            } else if let Expr::Index { target, index, .. } = &args[0]
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
                 // cas(@arr[idx], &code) -> __mutsu_cas_array_elem_code("@arr", idx, code)

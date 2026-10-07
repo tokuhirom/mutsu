@@ -110,12 +110,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
         } => {}
         Expr::Contextualizer { kind: _, inner } => v.visit_expr(inner),
         Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
-            ..
+            target, name, args, ..
         }
         | Expr::HyperMethodCall {
             target,
@@ -198,12 +193,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             v.visit_name(param, NameKind::BlockParam);
             super::walk_stmts(v, body);
         }
-        Expr::Index {
-            target,
-            index,
-            is_positional: _,
-            ..
-        } => {
+        Expr::Index { target, index, .. } => {
             v.visit_expr(target);
             v.visit_expr(index);
         }

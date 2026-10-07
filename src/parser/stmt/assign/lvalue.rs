@@ -257,12 +257,7 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
 
     match lhs {
         Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
-            ..
+            target, name, args, ..
         } if name == "value" && args.is_empty() => {
             if let Some((base_target, base_index, mode)) = subscript_parts(target.as_ref())
                 && (mode == "p" || mode == "not-p")

@@ -334,7 +334,6 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
             name,
             args,
             modifier,
-            quoted: _,
             ..
         } => {
             if name == "AT-POS"

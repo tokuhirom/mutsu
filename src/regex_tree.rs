@@ -3280,7 +3280,7 @@ fn colonpair_value_arguments(source: &str, args: &[crate::ast::Expr]) -> Vec<boo
                 crate::ast::Expr::Binary {
                     left,
                     op: crate::token_kind::TokenKind::FatArrow,
-                    right: _, ..
+                    ..
                 } if matches!(left.as_ref(), crate::ast::Expr::Literal(value)
                     if matches!(value.view(), crate::value::ValueView::Str(_)))
             );

@@ -98,8 +98,6 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             target,
             name: _,
             args,
-            modifier: _,
-            quoted: _,
             ..
         }
         | Expr::HyperMethodCall {
@@ -177,12 +175,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             is_whatever_code: _,
             param_sigilless: _,
         } => v.visit_stmts_mut(body),
-        Expr::Index {
-            target,
-            index,
-            is_positional: _,
-            ..
-        } => {
+        Expr::Index { target, index, .. } => {
             v.visit_expr_mut(target);
             v.visit_expr_mut(index);
         }

@@ -72,7 +72,6 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             name,
             args,
             modifier,
-            quoted: _,
             ..
         } => {
             if name == "AT-POS"
@@ -322,12 +321,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
             }
         }
         Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
-            ..
+            target, name, args, ..
         } if name == "AT-POS" && args.len() == 1 => {
             let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL));
             build_compound_assign_target_expr(

@@ -303,12 +303,7 @@ pub(crate) fn build_compound_assign_expr(
             Expr::desugar_block(body)
         }
         Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
-            ..
+            target, name, args, ..
         } if name == "AT-POS" && args.len() == 1 => {
             let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL));
             return Ok(compound_index_assign_expr(
@@ -319,12 +314,7 @@ pub(crate) fn build_compound_assign_expr(
             ));
         }
         Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
-            ..
+            target, name, args, ..
         } => {
             let target_var_name =
                 crate::parser::stmt::simple_expr_stmt::lvalue::method_lvalue_target_name(&target);
@@ -706,7 +696,6 @@ pub(crate) fn build_custom_compound_assign_expr(
             name,
             args,
             modifier: None,
-            quoted: _,
             ..
         } if name != "AT-POS" => {
             let target_var_name =

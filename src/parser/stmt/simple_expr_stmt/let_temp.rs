@@ -430,12 +430,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
         if expr_rest_ws.starts_with('=')
             && !expr_rest_ws.starts_with("==")
             && let Expr::MethodCall {
-                target,
-                name,
-                args,
-                modifier: _,
-                quoted: _,
-                ..
+                target, name, args, ..
             } = expr
             && let Expr::Var(var_name) = target.as_ref()
         {

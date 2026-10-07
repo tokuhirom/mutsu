@@ -217,12 +217,7 @@ impl Compiler {
                 self.compile_nested_postfix_incdec(expr, true);
             }
         } else if let Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
-            ..
+            target, name, args, ..
         } = expr
         {
             // Extract the invocant target from Var/ArrayVar/HashVar/BareWord
@@ -345,12 +340,7 @@ impl Compiler {
                 self.compile_nested_postfix_incdec(expr, false);
             }
         } else if let Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier: _,
-            quoted: _,
-            ..
+            target, name, args, ..
         } = expr
         {
             // Extract the invocant target from Var/ArrayVar/HashVar/BareWord

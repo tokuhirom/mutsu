@@ -41,7 +41,6 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
             name,
             args,
             modifier,
-            quoted: _,
             ..
         } => {
             if name == "AT-POS"
@@ -703,7 +702,6 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             name,
             args,
             modifier,
-            quoted: _,
             ..
         } = &target_expr
         {
@@ -848,7 +846,6 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             name,
             args,
             modifier,
-            quoted: _,
             ..
         } = &expr
         {

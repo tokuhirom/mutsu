@@ -11,6 +11,8 @@ mod tests;
 #[cfg(test)]
 mod tests_errors;
 #[cfg(test)]
+mod tests_forms;
+#[cfg(test)]
 mod tests_meta;
 #[cfg(test)]
 mod tests_postfix;

@@ -11,7 +11,10 @@ use crate::whatever_curry::make_wc_param;
 pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
     match expr {
         Expr::Binary {
-            left, op, right, ..
+            left,
+            op,
+            right,
+            form,
         } => {
             let left = wrap_composition_operands(*left);
             let right = wrap_composition_operands(*right);
@@ -86,14 +89,14 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                     left: Box::new(left_wrapped),
                     op,
                     right: Box::new(right_wrapped),
-                    form: Default::default(),
+                    form,
                 }
             } else {
                 Expr::Binary {
                     left: Box::new(left),
                     op,
                     right: Box::new(right),
-                    form: Default::default(),
+                    form,
                 }
             }
         }
@@ -107,14 +110,14 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
             args,
             modifier,
             quoted,
-            ..
+            on_topic,
         } => Expr::MethodCall {
             target: Box::new(wrap_composition_operands(*target)),
             name,
             args: args.into_iter().map(wrap_composition_operands).collect(),
             modifier,
             quoted,
-            on_topic: false,
+            on_topic,
         },
         Expr::CallOn { target, args } => Expr::CallOn {
             target: Box::new(wrap_composition_operands(*target)),
@@ -124,12 +127,12 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
             target,
             index,
             is_positional,
-            ..
+            spelling,
         } => Expr::Index {
             target: Box::new(wrap_composition_operands(*target)),
             index: Box::new(wrap_composition_operands(*index)),
             is_positional,
-            spelling: Default::default(),
+            spelling,
         },
         other => other,
     }
