@@ -1823,6 +1823,21 @@ pub(super) fn signature_positional_params(
     Ok((names, defs))
 }
 
+/// A `FakeSignature` -> the `Signature` literal the parser makes for `:(...)`.
+// Cost: O(n), n = size of the parameter list.
+fn lower_fake_signature(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let sig = child_node(&node.fields.first().ok_or_else(|| unsupported(node))?.value)?;
+    let defs = lower_signature_parameters(sig, node)?;
+    let returns = match sig.fields.iter().find(|f| f.name == Some("returns")) {
+        Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
+        None => None,
+    };
+    let info = crate::value::signature::param_defs_to_sig_info(&defs, returns);
+    Ok(Expr::Literal(
+        crate::value::signature::make_signature_value(info, None),
+    ))
+}
+
 pub(super) fn lower_signature_parameters(
     signature: &RakuAstNode,
     owner: &RakuAstNode,
@@ -3807,6 +3822,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         RakuAstClass::VarDeclarationSignature => {
             Ok(Expr::DoStmt(Box::new(super::signature_decl::lower(node)?)))
         }
+        // `:(Int $x)`: the `Signature` value the parser builds for the literal.
+        RakuAstClass::FakeSignature => lower_fake_signature(node),
         RakuAstClass::IntLiteral
         | RakuAstClass::NumLiteral
         | RakuAstClass::RatLiteral

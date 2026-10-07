@@ -2613,6 +2613,7 @@ t/nativecall/nativecall-deref-registered-name.t
 t/nativecall/nativecall-eval-trait-and-payload.t
 t/nativecall/nativecall-explicitly-manage.t
 t/nativecall/nativecall-export-stash.t
+t/nativecall/nativecall-exports-are-routines.t
 t/nativecall/nativecall-helpers-are-not-reexported.t
 t/nativecall/nativecall-in-module.t
 t/nativecall/nativecall-method-implicit-invocant.t
@@ -2631,12 +2632,14 @@ t/nativecall/nativecall-refuses-unrepresentable-arg.t
 t/nativecall/nativecall-repr-body.t
 t/nativecall/nativecall-return-constant-aliased-cstruct.t
 t/nativecall/nativecall-rw-numeric-out-param.t
+t/nativecall/nativecall-signature-cast.t
 t/nativecall/nativecall-sizeof-pointer-where.t
 t/nativecall/nativecall-smiley-type-name.t
 t/nativecall/nativecall-sqlite.t
 t/nativecall/nativecall-statement-level-sunk-call.t
 t/nativecall/nativecall-symbol-angle.t
 t/nativecall/nativecall-test-tag.t
+t/nativecall/nativecall-trait-mod-is-candidates.t
 t/nativecall/nativecall-type-short-and-qualified-spelling-identity.t
 t/nativecall/nativecall-type-surface.t
 t/nativecall/nativecall-typed-pointer.t
@@ -3404,6 +3407,7 @@ t/oo/role/my-role-compound-name-qualification.t
 t/oo/role/my-role-in-role.t
 t/oo/role/nested-class-runs-role-body-at-compile-time.t
 t/oo/role/nextsame-role-mixin.t
+t/oo/role/parameterize-role-with-value.t
 t/oo/role/parameterized-role-composes-base-candidate.t
 t/oo/role/parameterized-role-static-scope.t
 t/oo/role/parametric-container-role-of.t
@@ -3619,6 +3623,7 @@ t/oo/trait/param-trait-mixin-persists.t
 t/oo/trait/param-trait-word-quote-arg.t
 t/oo/trait/runtime-trait-persistence.t
 t/oo/trait/shadow-slot-var-trait.t
+t/oo/trait/signature-literal-custom-param-trait.t
 t/oo/trait/sub-trait-mod-user-dispatch.t
 t/oo/trait/subset-trait-after-of.t
 t/oo/trait/trait-does-captured-variable.t
@@ -3813,6 +3818,7 @@ t/rakuast/rakuast-role.t
 t/rakuast/rakuast-semantic-hierarchy.t
 t/rakuast/rakuast-sigilled-constant.t
 t/rakuast/rakuast-signature-decl.t
+t/rakuast/rakuast-signature-literal.t
 t/rakuast/rakuast-signature-members.t
 t/rakuast/rakuast-slurpy-marker-type-object.t
 t/rakuast/rakuast-smartmatch.t
@@ -3971,6 +3977,9 @@ t/regex/match/regex-tree-captures.t
 t/regex/match/regex-tree-named-captures.t
 t/regex/match/role-pun-isa-smartmatch.t
 t/regex/match/shared-capture-name-match-order.t
+t/regex/match/signature-role-subtype-smartmatch.t
+t/regex/match/signature-smartmatch-user-types.t
+t/regex/match/signature-where-smartmatch.t
 t/regex/match/slash-param-survives-smartmatch.t
 t/regex/match/smartmatch-bare-topic-rhs-no-writeback.t
 t/regex/match/smartmatch-bool-type-object.t
@@ -3981,6 +3990,7 @@ t/regex/match/smartmatch-method-dispatch.t
 t/regex/match/smartmatch-nondestructive-forms.t
 t/regex/match/smartmatch-pair-method.t
 t/regex/match/smartmatch-regex-capture-index.t
+t/regex/match/smartmatch-signature-value.t
 t/regex/match/smartmatch-user-accepts-multi-fallback.t
 t/regex/match/smartmatch-user-accepts.t
 t/regex/match/split-regex-separator-captures.t
@@ -4489,6 +4499,7 @@ t/routines/dispatch/listop-multi-subscript-autoviv.t
 t/routines/dispatch/map-multiarg-full-binding.t
 t/routines/dispatch/mix-immutability-and-multi-index.t
 t/routines/dispatch/multi-aggregate-rejects-nil.t
+t/routines/dispatch/multi-candidate-dispatcher.t
 t/routines/dispatch/multi-candidate-key-narrowing.t
 t/routines/dispatch/multi-candidate-ranking.t
 t/routines/dispatch/multi-candidate-state-otf.t
@@ -4735,6 +4746,7 @@ t/routines/signature/closure-captured-var-ignores-callers-readonly-param.t
 t/routines/signature/closure-rw-param-writeback.t
 t/routines/signature/closure-shared-signature.t
 t/routines/signature/code-call-topic-sigilless-param-writes.t
+t/routines/signature/code-signature-attr-bind.t
 t/routines/signature/coercion-param-dispatch-and-where.t
 t/routines/signature/coercion-param-scalar-rebind-no-recoerce.t
 t/routines/signature/coercion-type-param-default.t
@@ -4924,6 +4936,8 @@ t/routines/signature/sigilless-param-scoping.t
 t/routines/signature/sigilless-param-where.t
 t/routines/signature/sigilless-params.t
 t/routines/signature/sigilless-raw-param-container-return.t
+t/routines/signature/signature-accepts-literal-param.t
+t/routines/signature/signature-accepts-placeholder-where.t
 t/routines/signature/signature-accepts-sibling-named-where.t
 t/routines/signature/signature-accepts-user-capture-coercion.t
 t/routines/signature/signature-arity-count.t
@@ -5583,6 +5597,7 @@ t/vm/code-object-gist-in-container.t
 t/vm/codegen/adr0035-dynamics-chain-aware-enumeration.t
 t/vm/codegen/adr0051-buf-narrowness.t
 t/vm/codegen/adr0051-builtin-type-cool-ancestry.t
+t/vm/codegen/adr0051-catalog-ancestry-consumers.t
 t/vm/codegen/adr0051-cool-only-gate.t
 t/vm/codegen/adr0051-lookup-builtin-ancestry.t
 t/vm/codegen/adr0051-one-ancestry-oracle.t
