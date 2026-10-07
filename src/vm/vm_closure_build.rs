@@ -99,7 +99,7 @@ impl Interpreter {
             self.box_supply_container_captures(code, &compiled_code);
         }
         let owned_captures = self.compute_owned_captures(&compiled_code);
-        let authoritative_captures = self.compute_authoritative_captures(&compiled_code);
+        let authoritative_captures = self.compute_authoritative_captures(code, &compiled_code);
         let mut upvalues = self.capture_upvalues(code, &compiled_code);
         // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
         let mut env = self.capture_closure_env(code, &compiled_code);
