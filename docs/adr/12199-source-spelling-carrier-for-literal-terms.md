@@ -1,6 +1,6 @@
 # ADR-12199: Word lists, heredocs and bare-statement prefixes keep their source spelling in a wrapper the compiler never sees
 
-- **Status**: Proposed (2026-10-07)
+- **Status**: Accepted (2026-10-07). Not implemented: the first PR is the word-list experiment of section 4.
 - **Date**: 2026-10-07
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#12199](https://github.com/tokuhirom/mutsu/issues/12199). Roadmap:
