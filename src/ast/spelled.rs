@@ -100,13 +100,19 @@ mod tests {
         let outer = keep_spelling(true);
         {
             let _nested = keep_spelling(false);
-            assert!(matches!(Expr::spelled(words(), || unreachable!()), Expr::ArrayLiteral(_)));
+            assert!(matches!(
+                Expr::spelled(words(), || unreachable!()),
+                Expr::ArrayLiteral(_)
+            ));
         }
         assert!(matches!(
             Expr::spelled(words(), || Spelling::Words("a b".into())),
             Expr::Spelled(_)
         ));
         drop(outer);
-        assert!(matches!(Expr::spelled(words(), || unreachable!()), Expr::ArrayLiteral(_)));
+        assert!(matches!(
+            Expr::spelled(words(), || unreachable!()),
+            Expr::ArrayLiteral(_)
+        ));
     }
 }
