@@ -1496,21 +1496,10 @@ impl Interpreter {
         // target variable name is the 5th argument. Capture it so we can write
         // the new env value straight through to the local slot after dispatch,
         // keeping locals coherent without depending on the `env_dirty` backstop.
-        let lvalue_writeback_target = match name.as_str() {
-            "__mutsu_assign_method_lvalue" => args
-                .get(4)
-                .map(|v| v.to_string_value())
-                .filter(|s| !s.is_empty()),
-            "__mutsu_index_assign_method_lvalue" => args
-                .get(if args.len() >= 6 { 5 } else { 4 })
-                .map(|v| v.to_string_value())
-                .filter(|s| !s.is_empty()),
-            "__mutsu_index_delete_method_lvalue" => args
-                .get(3)
-                .map(|v| v.to_string_value())
-                .filter(|s| !s.is_empty()),
-            _ => None,
-        };
+        let lvalue_writeback_target = Self::lvalue_writeback_arg_index(&name, args.len())
+            .and_then(|i| args.get(i))
+            .map(|v| v.to_string_value())
+            .filter(|s| !s.is_empty());
         // #11275: a target that is a compunit lexical this routine captured
         // must be written back through that cell, not into whatever the
         // caller-rooted env holds under the same name. Bound before the raw-invocant

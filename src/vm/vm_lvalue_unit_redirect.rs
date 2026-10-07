@@ -29,12 +29,24 @@ use super::*;
 
 /// The frame-tier entry an lvalue writeback redirect displaced, restored by
 /// [`Interpreter::end_lvalue_unit_redirect`].
-pub(super) struct LvalueUnitRedirect {
+pub(crate) struct LvalueUnitRedirect {
     key: Symbol,
     prev: Option<Value>,
 }
 
 impl Interpreter {
+    /// Which argument of the lvalue-method builtin `name` (called with `argc`
+    /// arguments) carries the target variable's name, if `name` is one.
+    // Cost: O(1).
+    pub(crate) fn lvalue_writeback_arg_index(name: &str, argc: usize) -> Option<usize> {
+        match name {
+            "__mutsu_assign_method_lvalue" => Some(4),
+            "__mutsu_index_assign_method_lvalue" => Some(if argc >= 6 { 5 } else { 4 }),
+            "__mutsu_index_delete_method_lvalue" => Some(3),
+            _ => None,
+        }
+    }
+
     /// Bind `target` to its compunit cell in the running frame's env tier when
     /// `target` names a captured compunit lexical rather than a local of
     /// `code`. Returns what must be restored after the builtin call.
@@ -46,6 +58,17 @@ impl Interpreter {
         target: &str,
     ) -> Option<LvalueUnitRedirect> {
         if self.lexicals.unit_lexicals.is_empty() || self.find_local_slot(code, target).is_some() {
+            return None;
+        }
+        self.bind_lvalue_unit_redirect(target)
+    }
+
+    /// [`Self::begin_lvalue_unit_redirect`] for a caller that has already
+    /// established `target` is not a local of the running frame (a TRIR frame
+    /// knows its free variables, not a `CompiledCode` slot map).
+    // Cost: as `begin_lvalue_unit_redirect`.
+    pub(crate) fn bind_lvalue_unit_redirect(&mut self, target: &str) -> Option<LvalueUnitRedirect> {
+        if self.lexicals.unit_lexicals.is_empty() {
             return None;
         }
         let cell = self.unit_lexical_slot(target, None)?;
@@ -63,7 +86,7 @@ impl Interpreter {
     /// displaced entry back (or drop the temporary one without tombstoning, so
     /// an enclosing tier's binding shows through again).
     // Cost: O(1).
-    pub(super) fn end_lvalue_unit_redirect(&mut self, redirect: Option<LvalueUnitRedirect>) {
+    pub(crate) fn end_lvalue_unit_redirect(&mut self, redirect: Option<LvalueUnitRedirect>) {
         let Some(LvalueUnitRedirect { key, prev }) = redirect else {
             return;
         };

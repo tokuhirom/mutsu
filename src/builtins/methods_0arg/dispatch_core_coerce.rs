@@ -248,6 +248,15 @@ pub(super) fn dispatch(
                 // alias `@a[1;1] = v` into the clone.
                 ValueView::Array(items, kind) => {
                     let mut data = (**items).clone();
+                    // The clone gets containers of its own: a slot promoted to a
+                    // shared cell (a `for ... is rw` alias, a `:=` bind) must
+                    // not keep aliasing the source (`my @c = @a.clone; @c[0] = 9`
+                    // leaves `@a` alone, as in rakudo).
+                    for item in data.live_mut().iter_mut() {
+                        if item.is_container_ref() {
+                            *item = item.deref_container();
+                        }
+                    }
                     if kind == crate::value::ArrayKind::Shaped || data.shape.is_some() {
                         fn clone_rows(v: &Value) -> Value {
                             match v.view() {
