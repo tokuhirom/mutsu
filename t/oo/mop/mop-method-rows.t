@@ -3,7 +3,7 @@ use Test;
 # The Metamodel::*HOW metamethods are rows of the one method table
 # (ADR-11276 slice 3G); each family answers as Rakudo does.
 
-plan 21;
+plan 22;
 
 class P { has $.x; method m { 1 } }
 class C is P { has $.y; method n { 2 } }
