@@ -313,12 +313,12 @@ fn render_field_value(fv: &RakuAstFieldValue, indent: usize) -> String {
 }
 
 /// A parenthesised, trailing-comma list — every element gets a trailing comma
-/// (so a single element reads `( x, )`). An *empty* list is the itemized empty
-/// list `$( )`, exactly as raku's gist prints it (e.g. the `parameters` of a
-/// parameter-less `RakuAST::Signature`).
+/// (so a single element reads `( x, )`). An *empty* list is `()`, as raku
+/// 2026.09's gist prints it (e.g. the `parameters` of a parameter-less
+/// `RakuAST::Signature`); older rakudo printed the itemized `$( )`.
 fn render_paren_list(items: &[Value], indent: usize) -> String {
     if items.is_empty() {
-        return "$( )".to_string();
+        return "()".to_string();
     }
     let child_indent = indent + 2;
     let pad = " ".repeat(child_indent);

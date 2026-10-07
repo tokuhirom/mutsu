@@ -57,6 +57,14 @@ pub(super) fn call_method(
     if !args.is_empty() {
         fields.push(node_field(Some("args"), arg_list(args)?));
     }
+    // `self!priv(...)`: raku has a class of its own for the private call, and
+    // no `dispatch` string.
+    if modifier == Some('!') {
+        return Ok(RakuAstNode {
+            class: RakuAstClass::CallPrivateMethod,
+            fields,
+        });
+    }
     if let Some(m) = modifier {
         // `.?` / `.+` / `.*` become a `dispatch` string.
         fields.push(leaf_field(Some("dispatch"), Value::str(format!(".{m}"))));

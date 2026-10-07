@@ -10,7 +10,7 @@ use Test;
 #   * `sub f(--> Int)`        -> Signature.returns => Type::Simple
 #   * `sub f() returns Int`   -> traits => (Trait::Returns(Type::Simple),)
 #   * `sub f() of Int`        -> traits => (Trait::Of(Type::Simple),)
-# A parameter-less signature renders its empty parameter list as `$( )`.
+# A parameter-less signature renders its empty parameter list as `()`.
 #
 # Verified against Rakudo; passes under BOTH mutsu and raku.
 
@@ -20,8 +20,8 @@ plan 21;
 my $arrow = Q[sub f(--> Int) { 1 }].AST.gist;
 ok $arrow.contains('returns    => RakuAST::Type::Simple.new('),
     'a `-->` return type renders as Signature.returns';
-ok $arrow.contains('parameters => $( )'),
-    'a parameter-less signature renders its empty parameter list as $( )';
+ok $arrow.contains('parameters => ()'),
+    'a parameter-less signature renders its empty parameter list as ()';
 nok $arrow.contains('RakuAST::Trait::'),
     'a `-->` return type emits no trait';
 
@@ -48,8 +48,8 @@ nok Q[sub f() { 1 }].AST.gist.contains('signature'),
     'a sub with neither parameters nor a return type omits the signature';
 
 # --- read side: an empty Signature built by hand ----------------------------
-is RakuAST::Signature.new.gist.lines[1].trim, 'parameters => $( )',
-    'a hand-built empty Signature renders parameters as $( )';
+is RakuAST::Signature.new.gist.lines[1].trim, 'parameters => ()',
+    'a hand-built empty Signature renders parameters as ()';
 
 # --- introspection ----------------------------------------------------------
 my $sig = Q[sub f(--> Int) { 1 }].AST.statements[0].expression.signature;

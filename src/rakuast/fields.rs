@@ -153,12 +153,21 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         TermName => &[("name", Absent::Required)],
         TermNamed => &[("name", Absent::Required)],
         TermTopicCall => &[("call", Absent::Required)],
-        CallName | CallNameWithoutParentheses | CallMethod | CallNameAsMethod => &[
+        CallName
+        | CallNameWithoutParentheses
+        | CallMethod
+        | CallPrivateMethod
+        | CallNameAsMethod => &[
             ("name", Absent::Required),
             ("args", Absent::EmptyNode(ArgList)),
         ],
         CallTermAsMethod => &[
             ("callee", Absent::Required),
+            ("args", Absent::EmptyNode(ArgList)),
+        ],
+        CallTerm => &[("args", Absent::EmptyNode(ArgList))],
+        VarAttributePublic => &[
+            ("name", Absent::Required),
             ("args", Absent::EmptyNode(ArgList)),
         ],
         ApplyInfix => &[
@@ -402,7 +411,8 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
             "value"
         }
         FunctionInfix => "function",
-        Infix | Prefix | Feed | FlipFlop => "operator",
+        Infix | Prefix | Feed | FlipFlop | Mixin => "operator",
+        VarAttribute => "name",
         VarLexical | VarDynamic => "name",
         Label => "name",
         NamePartSimple => "name",
@@ -455,6 +465,9 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         | StatementPrefixGather
         | StatementPrefixEager
         | StatementPrefixOnce
+        | StatementPrefixStart
+        | StatementPrefixQuietly
+        | StatementPrefixSink
         | StatementPrefixPhaserBegin
         | StatementPrefixPhaserCheck
         | StatementPrefixPhaserClose

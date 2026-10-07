@@ -1583,6 +1583,47 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
     }
 }
 
+/// The op name of an `nqp::op(...)` call (`add_i` of `nqp::add_i`); `None` for
+/// any other name, including a constant (`nqp::const::CCLASS_WORD`, which raku
+/// has a node of its own for).
+// Cost: O(k), k = length of `name`.
+fn nqp_op(name: &str) -> Option<&str> {
+    let op = name.strip_prefix("nqp::")?;
+    (!op.is_empty() && !op.contains("::")).then_some(op)
+}
+
+/// `Num(EXPR)` / `Hash[Int](...)`: calling a type name is a call on the type
+/// term, `ApplyPostfix(Type::Simple, Call::Term(args))`, not a `Call::Name`
+/// (measured on 2026.09); `args` is absent for `Int()`.
+// Cost: O(k + n), k = length of `name`, n = size of the arguments.
+fn type_call(name: &str, args: &[Expr]) -> Result<Option<RakuAstNode>, RuntimeError> {
+    if !name.starts_with(char::is_uppercase) {
+        return Ok(None);
+    }
+    let Some(base) = bareword::convert(name) else {
+        return Ok(None);
+    };
+    if base.class != RakuAstClass::TypeSimple {
+        return Ok(None);
+    }
+    let mut call_term = RakuAstNode {
+        class: RakuAstClass::CallTerm,
+        fields: Vec::new(),
+    };
+    if !args.is_empty() {
+        call_term
+            .fields
+            .push(node_field(Some("args"), arg_list(args)?));
+    }
+    Ok(Some(RakuAstNode {
+        class: RakuAstClass::ApplyPostfix,
+        fields: vec![
+            node_field(Some("operand"), base),
+            node_field(Some("postfix"), call_term),
+        ],
+    }))
+}
+
 /// `$x = EXPR` -> `ApplyInfix(left => Var::Lexical, infix => Assignment, right)`.
 /// The `Assignment` node carries `:item` for scalar (`$`) targets; the list form
 /// (`@`/`%`) has no adverb.
@@ -2406,6 +2447,38 @@ pub(super) fn subscript_dims_node(
     assignee: Option<&Expr>,
     colonpairs: Vec<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    // `Array[Int]` / `Hash[Str, Int]`: a subscript on a type name is a type
+    // application, not a subscript (measured on 2026.09).
+    if is_positional
+        && assignee.is_none()
+        && colonpairs.is_empty()
+        && let [dim] = dims
+        && let Expr::BareWord(_) = target
+        && let base = convert_expr(target)?
+        && base.class == RakuAstClass::TypeSimple
+    {
+        let items = match dim {
+            Expr::ArrayLiteral(items) => items.as_slice(),
+            other => std::slice::from_ref(other),
+        };
+        let mut args = Vec::with_capacity(items.len());
+        for item in items {
+            args.push(node_field(None, convert_expr(item)?));
+        }
+        return Ok(RakuAstNode {
+            class: RakuAstClass::TypeParameterized,
+            fields: vec![
+                node_field(Some("base-type"), base),
+                node_field(
+                    Some("args"),
+                    RakuAstNode {
+                        class: RakuAstClass::ArgList,
+                        fields: args,
+                    },
+                ),
+            ],
+        });
+    }
     let mut statements = Vec::with_capacity(dims.len());
     for dim in dims {
         statements.push(node_field(None, statement_expression(convert_expr(dim)?)));
@@ -2497,6 +2570,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         Expr::Call { name, args, .. } | Expr::UserRoutineCall { name, args } => {
             let listop = matches!(expr, Expr::Call { listop: true, .. });
+            if let Some(prefix) = super::prefix_call::convert(name.as_str(), args) {
+                return prefix;
+            }
             if let Some(stub) = stub_node(name.as_str(), args) {
                 return stub;
             }
@@ -2513,6 +2589,19 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     ));
                 }
                 return Err(desugared(name.as_str()));
+            }
+            if let Some(coercion) = type_call(name.as_str(), args)? {
+                return Ok(coercion);
+            }
+            if let Some(op) = nqp_op(name.as_str()) {
+                let mut fields = vec![leaf_field(None, Value::str(op.to_string()))];
+                for arg in args {
+                    fields.push(node_field(None, convert_expr(arg)?));
+                }
+                return Ok(RakuAstNode {
+                    class: RakuAstClass::Nqp,
+                    fields,
+                });
             }
             Ok(call_name(name.as_str(), args, listop)?)
         }
@@ -3044,7 +3133,19 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             class: RakuAstClass::ApplyInfix,
             fields: vec![
                 node_field(Some("left"), convert_expr(left)?),
-                node_field(Some("infix"), operator_node(RakuAstClass::Infix, op)),
+                node_field(
+                    Some("infix"),
+                    // `but` and `does` are `Mixin` infixes in raku.
+                    operator_node(
+                        if matches!(op, crate::token_kind::TokenKind::Ident(name) if name == "but" || name == "does")
+                        {
+                            RakuAstClass::Mixin
+                        } else {
+                            RakuAstClass::Infix
+                        },
+                        op,
+                    ),
+                ),
                 node_field(Some("right"), convert_expr(right)?),
             ],
         }),
@@ -3579,7 +3680,7 @@ fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // RakuAST counterpart, so unwrap it here rather than rendering the
         // wrapper. Measured against rakudo 2026.07.
         Expr::DoStmt(inner) => match inner.as_ref() {
-            Stmt::Block(body) => signature_block_node(body),
+            Stmt::Block(body) => block_node(body),
             _ => convert_expr(expr),
         },
         other => match super::match_vars::convert_interpolated(other) {
@@ -5668,6 +5769,24 @@ fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
         || (sigil == "%" && crate::ast::anon_state::is_hash(name))
     {
         return anonymous_declaration(sigil, None);
+    }
+    // A `$!x` private attribute is a `Var::Attribute` of the whole spelling; a
+    // `$.x` public one a `Var::Attribute::Public` whose `name` is the whole
+    // spelling too (measured on 2026.09).
+    if name.len() > 1 && name.starts_with('!') {
+        return RakuAstNode {
+            class: RakuAstClass::VarAttribute,
+            fields: vec![leaf_field(None, Value::str(format!("{sigil}{name}")))],
+        };
+    }
+    if name.len() > 1 && name.starts_with('.') {
+        return RakuAstNode {
+            class: RakuAstClass::VarAttributePublic,
+            fields: vec![leaf_field(
+                Some("name"),
+                Value::str(format!("{sigil}{name}")),
+            )],
+        };
     }
     if name.len() > 1 && name.starts_with('*') {
         return RakuAstNode {

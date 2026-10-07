@@ -25,7 +25,7 @@ is $signature.returns.name.gist, 'RakuAST::Name.from-identifier("Int")',
     'the return type remains walkable';
 is $signature.gist, q:to/END/.chomp, 'Signature.gist renders returns like Rakudo';
     RakuAST::Signature.new(
-      parameters => $( ),
+      parameters => (),
       returns    => RakuAST::Type::Simple.new(
         RakuAST::Name.from-identifier("Int")
       )

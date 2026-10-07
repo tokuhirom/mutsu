@@ -2465,11 +2465,16 @@ fn lower_assign(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// how the parser names a package-qualified variable.
 fn variable_spelling(node: &RakuAstNode) -> Result<String, RuntimeError> {
     match node.class {
-        RakuAstClass::VarLexical | RakuAstClass::VarDynamic => {
+        RakuAstClass::VarLexical | RakuAstClass::VarDynamic | RakuAstClass::VarAttribute => {
             match positional_leaf(node)?.view() {
                 ValueView::Str(s) => Ok(s.to_string()),
                 _ => Err(unsupported(node)),
             }
+        }
+        // `$.x` -> the whole spelling is the `name`; the `$.x(1)` form (an
+        // `args` field) is a method call, which the parser keeps elsewhere.
+        RakuAstClass::VarAttributePublic if !node.fields.iter().any(|f| f.name == Some("args")) => {
+            leaf_str(node, "name")
         }
         RakuAstClass::VarPackage => {
             let sigil = leaf_str(node, "sigil")?;
@@ -4032,6 +4037,49 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::StatementLoopWhile
         | RakuAstClass::StatementLoopUntil
         | RakuAstClass::StatementLoop => Ok(Expr::DoStmt(Box::new(lower_stmt(node)?))),
+        // `nqp::op(ARGS)`: the first positional is the op, the rest its arguments.
+        RakuAstClass::Nqp => {
+            let mut fields = node.fields.iter();
+            let op = match fields.next() {
+                Some(super::RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Node(op),
+                }) => match op.view() {
+                    ValueView::Str(op) => op.to_string(),
+                    _ => return Err(unsupported(node)),
+                },
+                _ => return Err(unsupported(node)),
+            };
+            let mut args = Vec::new();
+            for field in fields {
+                args.push(lower_expr(child_node(&field.value)?)?);
+            }
+            Ok(Expr::Call {
+                name: crate::symbol::Symbol::intern(&format!("nqp::{op}")),
+                args,
+                listop: false,
+            })
+        }
+        // `Array[Int]` / `Hash[Str, Int]` -> a positional subscript on the type
+        // name, as the parser spells a type application in an expression.
+        RakuAstClass::TypeParameterized => {
+            let base = lower_expr(named_child(node, "base-type")?)?;
+            let mut args = arg_exprs(node)?;
+            let index = if args.len() == 1 {
+                args.remove(0)
+            } else {
+                Expr::ArrayLiteral(args)
+            };
+            Ok(Expr::Index {
+                target: Box::new(base),
+                index: Box::new(index),
+                is_positional: true,
+            })
+        }
+        // `start` / `quietly` / `sink` -> the call the parser spells them as.
+        RakuAstClass::StatementPrefixStart
+        | RakuAstClass::StatementPrefixQuietly
+        | RakuAstClass::StatementPrefixSink => super::prefix_call::lower(node),
         // `once { … }` -> a once expression over the lowered block body.
         RakuAstClass::StatementPrefixOnce => Ok(Expr::Once {
             body: lower_block(named_child_or_positional(node)?)?,
@@ -4186,7 +4234,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         },
         // `$x` / `@a` / `%h` / `&f` -> the sigil-specific variable expression.
         RakuAstClass::VarPackage if let Some(deref) = super::symbolic_deref::lower(node) => deref,
-        RakuAstClass::VarLexical | RakuAstClass::VarPackage | RakuAstClass::VarDynamic => {
+        RakuAstClass::VarLexical
+        | RakuAstClass::VarPackage
+        | RakuAstClass::VarDynamic
+        | RakuAstClass::VarAttribute
+        | RakuAstClass::VarAttributePublic => {
             let name = variable_spelling(node)?;
             let (sigil, bare) = name.split_at(name.chars().next().map_or(0, char::len_utf8));
             Ok(match sigil {
@@ -4408,6 +4460,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     modifier: dispatch_modifier(postfix)?,
                     quoted: false,
                 }),
+                // `self!priv(...)` -> a method call with the `!` modifier.
+                RakuAstClass::CallPrivateMethod => Ok(Expr::MethodCall {
+                    target: Box::new(operand),
+                    name: crate::symbol::Symbol::intern(&call_name_str(postfix)?),
+                    args: arg_exprs(postfix)?,
+                    modifier: Some('!'),
+                    quoted: false,
+                }),
                 // `$x."name"()` -> Call::QuotedMethod, whose `name` is a
                 // QuotedString rather than a Name. An interpolated name lowers
                 // to the existing DynamicMethodCall execution path.
@@ -4485,6 +4545,15 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     expr: Box::new(operand),
                 }),
                 // `$f(EXPR)` -> Call::Term(args) -> a call on the operand term.
+                // A call on a type term is the coercion call the parser keeps
+                // as a `Call` named after the type (`Num(EXPR)`).
+                RakuAstClass::CallTerm if let Expr::BareWord(type_name) = &operand => {
+                    Ok(Expr::Call {
+                        name: crate::symbol::Symbol::intern(type_name),
+                        args: arg_exprs(postfix)?,
+                        listop: false,
+                    })
+                }
                 RakuAstClass::CallTerm => Ok(Expr::CallOn {
                     target: Box::new(operand),
                     args: arg_exprs(postfix)?,

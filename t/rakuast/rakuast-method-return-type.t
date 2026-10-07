@@ -26,8 +26,8 @@ ok $arrow.contains('RakuAST::Method.new('),
     'a method with a `-->` return type renders as a RakuAST::Method';
 ok $arrow.contains('returns    => RakuAST::Type::Simple.new('),
     'a `-->` return type renders as Signature.returns';
-ok $arrow.contains('parameters => $( )'),
-    'a parameter-less method signature renders its empty parameter list as $( )';
+ok $arrow.contains('parameters => ()'),
+    'a parameter-less method signature renders its empty parameter list as ()';
 nok $arrow.contains('RakuAST::Trait::'),
     'a `-->` return type emits no trait';
 
