@@ -214,11 +214,11 @@ unsafe fn decode_c_arg(ct: CType, slot: *const std::ffi::c_void) -> Value {
                     Value::str(std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned())
                 }
             }
-            // Every other C type reaches Raku as an opaque `Pointer`, which is
-            // what a callback signature spells them as (`Pointer`, `CArray`,
-            // `Buf` and a nested function pointer are all one machine word).
+            // Every other C type is one machine word; `invoke` boxes it as an
+            // opaque `Pointer`, which is what a callback signature spells them
+            // as (`Pointer`, `CArray`, `Buf` and a nested function pointer).
             CType::Pointer | CType::CArray | CType::Buf | CType::Callback => {
-                crate::runtime::nativecall::make_pointer_object(*(slot as *const usize))
+                Value::int(*(slot as *const usize) as i64)
             }
         }
     }
@@ -238,7 +238,7 @@ fn invoke(data: &CallbackData, args: *const *const std::ffi::c_void) -> Option<V
         );
         return None;
     };
-    let raku_args: Vec<Value> = data
+    let mut raku_args: Vec<Value> = data
         .sig
         .params
         .iter()
@@ -247,6 +247,23 @@ fn invoke(data: &CallbackData, args: *const *const std::ffi::c_void) -> Option<V
         // each pointing at a live value of the declared type.
         .map(|(i, ct)| unsafe { decode_c_arg(*ct, *args.add(i)) })
         .collect();
+    // A pointer-shaped parameter arrives as the address; box it as upstream's
+    // `Pointer`, which is what rakudo hands the callback. NULL stays the type
+    // object, as for a native return.
+    for (arg, ct) in raku_args.iter_mut().zip(&data.sig.params) {
+        if matches!(
+            ct,
+            CType::Pointer | CType::CArray | CType::Buf | CType::Callback
+        ) {
+            // SAFETY: as below — the pointer was pushed by `InterpreterGuard`
+            // from the live `&mut Interpreter` making the native call.
+            let interp = unsafe { &mut *interp };
+            let addr = crate::runtime::nativecall::value_c_address(arg);
+            if let Some(Ok(boxed)) = interp.native_pointer_of_declared("Pointer", addr, true) {
+                *arg = boxed;
+            }
+        }
+    }
     let callable = data.callable.clone();
     // A panic must not unwind across the C frame libffi called us from.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
