@@ -960,6 +960,7 @@ impl Interpreter {
                 {
                     format!("array[{c}]")
                 }
+                Some(c) if !matches!(c.as_str(), "Any" | "Mu" | "") => format!("Array[{c}]"),
                 _ => "Array".to_string(),
             };
             // Storing Nil into a fresh array element resets it to the element
@@ -1863,6 +1864,7 @@ impl Interpreter {
                 {
                     format!("array[{c}]")
                 }
+                Some(c) if !matches!(c.as_str(), "Any" | "Mu" | "") => format!("Array[{c}]"),
                 _ => "Array".to_string(),
             };
             let array_flag = match self.env_root_descended_mut(&key).map(|v| v.view()) {
