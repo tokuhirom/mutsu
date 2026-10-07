@@ -584,12 +584,14 @@ pub fn call_native_with_out_args(
                         // work on the result (ADR-0056 keeps `T` in an `of`
                         // attribute, not in the class name).
                         Some(class) => {
-                            match crate::runtime::cstruct_layout::pointer_parameter(class) {
-                                Some(of) => make_typed_pointer(addr, of),
-                                None => make_struct_value(class, addr),
+                            if crate::runtime::cstruct_layout::pointer_parameter(class).is_some() {
+                                // The caller boxes the address as `$rettype`.
+                                Value::int(addr as i64)
+                            } else {
+                                make_struct_value(class, addr)
                             }
                         }
-                        None => make_pointer_value(addr),
+                        None => Value::int(addr as i64),
                     }
                 }
             }
@@ -658,15 +660,6 @@ pub fn call_native_with_out_args(
     Ok((result, out_args))
 }
 
-/// Build a `Pointer` object holding the given C address. Used to marshal a
-/// `void*` return value. The `Pointer` prelude class is registered whenever a
-/// program references `Pointer` (which a `returns Pointer` signature does), so
-/// method dispatch (`.Int`/`.gist`/…) on the result resolves.
-#[cfg(feature = "libffi")]
-fn make_pointer_value(addr: usize) -> Value {
-    make_native_handle("Pointer", addr)
-}
-
 /// Words in the block [`native_object_where`] hands out. The payload sits in
 /// word 0; the rest are zero so a binding that probes a few words past it reads
 /// its own memory rather than faulting.
@@ -719,21 +712,6 @@ pub(crate) fn native_object_where(payload: usize) -> usize {
 /// object (undefined) so `.defined` / boolean checks — the OpenSSL binding's
 /// `try {...} || try {...}` fallback pattern — behave like Rakudo, where a null
 /// CStruct return is a type object.
-/// A `Pointer[T]` — an ordinary `Pointer` object that also remembers what it
-/// points at, so `.of` can report `T` and `.deref` can read through it. Kept as
-/// class `Pointer` rather than a class named `Pointer[T]` so every existing
-/// `Pointer` method and the marshalling layer's `address` read keep working.
-/// A NULL address is still a defined object here: unlike an opaque CStruct
-/// handle, `Pointer.new(0)` is a legitimate value in Rakudo too.
-#[cfg(feature = "libffi")]
-pub(crate) fn make_typed_pointer(addr: usize, of: &str) -> Value {
-    let ptr = make_pointer_object(addr);
-    if let ValueView::Instance { attributes, .. } = ptr.view() {
-        attributes.insert("of", Value::package(crate::symbol::Symbol::intern(of)));
-    }
-    ptr
-}
-
 /// The `[T]` a typed `Pointer[T]` object should display, or `None` for a plain
 /// `Pointer` (and for anything that is not a `Pointer` at all).
 ///
