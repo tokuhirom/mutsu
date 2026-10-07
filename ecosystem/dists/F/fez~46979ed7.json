@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 0.87,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 25.13,
+        "secs": 33.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.07,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,30 +46,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.61,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'CALL-ME' for invocant of type 'Nil'",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 0.48,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-checkbuild.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.17,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +80,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 0.13,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -91,7 +90,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 1.86,
+        "secs": 2.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,7 +126,7 @@
     "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "f9d81d62",
+    "mutsu_commit": "fcd1d5ed",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -138,13 +137,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/F/EZ/FEZ/8718f3d6fd2ed206c4e6b465034d447e687880db.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 52,
     "baseline_files": 4,
-    "mutsu_assertions": 51,
-    "parity_files": 3,
-    "regressed_files": 1
+    "mutsu_assertions": 52,
+    "parity_files": 4,
+    "regressed_files": 0
   },
   "version": "100.0.2"
 }

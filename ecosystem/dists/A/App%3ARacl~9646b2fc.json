@@ -41,7 +41,7 @@
     "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "f9d81d62",
+    "mutsu_commit": "fcd1d5ed",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

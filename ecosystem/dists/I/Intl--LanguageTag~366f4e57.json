@@ -14,11 +14,11 @@
       "cmp": "no_baseline",
       "path": "t/00-sanity.rakutest",
       "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-cbl3gscy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-7qvpwelg/dist/dist/lib/X/Intl/LanguageTag.rakumod",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.06,
+        "secs": 1.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,11 +28,11 @@
       "cmp": "no_baseline",
       "path": "t/01-creation.rakutest",
       "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-cbl3gscy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-7qvpwelg/dist/dist/lib/X/Intl/LanguageTag.rakumod",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.36,
+        "secs": 2.18,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -42,11 +42,11 @@
       "cmp": "no_baseline",
       "path": "t/02-filter.rakutest",
       "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-cbl3gscy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-7qvpwelg/dist/dist/lib/X/Intl/LanguageTag.rakumod",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.42,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -56,11 +56,11 @@
       "cmp": "no_baseline",
       "path": "t/03-fallback.rakutest",
       "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-cbl3gscy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-7qvpwelg/dist/dist/lib/X/Intl/LanguageTag.rakumod",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.14,
+        "secs": 2.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -70,11 +70,11 @@
       "cmp": "no_baseline",
       "path": "t/10-t-extension.rakutest",
       "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-cbl3gscy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-7qvpwelg/dist/dist/lib/X/Intl/LanguageTag.rakumod",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.19,
+        "secs": 2.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -84,11 +84,11 @@
       "cmp": "no_baseline",
       "path": "t/20-u-extension.rakutest",
       "raku": {
-        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-cbl3gscy/dist/dist/lib/X/Intl/LanguageTag.rakumod",
+        "first_failure": "Circular module loading detected trying to precompile /home/runner/.cache/mutsu-ecosystem/run/ecosweep-7qvpwelg/dist/dist/lib/X/Intl/LanguageTag.rakumod",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.07,
+        "secs": 2.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -104,7 +104,7 @@
     "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "f9d81d62",
+    "mutsu_commit": "fcd1d5ed",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

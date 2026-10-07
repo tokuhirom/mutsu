@@ -14,20 +14,20 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 733,
-        "plan": 733,
-        "secs": 2.53,
-        "skip": 5,
+        "ok": 87,
+        "plan": 87,
+        "secs": 6.8,
+        "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
       "path": "t/compat.t",
       "raku": {
         "nok": 0,
-        "ok": 733,
-        "plan": 733,
-        "secs": 10.33,
-        "skip": 5,
+        "ok": 87,
+        "plan": 87,
+        "secs": 15.06,
+        "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 125,
         "plan": 125,
-        "secs": 0.49,
+        "secs": 0.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -48,29 +48,30 @@
         "nok": 0,
         "ok": 125,
         "plan": 125,
-        "secs": 0.53,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 59,
-        "plan": 59,
-        "secs": 0.71,
+        "first_failure": "css3 declaration-list warnings",
+        "nok": 2,
+        "ok": 116,
+        "plan": 118,
+        "secs": 1.26,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/error-handling.t",
       "raku": {
         "nok": 0,
-        "ok": 59,
-        "plan": 59,
-        "secs": 0.94,
+        "ok": 118,
+        "plan": 118,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,9 +81,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 24,
-        "plan": 24,
-        "secs": 0.41,
+        "ok": 32,
+        "plan": 32,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,9 +91,9 @@
       "path": "t/parse-stylesheets.t",
       "raku": {
         "nok": 0,
-        "ok": 24,
-        "plan": 24,
-        "secs": 0.76,
+        "ok": 32,
+        "plan": 32,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,9 +103,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 0.9,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,9 +113,9 @@
       "path": "t/parse-warnings.t",
       "raku": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.3,
+        "ok": 8,
+        "plan": 8,
+        "secs": 2.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -124,9 +125,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 109,
-        "plan": 109,
-        "secs": 0.29,
+        "ok": 123,
+        "plan": 123,
+        "secs": 0.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,9 +135,9 @@
       "path": "t/regex-tokens.t",
       "raku": {
         "nok": 0,
-        "ok": 109,
-        "plan": 109,
-        "secs": 0.98,
+        "ok": 123,
+        "plan": 123,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -150,6 +151,7 @@
     "CSS::Grammar::CSS1": "ok",
     "CSS::Grammar::CSS21": "ok",
     "CSS::Grammar::CSS3": "ok",
+    "CSS::Grammar::CSS4": "ok",
     "CSS::Grammar::Defs": "ok",
     "CSS::Grammar::Test": "ok"
   },
@@ -158,7 +160,7 @@
     "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "f9d81d62",
+    "mutsu_commit": "fcd1d5ed",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -167,15 +169,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/C/SS/CSS_GRAMMAR/5de0dc5873f5e1768dc427bf48cbeef8ce450f8a.tar.gz"
+    "url": "https://360.zef.pm/C/SS/CSS_GRAMMAR/c7b9350871c84d2cb4433a8f03725e8a2480d015.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 1056,
+    "baseline_assertions": 493,
     "baseline_files": 6,
-    "mutsu_assertions": 1056,
-    "parity_files": 6,
-    "regressed_files": 0
+    "mutsu_assertions": 491,
+    "parity_files": 5,
+    "regressed_files": 1
   },
-  "version": "0.4.3"
+  "version": "0.5.0"
 }

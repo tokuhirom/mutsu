@@ -9,22 +9,23 @@
   "dist": "Data::StaticTable",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed in assignment to @a; expected Data::StaticTable::Position but got Array ([])",
         "nok": 0,
-        "ok": 49,
+        "ok": 28,
         "plan": 49,
-        "secs": 0.26,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/001-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 49,
         "plan": 49,
-        "secs": 4.77,
+        "secs": 5.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +37,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.21,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,29 +47,30 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 1.1,
+        "secs": 1.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed in assignment to @a; expected Data::StaticTable::Position but got Array ([])",
         "nok": 0,
-        "ok": 26,
+        "ok": 0,
         "plan": 26,
-        "secs": 0.23,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/003-query.rakutest",
       "raku": {
         "nok": 0,
         "ok": 26,
         "plan": 26,
-        "secs": 1.39,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,29 +92,30 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.01,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed in assignment to @a; expected Data::StaticTable::Position but got Array ([])",
         "nok": 0,
-        "ok": 2,
+        "ok": 1,
         "plan": 2,
-        "secs": 15.35,
+        "secs": 3.7,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/005-perf.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 56.18,
+        "secs": 57.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -128,7 +131,7 @@
     "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "f9d81d62",
+    "mutsu_commit": "fcd1d5ed",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -139,13 +142,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATA_STATICTABLE/d0112737a7d408a3dc04e875026c98e15064540a.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 104,
     "baseline_files": 5,
-    "mutsu_assertions": 104,
-    "parity_files": 5,
-    "regressed_files": 0
+    "mutsu_assertions": 56,
+    "parity_files": 2,
+    "regressed_files": 3
   },
   "version": "0.1.1"
 }

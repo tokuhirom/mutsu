@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.09,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.66,
+        "secs": 3.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -33,11 +33,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: DoStmt(If { cond: MethodCall { target: DoStmt(VarDecl { name: \"__with_tmp_6\", expr: Var(\"value\"), type_constraint: None, is_state: false, is_our: f",
+        "first_failure": "RakuAST: EVAL does not yet support lowering `RakuAST::Statement::With`",
         "nok": 0,
         "ok": 6,
         "plan": null,
-        "secs": 0.13,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -47,7 +47,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 8.07,
+        "secs": 10.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -56,11 +56,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "RakuAST: `.AST` does not yet support this construct: Import { module: \"TestModule\", tags: [] }",
+        "first_failure": "No exports found for module: TestModule",
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.07,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -70,7 +70,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.1,
+        "secs": 2.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.08,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -92,7 +92,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.42,
+        "secs": 3.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,7 +104,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.09,
+        "secs": 0.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -114,7 +114,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.85,
+        "secs": 5.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +126,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.13,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,7 +136,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.32,
+        "secs": 6.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -148,7 +148,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.33,
+        "secs": 0.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -158,7 +158,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 5.86,
+        "secs": 7.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -170,7 +170,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.21,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -180,7 +180,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.09,
+        "secs": 3.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -192,7 +192,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.23,
+        "secs": 0.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -202,7 +202,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 4.38,
+        "secs": 6.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -214,7 +214,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.22,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -224,7 +224,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.42,
+        "secs": 4.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -240,7 +240,7 @@
     "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "f9d81d62",
+    "mutsu_commit": "fcd1d5ed",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

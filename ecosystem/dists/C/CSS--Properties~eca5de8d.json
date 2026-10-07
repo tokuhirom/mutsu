@@ -19,503 +19,311 @@
   "dist": "CSS::Properties",
   "files": [
     {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "code sample",
-        "nok": 5,
-        "ok": 7,
-        "plan": 12,
-        "secs": 5.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
+      "cmp": "no_baseline",
       "path": "t/00-readme.t",
       "raku": {
-        "nok": 0,
-        "ok": 12,
+        "first_failure": "code sample",
+        "nok": 1,
+        "ok": 0,
         "plan": 12,
-        "secs": 96.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "declared property",
-        "nok": 2,
-        "ok": 12,
-        "plan": 18,
-        "secs": 1.91,
+        "secs": 78.58,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
-      },
+      }
+    },
+    {
+      "cmp": "no_baseline",
       "path": "t/01-property-basic.t",
       "raku": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 4.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$_'; expected UInt but got Str (\"border-left-style\")",
-        "nok": 0,
-        "ok": 14,
-        "plan": 15,
-        "secs": 2.2,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/02-style-basic.t",
-      "raku": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 1.38,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/ast.t",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'property-number' for invocant of type 'CSS::Properties'",
-        "nok": 0,
-        "ok": 0,
-        "plan": 30,
-        "secs": 1.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/at-font-face.t",
-      "raku": {
-        "nok": 0,
-        "ok": 30,
-        "plan": 30,
-        "secs": 1.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'property-number' for invocant of type 'CSS::Properties'",
-        "nok": 0,
-        "ok": 0,
-        "plan": 5,
-        "secs": 1.46,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/box-fonts.t",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 2.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Could not instantiate role 'CSS::Units' because it died with X::Redeclaration; exception details:",
-        "nok": 0,
-        "ok": 0,
-        "plan": 19,
-        "secs": 1.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/box-measure.t",
-      "raku": {
-        "nok": 0,
-        "ok": 19,
-        "plan": 19,
-        "secs": 3.83,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'box'; expected CSS::Box::BoundingBox\u000012887272875320410114, got Any",
-        "nok": 0,
-        "ok": 0,
-        "plan": 20,
-        "secs": 1.57,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/box.t",
-      "raku": {
-        "nok": 0,
-        "ok": 19,
-        "plan": 20,
-        "secs": 1.56,
-        "skip": 0,
-        "todo": 1,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Could not instantiate role 'CSS::Units' because it died with X::Redeclaration; exception details:",
-        "nok": 0,
-        "ok": 0,
-        "plan": 4,
-        "secs": 1.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/calc.t",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 33,
-        "plan": 33,
-        "secs": 2.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/colors.t",
-      "raku": {
-        "nok": 0,
-        "ok": 33,
-        "plan": 33,
-        "secs": 1.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "change em",
-        "nok": 1,
-        "ok": 3,
-        "plan": 4,
-        "secs": 8.02,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/css-fonts.t",
-      "raku": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 2.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "updated margin-right value",
-        "nok": 5,
-        "ok": 22,
-        "plan": 47,
-        "secs": 2.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/declarations.t",
-      "raku": {
-        "nok": 0,
-        "ok": 47,
-        "plan": 47,
-        "secs": 1.71,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/errors.t",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 0.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "No such method 'css-val--my-align' for invocant of type 'CSS::Module::CSS3'",
-        "nok": 0,
-        "ok": 0,
-        "plan": 22,
-        "secs": 1.26,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/extend.t",
-      "raku": {
-        "nok": 0,
-        "ok": 22,
-        "plan": 22,
-        "secs": 1.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 1.65,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/important.t",
-      "raku": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 0.98,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "unknown property: moccasin",
-        "nok": 0,
-        "ok": 1,
-        "plan": 23,
-        "secs": 1.5,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/inherit.t",
-      "raku": {
-        "nok": 0,
-        "ok": 23,
-        "plan": 23,
-        "secs": 1.83,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Could not instantiate role 'CSS::Units' because it died with X::Redeclaration; exception details:",
-        "nok": 0,
-        "ok": 0,
-        "plan": 32,
-        "secs": 1.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/measure.t",
-      "raku": {
-        "nok": 0,
-        "ok": 32,
-        "plan": 32,
-        "secs": 1.77,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.88,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/modules.t",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 1.03,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$_'; expected UInt but got Str (\"border-left-color\")",
-        "nok": 0,
-        "ok": 0,
-        "plan": 16,
-        "secs": 1.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/optimize.t",
-      "raku": {
-        "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 1.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'box'; expected CSS::Box::BoundingBox\u000012887272875320410114, got Any",
-        "nok": 0,
-        "ok": 0,
-        "plan": 19,
-        "secs": 1.29,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/page-box.t",
-      "raku": {
-        "nok": 0,
-        "ok": 19,
-        "plan": 19,
-        "secs": 3.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 58,
-        "plan": 58,
-        "secs": 5.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/svg-properties.t",
-      "raku": {
-        "nok": 0,
-        "ok": 58,
-        "plan": 58,
-        "secs": 1.8,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "SWEEP-TIMEOUT",
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.1,
+        "secs": 8.9,
         "skip": 0,
         "todo": 0,
-        "verdict": "timeout"
-      },
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-style-basic.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ast.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/at-font-face.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 7.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/box-fonts.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/box-measure.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/box.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/calc.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/colors.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/css-fonts.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/declarations.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/errors.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/extend.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/important.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.95,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/inherit.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/measure.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/modules.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/optimize.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/page-box.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/svg-properties.t",
+      "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 9.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
       "path": "t/threads.t",
       "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
         "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 12.06,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       }
     },
     {
@@ -525,7 +333,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.14,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -535,56 +343,38 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 0.99,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot modify an immutable Str (baz)",
-        "nok": 0,
-        "ok": 4,
-        "plan": 6,
-        "secs": 1.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
+      "cmp": "no_baseline",
       "path": "t/vivify.t",
       "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.08,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$_'; expected UInt but got Str (\"border-left-style\")",
-        "nok": 0,
-        "ok": 1,
-        "plan": 25,
-        "secs": 1.51,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
-      },
+      }
+    },
+    {
+      "cmp": "no_baseline",
       "path": "t/write.t",
       "raku": {
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
         "nok": 0,
-        "ok": 25,
-        "plan": 25,
-        "secs": 1.38,
+        "ok": 0,
+        "plan": null,
+        "secs": 5.4,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       }
     }
   ],
@@ -607,7 +397,7 @@
     "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "f9d81d62",
+    "mutsu_commit": "fcd1d5ed",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -618,13 +408,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_PROPERTIES/f1b1015317c03fb74197067930bc3cdd939038eb.tar.gz"
   },
-  "status": "partial",
+  "status": "red",
   "totals": {
-    "baseline_assertions": 462,
-    "baseline_files": 25,
-    "mutsu_assertions": 185,
-    "parity_files": 6,
-    "regressed_files": 19
+    "baseline_assertions": 22,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 0,
+    "regressed_files": 1
   },
   "version": "0.10.9"
 }

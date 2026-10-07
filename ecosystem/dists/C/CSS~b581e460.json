@@ -53,11 +53,11 @@
       "cmp": "no_baseline",
       "path": "t/css-basic.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 54.7,
+        "secs": 9.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -67,11 +67,11 @@
       "cmp": "no_baseline",
       "path": "t/import.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.73,
+        "secs": 10.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -81,11 +81,11 @@
       "cmp": "no_baseline",
       "path": "t/link-status.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.92,
+        "secs": 9.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -95,11 +95,11 @@
       "cmp": "no_baseline",
       "path": "t/link.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libraries/xml6.dll': /home/runner/.cache/mutsu-ecosystem/deps/LibXML/LibXML-0.11.3/resources/libra",
+        "first_failure": "Method 'color' must be implemented by CSS::Module::CSS21::Actions because it is required by roles: CSS::Module::CSS21::Gen::External.",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.13,
+        "secs": 10.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -113,7 +113,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.83,
+        "secs": 40.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -127,7 +127,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.83,
+        "secs": 6.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -141,7 +141,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.49,
+        "secs": 6.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -155,7 +155,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.51,
+        "secs": 6.5,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -170,7 +170,7 @@
     "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "f9d81d62",
+    "mutsu_commit": "fcd1d5ed",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

@@ -11,23 +11,22 @@
   "dist": "Slang::Subscripts",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "does it work with sigilless entities",
-        "nok": 1,
-        "ok": 5,
+        "nok": 0,
+        "ok": 6,
         "plan": 6,
         "secs": 0.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.24,
+        "secs": 2.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +41,7 @@
     "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "f9d81d62",
+    "mutsu_commit": "fcd1d5ed",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -53,13 +52,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/LA/SLANG_SUBSCRIPTS/02f08ff2a4f5d8b1b5df9a0c7f9cebc6cd47e0ad.tar.gz"
   },
-  "status": "red",
+  "status": "green",
   "totals": {
     "baseline_assertions": 6,
     "baseline_files": 1,
-    "mutsu_assertions": 5,
-    "parity_files": 0,
-    "regressed_files": 1
+    "mutsu_assertions": 6,
+    "parity_files": 1,
+    "regressed_files": 0
   },
   "version": "0.0.9"
 }

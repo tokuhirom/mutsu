@@ -56,7 +56,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 5.54,
+        "secs": 8.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -66,7 +66,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 7.54,
+        "secs": 11.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 2,
         "ok": 5,
         "plan": 7,
-        "secs": 22.44,
+        "secs": 30.88,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -94,7 +94,7 @@
         "nok": 3,
         "ok": 4,
         "plan": 7,
-        "secs": 0.54,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.09,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,30 +116,29 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.53,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'message' for invocant of type 'Any'",
-        "nok": 2,
-        "ok": 1,
-        "plan": null,
-        "secs": 0.57,
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/050-proxy.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.55,
+        "secs": 4.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -160,7 +159,7 @@
     "date": "2026-10-06",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "f9d81d62",
+    "mutsu_commit": "fcd1d5ed",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -171,13 +170,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/UM/LUMBERJACK_APPLICATION/321feee7e5f458f6712313ea57cbbcb55dc2f379.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 12,
     "baseline_files": 3,
-    "mutsu_assertions": 7,
-    "parity_files": 2,
-    "regressed_files": 1
+    "mutsu_assertions": 12,
+    "parity_files": 3,
+    "regressed_files": 0
   },
   "version": "0.0.11"
 }
