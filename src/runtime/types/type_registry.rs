@@ -681,22 +681,39 @@ impl Interpreter {
     /// then the nearest enclosing named routine (anonymous blocks inherit that
     /// lexical owner), then whatever package is current.
     pub(crate) fn running_package_candidates(&self) -> [Option<&str>; 4] {
-        let frame = self
+        // A called closure that was compiled in a compunit of its own anchors on
+        // that compunit, not on the routine that happens to be calling it: a
+        // block of the main script handed to a module routine (`cb({ array[..] })`)
+        // must not see the module's file-scope names.
+        let own_block = self
             .routine_stack
-            .iter()
-            .rev()
-            .find(|frame| !frame.is_block)
-            .or_else(|| self.routine_stack.last());
-        [
-            self.method_class_stack_top_str(),
-            frame.and_then(|frame| frame.lexical_package.map(|pkg| pkg.as_str())),
-            frame
-                .map(|frame| frame.package)
-                .filter(|pkg| !crate::qualified::is_global_package(*pkg))
-                .map(|pkg| pkg.as_str()),
+            .last()
+            .filter(|frame| frame.is_block && !frame.is_inlined_block && frame.def_file.is_some());
+        let frame = own_block.or_else(|| {
+            self.routine_stack
+                .iter()
+                .rev()
+                .find(|frame| !frame.is_block)
+                .or_else(|| self.routine_stack.last())
+        });
+        let method_class = self.method_class_stack_top_str();
+        let frame_package = frame
+            .map(|frame| frame.package)
+            .filter(|pkg| !crate::qualified::is_global_package(*pkg))
+            .map(|pkg| pkg.as_str());
+        // The package being parsed or loaded stays current while a grammar's
+        // action runs, so it anchors only code with no package of its own: an
+        // action method of the main script must not see the grammar module's
+        // file-scope names (`enum ... is export(:Tag)`'s `array`).
+        let current = (method_class.is_none() && frame_package.is_none())
             // The atomic `Symbol` mirror of `current_package`, which yields a
             // `&'static str` instead of cloning the `String` behind the lock.
-            Some(self.current_package_sym().as_str()),
+            .then(|| self.current_package_sym().as_str());
+        [
+            method_class,
+            frame.and_then(|frame| frame.lexical_package.map(|pkg| pkg.as_str())),
+            frame_package,
+            current,
         ]
     }
 

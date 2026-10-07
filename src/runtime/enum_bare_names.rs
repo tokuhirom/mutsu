@@ -155,8 +155,53 @@ impl Interpreter {
         if table.is_empty() || !table.contains_name(name) {
             return None;
         }
-        self.lookup_in_running_package(table, name)
+        self.lookup_enum_key_in_running_package(table, name)
             .or_else(|| table.get(GLOBAL_OWNER).and_then(|keys| keys.get(name)))
+    }
+
+    /// [`Self::lookup_in_running_package`] for an enum key, which a package
+    /// reaches up its `::` chain only inside the compunit that declared the
+    /// owner: `PDF::Grammar::COS::Actions` (its own file) does not see the
+    /// `array` of `unit module PDF::Grammar`'s `enum AST-Types`, whose
+    /// file-scope names are lexical to that file.
+    // Cost: O(c * d), c = running package candidates (4), d = package nesting depth.
+    fn lookup_enum_key_in_running_package<'a>(
+        &'a self,
+        table: &'a crate::runtime::PackageKeyed<Value>,
+        name: &str,
+    ) -> Option<&'a Value> {
+        let running_unit = {
+            let def_file = self
+                .routine_stack
+                .iter()
+                .rev()
+                .find_map(|frame| frame.def_file);
+            def_file
+                .map(|file| self.unit_of_source_sym(Some(file)))
+                .unwrap_or(self.current_unit)
+        };
+        for candidate in self.running_package_candidates().into_iter().flatten() {
+            let mut pkg = candidate;
+            loop {
+                if let Some(found) = table.get(pkg).and_then(|entries| entries.get(name)) {
+                    let owner_unit = self
+                        .module
+                        .unit_module_packages
+                        .iter()
+                        .chain(self.module.module_source_packages.iter())
+                        .find(|(_, package)| package.as_str() == pkg)
+                        .map(|(unit, _)| *unit);
+                    if pkg == candidate || owner_unit.is_none_or(|unit| unit == running_unit) {
+                        return Some(found);
+                    }
+                }
+                match crate::runtime::utils::rsplit_once_double_colon(pkg) {
+                    Some((parent, _)) => pkg = parent,
+                    None => break,
+                }
+            }
+        }
+        None
     }
 
     /// Reject a bare enum-key read whose name was declared by more than one enum.
