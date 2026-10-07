@@ -263,7 +263,7 @@ impl Interpreter {
     /// `type_decl_constraint_is_plain_builtin`) and is the metadata value to
     /// store for it: the declaring op's own constant-pool string, so a
     /// re-registration stores the very allocation already there and the env
-    /// write is skipped (`Env::insert_sym_noting_unless_same`).
+    /// write is skipped (`Env::insert_sym_unless_same`).
     ///
     /// `type_key` is `name_sym`'s `__mutsu_type::` key
     /// ([`Self::type_meta_key_for_sym`]), which the caller already derived.
@@ -292,7 +292,9 @@ impl Interpreter {
         {
             self.mark_atomic_var_seen(name);
         }
-        self.env.insert_sym_noting_unless_same(type_key, meta);
+        // `__mutsu_type::<name>` arms no `note_env_key` latch, so the bare
+        // variant is the same write without the prefix chain.
+        self.env.insert_sym_unless_same(type_key, meta);
         // ADR-0042 slice 1: an object-hash's key type (`my %h{Int}`) must be
         // scoped the same way its value type is. `var_hash_key_constraint`
         // checks this env-scoped key first, so registering it here is what

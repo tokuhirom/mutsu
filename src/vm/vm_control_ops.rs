@@ -206,7 +206,6 @@ impl Interpreter {
         self.topic_state.active_loop_rw_param_names.pop();
         if let Some(saved) = self.topic_state.loop_local_saved_env.pop() {
             for (name_sym, val) in saved {
-                let name = name_sym.as_str();
                 // A `None` entry is a body-local `my` that shadowed NOTHING: the
                 // name did not exist before the loop, so the block's exit must
                 // take it away again rather than leave the last iteration's value
@@ -230,6 +229,7 @@ impl Interpreter {
                 // without consulting env, so an env-only restore would still read
                 // the stale last-iteration value. Mirror the restored value into
                 // every slot carrying this name.
+                let name = name_sym.as_str();
                 for (idx, slot_name) in code.locals.iter().enumerate() {
                     if slot_name == name && idx < self.locals.len() {
                         self.locals[idx] = val.clone();

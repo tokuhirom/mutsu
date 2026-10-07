@@ -2433,16 +2433,20 @@ impl Env {
         }
     }
 
-    /// [`Self::insert_sym_noting`] for a re-registration that usually writes
-    /// back what is already there (a typed `my` in a loop body re-registers
-    /// the same shared constraint value every iteration, #11467). The
+    /// [`Self::insert_sym`] for a re-registration that usually writes back
+    /// what is already there (a typed `my` in a loop body re-registers the
+    /// same shared constraint value every iteration, #11467). The
     /// bookkeeping runs as for any insert; only the map write — and the
     /// copy-on-write of a shared tier it may force — is skipped when this
     /// tier already binds `key` to this very value (same NaN-box bits, so the
     /// same immediate or the same allocation).
+    ///
+    /// Unlike `insert_sym_noting` it never runs `note_env_key`, so the key
+    /// must be one whose family arms no latch (`__mutsu_type::<name>`, the
+    /// typed-`my` registration): that spares the symbol-table lookup of its
+    /// spelling and the prefix chain on every re-registration (#12151).
     // Cost: O(1), one probe of the own tier, plus `insert_sym` on a change.
-    pub(crate) fn insert_sym_noting_unless_same(&mut self, key: Symbol, value: Value) {
-        note_env_key(key.as_str());
+    pub(crate) fn insert_sym_unless_same(&mut self, key: Symbol, value: Value) {
         if self
             .inner
             .get(&key)
