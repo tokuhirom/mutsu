@@ -1735,3 +1735,23 @@ own flags (`.^methods(:all)`) and the row is found by the full count. A handler 
 (`rw` on a role, `candidates`, `set_body_block`) keep it as a `*_applies` predicate the row asks first. The
 gate `is_classhow_method` is the rows plus the `EnumHOW`/`DefiniteHOW` names, whose own dispatchers still
 answer before the rows. A call no row answers is `X::Method::NotFound`, as the `_` arm was.
+
+### 9.25 Slice 4, first step: one enumeration of the native base candidates (2026-10-07)
+
+Branch `refactor/11276-4-resolver-cutover`. Inventory: `dispatch_next_candidate`
+(`runtime/builtins_dispatch_next.rs`) ends a deferral chain in one of ten
+`native_*_next_candidate` bridges (grammar `parse`, built-in grammar rule, `Mu` base for
+`BUILDALL`/`POPULATE`/`clone`/`new`, `is Array` / `is Hash` / baggy backing storage, `gist`/`Str`/`raku`,
+a mixin's inner value, an `augment`ed core type, the metamodel HOW), enumerated by hand at three sites
+with three different orders (a user MRO exhausted, a multi method exhausted, a method with no dispatch
+frame). None is a `MethodDef`, so the user-MRO walk never reaches them.
+
+This step makes the enumeration one thing: `NativeBase` names each bridge, `NATIVE_BASE_EXHAUSTED`,
+`NATIVE_BASE_MULTI` and `NATIVE_BASE_NO_FRAME` are the three orders (unchanged), and
+`native_base_next_candidate` is the single place that walks one. No behaviour change;
+`t/nativecall/native-base-candidates.t` pins one case per bridge family.
+
+What is left of slice 4: a `DeferralEntry::Native { owner }` produced from `resolve_sequence`'s `Native`
+candidates and invoked through `invoke_owner`, so the bridges that only call a builtin on the receiver
+(`CoreType`, `AnyBase`, `MixinBase`, the storage three) become entries of the sequence instead of probes at
+exhaustion. `augment` and the single-method fast path (no frame is pushed) are the part to design first.
