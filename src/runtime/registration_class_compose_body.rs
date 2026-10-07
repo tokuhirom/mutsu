@@ -141,6 +141,7 @@ impl Interpreter {
                 class_def: &mut class_def,
                 out: RoleCompositionOutcome::default(),
                 is_hoisted_shell: crate::runtime::HoistedShell::No,
+                pending_attrs: &[],
             };
             self.compose_role_into_class(&mut cx, &role_name, base_role_name, false, resolved)?;
             cx.out
@@ -246,7 +247,135 @@ impl Interpreter {
         }
     }
 
+    /// Runs a role's deferred body for the class `cx` is composing. Rakudo
+    /// composes at the END of the class, so the body's `::?CLASS.^attributes`
+    /// already lists the class's own `has` declarations; mutsu composes
+    /// header roles before the class body registers them. Publish the pending
+    /// declarations for the duration of the body so introspection agrees.
+    ///
+    /// Cost: O(a), a = pending attribute declarations, plus the body itself.
     pub(super) fn run_composed_role_deferred_body(
+        &mut self,
+        cx: &mut RoleCompositionCx<'_>,
+        base_role_name: &str,
+        role: &RoleDef,
+        role_param_values: &ValueMap,
+        role_arg_values: &[Value],
+    ) -> Result<(), RuntimeError> {
+        if role.deferred_body.is_empty() {
+            return Ok(());
+        }
+        let mut peeked: Vec<(String, char)> = Vec::new();
+        let mut unpublished = false;
+        let mut saved_attrs: Option<Vec<ClassAttributeDef>> = None;
+        if !cx.pending_attrs.is_empty() {
+            let mut added = Vec::new();
+            for (_, decl) in cx.pending_attrs {
+                if decl.is_my || decl.is_our || decl.is_alias {
+                    continue;
+                }
+                peeked.push((decl.name.clone(), decl.sigil));
+                added.push(ClassAttributeDef {
+                    name: decl.name.clone(),
+                    is_public: decl.is_public,
+                    default: decl.default.clone(),
+                    captured_env: None,
+                    captured_unit: None,
+                    declaring_package: Some(Symbol::intern(cx.name)),
+                    is_rw: !decl.is_readonly && decl.is_rw,
+                    is_required: decl.is_required.clone(),
+                    sigil: decl.sigil,
+                    type_constraint: decl.type_constraint.clone(),
+                    where_constraint: decl.where_constraint.clone(),
+                    declared_shape: decl.declared_shape.clone(),
+                    source_line: decl.decl_line,
+                    source_file: None,
+                    default_is_seed: decl.default_is_seed,
+                });
+            }
+            // Only the class's own declarations: Rakudo has not yet composed
+            // the role's attributes into the class when its body runs.
+            let mut registry = self.registry_mut();
+            if let Some(class) = registry.classes.get_mut(cx.name) {
+                saved_attrs = Some(std::mem::replace(&mut class.attributes, added));
+            } else {
+                // Header roles compose before the class shell is published.
+                let mut shell = cx.class_def.clone();
+                shell.attributes = added;
+                registry.classes.insert(cx.name.to_string(), shell.into());
+                unpublished = true;
+            }
+        }
+        // Custom attribute traits (`is hidden-from-ValueType`) have already run
+        // by the time Rakudo composes; run them on the published stand-ins so
+        // the body sees their effect. The real class body runs them again, so
+        // the stand-in meta-objects are dropped afterwards.
+        let mut trait_keys: Vec<(String, String)> = Vec::new();
+        let mut trait_err = None;
+        if !peeked.is_empty() {
+            let saved_package = self.current_package();
+            self.set_current_package(cx.name.to_string());
+            for (_, decl) in cx.pending_attrs {
+                if decl.unknown_traits.is_empty()
+                    || !peeked.contains(&(decl.name.clone(), decl.sigil))
+                {
+                    continue;
+                }
+                let key = (cx.name.to_string(), decl.name.clone());
+                let had = self
+                    .registry()
+                    .class_attribute_trait_objects
+                    .contains_key(&key);
+                let mut composes = Vec::new();
+                if let Err(err) = self.apply_attribute_traits(decl, &decl.name, cx.name, &mut composes)
+                {
+                    trait_err = Some(err);
+                    break;
+                }
+                if !had {
+                    trait_keys.push(key);
+                }
+            }
+            self.set_current_package(saved_package);
+        }
+        // Names from the role's declaring scope that the composer's scope
+        // lacks are visible to the body only while it runs.
+        let mut borrowed: Vec<String> = Vec::new();
+        if let Some(captured) = role.captured_env.as_ref() {
+            for (k, v) in captured.iter() {
+                if !self.env.contains_key(k) {
+                    self.env.insert(k.clone(), v.clone());
+                    borrowed.push(k.clone());
+                }
+            }
+        }
+        let result = match trait_err {
+            Some(err) => Err(err),
+            None => self.run_composed_role_deferred_body_inner(
+                cx,
+                base_role_name,
+                role,
+                role_param_values,
+                role_arg_values,
+            ),
+        };
+        for k in &borrowed {
+            self.env.remove(k);
+        }
+        for key in &trait_keys {
+            self.registry_mut().class_attribute_trait_objects.remove(key);
+        }
+        if unpublished {
+            self.registry_mut().classes.remove(cx.name);
+        } else if let Some(attrs) = saved_attrs
+            && let Some(class) = self.registry_mut().classes.get_mut(cx.name)
+        {
+            class.attributes = attrs;
+        }
+        result
+    }
+
+    fn run_composed_role_deferred_body_inner(
         &mut self,
         cx: &mut RoleCompositionCx<'_>,
         base_role_name: &str,

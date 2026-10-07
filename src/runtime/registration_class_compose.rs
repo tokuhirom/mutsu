@@ -72,6 +72,9 @@ pub(super) struct RoleCompositionCx<'a> {
     pub(super) out: RoleCompositionOutcome,
     /// See [`super::registration_class::ClassDeclModifiers::is_hoisted_shell`].
     pub(super) is_hoisted_shell: super::registration_class::HoistedShell,
+    /// The composing class's own `has` declarations, not yet registered while
+    /// its header roles compose (see `run_composed_role_deferred_body`).
+    pub(super) pending_attrs: &'a [(Symbol, crate::opcode::CompiledAttrDecl)],
 }
 
 impl Interpreter {
