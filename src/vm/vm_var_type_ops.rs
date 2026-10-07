@@ -164,6 +164,22 @@ impl Interpreter {
                 );
             if is_nil || is_dead_seed {
                 let init_val = self.typed_scalar_nil_seed_value(name, &constraint);
+                // The seed of a block-entry hoist is a declaration's own first
+                // value, not a write to a variable of that name in an enclosing
+                // scope: while the cross-thread store is active, mask the name
+                // exactly as `SetVarDynamic` does, or a worker running a routine
+                // with `my int $n` (upstream NativeCall's `CArray` code) would
+                // publish its seed under the bare name and `await` would pull it
+                // back over the caller's own `$n`.
+                if hoisted
+                    && self.threads.shared_vars_active
+                    && Self::thread_decl_masks_name(code, name)
+                {
+                    self.threads
+                        .thread_redeclared_vars
+                        .borrow_mut()
+                        .insert(name.to_string());
+                }
                 self.set_env_with_main_alias(name, init_val.clone());
                 // A declaration's SetVarDynamic directly precedes this op.
                 // Its slot is authoritative when an inner `my` shadows an

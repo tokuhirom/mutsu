@@ -2148,6 +2148,22 @@ impl Interpreter {
             if self.locals[i].is_nil() && !self.env().contains_key(name) {
                 continue;
             }
+            // While threads exist, an immutable scalar the slot still holds
+            // exactly as `env` already has it was neither assigned nor bound by
+            // this frame: it is the ambient copy the slot was seeded with at
+            // entry. Mirroring it back would republish that copy under the bare
+            // name and mark it dirty, so the next `await` of the thread that
+            // owns the name pulled the store's older copy over its live binding
+            // (a worker routine with a local `$i` pinned the caller's loop
+            // variable to its value at the spawn).
+            if self.threads.shared_vars_active
+                && self
+                    .env()
+                    .get(name)
+                    .is_some_and(|current| Self::is_unchanged_scalar_write(current, &self.locals[i]))
+            {
+                continue;
+            }
             self.set_env_with_main_alias(name, self.locals[i].clone());
         }
     }
