@@ -167,3 +167,26 @@ spelled" is its own issue. Two such findings exist: the word quotes other than `
 `«»`, `<<>>`, `qqww`, `q:w`), which `.AST` refuses today
 ([#12228](https://github.com/tokuhirom/mutsu/issues/12228)), and operator names with a colonpair
 (`sub infix:<foo>`, [#12220](https://github.com/tokuhirom/mutsu/issues/12220)).
+
+### 6.2 Heredocs (2026-10-07, [#12199](https://github.com/tokuhirom/mutsu/issues/12199), slice S2)
+
+Option A held again; no abort criterion was met.
+
+- **Carrier**: `Spelling::Heredoc { stop }` on `Expr::Spelled`, built by
+  `parse_to_heredoc_with_flags` (`src/parser/primary/string/heredoc.rs`) through
+  `Expr::spelled`, so only a spelling-keeping parse sees it. `stop` is the terminator line as
+  written: its indentation, the delimiter and the newline that ends it (none at the end of the
+  source). The `:w` adverb is not wrapped: rakudo keeps it as a `processors => ("words",)` field
+  over the unsplit text, which the parser has already split (a separate finding, not a slice).
+- **Peel sites: none.** The parse-time consumers of the heredoc term (`check_heredoc_scope_errors`,
+  the `closes_block_same_line` flag) run on `Expr::HeredocInterpolation`, which stays the wrapped
+  expression; nothing needed `peel_parens`.
+- **Read**: `convert` renders the wrapped expression the way it renders any quoted text and turns
+  the resulting `QuotedString` into `RakuAST::Heredoc` with a `stop` field, so `qq` interpolation
+  parts (variables, blocks) come out as rakudo's segments. **Write**: `RakuAST::Heredoc.new(
+  segments => ..., stop => ...)` is a constructor, and `lower` treats it as the `QuotedString` it
+  wraps (`stop` has no effect on the lowered string).
+- **Measured**: on the corpus (758 files, 11428 statements) the `heredoc` and `heredoc-stop`
+  classes are at zero and no class grew; 94.6% of the statements are identical. The
+  `MUTSU_RAKUAST=1` ratchet passes for all listed files (one file, `attribute-lazy-initialization.t`,
+  timed out under 4-way parallel load on a debug build and passes alone).

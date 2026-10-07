@@ -3786,7 +3786,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         | RakuAstClass::StrLiteral => Ok(Expr::Literal(positional_leaf(node)?)),
         // `"..."` parses to a QuotedString wrapping StrLiteral segments; a single
         // plain segment lowers to its string literal.
-        RakuAstClass::QuotedString => {
+        // A `Heredoc` is the same quoted text; `stop` only records the
+        // terminator line, which the lowered string no longer has.
+        RakuAstClass::QuotedString | RakuAstClass::Heredoc => {
             let segments = list_field(node, "segments")?;
             if let Some(content) = word_quote_content(node)? {
                 return Ok(crate::parser::angle_words_expr(&content));

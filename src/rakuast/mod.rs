@@ -114,6 +114,8 @@ pub enum RakuAstClass {
     ComplexLiteral,
     StrLiteral,
     QuotedString,
+    // `q:to/END/`: a `QuotedString` that also keeps its `stop` line (ADR-12199).
+    Heredoc,
     QuotedRegex,
     RegexSequence,
     RegexLiteral,
@@ -469,6 +471,7 @@ impl RakuAstClass {
             ComplexLiteral => "RakuAST::ComplexLiteral",
             StrLiteral => "RakuAST::StrLiteral",
             QuotedString => "RakuAST::QuotedString",
+            Heredoc => "RakuAST::Heredoc",
             QuotedRegex => "RakuAST::QuotedRegex",
             RegexSequence => "RakuAST::Regex::Sequence",
             RegexLiteral => "RakuAST::Regex::Literal",
@@ -837,6 +840,7 @@ impl RakuAstClass {
             | ComplexLiteral
             | StrLiteral
             | QuotedString
+            | Heredoc
             | QuotedRegex
             | TypeEnum
             | VarLexical
@@ -1135,6 +1139,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::ComplexLiteral"
         | "RakuAST::StrLiteral"
         | "RakuAST::QuotedString"
+        | "RakuAST::Heredoc"
         | "RakuAST::Type::Enum"
         | "RakuAST::Var::Lexical"
         | "RakuAST::Var::Package"
@@ -1308,6 +1313,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::ComplexLiteral,
     RakuAstClass::StrLiteral,
     RakuAstClass::QuotedString,
+    RakuAstClass::Heredoc,
     RakuAstClass::QuotedRegex,
     RakuAstClass::RegexSequence,
     RakuAstClass::RegexLiteral,
@@ -1665,7 +1671,8 @@ pub fn construct(
     {
         return node.map(Some);
     }
-    if class_name == "RakuAST::QuotedString" && method == "new" {
+    if matches!(class_name, "RakuAST::QuotedString" | "RakuAST::Heredoc") && method == "new" {
+        let heredoc = class_name == "RakuAST::Heredoc";
         let segments = named_arg(args, "segments")
             .ok_or_else(|| RuntimeError::new("RakuAST::QuotedString.new requires `segments`"))?
             .as_list_items()
@@ -1703,8 +1710,23 @@ pub fn construct(
             name: Some("segments"),
             value: RakuAstFieldValue::List(segments),
         });
+        if heredoc {
+            let stop = named_arg(args, "stop")
+                .filter(|stop| matches!(stop.view(), ValueView::Str(_)))
+                .ok_or_else(|| {
+                    RuntimeError::new("RakuAST::Heredoc.new requires a string `stop`")
+                })?;
+            fields.push(RakuAstField {
+                name: Some("stop"),
+                value: RakuAstFieldValue::Node(stop),
+            });
+        }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
-            class: RakuAstClass::QuotedString,
+            class: if heredoc {
+                RakuAstClass::Heredoc
+            } else {
+                RakuAstClass::QuotedString
+            },
             fields,
         }))));
     }
