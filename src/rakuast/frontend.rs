@@ -53,18 +53,25 @@ fn mode() -> Mode {
     })
 }
 
+/// Whether the `MUTSU_RAKUAST` mode runs a unit of this kind through the round
+/// trip. Such a unit is parsed with its spellings kept (ADR-12199): the
+/// conversion reads them, and the lowering hands the compiler the same tree it
+/// would have had without them.
+pub(crate) fn covers(unit: Unit) -> bool {
+    match mode() {
+        Mode::Off => false,
+        Mode::ProgramUnits => unit != Unit::Module,
+        Mode::All => true,
+    }
+}
+
 /// Run a parsed compilation unit through the RakuAST round trip when the mode
 /// covers its kind; hand it back untouched otherwise.
 pub(crate) fn round_trip_if_enabled(
     stmts: Vec<Stmt>,
     unit: Unit,
 ) -> Result<Vec<Stmt>, RuntimeError> {
-    let covered = match mode() {
-        Mode::Off => false,
-        Mode::ProgramUnits => unit != Unit::Module,
-        Mode::All => true,
-    };
-    if !covered {
+    if !covers(unit) {
         return Ok(stmts);
     }
     round_trip(&stmts).map_err(|err| {

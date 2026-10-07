@@ -14,6 +14,7 @@ use super::{
     RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, bareword, decl_traits,
     hash_literal, name_parts, routine_traits, subscript_adverb,
 };
+use crate::ast::spelled::Spelling;
 use crate::ast::{
     AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, IMPLICIT_INVOCANT_TRAIT, ParamDef,
     Stmt, WithBlockKind,
@@ -2636,6 +2637,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     match expr {
         // `$<name>`: the named capture of the last match.
         Expr::CaptureVar(name) => super::match_vars::convert(name),
+        // `<a b  c>`: rakudo keeps the raw text of a word list, whitespace
+        // included, as one word-quote (ADR-12199).
+        Expr::Spelled(spelled) => match &spelled.spelling {
+            Spelling::Words(text) => Ok(word_quote(text)),
+        },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept
         // for a statement-level literal, or from the exact constant otherwise.

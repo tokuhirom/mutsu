@@ -21,6 +21,17 @@ pub(crate) fn parse_source(input: &str) -> Result<(Vec<Stmt>, Option<String>), R
     result
 }
 
+/// [`parse_source`] for `.AST`: the source's spelled terms keep their spelling
+/// (ADR-12199), which only the RakuAST conversion may consume.
+pub(crate) fn parse_source_spelled(
+    input: &str,
+) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
+    let saved_language_version = parser::current_language_version();
+    let result = parser::parse_program_spelled(input);
+    parser::set_current_language_version(&saved_language_version);
+    result
+}
+
 /// Parse an internal expression *fragment* re-parsed while the program is
 /// already running (a parametric role's type argument, ...).
 ///
@@ -48,7 +59,11 @@ pub(crate) fn parse_compilation_unit_of(
     input: &str,
     unit: crate::rakuast::frontend::Unit,
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    let (stmts, finish) = parser::parse_program(input)?;
+    let (stmts, finish) = if crate::rakuast::frontend::covers(unit) {
+        parser::parse_program_spelled(input)?
+    } else {
+        parser::parse_program(input)?
+    };
     Ok((
         crate::rakuast::frontend::round_trip_if_enabled(stmts, unit)?,
         finish,

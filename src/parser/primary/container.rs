@@ -25,7 +25,9 @@ pub(crate) use angle_words::angle_words_subscript_index_expr;
 // trait-argument sugar (`is TraitName<a b>`, in `parser::stmt::decl`) reuses
 // it to parse the `<...>` word-list argument.
 pub(crate) use angle_words::{angle_list, angle_words_expr};
-pub(super) use angle_words::{double_angle_list, find_nested_angle_close_pub, french_quote_list};
+pub(super) use angle_words::{
+    angle_term, double_angle_list, find_nested_angle_close_pub, french_quote_list,
+};
 pub(crate) use array::fail_goal_error_at;
 pub(super) use array::percent_hash_literal;
 // `is foo[1,2,3]` variable-trait argument sugar parses its bracket as an array

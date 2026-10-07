@@ -344,6 +344,7 @@ impl Interpreter {
             &user_sub_names,
             &user_type_names,
             &user_value_term_names,
+            false,
         ) {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;

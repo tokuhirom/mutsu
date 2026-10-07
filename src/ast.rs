@@ -1125,6 +1125,11 @@ pub(crate) enum Expr {
     /// inner expression — but the chain-flattener stops at Grouped
     /// boundaries to prevent incorrect junction flattening.
     Grouped(Box<Expr>),
+    /// A term and the way it was spelled, for RakuAST (ADR-12199). Built by
+    /// the parser and stripped by [`spelled::strip_spelling`] before the
+    /// compiler, the precompilation cache or any analysis runs, so none of
+    /// them ever sees it; only the `.AST` entry points keep it.
+    Spelled(Box<spelled::Spelled>),
     Whatever,
     /// A `*` that participates in Whatever-priming (an "argument" `*`, in
     /// Rakudo's `WhateverCode::Argument` terminology), as opposed to a bare
@@ -2796,6 +2801,7 @@ pub(crate) mod placeholders;
 pub(crate) mod shaped_decl;
 pub(crate) mod sigilless_decl;
 pub(crate) mod signature_decl;
+pub(crate) mod spelled;
 pub(crate) mod stable_hash;
 pub(crate) mod stub;
 pub(crate) mod subscript_adverb;
@@ -2882,12 +2888,18 @@ impl Expr {
     /// match `Expr` directly, unless it genuinely cares whether parentheses
     /// were written (junction chain flattening, list assignment, the Whatever
     /// freeze).
+    ///
+    /// It also looks through [`Expr::Spelled`]: the wrapper only records how
+    /// the term was written, never what it is.
     pub fn peel_parens(&self) -> &Expr {
         let mut expr = self;
-        while let Expr::Grouped(inner) = expr {
-            expr = inner;
+        loop {
+            match expr {
+                Expr::Grouped(inner) => expr = inner,
+                Expr::Spelled(spelled) => expr = &spelled.expr,
+                _ => return expr,
+            }
         }
-        expr
     }
 
     /// The bareword a term is, or `None` for any other expression.
