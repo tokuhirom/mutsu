@@ -1308,6 +1308,10 @@ impl Interpreter {
                 saved_imported_routine_aliases,
             );
             self.module.imported_env_aliases = saved_imported_env_aliases;
+            if !module_routine_aliases.is_empty() {
+                crate::runtime::cow_table_mut(&mut self.module.module_body_import_aliases)
+                    .extend(module_routine_aliases.iter().copied());
+            }
             module_scope_names = self.collect_module_scope_names(&before_env_keys);
             // Hook-installed sigilless terms the env diff may have missed (see
             // `module_export_terms`).

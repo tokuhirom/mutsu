@@ -155,6 +155,16 @@ impl Interpreter {
         if base.is_empty() || base.contains(':') {
             return None;
         }
+        // A routine the package's own module body imported is lexical to that
+        // compunit, not a member of the package.
+        if package != crate::symbol::wk::global_package()
+            && self
+                .module
+                .module_body_import_aliases
+                .contains(&crate::qualified::qualified(package, Symbol::intern(base)))
+        {
+            return None;
+        }
         // Skip my-scoped subs (they should not appear in the package stash)
         if self.is_my_scoped_package_item(
             crate::qualified::qualified(package, Symbol::intern(base)).as_str(),
