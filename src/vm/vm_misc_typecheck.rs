@@ -60,6 +60,17 @@ impl Interpreter {
         if var_name.is_some_and(|name| name.starts_with('%')) {
             return Ok(());
         }
+        // `my T $x = <Proxy>`: `=` reads its RHS in value context, so the
+        // declaration checks (and stores) the FETCHed value, not the Proxy
+        // container (ADR-0040's store boundary, `fetch_proxy_for_store`).
+        // `my K $x = $obj[0]` over an `AT-POS ... is rw` returning a Proxy
+        // (`CArray[CStruct]`) otherwise failed the check against `Any (Proxy)`.
+        if !bind_mode && has_explicit_initializer && value.is_proxy_value() {
+            value = self.fetch_proxy_for_store(value)?;
+            if let Some(top) = self.stack.last_mut() {
+                *top = value.clone();
+            }
+        }
         // The following bind store checks a Proxy's FETCH value and installs
         // the Proxy container. Leave that check to the store so FETCH runs
         // once, including when the RHS is wrapped in a VarRef.

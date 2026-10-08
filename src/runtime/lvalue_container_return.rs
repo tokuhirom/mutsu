@@ -36,7 +36,9 @@ impl Interpreter {
         value: Value,
     ) -> Option<Result<Value, RuntimeError>> {
         match container.view() {
-            ValueView::Proxy { .. } => Some(self.assign_proxy_lvalue(container.clone(), value)),
+            ValueView::Proxy { .. } => {
+                Some(self.store_proxy_lvalue(container, value).map(|_| container.clone()))
+            }
             ValueView::ContainerRef(cell) => {
                 // A promoted typed element carries its constraint on the cell
                 // (`array_slot_ref` / `hash_slot_ref`), so `tel() = "nope"` on
