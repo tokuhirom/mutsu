@@ -2096,9 +2096,7 @@ impl Parser {
 
         // `<|w>` is rakudo's spelling of the word boundary `<.wb>`, and the
         // same node in RakuAST.
-        if !explicit
-            && self.chars[start..].starts_with(&['<', '|', 'w', '>'])
-        {
+        if !explicit && self.chars[start..].starts_with(&['<', '|', 'w', '>']) {
             let node = RegexTree::parse_lookaround_body("<.wb>", self.in_unit_parse)?.body;
             self.pos = start + 4;
             return Some(node);
@@ -3765,7 +3763,9 @@ fn is_executable_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::CharClassAssertion(_) => true,
         RegexNode::Sequence(nodes)
         | RegexNode::Alternation(nodes)
-        | RegexNode::SequentialAlternation(nodes) => nodes.iter().all(is_executable_lookaround_body),
+        | RegexNode::SequentialAlternation(nodes) => {
+            nodes.iter().all(is_executable_lookaround_body)
+        }
         RegexNode::Quantified { atom, quantifier } => {
             is_executable_lookaround_body(atom)
                 && quantifier
