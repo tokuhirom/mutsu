@@ -650,43 +650,28 @@ impl Interpreter {
         {
             return None;
         }
-        // Mutating key methods write into the SHARED backing storage in
-        // place (interior mutability via `with_attr_mut`), mirroring the
-        // Array analog's simple-mutator fast path.
-        if matches!(method_name.as_str(), "ASSIGN-KEY" | "DELETE-KEY") && !args.is_empty() {
-            let key = args[0].to_string_value();
-            let is_assign = method_name == "ASSIGN-KEY";
-            let value = if is_assign {
-                args.get(1).cloned().unwrap_or(Value::NIL)
-            } else {
-                Value::NIL
-            };
+        // The keyed mutators (`ASSIGN-KEY`, `DELETE-KEY`, `push`, `append`) are
+        // `Hash` rows reached with the backing storage as a detached place; they
+        // write the storage's shared node in place (ADR-11276 §9.37).
+        if matches!(
+            method_name.as_str(),
+            "ASSIGN-KEY" | "DELETE-KEY" | "push" | "append"
+        ) {
             let outcome = attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
-                storage.with_hash_mut(|gc| {
-                    let data = crate::value::gc_data_mut(gc);
-                    if is_assign {
-                        data.insert(key.clone(), value.clone());
-                    } else {
-                        data.remove(&key);
-                    }
-                })
-            });
-            outcome?;
-            return Some(Ok(value));
-        }
-        if matches!(method_name.as_str(), "push" | "append") {
-            let outcome = attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
-                storage.with_hash_mut(|gc| {
-                    let data = crate::value::gc_data_mut(gc);
-                    for arg in &args {
-                        if let ValueView::Pair(k, v) = arg.view() {
-                            data.insert(k.to_string(), v.clone());
-                        }
-                    }
-                })
-            });
-            outcome?;
-            return Some(Ok(invocant.clone()));
+                let mut place = crate::builtins::method_table::ReceiverPlace::detached(storage);
+                crate::builtins::method_table::invoke_mut(
+                    self,
+                    &mut place,
+                    Symbol::intern(&method_name),
+                    &args,
+                )
+            })?;
+            if let Some(result) = outcome {
+                return Some(match method_name.as_str() {
+                    "push" | "append" => result.map(|_| invocant.clone()),
+                    _ => result,
+                });
+            }
         }
         let method_sym = Symbol::intern(&method_name);
         attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
@@ -727,25 +712,20 @@ impl Interpreter {
             return Some(stored);
         }
         if matches!(method_name, "ASSIGN-KEY" | "DELETE-KEY")
-            && !args.is_empty()
-            && let ValueView::Hash(gc_ref) = inner.view()
+            && matches!(inner.view(), ValueView::Hash(..))
         {
-            let key = args[0].to_string_value();
-            let is_assign = method_name == "ASSIGN-KEY";
-            let value = if is_assign {
-                args.get(1).cloned().unwrap_or(Value::NIL)
-            } else {
-                Value::NIL
-            };
-            // SAFETY: no other borrow into this node is held live across the
-            // write; single-threaded VM mutation path (see `aliased_mut.rs`).
-            let data = unsafe { crate::gc::gc_contents_mut(&gc_ref) };
-            if is_assign {
-                data.insert(key, value.clone());
-            } else {
-                data.remove(&key);
+            // The `Mixin`'s inner value IS the hash's real backing storage, so
+            // the `Hash` row writes through its shared node (ADR-11276 §9.37).
+            let mut storage = inner.as_ref().clone();
+            let mut place = crate::builtins::method_table::ReceiverPlace::detached(&mut storage);
+            if let Some(result) = crate::builtins::method_table::invoke_mut(
+                self,
+                &mut place,
+                Symbol::intern(method_name),
+                args,
+            ) {
+                return Some(result);
             }
-            return Some(Ok(value));
         }
         if matches!(inner.view(), ValueView::Array(..))
             && matches!(

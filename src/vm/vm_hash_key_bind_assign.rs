@@ -176,45 +176,6 @@ impl Interpreter {
         Ok(())
     }
 
-    /// `%h.ASSIGN-KEY($k, $v)` written into the hash node `target_name` is
-    /// bound to, so every alias of that node (`my %s := %!s`, a captured
-    /// attribute) sees the store. Returns `Ok(false)` when `target_name` does
-    /// not resolve to a hash node, leaving the caller's rebuild path to run.
-    ///
-    // Cost: O(1) amortized (one hash insert; an object hash also records its
-    // key object).
-    pub(crate) fn assign_key_in_place(
-        &mut self,
-        target_name: &str,
-        key_arg: &Value,
-        value: &Value,
-    ) -> Result<bool, RuntimeError> {
-        let Some(root) = self.env_root_descended_mut(target_name) else {
-            return Ok(false);
-        };
-        if !matches!(root.view(), ValueView::Hash(..)) {
-            return Ok(false);
-        }
-        root.with_hash_mut(|gc| {
-            let data = crate::value::gc_data_mut(gc);
-            let object_hash = data.key_type.is_some();
-            let key = if object_hash {
-                crate::runtime::utils::value_which_key(key_arg)
-            } else {
-                key_arg.to_string_value()
-            };
-            Self::check_assign_key_writable(data, &key)?;
-            if object_hash {
-                data.original_keys
-                    .get_or_insert_with(crate::value::ValueMap::default)
-                    .insert(key.clone(), key_arg.clone());
-            }
-            Value::hash_insert_through(&mut data.map, key, value.clone());
-            Ok(true)
-        })
-        .unwrap_or(Ok(false))
-    }
-
     /// Whether `@name[idx] = v` targets an element bound to a bare value
     /// (`@a.BIND-POS($i, 42)`, #10924) — the positional twin of
     /// [`Self::hash_element_is_readonly_bound`].

@@ -2921,15 +2921,6 @@ impl Interpreter {
             }
         }
 
-        // `%h.DELETE-KEY($k)` on a hash *value*. The name-keyed mut path
-        // (`vm_call_method_mut_ops`) answers this for a plain lexical `%h`; every
-        // other route — a hash reached through a `Mixin` above all, which is what
-        // `:delete` on a `%h but R` dispatches through — had no method to find.
-        if method == "DELETE-KEY" && args.len() == 1 && matches!(target.view(), ValueView::Hash(_))
-        {
-            return self.hash_delete_key_value(&target, &args[0]);
-        }
-
         // Mixin dispatch
         if let ValueView::Mixin(..) = target.view()
             && let Some(result) = self.dispatch_mixin_method_call(&target, method, args.clone())

@@ -143,34 +143,23 @@ impl Interpreter {
         if !attributes.contains_key("__baggy_data__") {
             return None;
         }
-        // The mutating half writes into the SHARED backing storage in place
-        // (interior mutability via `with_attr_mut`), so the invocant the user
-        // method still holds sees the new weight — the same shape the
-        // `__mutsu_hash_storage` analog uses.
+        // The keyed mutators are rows of the quant-hash owners, reached with the
+        // backing storage as a detached place; they write its shared node in
+        // place, so the invocant the user method still holds sees the new
+        // weight (ADR-11276 §9.37).
         if matches!(method_name.as_str(), "ASSIGN-KEY" | "DELETE-KEY") && !args.is_empty() {
-            let assigned = if method_name == "ASSIGN-KEY" {
-                args.get(1).cloned().unwrap_or(Value::NIL)
-            } else {
-                Value::int(0)
-            };
-            let (key, elem) = crate::runtime::utils::quanthash_elem_entry(&args[0]);
-            let mut outcome: Result<Value, RuntimeError> = Ok(assigned.clone());
-            let applied = attributes.with_attr_mut("__baggy_data__", |storage| {
-                match Self::quanthash_with_weight(storage, key, Some(&elem), &assigned) {
-                    Ok(Some(updated)) => {
-                        *storage = updated;
-                    }
-                    Ok(None) => {
-                        outcome = Err(RuntimeError::assignment_ro_typename(
-                            crate::runtime::value_type_name(storage),
-                            &crate::runtime::utils::gist_value(storage),
-                        ));
-                    }
-                    Err(e) => outcome = Err(e),
-                }
-            });
-            applied?;
-            return Some(outcome);
+            let outcome = attributes.with_attr_mut("__baggy_data__", |storage| {
+                let mut place = crate::builtins::method_table::ReceiverPlace::detached(storage);
+                crate::builtins::method_table::invoke_mut(
+                    self,
+                    &mut place,
+                    Symbol::intern(&method_name),
+                    &args,
+                )
+            })?;
+            if let Some(result) = outcome {
+                return Some(result);
+            }
         }
         if method_name == "STORE" {
             let mut outcome: Result<Value, RuntimeError> = Ok(invocant.clone());
