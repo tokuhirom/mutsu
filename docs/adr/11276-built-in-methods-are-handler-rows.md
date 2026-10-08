@@ -1905,3 +1905,27 @@ Follow-up to §9.32 (`refactor/11276-blob-decode`).
   registry.
 - Not changed, filed as #12341: an unknown encoding name does not throw, and a 16-bit buffer defaults to UTF-16
   where Rakudo applies UTF-8 to its bytes.
+
+### 9.34 `Date` and `DateTime`: `later`, `earlier`, `truncated-to`, `in-timezone`, `local` (2026-10-08)
+
+3D remainder (`refactor/11276-3d-temporal-interp`), the interpreter-looking rows of `Date` and `DateTime`.
+
+- **Rows.** `later` and `earlier` on both owners are `Handler::Named` rows at zero arguments whose named list is the
+  fourteen units of Rakudo's `*%unit` (`second(s)` ... `year(s)`); `truncated-to` (one argument) on both owners and
+  `DateTime.in-timezone` (one argument, Rakudo's signature has no default) are `Handler::Narrow` rows; `DateTime.local`
+  is the `Handler::Interp` row, because it reads `$*TZ`. Nothing else here needs the interpreter: the first four are
+  pure, the plan's "interpreter rows" label for them came from `runtime/methods_temporal.rs` living under `runtime/`.
+- **One implementation.** The 680-line `runtime/methods_temporal.rs` moved into the method table's instance group
+  (`instances/temporal_shift.rs`: `later`/`earlier` and the shared re-bless helpers; `instances/temporal_edit.rs`:
+  `truncated-to`, `in-timezone`, `clone`). The rows and the cascade's `dispatch_temporal_method` call the same
+  entry functions (`later_earlier`, `truncated_to`, `in_timezone`), so a subclass instance (no shape, kept through
+  `rebless_*_result`) and a spelling no row binds answer from the same code.
+- **What stays on the cascade path.** The units as a positional list of pairs (`.later((:2hours, :30minutes))`:
+  Rakudo's only way to order several units) are not named arguments, so the guard step declines them, as it does a
+  non-scalar positional. `.in-timezone` with no argument, `Date.in-timezone`, `clone`, `utc` for subclasses and the
+  separator forms of `yyyy-mm-dd` stay in `dispatch_temporal_method` for the same reason (no row, or no shape).
+  `Date.in-timezone` and the zero-argument `in-timezone` are mutsu extensions Rakudo does not have.
+- **Not done.** `Date.IO`/`DateTime.IO` (the path form), `Instant`/`Duration`'s `base` and `polymod` (the `Real`
+  machinery), `clone` (a rendering-and-identity name, plan item 1).
+- **Found, not changed.** Rakudo refuses several named units in one call ("More than one time unit supplied"), mutsu
+  applies them in a fixed order; the roast and ecosystem code that exists spells them as a list of pairs.

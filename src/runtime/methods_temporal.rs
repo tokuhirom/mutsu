@@ -1,136 +1,33 @@
+use crate::builtins::method_table::temporal_edit::{
+    date_clone, datetime_clone, in_timezone, truncated_to,
+};
+use crate::builtins::method_table::temporal_shift::{
+    has_date_attrs, has_datetime_attrs, later_earlier, rebless_date_result,
+    rebless_datetime_result,
+};
 use crate::builtins::methods_0arg::temporal;
 use crate::value::{RuntimeError, Value, ValueView};
 
-/// Read a `:2hours`/`:30minutes`-style adverb argument regardless of Pair
-/// flavour (ADR-0021): these adverbs are commonly collected into a list
-/// literal (`.later((:2hours, :30minutes))`), which is a positional
-/// (`ValuePair`) context, not a call site — the named flavour is not
-/// guaranteed. A `Str`-keyed positional Pair is treated identically.
-fn temporal_adverb_pair(v: &Value) -> Option<(String, Value)> {
-    match v.view() {
-        ValueView::Pair(key, value) => Some((key.clone(), value.clone())),
-        ValueView::ValuePair(key, value) => match key.view() {
-            ValueView::Str(s) => Some((s.to_string(), value.clone())),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-fn has_date_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
-    attributes.contains_key("year")
-        && attributes.contains_key("month")
-        && attributes.contains_key("day")
-}
-
-fn has_datetime_attrs(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
-    has_date_attrs(attributes)
-        && attributes.contains_key("hour")
-        && attributes.contains_key("minute")
-        && attributes.contains_key("second")
-        && attributes.contains_key("timezone")
-}
-
-/// Carry the invocant's `:formatter` over to a value derived from it. Rakudo
-/// passes `:&!formatter` along in `later`/`earlier`/`truncated-to`/
-/// `in-timezone` (and so `utc`/`local`), so the derived value renders through
-/// the same formatter -- against its own fields, since nothing is cached.
-// Cost: O(a), a = attributes of the result (one copy when a formatter exists).
-fn keep_formatter(
-    result: Value,
-    original_attrs: &crate::gc::Gc<crate::value::InstanceAttrs>,
-) -> Value {
-    temporal::with_formatter(result, original_attrs.as_map().get("formatter").cloned())
-}
-
-fn rebless_datetime_result(
-    result: Value,
-    target_class_name: crate::symbol::Symbol,
-    original_attrs: &crate::gc::Gc<crate::value::InstanceAttrs>,
-) -> Value {
-    if target_class_name == "DateTime" {
-        return result;
-    }
-    let ValueView::Instance {
-        class_name,
-        attributes,
-        id,
-    } = result.view()
-    else {
-        return result;
-    };
-    if class_name != "DateTime" {
-        return result;
-    }
-    let merged = (**original_attrs).clone();
-    for key in [
-        "year", "month", "day", "hour", "minute", "second", "timezone", "epoch",
-    ] {
-        if let Some(value) = attributes.as_map().get(key) {
-            merged.insert(key.to_string(), value.clone());
-        }
-    }
-    let mut merged_map = (merged).to_map();
-    // The result decides the formatter: `.clone(:formatter(Callable))` resets it.
-    if !attributes.as_map().contains_key("formatter") {
-        merged_map.remove("formatter");
-    }
-    Value::instance_parts(
-        target_class_name,
-        crate::gc::Gc::new(crate::value::InstanceAttrs::new(
-            target_class_name,
-            merged_map,
-            id,
-            true,
-        )),
-        id,
-    )
-}
-
-fn rebless_date_result(
-    result: Value,
-    target_class_name: crate::symbol::Symbol,
-    original_attrs: &crate::gc::Gc<crate::value::InstanceAttrs>,
-) -> Value {
-    if target_class_name == "Date" {
-        return result;
-    }
-    let ValueView::Instance {
-        class_name,
-        attributes,
-        id,
-    } = result.view()
-    else {
-        return result;
-    };
-    if class_name != "Date" {
-        return result;
-    }
-    let merged = (**original_attrs).clone();
-    for key in ["year", "month", "day", "days"] {
-        if let Some(value) = attributes.as_map().get(key) {
-            merged.insert(key.to_string(), value.clone());
-        }
-    }
-    Value::instance_parts(
-        target_class_name,
-        crate::gc::Gc::new(crate::value::InstanceAttrs::new(
-            target_class_name,
-            (merged).to_map(),
-            id,
-            true,
-        )),
-        id,
-    )
-}
-
 /// Dispatch temporal n-arg methods for Date/DateTime instances.
 /// Returns Some(result) if handled, None if not a temporal method.
+///
+/// `later`, `earlier`, `truncated-to` and `in-timezone` are rows of the method
+/// table (ADR-11276 §9.34); this is their path for the receivers the table has
+/// no shape for (an instance of a subclass) and for the spellings a row does not
+/// bind (the units as a positional list of pairs).
 pub(super) fn dispatch_temporal_method(
     target: &Value,
     method: &str,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
+    match method {
+        "later" | "earlier" => return later_earlier(target, method, args),
+        "truncated-to" => return truncated_to(target, args),
+        "in-timezone" if let Some(result) = in_timezone(target, args.first()) => {
+            return Some(result);
+        }
+        _ => {}
+    }
     match target.view() {
         ValueView::Instance {
             class_name,
@@ -139,11 +36,6 @@ pub(super) fn dispatch_temporal_method(
         } if has_date_attrs(&attributes) && !has_datetime_attrs(&attributes) => {
             let (year, month, day) = temporal::date_attrs(&(attributes).as_map());
             match method {
-                "later" | "earlier" => {
-                    Some(date_later_earlier(year, month, day, args, method).map(|v| {
-                        rebless_date_result(keep_formatter(v, &attributes), class_name, &attributes)
-                    }))
-                }
                 // `.yyyy-mm-dd($sep)` / `.mm-dd-yyyy($sep)` / `.dd-mm-yyyy($sep)`
                 // with an optional separator string (default `-`).
                 "yyyy-mm-dd" | "mm-dd-yyyy" | "dd-mm-yyyy" => {
@@ -162,9 +54,6 @@ pub(super) fn dispatch_temporal_method(
                             .map(|v| rebless_date_result(v, class_name, &attributes)),
                     )
                 }
-                "truncated-to" => Some(date_truncated_to(year, month, day, args).map(|v| {
-                    rebless_date_result(keep_formatter(v, &attributes), class_name, &attributes)
-                })),
                 "in-timezone" => {
                     // Date.in-timezone returns a DateTime
                     if let Some(arg) = args.first() {
@@ -198,18 +87,6 @@ pub(super) fn dispatch_temporal_method(
             let (year, month, day, hour, minute, second, timezone) =
                 temporal::datetime_attrs(&(attributes).as_map());
             match method {
-                "later" | "earlier" => Some(
-                    datetime_later_earlier(
-                        year, month, day, hour, minute, second, timezone, args, method,
-                    )
-                    .map(|v| {
-                        rebless_datetime_result(
-                            keep_formatter(v, &attributes),
-                            class_name,
-                            &attributes,
-                        )
-                    }),
-                ),
                 // `.yyyy-mm-dd($sep)` etc. with an optional separator (default `-`).
                 "yyyy-mm-dd" | "mm-dd-yyyy" | "dd-mm-yyyy" => {
                     let sep = args
@@ -237,40 +114,9 @@ pub(super) fn dispatch_temporal_method(
                         .map(|v| rebless_datetime_result(v, class_name, &attributes)),
                     )
                 }
-                "truncated-to" => Some(
-                    datetime_truncated_to(year, month, day, hour, minute, second, timezone, args)
-                        .map(|v| {
-                            rebless_datetime_result(
-                                keep_formatter(v, &attributes),
-                                class_name,
-                                &attributes,
-                            )
-                        }),
-                ),
                 // `utc` is `in-timezone(0)` (Rakudo), reached here for a
                 // DateTime subclass so the result keeps the subclass.
-                "in-timezone" | "utc" if method == "in-timezone" || args.is_empty() => {
-                    let new_tz = if method == "utc" {
-                        Some(0)
-                    } else {
-                        args.first().map(|arg| arg.to_f64() as i64)
-                    };
-                    let result = match new_tz {
-                        Some(new_tz) => datetime_in_timezone(
-                            year, month, day, hour, minute, second, timezone, new_tz,
-                        ),
-                        None => Ok(temporal::make_datetime(
-                            year, month, day, hour, minute, second, timezone,
-                        )),
-                    };
-                    Some(result.map(|v| {
-                        rebless_datetime_result(
-                            keep_formatter(v, &attributes),
-                            class_name,
-                            &attributes,
-                        )
-                    }))
-                }
+                "utc" if args.is_empty() => in_timezone(target, Some(&Value::int(0))),
                 "posix" if args.len() == 1 => {
                     // .posix(True) / .posix(:real) keeps fractional seconds.
                     // .posix(False) / .posix(:!real) truncates to whole seconds.
@@ -294,385 +140,4 @@ pub(super) fn dispatch_temporal_method(
         }
         _ => None,
     }
-}
-
-/// Date.later / Date.earlier
-fn date_later_earlier(
-    year: i64,
-    month: i64,
-    day: i64,
-    args: &[Value],
-    method: &str,
-) -> Result<Value, RuntimeError> {
-    let sign: i64 = if method == "later" { 1 } else { -1 };
-    let mut y = year;
-    let mut m = month;
-    let mut d = day;
-
-    let mut apply_pair = |key: &str, value: &Value| -> Result<(), RuntimeError> {
-        let amount = value.to_f64() as i64 * sign;
-        let key_str = normalize_unit(key);
-        match key_str.as_str() {
-            "day" | "days" => {
-                let days = temporal::civil_to_epoch_days(y, m, d) + amount;
-                let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
-                y = ny;
-                m = nm;
-                d = nd;
-            }
-            "week" | "weeks" => {
-                let days = temporal::civil_to_epoch_days(y, m, d) + amount * 7;
-                let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
-                y = ny;
-                m = nm;
-                d = nd;
-            }
-            "month" | "months" => {
-                let total_months = (y * 12 + (m - 1)) + amount;
-                y = total_months.div_euclid(12);
-                m = total_months.rem_euclid(12) + 1;
-                let max_d = temporal::days_in_month(y, m);
-                if d > max_d {
-                    d = max_d;
-                }
-            }
-            "year" | "years" => {
-                y += amount;
-                let max_d = temporal::days_in_month(y, m);
-                if d > max_d {
-                    d = max_d;
-                }
-            }
-            _ => {
-                return Err(RuntimeError::new(format!(
-                    "Unknown unit '{}' for Date.{}",
-                    key, method
-                )));
-            }
-        }
-        Ok(())
-    };
-
-    for arg in args {
-        if let Some((key, value)) = temporal_adverb_pair(arg) {
-            apply_pair(&key, &value)?;
-            continue;
-        }
-        if let Some(items) = arg.as_list_items() {
-            for item in items.iter() {
-                if let Some((key, value)) = temporal_adverb_pair(item) {
-                    apply_pair(&key, &value)?;
-                }
-            }
-        }
-    }
-    Ok(temporal::make_date(y, m, d))
-}
-
-/// DateTime.later / DateTime.earlier
-#[allow(clippy::too_many_arguments)]
-fn datetime_later_earlier(
-    year: i64,
-    month: i64,
-    day: i64,
-    hour: i64,
-    minute: i64,
-    second: f64,
-    timezone: i64,
-    args: &[Value],
-    method: &str,
-) -> Result<Value, RuntimeError> {
-    let sign: i64 = if method == "later" { 1 } else { -1 };
-    let sign_f: f64 = sign as f64;
-    let mut y = year;
-    let mut m = month;
-    let mut d = day;
-    let mut h = hour;
-    let mut mi = minute;
-    let mut s = second;
-
-    let clip_non_leap_second = |y: i64, m: i64, d: i64, h: i64, mi: i64, s: &mut f64, tz: i64| {
-        if *s < 60.0 {
-            return;
-        }
-        if temporal::validate_datetime(y, m, d, h, mi, *s, tz).is_ok() {
-            return;
-        }
-        let frac = (*s - 60.0).clamp(0.0, 0.999_999);
-        *s = 59.0 + frac;
-    };
-
-    let mut apply_pair = |key: &str, value: &Value| -> Result<(), RuntimeError> {
-        let key_str = normalize_unit(key);
-        match key_str.as_str() {
-            "second" | "seconds" => {
-                let amount = value.to_f64() * sign_f;
-                let instant = temporal::datetime_to_instant_leap_aware(y, m, d, h, mi, s, timezone);
-                let (ny, nm, nd, nh, nmi, ns) =
-                    temporal::instant_to_datetime_leap_aware(instant + amount, timezone);
-                y = ny;
-                m = nm;
-                d = nd;
-                h = nh;
-                mi = nmi;
-                s = ns;
-            }
-            // Minutes and hours move the wall clock (a leap second in between
-            // is not counted, as in Rakudo); only `seconds` is Instant-based.
-            "minute" | "minutes" | "hour" | "hours" => {
-                let unit_secs = if key_str.starts_with("hour") { 3_600 } else { 60 };
-                let amount = value.to_f64() as i64 * unit_secs * sign;
-                let total = h * 3_600 + mi * 60 + amount;
-                let day_shift = total.div_euclid(86_400);
-                let in_day = total.rem_euclid(86_400);
-                let (ny, nm, nd) =
-                    temporal::epoch_days_to_civil(temporal::civil_to_epoch_days(y, m, d) + day_shift);
-                y = ny;
-                m = nm;
-                d = nd;
-                h = in_day / 3_600;
-                mi = (in_day % 3_600) / 60;
-                clip_non_leap_second(y, m, d, h, mi, &mut s, timezone);
-            }
-            "day" | "days" => {
-                let amount = value.to_f64() as i64 * sign;
-                let days = temporal::civil_to_epoch_days(y, m, d) + amount;
-                let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
-                y = ny;
-                m = nm;
-                d = nd;
-                clip_non_leap_second(y, m, d, h, mi, &mut s, timezone);
-            }
-            "week" | "weeks" => {
-                let amount = value.to_f64() as i64 * sign;
-                let days = temporal::civil_to_epoch_days(y, m, d) + amount * 7;
-                let (ny, nm, nd) = temporal::epoch_days_to_civil(days);
-                y = ny;
-                m = nm;
-                d = nd;
-                clip_non_leap_second(y, m, d, h, mi, &mut s, timezone);
-            }
-            "month" | "months" => {
-                let amount = value.to_f64() as i64 * sign;
-                let total_months = (y * 12 + (m - 1)) + amount;
-                y = total_months.div_euclid(12);
-                m = total_months.rem_euclid(12) + 1;
-                let max_d = temporal::days_in_month(y, m);
-                if d > max_d {
-                    d = max_d;
-                }
-                clip_non_leap_second(y, m, d, h, mi, &mut s, timezone);
-            }
-            "year" | "years" => {
-                let amount = value.to_f64() as i64 * sign;
-                y += amount;
-                let max_d = temporal::days_in_month(y, m);
-                if d > max_d {
-                    d = max_d;
-                }
-                clip_non_leap_second(y, m, d, h, mi, &mut s, timezone);
-            }
-            _ => {
-                return Err(RuntimeError::new(format!(
-                    "Unknown unit '{}' for DateTime.{}",
-                    key, method
-                )));
-            }
-        }
-        Ok(())
-    };
-
-    for arg in args {
-        if let Some((key, value)) = temporal_adverb_pair(arg) {
-            apply_pair(&key, &value)?;
-            continue;
-        }
-        if let Some(items) = arg.as_list_items() {
-            for item in items.iter() {
-                if let Some((key, value)) = temporal_adverb_pair(item) {
-                    apply_pair(&key, &value)?;
-                }
-            }
-        }
-    }
-    s = (s * 1_000_000.0).round() / 1_000_000.0;
-    Ok(temporal::make_datetime(y, m, d, h, mi, s, timezone))
-}
-
-/// Date.clone with optional overrides.
-fn date_clone(
-    mut year: i64,
-    mut month: i64,
-    mut day: i64,
-    existing_formatter: Option<Value>,
-    args: &[Value],
-) -> Result<Value, RuntimeError> {
-    let mut formatter = existing_formatter;
-    for arg in args {
-        if let ValueView::Pair(key, value) = arg.view() {
-            match key.as_str() {
-                "year" => year = value.to_f64() as i64,
-                "month" => month = value.to_f64() as i64,
-                "day" => day = value.to_f64() as i64,
-                // A type object (`:formatter(Callable)`, what `.now.formatter` returns)
-                // resets to the default formatter.
-                "formatter" => {
-                    formatter = (!matches!(value.view(), ValueView::Package(_)))
-                        .then(|| value.clone());
-                }
-                _ => {}
-            }
-        }
-    }
-    temporal::validate_date(year, month, day)?;
-    Ok(temporal::make_date_with_formatter(
-        year, month, day, formatter,
-    ))
-}
-
-/// DateTime.clone with optional overrides.
-#[allow(clippy::too_many_arguments)]
-fn datetime_clone(
-    mut year: i64,
-    mut month: i64,
-    mut day: i64,
-    mut hour: i64,
-    mut minute: i64,
-    mut second: f64,
-    mut timezone: i64,
-    existing_formatter: Option<Value>,
-    args: &[Value],
-) -> Result<Value, RuntimeError> {
-    let mut formatter = existing_formatter;
-    for arg in args {
-        if let ValueView::Pair(key, value) = arg.view() {
-            match key.as_str() {
-                "year" => year = value.to_f64() as i64,
-                "month" => month = value.to_f64() as i64,
-                "day" => day = value.to_f64() as i64,
-                "hour" => hour = value.to_f64() as i64,
-                "minute" => minute = value.to_f64() as i64,
-                "second" => second = value.to_f64(),
-                "timezone" => timezone = value.to_f64() as i64,
-                // A type object (`:formatter(Callable)`, what `.now.formatter` returns)
-                // resets to the default formatter.
-                "formatter" => {
-                    formatter = (!matches!(value.view(), ValueView::Package(_)))
-                        .then(|| value.clone());
-                }
-                _ => {}
-            }
-        }
-    }
-    temporal::validate_datetime(year, month, day, hour, minute, second, timezone)?;
-    Ok(temporal::with_formatter(
-        temporal::make_datetime(year, month, day, hour, minute, second, timezone),
-        formatter,
-    ))
-}
-
-/// Date.truncated-to
-fn date_truncated_to(
-    year: i64,
-    month: i64,
-    day: i64,
-    args: &[Value],
-) -> Result<Value, RuntimeError> {
-    let unit = args
-        .first()
-        .map(|v| v.to_string_value())
-        .unwrap_or_default();
-    match unit.as_str() {
-        "year" => Ok(temporal::make_date(year, 1, 1)),
-        "month" => Ok(temporal::make_date(year, month, 1)),
-        "week" => {
-            let days = temporal::civil_to_epoch_days(year, month, day);
-            let dow = temporal::day_of_week(days); // 1=Mon..7=Sun
-            let monday = days - (dow - 1);
-            let (ny, nm, nd) = temporal::epoch_days_to_civil(monday);
-            Ok(temporal::make_date(ny, nm, nd))
-        }
-        "day" => Ok(temporal::make_date(year, month, day)),
-        _ => Err(RuntimeError::new(format!(
-            "Unknown truncation unit '{}'",
-            unit
-        ))),
-    }
-}
-
-/// DateTime.truncated-to
-#[allow(clippy::too_many_arguments)]
-fn datetime_truncated_to(
-    year: i64,
-    month: i64,
-    day: i64,
-    _hour: i64,
-    _minute: i64,
-    _second: f64,
-    timezone: i64,
-    args: &[Value],
-) -> Result<Value, RuntimeError> {
-    let unit = args
-        .first()
-        .map(|v| v.to_string_value())
-        .unwrap_or_default();
-    match unit.as_str() {
-        "year" => Ok(temporal::make_datetime(year, 1, 1, 0, 0, 0.0, timezone)),
-        "month" => Ok(temporal::make_datetime(year, month, 1, 0, 0, 0.0, timezone)),
-        "week" => {
-            let days = temporal::civil_to_epoch_days(year, month, day);
-            let dow = temporal::day_of_week(days);
-            let monday = days - (dow - 1);
-            let (ny, nm, nd) = temporal::epoch_days_to_civil(monday);
-            Ok(temporal::make_datetime(ny, nm, nd, 0, 0, 0.0, timezone))
-        }
-        "day" => Ok(temporal::make_datetime(
-            year, month, day, 0, 0, 0.0, timezone,
-        )),
-        "hour" => Ok(temporal::make_datetime(
-            year, month, day, _hour, 0, 0.0, timezone,
-        )),
-        "minute" => Ok(temporal::make_datetime(
-            year, month, day, _hour, _minute, 0.0, timezone,
-        )),
-        "second" => Ok(temporal::make_datetime(
-            year,
-            month,
-            day,
-            _hour,
-            _minute,
-            _second.floor(),
-            timezone,
-        )),
-        _ => Err(RuntimeError::new(format!(
-            "Unknown truncation unit '{}'",
-            unit
-        ))),
-    }
-}
-
-/// DateTime.in-timezone
-#[allow(clippy::too_many_arguments)]
-fn datetime_in_timezone(
-    year: i64,
-    month: i64,
-    day: i64,
-    hour: i64,
-    minute: i64,
-    second: f64,
-    old_tz: i64,
-    new_tz: i64,
-) -> Result<Value, RuntimeError> {
-    // Use leap-second-aware instant conversion to correctly handle leap seconds
-    // (e.g. 23:59:60 must survive a timezone round-trip unchanged).
-    let (instant_int, instant_frac) =
-        temporal::datetime_to_instant_parts(year, month, day, hour, minute, second, old_tz);
-    let (ny, nm, nd, nh, nmi, ns) =
-        temporal::instant_to_datetime_leap_aware_parts(instant_int, instant_frac, new_tz);
-    Ok(temporal::make_datetime(ny, nm, nd, nh, nmi, ns, new_tz))
-}
-
-/// Normalize unit names (strip trailing 's', handle singular/plural).
-fn normalize_unit(key: &str) -> String {
-    key.to_lowercase()
 }
