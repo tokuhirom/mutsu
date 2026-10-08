@@ -345,6 +345,20 @@ impl Interpreter {
         if self.is_builtin_type_method(&class_name_str, method_name) {
             return Some(self.make_native_method_object(method_name, &class_name_str));
         }
+        // A built-in type outside the introspected owner set (`DateTime`,
+        // `Date`, ...) still declares its methods in the native row table,
+        // which is what `.^can` consults per MRO level. Without this,
+        // `DateTime.^find_method('timezone')` answered `(Mu)` while
+        // `DateTime.^can('timezone')` found it, so `.wrap` on it died
+        // (DateTime::Timezones).
+        for level in mro.iter() {
+            if crate::builtins::native_method_row::native_method_declared(
+                level.as_str(),
+                method_name,
+            ) {
+                return Some(self.make_native_method_object(method_name, level.as_str()));
+            }
+        }
         // The NQP cursor protocol (#7883): `Match.^lookup("!cursor_init")`.
         // A leading `!` is an ordinary identifier character in NQP, not Raku's
         // private-method marker, and rakudo answers these from `.^lookup` /
