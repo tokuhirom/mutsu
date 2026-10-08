@@ -40,8 +40,17 @@ pub(crate) fn read(
             method, type_name,
         ))));
     }
+    // A non-number offset (a `WhateverCode` the compiled call evaluates, a
+    // `Str` that is a type error) is the cascade's.
+    let offset = args.first()?;
+    if !matches!(
+        offset.view(),
+        ValueView::Int(_) | ValueView::Num(_) | ValueView::Rat(..)
+    ) {
+        return None;
+    }
     let (bytes, width) = buf_get_raw_bytes(target)?;
-    let offset_i64 = to_int_val(args.first()?);
+    let offset_i64 = to_int_val(offset);
     let endian = args.get(1).map(endian_of);
     let is_num = method.starts_with("read-num");
     let (size, signed) = if is_num {
@@ -120,6 +129,16 @@ readers! {
     read_num64 => "read-num64",
 }
 
+/// Whether `arg` is an index `subbuf` reads without evaluating anything: a
+/// number, `*`, or a `Range` of integers.
+// Cost: O(1).
+fn is_index_like(arg: &Value) -> bool {
+    matches!(
+        arg.view(),
+        ValueView::Int(_) | ValueView::Num(_) | ValueView::Rat(..) | ValueView::Whatever
+    ) || range_bounds(arg).is_some()
+}
+
 const fn subbuf_row(arity: u8, owner: &'static str) -> MethodRow {
     MethodRow {
         owner,
@@ -145,6 +164,12 @@ pub(super) static SUBBUF_ROWS: &[MethodRow] = &[
 // Cost: O(e), e = elements (the elements are copied out of the storage).
 pub(crate) fn subbuf(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if !is_buf_like(target) {
+        return None;
+    }
+    // A `WhateverCode` bound (`subbuf(*-2)`) is evaluated against the length by
+    // the compiled call, and anything else that is not a number is a type
+    // error the cascade reports.
+    if !args.iter().all(is_index_like) {
         return None;
     }
     let items = buf_get_int_items(target)?;

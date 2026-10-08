@@ -13,7 +13,7 @@ use crate::symbol::Symbol;
 use crate::value::ValueView;
 use crate::value::signature::extract_sig_info;
 use crate::value::value_buf::{
-    buf_elem_width, buf_elems_or_empty, buf_raw_bytes_or_empty, make_buf, set_buf_raw_bytes,
+    buf_elem_width, buf_raw_bytes_or_empty, set_buf_raw_bytes,
     with_buf_bytes,
 };
 
@@ -2117,121 +2117,27 @@ impl Interpreter {
                 }
             }
         }
-        // Buf/Blob .reallocate on non-variable targets (chained calls)
-        if method == "reallocate"
-            && let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = target.view()
+        // Buf/Blob mutators on a receiver with no binding (chained calls such as
+        // `Buf.new($s.encode).append: $body`): the `Buf` rows' by-value
+        // implementation (`method_table::buf_by_value`), which works on a copy
+        // and answers it. A `Blob` is immutable.
+        if matches!(
+            method,
+            "push" | "append" | "unshift" | "prepend" | "pop" | "shift" | "reallocate"
+        ) && let ValueView::Instance { class_name, .. } = target.view()
         {
             let cn = class_name.resolve();
             if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                let new_size = match args.first() {
-                    Some(v) => super::to_int(v) as usize,
-                    None => 0,
-                };
-                let mut bytes = buf_elems_or_empty(&attributes);
-                // When growing, fill with zeros; when shrinking, truncate
-                // After reallocate(0).reallocate(N), the new bytes should be zeros
-                bytes.resize(new_size, Value::int(0));
-                return Ok(make_buf(class_name, bytes));
-            }
-        }
-        // Buf/Blob push/append/unshift/prepend on non-variable (rvalue) targets,
-        // e.g. `Buf.new($s.encode).append: $body`. There is no container to
-        // write back to, so perform the mutation on a copy and return the new
-        // Buf. (The named-variable path goes through `buf_mutate_method`, which
-        // additionally writes the result back into the variable.)
-        if matches!(method, "push" | "append" | "unshift" | "prepend")
-            && let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = target.view()
-        {
-            let cn = class_name.resolve();
-            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                // Blob is immutable.
-                if crate::runtime::utils::is_blob_like_class(&cn) {
+                if method != "reallocate" && crate::runtime::utils::is_blob_like_class(&cn) {
                     return Err(RuntimeError::new(format!(
                         "Cannot modify immutable {} with {}",
                         cn, method
                     )));
                 }
-                // Check for string args => X::TypeCheck
-                for a in &args {
-                    if matches!(a.view(), ValueView::Str(_)) {
-                        let msg =
-                            "Type check failed in assignment; expected Int but got Str".to_string();
-                        let mut ex_attrs = std::collections::HashMap::new();
-                        ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
-                        ex_attrs.insert("got".to_string(), a.clone());
-                        ex_attrs.insert("expected".to_string(), Value::str("Int".to_string()));
-                        let exception = Value::make_instance(
-                            crate::symbol::Symbol::intern("X::TypeCheck"),
-                            ex_attrs,
-                        );
-                        let mut err = RuntimeError::new(msg);
-                        err.exception = Some(Box::new(exception));
-                        return Err(err);
-                    }
-                }
-                let new_items = Self::flatten_buf_args(args);
-                let end = match method {
-                    "append" | "push" => crate::value::value_buf::BufEnd::Back,
-                    "prepend" | "unshift" => crate::value::value_buf::BufEnd::Front,
-                    _ => unreachable!(),
-                };
-                // Only the new elements are encoded; the existing bytes are
-                // carried across without being decoded to boxed `Value`s (#7680).
-                let attrs = crate::value::value_buf::buf_attrs_extended(
-                    &attributes,
-                    class_name,
-                    &new_items,
-                    end,
-                );
-                return Ok(Value::make_instance(class_name, attrs));
-            }
-        }
-        // Buf/Blob pop/shift on non-variable targets (e.g. Buf.new.pop throws X::Cannot::Empty)
-        if matches!(method, "pop" | "shift")
-            && let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = target.view()
-        {
-            let cn = class_name.resolve();
-            if crate::runtime::utils::is_buf_or_blob_class(&cn) {
-                if crate::runtime::utils::is_blob_like_class(&cn) {
-                    return Err(RuntimeError::new(format!(
-                        "Cannot modify immutable {} with {}",
-                        cn, method
-                    )));
-                }
-                let bytes = buf_elems_or_empty(&attributes);
-                if bytes.is_empty() {
-                    let mut ex_attrs = std::collections::HashMap::new();
-                    ex_attrs.insert("action".to_string(), Value::str(method.to_string()));
-                    ex_attrs.insert("what".to_string(), Value::str("Buf".to_string()));
-                    ex_attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!("Cannot {} from an empty Buf", method)),
-                    );
-                    let exception = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Cannot::Empty"),
-                        ex_attrs,
-                    );
-                    let mut err = RuntimeError::new(format!("Cannot {} from an empty Buf", method));
-                    err.exception = Some(Box::new(exception));
-                    return Err(err);
-                }
-                // Non-empty: return element
-                if method == "pop" {
-                    return Ok(bytes.last().unwrap().clone());
-                } else {
-                    return Ok(bytes.first().unwrap().clone());
+                if let Some(result) =
+                    crate::builtins::method_table::buf_by_value(&target, method, &args)
+                {
+                    return result;
                 }
             }
         }
