@@ -1374,6 +1374,22 @@ impl Interpreter {
                     // Backtrace.new captures the current call stack;
                     // Backtrace.new($offset) skips the first $offset frames.
                     let bt = self.build_backtrace_value();
+                    // Rakudo's own `Backtrace.new` frame heads the list.
+                    if let ValueView::Instance { attributes, .. } = bt.view() {
+                        let list = attributes
+                            .as_map()
+                            .get("frames")
+                            .map(crate::runtime::utils::value_to_list);
+                        if let Some(list) = list {
+                            let mut frames = vec![crate::vm::setting_frame(
+                                "new",
+                                Value::str("SETTING::src/core.c/Backtrace.rakumod".to_string()),
+                                Value::int(96),
+                            )];
+                            frames.extend(list);
+                            attributes.insert("frames".to_string(), Value::array(frames));
+                        }
+                    }
                     let offset = args
                         .first()
                         .and_then(|a| match a.view() {
