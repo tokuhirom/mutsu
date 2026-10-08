@@ -357,6 +357,9 @@ impl Interpreter {
         // reaches here.
         let assoc_instance: Option<Value> = if matches!(target.view(), ValueView::Instance { class_name, .. }
             if self.has_user_method(&class_name.resolve(), "AT-KEY"))
+            // `my %m is Foo`: the role is mixed into a Hash, giving a Mixin.
+            || (matches!(target.view(), ValueView::Mixin(..))
+                && self.mixin_composes_method(&target, "AT-KEY"))
         {
             Some(target.clone())
         } else {

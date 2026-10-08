@@ -43,6 +43,7 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => {
                 self.has_user_method_including_role(&class_name.resolve(), "EXISTS-KEY")
             }
+            ValueView::Mixin(..) => self.mixin_composes_method(inst, "EXISTS-KEY"),
             _ => false,
         };
         let mut map = ValueMap::default();
