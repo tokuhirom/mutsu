@@ -72,6 +72,12 @@ pub(super) fn expression_memo_stats() -> (usize, usize, usize) {
     EXPR_MEMO.stats()
 }
 
+/// An operand at the structural (`does`/`but`) level: tighter than assignment,
+/// so a trailing `= <init>` is left for the caller.
+pub(super) fn structural_operand(input: &str) -> PResult<'_, Expr> {
+    precedence::structural_comparison_expr_mode(input, operators::ExprMode::Full)
+}
+
 pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
     if let Some(cached) = EXPR_MEMO.get(input) {
         return cached;

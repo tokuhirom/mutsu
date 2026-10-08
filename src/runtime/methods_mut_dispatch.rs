@@ -430,6 +430,7 @@ impl Interpreter {
         if method == "of"
             && args.is_empty()
             && (target_var.starts_with('@') || target_var.starts_with('%'))
+            && !self.mixin_composes_method(&target, "of")
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmutwithvalues", "of");
             // An `@`/`%` param bound to a parametric TYPE OBJECT

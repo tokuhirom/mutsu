@@ -1045,10 +1045,40 @@ impl Interpreter {
                     // in raku (`(1 but role { has $.x }).x` is `Any`, not
                     // `Nil`), narrowed to the declared type by the accessor for
                     // a typed `has Int $.x`.
-                    match sigil {
+                    let empty = match sigil {
                         '@' => Value::real_array(Vec::new()),
                         '%' => Value::hash_with_data(Value::hash_arc(ValueMap::default())),
                         _ => Value::package(crate::symbol::wk::any()),
+                    };
+                    // A typed container attribute (`has T @!v`, `has Int %!h`)
+                    // carries its element type, with a role type parameter
+                    // resolved through the mixin's bindings, so an unset slot
+                    // reads as the type object like an instance attribute.
+                    match (sigil, attr.type_constraint.as_deref()) {
+                        ('@' | '%', Some(tc)) => {
+                            let param_key = format!("__mutsu_role_param__{tc}");
+                            let resolved = match mixins.get(&param_key).map(Value::view) {
+                                Some(ValueView::Package(name)) => name.resolve(),
+                                _ => tc.to_string(),
+                            };
+                            let (value_type, key_type) = if *sigil == '%' {
+                                let (v, k) = crate::runtime::types::split_object_hash_constraint(
+                                    &resolved,
+                                );
+                                (v.to_string(), k.map(str::to_string))
+                            } else {
+                                (resolved, None)
+                            };
+                            self.tag_container_metadata(
+                                empty,
+                                crate::runtime::ContainerTypeInfo {
+                                    value_type,
+                                    key_type,
+                                    declared_type: None,
+                                },
+                            )
+                        }
+                        _ => empty,
                     }
                 };
                 mixins.insert(MetaNs::Attr.owned_key_for_str(attr_name), value);
