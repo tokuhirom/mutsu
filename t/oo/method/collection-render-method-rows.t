@@ -3,7 +3,7 @@ use Test;
 # ADR-11276: gist on List, Seq, Hash/Map and Pair is a method-table row sharing
 # one renderer with the cascade (user-gist elements and cycles still route away).
 
-plan 13;
+plan 14;
 
 is [1, 2, (3, 4)].gist, "[1 2 (3 4)]", "Array.gist";
 is (1, 2, 3).gist, "(1 2 3)", "List.gist";
@@ -14,6 +14,8 @@ is %(a => 1, b => 2).gist, "\{a => 1, b => 2}", "Hash.gist";
 is (a => 1).gist, "a => 1", "Pair.gist";
 is ((a => 1) => 2).gist, "(a => 1) => 2", "Pair with a Pair key";
 is {a => [1, 2]}.gist, "\{a => [1 2]}", "nested Hash.gist";
+
+is Map.new((a => 1)).gist, "Map.new((a => 1))", "an immutable Map keeps its Map.new form";
 
 class Fancy { method gist { "FF" } }
 is [Fancy.new, 1].gist, "[FF 1]", "an element's own gist is used";
