@@ -254,6 +254,24 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        let encoding = args.iter().find(|v| !v.is_string_pair_value());
+        let replacement = Self::named_value(args, "replacement");
+        self.decode_buf(target, encoding, replacement.as_ref())
+    }
+
+    /// `Blob.decode($encoding, :$replacement)`: the buffer as text, by the
+    /// encoding named (the buffer's own default when absent: UTF-16 for a
+    /// 16-bit buffer, UTF-8 otherwise), with the platform's newline translation.
+    /// `None` for a receiver that is not a `Buf`/`Blob`. The one implementation:
+    /// the `Blob`/`Buf` `decode` rows (`method_table::blob_decode`) and the
+    /// cascade for a receiver with no shape both end here.
+    // Cost: O(e) to copy the elements out and decode them, e = elements.
+    pub(crate) fn decode_buf(
+        &self,
+        target: &Value,
+        encoding: Option<&Value>,
+        replacement: Option<&Value>,
+    ) -> Option<Result<Value, RuntimeError>> {
         if let ValueView::Instance {
             class_name,
             attributes,
@@ -270,12 +288,10 @@ impl Interpreter {
             // `builtins::decode_buf_target_bytes`.
             let is_wide = crate::value::value_buf::buf_elem_width(&cn) == 2;
             let default_encoding = if is_wide { "utf-16" } else { "utf-8" };
-            let encoding = args
-                .iter()
-                .find(|v| !v.is_string_pair_value())
+            let encoding = encoding
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| default_encoding.to_string());
-            let replacement = Self::named_value(args, "replacement").map(|v| {
+            let replacement = replacement.map(|v| {
                 if matches!(v.view(), ValueView::Bool(true)) {
                     "\u{FFFD}".to_string()
                 } else {

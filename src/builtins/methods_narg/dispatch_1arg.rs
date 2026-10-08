@@ -453,10 +453,6 @@ pub(crate) fn native_method_1arg(
                 &pattern_str,
             ))))
         }
-        "decode" => {
-            let encoding = arg.to_string_value();
-            crate::builtins::decode_buf_method(target, Some(&encoding))
-        }
         // An allomorph (`IntStr`/`RatStr`/`NumStr`) answers with its numeric
         // inner value, so the epsilon binds exactly where it does for that type.
         // Cost: O(1) plus the inner value's own `Rat`/`FatRat` cost.
