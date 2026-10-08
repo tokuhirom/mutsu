@@ -730,6 +730,7 @@ pub(crate) use enum_display::{
     enum_display_name, is_package_enum_declared_name, note_enum_display_name,
 };
 pub(crate) use error::LazyBacktraceText;
+pub(crate) use error::SeqPullProgress;
 pub(crate) use error::expected_type_object;
 pub use error::{CatchInlinePayload, CatchInlineVerdict, Control, RuntimeError, RuntimeErrorCode};
 // SubData is re-exported so callers can destructure Value::Sub(data)

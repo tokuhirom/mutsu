@@ -1,0 +1,3 @@
+# A deferred Seq resumes after a failed non-consuming read
+
+A `.map`/`.grep` Seq or `Seq.new($iterator)` whose first reification dies no longer ends up "already consumed". Like rakudo's `.cache`, the Seq keeps the elements produced so far and continues after the failing element, so `try $s.elems; $s.List` answers the rest instead of dying with `X::Seq::Consumed`. The pulls attach their progress to the exception on the error path only (`SeqPullProgress`), so healthy reads cost nothing extra. Consuming reads still leave the Seq consumed. Chained maps and the rw/array-promoting loops do not report progress yet and keep the old behaviour. Part of #12048.

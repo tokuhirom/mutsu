@@ -471,7 +471,13 @@ impl SeqBody {
             }
             std::mem::replace(&mut state.source, SeqSource::Taken)
         };
-        let items = self.after_pulled_prefix(&source, pull_source(&source, pull)?);
+        let items = match pull_source(&source, pull) {
+            Ok(rest) => self.after_pulled_prefix(&source, rest),
+            Err(mut e) => {
+                self.keep_progress_of_failed_pull(source, &mut e);
+                return Err(e);
+            }
+        };
         // SAFETY: the shape `SyncUnsafeCell` exists for — a write under the
         // shared `&self` every alias of this `Arc<SeqBody>` keeps using
         // afterward. No reference into `gens` is held across this push:
@@ -481,6 +487,50 @@ impl SeqBody {
         unsafe { (*self.core.gens.get()).push(Box::new(items)) };
         self.core.state.lock().unwrap().source = SeqSource::Reified;
         Ok(())
+    }
+
+    /// A non-consuming pull of `source` died with `error`. When the pull
+    /// reported how far it got (`SeqPullProgress`), keep what it produced as
+    /// a generation and put the source back just past the failing element, so
+    /// the next read resumes there the way rakudo's `.cache` does (#12048).
+    /// Without progress the body stays `Taken`, as for any failed pull.
+    // Cost: O(p) to join the progress onto the prefix already stored, p = elements kept.
+    fn keep_progress_of_failed_pull(&self, source: SeqSource, error: &mut RuntimeError) {
+        let Some(progress) = error.take_seq_pull_progress() else {
+            return;
+        };
+        if !matches!(source, SeqSource::Iterator(_) | SeqSource::MapGrep { .. }) {
+            return;
+        }
+        let kept = self.after_pulled_prefix(&source, progress.produced);
+        // SAFETY: same reasoning as `pull_and_store`.
+        unsafe { (*self.core.gens.get()).push(Box::new(kept)) };
+        let restored = match source {
+            SeqSource::MapGrep {
+                items,
+                pos,
+                func,
+                fatal,
+                mode,
+                plan,
+            } => {
+                let pos = pos + progress.consumed;
+                if pos >= items.len() {
+                    SeqSource::Reified
+                } else {
+                    SeqSource::MapGrep {
+                        items,
+                        pos,
+                        func,
+                        fatal,
+                        mode,
+                        plan,
+                    }
+                }
+            }
+            other => other,
+        };
+        self.core.state.lock().unwrap().source = restored;
     }
 
     /// `rest`, the elements a full pull of `source` produced, behind the

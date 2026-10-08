@@ -71,7 +71,18 @@ impl Interpreter {
         }
         let mut pulled = Vec::new();
         while pulled.len() < limit {
-            let val = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
+            let val = match self.call_method_with_values(iterator.clone(), "pull-one", vec![]) {
+                Ok(val) => val,
+                Err(mut e) => {
+                    // The iterator keeps its own position; the Seq keeps what
+                    // was pulled so far and resumes after the failure (#12048).
+                    e.set_seq_pull_progress(crate::value::SeqPullProgress {
+                        produced: pulled,
+                        consumed: 0,
+                    });
+                    return Err(e);
+                }
+            };
             if val.is_iteration_end() {
                 break;
             }
