@@ -1,6 +1,6 @@
 use Test;
 
-plan 30;
+plan 36;
 
 # Date's and DateTime's `later`, `earlier`, `truncated-to`, `in-timezone` and
 # `local` are built-in method rows (ADR-11276 §9.34). A plain receiver reaches
@@ -58,3 +58,17 @@ is $dt.in-timezone(3600).timezone, 3600, 'the offset is the argument';
 is $dt, '2024-03-05T07:08:09.500000+01:00', 'the receiver DateTime is unchanged';
 is $d, '2024-01-31', 'the receiver Date is unchanged';
 is $d.later(:1day).earlier(:1day), $d, 'later then earlier round-trips';
+
+# several named units have no order of application: Rakudo refuses them,
+# a positional list of pairs fixes the order and stays legal
+class MyD is Date {}
+throws-like { $d.later(:1month, :2days) }, Exception,
+    message => /'More than one time unit supplied'/, 'Date.later with two named units';
+throws-like { $d.earlier(:1week, :1day) }, Exception,
+    message => /'More than one time unit supplied'/, 'Date.earlier with two named units';
+throws-like { $dt.later(:1hour, :30minutes) }, Exception,
+    message => /'More than one time unit supplied'/, 'DateTime.later with two named units';
+throws-like { MyD.new(2024, 1, 31).later(:1month, :2days) }, Exception,
+    message => /'More than one time unit supplied'/, 'subclass later with two named units';
+is $d.later((:1month, :2days)), '2024-03-02', 'a list of pairs keeps working';
+is $d.later(:1month), '2024-02-29', 'a single unit keeps working';
