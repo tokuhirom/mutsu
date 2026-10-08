@@ -110,7 +110,7 @@ impl Interpreter {
                 }
                 if directive == "comment" {
                     let (comment, next_idx) =
-                        Self::collect_pod_comment_paragraph(&lines, idx, rest);
+                        Self::collect_pod_comment_paragraph(lines, idx, rest);
                     entries.push(comment);
                     idx = next_idx;
                     continue;
@@ -133,7 +133,7 @@ impl Interpreter {
                         config.insert("numbered".to_string(), Value::TRUE);
                     }
                     let (headers, rows, next_idx) =
-                        Self::collect_table_rows_with_headers(&lines, idx + 1);
+                        Self::collect_table_rows_with_headers(lines, idx + 1);
                     if !rows.is_empty() || !headers.is_empty() || numbered || !config.is_empty() {
                         entries.push(Self::make_pod_table_full(headers, rows, config));
                     }
@@ -152,7 +152,7 @@ impl Interpreter {
                         .unwrap_or_default();
                     if target == "comment" {
                         let (comment, next_idx) =
-                            Self::collect_pod_comment_paragraph(&lines, idx, inline);
+                            Self::collect_pod_comment_paragraph(lines, idx, inline);
                         entries.push(comment);
                         idx = next_idx;
                         continue;
@@ -160,7 +160,7 @@ impl Interpreter {
                     if target == "defn" {
                         let (config, leftover) = Self::parse_pod_config(inline);
                         let (defn, next_idx) =
-                            Self::build_pod_defn_paragraph(&lines, idx + 1, leftover, config, None);
+                            Self::build_pod_defn_paragraph(lines, idx + 1, leftover, config, None);
                         entries.push(defn);
                         idx = next_idx.max(idx + 1);
                         continue;
@@ -172,7 +172,7 @@ impl Interpreter {
                             config.insert("numbered".to_string(), Value::TRUE);
                         }
                         let (headers, rows, next_idx) =
-                            Self::collect_table_rows_with_headers(&lines, idx + 1);
+                            Self::collect_table_rows_with_headers(lines, idx + 1);
                         entries.push(Self::make_pod_table_full(headers, rows, config));
                         idx = next_idx.max(idx + 1);
                         continue;
@@ -186,7 +186,7 @@ impl Interpreter {
                             config.insert("numbered".to_string(), Value::TRUE);
                         }
                         let (code_lines, next_idx) =
-                            Self::collect_pod_code_paragraph(&lines, idx + 1, leftover, None);
+                            Self::collect_pod_code_paragraph(lines, idx + 1, leftover, None);
                         entries.push(Self::make_pod_code_block(code_lines, config));
                         idx = next_idx.max(idx + 1);
                         continue;
@@ -209,7 +209,7 @@ impl Interpreter {
                         }
                     }
                     let (para, next_idx) =
-                        Self::collect_pod_para_with_inline(&lines, cont_idx, leftover, None);
+                        Self::collect_pod_para_with_inline(lines, cont_idx, leftover, None);
                     let mut contents = Vec::new();
                     if let Some(para) = para {
                         contents.push(para);
@@ -248,7 +248,7 @@ impl Interpreter {
                         let after_target = rest.strip_prefix(target).unwrap_or("");
                         let (config, _) = Self::parse_pod_config(after_target);
                         let (defn, next_idx) =
-                            Self::build_pod_defn_delimited(&lines, idx + 1, config);
+                            Self::build_pod_defn_delimited(lines, idx + 1, config);
                         entries.push(defn);
                         idx = next_idx.max(idx + 1);
                         continue;
@@ -311,8 +311,7 @@ impl Interpreter {
                         entries.push(Self::make_pod_table_full(headers, rows, tbl_config));
                         continue;
                     }
-                    let (contents, next_idx) = Self::collect_pod_entries(
-                        &lines,
+                    let (contents, next_idx) = Self::collect_pod_entries(lines,
                         idx + 1,
                         Some(target),
                         Self::pod_line_indent(lines[idx]),
@@ -325,7 +324,7 @@ impl Interpreter {
                 }
                 if let Some((level, inline)) = Self::parse_item_directive(trimmed) {
                     let (para, next_idx) =
-                        Self::collect_pod_para_with_inline(&lines, idx + 1, inline, None);
+                        Self::collect_pod_para_with_inline(lines, idx + 1, inline, None);
                     let mut item_contents = Vec::new();
                     if let Some(para) = para {
                         item_contents.push(para);
@@ -337,7 +336,7 @@ impl Interpreter {
                 if directive == "defn" {
                     let (config, leftover) = Self::parse_pod_config(rest);
                     let (defn, next_idx) =
-                        Self::build_pod_defn_paragraph(&lines, idx + 1, leftover, config, None);
+                        Self::build_pod_defn_paragraph(lines, idx + 1, leftover, config, None);
                     entries.push(defn);
                     idx = next_idx.max(idx + 1);
                     continue;
@@ -350,7 +349,7 @@ impl Interpreter {
                         config.insert("numbered".to_string(), Value::TRUE);
                     }
                     let (code_lines, next_idx) =
-                        Self::collect_pod_code_paragraph(&lines, idx + 1, leftover, None);
+                        Self::collect_pod_code_paragraph(lines, idx + 1, leftover, None);
                     entries.push(Self::make_pod_code_block(code_lines, config));
                     idx = next_idx.max(idx + 1);
                     continue;
@@ -362,7 +361,7 @@ impl Interpreter {
                     config.insert("numbered".to_string(), Value::TRUE);
                 }
                 let (para, next_idx) =
-                    Self::collect_pod_para_with_inline(&lines, idx + 1, rest_after, None);
+                    Self::collect_pod_para_with_inline(lines, idx + 1, rest_after, None);
                 let mut contents = Vec::new();
                 if let Some(para) = para {
                     contents.push(para);
