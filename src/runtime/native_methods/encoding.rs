@@ -42,7 +42,7 @@ impl Interpreter {
                         attrs.insert("replacement".to_string(), value.clone());
                     }
                 }
-                Value::make_instance(Symbol::intern("Encoding::Encoder"), attrs)
+                Value::make_instance(Symbol::intern("Encoding::Encoder::Builtin"), attrs)
             }
             // Cost: O(1).
             "decoder" => {
@@ -128,7 +128,7 @@ impl Interpreter {
                     bytes,
                 ))
             }
-            "WHAT" => Ok(Value::package(Symbol::intern("Encoding::Encoder"))),
+            "WHAT" => Ok(Value::package(Symbol::intern("Encoding::Encoder::Builtin"))),
             _ => Ok(Value::NIL),
         }
     }

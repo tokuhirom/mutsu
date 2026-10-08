@@ -11,7 +11,7 @@ use Test;
 # the ticket. The children are all bounded (`sh` exits on its own) and every
 # start Promise is awaited, so nothing here depends on a timeout or a port.
 
-plan 12;
+plan 13;
 
 # Collect the chunks one stream delivers, in order.
 sub chunks-of($proc, $supply) {
@@ -134,6 +134,19 @@ sub chunks-of($proc, $supply) {
         whenever $proc.start { }
     }
     is "$got/$quit", '/quit', 'a read that hits a malformed byte delivers nothing at all';
+}
+
+# 8. A multibyte character cut off by the end of the stream quits the supply
+#    (the shared streaming decoder's "incomplete" error, #11783); the held-back
+#    text dies with it. (rakudo: got="a", quit)
+{
+    my $proc = Proc::Async.new('sh', '-c', 'printf "ab\343\201"');
+    my ($got, $quit) = ('', '');
+    react {
+        whenever $proc.stdout { $got ~= $_; QUIT { $quit = 'quit'; done } }
+        whenever $proc.start { }
+    }
+    is "$got/$quit", 'a/quit', 'an incomplete sequence at the end of the stream quits';
 }
 
 # vim: expandtab shiftwidth=4
