@@ -252,6 +252,11 @@ pub(crate) fn needs_raku_dispatch(v: &Value) -> bool {
         // which only method dispatch reaches; the pure renderer would print
         // the bare `"foo"`.
         ValueView::Mixin(_, overrides) => overrides.keys().any(|k| k.starts_with("__mutsu_role__")),
+        // A `gather` held unforced inside a collection: its values exist only
+        // once the coroutine runs, so the pure renderer would show nothing.
+        // Dispatching `.raku` on it reifies it at render time (never at
+        // construction, where an infinite body would hang).
+        ValueView::LazyList(ll) => ll.is_gather_coroutine(),
         _ => false,
     }
 }

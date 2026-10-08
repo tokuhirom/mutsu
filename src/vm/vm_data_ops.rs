@@ -169,7 +169,10 @@ impl Interpreter {
                     Ok(_) => val.clone(),
                     Err(_) => continue,
                 }
-            } else if let Some(forced) = self.force_finite_lazy_element(&val) {
+            } else if let Some(forced) = is_real_array
+                .then(|| self.force_finite_lazy_element(&val))
+                .flatten()
+            {
                 // Array literals (`[...]`) are eager: a finite gather/take or
                 // finite-endpoint closure sequence must run now so its elements
                 // materialize. Unbounded `... *` sequences and lazy pipelines
