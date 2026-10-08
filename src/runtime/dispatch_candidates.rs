@@ -46,7 +46,58 @@ pub(crate) type CandidateRankKey = (
     (usize, usize),
     usize,
     u64,
+    RankProfile,
 );
+
+/// How many leading positional parameters a [`RankProfile`] records.
+const PROFILE_LEN: usize = 6;
+
+/// A candidate's per-positional-parameter narrowness, for the one question the
+/// scalar [`CandidateRankKey`] cannot answer: are two candidates *comparable*?
+///
+/// Rakudo orders candidates parameter-wise: one is narrower only when it is at
+/// least as narrow on every positional parameter and strictly narrower on one,
+/// where a `where`/`subset`/literal refinement counts as narrower than the same
+/// type without it. When each candidate wins a different parameter (one by a
+/// refinement, the other by a nominal type) they are incomparable, and a
+/// refinement means a bind-time check, so the first candidate DECLARED that
+/// binds wins instead of the summed key picking one
+/// ([#11943](https://github.com/tokuhirom/mutsu/issues/11943)).
+///
+/// `scores[i]` is `2 * distance + (1 if unrefined)`, lower being narrower, and
+/// `u16::MAX` for a parameter the candidate does not have.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RankProfile {
+    scores: [u16; PROFILE_LEN],
+    refined: bool,
+}
+
+impl RankProfile {
+    const EMPTY: RankProfile = RankProfile {
+        scores: [u16::MAX; PROFILE_LEN],
+        refined: false,
+    };
+
+    /// Whether neither candidate is narrower than the other because of a
+    /// refinement: each wins at least one shared parameter, and at least one of
+    /// the two carries a refinement (a purely nominal split stays the
+    /// ambiguity the summed key reports).
+    // Cost: O(1), the profile length is a constant.
+    fn incomparable(&self, other: &RankProfile) -> bool {
+        if !(self.refined || other.refined) {
+            return false;
+        }
+        let (mut self_wins, mut other_wins) = (false, false);
+        for (a, b) in self.scores.iter().zip(other.scores.iter()) {
+            if *a == u16::MAX || *b == u16::MAX {
+                continue;
+            }
+            self_wins |= a < b;
+            other_wins |= b < a;
+        }
+        self_wins && other_wins
+    }
+}
 
 /// The type a coercion parameter accepts, i.e. the type it is as *wide* as.
 /// `Str()` is short for `Str(Any)`, so it accepts anything.
@@ -123,7 +174,7 @@ impl Interpreter {
     ) -> CandidateRankKey {
         let (literal, typed, constrained, subsig, writable) =
             self.candidate_specificity_rank_for_args(def, args);
-        let dist = self.candidate_type_distance(args, def);
+        let (dist, profile) = self.candidate_type_distance_profile(args, def);
         let non_slurpy = usize::from(!Self::candidate_has_slurpy_positional(def));
         let bind_check = usize::from(Self::candidate_needs_named_bind_check(def));
         let opt = Self::candidate_optional_positional_count(def);
@@ -134,7 +185,55 @@ impl Interpreter {
             (non_slurpy, bind_check),
             opt,
             def.decl_order,
+            profile,
         )
+    }
+
+    /// Whether `a` and `b` are incomparable in rakudo's parameter-wise
+    /// narrowness order (see [`RankProfile`]).
+    pub(super) fn rank_keys_incomparable(a: &CandidateRankKey, b: &CandidateRankKey) -> bool {
+        a.6.incomparable(&b.6)
+    }
+
+    /// Drop the matches another match out-narrows and, when what is left is
+    /// split by incomparable candidates, keep only the first declared of them.
+    /// `matches` is in narrowest-first scan order, each with its key; a pure
+    /// tie (no incomparability) is returned unchanged so the ambiguity logic in
+    /// [`Self::settle_ranked_matches`] still sees it.
+    // Cost: O(m^2), m = candidates that bound.
+    pub(super) fn prune_incomparable_matches(
+        matches: Vec<(CandidateRankKey, Arc<FunctionDef>)>,
+    ) -> Vec<Arc<FunctionDef>> {
+        let best = matches.first().map(|(k, _)| *k);
+        let Some(best) = best else { return Vec::new() };
+        let same_rank = |k: &CandidateRankKey| {
+            Self::candidate_rank_cmp(
+                Self::rank_key_ignoring_decl_order(*k),
+                Self::rank_key_ignoring_decl_order(best),
+            ) == std::cmp::Ordering::Equal
+        };
+        if matches.iter().all(|(k, _)| same_rank(k)) {
+            return matches.into_iter().map(|(_, d)| d).collect();
+        }
+        let keys: Vec<CandidateRankKey> = matches.iter().map(|(k, _)| *k).collect();
+        let dominated = |k: &CandidateRankKey| {
+            keys.iter().any(|o| {
+                !Self::rank_keys_incomparable(o, k)
+                    && Self::candidate_rank_cmp(
+                        Self::rank_key_ignoring_decl_order(*o),
+                        Self::rank_key_ignoring_decl_order(*k),
+                    ) == std::cmp::Ordering::Less
+            })
+        };
+        let mut maximal: Vec<(CandidateRankKey, Arc<FunctionDef>)> =
+            matches.into_iter().filter(|(k, _)| !dominated(k)).collect();
+        if maximal.iter().all(|(k, _)| same_rank(k)) {
+            return maximal.into_iter().map(|(_, d)| d).collect();
+        }
+        // Incomparable survivors: declaration order decides.
+        maximal.sort_by_key(|(k, _)| k.5);
+        maximal.truncate(1);
+        maximal.into_iter().map(|(_, d)| d).collect()
     }
 
     /// Order two [`Self::candidate_rank_key`]s narrowest-first: higher nominal
@@ -277,7 +376,7 @@ impl Interpreter {
         // be registered under (`multi f(Int:D $x where {...})` evaluated its
         // constraint 3x per resolution before the dedup existed), and now also
         // stops it being RANKED that many times.
-        let mut matches: Vec<Arc<FunctionDef>> = Vec::new();
+        let mut matches: Vec<(CandidateRankKey, Arc<FunctionDef>)> = Vec::new();
         // The rank key of `matches[0]`, i.e. of the narrowest candidate that
         // actually bound. `None` until the first match.
         let mut best_key: Option<CandidateRankKey> = None;
@@ -295,13 +394,19 @@ impl Interpreter {
         for (key, def) in ranked {
             // Strictly wider than the narrowest candidate that already bound:
             // every candidate from here on is too, since the list is sorted.
+            // Not for one that is incomparable with it (#11943): that one may
+            // still win by declaration order, so it is tried and the scan goes on.
             if let Some(best) = best_key
                 && Self::candidate_rank_cmp(
                     Self::rank_key_ignoring_decl_order(key),
                     Self::rank_key_ignoring_decl_order(best),
                 ) == std::cmp::Ordering::Greater
             {
-                break;
+                if Self::rank_keys_incomparable(&key, &best) {
+                    // fall through to the bind attempt
+                } else {
+                    continue;
+                }
             }
             // For auto-param subs ($^a, $^b) with empty param_defs but
             // non-empty params, check arity against params.len() since
@@ -336,9 +441,10 @@ impl Interpreter {
                 // fingerprint (see the `retain` above), so every match is a
                 // distinct declaration.
                 best_key.get_or_insert(key);
-                matches.push(def);
+                matches.push((key, def));
             }
         }
+        let matches = Self::prune_incomparable_matches(matches);
         self.settle_ranked_matches(name, args, matches, threw, outer_where_exception)
     }
 
@@ -793,7 +899,29 @@ impl Interpreter {
     /// constraint and the actual type; unconstrained parameters contribute a
     /// large constant so that constrained candidates are always preferred.
     pub(crate) fn candidate_type_distance(&self, args: &[Value], def: &FunctionDef) -> usize {
+        self.candidate_type_distance_profile(args, def).0
+    }
+
+    /// [`Self::candidate_type_distance`] together with the per-parameter
+    /// [`RankProfile`] the same walk produces.
+    // Cost: O(p) plus one hierarchy walk per typed parameter, p = parameters.
+    pub(crate) fn candidate_type_distance_profile(
+        &self,
+        args: &[Value],
+        def: &FunctionDef,
+    ) -> (usize, RankProfile) {
         let mut total = 0usize;
+        let mut profile = RankProfile::EMPTY;
+        let mut refined_slot = [false; PROFILE_LEN];
+        let mut prev_total = 0usize;
+        let mut slot = 0usize;
+        let record = |profile: &mut RankProfile, slot: usize, delta: usize, refined: bool| {
+            if slot < PROFILE_LEN {
+                let d = delta.min(20_000) as u16;
+                profile.scores[slot] = d * 2 + u16::from(!refined);
+                profile.refined |= refined;
+            }
+        };
         let params: Vec<&ParamDef> = Self::dispatch_visible_params(def);
         let mut pos_idx = 0usize;
         for pd in params.iter() {
@@ -816,6 +944,20 @@ impl Interpreter {
             if pd.slurpy && pd.name.starts_with('%') {
                 continue;
             }
+            if slot > 0 {
+                record(&mut profile, slot - 1, total - prev_total, refined_slot[(slot - 1).min(PROFILE_LEN - 1)]);
+            }
+            prev_total = total;
+            if slot < PROFILE_LEN {
+                refined_slot[slot] = (pd.where_constraint.is_some() && !pd.is_variadic())
+                    || pd.literal_value.is_some()
+                    || pd
+                        .type_constraint
+                        .as_deref()
+                        .map(Self::constraint_base_name)
+                        .is_some_and(|base| self.constraint_is_subset(base));
+            }
+            slot += 1;
             if let Some(constraint) = &pd.type_constraint {
                 if pos_idx < args.len() {
                     // Skip Pair args when looking for positional args
@@ -1012,7 +1154,10 @@ impl Interpreter {
                 pos_idx += 1;
             }
         }
-        total
+        if slot > 0 {
+            record(&mut profile, slot - 1, total - prev_total, refined_slot[(slot - 1).min(PROFILE_LEN - 1)]);
+        }
+        (total, profile)
     }
 
     /// Unwrap a [`Value::varref`] wrapper to get the inner value and the source
