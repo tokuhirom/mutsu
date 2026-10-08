@@ -238,6 +238,25 @@ impl Interpreter {
             .and_then(Value::into_array)
             .is_some_and(|(candidates, _)| self.captured_candidates_are_live(name, &candidates))
     }
+    /// A captured candidate's env is a clone of the one live when `&name` was
+    /// evaluated, so it has no `&name`: a by-name call in its body (`b($n-1)`)
+    /// cannot reach its own family once the declaring scope is gone. Bind the
+    /// dispatcher being called under `&name` for this call (the Subs are
+    /// immutable once built, so a standing back-reference is not an option).
+    // Cost: O(e), e = size of the candidate's captured env (only when it lacks `&name`).
+    fn bind_family_dispatcher(candidate: &Value, family: Option<&str>, dispatcher: &Value) -> Value {
+        let (Some(family), ValueView::Sub(cand)) = (family, candidate.view()) else {
+            return candidate.clone();
+        };
+        let amp = format!("&{family}");
+        if cand.env.contains_key(&amp) {
+            return candidate.clone();
+        }
+        let mut next: crate::value::SubData = (**cand).clone();
+        next.env.insert(amp, dispatcher.clone());
+        Value::sub_value(crate::gc::Gc::new(next))
+    }
+
     pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
@@ -558,6 +577,12 @@ impl Interpreter {
                 .and_then(Value::into_array)
             {
                 let candidates = (*candidates_arc).clone();
+                let func_for_family = func.clone();
+                let family_name = match data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+                {
+                    Some(ValueView::Str(n)) => Some(n.to_string()),
+                    _ => None,
+                };
                 // First try to dispatch via the function table (if still in scope).
                 // A proto or multi-candidate name alone is not enough: resolving
                 // either here can find the caller's declaration and discard the
@@ -636,7 +661,8 @@ impl Interpreter {
                             .is_ok();
                         self.env = saved_env;
                         if applicable {
-                            return self.call_sub_value(candidate.clone(), call_args, false);
+                            let candidate = Self::bind_family_dispatcher(candidate, family_name.as_deref(), &func_for_family);
+                            return self.call_sub_value(candidate, call_args, false);
                         }
                     }
                 }
@@ -645,7 +671,8 @@ impl Interpreter {
                     if let ValueView::Sub(cand_data) = candidate.view()
                         && cand_data.param_defs.iter().any(|pd| pd.slurpy)
                     {
-                        return self.call_sub_value(candidate.clone(), call_args, false);
+                        let candidate = Self::bind_family_dispatcher(candidate, family_name.as_deref(), &func_for_family);
+                            return self.call_sub_value(candidate, call_args, false);
                     }
                 }
                 // None of the captured candidates accepts the call. For a family
@@ -660,7 +687,8 @@ impl Interpreter {
                     return Err(self.multi_no_match_error(&family, &call_args));
                 }
                 if let Some(candidate) = candidates.first() {
-                    return self.call_sub_value(candidate.clone(), call_args, false);
+                    let candidate = Self::bind_family_dispatcher(candidate, family_name.as_deref(), &func_for_family);
+                            return self.call_sub_value(candidate, call_args, false);
                 }
             }
             // The identity function `[∘]` yields for an empty operand list.
