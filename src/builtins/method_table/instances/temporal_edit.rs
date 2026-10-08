@@ -45,7 +45,11 @@ fn local_row(
     _args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    let tz = interp.env().get("*TZ").and_then(|v| v.as_int()).unwrap_or(0);
+    let tz = interp
+        .env()
+        .get("*TZ")
+        .and_then(|v| v.as_int())
+        .unwrap_or(0);
     in_timezone(target, Some(&Value::int(tz)))
 }
 
@@ -65,14 +69,18 @@ pub(crate) fn truncated_to(target: &Value, args: &[Value]) -> Option<Result<Valu
         let (year, month, day, hour, minute, second, timezone) =
             temporal::datetime_attrs(&attributes.as_map());
         Some(
-            datetime_truncated_to(year, month, day, hour, minute, second, timezone, args)
-                .map(|v| rebless_datetime_result(keep_formatter(v, &attributes), class_name, &attributes)),
+            datetime_truncated_to(year, month, day, hour, minute, second, timezone, args).map(
+                |v| {
+                    rebless_datetime_result(keep_formatter(v, &attributes), class_name, &attributes)
+                },
+            ),
         )
     } else if has_date_attrs(&attributes) {
         let (year, month, day) = temporal::date_attrs(&attributes.as_map());
         Some(
-            date_truncated_to(year, month, day, args)
-                .map(|v| rebless_date_result(keep_formatter(v, &attributes), class_name, &attributes)),
+            date_truncated_to(year, month, day, args).map(|v| {
+                rebless_date_result(keep_formatter(v, &attributes), class_name, &attributes)
+            }),
         )
     } else {
         None
@@ -100,14 +108,25 @@ pub(crate) fn in_timezone(
     let (year, month, day, hour, minute, second, timezone) =
         temporal::datetime_attrs(&attributes.as_map());
     let result = match offset {
-        Some(arg) => {
-            datetime_in_timezone(year, month, day, hour, minute, second, timezone, arg.to_f64() as i64)
-        }
+        Some(arg) => datetime_in_timezone(
+            year,
+            month,
+            day,
+            hour,
+            minute,
+            second,
+            timezone,
+            arg.to_f64() as i64,
+        ),
         None => Ok(temporal::make_datetime(
             year, month, day, hour, minute, second, timezone,
         )),
     };
-    Some(result.map(|v| rebless_datetime_result(keep_formatter(v, &attributes), class_name, &attributes)))
+    Some(
+        result.map(|v| {
+            rebless_datetime_result(keep_formatter(v, &attributes), class_name, &attributes)
+        }),
+    )
 }
 
 /// Date.clone with optional overrides.
@@ -128,8 +147,8 @@ pub(crate) fn date_clone(
                 // A type object (`:formatter(Callable)`, what `.now.formatter` returns)
                 // resets to the default formatter.
                 "formatter" => {
-                    formatter = (!matches!(value.view(), ValueView::Package(_)))
-                        .then(|| value.clone());
+                    formatter =
+                        (!matches!(value.view(), ValueView::Package(_))).then(|| value.clone());
                 }
                 _ => {}
             }
@@ -168,8 +187,8 @@ pub(crate) fn datetime_clone(
                 // A type object (`:formatter(Callable)`, what `.now.formatter` returns)
                 // resets to the default formatter.
                 "formatter" => {
-                    formatter = (!matches!(value.view(), ValueView::Package(_)))
-                        .then(|| value.clone());
+                    formatter =
+                        (!matches!(value.view(), ValueView::Package(_))).then(|| value.clone());
                 }
                 _ => {}
             }

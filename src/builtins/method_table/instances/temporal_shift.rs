@@ -78,13 +78,16 @@ pub(crate) fn later_earlier(
             datetime_later_earlier(
                 year, month, day, hour, minute, second, timezone, args, method,
             )
-            .map(|v| rebless_datetime_result(keep_formatter(v, &attributes), class_name, &attributes)),
+            .map(|v| {
+                rebless_datetime_result(keep_formatter(v, &attributes), class_name, &attributes)
+            }),
         )
     } else if has_date_attrs(&attributes) {
         let (year, month, day) = temporal::date_attrs(&attributes.as_map());
         Some(
-            date_later_earlier(year, month, day, args, method)
-                .map(|v| rebless_date_result(keep_formatter(v, &attributes), class_name, &attributes)),
+            date_later_earlier(year, month, day, args, method).map(|v| {
+                rebless_date_result(keep_formatter(v, &attributes), class_name, &attributes)
+            }),
         )
     } else {
         None
@@ -338,13 +341,18 @@ fn datetime_later_earlier(
             // Minutes and hours move the wall clock (a leap second in between
             // is not counted, as in Rakudo); only `seconds` is Instant-based.
             "minute" | "minutes" | "hour" | "hours" => {
-                let unit_secs = if key_str.starts_with("hour") { 3_600 } else { 60 };
+                let unit_secs = if key_str.starts_with("hour") {
+                    3_600
+                } else {
+                    60
+                };
                 let amount = value.to_f64() as i64 * unit_secs * sign;
                 let total = h * 3_600 + mi * 60 + amount;
                 let day_shift = total.div_euclid(86_400);
                 let in_day = total.rem_euclid(86_400);
-                let (ny, nm, nd) =
-                    temporal::epoch_days_to_civil(temporal::civil_to_epoch_days(y, m, d) + day_shift);
+                let (ny, nm, nd) = temporal::epoch_days_to_civil(
+                    temporal::civil_to_epoch_days(y, m, d) + day_shift,
+                );
                 y = ny;
                 m = nm;
                 d = nd;
