@@ -159,9 +159,27 @@ pub(crate) fn with_conditional(
 ) -> Stmt {
     let tmp_var = Expr::Var(tmp_name.to_string());
     let topic = body_topic(&cond_expr, &tmp_var);
+    with_conditional_branch(
+        kind,
+        tmp_name,
+        cond_expr,
+        vec![topic_given(topic, body)],
+        else_branch,
+    )
+}
+
+/// [`with_conditional`] over an already built then-branch (a pointy block's
+/// parameter binds come from the parser's `with_then_branch`).
+pub(crate) fn with_conditional_branch(
+    kind: WithBlockKind,
+    tmp_name: &str,
+    cond_expr: Expr,
+    then_branch: Vec<Stmt>,
+    else_branch: Vec<Stmt>,
+) -> Stmt {
     Stmt::If {
         cond: defined_condition(kind == WithBlockKind::Without, tmp_name, cond_expr),
-        then_branch: vec![topic_given(topic, body)],
+        then_branch,
         else_branch,
         binding_var: None,
         is_statement_modifier: false,
