@@ -1533,6 +1533,22 @@ impl Interpreter {
                     }
                 }
             }
+            // The module's own `$=pod` document is a compunit lexical too: its
+            // routines read it after the load, when the restore below has put
+            // the importer's document back under `=pod`.
+            if let Some(unit) = unit_name.as_deref()
+                && let Some(pod) = self.env.get("=pod").cloned()
+            {
+                let cell = if pod.is_container_ref() {
+                    pod
+                } else {
+                    pod.into_container_ref()
+                };
+                self.unit_lexicals_cow_mut()
+                    .entry(unit.to_string())
+                    .or_default()
+                    .insert("=pod".to_string(), cell);
+            }
             // Restore every plain caller binding after the module's own lexical
             // values have been extracted above. Qualified package globals and
             // newly-created module names are intentionally left alone.
