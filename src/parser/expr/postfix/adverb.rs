@@ -320,11 +320,11 @@ pub(crate) fn collect_remaining_adverbs<'a>(start: &'a str, known: &mut Vec<Stri
 /// which is why `t/hash-multislice-container.t` (`use v6.e.PREVIEW`) keeps
 /// asserting the deletion while the 6.d spelling now throws.
 pub(crate) fn multidim_delete_fn(is_positional: bool, ndims: usize) -> &'static str {
-    if is_positional || ndims < 2 || crate::parser::current_language_version().starts_with("6.e") {
-        "__mutsu_multidim_delete"
-    } else {
-        "__mutsu_multidim_delete_assoc"
-    }
+    crate::ast::subscript_adverb::multidim_delete_fn(
+        is_positional,
+        ndims,
+        crate::parser::current_language_version().starts_with("6.e"),
+    )
 }
 
 pub(crate) enum DeleteAdverb {
