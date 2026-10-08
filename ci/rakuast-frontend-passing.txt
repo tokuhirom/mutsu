@@ -238,6 +238,7 @@ t/collections/lazy-seq/gather-class-lexical-sub.t
 t/collections/lazy-seq/gather-deepmap-lazy-take.t
 t/collections/lazy-seq/gather-do-stmt-terminator.t
 t/collections/lazy-seq/gather-hyper-take-lazy-pull.t
+t/collections/lazy-seq/gather-in-list-literal-lazy.t
 t/collections/lazy-seq/gather-lazy-hyper.t
 t/collections/lazy-seq/gather-lazy.t
 t/collections/lazy-seq/gather-map-take-lazy-resume.t
@@ -373,6 +374,7 @@ t/collections/list-assign-existing.t
 t/collections/list-cache-no-args.t
 t/collections/list-container-aliasing.t
 t/collections/list-destructure-result.t
+t/collections/list-destructuring-sigilless-bind.t
 t/collections/list-element-bind-runtime.t
 t/collections/list-fmt.t
 t/collections/list-functions.t
@@ -1173,6 +1175,7 @@ t/control/block-newline-ends-junction-statement.t
 t/control/block-phasers-split.t
 t/control/block-restore-slot-authoritative.t
 t/control/block-scope-code-vars.t
+t/control/block-scope-env-tier.t
 t/control/block-scope-recursion-decl-leak.t
 t/control/block-scope-registry-skip.t
 t/control/block-use-main-declared-after.t
@@ -1345,6 +1348,7 @@ t/exceptions/assignment-error-source-line.t
 t/exceptions/backtrace-anonymous-pointy-frames.t
 t/exceptions/backtrace-introspection.t
 t/exceptions/backtrace-method-rows.t
+t/exceptions/backtrace-new-setting-frames.t
 t/exceptions/backtrace-object.t
 t/exceptions/backtrace-positional-index.t
 t/exceptions/backtrace.t
@@ -2232,6 +2236,7 @@ t/modules/eval-stub-package-does-not-leak.t
 t/modules/eval-unit-package-scope.t
 t/modules/for-loop-param-in-package-body.t
 t/modules/gather-module-lexical-helper.t
+t/modules/global-package-prefix.t
 t/modules/import-export/adverbed-block-module-exports.t
 t/modules/import-export/augment-in-export-hook-runs-once.t
 t/modules/import-export/augment-method-export-operator.t
@@ -2474,6 +2479,7 @@ t/modules/module-sub-user-type-signatures.t
 t/modules/module-subset-same-leaf-signature.t
 t/modules/module-toplevel-enum-keys-off-frame-env.t
 t/modules/module-toplevel-package-names-off-frame-env.t
+t/modules/module-toplevel-qualified-names-off-frame-env.t
 t/modules/module-toplevel-routine-state-outlives-loader.t
 t/modules/module-warning-location-misattributed.t
 t/modules/multi-method-where-module-scope.t
@@ -2807,6 +2813,7 @@ t/nativecall/sort-native.t
 t/nativecall/starts-ends-substr-eq-named-native.t
 t/nativecall/starts-ends-with-native.t
 t/nativecall/str-search-match-invocant-native.t
+t/nativecall/subset-shadows-native-int8.t
 t/nativecall/subset-shadows-native-width-container-store.t
 t/nativecall/subst-native.t
 t/nativecall/substr-eq-native.t
@@ -3772,6 +3779,7 @@ t/oo/trait/anon-param-trait.t
 t/oo/trait/anon-sub-return-trait.t
 t/oo/trait/augment-method-custom-trait-typed-method-param.t
 t/oo/trait/cached-trait.t
+t/oo/trait/callable-trait-closure-capture.t
 t/oo/trait/class-body-trait-multi.t
 t/oo/trait/class-is-array-type-trait.t
 t/oo/trait/class-trait-how-mixin-compose.t
@@ -3839,6 +3847,7 @@ t/rakuast/rakuast-attribute-traits.t
 t/rakuast/rakuast-attribute.t
 t/rakuast/rakuast-bare-loop-term.t
 t/rakuast/rakuast-bare-prefix.t
+t/rakuast/rakuast-bareword-declared-scope.t
 t/rakuast/rakuast-bareword-resolution.t
 t/rakuast/rakuast-bareword-scope-shadowing.t
 t/rakuast/rakuast-bind-declaration.t
@@ -5214,6 +5223,7 @@ t/routines/signature/start-body-param-compiled.t
 t/routines/signature/sub-signature-array-param-iterable.t
 t/routines/signature/subsig-destructure-through-itemization.t
 t/routines/signature/subsig-destructure-varref.t
+t/routines/signature/subsig-named-arg-rejected.t
 t/routines/signature/subsig-positional-typecheck.t
 t/routines/signature/system-object-signature-blob-type.t
 t/routines/signature/too-few-positionals-fixed-arity.t
@@ -5276,6 +5286,7 @@ t/tooling/main-semicolon.t
 t/tooling/main-sub.t
 t/tooling/main-usage-format.t
 t/tooling/missing-test-module-use-warns.t
+t/tooling/nqp-getcomp-repl-context.t
 t/tooling/plan-whatever.t
 t/tooling/profiler-cli-options.t
 t/tooling/profiler-report.t
@@ -5482,6 +5493,7 @@ t/types/enum-subset/enum-value-numeric-compare.t
 t/types/enum-subset/enum-value-shadows-core-listop.t
 t/types/enum-subset/enum-value-shadows-same-named-sub.t
 t/types/enum-subset/enum-value-which.t
+t/types/enum-subset/eval-enum-bare-key-transitive.t
 t/types/enum-subset/lowercase-subset-return-type.t
 t/types/enum-subset/named-enum-value-map.t
 t/types/enum-subset/omitted-optional-subset-implicit-default.t
@@ -5500,6 +5512,7 @@ t/types/fatrat-round-abs-pow-keep-type.t
 t/types/gate-b-sigilless-typed-bind.t
 t/types/indent.t
 t/types/instance-numeric-associative-key.t
+t/types/junction-all-infix-before-code-sigil.t
 t/types/junction-bound-cell.t
 t/types/junction-eigenstates-decontainerized.t
 t/types/junction-gist-in-list.t
@@ -6091,6 +6104,7 @@ t/vm/scope/lexical-class-sibling-identity.t
 t/vm/scope/lexical-decl-and-autoviv.t
 t/vm/scope/lexical-shadow-slots.t
 t/vm/scope/lexical-shadows-builtin-call.t
+t/vm/scope/lexical-type-scalar-same-name.t
 t/vm/scope/lexical-type-scope-suppression.t
 t/vm/scope/monkey-typing-lexical.t
 t/vm/scope/my-class-shadows-outer-constant.t
@@ -6181,6 +6195,7 @@ t/vm/sigilless-alias-typecheck.t
 t/vm/sigilless-and-constant-nil-initializer.t
 t/vm/sigilless-assign-into-aggregate.t
 t/vm/sigilless-bind-chain.t
+t/vm/sigilless-bind-class-body-scratch-var.t
 t/vm/sigilless-bind-writability-source.t
 t/vm/sigilless-bind-writable-alias.t
 t/vm/sigilless-comma-decl.t

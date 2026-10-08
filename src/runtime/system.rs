@@ -97,9 +97,10 @@ impl Interpreter {
         // its RakuAST round trip, like every other compilation unit.
         let parse_result = parse_result.and_then(|(stmts, finish)| {
             Ok((
-                crate::rakuast::frontend::round_trip_if_enabled(
+                crate::rakuast::frontend::round_trip_eval_if_enabled(
                     stmts,
-                    crate::rakuast::frontend::Unit::Eval,
+                    || self.eval_caller_type_names(),
+                    || self.eval_caller_enum_value_names(),
                 )?,
                 finish,
             ))

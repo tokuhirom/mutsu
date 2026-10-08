@@ -219,6 +219,42 @@ impl Interpreter {
             .collect()
     }
 
+    /// The type names the calling scope declares, for the RakuAST conversion of
+    /// an EVAL string: the registry's types, plus the lexical ones (`my class
+    /// P`), which live in the environment as the package they are stored under.
+    // Cost: O(r + e), r = registry types, e = environment entries.
+    pub(crate) fn eval_caller_type_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self
+            .collect_eval_user_type_names()
+            .into_iter()
+            .map(|n| n.split('\u{0}').next().unwrap_or(&n).to_string())
+            .collect();
+        names.extend(self.env.iter().filter_map(|(key, value)| {
+            let name = key.resolve();
+            matches!(value.view(), ValueView::Package(_))
+                .then(|| name.split('\u{0}').next().unwrap_or(&name).to_string())
+        }));
+        names
+    }
+
+    /// The enum values the calling scope declares, bare and qualified by their
+    /// enum's name, for the RakuAST conversion of an EVAL string.
+    // Cost: O(v), v = enum values in the registry.
+    pub(crate) fn eval_caller_enum_value_names(&self) -> Vec<String> {
+        let mut names = self.collect_eval_user_value_term_names();
+        for (owner, variants) in &self.registry().enum_types {
+            for (variant, _) in variants {
+                names.push(variant.clone());
+                names.push(
+                    crate::qualified::qualified(Symbol::intern(owner), Symbol::intern(variant))
+                        .resolve()
+                        .to_string(),
+                );
+            }
+        }
+        names
+    }
+
     /// Collect the sigilless *value* term names (`constant Foo = 1`, `my \\x`)
     /// the calling unit has declared, so an EVAL'd snippet parses them as
     /// declared terms. The type-name twin above reads the class/role/enum
