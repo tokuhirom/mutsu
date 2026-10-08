@@ -217,25 +217,16 @@ impl Interpreter {
         // `STORE` re-initializes the container wholesale, in place for the same
         // shared-identity reason as the element writes above.
         if method == "STORE" {
-            let positional: Vec<Value> = args
-                .iter()
-                .filter(|a| !matches!(a.view(), ValueView::Pair(k, _) if k == "INITIALIZE"))
-                .cloned()
-                .collect();
-            let mut outcome: Result<Value, RuntimeError> = Ok(Value::NIL);
-            let applied = attributes.with_attr_mut("__baggy_data__", |slot| {
-                match crate::runtime::quanthash_store::quanthash_store(slot, &positional) {
-                    Some(stored) => *slot = stored,
-                    None => {
-                        outcome = Err(RuntimeError::assignment_ro_typename(
-                            crate::runtime::value_type_name(slot),
-                            &crate::runtime::utils::gist_value(slot),
-                        ))
-                    }
-                }
+            let outcome = attributes.with_attr_mut("__baggy_data__", |slot| {
+                let mut place = crate::builtins::method_table::ReceiverPlace::detached(slot);
+                crate::builtins::method_table::invoke_mut(
+                    self,
+                    &mut place,
+                    crate::symbol::Symbol::intern("STORE"),
+                    &args,
+                )
             });
-            applied?;
-            if let Err(e) = outcome {
+            if let Some(Some(Err(e))) = outcome {
                 return Some(Err(e));
             }
             // `STORE` answers the invocant: the tied-variable declaration path

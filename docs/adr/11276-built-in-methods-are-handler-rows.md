@@ -2038,3 +2038,14 @@ Third step of the objects group (3D remainder; `refactor/11276-exception-rows`),
 - Left: `line`, `file` and `filename` (mutsu's own accessors; Rakudo declares them on `X::Comp`, which the oracle snapshot
   lacks), `Exception.throw` (an interpreter row), `Failure` (the recognition table declares nothing on it), `Code`,
   `Mu`'s rows.
+
+### 9.40 Slice 4: `STORE` of the quant hashes is a row (2026-10-08)
+
+`refactor/12387-store-row-quanthash` (item 1 of #12387). `STORE` was folded by `quanthash_store` in three places: the baggy
+`nextsame` bridge, the `is BagHash` VM delegate and the by-value interpreter entry. It is now one `Handler::Mut` row on each of
+`SetHash`, `BagHash`, `MixHash` (re-initialize) and `Set`, `Bag`, `Mix` (`X::Assignment::RO`), in
+`mutating::quanthash`, and the three callers reach it through `invoke_mut` (a detached place for the storage and by-value
+cases). The bridges still answer the invocant, as the tied-variable declaration expects.
+
+- Left: `BIND-KEY` / `BIND-POS` (they need the call's argument sources; an ADR amendment on the binding descriptor comes first),
+  the `Mu`, grammar and metamodel bridges, and asking the storage question in `resolve_sequence`.

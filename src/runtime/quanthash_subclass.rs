@@ -161,21 +161,19 @@ impl Interpreter {
                 return Some(result);
             }
         }
+        // `STORE` re-initializes the backing storage through its row; the
+        // call answers the invocant, as the tied-variable declaration expects.
         if method_name == "STORE" {
-            let mut outcome: Result<Value, RuntimeError> = Ok(invocant.clone());
-            let applied = attributes.with_attr_mut("__baggy_data__", |storage| {
-                match crate::runtime::quanthash_store::quanthash_store(storage, &args) {
-                    Some(stored) => *storage = stored,
-                    None => {
-                        outcome = Err(RuntimeError::assignment_ro_typename(
-                            crate::runtime::value_type_name(storage),
-                            &crate::runtime::utils::gist_value(storage),
-                        ))
-                    }
-                }
-            });
-            applied?;
-            return Some(outcome);
+            let outcome = attributes.with_attr_mut("__baggy_data__", |storage| {
+                let mut place = crate::builtins::method_table::ReceiverPlace::detached(storage);
+                crate::builtins::method_table::invoke_mut(
+                    self,
+                    &mut place,
+                    Symbol::intern("STORE"),
+                    &args,
+                )
+            })?;
+            return outcome.map(|r| r.map(|_| invocant.clone()));
         }
         let method_sym = Symbol::intern(&method_name);
         attributes.with_attr_mut("__baggy_data__", |storage| {
