@@ -821,6 +821,7 @@ t/concurrency/concurrent-lane-decline-routes.t
 t/concurrency/concurrent-nested-subscript-store.t
 t/concurrency/concurrent-shared-cell.t
 t/concurrency/concurrent-state-var.t
+t/concurrency/cro-client-repeated-await-response-lexical.t
 t/concurrency/io-socket-async-bin.t
 t/concurrency/io-socket-async-connect-error-text.t
 t/concurrency/io-socket-async-listen-tap-close-backlog.t
@@ -835,6 +836,7 @@ t/concurrency/proc-async.t
 t/concurrency/procasync-final-grapheme-holdback.t
 t/concurrency/procasync-ready-publishes-started.t
 t/concurrency/procasync-stdout-incremental.t
+t/concurrency/promise/await-after-cro-request-keeps-caller-lexicals.t
 t/concurrency/promise/await-after-keep-keeper-order.t
 t/concurrency/promise/await-died-exception.t
 t/concurrency/promise/await-nested-iterable.t
@@ -1608,6 +1610,7 @@ t/grammar/grammar-token-instance-method.t
 t/grammar/grammar-user-highwater.t
 t/grammar/grammar-wrapped-token-dispatch.t
 t/grammar/grammar-zero-width-silent-action.t
+t/grammar/grammarhow-new-type-add-regex-method.t
 t/grammar/match-of-x-namespaced-grammar-is-not-an-exception.t
 t/grammar/multi-token-protoless-dispatch.t
 t/grammar/multiple-proto-regex.t
@@ -1627,6 +1630,7 @@ t/grammar/rule-sigspace-charclass-brace.t
 t/grammar/rule-sigspace-escaped-brace.t
 t/grammar/rule-sigspace-inline-modifier.t
 t/grammar/rule-sigspace-quantified-alternation.t
+t/grammar/rule-sigspace-quantifier-backtracks.t
 t/grammar/rule-sigspace-trailing-whitespace.t
 t/grammar/rw-method-attribute-store-shares-accessor-rule.t
 t/grammar/slurpy-single-argument-rule.t
@@ -2108,6 +2112,7 @@ t/modules/backtrace-module-file.t
 t/modules/bare-module-multi-family-scope.t
 t/modules/bare-package-id-metamethods.t
 t/modules/bare-type-name-under-a-package.t
+t/modules/batteries/cro-http-battery.t
 t/modules/batteries/crypt-random-battery.t
 t/modules/batteries/digest-battery.t
 t/modules/batteries/http-deps-battery.t
@@ -2916,6 +2921,7 @@ t/oo/attribute/start-in-method-attribute-alias.t
 t/oo/attribute/strict-undeclared-accessor.t
 t/oo/attribute/ternary-paren-accessor-assign.t
 t/oo/attribute/topic-dot-assign-attribute-topic.t
+t/oo/attribute/typed-array-accessor-append.t
 t/oo/attribute/undeclared-attribute-in-every-position.t
 t/oo/attribute/wrap-reaches-accessor-and-rw-lvalue.t
 t/oo/bind-topic-does-not-corrupt-ancestor-frames.t
@@ -3390,6 +3396,7 @@ t/oo/method/uni-method-rows.t
 t/oo/method/unicode-method-rows.t
 t/oo/method/user-method-shadows-builtin-name.t
 t/oo/method/variable-var-method-chain.t
+t/oo/method/version-bool-method-rows.t
 t/oo/method/which-method.t
 t/oo/mixin-array-hash-mutator-override.t
 t/oo/mixin-assign-pos.t
@@ -3771,6 +3778,7 @@ t/rakuast/rakuast-absent-field-accessors.t
 t/rakuast/rakuast-accessors.t
 t/rakuast/rakuast-allomorph-word-quote.t
 t/rakuast/rakuast-also-is-roundtrip.t
+t/rakuast/rakuast-anon-regex-declarator.t
 t/rakuast/rakuast-anon-sub-signature.t
 t/rakuast/rakuast-anon-sub.t
 t/rakuast/rakuast-anonymous-packages.t
@@ -4233,6 +4241,7 @@ t/regex/regex-m-s.t
 t/regex/regex-make.t
 t/regex/regex-modifier-only.t
 t/regex/regex-my-embedded-block-persist.t
+t/regex/regex-my-initializer-and-escaping-sub.t
 t/regex/regex-my-lexical-in-make-block.t
 t/regex/regex-my-scalar-reuse.t
 t/regex/regex-my-var-interpolation.t
@@ -4259,6 +4268,7 @@ t/regex/regex-reduce-values-ast.t
 t/regex/regex-repeat-adverb.t
 t/regex/regex-repeat-zero.t
 t/regex/regex-repeated-optional-name-list.t
+t/regex/regex-routine-introspection.t
 t/regex/regex-scalar-interp-metachar-literal.t
 t/regex/regex-scan-prefilter-chain.t
 t/regex/regex-scan-prefilter-ignoremark-prop.t
@@ -4293,6 +4303,7 @@ t/regex/regex-tree-static-execution.t
 t/regex/regex-tree-value-provenance.t
 t/regex/regex-unicode-property-value.t
 t/regex/regex-unspace.t
+t/regex/regex-value-identity.t
 t/regex/regex-value-interp-parse-memo.t
 t/regex/regex-walk-residue-compiled.t
 t/regex/regex-wb-assertion.t
@@ -4669,6 +4680,7 @@ t/routines/dispatch/multi-dispatch-program-repeat.t
 t/routines/dispatch/multi-dispatch-resolution-cache.t
 t/routines/dispatch/multi-dispatcher-code-value-later-import.t
 t/routines/dispatch/multi-dispatcher-wrap.t
+t/routines/dispatch/multi-escaped-self-call.t
 t/routines/dispatch/multi-flexible-arity-beats-untyped-catchall.t
 t/routines/dispatch/multi-flexible-arity-named-only.t
 t/routines/dispatch/multi-frame-accumulation-coherence.t
@@ -5807,6 +5819,7 @@ t/vm/codegen/jit-tier-b-arith.t
 t/vm/codegen/jit-tier-b-infix-override.t
 t/vm/codegen/nqp-int-ops-jit-inline.t
 t/vm/codegen/nqp-value-ops-compile-to-opcode.t
+t/vm/codegen/one-pass-parsing.t
 t/vm/codegen/rebound-return-hot-loop.t
 t/vm/codegen/vm-basic.t
 t/vm/codegen/vm-config-toolchain.t
