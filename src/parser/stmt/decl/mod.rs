@@ -123,8 +123,13 @@ pub(super) fn strip_type_smiley_suffix(type_name: &str) -> &str {
 
 fn typed_default_expr(type_name: &str) -> Expr {
     let base = strip_type_smiley_suffix(type_name);
+    // A user type (`my subset int8 of Int ...`) shadows the native spelling,
+    // so `my int8 $c` is its type object (Nil here), not the native 0/""/0e0.
+    let shadowed = super::simple::is_user_declared_type(base);
     if base == "Mu" {
         Expr::BareWord("Mu".to_string())
+    } else if shadowed {
+        Expr::Literal(Value::NIL)
     } else if crate::native_types::is_native_int_type(base) {
         // Includes the C-width aliases (`ulong`, `size_t`, …): an
         // uninitialized `my size_t $sz;` reads as 0, not Nil (DBDish::Pg's
