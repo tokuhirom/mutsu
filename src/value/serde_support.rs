@@ -325,10 +325,15 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             let sig_info = (class_name == "Signature")
                 .then(|| crate::value::signature::lookup_sig_info(id))
                 .flatten();
+            // A sig-info `Signature` is rebuilt under a fresh id on decode, so
+            // its recorded id is meaningless; zeroing it keeps the encoding
+            // reproducible across compiles (the precomp verify mode compares
+            // bytes).
+            let rec_id = if sig_info.is_some() { 0 } else { id };
             Ok(SerValue::Instance {
                 class_name,
                 attributes: ser_attrs?,
-                id: crate::ast::stable_hash::ProcessLocalId(id),
+                id: crate::ast::stable_hash::ProcessLocalId(rec_id),
                 sig_info,
             })
         }
@@ -688,6 +693,10 @@ impl SerValue {
     fn has_identity(&self) -> bool {
         let any = |vs: &[SerValue]| vs.iter().any(SerValue::has_identity);
         match self {
+            // Rebuilt under a fresh id on decode, so it carries no identity.
+            SerValue::Instance {
+                sig_info: Some(_), ..
+            } => false,
             SerValue::Instance { .. }
             | SerValue::Mixin(..)
             | SerValue::MixinWithAttributes { .. } => true,
