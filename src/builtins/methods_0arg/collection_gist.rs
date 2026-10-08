@@ -5,7 +5,7 @@
 use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
 
-use super::raku_repr::{promise_raku_repr};
+use super::raku_repr::promise_raku_repr;
 use super::{gist_array_wrap, range_gist_string};
 
 /// Rakudo caps an aggregate's `.gist` at the first 100 elements, then appends
@@ -275,8 +275,7 @@ fn gist_item(v: &Value) -> String {
             // A Set/Bag/Mix nested in a list/array gist keeps its
             // type-name wrapper (`Set(a b c)`), like the say/gist
             // fast path, rather than its bare-element `.Str` form.
-            crate::runtime::utils::setbagmix_gist(v)
-                .unwrap_or_else(|| v.to_string_value())
+            crate::runtime::utils::setbagmix_gist(v).unwrap_or_else(|| v.to_string_value())
         }
         _ if v.is_range() => range_gist_string(v),
         _ => leaf_gist(v),
@@ -368,11 +367,7 @@ pub(crate) fn collection_gist(target: &Value) -> Option<Option<Result<Value, Run
         }
         ValueView::Seq(items) => Value::str(format!("({})", capped_join(&items, gist_item))),
         ValueView::Slip(items) => Value::str(format!("({})", capped_join(&items, gist_item))),
-        ValueView::Pair(k, v) => Value::str(format!(
-            "{} => {}",
-            k,
-            runtime::gist_value(v)
-        )),
+        ValueView::Pair(k, v) => Value::str(format!("{} => {}", k, runtime::gist_value(v))),
         // A Pair-valued key is parenthesized so the outer arrow is unambiguous
         // (`(red => 2) => apples`), matching raku's gist and the `gist_value`
         // fast path.

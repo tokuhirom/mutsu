@@ -4,7 +4,6 @@ use crate::value::{RuntimeError, Value, ValueView};
 use super::raku_repr::{promise_raku_repr, raku_value};
 use crate::value::types::is_stash_class_name;
 
-
 /// The scalar rendering rows' handlers: `gist` for `gist`, `raku` for
 /// `raku`/`perl`. The table and this cascade share them.
 fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
