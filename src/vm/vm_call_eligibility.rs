@@ -422,6 +422,9 @@ impl Interpreter {
         where_verified: bool,
     ) -> bool {
         !fn_name.is_empty()
+            // A `Proxy` argument is FETCHed by the general binder; the light
+            // binders would type-check the Proxy itself.
+            && !args.iter().any(|a| a.unwrap_varref().is_proxy_value())
             && cf.code.state_locals.is_empty()
             && !cf.is_cached
             && !cf.is_rw

@@ -199,7 +199,9 @@ impl Interpreter {
             "required".to_string(),
             Self::required_meta_value(is_required),
         );
-        if let Some(default_arg) = default {
+        // A seeded default (the parser's type-object seed for `has Int $.id`)
+        // is not a user-written initializer: `.build` stays `Mu` for it.
+        if let Some(default_arg) = default.as_ref().filter(|_| !attr.default_is_seed) {
             meta.insert("__mutsu_has_build".to_string(), Value::TRUE);
             if let Some(v) = default_arg.literal() {
                 meta.insert("build".to_string(), v.clone());

@@ -1061,6 +1061,24 @@ impl Interpreter {
                         ));
                     }
                     "build" => {
+                        // `set_build` replaces what `.build` reports.
+                        {
+                            let map = attributes.as_map();
+                            let owner = map
+                                .get("__mutsu_attr_owner")
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            let attr_name = map
+                                .get("__mutsu_attr_name")
+                                .or_else(|| map.get("name"))
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            if let Some(over) =
+                                self.registry().attribute_build_overrides.get(&(owner, attr_name))
+                            {
+                                return Ok(over.clone());
+                            }
+                        }
                         if let Some(build_val) = attributes.as_map().get("build") {
                             return Ok(build_val.clone());
                         }
@@ -1072,7 +1090,8 @@ impl Interpreter {
                         {
                             return Ok(Value::TRUE);
                         }
-                        return Ok(Value::NIL);
+                        // No initializer: the type object `Mu` (rakudo).
+                        return Ok(Value::package(crate::symbol::Symbol::intern("Mu")));
                     }
                     "get_value" => {
                         let obj = args.first().ok_or_else(|| {

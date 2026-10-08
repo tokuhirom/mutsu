@@ -120,7 +120,16 @@ impl Interpreter {
                 if pd.slurpy {
                     format!("*{}", pd.type_constraint.as_deref().unwrap_or("Any"))
                 } else {
-                    pd.type_constraint.as_deref().unwrap_or("Any").to_string()
+                    // `@value` / `%value` select on Positional / Associative:
+                    // they are not the same candidate as an untyped `$value`.
+                    let container = match pd.name.chars().next() {
+                        Some(sigil @ ('@' | '%')) => sigil.to_string(),
+                        _ => String::new(),
+                    };
+                    format!(
+                        "{container}{}",
+                        pd.type_constraint.as_deref().unwrap_or("Any")
+                    )
                 }
             })
             .collect()
