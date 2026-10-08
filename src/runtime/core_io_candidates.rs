@@ -21,7 +21,9 @@ impl Interpreter {
     /// `IO::Path` (the first positional argument is an `IO::Path`).
     // Cost: O(a), a = arguments up to the first positional.
     pub(crate) fn core_io_path_candidate_applies(name: &str, args: &[Value]) -> bool {
-        CORE_IO_PATH_ROUTINES.contains(&name.rsplit("::").next().unwrap_or(name))
+        CORE_IO_PATH_ROUTINES.contains(
+            &crate::qualified::last_segment(crate::qualified::known_symbol(name)).as_str(),
+        )
             && args
                 .iter()
                 .find(|v| !v.is_string_pair_value())
