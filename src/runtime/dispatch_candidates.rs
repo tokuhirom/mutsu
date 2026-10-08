@@ -341,6 +341,7 @@ impl Interpreter {
         // An operator candidate only another compunit imported is not in
         // scope here (#9944, `runtime/operator_scope.rs`).
         self.retain_visible_operator_candidates(name, &mut candidates);
+        self.retain_candidates_not_outranked_by_core(name, args, &mut candidates);
         {
             let mut seen_keys = std::collections::HashSet::new();
             candidates.retain(|(_, def)| {
