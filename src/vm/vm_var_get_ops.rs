@@ -140,14 +140,35 @@ impl Interpreter {
         over_scalar: bool,
     ) -> Result<(), RuntimeError> {
         let name: &'static str = name_sym.as_str();
-        // A lexical `my class foo` is bound in `env` under its own name, the
-        // very key a same-named `$foo` shares, and no other table says which of
-        // several same-named lexical types is the one in scope. Where such a
-        // type exists the `env[name]` read is how the type is found, so the
-        // name keeps the ordinary resolution.
-        // TODO: give lexical type bindings a key space of their own (#12109,
-        // #9962's "decide once"); the `$foo` read there is then no longer
-        // ambiguous.
+        // A lexical `my class foo` is bound under its own `env` key space
+        // (`lexical_type_key`) as well as the bare name a same-named `$foo`
+        // shares (#12109). The bare binding is the ordinary resolution; the
+        // type-only key answers where a `$foo` has taken the bare name over
+        // (`over_scalar`, or an `env[name]` that is no longer a type, as under
+        // `EVAL`, which has no slot map). It is NOT consulted otherwise: it can
+        // outlive the scope that made the bare binding invisible (module
+        // visibility, suppressed names), which the ordinary path still honours.
+        let lexical_type = if self.registry().has_lexical_type_key_for(name) {
+            let taken_over = over_scalar
+                || !matches!(
+                    self.env().get(name).map(Value::view),
+                    None | Some(ValueView::Package(_))
+                );
+            match self
+                .env()
+                .get(&crate::term_names::lexical_type_key(name))
+                .map(Value::view)
+            {
+                Some(ValueView::Package(storage)) if taken_over => Some(storage),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if let Some(storage) = lexical_type {
+            self.stack.push(Value::package(storage));
+            return Ok(());
+        }
         let over_scalar = over_scalar && !self.registry().has_lexical_type_key_for(name);
         let mut preferred_module_bareword = None;
         // `Pkg::tail` split once per symbol; `None` for an unqualified name.

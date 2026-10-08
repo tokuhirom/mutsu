@@ -744,6 +744,12 @@ impl Interpreter {
             // When `my class` is used, register the class name as lexically scoped
             // so it gets suppressed when the enclosing block scope exits.
             if *is_lexical {
+                if storage_name.contains('\u{0}') {
+                    self.bind_lexical_type_keys(
+                        &storage_name,
+                        &[qualified_name.as_str(), resolved_name.as_str()],
+                    );
+                }
                 self.register_lexical_class(resolved_name.clone());
                 // Also mark as my-scoped so it's excluded from the parent package stash
                 self.mark_my_scoped_package_item(storage_name.clone());

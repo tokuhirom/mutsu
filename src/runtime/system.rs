@@ -183,6 +183,12 @@ impl Interpreter {
                 let eval_shadowed: Vec<(crate::symbol::Symbol, Option<Value>)> =
                     super::eval_decl_scans::eval_declared_lexical_keys(&stmts)
                         .into_iter()
+                        .flat_map(|key| {
+                            // A `my class`/`my role` is also bound in the
+                            // type-only key space (`lexical_type_key`).
+                            let type_key = crate::term_names::lexical_type_key(&key);
+                            [key, type_key]
+                        })
                         .map(|key| {
                             let sym = crate::symbol::Symbol::intern(&key);
                             let prev = self.env.get_sym(sym).cloned();

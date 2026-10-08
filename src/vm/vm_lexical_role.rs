@@ -62,6 +62,7 @@ impl Interpreter {
             .as_str()
             .to_string();
         let value = Value::package(Symbol::intern(storage));
+        self.bind_lexical_type_keys(storage, &[qualified, name, short.as_str()]);
         for bound in [qualified, name, short.as_str()] {
             // Hand an enclosing same-named binding back when a branch/loop body
             // that declared this role exits (#10594).
@@ -76,5 +77,26 @@ impl Interpreter {
             self.register_lexical_class(name.to_string());
         }
         self.mark_my_scoped_package_item(storage.to_string());
+    }
+
+    /// Bind the lexical type stored as `storage` under each of `names` in the
+    /// type-only key space (`lexical_type_key`), scoped like the bare binding.
+    // Cost: O(k), k = names.
+    pub(super) fn bind_lexical_type_keys(&mut self, storage: &str, names: &[&str]) {
+        let value = Value::package(Symbol::intern(storage));
+        for name in names {
+            // A package-qualified key would pass for a package symbol and
+            // escape the declaring block (`Sto::Client` outside `module Sto`),
+            // so only unqualified spellings get a type-only key.
+            if crate::qualified::is_qualified_str(name) {
+                continue;
+            }
+            let key = crate::term_names::lexical_type_key(name);
+            self.save_lexical_type_binding_for_scope_exit(&key);
+            if let Some(set) = self.lexicals.block_declared_vars.last_mut() {
+                set.insert(Symbol::intern(&key));
+            }
+            self.env_mut().insert(key, value.clone());
+        }
     }
 }

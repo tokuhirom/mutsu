@@ -128,3 +128,19 @@ pub(crate) fn stmt_decl_storage_name(stmt: &crate::ast::Stmt) -> Option<String> 
         _ => None,
     }
 }
+
+/// The prefix a lexical (`my class`/`my role`) type's own `env` key carries.
+/// `\u{1}` cannot start a scalar, term or enum key.
+pub(crate) const LEXICAL_TYPE_PREFIX: char = '\u{1}';
+
+/// The `env` key that holds the storage name of the lexical type spelled
+/// `name`. A `my class foo` is also bound under the bare `foo`, the very key a
+/// same-named `$foo` shares, so the bare binding alone cannot say which type
+/// is in scope once the scalar overwrites it (#12109). Readers that must find
+/// the type consult this key first.
+pub(crate) fn lexical_type_key(name: &str) -> String {
+    let mut key = String::with_capacity(name.len() + 1);
+    key.push(LEXICAL_TYPE_PREFIX);
+    key.push_str(name);
+    key
+}
