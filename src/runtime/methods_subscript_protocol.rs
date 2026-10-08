@@ -90,7 +90,7 @@ impl Interpreter {
     /// `[1, 2]`) — the same trimming the `:delete` opcode performs. An
     /// explicitly-assigned type object is not a hole, so `[1, 2, Any]` keeps
     /// its length, matching raku.
-    pub(super) fn array_delete_pos_value(&mut self, target: &Value, index: usize) -> Value {
+    pub(crate) fn array_delete_pos_value(&mut self, target: &Value, index: usize) -> Value {
         let mut container = target.clone();
         let deleted = container.with_array_mut(|gc, kind| {
             let shaped = *kind == crate::value::ArrayKind::Shaped;

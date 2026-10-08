@@ -583,15 +583,17 @@ impl Interpreter {
         // `.^name` come out right; `pop`/`shift` return the removed element as-is.
         if matches!(
             method_name.as_str(),
-            "push" | "append" | "prepend" | "unshift" | "pop" | "shift"
+            "push" | "append" | "prepend" | "unshift" | "pop" | "shift" | "ASSIGN-POS" | "DELETE-POS"
         ) {
             let outcome = attributes.with_attr_mut("__mutsu_array_storage", |storage| {
                 self.native_array_storage_mut(storage, &method_name, &args)
-            })??;
-            return Some(outcome.map(|value| match method_name.as_str() {
-                "push" | "append" | "prepend" | "unshift" => invocant.clone(),
-                _ => value,
-            }));
+            })?;
+            if let Some(outcome) = outcome {
+                return Some(outcome.map(|value| match method_name.as_str() {
+                    "push" | "append" | "prepend" | "unshift" => invocant.clone(),
+                    _ => value,
+                }));
+            }
         }
         let method_sym = Symbol::intern(&method_name);
         attributes.with_attr_mut("__mutsu_array_storage", |storage| {
