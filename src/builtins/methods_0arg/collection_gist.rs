@@ -130,6 +130,11 @@ fn gist_route(v: &Value) -> GistRoute {
                 | ValueView::CustomType(..)
                 | ValueView::CustomTypeInstance(_)
                 | ValueView::Package(..)
+                // A `Code` element renders through the Sub method handler
+                // (`&name`, `-> $a  #`(Block|N)`), which this pure walk lacks.
+                | ValueView::Sub(..)
+                | ValueView::WeakSub(..)
+                | ValueView::Routine { .. }
         ) {
             return Some(GistRoute::Dispatch);
         }
