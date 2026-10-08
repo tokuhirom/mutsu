@@ -3493,6 +3493,27 @@ impl Interpreter {
                     }
                     _ => None,
                 };
+                // `$scalar[0 .. *-2]`: the closure yields a Range, which slices
+                // the one-element list `($scalar,)`; an empty range is `()`.
+                let range_bounds = match idx.view() {
+                    ValueView::Range(a, b) => Some((a, b)),
+                    ValueView::RangeExcl(a, b) => Some((a, b - 1)),
+                    ValueView::RangeExclStart(a, b) => Some((a + 1, b)),
+                    ValueView::RangeExclBoth(a, b) => Some((a + 1, b - 1)),
+                    _ => None,
+                };
+                if let Some((lo, hi)) = range_bounds {
+                    if lo >= 1 {
+                        return Err(RuntimeError::out_of_range("Index", Value::int(lo), "0..0"));
+                    }
+                    let items = if lo <= 0 && hi >= 0 {
+                        vec![target.clone()]
+                    } else {
+                        Vec::new()
+                    };
+                    self.stack.push(Value::array(items));
+                    return Ok(());
+                }
                 match i {
                     Some(0) => target.clone(),
                     _ => Value::NIL,
