@@ -458,6 +458,7 @@ mod with_stmt;
 
 // Re-exports preserving each function's original visibility (all `pub(super)`).
 pub(super) use conditionals::{if_stmt, unless_stmt};
+pub(crate) use conditionals::if_pointy_clause;
 pub(super) use for_loops::{
     for_stmt, foreach_stmt, hyper_for_body, hyper_for_stmt, lazy_for_body, placeholder_loop_params,
     race_for_body, race_for_stmt,

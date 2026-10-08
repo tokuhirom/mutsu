@@ -36,6 +36,13 @@ pub(crate) enum SourceForm {
         param_def: super::ParamDef,
         body: Vec<Stmt>,
     },
+    /// `if COND -> PARAMS { BODY }` (and `elsif`): the written parameters and
+    /// body, which open the then-branch of the expansion
+    /// `lower_if_clause_binding` builds.
+    IfPointy {
+        param_defs: Vec<super::ParamDef>,
+        body: Vec<Stmt>,
+    },
     /// `BEGIN say 1`: a phaser written over a bare statement (ADR-12199). It
     /// opens a one-statement expansion whose second statement is the phaser;
     /// only a spelling-keeping parse builds it.
