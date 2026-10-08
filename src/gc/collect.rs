@@ -161,7 +161,7 @@ fn reclaim(white: Vec<ErasedGc>, roots: Vec<ErasedGc>) {
     // counts. Safepoint collects run on the interpreter thread, so the queued
     // DESTROYs drain at this thread's next drain point.
     for node in &white {
-        gc_finalize(node);
+        finalize_white(node);
     }
     let _guard = CollectGuard::new();
     for node in &white {
@@ -172,6 +172,36 @@ fn reclaim(white: Vec<ErasedGc>, roots: Vec<ErasedGc>) {
     // `GcBox`es — and any drop cascade stays inert under the guard.
     drop(white);
     drop(roots);
+}
+
+/// Run a white node's finalizer and rebalance the strong counts it disturbs.
+///
+/// Trial deletion counted every edge the node owns *inline* (through a
+/// uniquely-owned `Arc` wrapper such as a `Scalar` or `Capture` box) as the
+/// node's own, and `reclaim` drops those edges inertly with the node. A
+/// finalizer that snapshots the node's attributes (`DESTROY`) clones such a
+/// wrapper's `Arc`, not its `Gc` handles, so the snapshot keeps the wrapper —
+/// and the handles inside it — alive past the reclaim without the `+1` those
+/// handles need: dropping the snapshot later would take a count already
+/// deducted by the trial and underflow it (the nightly `gc-stress-tap` Cro
+/// failures, #12306). The wrapper is shared after the clone, so the node's
+/// children shrink to the directly held nodes; every edge that vanished
+/// from the child list is one the snapshot now owns, and gets its count back.
+fn finalize_white(node: &ErasedGc) {
+    if !node.gc_finalize_clones_edges() {
+        gc_finalize(node);
+        return;
+    }
+    let mut before = children(node);
+    gc_finalize(node);
+    for kept in children(node) {
+        if let Some(i) = before.iter().position(|c| erased_id(c) == erased_id(&kept)) {
+            before.swap_remove(i);
+        }
+    }
+    for owned_by_snapshot in &before {
+        owned_by_snapshot.gc_strong_inc();
+    }
 }
 
 /// GC log verbosity (`MUTSU_GC_LOG`, design §9.4): `summary` = start/end lines
@@ -790,5 +820,68 @@ mod tests {
         assert_eq!(DROPS.load(Ordering::Relaxed) - before, 0);
         drop(a);
         drop(b);
+    }
+    /// A leaf the wrapper test below keeps alive through an external handle.
+    struct WrapLeaf;
+    impl Trace for WrapLeaf {
+        fn trace(&self, _visit: &mut dyn FnMut(&ErasedGc)) {}
+        fn drop_gc_edges(&mut self) {}
+    }
+
+    /// Where `WrapNode::finalize` parks its snapshot (a `DESTROY` stand-in).
+    static SNAPSHOT: Mutex<Vec<std::sync::Arc<Gc<WrapLeaf>>>> = Mutex::new(Vec::new());
+
+    /// A self-cycling node that owns a `Gc` edge *through an `Arc` wrapper*
+    /// (the shape of a `Scalar`/`Capture` box inside an attribute), and whose
+    /// finalizer snapshots the wrapper by cloning the `Arc`.
+    struct WrapNode {
+        me: Mutex<Option<Gc<WrapNode>>>,
+        wrapper: std::sync::Arc<Gc<WrapLeaf>>,
+    }
+
+    impl Trace for WrapNode {
+        fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+            if let Some(me) = self.me.lock().unwrap().as_ref() {
+                visit(&me.erased());
+            }
+            if std::sync::Arc::strong_count(&self.wrapper) == 1 {
+                visit(&self.wrapper.erased());
+            }
+        }
+        fn drop_gc_edges(&mut self) {
+            self.me.get_mut().unwrap().take();
+        }
+        fn finalize(&self) {
+            SNAPSHOT.lock().unwrap().push(self.wrapper.clone());
+        }
+        fn finalize_clones_edges(&self) -> bool {
+            true
+        }
+    }
+
+    /// #12306: a finalizer snapshot that keeps an inline-wrapper edge alive
+    /// past the reclaim must give that edge's trial-deleted count back, or
+    /// dropping the snapshot underflows the live leaf's strong count.
+    #[test]
+    fn finalizer_snapshot_of_an_inline_wrapper_edge_keeps_counts_balanced() {
+        let _g = lock();
+        drain_candidates();
+
+        let leaf = Gc::new(WrapLeaf);
+        let node = Gc::new(WrapNode {
+            me: Mutex::new(None),
+            wrapper: std::sync::Arc::new(leaf.clone()),
+        });
+        *node.me.lock().unwrap() = Some(node.clone());
+        node.buffer_as_candidate();
+        drop(node);
+
+        let _ = collect_cycles();
+        let snapshot: Vec<_> = std::mem::take(&mut *SNAPSHOT.lock().unwrap());
+        assert_eq!(snapshot.len(), 1, "the garbage node was finalized");
+        // The leaf is held by `leaf` and by the snapshot's wrapper.
+        assert_eq!(leaf.erased().gc_strong(), 2);
+        drop(snapshot); // underflowed (debug assert) before the rebalance
+        assert_eq!(leaf.erased().gc_strong(), 1);
     }
 }
