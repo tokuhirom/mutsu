@@ -130,6 +130,27 @@ impl Interpreter {
     }
 }
 
+/// A synthetic setting-routine `Backtrace::Frame` (structured-only).
+pub(crate) fn setting_frame(subname: &str, file: Value, line: Value) -> Value {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("subname".to_string(), Value::str(subname.to_string()));
+    attrs.insert("is-setting".to_string(), Value::TRUE);
+    attrs.insert("file".to_string(), file);
+    attrs.insert("line".to_string(), line);
+    Value::make_instance(crate::symbol::Symbol::intern("Backtrace::Frame"), attrs)
+}
+
+/// The `file` attribute of the frame most recently pushed onto `frames`.
+fn frame_file_value(frames: &[Value]) -> Value {
+    if let Some(last) = frames.last()
+        && let ValueView::Instance { attributes, .. } = last.view()
+        && let Some(f) = attributes.as_map().get("file")
+    {
+        return f.clone();
+    }
+    Value::str(String::new())
+}
+
 impl BacktraceCapture {
     /// Build a backtrace string from the interpreter's routine stack.
     /// Each frame is formatted as `  in sub <name> at <file> line <N>`.
@@ -327,6 +348,21 @@ impl BacktraceCapture {
                 Symbol::intern("Backtrace::Frame"),
                 frame_attrs,
             ));
+            // Rakudo runs BUILD/TWEAK from `POPULATE`, itself called from the
+            // setting's `Mu.new`; both sit under the submethod's frame in
+            // `.list` (hidden from the rendered text). Code that locates its
+            // caller by skipping to the first setting frame (Proc::Easier)
+            // depends on them.
+            // TODO: a user `bless` call has `Mu.bless` here, not `Mu.new`.
+            if frame.is_method && matches!(frame.name.as_str(), "BUILD" | "TWEAK") {
+                let own_file = frame_file_value(&frames);
+                frames.push(setting_frame("POPULATE", own_file, Value::int(0)));
+                frames.push(setting_frame(
+                    "new",
+                    Value::str("SETTING::src/core.c/Mu.rakumod".to_string()),
+                    Value::int(158),
+                ));
+            }
         }
 
         // Add <unit> frame at bottom if needed

@@ -194,6 +194,7 @@ pub(crate) use vm_data_io_ops::OutputKind;
 mod vm_array_share_mark;
 mod vm_attr_share;
 mod vm_backtrace;
+pub(crate) use vm_backtrace::setting_frame;
 mod vm_backtrace_lazy;
 mod vm_check_read_only;
 mod vm_closure_build;
