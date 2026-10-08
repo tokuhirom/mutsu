@@ -267,6 +267,20 @@ impl Interpreter {
                 args,
             );
         }
+        // A qualified rendering (`self.Map::raku`, the user-override-bypassing
+        // twin of the branch above) still names the instance's own class.
+        if matches!(method, "raku" | "perl" | "gist") {
+            return Some(
+                self.vm_call_method_with_values(storage.clone(), method, args.to_vec())
+                    .map(|text| {
+                        Value::str(crate::value::raku_repr::rename_map_subclass_repr(
+                            &cn,
+                            &storage,
+                            text.to_string_value(),
+                        ))
+                    }),
+            );
+        }
         // Seed a synthetic binding so the native xxKEY fast paths (which
         // write back into `self.env` by NAME — see `vm_call_method_mut_ops.rs`)
         // have somewhere to write the mutated hash.
