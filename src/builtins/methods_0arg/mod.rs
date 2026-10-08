@@ -1049,34 +1049,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         return crate::builtins::method_table::blob::list(target, &[]);
     }
 
-    // CX::Warn methods: message, resume
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-        && class_name == "CX::Warn"
-    {
-        match method {
-            "message" => {
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("message")
-                    .cloned()
-                    .unwrap_or(Value::str(String::new()))));
-            }
-            "resume" => return Some(Err(RuntimeError::resume_signal())),
-            "gist" | "Str" => {
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("message")
-                    .cloned()
-                    .unwrap_or(Value::str(String::new()))));
-            }
-            _ => {}
-        }
-    }
-
     // Distribution methods: meta, Str, gist, defined
     if let ValueView::Instance {
         class_name,
@@ -1099,175 +1071,31 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
-    // Cost: O(1), the payload is an attribute lookup.
-    if method == "payload"
-        && let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-        && class_name == "X::AdHoc"
-    {
-        let attrs = attributes.as_map();
-        return Some(Ok(attrs
-            .get("payload")
-            .or_else(|| attrs.get("message"))
-            .cloned()
-            .unwrap_or_else(|| Value::str(String::new()))));
+    // Exception/X:: methods: `message`, `gist`, `Str`, `backtrace`, `resume` and
+    // `X::AdHoc.payload` are rows of the method table (`method_table::exception`,
+    // ADR-11276 §9.39); `line`, `file` and `filename` are mutsu's own accessors.
+    if let Some(answer) = crate::builtins::method_table::exception::answer(target, method) {
+        return Some(answer);
     }
-
-    // Exception/X:: methods: gist, Str, message
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
+    if let ValueView::Instance { attributes, .. } = target.view()
+        && target.instance_is_exception_by_name()
     {
-        let cn = class_name.resolve();
-        if target.instance_is_exception_by_name() {
-            match method {
-                "gist" => {
-                    let bt = attributes
-                        .as_map()
-                        .get("backtrace")
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    let append_bt = |msg: String| -> String {
-                        if bt.is_empty() {
-                            msg
-                        } else {
-                            format!("{}\n{}", msg, bt)
-                        }
-                    };
-                    // A declared-but-undefined `has $.message` is not a message —
-                    // rendering it would print the literal `(Any)`. (Such a class
-                    // is routed to the interpreter by the render gate in
-                    // `try_native_method`; this keeps the arm honest regardless.)
-                    if let Some(msg) = attributes
-                        .as_map()
-                        .get("message")
-                        .filter(|v| !v.is_nil() && !matches!(v.view(), ValueView::Package(_)))
-                    {
-                        let msg_str = msg.to_string_value();
-                        if !msg_str.is_empty() {
-                            return Some(Ok(Value::str(append_bt(msg_str))));
-                        }
-                    }
-                    if cn == "Exception" {
-                        return Some(Ok(Value::str(append_bt(
-                            "Unthrown Exception with no message".to_string(),
-                        ))));
-                    }
-                    if cn == "X::AdHoc" {
-                        if let Some(payload) = attributes.as_map().get("payload") {
-                            let payload_str = payload.to_string_value();
-                            if !payload_str.is_empty() {
-                                return Some(Ok(Value::str(append_bt(payload_str))));
-                            }
-                        }
-                        return Some(Ok(Value::str(append_bt("Unexplained error".to_string()))));
-                    }
-                    // Construct message from typed exception attributes
-                    if let Some(formatted) =
-                        crate::value::exception_message::format_exception_message(
-                            &cn,
-                            &(attributes).as_map(),
-                        )
-                    {
-                        return Some(Ok(Value::str(append_bt(formatted))));
-                    }
-                    return Some(Ok(Value::str(append_bt(format!("{} with no message", cn)))));
-                }
-                "Str" => {
-                    if let Some(msg) = attributes
-                        .as_map()
-                        .get("message")
-                        .filter(|v| !v.is_nil() && !matches!(v.view(), ValueView::Package(_)))
-                    {
-                        let msg_str = msg.to_string_value();
-                        if !msg_str.is_empty() {
-                            return Some(Ok(Value::str(msg_str)));
-                        }
-                    }
-                    if cn == "Exception" {
-                        return Some(Ok(Value::str(format!("Something went wrong in ({})", cn))));
-                    }
-                    // X::AdHoc carries its text in `payload`, not `message`
-                    // (`die "..."` builds one). `.Str` returns that payload,
-                    // mirroring `.gist`/`.message`.
-                    if cn == "X::AdHoc" {
-                        if let Some(payload) = attributes.as_map().get("payload") {
-                            let payload_str = payload.to_string_value();
-                            if !payload_str.is_empty() {
-                                return Some(Ok(Value::str(payload_str)));
-                            }
-                        }
-                        return Some(Ok(Value::str("Unexplained error".to_string())));
-                    }
-                    // Construct message from typed exception attributes
-                    if let Some(formatted) =
-                        crate::value::exception_message::format_exception_message(
-                            &cn,
-                            &(attributes).as_map(),
-                        )
-                    {
-                        return Some(Ok(Value::str(formatted)));
-                    }
-                    return Some(Ok(Value::str(format!("{} with no message", cn))));
-                }
-                "message" => {
-                    if let Some(msg) = attributes.as_map().get("message") {
-                        return Some(Ok(msg.clone()));
-                    }
-                    if cn == "X::AdHoc"
-                        && let Some(payload) = attributes.as_map().get("payload")
-                    {
-                        return Some(Ok(payload.clone()));
-                    }
-                    // Construct message from typed exception attributes
-                    if let Some(formatted) =
-                        crate::value::exception_message::format_exception_message(
-                            &cn,
-                            &(attributes).as_map(),
-                        )
-                    {
-                        return Some(Ok(Value::str(formatted)));
-                    }
-                    return Some(Ok(Value::str(String::new())));
-                }
-                "line" => {
-                    if let Some(line) = attributes.as_map().get("line") {
-                        return Some(Ok(line.clone()));
-                    }
-                    return Some(Ok(Value::NIL));
-                }
-                "file" => {
-                    if let Some(file) = attributes.as_map().get("file") {
-                        return Some(Ok(file.clone()));
-                    }
-                    return Some(Ok(Value::NIL));
-                }
-                // `X::Comp` (compile-time diagnoses like `X::Syntax::*`)
-                // exposes `.filename`, not `.file` -- rakudo's actual
-                // attribute is `$!filename`. Fall back to `file` for
-                // exceptions that only got the older generic attribute
-                // populated (kept for symmetry with the `.file` arm above).
-                "filename" => {
-                    let map = attributes.as_map();
-                    if let Some(filename) = map.get("filename").or_else(|| map.get("file")) {
-                        return Some(Ok(filename.clone()));
-                    }
-                    return Some(Ok(Value::NIL));
-                }
-                // Cost: O(1).
-                "backtrace" => {
-                    if let Some(bt) = attributes.as_map().get("backtrace") {
-                        return Some(Ok(bt.clone()));
-                    }
-                    return Some(Ok(Value::NIL));
-                }
-                _ => {}
+        let map = attributes.as_map();
+        match method {
+            "line" => return Some(Ok(map.get("line").cloned().unwrap_or(Value::NIL))),
+            "file" => return Some(Ok(map.get("file").cloned().unwrap_or(Value::NIL))),
+            // `X::Comp` (compile-time diagnoses like `X::Syntax::*`) exposes
+            // `.filename`, not `.file` -- rakudo's actual attribute is
+            // `$!filename`. Fall back to `file` for exceptions that only got the
+            // older generic attribute populated.
+            "filename" => {
+                return Some(Ok(map
+                    .get("filename")
+                    .or_else(|| map.get("file"))
+                    .cloned()
+                    .unwrap_or(Value::NIL)));
             }
+            _ => {}
         }
     }
 

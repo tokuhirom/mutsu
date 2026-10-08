@@ -2018,3 +2018,23 @@ Fourth step of the rendering and identity names (`refactor/11276-collection-rend
   `fmt_native`, reached through the cascade).
 - **Found, not fixed.** `[Nm.new].fmt('%s')` (an item with its own `Str`) answers `nm` where Rakudo dies, because it calls
   `.fmt` on each item; `<a b>.fmt('%s%s')` answers `a b` where Rakudo dies on the argument count.
+
+### 9.39 `Exception` and its subclasses, `Signature.gist`/`raku` (2026-10-08)
+
+Third step of the objects group (3D remainder; `refactor/11276-exception-rows`), after `Backtrace` (§9.35).
+
+- **Nine rows** (`instances/exception.rs`), all pure and `OWNER_ONLY`: `Exception` `message`, `gist`, `Str`, `backtrace`,
+  `resume`; `X::AdHoc` `message`, `payload`; `CX::Warn` `message`; `X::TypeCheck::Assignment` `message`. The recognition
+  table already declared all of them. Two rows (`Signature` `gist`, `raku`, `instances/signature.rs`) read an attribute the
+  compiler rendered.
+- **No shape.** An exception is an instance of a class named `Exception`, `X::...` or `CX::...`, and every `X::Foo` is
+  one, so a shape decoded from a class-name list cannot name them. The rows are reached through their owner: `answer`
+  walks the instance's owner chain (`X::AdHoc`, `CX::Warn` or `X::TypeCheck::Assignment` first, then `Exception`), exactly as
+  the family cascade's ~190-line exception block did, and that block is now one call. The same holds for `Signature`.
+  `.^can` and the resolver now find these as native candidates; the dispatch of a plain exception call is unchanged.
+- The class-specific texts that were scattered over the `gist`, `Str` and `message` arms (`Unthrown Exception with no
+  message`, `Something went wrong in (Exception)`, `Unexplained error`, the typed message, `<Class> with no message`) are
+  one function, `text`, with the two callers' differences as arguments.
+- Left: `line`, `file` and `filename` (mutsu's own accessors; Rakudo declares them on `X::Comp`, which the oracle snapshot
+  lacks), `Exception.throw` (an interpreter row), `Failure` (the recognition table declares nothing on it), `Code`,
+  `Mu`'s rows.

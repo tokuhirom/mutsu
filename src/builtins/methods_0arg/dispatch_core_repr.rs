@@ -78,17 +78,9 @@ pub(super) fn dispatch(
             }
         }
         ValueView::Rat(..) => render(target, method),
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if class_name == "Signature" => {
-            let attr_key = if method == "gist" { "gist" } else { "raku" };
-            Some(Ok(attributes
-                .as_map()
-                .get(attr_key)
-                .cloned()
-                .unwrap_or_else(|| Value::str(format!("{}()", class_name)))))
+        // The `Signature` rows' renderings (`method_table::signature`).
+        ValueView::Instance { class_name, .. } if class_name == "Signature" => {
+            crate::builtins::method_table::signature::answer(target, method)
         }
         ValueView::Instance {
             class_name,
