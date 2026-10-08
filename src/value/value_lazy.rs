@@ -206,6 +206,16 @@ impl LazyList {
             })
     }
 
+    /// A plain `gather` body (a coroutine, not a `...` sequence, scan or
+    /// lazy pipe).
+    // Cost: O(1).
+    pub(crate) fn is_gather_coroutine(&self) -> bool {
+        self.coroutine.is_some()
+            && self.sequence_spec.is_none()
+            && self.scan_spec.is_none()
+            && self.lazy_pipe.is_none()
+    }
+
     /// A closure sequence can have a concrete endpoint while still requiring
     /// incremental evaluation to discover it. Unlike `... *`, such a sequence
     /// is safe for strict consumers to reify to completion.
