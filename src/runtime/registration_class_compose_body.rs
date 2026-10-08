@@ -415,12 +415,15 @@ impl Interpreter {
         // parameter through `class_role_param_bindings` and the persisted
         // body statics below.
         let mut shadowed_params: Vec<(String, Value)> = Vec::new();
+        let mut fresh_params: Vec<String> = Vec::new();
         for (param_name, param_value) in role_param_values {
             if type_capture_names.contains(param_name) {
                 self.bind_type_capture(param_name, param_value);
             } else {
                 if let Some(prior) = self.env.get(param_name) {
                     shadowed_params.push((param_name.clone(), prior.clone()));
+                } else {
+                    fresh_params.push(param_name.clone());
                 }
                 self.env.insert(param_name.clone(), param_value.clone());
             }
@@ -755,6 +758,14 @@ impl Interpreter {
         }
         for (param_name, prior) in shadowed_params {
             self.env.insert(param_name, prior);
+        }
+        // A value parameter the composing scope did not hold must not outlive
+        // the body: left behind, the next composition of the same role
+        // restores it as its "prior", and a closure that escapes a method
+        // (`method m { -> $y { $param ~ $y } }`) reads that first
+        // specialization's value instead of its own class's.
+        for param_name in fresh_params {
+            self.env.remove(&param_name);
         }
         Ok(())
     }
