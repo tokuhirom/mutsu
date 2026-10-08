@@ -125,7 +125,7 @@ pub(crate) fn which_of(target: &Value) -> Value {
             };
             format!("{}|{}/{}", flavour, n, d)
         }
-        ValueView::Complex(r, i) => format!("Complex|{}+{}i", r, i),
+        ValueView::Complex(r, i) => format!("Complex|{}|{}", r, i),
         // An enum value's identity is `{EnumType}|{ordinal}` (raku:
         // `Bob.WHICH` is `Names|0`, using the position in the enum, not
         // the underlying value). Without this arm an enum fell to the

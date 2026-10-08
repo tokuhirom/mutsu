@@ -99,6 +99,7 @@ t/collections/for-single-element-topic-writeback.t
 t/collections/for-topic-element-writeback.t
 t/collections/gist-element-cap.t
 t/collections/given-element-topic-bind-self.t
+t/collections/given-element-topic-nested-local.t
 t/collections/given-element-topic-readonly-writeback.t
 t/collections/given-element-topic.t
 t/collections/group-of.t
@@ -611,6 +612,7 @@ t/collections/subscript/rw-slice-arg-is-not-a-container.t
 t/collections/subscript/scalar-subscript-protocol.t
 t/collections/subscript/seq-whatever-subscript-element-cells.t
 t/collections/subscript/shape-illegal-dimension-bigint.t
+t/collections/subscript/shaped-array-delete-keeps-shape.t
 t/collections/subscript/shaped-array-delete-pos.t
 t/collections/subscript/shaped-array-exists-holes.t
 t/collections/subscript/shaped-array-gist-dimensions.t
@@ -624,6 +626,7 @@ t/collections/subscript/shaped-array-slice-exists.t
 t/collections/subscript/shaped-attr-constant-dimension.t
 t/collections/subscript/shaped-buf-alloc-guard.t
 t/collections/subscript/shaped-enum-value-and-anon-array-type.t
+t/collections/subscript/shaped-typed-array-row-hole-tracking.t
 t/collections/subscript/single-store-slice-a.t
 t/collections/subscript/single-store-slice-c-prime.t
 t/collections/subscript/slice-assign-generic-range.t
@@ -791,6 +794,8 @@ t/collections/uni-methods-return-seq.t
 t/collections/var-on-itemized-list-element.t
 t/collections/with-element-topic.t
 t/collections/with-else-topic-writes-element.t
+t/collections/with-pointy-element-source-not-leaked-to-callee.t
+t/collections/with-resources-pseudo-var-element.t
 t/collections/with-statement-modifier-element-writeback.t
 t/concurrency/concurrency-basic.t
 t/concurrency/concurrent-array-index-assign.t
@@ -1092,6 +1097,7 @@ t/concurrency/thread-lock/thread-uncaptured-container-lane.t
 t/concurrency/thread-lock/thread-yield.t
 t/concurrency/thread-lock/thread.t
 t/concurrency/thread-lock/timer-heap-threads.t
+t/concurrency/thread-lock/virtual-scheduler-await-ordering.t
 t/concurrency/thread-lock/worker-thread-array-push-visible-to-lexical-sub.t
 t/control/bare-block-caller-topic-rw.t
 t/control/bare-block-followed-by-word-infix.t
@@ -1173,6 +1179,7 @@ t/control/if-block-args-string-literal.t
 t/control/if-body-let-resolution.t
 t/control/if-elsif-condition-without-whitespace.t
 t/control/if-given-value-propagation.t
+t/control/if-topic-binding-value.t
 t/control/immutable-topic-receiver-oracle.t
 t/control/init-check-class-in-code-timing.t
 t/control/init-check-lift-positions.t
@@ -1260,6 +1267,7 @@ t/control/with-lvalue-evaluated-once.t
 t/control/with-orwith-in-loop.t
 t/control/with-statement-tail-value.t
 t/control/with-topic-alias.t
+t/control/with-topic-and-gather-scope.t
 t/control/with-topic-gist-ascii.t
 t/control/with-without.t
 t/control/with-writable-topic-under-loop.t
@@ -2075,6 +2083,7 @@ t/modules/closure-package-nested-class.t
 t/modules/code-file-module-package-suffix.t
 t/modules/compound-declared-type-does-not-shadow-core-in-module.t
 t/modules/compunit/builtin-distribution-role.t
+t/modules/compunit/compunit-can-install.t
 t/modules/compunit/compunit-filesystem-meta6-provides.t
 t/modules/compunit/compunit-loader-source-file.t
 t/modules/compunit/compunit-need-protocol.t
@@ -3779,6 +3788,7 @@ t/rakuast/rakuast-method-literal.t
 t/rakuast/rakuast-method-lvalue-assign.t
 t/rakuast/rakuast-method-modifier.t
 t/rakuast/rakuast-method-return-type.t
+t/rakuast/rakuast-multidim-delete.t
 t/rakuast/rakuast-named-parameters.t
 t/rakuast/rakuast-named-type-arguments.t
 t/rakuast/rakuast-names-and-literals.t
@@ -3868,6 +3878,7 @@ t/rakuast/rakuast-vardecl-scoped.t
 t/rakuast/rakuast-variable-container-traits.t
 t/rakuast/rakuast-when-modifier.t
 t/rakuast/rakuast-where-parameter.t
+t/rakuast/rakuast-with-pointy-block.t
 t/rakuast/rakuast-with-without-block.t
 t/rakuast/rakuast-with-without-modifier.t
 t/rakuast/rakuast-yada-stubs.t
@@ -4394,6 +4405,7 @@ t/routines/closure/closure-capture-container-arg-cell.t
 t/routines/closure/closure-capture-expr-assign-callback.t
 t/routines/closure/closure-capture-hash-element-callback.t
 t/routines/closure/closure-capture-instance-cell.t
+t/routines/closure/closure-capture-keeps-container-traits.t
 t/routines/closure/closure-capture-memo.t
 t/routines/closure/closure-capture-named-arg-imported-callee.t
 t/routines/closure/closure-capture-nested-named-sub.t
@@ -4472,6 +4484,7 @@ t/routines/core-postcircumfix-routine.t
 t/routines/core-sleep-timer-routine.t
 t/routines/dispatch/adr0110-trir-call-out-dispatch.t
 t/routines/dispatch/anonymous-any-multi-dispatch.t
+t/routines/dispatch/assoc-multidim-lvalue-edges.t
 t/routines/dispatch/begin-selective-import-proto-multi.t
 t/routines/dispatch/block-local-sub-dispatch.t
 t/routines/dispatch/block-scoped-use-main-not-dispatched.t
@@ -4492,6 +4505,7 @@ t/routines/dispatch/dispatch-control.t
 t/routines/dispatch/dynamic-code-var-imported-test-multi.t
 t/routines/dispatch/enum-multiline-wordlist.t
 t/routines/dispatch/gate-b-rw-redispatch-slot-read.t
+t/routines/dispatch/hash-multislice-container.t
 t/routines/dispatch/heredoc-multibyte-terminator.t
 t/routines/dispatch/lastcall-in-wrapper-callsame-dies.t
 t/routines/dispatch/lastcall-then-nextsame.t
@@ -4575,11 +4589,17 @@ t/routines/dispatch/multidim-assoc-slice-map-writeback.t
 t/routines/dispatch/multidim-associative-subscript-6e.t
 t/routines/dispatch/multidim-associative-subscript-assign.t
 t/routines/dispatch/multidim-compound-assign.t
+t/routines/dispatch/multidim-container-ref-coherence.t
+t/routines/dispatch/multidim-delete-after-ephemeral-block-coherence.t
+t/routines/dispatch/multidim-dim-resolution-and-adverbs.t
+t/routines/dispatch/multidim-dynamic-delete-adverb.t
+t/routines/dispatch/multidim-exists-canonical-hole-predicate.t
 t/routines/dispatch/multidim-hash-pair-subscript.t
 t/routines/dispatch/multidim-hash-read-one-element-list.t
 t/routines/dispatch/multidim-hash-read.t
 t/routines/dispatch/multidim-index-through-itemized-seq.t
 t/routines/dispatch/multidim-list-assign-no-alias.t
+t/routines/dispatch/multidim-shaped-delete-bounds.t
 t/routines/dispatch/multidim-slice-scalar-leaf.t
 t/routines/dispatch/multidim-whatevercode-dimension-list.t
 t/routines/dispatch/multiframe-sigilless-for-rebind-coherence.t
@@ -5551,6 +5571,7 @@ t/vm/binding/constant-shadow.t
 t/vm/binding/constant-statement-modifier-value-kept.t
 t/vm/binding/constant-twigil-nyi.t
 t/vm/binding/constant-type-alias.t
+t/vm/binding/decl-as-expression.t
 t/vm/binding/decl-block-init-not-stmt-modifier.t
 t/vm/binding/decl-marker-fusion.t
 t/vm/binding/declarator-trailing-after-earlier-sub.t
@@ -5946,6 +5967,7 @@ t/vm/writeback/container-cell-raku-render.t
 t/vm/writeback/container-default-survives-reassign.t
 t/vm/writeback/container-default-survives-sibling-declaration.t
 t/vm/writeback/container-identity-bare-value.t
+t/vm/writeback/container-identity-mutation.t
 t/vm/writeback/container-identity-phase2-complete.t
 t/vm/writeback/container-identity-whole-assign.t
 t/vm/writeback/container-lexical-declarator-matrix.t

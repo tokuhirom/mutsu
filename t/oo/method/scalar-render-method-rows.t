@@ -2,7 +2,7 @@ use Test;
 
 # ADR-11276: gist, raku and WHICH on the scalar types are method-table rows.
 
-plan 30;
+plan 33;
 
 is 5.gist, "5", "Int.gist";
 is 5.raku, "5", "Int.raku";
@@ -26,6 +26,9 @@ is 5.WHICH, "Int|5", "Int.WHICH";
 is "a".WHICH, "Str|a", "Str.WHICH";
 is 2.5e0.WHICH, "Num|2.5", "Num.WHICH";
 is (1/3).WHICH, "Rat|1/3", "Rat.WHICH";
+is (1+2i).WHICH, "Complex|1|2", "Complex.WHICH";
+is (1.5+2.5i).WHICH, "Complex|1.5|2.5", "Complex.WHICH with fractional parts";
+ok (1+2i).WHICH eq (1+2i).WHICH, "equal Complexes share an identity";
 isa-ok 5.WHICH, ObjAt, "Int.WHICH is an ObjAt";
 isa-ok "a".WHICH, ValueObjAt, "Str.WHICH is a ValueObjAt";
 ok 5.WHICH === 5.WHICH, "equal Ints share an identity";

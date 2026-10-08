@@ -1,9 +1,7 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, EnumValue, RuntimeError, Value, ValueView};
-use num_traits::{Signed, ToPrimitive};
-
-use super::rng::builtin_rand;
+use num_traits::ToPrimitive;
 
 pub(crate) mod coercion;
 pub(crate) mod collection;
@@ -32,63 +30,6 @@ pub(crate) fn make_no_match_error(method_name: &str) -> RuntimeError {
     let mut err = RuntimeError::new(msg);
     err.exception = Some(Box::new(ex));
     err
-}
-
-fn sample_weighted_mix_key(items: &crate::value::MixData) -> Option<Value> {
-    let mut total = 0.0;
-    for weight in items.values() {
-        if weight.is_finite() && *weight > 0.0 {
-            total += *weight;
-        }
-    }
-    if total <= 0.0 {
-        return None;
-    }
-    let mut needle = builtin_rand() * total;
-    for (key, weight) in items.iter() {
-        if !weight.is_finite() || *weight <= 0.0 {
-            continue;
-        }
-        if needle <= *weight {
-            return Some(items.typed_key(key));
-        }
-        needle -= *weight;
-    }
-    items
-        .iter()
-        .find_map(|(key, weight)| (*weight > 0.0).then(|| items.typed_key(key)))
-}
-
-fn sample_weighted_bag_key(items: &crate::value::BagData) -> Option<Value> {
-    use crate::runtime::utils::bigint_to_i128_sat;
-    let mut total: i128 = 0;
-    for count in items.values() {
-        let count = bigint_to_i128_sat(count);
-        if count > 0 {
-            total = total.saturating_add(count);
-        }
-    }
-    if total <= 0 {
-        return None;
-    }
-    let needle_f = builtin_rand() * total as f64;
-    let mut needle = needle_f as i128;
-    if needle >= total {
-        needle = total - 1;
-    }
-    for (key, count) in items.iter() {
-        let count = bigint_to_i128_sat(count);
-        if count <= 0 {
-            continue;
-        }
-        if needle < count {
-            return Some(items.typed_key(key));
-        }
-        needle -= count;
-    }
-    items
-        .iter()
-        .find_map(|(key, count)| count.is_positive().then(|| items.typed_key(key)))
 }
 
 /// Normalize Unicode Nd (decimal digit) characters to their ASCII equivalents.
