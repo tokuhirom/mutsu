@@ -26,8 +26,10 @@ pub(crate) mod backtrace;
 pub(crate) mod date;
 pub(crate) mod dateish;
 pub(crate) mod datetime;
+pub(crate) mod exception;
 pub(crate) mod instant;
 pub(crate) mod regex_match;
+pub(crate) mod signature;
 pub(crate) mod temporal;
 pub(crate) mod temporal_edit;
 pub(crate) mod temporal_shift;
@@ -46,6 +48,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     instant::DURATION_OWN_ROWS,
     regex_match::ROWS,
     backtrace::ROWS,
+    exception::ROWS,
+    signature::ROWS,
     temporal_shift::ROWS,
     temporal_edit::ROWS,
 ];
