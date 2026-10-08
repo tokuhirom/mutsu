@@ -504,6 +504,13 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Blob", "read-uint16", 6, 24),
     ("Blob", "read-int16", 6, 24),
     ("Blob", "read-uint32", 6, 24),
+    ("Blob", "read-int32", 6, 24),
+    ("Blob", "read-uint64", 6, 24),
+    ("Blob", "read-int64", 6, 24),
+    ("Blob", "read-uint128", 6, 24),
+    ("Blob", "read-int128", 6, 24),
+    ("Blob", "read-num32", 6, 24),
+    ("Blob", "read-num64", 6, 24),
     // `.DEFINITE` is a quoted pseudo-method (like `.WHAT`/`.HOW`/`.WHICH`),
     // deliberately excluded from `MU_METHODS`'s `.^methods` introspection
     // list since it is a compiler-level construct rather than an ordinary
