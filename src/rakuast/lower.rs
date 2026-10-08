@@ -72,6 +72,16 @@ pub(super) fn lower_routine_stmts(node: &RakuAstNode) -> Result<Vec<Stmt>, Runti
     lower_stmts(node)
 }
 
+/// The statements of a `StatementSequence`, which opens no scope.
+// Cost: O(n), n = size of the statements.
+pub(super) fn lower_statement_sequence(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
+    let mut stmts = Vec::with_capacity(node.fields.len());
+    for f in &node.fields {
+        stmts.push(lower_stmt(child_node(&f.value)?)?);
+    }
+    Ok(stmts)
+}
+
 fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
     match node.class {
         RakuAstClass::StatementList => {
@@ -2549,6 +2559,25 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
             _ => return Ok(None),
         }));
     }
+    // `120 = 3`: an assignment to an immutable literal throws once the
+    // right-hand side has run.
+    if matches!(
+        left.class,
+        RakuAstClass::IntLiteral
+            | RakuAstClass::NumLiteral
+            | RakuAstClass::RatLiteral
+            | RakuAstClass::StrLiteral
+            | RakuAstClass::QuotedString
+    ) {
+        let literal = match lower_expr(left)? {
+            Expr::LiteralSrc(value, _) => Expr::Literal(value),
+            other => other,
+        };
+        if matches!(literal, Expr::Literal(_)) {
+            let value = lower_expr(named_child(node, "right")?)?;
+            return Ok(Some(crate::parser::literal_assign_ro_expr(literal, value)));
+        }
+    }
     let is_call = left.class == RakuAstClass::CallName
         || (left.class == RakuAstClass::ApplyPostfix
             && named_child(left, "postfix").is_ok_and(|p| p.class == RakuAstClass::CallTerm));
@@ -3952,6 +3981,15 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     && let Some(contents) = super::contextualizer::lower_segment(seg)?
                 {
                     parts.push(Expr::DoStmt(Box::new(Stmt::Expr(contents))));
+                    continue;
+                }
+                // `"a$(my $x = 1; $x)b"`: the parser's scope-transparent block.
+                if seg.class == RakuAstClass::ContextualizerItem
+                    && let Ok(sequence) = named_child_or_positional(seg)
+                    && sequence.class == RakuAstClass::StatementSequence
+                    && sequence.fields.len() > 1
+                {
+                    parts.push(Expr::desugar_block(lower_statement_sequence(sequence)?));
                     continue;
                 }
                 parts.push(lower_expr(seg)?);

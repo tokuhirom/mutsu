@@ -19,7 +19,7 @@
 use super::convert::{convert_expr, node_field, statement_expression};
 use super::lower::{lower_expr, named_child_or_positional, unsupported};
 use super::{RakuAstClass, RakuAstNode};
-use crate::ast::{ContextKind, Expr};
+use crate::ast::{ContextKind, Expr, Stmt};
 use crate::value::RuntimeError;
 
 fn class_of(kind: ContextKind) -> RakuAstClass {
@@ -89,6 +89,26 @@ pub(super) fn lower_segment(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeE
     Ok(Some(lower_expr(expression)?))
 }
 
+/// `$(STMT; STMT; ...)`: the parser's [`crate::parser::item_statements_expr`] as
+/// `Contextualizer::Item(StatementSequence(Statement::*, ...))`.
+// Cost: O(n), n = nodes of the statements.
+pub(super) fn convert_statements(stmts: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    let fields = super::convert::block_statements(stmts)?
+        .into_iter()
+        .map(|statement| node_field(None, statement))
+        .collect();
+    Ok(RakuAstNode {
+        class: RakuAstClass::ContextualizerItem,
+        fields: vec![node_field(
+            None,
+            RakuAstNode {
+                class: RakuAstClass::StatementSequence,
+                fields,
+            },
+        )],
+    })
+}
+
 fn sequence(statement: Option<RakuAstNode>) -> RakuAstNode {
     RakuAstNode {
         class: RakuAstClass::StatementSequence,
@@ -142,6 +162,12 @@ pub(super) fn lower(node: &RakuAstNode, kind: ContextKind) -> Result<Expr, Runti
                 }
                 let expression = super::lower::named_child(statement, "expression")?;
                 Expr::Grouped(Box::new(lower_expr(expression)?))
+            }
+            // `$(a; b)`: several statements.
+            _ if kind == ContextKind::Item => {
+                return Ok(crate::parser::item_statements_expr(
+                    super::lower::lower_statement_sequence(target)?,
+                ));
             }
             _ => return Err(unsupported(node)),
         },

@@ -354,8 +354,11 @@ pub(crate) fn ternary_trailing_assignment<'a>(
                 rhs_in.len(),
             )
         })?;
-        let assigned =
-            crate::parser::stmt::assign::build_compound_assign_expr(ternary_expr.clone(), op, rhs)?;
+        let assigned = crate::parser::stmt::assign::preserve_compound_assign(
+            ternary_expr.clone(),
+            op,
+            rhs,
+        )?;
         return Ok(Some((r2, assigned)));
     }
     if r.starts_with('=')

@@ -260,17 +260,6 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         if let Ok((r, rhs)) = parse_compound_assign_rhs_mode(after_ws, comma_level, mode)
             && let Ok(result) = build_compound_assign_expr(expr.clone(), op, rhs.clone())
         {
-            // The established nested-lvalue expansion consumes the inner
-            // marker when `($x += 2) *= 3` is parsed. Keep its historical
-            // `AssignExpr` shape so the outer writeback machinery (and its
-            // parser contract) continues to see the inner assignment.
-            if matches!(
-                &expr,
-                Expr::Grouped(inner)
-                    if matches!(inner.as_ref(), Expr::CompoundAssign { .. })
-            ) {
-                return Ok((r, result));
-            }
             // Preserve the original lvalue for RakuAST. The marker is
             // transparent to execution and keeps the established expansion
             // (including dedicated index/method writeback) underneath it.

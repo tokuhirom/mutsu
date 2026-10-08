@@ -5,6 +5,48 @@ use crate::symbol::Symbol;
 use super::array::array_literal;
 use super::paren::paren_expr;
 
+/// `$(STMT; STMT; ...)`: the statements as one scope-transparent block whose
+/// last value is itemized.
+///
+/// Built here for the parser and for RakuAST lowering, and taken apart again
+/// by [`item_statements_parts`] when `.AST` renders the written
+/// `Contextualizer::Item(StatementSequence(..))`.
+pub(crate) fn item_statements_expr(stmts: Vec<crate::ast::Stmt>) -> Expr {
+    Expr::MethodCall {
+        target: Box::new(Expr::desugar_block(stmts)),
+        name: Symbol::intern("item"),
+        args: vec![],
+        modifier: None,
+        quoted: false,
+        sugar: false,
+    }
+}
+
+/// The statements of an expression [`item_statements_expr`] built.
+// Cost: O(1).
+pub(crate) fn item_statements_parts(expr: &Expr) -> Option<&[crate::ast::Stmt]> {
+    let Expr::MethodCall {
+        target,
+        name,
+        args,
+        modifier: None,
+        quoted: false,
+        sugar: false,
+    } = expr
+    else {
+        return None;
+    };
+    let Expr::DoBlock {
+        body,
+        label: None,
+        origin: crate::ast::DoBlockOrigin::Desugar,
+    } = target.as_ref()
+    else {
+        return None;
+    };
+    (args.is_empty() && name.with_str(|n| n == "item")).then_some(body.as_slice())
+}
+
 /// Parse itemized parenthesized expression: `$(...)`.
 ///
 /// In Raku, `$(expr)` creates an item container — the value is evaluated and
@@ -23,19 +65,10 @@ pub(crate) fn itemized_paren_expr(input: &str) -> PResult<'_, Expr> {
     if let Ok((block_rest, block_expr)) =
         crate::parser::primary::var::parse_dollar_paren_block_pub(inner)
     {
-        return Ok((
-            block_rest,
-            // TODO: render as `Contextualizer::Item` once a multi-statement
-            // `$(a; b)` has a RakuAST statement-sequence form.
-            Expr::MethodCall {
-                target: Box::new(block_expr),
-                name: Symbol::intern("item"),
-                args: vec![],
-                modifier: None,
-                quoted: false,
-                sugar: false,
-            },
-        ));
+        let Expr::DoBlock { body, .. } = block_expr else {
+            unreachable!("parse_dollar_paren_block builds a DoBlock")
+        };
+        return Ok((block_rest, item_statements_expr(body)));
     }
     let (rest, inner) = paren_expr(rest)?;
     // $(expr) compiles to expr.item — wraps the value in a Scalar container

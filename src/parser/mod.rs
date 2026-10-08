@@ -199,6 +199,7 @@ pub use stmt::simple::{
 };
 
 pub(crate) use expr::precedence::assign_to_target_expr;
+pub(crate) use expr::precedence::{literal_assign_ro_expr, literal_assign_ro_parts};
 pub(crate) use expr::precedence::lower_feed_node;
 pub(crate) use stmt::assign::callable_lvalue_assign_expr;
 pub(crate) use stmt::assign::paren_list_assign_expr;
@@ -531,8 +532,8 @@ pub(crate) fn angle_word_value(word: &str) -> Value {
 }
 
 pub(crate) use primary::{
-    QuoteWordsPart, angle_word_is_numeric_literal, angle_words_expr, quotewords_from_words,
-    quotewords_spelled_parts, word_quote_expr,
+    QuoteWordsPart, angle_word_is_numeric_literal, angle_words_expr, item_statements_expr,
+    item_statements_parts, quotewords_from_words, quotewords_spelled_parts, word_quote_expr,
 };
 
 fn line_col_at_offset(source: &str, offset: usize) -> (usize, usize) {

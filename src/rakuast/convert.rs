@@ -2955,6 +2955,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // it would hand back a node with block semantics (`let`/`temp`
             // resolution) the original never had -- GH-7635.
             if origin != &crate::ast::DoBlockOrigin::SourceBlock {
+                // `120 = 3`: the written assignment to an immutable literal.
+                if let Some((literal, rhs)) = crate::parser::literal_assign_ro_parts(expr) {
+                    return assignment_around(convert_expr(literal)?, false, rhs);
+                }
                 return Err(unsupported("desugared do-block"));
             }
             Ok(RakuAstNode {
@@ -3529,6 +3533,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             quoted,
             sugar,
         } => {
+            // `$(a; b)`: several statements in item context.
+            if let Some(stmts) = crate::parser::item_statements_parts(expr) {
+                return super::contextualizer::convert_statements(stmts);
+            }
             // `lazy EXPR` / `hyper EXPR` / `race EXPR` and `$[1, 2]` / `${...}`:
             // sugar for the call, with a node of its own.
             if *sugar && args.is_empty() && modifier.is_none() {
@@ -3993,6 +4001,12 @@ pub(super) fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Stmt::Expr(contents) => super::contextualizer::convert_segment(contents),
             _ => convert_expr(expr),
         },
+        // `"a$(my $x = 1; $x)b"`: several statements in the item contextualizer.
+        Expr::DoBlock {
+            body,
+            label: None,
+            origin: crate::ast::DoBlockOrigin::Desugar,
+        } if body.len() > 1 => super::contextualizer::convert_statements(body),
         other => match super::match_vars::convert_interpolated(other) {
             Some(capture) => Ok(capture),
             None => convert_expr(other),
