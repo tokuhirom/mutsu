@@ -10,7 +10,17 @@ use num_traits::{Signed, Zero};
 pub(crate) fn escape_raku_str(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
+    let mut prev: Option<char> = None;
     for c in s.chars() {
+        // A grapheme-extending mark with no base (string start, or right after
+        // a control character, which is a hard grapheme break) would merge
+        // visually into the preceding output and not round-trip.
+        if prev.is_none_or(|p| p.is_control()) && !c.is_control() && extends_grapheme(c) {
+            out.push_str(&format!("\\x[{:X}]", c as u32));
+            prev = Some(c);
+            continue;
+        }
+        prev = Some(c);
         match c {
             '\\' => out.push_str("\\\\"),
             '"' => out.push_str("\\\""),
@@ -30,6 +40,16 @@ pub(crate) fn escape_raku_str(s: &str) -> String {
     }
     out.push('"');
     out
+}
+
+/// True when `c` attaches to a preceding base character (Extend / combining).
+// Cost: O(1).
+fn extends_grapheme(c: char) -> bool {
+    use unicode_segmentation::UnicodeSegmentation;
+    let mut buf = [0u8; 8];
+    let mut t = String::from("a");
+    t.push_str(c.encode_utf8(&mut buf));
+    t.graphemes(true).count() == 1
 }
 
 /// Format a BigRat with a terminating decimal as an exact decimal string.
