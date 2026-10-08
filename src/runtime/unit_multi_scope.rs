@@ -1,5 +1,5 @@
-//! Compunit scoping for a loaded module's package-less `multi`/`proto`
-//! families (#11004).
+//! Compunit scoping for a loaded module's `multi`/`proto` families (#11004,
+//! #12161).
 //!
 //! A `multi sub` or `proto sub` declared at the top level of a file with no
 //! package of its own is, in Raku, a lexical of that compilation unit, exactly
@@ -83,11 +83,6 @@ impl Interpreter {
     // Cost: O(r + p), r = registered functions, p = registered protos.
     fn scope_multi_families_of_unit(&mut self, decl_unit: Symbol, wanted: impl Fn(&str) -> bool) {
         let mut names: HashSet<Symbol> = HashSet::new();
-        // Names this unit declared inside a package (`module M { ... }`, a
-        // namespaced `unit module`). Their `GLOBAL::` entries are export
-        // aliases of a package routine (`register_proto_decl_as_global`), not
-        // package-less declarations, and keep their existing import handling.
-        let mut packaged: HashSet<Symbol> = HashSet::new();
         {
             let registry = self.registry();
             let routines = registry
@@ -107,11 +102,6 @@ impl Interpreter {
                 let ks = key.as_str();
                 let base = function_key_base_name(ks);
                 let Some(tail) = ks.strip_prefix("GLOBAL::") else {
-                    // The `EXPORT::<tag>::` stash aliases of a package-less
-                    // export are not a package declaration.
-                    if !ks.starts_with("EXPORT::") && !ks.contains("::EXPORT::") {
-                        packaged.insert(Symbol::intern(base));
-                    }
                     continue;
                 };
                 let package_less = if is_candidate_map {
@@ -127,7 +117,6 @@ impl Interpreter {
                 }
             }
         }
-        names.retain(|name| !packaged.contains(name));
         // The main script's own package-less candidates of a name this module
         // now scopes, declared before the load. See
         // [`Self::scope_main_family_if_contested`].
