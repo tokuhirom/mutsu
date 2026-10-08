@@ -613,6 +613,13 @@ impl Interpreter {
         if let Some(captured_name) = pd.captured_type_name() {
             self.bind_type_capture(captured_name, &value);
         }
+        // A `Proxy` argument is type-checked by what its FETCH answers
+        // (`sub f(Str $s is raw)` accepts a Proxy over a Str). An `is rw` /
+        // `is raw` parameter that must keep the caller's Proxy re-binds it from
+        // the caller's cell below, so only the checked value is the fetched one.
+        if pd.type_constraint.is_some() && value.is_proxy_value() {
+            value = self.auto_fetch_proxy(&value)?;
+        }
         if let Some(constraint) = &pd.type_constraint
             && (pd.name != "__type_only__"
                 || (self.is_resolvable_type(constraint)

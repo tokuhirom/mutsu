@@ -3835,17 +3835,8 @@ impl Interpreter {
         {
             let how = self.call_method_with_values(target.clone(), "HOW", vec![])?;
             let mut how_args = Vec::with_capacity(args.len() + 1);
-            let type_target = if matches!(
-                meta_method,
-                "mixin" | "set_name" | "language-revision" | "can"
-            ) {
-                target.clone()
-            } else {
-                match target.view() {
-                    ValueView::Instance { class_name, .. } => Value::package(class_name),
-                    _ => target.clone(),
-                }
-            };
+            let type_target =
+                crate::runtime::Interpreter::meta_call_type_target(&how, meta_method, &target);
             how_args.push(type_target);
             how_args.extend(args.clone());
             return self.call_method_with_values(how, meta_method, how_args);

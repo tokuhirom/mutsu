@@ -4,6 +4,31 @@ use crate::symbol::Symbol;
 use crate::value::types::is_stash_class_name;
 
 impl Interpreter {
+    /// The object passed as the first argument of `target.^meta_method(...)`
+    /// to the HOW. The builtin metaclasses are written against the type object,
+    /// so an instance is replaced by its class; a user-defined metaclass
+    /// (`class MetamodelX::Foo is Metamodel::ClassHOW`) receives the object
+    /// itself, as in Rakudo (`$obj.^save` reaches `save($obj)` with the instance).
+    // Cost: O(1).
+    pub(crate) fn meta_call_type_target(how: &Value, meta_method: &str, target: &Value) -> Value {
+        if matches!(
+            meta_method,
+            "mixin" | "set_name" | "language-revision" | "can"
+        ) {
+            return target.clone();
+        }
+        if matches!(
+            how.view(),
+            ValueView::Instance { ref class_name, .. } if !Self::is_metamodel_how(class_name)
+        ) {
+            return target.clone();
+        }
+        match target.view() {
+            ValueView::Instance { class_name, .. } => Value::package(class_name),
+            _ => target.clone(),
+        }
+    }
+
     /// Check if a metamodel class name is a HOW type.
     pub(super) fn is_metamodel_how(class_name: &Symbol) -> bool {
         let cn = class_name.resolve();

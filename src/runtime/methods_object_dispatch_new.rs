@@ -2129,6 +2129,11 @@ impl Interpreter {
                             {
                                 let sigil = sigil_map.get(k).copied().unwrap_or('$');
                                 let mut value = v.clone();
+                                // A `Proxy` is FETCHed as it lands in the attribute's
+                                // Scalar (ADR-0040 §9).
+                                if sigil == '$' && value.is_proxy_value() {
+                                    value = self.auto_fetch_proxy(&value)?;
+                                }
                                 let attr_type_constraint = class_attrs_info
                                     .iter()
                                     .find(|attr| attr.name == *k && attr.sigil == sigil)

@@ -624,6 +624,20 @@ impl Interpreter {
         {
             return None;
         }
+        // A `Proxy` named argument is FETCHed as it lands in the attribute's
+        // Scalar (ADR-0040 §9); the builder reads plain values.
+        let fetched;
+        let args = if args.iter().any(Self::arg_carries_store_proxy) {
+            match self.fetch_proxy_ctor_args(args) {
+                Ok(v) => {
+                    fetched = v;
+                    &fetched[..]
+                }
+                Err(e) => return Some(Err(e)),
+            }
+        } else {
+            args
+        };
         let result =
             self.build_native_default_instance(class_name, class_name.as_str(), args, &plan);
         // The REPR step of construction: an `is repr('CStruct')` object gets
