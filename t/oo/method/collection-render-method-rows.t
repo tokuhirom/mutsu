@@ -3,7 +3,7 @@ use Test;
 # ADR-11276: gist on List, Seq, Hash/Map and Pair is a method-table row sharing
 # one renderer with the cascade (user-gist elements and cycles still route away).
 
-plan 14;
+plan 16;
 
 is [1, 2, (3, 4)].gist, "[1 2 (3 4)]", "Array.gist";
 is (1, 2, 3).gist, "(1 2 3)", "List.gist";
@@ -26,3 +26,7 @@ my @c;
 like @c.gist, /^ '(\\Array_' \d+ ' = [Array_' \d+ '])' $/, "a cyclic Array renders the back-reference";
 
 throws-like { (1/0,).gist }, X::Numeric::DivideByZero, "a zero-denominator element dies";
+
+my $big = Map.new((1 .. 202).list);
+ok $big.gist.ends-with(", ...))"), "a Map with more than 100 pairs ends in ...";
+is $big.gist.comb("=>").elems, 100, "... after the first 100 sorted pairs";

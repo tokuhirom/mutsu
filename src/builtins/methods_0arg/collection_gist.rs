@@ -385,9 +385,23 @@ pub(crate) fn collection_gist(target: &Value) -> Option<Option<Result<Value, Run
             };
             Value::str(format!("{} => {}", key_gist, runtime::gist_value(v)))
         }
-        // An immutable `Map` gists as `Map.new((...))`: the shared hash renderer.
+        // An immutable `Map` gists as `Map.new((...))`, its first 100 sorted
+        // pairs and then `...` (a `Hash` renders in full).
         ValueView::Hash(map) if map.declared_type.as_deref() == Some("Map") => {
-            Value::str(runtime::utils::gist_value(target))
+            let mut sorted_keys: Vec<&String> = map.keys().collect();
+            sorted_keys.sort();
+            let mut parts: Vec<String> = sorted_keys
+                .iter()
+                .take(GIST_ELEM_CAP)
+                .map(|k| {
+                    let key_disp = runtime::gist_value(&map.typed_key(k));
+                    format!("{} => {}", key_disp, runtime::gist_value(&map[*k]))
+                })
+                .collect();
+            if sorted_keys.len() > GIST_ELEM_CAP {
+                parts.push("...".to_string());
+            }
+            Value::str(format!("Map.new(({}))", parts.join(", ")))
         }
         ValueView::Hash(map) => {
             let mut sorted_keys: Vec<&String> = map.keys().collect();
