@@ -250,6 +250,41 @@ impl Interpreter {
         }
     }
 
+    /// Whether `qualifier` is a role reachable by composition from any type in
+    /// `mro`: composed directly, or through roles that those roles compose
+    /// (`role B does A` consumed by a class or punned/mixed into a value makes
+    /// `self.A::m()` valid). A parametric qualifier matches its `Base[..]` form.
+    // Cost: O(R), R = roles reachable from the MRO's types.
+    pub(super) fn qualifier_in_composed_roles<'a>(
+        &self,
+        mro: impl IntoIterator<Item = &'a str>,
+        qualifier: &str,
+    ) -> bool {
+        let names_qualifier = |r: &str| {
+            r == qualifier || r.starts_with(qualifier) && r[qualifier.len()..].starts_with('[')
+        };
+        let mut seen: Vec<String> = Vec::new();
+        let mut pending: Vec<String> = Vec::new();
+        for c in mro {
+            // A punned role instance has the role itself in its MRO.
+            pending.extend(self.registry().role_parents_of(c));
+            if let Some(roles) = self.registry().class_composed_roles.get(c) {
+                pending.extend(roles.iter().cloned());
+            }
+        }
+        while let Some(r) = pending.pop() {
+            if names_qualifier(&r) {
+                return true;
+            }
+            if seen.contains(&r) {
+                continue;
+            }
+            pending.extend(self.registry().role_parents_of(&r));
+            seen.push(r);
+        }
+        false
+    }
+
     /// A qualified method call (`Class::method`) on an instance, a value
     /// with a role mixed in, or anything else, tried in that order. `None`
     /// when none of them takes it.
@@ -300,17 +335,7 @@ impl Interpreter {
         let inst_mro = self.class_mro(&inst_cn_str);
         let in_mro = inst_mro.iter().any(|c| c.as_str() == qualifier);
         let in_composed_roles = if !in_mro {
-            inst_mro.iter().any(|c| {
-                self.registry()
-                    .class_composed_roles
-                    .get(c.as_str())
-                    .is_some_and(|roles| {
-                        roles.iter().any(|r| {
-                            r == qualifier
-                                || r.starts_with(qualifier) && r[qualifier.len()..].starts_with('[')
-                        })
-                    })
-            })
+            self.qualifier_in_composed_roles(inst_mro.iter().map(|c| c.as_str()), qualifier)
         } else {
             false
         };
@@ -1046,19 +1071,7 @@ impl Interpreter {
             let inst_cn_str = inner_cn.resolve();
             let inst_mro = self.class_mro(&inst_cn_str);
             let in_mro = inst_mro.iter().any(|c| c.as_str() == qualifier);
-            let in_composed_roles = !in_mro
-                && inst_mro.iter().any(|c| {
-                    self.registry()
-                        .class_composed_roles
-                        .get(c.as_str())
-                        .is_some_and(|roles| {
-                            roles.iter().any(|r| {
-                                r == qualifier
-                                    || r.starts_with(qualifier)
-                                        && r[qualifier.len()..].starts_with('[')
-                            })
-                        })
-                });
+            let in_composed_roles = !in_mro && self.qualifier_in_composed_roles(inst_mro.iter().map(|c| c.as_str()), qualifier);
             if !in_mro && !in_composed_roles {
                 return Some(Err(RuntimeError::invalid_qualifier(
                     actual_method,
@@ -1178,19 +1191,7 @@ impl Interpreter {
             // same way for a bare type object).
             let mro = self.class_mro(&pkg_name);
             let in_mro = qualifier == pkg_name || mro.iter().any(|c| c.as_str() == qualifier);
-            let in_composed_roles = !in_mro
-                && mro.iter().any(|c| {
-                    self.registry()
-                        .class_composed_roles
-                        .get(c.as_str())
-                        .is_some_and(|roles| {
-                            roles.iter().any(|r| {
-                                r == qualifier
-                                    || r.starts_with(qualifier)
-                                        && r[qualifier.len()..].starts_with('[')
-                            })
-                        })
-                });
+            let in_composed_roles = !in_mro && self.qualifier_in_composed_roles(mro.iter().map(|c| c.as_str()), qualifier);
             if !in_mro && !in_composed_roles {
                 return Some(Err(RuntimeError::invalid_qualifier(
                     actual_method,
@@ -1282,7 +1283,9 @@ impl Interpreter {
             .first()
             .map(|t| t.as_str())
             .unwrap_or_else(|| crate::type_id::well_known_types().any.as_str());
-        let type_matches = qualifier == type_name || chain.iter().any(|t| t.as_str() == qualifier);
+        let type_matches = qualifier == type_name
+            || chain.iter().any(|t| t.as_str() == qualifier)
+            || self.qualifier_in_composed_roles(chain.iter().map(|c| c.as_str()), qualifier);
         if type_matches {
             return Some(self.call_method_with_values(target.clone(), actual_method, args));
         }
