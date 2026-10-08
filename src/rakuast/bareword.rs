@@ -71,6 +71,33 @@ impl Drop for DeclaredNames {
     }
 }
 
+thread_local! {
+    /// The names an `EVAL` string's calling scope declares: the unit being
+    /// converted is only the string, so its own declarations cannot say what
+    /// `aa` of `enum E <aa bb>; EVAL "aa"` is. Empty outside such a conversion.
+    static CALLER_NAMES: RefCell<HashMap<String, DeclaredKind>> =
+        RefCell::new(HashMap::new());
+}
+
+/// RAII guard installing an `EVAL` string's caller names (see [`CALLER_NAMES`]).
+pub(super) struct CallerNames(HashMap<String, DeclaredKind>);
+
+impl CallerNames {
+    // Cost: O(n), n = number of caller names.
+    pub(super) fn install(types: Vec<String>, terms: Vec<String>) -> Self {
+        let mut names = HashMap::new();
+        names.extend(types.into_iter().map(|n| (n, DeclaredKind::Type)));
+        names.extend(terms.into_iter().map(|n| (n, DeclaredKind::Term)));
+        Self(CALLER_NAMES.with(|c| std::mem::replace(&mut *c.borrow_mut(), names)))
+    }
+}
+
+impl Drop for CallerNames {
+    fn drop(&mut self) {
+        CALLER_NAMES.with(|c| *c.borrow_mut() = std::mem::take(&mut self.0));
+    }
+}
+
 /// What a `constant` renders as when named later. Rakudo evaluates the
 /// initializer at compile time, so a constant holding a type object is a type
 /// (`my constant E = Metamodel::EnumHOW.new_type(...)`, `constant T = Int`) and
@@ -154,7 +181,9 @@ fn scoped_kind(name: &str) -> Option<DeclaredKind> {
 }
 
 fn declared_kind(name: &str) -> Option<DeclaredKind> {
-    scoped_kind(name).or_else(|| DECLARED_NAMES.with(|d| d.borrow().get(name).copied()))
+    scoped_kind(name)
+        .or_else(|| DECLARED_NAMES.with(|d| d.borrow().get(name).copied()))
+        .or_else(|| CALLER_NAMES.with(|c| c.borrow().get(name).copied()))
 }
 
 /// Whether `name` names a type at parse time: a builtin type or one the unit
@@ -183,6 +212,13 @@ fn insert_declared_type(name: Symbol, out: &mut HashMap<String, DeclaredKind>) {
     out.insert(name.resolve(), DeclaredKind::Type);
     for stub in crate::qualified::package_ancestors(name).skip(1) {
         out.entry(stub.resolve()).or_insert(DeclaredKind::Type);
+    }
+    // `package GLOBAL::X::Y { class C }` declares `X::Y::C` absolutely: the
+    // root namespace is implicit in every spelling that reaches it.
+    if let Some(absolute) = name.resolve().strip_prefix("GLOBAL::")
+        && !absolute.is_empty()
+    {
+        insert_declared_type(Symbol::intern(absolute), out);
     }
 }
 
@@ -263,9 +299,20 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                         crate::ast::SourceForm::GivenPointy { param_def, .. } => {
                             self.visit_param(param_def)
                         }
+                        // `with X -> \y { y }` likewise.
+                        crate::ast::SourceForm::WithPointy {
+                            param_def: Some(param_def),
+                            ..
+                        } => self.visit_param(param_def),
                         // `if X -> \y { y }` likewise.
                         crate::ast::SourceForm::IfPointy { param_defs, .. } => {
                             param_defs.iter().for_each(|p| self.visit_param(p))
+                        }
+                        // `my (\a, \b) := …` declares each sigilless element as a term.
+                        crate::ast::SourceForm::SignatureDecl(decl) => {
+                            for var in decl.vars.iter().filter(|v| v.sigilless) {
+                                insert_term(self.0, var.name.clone());
+                            }
                         }
                         _ => {}
                     }
@@ -347,6 +394,15 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
             // `|c` slurpy carries the same flag and renders the same way.
             if param.sigilless && !param.name.is_empty() {
                 insert_term(self.0, param.name.clone());
+            }
+            // A `&cb` parameter is a routine: a bare `cb` is an argument-less
+            // call of it (`sub f(&cb) { cb }`, measured on 2026.09).
+            if let Some(routine) = param.name.strip_prefix('&')
+                && !routine.is_empty()
+            {
+                self.0
+                    .entry(routine.to_string())
+                    .or_insert(DeclaredKind::Routine);
             }
             // A `::T` capture declares the type name `T` (`sub f(::T $x) { T }`
             // renders `T` as a `Type::Simple`, measured on 2026.09).
