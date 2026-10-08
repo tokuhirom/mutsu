@@ -765,15 +765,26 @@ impl Interpreter {
                 .env
                 .get_sym(crate::symbol::well_known::multi_dispatch_name())
                 .map(Value::view)
-                && self.has_proto_cached(&name)
-                && let Some(def) = self.vm_resolve_trivial_proto_candidate(&name, &args)
             {
-                let empty_fns = CompiledFns::default();
-                return self.compile_and_call_function_def(
-                    &def,
-                    args,
-                    compiled_fns.unwrap_or(&empty_fns),
-                );
+                if self.has_proto_cached(&name)
+                    && let Some(result) = self.vm_try_run_nontrivial_proto_body(
+                        &name,
+                        args.clone(),
+                        compiled_fns.unwrap_or(&CompiledFns::default()),
+                    )
+                {
+                    return result;
+                }
+                if self.has_proto_cached(&name)
+                    && let Some(def) = self.vm_resolve_trivial_proto_candidate(&name, &args)
+                {
+                    let empty_fns = CompiledFns::default();
+                    return self.compile_and_call_function_def(
+                        &def,
+                        args,
+                        compiled_fns.unwrap_or(&empty_fns),
+                    );
+                }
             }
             return self.call_sub_value(target, args, false);
         }

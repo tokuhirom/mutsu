@@ -2679,8 +2679,6 @@ impl Interpreter {
     /// bypass would not be safe / byte-identical:
     /// - the name is interpreter-handled, or has no proto / a *trivial* body
     ///   (handled by `vm_resolve_trivial_proto_candidate` instead);
-    /// - the args do not satisfy the proto's own signature (the interpreter then
-    ///   raises the proper `X::TypeCheck::Argument`);
     /// - the proto's signature or (rewritten) body is not OTF-compilable, or the
     ///   body declares `state` (whose shared-cell identity the fingerprint cache
     ///   cannot preserve).
@@ -2702,11 +2700,6 @@ impl Interpreter {
         let trivial = significant.is_empty()
             || (significant.len() == 1 && matches!(significant[0], Stmt::Expr(Expr::Whatever)));
         if trivial {
-            return None;
-        }
-        // The proto's OWN signature is a gate (same as the trivial path): bypassing
-        // to compiled code must still reject args the proto signature forbids.
-        if !proto.param_defs.is_empty() && !self.method_args_match(&args, &proto.param_defs) {
             return None;
         }
         // ADR-0019 C8: a plan-derived proto already carries the bytecode for
