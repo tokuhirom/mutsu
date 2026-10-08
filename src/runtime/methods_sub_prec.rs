@@ -15,8 +15,13 @@ impl Interpreter {
     // (`is-implementation-detail`, `line`, `file`); it becomes a row when
     // the `Code` family migrates.
     // Cost: O(c + k), c = candidates registered under the name, k = entries.
-    pub(super) fn routine_prec(&mut self, package: Symbol, name: Symbol) -> Value {
-        let declared = self.declared_op_prec(package, name);
+    pub(super) fn routine_prec(
+        &mut self,
+        package: Symbol,
+        name: Symbol,
+        cell: Option<&crate::value::RoutineCell>,
+    ) -> Value {
+        let declared = self.declared_op_prec(package, name, cell);
         let prec = declared.or_else(|| {
             crate::op_prec::for_name(&name.resolve()).map(crate::op_prec::OpPrec::from_entries)
         });
@@ -32,13 +37,41 @@ impl Interpreter {
         Value::hash(map)
     }
 
+    /// `&infix:<+>.precedence` / `.associative`: the `prec` / `assoc` entry of
+    /// [`Self::routine_prec`] as a `Str`, the empty string when the routine
+    /// is not an operator (as in Rakudo).
+    // TODO: compile to bytecode -- see `routine_prec`.
+    // Cost: O(c + k), c = candidates registered under the name, k = entries.
+    pub(super) fn routine_prec_field(
+        &mut self,
+        package: Symbol,
+        name: Symbol,
+        cell: Option<&crate::value::RoutineCell>,
+        field: &str,
+    ) -> Value {
+        let prec = self.declared_op_prec(package, name, cell).or_else(|| {
+            crate::op_prec::for_name(&name.resolve()).map(crate::op_prec::OpPrec::from_entries)
+        });
+        let found = prec
+            .iter()
+            .flat_map(|prec| prec.entries())
+            .find(|(key, _)| *key == field)
+            .map(|(_, value)| value.to_string());
+        Value::str(found.unwrap_or_default())
+    }
+
     /// The `__prec` trait recorded on `package::name`, or on one of its
     /// `multi` candidates.
     fn declared_op_prec(
         &mut self,
         package: Symbol,
         name: Symbol,
+        cell: Option<&crate::value::RoutineCell>,
     ) -> Option<crate::op_prec::OpPrec> {
+        // The value's own routine cell outlives the registry entry.
+        if let Some(prec) = cell.and_then(|cell| cell.op_prec()) {
+            return Some(prec.clone());
+        }
         let key = crate::qualified::qualified(package, name);
         if let Some(prec) = self
             .registry()

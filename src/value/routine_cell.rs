@@ -41,6 +41,11 @@ struct Inner {
     renamed: RwLock<Option<Symbol>>,
     /// Set once a rename is stored; never cleared.
     has_renamed: AtomicBool,
+    /// The `Routine.prec` an operator's `is equiv/tighter/looser/assoc` traits
+    /// declared. A first-class `Sub` outlives its registry entry (an operator
+    /// declared inside `sub EXPORT` and exported through the returned `Map`),
+    /// so `.prec` cannot be read back from the registry alone.
+    op_prec: std::sync::OnceLock<crate::op_prec::OpPrec>,
 }
 
 /// See the module docs. Cloning shares the cell: a clone of the handle is the
@@ -103,6 +108,18 @@ impl RoutineCell {
         }
     }
 
+    /// The declared operator precedence recorded for the routine, if any.
+    // Cost: O(1).
+    pub(crate) fn op_prec(&self) -> Option<&crate::op_prec::OpPrec> {
+        self.0.op_prec.get()
+    }
+
+    /// Record the routine's declared operator precedence (first write wins).
+    // Cost: O(1).
+    pub(crate) fn note_op_prec(&self, prec: crate::op_prec::OpPrec) {
+        let _ = self.0.op_prec.set(prec);
+    }
+
     /// The name the routine was last renamed to, if it ever was.
     // Cost: O(1); one atomic load for a routine that was never renamed.
     pub(crate) fn renamed(&self) -> Option<Symbol> {
@@ -137,6 +154,9 @@ impl RoutineCell {
         }
         if let Some(ty) = self.return_type() {
             fresh.note_return_type(ty);
+        }
+        if let Some(prec) = self.op_prec() {
+            fresh.note_op_prec(prec.clone());
         }
         fresh
     }

@@ -1287,6 +1287,9 @@ impl Interpreter {
             },
             routine_cell: Default::default(),
         };
+        if let Some(prec) = &new_def.op_prec {
+            new_def.routine_cell.note_op_prec(prec.clone());
+        }
         // The seeded values must equal what the lazy fill would compute while
         // the body is still attached — a divergence here would silently change
         // multi-candidate identity or redeclaration comparison after the

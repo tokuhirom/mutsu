@@ -262,8 +262,16 @@ impl Interpreter {
         // function instead, as a `ValueView::Routine`, so both need the arm).
         if method == "prec" && args.is_empty() {
             return Some(Ok(
-                self.routine_prec(Symbol::intern(package), Symbol::intern(name))
+                self.routine_prec(Symbol::intern(package), Symbol::intern(name), None)
             ));
+        }
+        if let Some(field) = prec_field_of(method).filter(|_| args.is_empty()) {
+            return Some(Ok(self.routine_prec_field(
+                Symbol::intern(package),
+                Symbol::intern(name),
+                None,
+                field,
+            )));
         }
         if method == "is-implementation-detail" && args.is_empty() {
             let key = crate::qualified::qualified(Symbol::intern(package), Symbol::intern(name));
@@ -1118,7 +1126,15 @@ impl Interpreter {
         // registry entry under its own name and answers `False`, matching
         // real Raku rather than raising "No such method".
         if method == "prec" && args.is_empty() {
-            return Some(Ok(self.routine_prec(data.package, data.name)));
+            return Some(Ok(self.routine_prec(data.package, data.name, Some(&data.routine_cell))));
+        }
+        if let Some(field) = prec_field_of(method).filter(|_| args.is_empty()) {
+            return Some(Ok(self.routine_prec_field(
+                data.package,
+                data.name,
+                Some(&data.routine_cell),
+                field,
+            )));
         }
         if method == "is-implementation-detail" && args.is_empty() {
             let key = crate::qualified::qualified(data.package, data.name);
@@ -1484,4 +1500,13 @@ pub(crate) fn rename_code_object(target: &Value, name: &str) -> bool {
     // answers the new name too (#11844).
     gc.routine_cell.rename(Symbol::intern(name));
     true
+}
+
+/// The `Routine.prec` key behind `.precedence` / `.associative`.
+fn prec_field_of(method: &str) -> Option<&'static str> {
+    match method {
+        "precedence" => Some("prec"),
+        "associative" => Some("assoc"),
+        _ => None,
+    }
 }
