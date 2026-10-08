@@ -2800,10 +2800,11 @@ impl Interpreter {
                 // ONE positional argument and binds that argument's elements
                 // via the subsignature — later parameters keep their own
                 // arguments (`sub f( ($c, $s), $x )`, the reduce-with-
-                // destructuring shape). Pair entries are usually trailing named
-                // args and are skipped — but when ONLY Pairs remain, the first
-                // Pair itself is the destructure target (a `.map` over a Hash
-                // passes each Pair positionally: `-> (:$suffix) { }`).
+                // destructuring shape). Named-flavour Pairs (ADR-0021: a
+                // call-site `a => 1` / `:a(1)`) are named arguments and never
+                // the destructure target; a positional-flavour `ValuePair`
+                // (hash iteration, `.pairs`) is an ordinary positional, so
+                // `-> (:$suffix) { }` over a Hash still destructures it.
                 let mut target_idx = positional_idx;
                 while target_idx < args.len()
                     && matches!(
@@ -2812,9 +2813,6 @@ impl Interpreter {
                     )
                 {
                     target_idx += 1;
-                }
-                if target_idx >= args.len() {
-                    target_idx = positional_idx;
                 }
                 if target_idx < args.len() {
                     let arg = unwrap_varref_value(args[target_idx].clone());
