@@ -7,6 +7,7 @@
 use super::{Handler, MethodRow, RowFlags};
 
 pub(crate) mod blob;
+pub(crate) mod blob_read;
 pub(crate) mod coerce;
 pub(crate) mod complex;
 pub(crate) mod complex_math;
@@ -71,6 +72,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     version::ROWS,
     blob::ROWS,
     blob::COERCE_ROWS,
+    blob_read::READ_ROWS,
+    blob_read::SUBBUF_ROWS,
     math::INT_ROWS,
     math::NUM_ROWS,
     math::RAT_ROWS,

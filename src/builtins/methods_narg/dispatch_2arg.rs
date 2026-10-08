@@ -2,9 +2,8 @@ use super::allomorph::out_of_range_failure;
 use super::base::{BaseDigits, f64_to_rat, rat_to_base};
 use super::buf::{
     bigint_to_value, buf_class_name, buf_get_int_items, buf_get_raw_bytes, is_buf_like,
-    make_buf_from_int_items, out_of_range_error, read_byte_offset, read_f32_endian,
-    read_f64_endian, read_int_method_info, read_int_value, read_ubits_from_bytes,
-    resolve_buf_index, resolve_buf_len, to_int_val,
+    make_buf_from_int_items, out_of_range_error, read_ubits_from_bytes, resolve_buf_index,
+    resolve_buf_len,
 };
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use super::fmt_contains::{fmt_joinable_target, fmt_single_or_pair};
@@ -319,84 +318,17 @@ pub(crate) fn native_method_2arg(
             };
             Some(Ok(bigint_to_value(signed)))
         }
-        // Buf/Blob read-num methods (2 args: offset + endian)
-        "read-num32" | "read-num64" => {
-            if let ValueView::Package(type_name) = target.view() {
-                return Some(Err(RuntimeError::new(format!(
-                    "Cannot resolve caller {}({}:U)",
-                    method, type_name,
-                ))));
-            }
-            let (bytes, width) = buf_get_raw_bytes(target)?;
-            let offset_i64 = to_int_val(arg1);
-            let endian_val = match arg2.view() {
-                ValueView::Enum { value, .. } => value.as_i64(),
-                ValueView::Int(i) => i,
-                _ => 0, // NativeEndian
-            };
-            let size: usize = if method == "read-num32" { 4 } else { 8 };
-            let offset = match read_byte_offset(&bytes, offset_i64, size, width) {
-                Ok(off) => off,
-                Err(e) => return Some(Err(e)),
-            };
-            let result = if size == 4 {
-                read_f32_endian(&bytes[offset..offset + 4], endian_val)
-            } else {
-                read_f64_endian(&bytes[offset..offset + 8], endian_val)
-            };
-            Some(Ok(Value::num(result)))
-        }
-        // Buf/Blob read-int/uint methods (2 args: offset + endian)
-        "read-uint8" | "read-int8" | "read-uint16" | "read-int16" | "read-uint32"
-        | "read-int32" | "read-uint64" | "read-int64" | "read-uint128" | "read-int128" => {
-            if let ValueView::Package(type_name) = target.view() {
-                return Some(Err(RuntimeError::new(format!(
-                    "Cannot resolve caller {}({}:U)",
-                    method, type_name,
-                ))));
-            }
-            let (bytes, width) = buf_get_raw_bytes(target)?;
-            let offset_i64 = to_int_val(arg1);
-            let endian_val = match arg2.view() {
-                ValueView::Enum { value, .. } => value.as_i64(),
-                ValueView::Int(i) => i,
-                _ => 0, // NativeEndian
-            };
-            let (size, signed) = read_int_method_info(method);
-            let offset = match read_byte_offset(&bytes, offset_i64, size, width) {
-                Ok(off) => off,
-                Err(e) => return Some(Err(e)),
-            };
-            Some(Ok(read_int_value(
-                &bytes[offset..offset + size],
-                size,
-                signed,
-                endian_val,
-            )))
-        }
+        // Buf/Blob `read-*` (2 args: offset and byte order) and `subbuf`: the
+        // rows' implementation (`method_table::blob_read`).
+        "read-num32" | "read-num64" | "read-uint8" | "read-int8" | "read-uint16" | "read-int16"
+        | "read-uint32" | "read-int32" | "read-uint64" | "read-int64" | "read-uint128"
+        | "read-int128" => crate::builtins::method_table::blob_read::read(
+            method,
+            target,
+            &[arg1.clone(), arg2.clone()],
+        ),
         "subbuf" => {
-            if !is_buf_like(target) {
-                return None;
-            }
-            let items = buf_get_int_items(target)?;
-            let cn = buf_class_name(target);
-            let len = items.len();
-            let start = resolve_buf_index(arg1, len);
-            if start < 0 {
-                return Some(Err(out_of_range_error(start, 0, len as i64)));
-            }
-            if start as usize > len {
-                return Some(Err(out_of_range_error(start, 0, len as i64)));
-            }
-            // arg2 is the length
-            let sub_len = resolve_buf_len(arg2, len, start as usize);
-            if sub_len < 0 {
-                return Some(Err(out_of_range_error(sub_len, 0, len as i64)));
-            }
-            let s = start as usize;
-            let available = len - s;
-            let take = (sub_len as usize).min(available);
-            Some(Ok(make_buf_from_int_items(&cn, &items[s..s + take])))
+            crate::builtins::method_table::blob_read::subbuf(target, &[arg1.clone(), arg2.clone()])
         }
         "subbuf-rw" => {
             if !is_buf_like(target) {

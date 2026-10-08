@@ -68,8 +68,8 @@ pub(crate) use collections::{
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::{date, dateish, datetime, regex_match, temporal};
 pub(crate) use scalars::{
-    blob, coerce, complex, complex_math, cool_real, math, numify, real, real_misc, str, str_iter,
-    str_search, succ_pred, truth, uni, unicode, version,
+    blob, blob_read, coerce, complex, complex_math, cool_real, math, numify, real, real_misc, str,
+    str_iter, str_search, succ_pred, truth, uni, unicode, version,
 };
 
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};

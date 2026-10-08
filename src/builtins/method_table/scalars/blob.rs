@@ -241,10 +241,7 @@ pub(crate) fn str_of(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
 /// `.Str` and `.Stringy` of a buffer; `method` names the one called, for the
 /// exception.
 // Cost: O(e) for `utf8`, O(1) otherwise, e = elements.
-pub(crate) fn str_or_stringy(
-    target: &Value,
-    method: &str,
-) -> Option<Result<Value, RuntimeError>> {
+pub(crate) fn str_or_stringy(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
     let class = class_of(target)?;
     if class.resolve() == "utf8"
         && let Some(decoded) = crate::builtins::decode_buf_method(target, Some("utf-8"))
@@ -271,10 +268,7 @@ pub(crate) fn to_buf(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
 /// `.Buf`/`.Blob` on a byte string: a plain value of the requested class
 /// carrying the same storage, so `"\r\n".encode.Buf` is a `Buf[uint8]`.
 // Cost: O(1), the storage is shared.
-pub(crate) fn reinterpret(
-    target: &Value,
-    class: &str,
-) -> Option<Result<Value, RuntimeError>> {
+pub(crate) fn reinterpret(target: &Value, class: &str) -> Option<Result<Value, RuntimeError>> {
     let ValueView::Instance { attributes, .. } = target.view() else {
         return None;
     };

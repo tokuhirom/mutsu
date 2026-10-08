@@ -9,10 +9,11 @@ pub(super) fn dispatch(
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
         "bytes" => Some(match target.view() {
-            ValueView::Instance { class_name, .. } if {
-                let cn = class_name.resolve();
-                crate::runtime::utils::is_buf_or_blob_class(&cn)
-            } =>
+            ValueView::Instance { class_name, .. }
+                if {
+                    let cn = class_name.resolve();
+                    crate::runtime::utils::is_buf_or_blob_class(&cn)
+                } =>
             {
                 // The `Blob`/`Buf` rows' implementation (`method_table::blob`).
                 crate::builtins::method_table::blob::bytes(target, &[])

@@ -1055,8 +1055,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // decodes (rakudo: `utf8.new(98,117).Str` is "bu", while `Buf`, `Blob` and
     // `Blob[uint8]` all die). Only the type object's own name matters; prefix
     // `~` still dies for utf8 too.
-    if (method == "Str" || method == "Stringy")
-        && crate::runtime::Interpreter::is_buf_value(target)
+    if (method == "Str" || method == "Stringy") && crate::runtime::Interpreter::is_buf_value(target)
     {
         // The `Blob`/`Buf` rows' implementation (`method_table::blob`).
         return crate::builtins::method_table::blob::str_or_stringy(target, method);

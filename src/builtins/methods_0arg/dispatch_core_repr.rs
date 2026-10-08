@@ -379,7 +379,10 @@ pub(super) fn dispatch(
         ValueView::Instance { class_name, .. }
             if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
         {
-            crate::builtins::method_table::blob::render(target, method == "raku" || method == "perl")
+            crate::builtins::method_table::blob::render(
+                target,
+                method == "raku" || method == "perl",
+            )
         }
         // The renderers the quant hashes' rows share. The rows decline an
         // element that may carry a user `gist`/`raku`; this arm renders it
