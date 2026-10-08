@@ -885,6 +885,14 @@ impl Value {
         self.0.dispatch_shape()
     }
 
+    /// [`crate::value::DispatchShape::Seq`] for a settled, plain `Seq`, else
+    /// `None`. Asked only after the Seq consumption step has run for the call
+    /// (`Receiver::of_settled`): the step decides what the call does to the body.
+    #[inline]
+    pub(crate) fn settled_seq_shape(&self) -> Option<crate::value::DispatchShape> {
+        self.0.settled_seq_shape()
+    }
+
     /// Whether this is the `Any` type object (`Package("Any")`) — notably the
     /// value an uninitialized untyped scalar declaration seeds (PLAN 8.5
     /// step 3), which container-identity heuristics must treat like the old

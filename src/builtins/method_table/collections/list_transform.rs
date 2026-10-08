@@ -30,7 +30,12 @@ pub(super) static LIST_ROWS: &[MethodRow] = rows!["List":
 
 /// `flat` (and `flat(:hammer)`) on each owner Rakudo declares it on: the
 /// first rows to bind a named argument.
-pub(super) static FLAT_ROWS: &[MethodRow] = &[flat_row("Any"), flat_row("List"), flat_row("Array")];
+pub(super) static FLAT_ROWS: &[MethodRow] = &[
+    flat_row("Any"),
+    flat_row("List"),
+    flat_row("Array"),
+    flat_row("Seq"),
+];
 
 const fn flat_row(owner: &'static str) -> MethodRow {
     MethodRow {

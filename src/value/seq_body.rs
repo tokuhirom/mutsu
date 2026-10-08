@@ -964,6 +964,21 @@ impl SeqBody {
         )
     }
 
+    /// Whether a built-in method row may answer a call on this body: the Seq
+    /// presents as a `Seq` (not the `List` a `.cache` returns), holds its
+    /// elements already (no source left to pull, nothing handed away), is not
+    /// lazy and does not hold live element containers. The consumption step
+    /// (`reify_or_consume_seq_target`) has decided what the call does to the
+    /// body before a row is asked.
+    // Cost: O(1), one lock read.
+    pub(crate) fn is_settled_for_rows(&self) -> bool {
+        if !matches!(self.view, SeqView::Seq | SeqView::ItemSeq) || self.core.element_containers {
+            return false;
+        }
+        let state = self.core.state.lock().unwrap();
+        matches!(state.source, SeqSource::Reified) && !state.lazy
+    }
+
     pub(crate) fn needs_touch(&self) -> bool {
         let state = self.core.state.lock().unwrap();
         !(matches!(state.source, SeqSource::Reified) && (state.retained || state.cache_requested))

@@ -155,14 +155,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "Capture" => Some(value_to_capture(target)),
         // Cost: O(e), e = elements (O(1) for a Slip, which is returned as is).
         "Slip" => match target.view() {
-            ValueView::Seq(items) => {
-                if items.is_consumed() && !items.is_cached() {
-                    return Some(Err(crate::value::seq_consumed_error()));
-                }
-                // Mark as cached so the Seq remains reusable
-                items.mark_cache_requested();
-                Some(Ok(Value::slip(items.to_vec())))
-            }
+            // The `Seq.Slip` row's implementation (`method_table::seq`).
+            ValueView::Seq(_) => crate::builtins::method_table::seq::slip(target, &[]),
             // The `Slip` rows' implementation (`method_table::positional`).
             ValueView::Array(..) => crate::builtins::method_table::positional::slip(target, &[]),
             // `.Slip` on a Slip is the identity, but it hands out the VALUE
@@ -242,14 +236,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::array((a..b).map(Value::int).collect())))
                 }
             }
-            ValueView::Seq(items) => {
-                if items.is_consumed() && !items.is_cached() {
-                    return Some(Err(crate::value::seq_consumed_error()));
-                }
-                // Mark as cached so the Seq remains reusable
-                items.mark_cache_requested();
-                Some(Ok(Value::array(items.to_vec())))
-            }
+            // The `Seq.List` row's implementation (`method_table::seq`).
+            ValueView::Seq(_) => crate::builtins::method_table::seq::list_type(target, &[]),
             // `.List` on a Slip flattens its elements into a List (`slip(1,2,3).List`
             // is `(1 2 3)`, not `((1 2 3))`) — without this arm a Slip falls through
             // to the scalar catch-all and is wrapped as a single element.
@@ -577,18 +565,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                         Some(Ok(target.clone()))
                     }
                 }
-                ValueView::Seq(items) if method == "list" || method == "Array" => {
-                    // Consumed Seq check: throw X::Seq::Consumed if not cached
-                    if items.is_consumed() && !items.is_cached() {
-                        return Some(Err(crate::value::seq_consumed_error()));
-                    }
-                    // Mark as cached so the Seq remains reusable (e.g. when the Seq is
-                    // bound to an @-sigil parameter, Raku implicitly caches it).
-                    // TODO: implement proper @-sigil parameter caching separately, and
-                    // change this back to seq_consume for strict Raku semantics where
-                    // .List on an uncached Seq consumes it.
-                    items.mark_cache_requested();
-                    Some(Ok(wrap(items.to_vec())))
+                // The `Seq.list`/`Seq.Array` rows' implementation (`method_table::seq`).
+                ValueView::Seq(_) if method == "list" || method == "Array" => {
+                    crate::builtins::method_table::seq::listify(target, want_array)
                 }
                 ValueView::Slip(items) if method == "list" || method == "Array" => {
                     Some(Ok(wrap(items.to_vec())))

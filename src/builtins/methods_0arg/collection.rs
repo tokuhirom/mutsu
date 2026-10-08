@@ -705,16 +705,9 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // so the NEXT touch (of this alias or any other) reifies-and-
             // keeps instead of consuming, and return the same (still lazy)
             // Seq value.
-            if let ValueView::Seq(body) = target.view() {
-                body.mark_cache_requested();
-                // ADR-0038 phase 3: rakudo's `.cache` returns a `List`-typed
-                // value, not a `Seq`-typed one. Return a second handle over the
-                // SAME core: a deferred body (which has no elements to hand
-                // back yet -- a strict force is wrong here, S1.6) reifies once
-                // on a later real read and both handles observe it, and a
-                // reified one shares its elements instead of copying them.
-                let body = std::sync::Arc::clone(&body);
-                return Some(Ok(Value::seq_list_view(&body)));
+            // The `Seq.cache` row's implementation (`method_table::seq`).
+            if matches!(target.view(), ValueView::Seq(_)) {
+                return crate::builtins::method_table::seq::cache(target, &[]);
             }
             let items = target
                 .as_list_items()

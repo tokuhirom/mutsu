@@ -71,6 +71,23 @@ impl Receiver {
         }
     }
 
+    /// [`Self::of`], and also a settled `Seq` (`DispatchShape::Seq`). For the entries
+    /// that run after the Seq consumption step (`reify_or_consume_seq_target`), which
+    /// has already decided what the call does to the body; the call-site lane and the
+    /// by-name mutating entry run before it and use [`Self::of`].
+    // Cost: O(1), a tag probe; a `Seq` also reads its state, a `Package` looks its
+    // name up.
+    #[inline]
+    pub(crate) fn of_settled(target: &Value) -> Option<Receiver> {
+        match target.dispatch_shape() {
+            Some(shape) => Some(Receiver::instance(shape)),
+            None => match target.settled_seq_shape() {
+                Some(shape) => Some(Receiver::instance(shape)),
+                None => target.type_object_shape().map(Receiver::type_object),
+            },
+        }
+    }
+
     /// The receiver packed into a byte: the shape and a type-object bit.
     // Cost: O(1).
     pub(crate) const fn to_bits(self) -> u8 {

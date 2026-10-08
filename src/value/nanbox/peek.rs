@@ -679,6 +679,24 @@ impl NanBox {
         }
     }
 
+    /// [`crate::value::DispatchShape::Seq`] when this word is a settled, plain
+    /// `Seq` (see [`crate::value::SeqBody::is_settled_for_rows`]); a tag probe and
+    /// one lock read. Not part of [`Self::dispatch_shape`]: only the entries that
+    /// run after the Seq consumption step ask for it.
+    #[inline]
+    pub(in crate::value) fn settled_seq_shape(&self) -> Option<crate::value::DispatchShape> {
+        let bits = self.0.get();
+        match classify(bits) {
+            Classified::Kind(Kind::Seq) => {
+                // SAFETY: Seq words carry an `Arc<SeqBody>`.
+                let body = unsafe { peek_arc::<crate::value::SeqBody>(bits) };
+                body.is_settled_for_rows()
+                    .then_some(crate::value::DispatchShape::Seq)
+            }
+            _ => None,
+        }
+    }
+
     /// The [`crate::value::DispatchShape`] of the built-in type a type object
     /// (`Package("Int")`) stands for, or `None` for anything else — a user
     /// class's type object has no shape. A pure tag probe for everything but
