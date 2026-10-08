@@ -82,15 +82,3 @@ fn circumfix_fail_goal(open: &str, close_delim: &str, pos: &str) -> PError {
     let goal = format!("'{}'", close_delim);
     crate::parser::primary::fail_goal_error_at(&dba, &goal, Some(pos))
 }
-
-pub(crate) fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
-    let after_open = input
-        .strip_prefix('{')
-        .ok_or_else(|| PError::expected("regex body"))?;
-    if let Some((body, rest)) =
-        crate::parser::primary::regex::scan_to_delim(after_open, '{', '}', true)
-    {
-        return Ok((rest, body.trim().to_string()));
-    }
-    Err(PError::expected("regex closing delimiter"))
-}

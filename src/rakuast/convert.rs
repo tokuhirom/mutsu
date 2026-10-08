@@ -293,7 +293,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             };
             Ok(Some(statement_expression(regex_declaration_with_body(
                 class,
-                &name.resolve(),
+                Some(&name.resolve()),
                 scope,
                 Some("proto"),
                 param_defs,
@@ -4631,7 +4631,7 @@ fn regex_declaration(
 ) -> Result<RakuAstNode, RuntimeError> {
     regex_declaration_with_body(
         class,
-        name,
+        Some(name),
         scope,
         multiness,
         param_defs,
@@ -4643,7 +4643,7 @@ fn regex_declaration(
 // Cost: O(p), p = size of the parameters.
 fn regex_declaration_with_body(
     class: RakuAstClass,
-    name: &str,
+    name: Option<&str>,
     scope: Option<&str>,
     multiness: Option<&str>,
     param_defs: &[ParamDef],
@@ -4656,7 +4656,9 @@ fn regex_declaration_with_body(
     if let Some(multiness) = multiness {
         fields.push(leaf_field(Some("multiness"), Value::str_from(multiness)));
     }
-    fields.push(node_field(Some("name"), name_from_identifier(name)));
+    if let Some(name) = name {
+        fields.push(node_field(Some("name"), name_from_identifier(name)));
+    }
     if !param_defs.is_empty() {
         fields.push(node_field(
             Some("signature"),
@@ -6361,8 +6363,28 @@ fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
         // value, which keeps the declared parameters it was built from;
         // rakudo wraps them in a `FakeSignature`.
         ValueView::Instance { class_name, .. } if class_name == "Signature" => signature_literal(v),
+        // `regex { }` / `token { }` / `rule { }` as a term: the parser keeps
+        // the declarator's tree on the value.
+        ValueView::Regex(_) => match v.regex_source_tree() {
+            Some(tree) if tree.declaration_kind.is_some() => anon_regex_declaration(v, tree),
+            _ => Err(unsupported("literal Regex without a declarator tree")),
+        },
         other => Err(unsupported(&format!("literal {other:?}"))),
     }
+}
+
+/// An anonymous `regex`/`token`/`rule` term: the named declaration's node
+/// without its `name`.
+// Cost: O(n), n = size of the regex tree and signature.
+fn anon_regex_declaration(v: &Value, tree: &RegexTree) -> Result<RakuAstNode, RuntimeError> {
+    use crate::regex_tree::RegexDeclKind;
+    let class = match tree.declaration_kind {
+        Some(RegexDeclKind::Token) => RakuAstClass::TokenDeclaration,
+        Some(RegexDeclKind::Rule) => RakuAstClass::RuleDeclaration,
+        _ => RakuAstClass::RegexDeclaration,
+    };
+    let params = v.regex_signature().map(|p| (*p).clone()).unwrap_or_default();
+    regex_declaration_with_body(class, None, None, None, &params, regex_node(&tree.body)?)
 }
 
 /// `FakeSignature.new(Signature(parameters => (...)[, returns => Type]))` for a

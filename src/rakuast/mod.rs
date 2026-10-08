@@ -2746,9 +2746,11 @@ pub fn construct(
         "RakuAST::RegexDeclaration" | "RakuAST::TokenDeclaration" | "RakuAST::RuleDeclaration"
     ) && method == "new"
     {
-        let name = named_arg(args, "name")
-            .ok_or_else(|| RuntimeError::new(format!("{class_name}.new requires `name`")))?;
-        require_rakuast_class(&name, RakuAstClass::Name, "RakuAST regex declaration")?;
+        // The name is optional: an anonymous `regex { }` term has none.
+        let name = named_arg(args, "name");
+        if let Some(name) = &name {
+            require_rakuast_class(name, RakuAstClass::Name, "RakuAST regex declaration")?;
+        }
         let body = named_arg(args, "body")
             .ok_or_else(|| RuntimeError::new(format!("{class_name}.new requires `body`")))?;
         require_regex_node(&body, class_name)?;
@@ -2759,16 +2761,17 @@ pub fn construct(
         };
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class,
-            fields: vec![
-                RakuAstField {
+            fields: name
+                .map(|name| RakuAstField {
                     name: Some("name"),
                     value: RakuAstFieldValue::Node(name),
-                },
-                RakuAstField {
+                })
+                .into_iter()
+                .chain([RakuAstField {
                     name: Some("body"),
                     value: RakuAstFieldValue::Node(body),
-                },
-            ],
+                }])
+                .collect(),
         }))));
     }
     if class_name == "RakuAST::Grammar" && method == "new" {
