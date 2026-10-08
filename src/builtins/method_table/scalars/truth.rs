@@ -21,6 +21,9 @@ pub(super) static BOOL_ROWS: &[MethodRow] = &[
     row!("Bool", "Bool", truthiness),
     row!("Bool", "key", bool_key),
     row!("Bool", "value", bool_value),
+    row!("Bool", "Int", bool_value),
+    row!("Bool", "Numeric", bool_value),
+    row!("Bool", "Real", bool_value),
 ];
 
 pub(super) static UNI_ROWS: &[MethodRow] = &[row!("Uni", "Bool", truthiness)];
