@@ -2856,6 +2856,15 @@ impl Parser {
             return None;
         }
         let (backtrack, width) = match self.chars.get(self.pos + 1) {
+            // `:!r` / `:?x` negate or parameterise an adverb instead.
+            Some('!' | '?')
+                if self
+                    .chars
+                    .get(self.pos + 2)
+                    .is_some_and(|next| next.is_alphanumeric()) =>
+            {
+                return None;
+            }
             Some('!') => (RegexBacktrack::Greedy, 2),
             Some('?') => (RegexBacktrack::Frugal, 2),
             Some(next) if next.is_alphanumeric() || matches!(next, ':' | '_' | '<' | '[') => {
@@ -3124,6 +3133,18 @@ impl Parser {
             }
         }
         Some(self.chars[start..self.pos].iter().collect())
+    }
+
+    /// Skip whitespace only: inside a character class a `#` is a member.
+    // Cost: O(n), n = length of the skipped whitespace.
+    fn skip_plain_whitespace(&mut self) {
+        while self
+            .chars
+            .get(self.pos)
+            .is_some_and(|ch| ch.is_whitespace())
+        {
+            self.pos += 1;
+        }
     }
 
     /// Skip whitespace and comments: a regex's whitespace is the main
