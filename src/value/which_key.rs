@@ -25,7 +25,7 @@ pub(crate) fn value_which_key(value: &Value) -> String {
             };
             format!("{}|{}/{}", flavour, n, d)
         }
-        ValueView::Complex(r, i) => format!("Complex|{}+{}i", r, i),
+        ValueView::Complex(r, i) => format!("Complex|{}|{}", r, i),
         ValueView::Nil => format!("Nil|U{}", Symbol::intern("Nil").id()),
         ValueView::Package(name) => format!("{}|U{}", name.resolve(), name.id()),
         ValueView::CustomType(c) => format!("{}|U{}", c.name.resolve(), c.id),
