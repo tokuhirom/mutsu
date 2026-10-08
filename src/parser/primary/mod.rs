@@ -328,7 +328,9 @@ pub(crate) fn angle_word_value(word: &str) -> Value {
     container::angle_word_value(word)
 }
 
-pub(crate) use container::{angle_word_is_numeric_literal, angle_words_expr};
+pub(crate) use container::{
+    angle_word_is_numeric_literal, angle_words_expr, item_statements_expr, item_statements_parts,
+};
 pub(crate) use string::{
     QuoteWordsPart, quotewords_from_words, quotewords_spelled_parts, word_quote_expr,
 };

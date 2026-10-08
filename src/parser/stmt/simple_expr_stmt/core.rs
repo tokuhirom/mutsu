@@ -8,9 +8,9 @@ use crate::parser::parse_result::{
 };
 use crate::parser::primary::parse_call_arg_list;
 use crate::parser::stmt::assign::{
-    CompoundAssignOp, build_compound_assign_expr, compound_assign_marker,
-    compound_assigned_value_expr, parse_assign_expr_or_comma, parse_colon_args,
-    parse_comma_or_expr, parse_compound_assign_op, parse_set_compound_assign_op,
+    CompoundAssignOp, compound_assign_marker, compound_assigned_value_expr,
+    parse_assign_expr_or_comma, parse_colon_args, parse_comma_or_expr, parse_compound_assign_op,
+    parse_set_compound_assign_op, preserve_compound_assign,
 };
 use crate::parser::stmt::modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
 use crate::parser::stmt::simple::{
@@ -916,14 +916,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     Expr::LiteralSrc(v, _) => Expr::Literal(v),
                     other => other,
                 };
-                Stmt::Expr(Expr::desugar_block(vec![
-                    Stmt::Expr(rhs),
-                    Stmt::Expr(Expr::Call {
-                        name: Symbol::intern("__mutsu_assignment_ro"),
-                        args: vec![lit],
-                        listop: false,
-                    }),
-                ]))
+                Stmt::Expr(crate::parser::literal_assign_ro_expr(lit, rhs))
             }
             Expr::BareWord(_) => Stmt::Block(vec![Stmt::Expr(expr), Stmt::Expr(rhs)]),
             Expr::SymbolicDeref { sigil, expr: inner } => Stmt::Expr(Expr::SymbolicDerefAssign {
@@ -1477,7 +1470,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         // taken branch is mutated. The generic RO fallback below would instead
         // reject it as immutable.
         if matches!(expr, Expr::Ternary { .. })
-            && let Ok(ternary_assign) = build_compound_assign_expr(expr.clone(), op, rhs.clone())
+            && let Ok(ternary_assign) = preserve_compound_assign(expr.clone(), op, rhs.clone())
         {
             return parse_statement_modifier(r, Stmt::Expr(ternary_assign));
         }
@@ -1489,42 +1482,11 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                     right: Box::new(rhs),
                     form: Default::default(),
                 })
-            } else if matches!(
-                op,
-                CompoundAssignOp::KeywordOr
-                    | CompoundAssignOp::KeywordAnd
-                    | CompoundAssignOp::LogicalOr
-                    | CompoundAssignOp::LogicalAnd
-                    | CompoundAssignOp::DefinedOr
-                    | CompoundAssignOp::Orelse
-                    | CompoundAssignOp::Andthen
-            ) {
-                // Short-circuit compound assignment on non-lvalue: preserve
-                // short-circuit semantics so the RHS is not evaluated when
-                // the LHS triggers short-circuit.
-                Stmt::Expr(Expr::Binary {
-                    left: Box::new(expr),
-                    op: op.token_kind(),
-                    right: Box::new(Expr::desugar_block(vec![
-                        Stmt::Expr(rhs),
-                        Stmt::Expr(Expr::Call {
-                            name: Symbol::intern("__mutsu_assignment_ro"),
-                            args: Vec::new(),
-                            listop: false,
-                        }),
-                    ])),
-                    form: Default::default(),
-                })
             } else {
-                Stmt::Expr(Expr::desugar_block(vec![
-                    Stmt::Expr(expr),
-                    Stmt::Expr(rhs),
-                    Stmt::Expr(Expr::Call {
-                        name: Symbol::intern("__mutsu_assignment_ro"),
-                        args: Vec::new(),
-                        listop: false,
-                    }),
-                ]))
+                // A non-lvalue target (a literal, `(my $x)`, a nested `($a //= 1)`):
+                // the expansion throws `X::Assignment::RO` when it is reached, but
+                // the written `LHS OP= RHS` stays recoverable through the marker.
+                Stmt::Expr(preserve_compound_assign(expr, op, rhs)?)
             };
         return parse_statement_modifier(r, stmt);
     }

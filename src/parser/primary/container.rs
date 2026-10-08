@@ -44,6 +44,7 @@ pub(super) use sigil_context::{
     hash_context_paren_expr, itemized_brace_expr, itemized_bracket_expr,
     itemized_context_paren_expr, itemized_paren_expr, list_context_paren_expr,
 };
+pub(crate) use sigil_context::{item_statements_expr, item_statements_parts};
 
 // pub(crate) re-exports — visible throughout the crate
 pub(crate) use allomorph::{angle_word_is_numeric_literal, angle_word_value};
