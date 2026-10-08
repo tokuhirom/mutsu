@@ -20,7 +20,7 @@ use Test;
 # does NOT assert what the right node would be — that needs measuring against
 # raku first.
 
-plan 9;
+plan 10;
 
 # --- a desugared construct throws rather than rendering a fake node ---------
 throws-like { Q[-<<@a].AST }, Exception,
@@ -37,12 +37,13 @@ ok Q[with 1 { say $_ }].AST.gist.contains('RakuAST::Statement::With.new('),
 nok Q[with 1 { say $_ }].AST.gist.contains('__with_tmp'),
     '`with` does not render its __with_tmp_N temporary';
 
-# The pointy spellings are still boundaries: such a body binds its parameter
-# inside the same scaffold, which raku spells as a PointyBlock -- a shape the
-# converter does not build yet, so it must not render an implicit-topic block
-# that has swallowed the binding.
-throws-like { Q[with 1 -> $a { say $a }].AST }, Exception,
-    '`with` with an explicit signature is still an explicit boundary';
+# A pointy `with` renders its parameter as raku's `PointyBlock` (the parser
+# records the written parameter), not as an implicit-topic block that has
+# swallowed the binding. The pointy `else` is still a boundary.
+ok Q[with 1 -> $a { say $a }].AST.gist.contains('RakuAST::PointyBlock.new('),
+    '`with` with an explicit signature renders a PointyBlock';
+nok Q[with 1 -> $a { say $a }].AST.gist.contains('__with_tmp'),
+    '... without its __with_tmp_N temporary';
 throws-like { Q[with 1 { say 2 } else -> $p { say $p }].AST }, Exception,
     'a pointy `else` on a with chain is an explicit boundary too';
 
