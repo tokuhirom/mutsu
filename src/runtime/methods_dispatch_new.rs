@@ -875,8 +875,12 @@ impl Interpreter {
                 continue;
             };
             if let Some(value) = attributes.get(attr_sym).cloned() {
+                // `has Str:D @.e` is an `Array[Str:D]`; the smiley is recorded
+                // apart from the type constraint (`attribute_smileys`).
+                let elem_type =
+                    self.attribute_reported_constraint(cn_resolved, &attr.name, elem_type);
                 let tagged =
-                    self.finalize_typed_container_attr(&attr.name, attr.sigil, elem_type, value)?;
+                    self.finalize_typed_container_attr(&attr.name, attr.sigil, &elem_type, value)?;
                 attributes.insert(attr_sym, tagged);
             }
         }
