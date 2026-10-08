@@ -82,6 +82,7 @@ impl Interpreter {
             | OpCode::CaptureRwArgCell
             | OpCode::CaptureVarCell
             | OpCode::Concat
+            | OpCode::ConsumeReifiedSeq
             | OpCode::ContainerEq(..)
             | OpCode::ContainerEqDeconted { .. }
             | OpCode::ContainerEqIndexed { .. }
