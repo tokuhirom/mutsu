@@ -3946,6 +3946,13 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     parts.push(Expr::DoStmt(Box::new(Stmt::Block(lower_block(seg)?))));
                     continue;
                 }
+                // `"a$(EXPR)b"` is the parser's `DoStmt(Expr(EXPR))`.
+                if seg.class == RakuAstClass::ContextualizerItem
+                    && let Some(contents) = super::contextualizer::lower_segment(seg)?
+                {
+                    parts.push(Expr::DoStmt(Box::new(Stmt::Expr(contents))));
+                    continue;
+                }
                 parts.push(lower_expr(seg)?);
             }
             Ok(Expr::StringInterpolation(parts))

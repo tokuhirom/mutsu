@@ -57,6 +57,38 @@ pub(super) fn convert(kind: ContextKind, inner: &Expr) -> Result<RakuAstNode, Ru
     })
 }
 
+/// The `$(EXPR)` of an interpolated string: the parser spells it
+/// `DoStmt(Expr(EXPR))`, raku `Contextualizer::Item(StatementSequence(..))`.
+// Cost: O(n), n = nodes of the contents.
+pub(super) fn convert_segment(contents: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class: RakuAstClass::ContextualizerItem,
+        fields: vec![node_field(
+            None,
+            sequence(Some(statement_expression(convert_expr(contents)?))),
+        )],
+    })
+}
+
+/// The inverse of [`convert_segment`]: the contents of a one-expression
+/// `Contextualizer::Item` segment, `None` for any other shape.
+// Cost: O(n), n = nodes of the contents.
+pub(super) fn lower_segment(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
+    let target = named_child_or_positional(node)?;
+    if target.class != RakuAstClass::StatementSequence {
+        return Ok(None);
+    }
+    let [_] = target.fields.as_slice() else {
+        return Ok(None);
+    };
+    let statement = named_child_or_positional(target)?;
+    if statement.class != RakuAstClass::StatementExpression {
+        return Ok(None);
+    }
+    let expression = super::lower::named_child(statement, "expression")?;
+    Ok(Some(lower_expr(expression)?))
+}
+
 fn sequence(statement: Option<RakuAstNode>) -> RakuAstNode {
     RakuAstNode {
         class: RakuAstClass::StatementSequence,

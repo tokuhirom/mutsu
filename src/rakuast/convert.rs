@@ -3963,6 +3963,8 @@ pub(super) fn interp_segment(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // wrapper. Measured against rakudo 2026.07.
         Expr::DoStmt(inner) => match inner.as_ref() {
             Stmt::Block(body) => block_node(body),
+            // `"a$(1 + 2)b"`: the item contextualizer around the contents.
+            Stmt::Expr(contents) => super::contextualizer::convert_segment(contents),
             _ => convert_expr(expr),
         },
         other => match super::match_vars::convert_interpolated(other) {
