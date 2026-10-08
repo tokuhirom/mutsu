@@ -24,7 +24,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("plus", plus),
     row!("whatever", whatever),
     row!("Str", text),
-    row!("gist", raku),
+    row!("gist", gist),
     row!("raku", raku),
     row!("WHICH", which),
     row!("Version", itself),
@@ -47,8 +47,17 @@ pub(crate) fn text(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     }
 }
 
-/// `Version.gist` and `Version.raku`: the `v` literal form (`v1.2.3+`), or
-/// `Version.new('..')` when the text has no literal form.
+/// `Version.gist`: `v` and the text, always (`vTrue`).
+// Cost: O(n), n = chars of the rendering.
+pub(crate) fn gist(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Version { .. } => Some(Ok(Value::str(format!("v{}", target.to_string_value())))),
+        _ => None,
+    }
+}
+
+/// `Version.raku`: the `v` literal form (`v1.2.3+`), or `Version.new('..')`
+/// when the text has no literal form.
 // Cost: O(n), n = chars of the rendering.
 pub(crate) fn raku(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
