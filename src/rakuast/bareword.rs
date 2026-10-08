@@ -186,6 +186,16 @@ fn insert_declared_type(name: Symbol, out: &mut HashMap<String, DeclaredKind>) {
     }
 }
 
+/// Record a sigilless term. A routine of the same name loses to it: the unit
+/// scan has no scopes, and a `\\d` parameter reads as the term inside the sub
+/// that also happens to be called `d` elsewhere.
+fn insert_term(out: &mut HashMap<String, DeclaredKind>, name: String) {
+    let kind = out.entry(name).or_insert(DeclaredKind::Term);
+    if *kind == DeclaredKind::Routine {
+        *kind = DeclaredKind::Term;
+    }
+}
+
 /// The names a statement list declares, at any depth: raku resolves a name
 /// declared anywhere the reference can see it, and a bareword that reaches
 /// conversion at all was already accepted by the parser. So the scan enters
@@ -249,9 +259,7 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 // `my \x = 5` / `my \x := $s` declares the term `x`.
                 Stmt::SyntheticBlock(_) => {
                     if let Some(decl) = crate::ast::sigilless_decl::declaration(stmt) {
-                        self.0
-                            .entry(decl.name.to_string())
-                            .or_insert(DeclaredKind::Term);
+                        insert_term(self.0, decl.name.to_string());
                     }
                 }
                 Stmt::VarDecl {
@@ -278,6 +286,16 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                     for composed in self.compositions(*name).into_iter().skip(1) {
                         self.0.insert(composed.resolve(), DeclaredKind::Routine);
                     }
+                    self.0
+                        .entry(name.resolve())
+                        .or_insert(DeclaredKind::Routine);
+                }
+                // Any other sub the unit declares: a bare mention of its name
+                // is an argument-less call (`sub f { }; f`, measured on 2026.09).
+                Stmt::SubDecl { name, .. } => {
+                    self.0
+                        .entry(name.resolve())
+                        .or_insert(DeclaredKind::Routine);
                 }
                 _ => {}
             }
@@ -305,7 +323,7 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 ..
             } = expr
             {
-                self.0.entry(param.clone()).or_insert(DeclaredKind::Term);
+                insert_term(self.0, param.clone());
             }
             walk_expr(self, expr);
         }
@@ -314,9 +332,7 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
             // A sigilless parameter (`\x`, `-> \v`) is a term; a `+a` /
             // `|c` slurpy carries the same flag and renders the same way.
             if param.sigilless && !param.name.is_empty() {
-                self.0
-                    .entry(param.name.clone())
-                    .or_insert(DeclaredKind::Term);
+                insert_term(self.0, param.name.clone());
             }
             // A `::T` capture declares the type name `T` (`sub f(::T $x) { T }`
             // renders `T` as a `Type::Simple`, measured on 2026.09).
