@@ -191,7 +191,8 @@ pub(crate) fn decode_bytes_with_encoding_label(
 /// rest of the stream, so it always ends on a code point boundary (#9226).
 // Cost: O(n), n = bytes.
 pub(crate) fn decode_utf8_handle_text(bytes: &[u8]) -> Result<String, RuntimeError> {
-    decode_bytes_with_builtin_encoding(bytes, "utf-8")
+    let bytes = bytes.strip_prefix("\u{FEFF}".as_bytes()).unwrap_or(bytes);
+    stream_decoder::decode_stream(stream_decoder::Codec::Utf8, bytes)
 }
 
 /// [`decode_utf8_handle_text`] for a record the caller owns: valid UTF-8 (the
