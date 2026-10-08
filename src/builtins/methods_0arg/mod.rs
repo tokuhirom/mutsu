@@ -128,20 +128,6 @@ pub(crate) fn parse_raku_int_from_str(s: &str) -> Option<Value> {
     None
 }
 
-/// Format a single item for 0-arg `.fmt()` on lists.
-/// Pairs format as "%s\t%s", other values as "%s".
-fn fmt_0arg_item(item: &Value) -> String {
-    match item.view() {
-        ValueView::Pair(k, v) => {
-            runtime::format_sprintf_args("%s\t%s", &[Value::str(k.to_string()), v.clone()])
-        }
-        ValueView::ValuePair(k, v) => {
-            runtime::format_sprintf_args("%s\t%s", &[k.clone(), v.clone()])
-        }
-        _ => runtime::format_sprintf("%s", Some(item)),
-    }
-}
-
 // ── 0-arg method dispatch ────────────────────────────────────────────
 /// Try to dispatch a 0-argument method call on a Value.
 /// Returns `Some(Ok(..))` / `Some(Err(..))` when handled, `None` to fall through.
@@ -820,15 +806,12 @@ fn dispatch_capture(
         "kv" => capture::kv(target, &[]),
         "pairs" => capture::pairs(target, &[]),
         "antipairs" => capture::antipairs(target, &[]),
-        "raku" | "perl" => Some(Ok(Value::str(crate::value::capture_text::capture_raku(
-            positional, named,
-        )))),
+        // The renderers the `Capture` rows share (`method_table::collection_render_names`).
+        "raku" | "perl" => crate::builtins::method_table::collection_render_names::raku(target, &[]),
         "gist" => Some(Ok(Value::str(crate::value::capture_text::capture_gist(
             positional, named,
         )))),
-        "Str" => Some(Ok(Value::str(crate::value::capture_text::capture_str(
-            positional, named,
-        )))),
+        "Str" => crate::builtins::method_table::collection_render_names::str_row(target, &[]),
         "Bool" => Some(Ok(Value::truth(
             !positional.is_empty() || !named.is_empty(),
         ))),

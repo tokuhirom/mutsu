@@ -126,3 +126,190 @@ pub(crate) fn native_contains_with_options(
         )))
     })
 }
+
+/// Format one item for 0-arg `.fmt()` on lists: a Pair formats as `%s\t%s`,
+/// any other value as `%s`.
+// Cost: O(n), n = chars of the rendered item.
+fn fmt_default_item(item: &Value) -> String {
+    match item.view() {
+        ValueView::Pair(k, v) => {
+            runtime::format_sprintf_args("%s\t%s", &[Value::str(k.to_string()), v.clone()])
+        }
+        ValueView::ValuePair(k, v) => {
+            runtime::format_sprintf_args("%s\t%s", &[k.clone(), v.clone()])
+        }
+        _ => runtime::format_sprintf("%s", Some(item)),
+    }
+}
+
+/// `.fmt` on a collection or a scalar, for the three forms `fmt`, `fmt($format)`
+/// and `fmt($format, $separator)`: the one implementation the `fmt` rows
+/// (`method_table::collections::fmt`) and the 0-, 1- and 2-argument cascades share
+/// (ADR-11276, the rendering names).
+///
+/// The items are formatted by `format_sprintf`, which cannot dispatch a user
+/// `.Str`/`.Int`/`.Numeric`, so a `$format` with a directive over an item that may
+/// carry one (`fmt_value_needs_coercion`) and a `Format` object as `$format`
+/// decline (`None`) to the interpreter (`dispatch_fmt_with_user_coercion`). A
+/// positional collection joins its items with a space, an associative one its
+/// pairs with a newline, unless `$separator` says otherwise.
+// Cost: O(f + n), f = chars of the format, n = chars of the rendering; the
+// coercion probe adds O(e), e = items.
+pub(crate) fn fmt_native(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let default_sep = args.len() < 2;
+    let (fmt, sep) = match args {
+        [] => return fmt_default(target),
+        [fmt] => (fmt, None),
+        [fmt, sep] => (fmt, Some(sep.to_string_value())),
+        _ => return None,
+    };
+    // A Format object is handled by the slow-path Format dispatch (arity-aware
+    // batching, separators, X::Str::Sprintf::Directives::Count).
+    if matches!(fmt.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Format")
+    {
+        return None;
+    }
+    let fmt = fmt.to_string_value();
+    // A format with no value-consuming directive never reads an item, so no
+    // coercion can be needed: skip the coercion probe entirely.
+    let has_directives = default_sep && runtime::sprintf_directive_count(&fmt) > 0;
+    let join = |parts: Vec<String>, default: &str| {
+        Some(Ok(Value::str(parts.join(sep.as_deref().unwrap_or(default)))))
+    };
+    match target.view() {
+        ValueView::Hash(items) => {
+            if has_directives && items.iter().any(|(_, v)| fmt_value_needs_coercion(v)) {
+                return None;
+            }
+            join(
+                items
+                    .iter()
+                    .map(|(k, v)| {
+                        runtime::format_sprintf_args(&fmt, &[Value::str(k.to_string()), v.clone()])
+                    })
+                    .collect(),
+                "\n",
+            )
+        }
+        ValueView::Bag(items, _) => {
+            if has_directives
+                && items
+                    .iter()
+                    .any(|(k, _)| fmt_value_needs_coercion(&items.typed_key(k)))
+            {
+                return None;
+            }
+            join(
+                items
+                    .iter()
+                    .map(|(k, v)| {
+                        runtime::format_sprintf_args(
+                            &fmt,
+                            &[items.typed_key(k), Value::from_bigint(v.clone())],
+                        )
+                    })
+                    .collect(),
+                "\n",
+            )
+        }
+        ValueView::Set(items, _) => {
+            if has_directives
+                && items
+                    .iter()
+                    .any(|k| fmt_value_needs_coercion(&items.typed_key(k)))
+            {
+                return None;
+            }
+            join(
+                items
+                    .iter()
+                    .map(|k| runtime::format_sprintf_args(&fmt, &[items.typed_key(k), Value::TRUE]))
+                    .collect(),
+                "\n",
+            )
+        }
+        ValueView::Mix(items, _) => {
+            if has_directives
+                && items
+                    .iter()
+                    .any(|(k, _)| fmt_value_needs_coercion(&items.typed_key(k)))
+            {
+                return None;
+            }
+            join(
+                items
+                    .iter()
+                    .map(|(k, v)| {
+                        runtime::format_sprintf_args(&fmt, &[items.typed_key(k), Value::num(*v)])
+                    })
+                    .collect(),
+                "\n",
+            )
+        }
+        _ if pair_key_value(target).is_some() && sep.is_none() => {
+            let (k, v) = pair_key_value(target)?;
+            if has_directives && (fmt_value_needs_coercion(&k) || fmt_value_needs_coercion(&v)) {
+                return None;
+            }
+            Some(Ok(Value::str(runtime::format_sprintf_args(&fmt, &[k, v]))))
+        }
+        _ if fmt_joinable_target(target) => {
+            // `as_list_items` bypasses itemization: `.fmt` still iterates the
+            // inner elements of `$[...]` / `$(...)`.
+            let items: Vec<Value> = match target.as_list_items() {
+                Some(inner) => inner.to_vec(),
+                None if sep.is_none() => runtime::value_to_list_for_receiver(target),
+                None => runtime::value_to_list(target),
+            };
+            if has_directives
+                && items.iter().any(|item| match pair_key_value(item) {
+                    Some((k, v)) => fmt_value_needs_coercion(&k) || fmt_value_needs_coercion(&v),
+                    None => fmt_value_needs_coercion(item),
+                })
+            {
+                return None;
+            }
+            join(
+                items
+                    .iter()
+                    .map(|item| fmt_single_or_pair(&fmt, item))
+                    .collect(),
+                " ",
+            )
+        }
+        _ if sep.is_none() => {
+            if has_directives && fmt_value_needs_coercion(target) {
+                return None;
+            }
+            Some(Ok(Value::str(runtime::format_sprintf(&fmt, Some(target)))))
+        }
+        // A separator on a scalar: `fmt` takes at most one argument there.
+        _ => Some(Err(RuntimeError::new(
+            "Too many positionals passed; expected 1 or 2 arguments but got 3",
+        ))),
+    }
+}
+
+/// `.fmt` with no argument: a pair formats as `key\tvalue` (an associative
+/// collection one per line), a positional collection joins its items with a
+/// space, anything else is its `%s`.
+// Cost: O(n), n = chars of the rendering.
+fn fmt_default(target: &Value) -> Option<Result<Value, RuntimeError>> {
+    let rendered = match target.view() {
+        ValueView::Hash(items) => items
+            .iter()
+            .map(|(k, v)| {
+                runtime::format_sprintf_args("%s\t%s", &[Value::str(k.to_string()), v.clone()])
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        ValueView::Pair(..) | ValueView::ValuePair(..) => fmt_default_item(target),
+        _ if fmt_joinable_target(target) => runtime::value_to_list(target)
+            .into_iter()
+            .map(|item| fmt_default_item(&item))
+            .collect::<Vec<_>>()
+            .join(" "),
+        _ => runtime::format_sprintf("%s", Some(target)),
+    };
+    Some(Ok(Value::str(rendered)))
+}

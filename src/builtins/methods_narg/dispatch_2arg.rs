@@ -153,78 +153,8 @@ pub(crate) fn native_method_2arg(
             target,
             &[arg1.clone(), arg2.clone()],
         ),
-        "fmt" => {
-            // A Format object argument is handled by the slow-path Format dispatch.
-            if matches!(arg1.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Format")
-            {
-                return None;
-            }
-            let fmt_str = arg1.to_string_value();
-            let sep = arg2.to_string_value();
-            if let ValueView::Hash(items) = target.view() {
-                // Hash.fmt(format, separator)
-                let rendered = items
-                    .iter()
-                    .map(|(k, v)| {
-                        runtime::format_sprintf_args(
-                            &fmt_str,
-                            &[Value::str(k.to_string()), v.clone()],
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                Some(Ok(Value::str(rendered)))
-            } else if let ValueView::Bag(items, _) = target.view() {
-                let rendered = items
-                    .iter()
-                    .map(|(k, v)| {
-                        runtime::format_sprintf_args(
-                            &fmt_str,
-                            &[items.typed_key(k), Value::from_bigint(v.clone())],
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                Some(Ok(Value::str(rendered)))
-            } else if let ValueView::Set(items, _) = target.view() {
-                let rendered = items
-                    .iter()
-                    .map(|k| {
-                        runtime::format_sprintf_args(&fmt_str, &[items.typed_key(k), Value::TRUE])
-                    })
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                Some(Ok(Value::str(rendered)))
-            } else if let ValueView::Mix(items, _) = target.view() {
-                let rendered = items
-                    .iter()
-                    .map(|(k, v)| {
-                        runtime::format_sprintf_args(
-                            &fmt_str,
-                            &[items.typed_key(k), Value::num(*v)],
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                Some(Ok(Value::str(rendered)))
-            } else if fmt_joinable_target(target) {
-                let items: Vec<Value> = if let Some(inner) = target.as_list_items() {
-                    inner.to_vec()
-                } else {
-                    runtime::value_to_list(target)
-                };
-                let rendered = items
-                    .into_iter()
-                    .map(|item| fmt_single_or_pair(&fmt_str, &item))
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                Some(Ok(Value::str(rendered)))
-            } else {
-                Some(Err(RuntimeError::new(
-                    "Too many positionals passed; expected 1 or 2 arguments but got 3",
-                )))
-            }
-        }
+        // The `fmt` rows' implementation (`method_table::collections::fmt`).
+        "fmt" => super::fmt_contains::fmt_native(target, &[arg1.clone(), arg2.clone()]),
         // Cost: O(k), k = chars returned, once the invocant's grapheme index is
         // cached (see `native_substr_slice`).
         "substr" => crate::builtins::substr::native_substr_slice(target, arg1, Some(arg2)),

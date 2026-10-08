@@ -244,15 +244,9 @@ pub(super) fn dispatch(
             }
         }
         ValueView::Str(_) => render(target, method),
-        ValueView::Array(_, kind) if method == "raku" || method == "perl" => {
-            if kind == crate::value::ArrayKind::Lazy {
-                Some(Ok(Value::str_from("[...]")))
-            } else {
-                Some(Ok(Value::str(raku_value(target))))
-            }
-        }
-        ValueView::Seq(_) if method == "raku" || method == "perl" => {
-            Some(Ok(Value::str(raku_value(target))))
+        // The `raku` rows' renderer (`method_table::collection_render_names`).
+        ValueView::Array(..) | ValueView::Seq(_) if method == "raku" || method == "perl" => {
+            crate::builtins::method_table::collection_render_names::raku(target, &[])
         }
         // Delegate to the single Slip renderer in `raku_repr` rather than
         // repeating it: this arm used to carry its own copy of the `Empty` /
@@ -277,7 +271,9 @@ pub(super) fn dispatch(
         // Sub/Routine/WeakSub: delegate to interpreter for proper raku/gist/Str
         ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => None,
         // `gist` was answered by `collection_gist` above.
-        ValueView::Pair(..) | ValueView::ValuePair(..) => Some(Ok(Value::str(raku_value(target)))),
+        ValueView::Pair(..) | ValueView::ValuePair(..) => {
+            crate::builtins::method_table::collection_render_names::raku(target, &[])
+        }
         ValueView::BigInt(i) => {
             // A BigInt is an integer (its `.^name` is `Int`); `.raku` must render
             // the plain integer, not a float (`100000000000000000000`, not
@@ -310,7 +306,7 @@ pub(super) fn dispatch(
         }
         // Delegate to raku_value which has cycle detection for self-referencing
         // hashes (e.g. %h<b> = %h).
-        ValueView::Hash(..) => Some(Ok(Value::str(raku_value(target)))),
+        ValueView::Hash(..) => crate::builtins::method_table::collection_render_names::raku(target, &[]),
         _ if target.is_range() && (method == "gist" || method == "raku" || method == "perl") => {
             crate::builtins::method_table::collection_render::range_render(target, &[])
         }

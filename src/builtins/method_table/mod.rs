@@ -62,7 +62,8 @@ mod table_const;
 // (`method_table::str::tclc`), whichever group directory holds them.
 pub(crate) use collections::{
     any_collection, capture, lazy, list, list_aggregate, list_transform, map, pair, positional,
-    quanthash, range, render as collection_render, seq, subscript,
+    quanthash, range, render as collection_render, render_names as collection_render_names, seq,
+    subscript,
 };
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
