@@ -1,45 +1,5 @@
 use v6;
 use Test;
-# TEMPORARY #9930 CI diagnostic -- remove.
-unless %*ENV<DIAG9930> {
-    %*ENV<DIAG9930> = '1';
-    my @variants = (
-        'base' => {},
-        'jit-off' => { MUTSU_JIT => 'off' },
-        'precomp-0' => { MUTSU_PRECOMP => '0' },
-        'bytecode-0' => { MUTSU_PRECOMP_BYTECODE => '0' },
-        'gc-off' => { MUTSU_GC => 'off' },
-        'gc-on' => { MUTSU_GC => 'on' },
-        'trir-0' => { MUTSU_TRIR => '0' },
-        'memo-0' => { MUTSU_PARSE_MEMO => '0' },
-        'fold-0' => { MUTSU_CONST_FOLD => '0' },
-    );
-    my @res;
-    my $first-err = '';
-    for @variants -> $v {
-        my %saved;
-        for $v.value.kv -> $k, $val { %saved{$k} = %*ENV{$k}; %*ENV{$k} = $val }
-        my $p = run $*EXECUTABLE, $?FILE, :out, :err;
-        my $e = $p.err.slurp(:close);
-        $p.out.slurp(:close);
-        for $v.value.keys -> $k { %*ENV{$k}:delete }
-        @res.push("{$v.key}={$p.exitcode}");
-        $first-err ||= $e.subst("\n", ' | ', :g) if $p.exitcode != 0;
-    }
-    my $bc = run $*EXECUTABLE, '--dump-bytecode', $?FILE, :out, :err;
-    my $bco = $bc.out.slurp(:close);
-    my $bcn = +$bco.lines.grep(/ConsumeReifiedSeq/);
-    my $ast = run $*EXECUTABLE, '--dump-ast', $?FILE, :out, :err;
-    my $asto = $ast.out.slurp(:close);
-    my $sugar-t = +$asto.lines.grep(/sugar.*true/);
-    my $sugar-f = +$asto.lines.grep(/sugar.*false/);
-    my $extra = "consume-ops={$bcn} sugar-true={$sugar-t} sugar-false={$sugar-f} exe={$*EXECUTABLE} cwd={$*CWD}";
-    if True {
-        say "Bail out! variants: {@res.join(' ')} $extra err1=[$first-err]";
-    }
-    else { say "1..1"; say "ok 1 - all variants pass: {@res.join(' ')}" }
-    exit 0;
-}
 
 # Array-contextualizing a Seq held in a scalar (`@$s`) reifies it into a
 # re-iterable list, matching Rakudo. A second `for @$s` / read must NOT throw
