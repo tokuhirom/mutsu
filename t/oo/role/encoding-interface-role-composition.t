@@ -1,6 +1,6 @@
 use Test;
 
-plan 2;
+plan 4;
 
 # Encoding::Decoder and Encoding::Encoder are composable interfaces in Raku,
 # even though mutsu also has native dispatch entries for their methods.
@@ -24,3 +24,8 @@ ok DecoderProbe.^roles.grep(*.^name eq 'Encoding::Decoder'),
     'Encoding::Decoder is composable';
 ok EncoderProbe.^roles.grep(*.^name eq 'Encoding::Encoder'),
     'Encoding::Encoder is composable';
+
+# The registry's encoder is Encoding::Encoder::Builtin doing the role (#11783).
+my $enc = Encoding::Registry.find("utf8").encoder;
+is $enc.^name, 'Encoding::Encoder::Builtin', 'builtin encoder class name';
+ok $enc.does(Encoding::Encoder), 'builtin encoder does Encoding::Encoder';

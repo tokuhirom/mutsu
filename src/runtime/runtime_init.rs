@@ -1367,12 +1367,12 @@ impl Interpreter {
             },
         );
         classes.insert(
-            "Encoding::Encoder".to_string(),
+            "Encoding::Encoder::Builtin".to_string(),
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 native_methods: ["encode-chars"].iter().map(|s| s.to_string()).collect(),
-                mro: sym_mro(&["Encoding::Encoder"]),
+                mro: sym_mro(&["Encoding::Encoder::Builtin"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -2610,6 +2610,10 @@ impl Interpreter {
         ccr.insert(
             "Encoding::Decoder::Builtin".to_string(),
             vec!["Encoding::Decoder".to_string()],
+        );
+        ccr.insert(
+            "Encoding::Encoder::Builtin".to_string(),
+            vec!["Encoding::Encoder".to_string()],
         );
         // Built-in type role composition
         ccr.insert(

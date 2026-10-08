@@ -1,7 +1,8 @@
 use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
-use crate::value::AttrMap;
+use crate::builtins::stream_decoder::{Codec, DecoderConfig, StreamDecoder, TextQueues};
+use crate::value::{AttrMap, BufBytes};
 use std::io::{Read, Write};
 
 /// Create a Buf Value from raw bytes.
@@ -59,108 +60,73 @@ impl ChunkSinks {
     }
 }
 
-/// Incrementally UTF-8-decode a Proc::Async output stream. Emits the decoded
-/// text through the supply channels, retains an INCOMPLETE trailing byte
-/// sequence in `pending` (so a multibyte character split across two reads is not
-/// mis-flagged) and the trailing *grapheme* in `held` (see below), and returns
-/// `true` when a genuinely malformed byte is hit — the caller then quits the
-/// supply, matching Rakudo ("stdout/stderr Supply quit on encoding error", roast
-/// S17-procasync/encoding.t).
+/// The text side of one Proc::Async output stream: the shared streaming
+/// decoder (#11783, `crate::builtins::stream_decoder`) over the bytes the
+/// reader thread has read so far. It is the same state machine behind
+/// `Encoding::Decoder::Builtin` and the `nqp::decoder*` ops, so a chunk
+/// boundary is handled exactly as Rakudo's decoder handles it:
 ///
-/// ## An EXTENDABLE final grapheme is held back
-///
-/// A decoder cannot know the last grapheme it decoded is finished: the next
-/// `read()` could start with a combining mark that extends it into a different
-/// grapheme. Rakudo's decoder therefore does not hand out such a trailing
-/// grapheme; it flushes it alone once the stream ends. That is observable at
-/// chunk boundaries — `printf "abc"; sleep 1; printf "def"` yields `"ab"`,
-/// `"cde"`, `"f"`, not `"abc"`, `"def"` — so mutsu holds it back too.
-///
-/// It is held back only when something *could* extend it
-/// ([`final_grapheme_is_unextendable`](crate::builtins::string_pos::final_grapheme_is_unextendable)). UAX #29 GB4 breaks after LF and after
-/// any Control unconditionally, so a chunk ending in a newline is delivered
-/// whole — which is what keeps line-oriented output streaming: a `.lines`
-/// consumer sees `Started\n` the moment the child writes it, instead of waiting
-/// for a read that may never come because the child is blocked waiting for the
-/// reply (`roast/S17-procasync/kill.t`). CR is the exception that stays held,
-/// since the next read may start with the LF that joins it.
-///
-/// This subsumes the narrower `\r` holdback that used to live here: `\r\n` is a
-/// single grapheme (UAX #29), so a trailing `\r` is held back as the final
-/// grapheme and is only ever emitted together with the `\n` that may follow it.
-/// That keeps the `translate_crlf` rewrite (whole-run `\r\n` -> `\n`, applied to
-/// stdout only — see the caller) from ever seeing a pair split across two chunks.
-///
-/// ## On a malformed byte, the read delivers nothing
-///
-/// Rakudo discards the whole pending decode when the stream goes bad, rather
-/// than flushing the valid prefix first: `printf "ok-"` then `printf "\377\377"`
-/// gives `"ok"` (the held-back `-` dies with the stream), and with both writes in
-/// one `read()` it gives `""`. So a malformed byte emits nothing at all from the
-/// current read and drops whatever is held.
-fn feed_utf8_incremental(
-    pending: &mut Vec<u8>,
-    new: &[u8],
-    sinks: &ChunkSinks,
-    collected: &mut String,
-    translate_crlf: bool,
-    held: &mut String,
-) -> bool {
-    pending.extend_from_slice(new);
-    let decoded_len = match std::str::from_utf8(pending) {
-        Ok(_) => pending.len(),
-        Err(e) => match e.error_len() {
-            // Incomplete trailing sequence: keep the tail for the next read.
-            None => e.valid_up_to(),
-            // A genuinely invalid byte: this read delivers nothing, and the
-            // held-back grapheme dies with the stream.
-            Some(_) => {
-                held.clear();
-                return true;
+/// * a final grapheme a later read could extend (a combining mark) is held
+///   back and flushed alone once the stream ends -- `printf "abc"; sleep 1;
+///   printf "def"` yields `"ab"`, `"cde"`, `"f"`. A chunk ending in a newline
+///   is delivered whole, which keeps line-oriented output streaming
+///   (`roast/S17-procasync/kill.t`);
+/// * a trailing `\r` is held until the byte after it is known, so the
+///   `\r\n` -> `\n` translation (stdout only) never sees a split pair;
+/// * a malformed byte, or an incomplete sequence at the end of the stream,
+///   quits the supply and drops whatever is held (roast
+///   S17-procasync/encoding.t).
+struct ProcTextStream {
+    cfg: DecoderConfig,
+    bytes: BufBytes,
+    queues: TextQueues,
+}
+
+impl ProcTextStream {
+    fn new(translate_crlf: bool) -> Self {
+        ProcTextStream {
+            cfg: DecoderConfig {
+                codec: Codec::Utf8,
+                translate_nl: translate_crlf,
+                line_separators: Vec::new(),
+            },
+            bytes: BufBytes::new(),
+            queues: TextQueues::default(),
+        }
+    }
+
+    fn decoder(&mut self) -> StreamDecoder<'_> {
+        StreamDecoder {
+            cfg: &self.cfg,
+            bytes: &mut self.bytes,
+            q: &mut self.queues,
+        }
+    }
+
+    /// Decode a read and deliver the text that is final. `true` when the
+    /// stream is malformed -- the caller quits the supply.
+    fn feed(&mut self, new: &[u8], sinks: &ChunkSinks, collected: &mut String) -> bool {
+        self.bytes.extend_from_slice(new);
+        match self.decoder().take_available_chars() {
+            Ok(text) => {
+                send_chunk(text, sinks, collected);
+                false
             }
-        },
-    };
-    let decoded = std::str::from_utf8(&pending[..decoded_len]).unwrap_or("");
-    emit_decoded_chunk(decoded, sinks, collected, translate_crlf, held);
-    pending.drain(..decoded_len);
-    false
-}
+            Err(_) => true,
+        }
+    }
 
-/// Append `s` to the held-back text and emit it, less a final grapheme that a
-/// later read could still extend (see [`feed_utf8_incremental`]), applying the
-/// `\r\n` -> `\n` translation when `translate_crlf` is set.
-fn emit_decoded_chunk(
-    s: &str,
-    sinks: &ChunkSinks,
-    collected: &mut String,
-    translate_crlf: bool,
-    held: &mut String,
-) {
-    held.push_str(s);
-    if held.is_empty() {
-        return;
+    /// The stream has ended: deliver the held-back text. `true` when bytes
+    /// that do not form a whole character are left over.
+    fn finish(&mut self, sinks: &ChunkSinks, collected: &mut String) -> bool {
+        match self.decoder().take_all_chars() {
+            Ok(text) => {
+                send_chunk(text, sinks, collected);
+                false
+            }
+            Err(_) => true,
+        }
     }
-    let split = if crate::builtins::string_pos::final_grapheme_is_unextendable(held) {
-        held.len()
-    } else {
-        crate::builtins::string_pos::last_grapheme_start(held)
-    };
-    if split == 0 {
-        return;
-    }
-    let text: String = held[..split].to_string();
-    held.drain(..split);
-    send_chunk(text, sinks, collected, translate_crlf);
-}
-
-/// Flush a [`feed_utf8_incremental`] run's held-back final grapheme once the
-/// stream has genuinely ended, so nothing extends it any more. Not called when
-/// the stream quit on an encoding error — there the held text is discarded.
-fn flush_held(held: &str, sinks: &ChunkSinks, collected: &mut String, translate_crlf: bool) {
-    if held.is_empty() {
-        return;
-    }
-    send_chunk(held.to_string(), sinks, collected, translate_crlf);
 }
 
 /// Deliver one decoded chunk to the supplies and to the whole-run `collected`
@@ -172,14 +138,10 @@ fn flush_held(held: &str, sinks: &ChunkSinks, collected: &mut String, translate_
 /// sound *because* of the final-grapheme holdback — no grapheme spans two
 /// chunks, so normalizing each one gives the same answer as normalizing the
 /// whole stream. (`is_nfc_quick` inside makes this free for ASCII output.)
-fn send_chunk(mut text: String, sinks: &ChunkSinks, collected: &mut String, translate_crlf: bool) {
-    if translate_crlf && text.contains('\r') {
-        text = text.replace("\r\n", "\n");
-    }
+fn send_chunk(text: String, sinks: &ChunkSinks, collected: &mut String) {
     if text.is_empty() {
         return;
     }
-    let text = crate::builtins::nfc(text);
     sinks.emit(Value::str(text.clone()));
     collected.push_str(&text);
 }
@@ -816,8 +778,7 @@ impl Interpreter {
                                     let mut collected = String::new();
                                     let mut raw: Vec<u8> = Vec::new();
                                     let mut buf = [0u8; 4096];
-                                    let mut pending: Vec<u8> = Vec::new();
-                                    let mut held = String::new();
+                                    let mut text = ProcTextStream::new(true);
                                     let mut quit = false;
                                     loop {
                                         match crate::gc::block_quiescent(|| stdout.read(&mut buf)) {
@@ -828,14 +789,7 @@ impl Interpreter {
                                                     if !sinks.is_empty() {
                                                         sinks.emit(make_buf_value(&buf[..n]));
                                                     }
-                                                } else if feed_utf8_incremental(
-                                                    &mut pending,
-                                                    &buf[..n],
-                                                    &sinks,
-                                                    &mut collected,
-                                                    true,
-                                                    &mut held,
-                                                ) {
+                                                } else if text.feed(&buf[..n], &sinks, &mut collected) {
                                                     sinks.quit(
                                                         malformed_utf8_quit_value(),
                                                         &merged_quit,
@@ -848,8 +802,11 @@ impl Interpreter {
                                         }
                                     }
                                     if !quit {
-                                        flush_held(&held, &sinks, &mut collected, true);
-                                        sinks.stream_done();
+                                        if text.finish(&sinks, &mut collected) {
+                                            sinks.quit(malformed_utf8_quit_value(), &merged_quit);
+                                        } else {
+                                            sinks.stream_done();
+                                        }
                                     }
                                     // Retain the raw bytes so the await-time replay can
                                     // decode them with the stream's effective encoding
@@ -885,8 +842,7 @@ impl Interpreter {
                                     let mut collected = String::new();
                                     let mut raw: Vec<u8> = Vec::new();
                                     let mut buf = [0u8; 4096];
-                                    let mut pending: Vec<u8> = Vec::new();
-                                    let mut held = String::new();
+                                    let mut text = ProcTextStream::new(false);
                                     let mut quit = false;
                                     loop {
                                         match crate::gc::block_quiescent(|| stderr.read(&mut buf)) {
@@ -897,14 +853,7 @@ impl Interpreter {
                                                     if !sinks.is_empty() {
                                                         sinks.emit(make_buf_value(&buf[..n]));
                                                     }
-                                                } else if feed_utf8_incremental(
-                                                    &mut pending,
-                                                    &buf[..n],
-                                                    &sinks,
-                                                    &mut collected,
-                                                    false,
-                                                    &mut held,
-                                                ) {
+                                                } else if text.feed(&buf[..n], &sinks, &mut collected) {
                                                     sinks.quit(
                                                         malformed_utf8_quit_value(),
                                                         &merged_quit,
@@ -917,8 +866,11 @@ impl Interpreter {
                                         }
                                     }
                                     if !quit {
-                                        flush_held(&held, &sinks, &mut collected, false);
-                                        sinks.stream_done();
+                                        if text.finish(&sinks, &mut collected) {
+                                            sinks.quit(malformed_utf8_quit_value(), &merged_quit);
+                                        } else {
+                                            sinks.stream_done();
+                                        }
                                     }
                                     if let Some(sid) = sid {
                                         set_supply_collected_bytes(sid, raw);

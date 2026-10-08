@@ -506,7 +506,7 @@ impl Interpreter {
                 | "FakeScheduler"
                 | "Cancellation"
                 | "Encoding::Builtin"
-                | "Encoding::Encoder"
+                | "Encoding::Encoder::Builtin"
                 | "Encoding::Decoder::Builtin"
                 | "VM"
                 | "IO::Notification::Change"
@@ -554,7 +554,7 @@ impl Interpreter {
                             | "FakeScheduler"
                             | "Cancellation"
                             | "Encoding::Builtin"
-                            | "Encoding::Encoder"
+                            | "Encoding::Encoder::Builtin"
                             | "Encoding::Decoder::Builtin"
                             | "VM"
                             | "IO::Notification::Change"
@@ -640,7 +640,7 @@ impl Interpreter {
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),
             "Cancellation" => self.native_cancellation(attributes, method),
             "Encoding::Builtin" => Self::native_encoding_builtin(attributes, method, &args),
-            "Encoding::Encoder" => Self::native_encoding_encoder(attributes, method, &args),
+            "Encoding::Encoder::Builtin" => Self::native_encoding_encoder(attributes, method, &args),
             "Encoding::Decoder::Builtin" => self.native_stream_decoder(attributes, method, &args),
             "VM" => self.native_vm(attributes, method, &args),
             "IO::Notification::Change" => self
