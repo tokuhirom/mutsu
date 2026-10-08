@@ -203,6 +203,7 @@ t/collections/hyper-operand-element-container.t
 t/collections/immutable-element-store-and-bind.t
 t/collections/is-array-subclass-compound-assign.t
 t/collections/is-list-subclass.t
+t/collections/is-map-subclass-qualified-raku.t
 t/collections/itemized-array-keys-values.t
 t/collections/itemized-container-raku-gist.t
 t/collections/itemized-context-paren.t
@@ -662,9 +663,11 @@ t/collections/subscript/subscript-adverb-lazy-truncate.t
 t/collections/subscript/subscript-adverb-whatever-missing.t
 t/collections/subscript/subscript-adverbs.t
 t/collections/subscript/subscript-delete-cond-exists.t
+t/collections/subscript/subscript-key-mutator-rows.t
 t/collections/subscript/subscript-kind-associative.t
 t/collections/subscript/subscript-kind-positional.t
 t/collections/subscript/subscript-pair-element-container.t
+t/collections/subscript/subscript-pos-mutator-rows.t
 t/collections/subscript/subscript-semilist-trailing-semicolon.t
 t/collections/subscript/subscript-sequence-seed.t
 t/collections/subscript/subscript-type-object-index.t
@@ -1173,6 +1176,7 @@ t/control/block-local-my-no-leak.t
 t/control/block-local-my-scope.t
 t/control/block-newline-ends-junction-statement.t
 t/control/block-phasers-split.t
+t/control/block-position-parity.t
 t/control/block-restore-slot-authoritative.t
 t/control/block-scope-code-vars.t
 t/control/block-scope-env-tier.t
@@ -1302,9 +1306,11 @@ t/control/ternary-call-arg.t
 t/control/ternary-container-increment.t
 t/control/ternary-dot-assign-branch.t
 t/control/ternary-lvalue-assign-reassoc.t
+t/control/ternary-lvalue-assignment.t
 t/control/ternary-lvalue.t
 t/control/ternary-second-part-diagnoses.t
 t/control/ternary-self-then-branch.t
+t/control/ternary-sigilless-compound-assign.t
 t/control/ternary-sigilless-term-then-branch.t
 t/control/ternary-type-branch.t
 t/control/topic-assign-in-nested-block.t
@@ -1406,6 +1412,7 @@ t/exceptions/exception-failure-method.t
 t/exceptions/exception-message-fidelity.t
 t/exceptions/exception-message-materialize.t
 t/exceptions/exception-messages.t
+t/exceptions/exception-method-rows.t
 t/exceptions/exception-methods.t
 t/exceptions/exception-rendering-and-phasers.t
 t/exceptions/exception-resume-cross-frame.t
@@ -1452,6 +1459,7 @@ t/exceptions/perl5var-special.t
 t/exceptions/phaser-begin-nested-eval-error.t
 t/exceptions/private-method-binding-error.t
 t/exceptions/proto-without-candidates-error.t
+t/exceptions/readonly-assign-exception-taxonomy.t
 t/exceptions/repeat-call-backtrace-frame.t
 t/exceptions/resumable-control-signal-indirect-call.t
 t/exceptions/resume.t
@@ -1527,6 +1535,7 @@ t/grammar/dispatch-token-cross-stack-nesting.t
 t/grammar/eval-grammar-parse.t
 t/grammar/grammar-action-capture-env-isolation.t
 t/grammar/grammar-action-capture-order.t
+t/grammar/grammar-action-failed-alternative.t
 t/grammar/grammar-action-generic-rule-category.t
 t/grammar/grammar-action-made-in-assertion.t
 t/grammar/grammar-action-math-method.t
@@ -1689,6 +1698,7 @@ t/io/chmod-allomorph.t
 t/io/chmod-mode-listop-postfix.t
 t/io/code-block-io-handle-table.t
 t/io/copy-param-shadows-caller-readonly.t
+t/io/core-io-path-candidate-outranks-user-multi.t
 t/io/custom-io-handle-read-pushback.t
 t/io/custom-io-handle-write-read.t
 t/io/custom-out-print-accumulation.t
@@ -1720,6 +1730,7 @@ t/io/io-getc-grapheme.t
 t/io/io-handle-default-path.t
 t/io/io-handle-eqv-ignores-open-state.t
 t/io/io-handle-lines-words-seq.t
+t/io/io-handle-malformed-utf8-messages.t
 t/io/io-handle-method-rows.t
 t/io/io-handle-open-display-path.t
 t/io/io-handle-open-mutates-receiver.t
@@ -2000,6 +2011,7 @@ t/lang/operators/reduction-user-op-arity.t
 t/lang/operators/reduction.t
 t/lang/operators/sequence-op-endpoint-arity.t
 t/lang/operators/sequence-op-in-call-args.t
+t/lang/operators/short-circuit-compound-assign.t
 t/lang/operators/stacked-prefix-operators.t
 t/lang/operators/user-infix-across-newline.t
 t/lang/operators/user-infix-core-rank-memo.t
@@ -2111,6 +2123,7 @@ t/lang/quoting/quote-heredoc-forms.t
 t/lang/quoting/quote-op-hyphen-identifier.t
 t/lang/quoting/quote-op-name-fat-arrow-key.t
 t/lang/quoting/quoted-brace-before-interpolation.t
+t/lang/quoting/quoting.t
 t/lang/quoting/qx-quote.t
 t/lang/quoting/slip-prefix-quote-word-list.t
 t/lang/quoting/string-interpolation-hyphen-boundary.t
@@ -2223,6 +2236,7 @@ t/modules/compunit/repo-resolve-bundled.t
 t/modules/compunit/require-toplevel-routine-scoped-to-compunit.t
 t/modules/compunit/resources-outside-distribution-is-nil.t
 t/modules/compunit/role-method-sees-its-own-compunit-scope.t
+t/modules/compunit/signature-literal-precomp-bytecode-hit.t
 t/modules/compunit/signature-literal-precomp-warm-cache.t
 t/modules/compunit/trait-mod-candidate-is-compunit-scoped.t
 t/modules/constant-package-alias-container-store.t
@@ -2829,6 +2843,7 @@ t/nativecall/unit-class-repr-paren-trait.t
 t/nativecall/unknown-trait-with-nativecall-loaded.t
 t/nativecall/user-type-shadows-nativecall-type-name.t
 t/oo/anon-value-mixin-order-and-stacking.t
+t/oo/assoc-mixin-slice-adverbs.t
 t/oo/attribute/accessor-fast-path.t
 t/oo/attribute/accessor-lane.t
 t/oo/attribute/accessor-list-element-assign-ro.t
@@ -3182,6 +3197,8 @@ t/oo/method/coercion-method-captured-writeback.t
 t/oo/method/coercion-param-type-object-user-method.t
 t/oo/method/coercion-str-method-dispatch.t
 t/oo/method/collection-aggregate-method-rows.t
+t/oo/method/collection-fmt-method-rows.t
+t/oo/method/collection-raku-str-method-rows.t
 t/oo/method/collection-render-method-rows.t
 t/oo/method/collection-transform-method-rows.t
 t/oo/method/colon-method-arg-list-infix.t
@@ -3423,6 +3440,7 @@ t/oo/method/self-method-decontainerizes.t
 t/oo/method/self-term-in-method-closure.t
 t/oo/method/seq-method-rows.t
 t/oo/method/set-op-after-method.t
+t/oo/method/signature-render-method-rows.t
 t/oo/method/sink-method-context.t
 t/oo/method/sprintf-method-form-arg-count.t
 t/oo/method/sprintf-method-form-flatten.t
@@ -3539,6 +3557,7 @@ t/oo/role/classhow-parents-exclude-roles.t
 t/oo/role/classhow-roles-to-compose.t
 t/oo/role/coerce-into-role-inheriting-builtin.t
 t/oo/role/concrete-role-how-compose.t
+t/oo/role/constant-hash-keeps-role-mixin.t
 t/oo/role/curried-role-name-is-argument-types.t
 t/oo/role/curried-role-value-arguments.t
 t/oo/role/custom-how-explicit-self-and-role-default.t
@@ -3718,6 +3737,7 @@ t/oo/role/role-pun-private-code-attribute.t
 t/oo/role/role-punned-is-type.t
 t/oo/role/role-qualified-constraint-type-capture.t
 t/oo/role/role-qualified-is-parent.t
+t/oo/role/role-qualified-method-through-composed-role.t
 t/oo/role/role-required-method-name-based.t
 t/oo/role/role-required-universal-method.t
 t/oo/role/role-samename-composition-and-nested-class.t
@@ -3983,6 +4003,7 @@ t/rakuast/rakuast-multidim-delete.t
 t/rakuast/rakuast-named-parameters.t
 t/rakuast/rakuast-named-type-arguments.t
 t/rakuast/rakuast-names-and-literals.t
+t/rakuast/rakuast-nonlvalue-assignment.t
 t/rakuast/rakuast-nqp-terms.t
 t/rakuast/rakuast-operator-name-colonpairs.t
 t/rakuast/rakuast-operators.t
@@ -5341,6 +5362,7 @@ t/types/bool-raku-repr.t
 t/types/buf-and-list-mutators.t
 t/types/buf-decode-one-decoder-parity.t
 t/types/buf-decode.t
+t/types/buf-item-concat.t
 t/types/buf-mutator-rows.t
 t/types/buf-nested-index-assign-preserves-buf.t
 t/types/buf-numeric-context.t
@@ -5689,6 +5711,7 @@ t/types/string/str-operator-forms-parity.t
 t/types/string/str-per-call-bounds.t
 t/types/string/str-positional-grapheme-index.t
 t/types/string/str-positioned-search-graphemes.t
+t/types/string/str-raku-combining-mark.t
 t/types/string/str-strand-bind-not-materialized.t
 t/types/string/str-strands.t
 t/types/string/str-subclass-stringy-payload.t
@@ -5784,6 +5807,7 @@ t/vm/binding/assign-expr-container-copy.t
 t/vm/binding/assign-key-through-bound-alias.t
 t/vm/binding/assign-plain-scalar-store-fast-path.t
 t/vm/binding/assign-rhs-sequence-op.t
+t/vm/binding/assignment-ro-literal.t
 t/vm/binding/bind-alias-chain.t
 t/vm/binding/bind-alias-is-a-container.t
 t/vm/binding/bind-alias-recursive-frame-index.t
@@ -6096,6 +6120,7 @@ t/vm/scope/frame-lexical-inner-sub.t
 t/vm/scope/free-var-in-bare-block-lexical-scope.t
 t/vm/scope/free-var-store-ignores-caller-lexical-constraint.t
 t/vm/scope/is-default-scoped-to-declaration.t
+t/vm/scope/let-block-initializer-classifier.t
 t/vm/scope/let-temp.t
 t/vm/scope/lexical-amp-var-shadow-vm.t
 t/vm/scope/lexical-amp-var-slip-vm.t
