@@ -311,3 +311,9 @@ The steps:
   `use Test` load: **−1.2M** Ir. The price is +0.3M at startup, because the
   367 builtin class definitions are each allocated behind a reference count
   once per process.
+- **Step 2** (§2.4). Recording the Pod `Value`s turned out unnecessary. The load
+  facts hold the byte ranges of the source that Pod entries were read from
+  (`pod_ranges`), and a hit runs the same entry scanner over just those ranges.
+  A heredoc body inside a range, or a Pod error, records no ranges and the
+  whole source is scanned as before. Verify mode recomputes the ranges.
+  `use Test` load: **33.09M → 32.09M** Ir (−1.0M, same-session paired A/B).
