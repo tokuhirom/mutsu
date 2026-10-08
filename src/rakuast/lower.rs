@@ -1384,6 +1384,9 @@ fn regex_declaration_scope(node: &RakuAstNode) -> Result<(bool, bool), RuntimeEr
 }
 
 fn lower_regex_declaration(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if !node.fields.iter().any(|f| f.name == Some("name")) {
+        return Ok(Stmt::Expr(lower_anon_regex_declaration(node)?));
+    }
     let name = call_name_str(node)?;
     let body = named_child(node, "body")?;
     let declaration_kind = match node.class {
@@ -3824,6 +3827,41 @@ pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeE
     }
 }
 
+/// `regex { }` / `token { }` / `rule { }` without a name: the term the parser
+/// builds, a `Regex` value carrying its tree and signature.
+fn lower_anon_regex_declaration(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let kind = match node.class {
+        RakuAstClass::RegexDeclaration => crate::regex_tree::RegexDeclKind::Regex,
+        RakuAstClass::TokenDeclaration => crate::regex_tree::RegexDeclKind::Token,
+        RakuAstClass::RuleDeclaration => crate::regex_tree::RegexDeclKind::Rule,
+        _ => return Err(unsupported(node)),
+    };
+    if node
+        .fields
+        .iter()
+        .any(|f| matches!(f.name, Some("scope") | Some("multiness")))
+    {
+        return Err(unsupported(node));
+    }
+    let tree = RegexTree {
+        body: lower_regex_node(named_child(node, "body")?)?,
+        match_immediately: false,
+        adverbs: Vec::new(),
+        declaration_kind: Some(kind),
+    };
+    let pattern = crate::parser::finalize_anon_declarator_pattern(&tree.to_source(), kind);
+    let params = node
+        .fields
+        .iter()
+        .any(|f| f.name == Some("signature"))
+        .then(|| signature_positional_params(node))
+        .transpose()?
+        .map(|(_, defs)| defs);
+    Ok(Expr::Literal(
+        Value::anon_regex_code(pattern, params).with_regex_source_tree(tree),
+    ))
+}
+
 /// The execution value of a regex literal: what the parser builds from the
 /// same written adverbs (`rx:i/a/`, `m:g:x(2)/a/`), with the tree beside it.
 // Cost: O(n), n = size of the pattern and adverbs.
@@ -3858,6 +3896,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     }
     match node.class {
         RakuAstClass::OnlyStar => Ok(Expr::onlystar_dispatch()),
+        RakuAstClass::RegexDeclaration
+        | RakuAstClass::TokenDeclaration
+        | RakuAstClass::RuleDeclaration => lower_anon_regex_declaration(node),
         // `$<name>` / `@<name>`.
         RakuAstClass::VarNamedCapture => super::match_vars::lower(node),
         RakuAstClass::VarPositionalCapture => super::match_vars::lower_positional(node),

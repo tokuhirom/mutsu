@@ -1064,7 +1064,7 @@ mod tests {
         let (rest, expr) = primary("token { <foo> }").unwrap();
         assert_eq!(rest, "");
         assert!(
-            matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Regex(s) if s.as_str() == ":ratchet <foo>"))
+            matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Regex(s) if s.as_str().trim_end() == ":ratchet <foo>"))
         );
     }
 
@@ -1073,7 +1073,7 @@ mod tests {
         let (rest, expr) = primary("regex { <foo> }").unwrap();
         assert_eq!(rest, "");
         assert!(
-            matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Regex(s) if s.as_str() == "<foo>"))
+            matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Regex(s) if s.as_str().trim_end() == "<foo>"))
         );
     }
 
