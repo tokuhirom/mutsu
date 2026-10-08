@@ -28,6 +28,8 @@ pub(crate) mod datetime;
 pub(crate) mod instant;
 pub(crate) mod regex_match;
 pub(crate) mod temporal;
+pub(crate) mod temporal_edit;
+pub(crate) mod temporal_shift;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
@@ -42,4 +44,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     instant::INSTANT_OWN_ROWS,
     instant::DURATION_OWN_ROWS,
     regex_match::ROWS,
+    temporal_shift::ROWS,
+    temporal_edit::ROWS,
 ];
