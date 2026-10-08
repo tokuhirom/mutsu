@@ -29,6 +29,7 @@ mod truth;
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     any_collection::ROWS,
     render::WHICH_ROWS,
+    render::LIST_GIST_ROWS,
     render::QUANT_GIST_ROWS,
     render::QUANT_RAKU_ROWS,
     render::RANGE_ROWS,

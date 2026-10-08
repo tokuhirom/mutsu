@@ -29,6 +29,8 @@ macro_rules! rows {
 
 pub(super) static WHICH_ROWS: &[MethodRow] = rows!("WHICH" => which:
     "Array", "Hash", "Pair", "Range", "Set", "Bag", "Mix");
+pub(super) static LIST_GIST_ROWS: &[MethodRow] =
+    rows!("gist" => collection_gist: "List", "Seq", "Hash", "Pair");
 pub(super) static QUANT_GIST_ROWS: &[MethodRow] =
     rows!("gist" => quant_gist: "Set", "SetHash", "Bag", "BagHash", "Mix", "MixHash");
 pub(super) static QUANT_RAKU_ROWS: &[MethodRow] =
@@ -41,6 +43,15 @@ pub(super) static RANGE_ROWS: &[MethodRow] = &[MethodRow {
     flags: RowFlags::NONE,
     named: &[],
 }];
+
+/// `.gist` of a list, `Seq`, hash or pair: the renderer the cascade shares. It
+/// declines (`None`) a collection whose element may carry a user `gist`, which
+/// the interpreter path dispatches.
+// Cost: O(min(e, 100) * d + t), e = elements, d = rendered size of each shown
+// element, t = nodes `gist_route` walks.
+fn collection_gist(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    crate::builtins::methods_0arg::collection_gist::collection_gist(target)?
+}
 
 /// `.WHICH` of a collection or a range.
 // Cost: O(1) for an `Array`, `Hash` and `Pair` (a per-container id); O(n) for

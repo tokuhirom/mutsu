@@ -5,6 +5,7 @@ use num_traits::ToPrimitive;
 
 pub(crate) mod coercion;
 pub(crate) mod collection;
+pub(crate) mod collection_gist;
 mod dispatch_core_coerce;
 mod dispatch_core_list;
 pub(crate) mod dispatch_core_math;
