@@ -1187,6 +1187,7 @@ t/control/dotassign-store-and-container-topic.t
 t/control/double-statement-modifier-confused.t
 t/control/eager-gather-outer-local-writes.t
 t/control/enter-expr-inside-leave-phaser.t
+t/control/enter-phaser-our-later.t
 t/control/enter-phaser-rvalue.t
 t/control/eval-begin-phaser.t
 t/control/eval-type-decl-and-phaser-message.t
@@ -2883,6 +2884,7 @@ t/oo/attribute/attribute-type-lexical-class-introspection.t
 t/oo/attribute/attribute-undeclared.t
 t/oo/attribute/attribute-where-block-rejects-out-of-range.t
 t/oo/attribute/attribute-where-implicit-topic.t
+t/oo/attribute/attribute-where-nested-type-from-foreign-method.t
 t/oo/attribute/attribute-where-not-applied-to-same-named-lexical.t
 t/oo/attribute/attribute-where-rw-accessor.t
 t/oo/attribute/attribute-where-unset-not-checked.t
@@ -3338,6 +3340,7 @@ t/oo/method/my-multi-method.t
 t/oo/method/named-method-expression-position.t
 t/oo/method/nested-block-method-capture-persists.t
 t/oo/method/nested-class-in-method-is-named-under-owner.t
+t/oo/method/nested-class-relative-names-in-method.t
 t/oo/method/nested-index-method-no-writeback.t
 t/oo/method/nested-method-captured-writeback-coherence.t
 t/oo/method/nested-method-local-sub-code-var.t
@@ -3347,6 +3350,7 @@ t/oo/method/nextsame-in-qualified-method-call.t
 t/oo/method/nil-numeric-method-zero.t
 t/oo/method/numeric-coercion-method-rows.t
 t/oo/method/numeric-equality-falls-back-to-the-numeric-method.t
+t/oo/method/numeric-method-does-not-provide-str.t
 t/oo/method/perl5-unary-topic-method-arg.t
 t/oo/method/placeholder-named-in-method-do.t
 t/oo/method/plain-method-dispatch-boundary.t
@@ -4011,6 +4015,7 @@ t/rakuast/rakuast-source-forms.t
 t/rakuast/rakuast-statement-origin.t
 t/rakuast/rakuast-statement-prefix-binding.t
 t/rakuast/rakuast-statement-prefix-blorst.t
+t/rakuast/rakuast-string-item-segment.t
 t/rakuast/rakuast-sub-custom-traits.t
 t/rakuast/rakuast-sub-traits.t
 t/rakuast/rakuast-sub.t
@@ -4243,6 +4248,7 @@ t/regex/regex-decl-stmt-terminator.t
 t/regex/regex-declarative-modifiers.t
 t/regex/regex-declarator-block-comment.t
 t/regex/regex-dq-hex-escape.t
+t/regex/regex-embedded-code-blocks.t
 t/regex/regex-embedded-comment-brackets.t
 t/regex/regex-embedded-my-decl-value.t
 t/regex/regex-engine-only-compiled.t
@@ -5577,6 +5583,7 @@ t/types/numeric/rat-numerator-denominator-nude.t
 t/types/numeric/rat-numerator-uint-refinement-forwarding.t
 t/types/numeric/rat-overflow-dynamic-var.t
 t/types/numeric/rat-overflow-literal-arith.t
+t/types/numeric/rat-str-precision.t
 t/types/numeric/rat-subclass-payload.t
 t/types/numeric/rat.t
 t/types/numeric/roots-are-complex.t
