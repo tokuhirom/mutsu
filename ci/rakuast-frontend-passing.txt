@@ -538,6 +538,8 @@ t/collections/set-bag-mix/slip-quanthash-pairs.t
 t/collections/sigilless-bind-missing-element.t
 t/collections/subbuf-rw-tail.t
 t/collections/subscript/allomorph-positional-subscript.t
+t/collections/subscript/angle-subscript-ascii.t
+t/collections/subscript/angle-subscript-interpolation.t
 t/collections/subscript/angle-subscript-not-type-generic-args.t
 t/collections/subscript/angle-subscript-parens.t
 t/collections/subscript/angle-subscript-word-chars.t
@@ -565,6 +567,7 @@ t/collections/subscript/computed-slice-result.t
 t/collections/subscript/delete-pos-whatevercode-subscript.t
 t/collections/subscript/delete-through-a-call-result-subscript.t
 t/collections/subscript/do-given-for-slice-no-writeback.t
+t/collections/subscript/dotted-postcircumfix-subscripts.t
 t/collections/subscript/dotted-subscript-semilist.t
 t/collections/subscript/elem-index-meta.t
 t/collections/subscript/eval-context-slice5-residue.t
@@ -2276,6 +2279,7 @@ t/modules/import-export/export-term-vs-caller-scalar.t
 t/modules/import-export/export-trait-mod-dispatcher.t
 t/modules/import-export/exported-alias-reimport.t
 t/modules/import-export/exported-class-why-doc.t
+t/modules/import-export/exported-code-constant-reimport.t
 t/modules/import-export/exported-code-value-module-stash.t
 t/modules/import-export/exported-infix-candidate-family.t
 t/modules/import-export/exported-main-dispatch.t
@@ -2509,6 +2513,7 @@ t/modules/our-sub-rebinds-file-scope-lexical.t
 t/modules/our-sub-sibling-block-redeclaration.t
 t/modules/our-var-package-sync.t
 t/modules/our-var-package-write.t
+t/modules/outer-my-pseudo-package.t
 t/modules/outer-pseudo-package.t
 t/modules/package-array-push-vivify.t
 t/modules/package-as-type-badtype.t
@@ -2802,6 +2807,7 @@ t/nativecall/sort-native.t
 t/nativecall/starts-ends-substr-eq-named-native.t
 t/nativecall/starts-ends-with-native.t
 t/nativecall/str-search-match-invocant-native.t
+t/nativecall/subset-shadows-native-width-container-store.t
 t/nativecall/subst-native.t
 t/nativecall/substr-eq-native.t
 t/nativecall/substr-native-layer.t
@@ -3940,6 +3946,7 @@ t/rakuast/rakuast-index-bind.t
 t/rakuast/rakuast-indirect-name.t
 t/rakuast/rakuast-internal-arg-and-range-ops.t
 t/rakuast/rakuast-interp-code-block.t
+t/rakuast/rakuast-interpolating-angle-subscript.t
 t/rakuast/rakuast-interpolating-word-quotes.t
 t/rakuast/rakuast-invocant-parameters.t
 t/rakuast/rakuast-keyed-hash-declaration.t
@@ -5739,6 +5746,7 @@ t/types/temporal/duration-rand.t
 t/types/temporal/duration-tai-nanosecond-rat.t
 t/types/temporal/instant-duration-do-real.t
 t/types/temporal/temporal-invalidformat.t
+t/types/temporal/time-localtime.t
 t/types/temporal/version-compare-flags.t
 t/types/temporal/version-parts-plus.t
 t/types/temporal/version-parts-whatever-str.t

@@ -2527,6 +2527,10 @@ pub(super) fn subscript_node(
 /// space, or `None` when the index is not a list of word literals.
 // Cost: O(n), n = length of the keys.
 pub(super) fn angle_key_text(index: &Expr) -> Option<String> {
+    // `%h<<$k>>` / `%h«a b»`: the parser kept the raw text of the quote.
+    if let Some(text) = spelled_angle_text(index) {
+        return Some(text.to_string());
+    }
     let word = |expr: &Expr| match expr {
         Expr::Literal(v) => Some(v.to_string_value()),
         _ => None,
@@ -2537,6 +2541,23 @@ pub(super) fn angle_key_text(index: &Expr) -> Option<String> {
             Some(words.join(" "))
         }
         other => word(other),
+    }
+}
+
+/// The raw text of an interpolating angle subscript (`%h<<$k>>`), when the
+/// parser kept it.
+fn spelled_angle_text(index: &Expr) -> Option<&str> {
+    match index {
+        Expr::Spelled(spelled) => match &spelled.spelling {
+            Spelling::WordQuote {
+                quotewords: true,
+                text,
+                ..
+            }
+            | Spelling::InterpolatingWords { text, .. } => Some(text),
+            _ => None,
+        },
+        _ => None,
     }
 }
 
@@ -2551,10 +2572,15 @@ pub(super) fn angle_subscript_node(
     assignee: Option<&Expr>,
     colonpairs: Vec<Value>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let text = angle_key_text(index).ok_or_else(|| unsupported("angle subscript key"))?;
+    let quote = if spelled_angle_text(index).is_some() {
+        convert_expr(index)?
+    } else {
+        let text = angle_key_text(index).ok_or_else(|| unsupported("angle subscript key"))?;
+        word_quote(&text)
+    };
     let mut index_node = RakuAstNode {
         class: RakuAstClass::PostcircumfixLiteralHashIndex,
-        fields: vec![node_field(Some("index"), word_quote(&text))],
+        fields: vec![node_field(Some("index"), quote)],
     };
     if !colonpairs.is_empty() {
         index_node.fields.push(RakuAstField {
