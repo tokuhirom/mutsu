@@ -520,8 +520,13 @@ impl Interpreter {
         } else {
             result
         };
+        // A `Proxy` result is STOREd and the assignment answers the stored
+        // value, as the public-method form does: handing the container back
+        // would have the call site FETCH it (`maybe_fetch_rw_proxy`) even in
+        // sink context, where raku never reads it.
+        let is_proxy = result.is_proxy_value();
         self.assign_through_rw_result(result, value.clone())
-            .map(Some)
+            .map(|assigned| Some(if is_proxy { value.clone() } else { assigned }))
     }
 
     /// The assignment call site wraps the invocant in a `VarRef` (its source
