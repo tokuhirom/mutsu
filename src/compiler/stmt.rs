@@ -2012,7 +2012,11 @@ impl Compiler {
                         && !is_native_type
                         && !name.starts_with('@')
                         && !name.starts_with('%')
-                        && !name.starts_with('&')
+                        // An `our &code` shares one cell with its qualified name
+                        // only for a plain `our &name = ...`; an operator-named
+                        // or bodiless declaration keeps the two-store sequence.
+                        && (!name.starts_with('&')
+                            || (has_explicit_initializer && !name.contains(':')))
                         && !self.sigilless_locals.contains(name.as_str())
                         && !has_default_trait
                         && !scalar_bind_decont
