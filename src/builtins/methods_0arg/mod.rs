@@ -537,9 +537,13 @@ pub(crate) fn native_method_0arg_cascade(
         // An allomorph (IntStr/NumStr/…) gists as its preserved source string,
         // not the inner numeric's gist: `<1e3>.gist` → `1e3` (not `1000`). Only
         // allomorphs; a general `but`-mixin gists via its inner value (below).
-        if method == "gist"
-            && crate::value::types::allomorph_type_name(inner, mixins).is_some()
+        // A `Str` mixed into any value (`5 but "x"`) wins for the stringifying
+        // methods too, as in Rakudo: `.gist` and `.raku`/`.perl` answer it.
+        if matches!(method, "gist" | "raku" | "perl")
             && let Some(str_val) = mixins.get("Str")
+            && matches!(str_val.view(), ValueView::Str(_))
+            && (method == "gist"
+                || crate::value::types::allomorph_type_name(inner, mixins).is_none())
         {
             return Some(Ok(str_val.clone()));
         }
