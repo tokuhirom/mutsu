@@ -329,11 +329,16 @@ impl Interpreter {
         source_path: &std::path::Path,
         ast: &ModuleAst,
         recorded: &ModuleLoadFacts,
+        source_text: &str,
     ) -> Result<(), RuntimeError> {
         if !verify_enabled() {
             return Ok(());
         }
-        let fresh = ModuleLoadFacts::compute(&ast.decode_unguarded()?, recorded.prologue_len);
+        let fresh = ModuleLoadFacts::compute(
+            &ast.decode_unguarded()?,
+            recorded.prologue_len,
+            &Interpreter::maybe_preprocess_roast_directives(source_text),
+        );
         if fresh != *recorded {
             eprintln!(
                 "precomp verify: the load facts recorded for {} differ from fresh ones: {:?} != {:?}",

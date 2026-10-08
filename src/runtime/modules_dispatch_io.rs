@@ -45,7 +45,7 @@ mod io_doc;
 mod io_env;
 mod io_handles;
 mod io_pod;
-mod io_pod_blocks;
+pub(crate) mod io_pod_blocks;
 mod io_pod_config;
 mod io_pod_entries;
 mod io_pod_format;
