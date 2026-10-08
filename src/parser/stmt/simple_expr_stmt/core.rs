@@ -1474,21 +1474,20 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         {
             return parse_statement_modifier(r, Stmt::Expr(ternary_assign));
         }
-        let stmt = if matches!(expr, Expr::BracketArray(..))
-            && matches!(op, CompoundAssignOp::Comma)
-        {
-            Stmt::Expr(Expr::Binary {
-                left: Box::new(expr),
-                op: op.token_kind(),
-                right: Box::new(rhs),
-                form: Default::default(),
-            })
-        } else {
-            // A non-lvalue target (a literal, `(my $x)`, a nested `($a //= 1)`):
-            // the expansion throws `X::Assignment::RO` when it is reached, but
-            // the written `LHS OP= RHS` stays recoverable through the marker.
-            Stmt::Expr(preserve_compound_assign(expr, op, rhs)?)
-        };
+        let stmt =
+            if matches!(expr, Expr::BracketArray(..)) && matches!(op, CompoundAssignOp::Comma) {
+                Stmt::Expr(Expr::Binary {
+                    left: Box::new(expr),
+                    op: op.token_kind(),
+                    right: Box::new(rhs),
+                    form: Default::default(),
+                })
+            } else {
+                // A non-lvalue target (a literal, `(my $x)`, a nested `($a //= 1)`):
+                // the expansion throws `X::Assignment::RO` when it is reached, but
+                // the written `LHS OP= RHS` stays recoverable through the marker.
+                Stmt::Expr(preserve_compound_assign(expr, op, rhs)?)
+            };
         return parse_statement_modifier(r, stmt);
     }
 
