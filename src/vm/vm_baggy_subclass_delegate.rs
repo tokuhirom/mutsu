@@ -223,7 +223,7 @@ impl Interpreter {
                     self,
                     &mut place,
                     crate::symbol::Symbol::intern("STORE"),
-                    &args,
+                    args,
                 )
             });
             if let Some(Some(Err(e))) = outcome {
