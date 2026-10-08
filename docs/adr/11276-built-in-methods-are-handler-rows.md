@@ -1956,3 +1956,18 @@ Follow-up to §9.32 (`refactor/11276-blob-decode`).
 - **Found, not changed.** A user subclass of `Backtrace` answers `X::Method::NotFound` for `is-runtime` where Rakudo
   answers (the class-name decode is exact, as the arms it replaces were); `Backtrace.new` inside a sub has one frame
   fewer than Rakudo's (mutsu does not record the `new` frame).
+
+### 9.36 `gist` of the collections (2026-10-08)
+
+Third step of the rendering and identity names (`refactor/11276-collection-render-rows`), after §9.30 and §9.31.
+
+- `gist` rows (4) on `List` (`Array` and `Slip`-free list receivers reach it through the MRO), `Seq`, `Hash` and `Pair`, the
+  owners Rakudo declares it on. `Map.gist` is not registered: `Hash` declares its own, so a `Map` row would be reached by
+  no shape.
+- One renderer, `methods_0arg::collection_gist::collection_gist`, shared by the rows and by `dispatch_core_repr`. It owns the
+  zero-denominator check, the `gist_route` walk (user-`gist` element: decline to the interpreter; cycle: `gist_value`),
+  the 100-element cap and the per-element renderer. The two hand-copied `gist_item` functions (Array and Seq/Slip) and the
+  Array/Seq/Slip/Pair/Hash gist arms of the cascade are gone; those arms now answer `raku`/`perl` only.
+- The row declines (`None`) exactly when the route says the interpreter must dispatch an element's own `gist`, so a row
+  never preempts a user `gist`.
+- Left: `raku`/`Str`/`fmt` of the collections, `Version`, `Capture`, `Nil`, the objects group, `Cool`/`Any`/`Mu`, `clone`.

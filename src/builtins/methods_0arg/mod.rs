@@ -10,6 +10,7 @@ mod dispatch_core_list;
 pub(crate) mod dispatch_core_math;
 mod dispatch_core_numeric;
 pub(crate) mod dispatch_core_range;
+pub(crate) mod collection_gist;
 mod dispatch_core_repr;
 mod dispatch_core_str;
 mod dispatch_core_unicode;
