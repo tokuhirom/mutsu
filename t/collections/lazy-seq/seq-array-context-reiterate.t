@@ -1,5 +1,18 @@
 use v6;
 use Test;
+# TEMPORARY #9930 CI diagnostic -- remove.
+unless %*ENV<DIAG9930> {
+    %*ENV<DIAG9930> = '1';
+    my $p = run $*EXECUTABLE, $?FILE, :out, :err;
+    my $o = $p.out.slurp(:close);
+    my $e = $p.err.slurp(:close);
+    if $p.exitcode != 0 {
+        my $msg = "rc={$p.exitcode} err=[{$e.subst("\n", ' | ', :g)}] out=[{$o.subst("\n", ' | ', :g)}]";
+        say "Bail out! $msg";
+    }
+    else { print $o }
+    exit 0;
+}
 
 # Array-contextualizing a Seq held in a scalar (`@$s`) reifies it into a
 # re-iterable list, matching Rakudo. A second `for @$s` / read must NOT throw
