@@ -1854,6 +1854,7 @@ t/lang/operators/compound-assign-paren-rhs-infix.t
 t/lang/operators/compound-assign-precedence.t
 t/lang/operators/constant-term-operator-name.t
 t/lang/operators/core-operator-stash.t
+t/lang/operators/custom-operator-and-term-parsing.t
 t/lang/operators/diffy-assign-metaop.t
 t/lang/operators/dot-assign-adverb-args.t
 t/lang/operators/dot-assign-call-trailing-adverb.t
@@ -2090,6 +2091,7 @@ t/modules/attr-default-declaring-package-scope.t
 t/modules/attribute-package.t
 t/modules/attribute-trait-imported-into-module-sibling-class.t
 t/modules/attribute-where-module-private-sub.t
+t/modules/backtrace-frame-code-package-and-callsite.t
 t/modules/backtrace-module-block-file.t
 t/modules/backtrace-module-file.t
 t/modules/bare-module-multi-family-scope.t
@@ -2904,6 +2906,7 @@ t/oo/attribute/undeclared-attribute-in-every-position.t
 t/oo/attribute/wrap-reaches-accessor-and-rw-lvalue.t
 t/oo/bind-topic-does-not-corrupt-ancestor-frames.t
 t/oo/block-scope-trailing-value-does-not-clobber-topic.t
+t/oo/but-str-mixin-gist.t
 t/oo/class/also-is-body-position.t
 t/oo/class/also-is-body-use-composition.t
 t/oo/class/also-is-qualified-parent.t
@@ -3339,7 +3342,9 @@ t/oo/method/rw-method-indexed-element.t
 t/oo/method/rw-method-missing-entry-index-store.t
 t/oo/method/rw-method-outer-var-callers-readonly-param.t
 t/oo/method/samewith-only-method-explicit-invocant.t
+t/oo/method/sampling-method-rows.t
 t/oo/method/scalar-param-container-share-method.t
+t/oo/method/scalar-render-method-rows.t
 t/oo/method/scoped-overlay-method.t
 t/oo/method/self-longname-method-call.t
 t/oo/method/self-method-decontainerizes.t
@@ -3799,6 +3804,7 @@ t/rakuast/rakuast-declaration-headers.t
 t/rakuast/rakuast-declaration-traits.t
 t/rakuast/rakuast-declared-name-nested.t
 t/rakuast/rakuast-declared-name.t
+t/rakuast/rakuast-declared-sub-bareword.t
 t/rakuast/rakuast-desugar-boundary.t
 t/rakuast/rakuast-do-whenever.t
 t/rakuast/rakuast-elsif.t
@@ -5398,6 +5404,7 @@ t/types/nil-key-value-views.t
 t/types/nil-list-holes.t
 t/types/nil-reset-scalar-by-name.t
 t/types/nil-reset-scalar.t
+t/types/nil-semantics.t
 t/types/nil-str-context-warning.t
 t/types/nil-through-alias-restores-container-default.t
 t/types/nil-through-sigilless-alias-decays.t
