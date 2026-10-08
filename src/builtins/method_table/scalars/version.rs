@@ -2,6 +2,8 @@
 //! shape; slice 3B moves the rest of its methods).
 
 use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::methods_0arg::which::which_of;
+use crate::value::raku_repr::raku_value;
 use crate::value::{RuntimeError, Value, ValueView, VersionPart};
 
 macro_rules! row {
@@ -21,7 +23,78 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("parts", parts),
     row!("plus", plus),
     row!("whatever", whatever),
+    row!("Str", text),
+    row!("gist", raku),
+    row!("raku", raku),
+    row!("WHICH", which),
+    row!("Version", itself),
+    MethodRow {
+        owner: "Version",
+        name: "ACCEPTS",
+        arity: 1,
+        handler: Handler::Narrow(accepts),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
 ];
+
+/// `Version.Str`: the version without the `v` prefix (`1.2.3+`).
+// Cost: O(n), n = chars of the rendering.
+pub(crate) fn text(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Version { .. } => Some(Ok(Value::str(target.to_string_value()))),
+        _ => None,
+    }
+}
+
+/// `Version.gist` and `Version.raku`: the `v` literal form (`v1.2.3+`), or
+/// `Version.new('..')` when the text has no literal form.
+// Cost: O(n), n = chars of the rendering.
+pub(crate) fn raku(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Version { .. } => Some(Ok(Value::str(raku_value(target)))),
+        _ => None,
+    }
+}
+
+/// `Version.WHICH`: `Version|` and the canonical text.
+// Cost: O(n), n = chars of the rendering.
+pub(crate) fn which(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Version { .. } => Some(Ok(which_of(target))),
+        _ => None,
+    }
+}
+
+/// `Version.Version`: the version itself.
+// Cost: O(1).
+pub(crate) fn itself(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Version { .. } => Some(Ok(target.clone())),
+        _ => None,
+    }
+}
+
+/// `Version.ACCEPTS($candidate)`: whether the candidate version matches this
+/// one (`v1.2.*`, `v1.2+`); a non-version candidate is read as its text.
+// Cost: O(p), p = parts of the version matcher.
+pub(crate) fn accepts(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let ValueView::Version {
+        parts, plus, minus, ..
+    } = target.view()
+    else {
+        return None;
+    };
+    let candidate = args.first()?;
+    // An instance of a `Version` subclass carries its version in an attribute;
+    // the cascade reads it.
+    if matches!(candidate.view(), ValueView::Instance { .. }) {
+        return None;
+    }
+    Some(Ok(Value::truth(
+        crate::runtime::Interpreter::version_smart_match(candidate, parts, plus, minus),
+    )))
+}
 
 /// `Version.parts`: the version's parts as a `List` of `Int` and `Str`; a `*`
 /// part is the `Str` `"*"`, as in Rakudo, not a `Whatever` (zef's
