@@ -89,6 +89,46 @@ pub(crate) struct SubruleArgs {
     pub(crate) colonpair_falses: Vec<bool>,
 }
 
+impl SubruleArgs {
+    /// The text of a `:sym<text>` adverb when these arguments are exactly that
+    /// adverb (`<value:sym<number>>` keeps it as the one argument `sym<number>`).
+    // Cost: O(k), k = length of the adverb text.
+    pub(crate) fn sym_adverb(&self) -> Option<String> {
+        use crate::ast::{Expr, IndexSpelling};
+        let [
+            Expr::Index {
+                target,
+                index,
+                is_positional: false,
+                spelling: IndexSpelling::Angle,
+            },
+        ] = self.args.as_slice()
+        else {
+            return None;
+        };
+        if !matches!(target.as_ref(), Expr::BareWord(key) if key == "sym") {
+            return None;
+        }
+        let (Expr::Literal(text) | Expr::LiteralSrc(text, _)) = index.as_ref() else {
+            return None;
+        };
+        let crate::value::ValueView::Str(text) = text.view() else {
+            return None;
+        };
+        let text = text.to_string();
+        let plain = [
+            &self.literal_hash_indices,
+            &self.colonpair_values,
+            &self.colonpair_variables,
+            &self.colonpair_trues,
+            &self.colonpair_falses,
+        ]
+        .iter()
+        .all(|flags| flags.iter().all(|&flag| !flag));
+        (plain && self.source.as_deref() == Some(format!("sym<{text}>").as_str())).then_some(text)
+    }
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum RegexNode {
     Literal(String),
@@ -1240,6 +1280,9 @@ impl RegexNode {
                 let Some(args) = args.as_deref() else {
                     return format!("<{prefix}{name}>");
                 };
+                if let Some(text) = args.sym_adverb() {
+                    return format!("<{prefix}{name}:sym<{text}>>");
+                }
                 let rendered = args.source.clone().or_else(|| {
                     args.args
                         .iter()
@@ -3265,7 +3308,9 @@ fn subrule_alias_inner_source(
     capturing: bool,
     args: &Option<Box<SubruleArgs>>,
 ) -> String {
-    let target = if let Some(args) = args.as_deref() {
+    let target = if let Some(text) = args.as_deref().and_then(SubruleArgs::sym_adverb) {
+        format!("{}{name}:sym<{text}>", if capturing { "" } else { "." })
+    } else if let Some(args) = args.as_deref() {
         let rendered = args.source.clone().or_else(|| {
             args.args
                 .iter()

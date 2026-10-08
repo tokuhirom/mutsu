@@ -3538,7 +3538,7 @@ pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeE
         RakuAstClass::RegexAssertionNamed => Ok(RegexNode::Subrule {
             name: lower_regex_subrule_name(named_child(node, "name")?)?,
             capturing: bool_field(node, "capturing")?,
-            args: None,
+            args: super::regex_sym::args_from_name(named_child(node, "name")?)?.map(Box::new),
         }),
         RakuAstClass::RegexAssertionNamedArgs => {
             let args = lower_regex_subrule_args(node)?;
@@ -3554,7 +3554,8 @@ pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeE
                 RakuAstClass::RegexAssertionNamed => (
                     lower_regex_subrule_name(named_child(assertion, "name")?)?,
                     bool_field(assertion, "capturing")?,
-                    None,
+                    super::regex_sym::args_from_name(named_child(assertion, "name")?)?
+                        .map(Box::new),
                 ),
                 RakuAstClass::RegexAssertionNamedArgs => {
                     let args = lower_regex_subrule_args(assertion)?;
