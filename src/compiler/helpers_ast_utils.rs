@@ -66,7 +66,11 @@ impl Compiler {
     pub(super) fn native_default_expr_for_constraint(&self, constraint: &str) -> Option<Expr> {
         let resolved = self.resolve_type_alias_constraint(constraint);
         let (base, _) = crate::runtime::types::strip_type_smiley(&resolved);
-        if crate::runtime::native_types::is_native_int_type(base) {
+        // A self-alias marks a user subset shadowing the native spelling.
+        let shadowed = |t: &HashMap<String, String>| t.get(base).is_some_and(|v| v == base);
+        if shadowed(&self.type_aliases) || shadowed(&self.outer_type_aliases) {
+            None
+        } else if crate::runtime::native_types::is_native_int_type(base) {
             Some(Expr::Literal(Value::int(0)))
         } else if matches!(base, "num" | "num32" | "num64") {
             Some(Expr::Literal(Value::num(0.0)))

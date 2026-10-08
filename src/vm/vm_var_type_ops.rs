@@ -155,7 +155,7 @@ impl Interpreter {
         if let Some(slot) = env_free_slot
             && constraint != "Nil"
         {
-            let init_val = match Self::native_nil_seed_value(&constraint) {
+            let init_val = match self.unshadowed_native_nil_seed(&constraint) {
                 Some(native) => native,
                 None => {
                     let base = self.var_type_constraint_sym(name_sym);
@@ -201,7 +201,7 @@ impl Interpreter {
             if is_nil || is_dead_seed {
                 // The declaration's own symbol: the by-name forms re-interned
                 // `name` three times per execution (#12151).
-                let init_val = match Self::native_nil_seed_value(&constraint) {
+                let init_val = match self.unshadowed_native_nil_seed(&constraint) {
                     Some(native) => native,
                     None => {
                         let base = self.var_type_constraint_sym(name_sym);
@@ -383,11 +383,24 @@ impl Interpreter {
     /// constraints for Nil→type-object conversion (a `= Nil` parameter default
     /// must stay Nil), so the stored value itself must carry the type object.
     pub(crate) fn typed_scalar_nil_seed_value(&mut self, name: &str, constraint: &str) -> Value {
-        if let Some(native) = Self::native_nil_seed_value(constraint) {
+        if !self.constraint_is_user_subset(constraint)
+            && let Some(native) = Self::native_nil_seed_value(constraint)
+        {
             return native;
         }
         let base = loan_env!(self, var_type_constraint(name));
         self.typed_scalar_nil_seed_value_with_base(constraint, base)
+    }
+
+    /// [`Self::native_nil_seed_value`] unless a user subset spelled like the
+    /// native type shadows it (#12359).
+    // Cost: O(1).
+    fn unshadowed_native_nil_seed(&self, constraint: &str) -> Option<Value> {
+        if self.constraint_is_user_subset(constraint) {
+            None
+        } else {
+            Self::native_nil_seed_value(constraint)
+        }
     }
 
     /// The zero/empty default of a native scalar constraint (`int` -> 0,
@@ -418,7 +431,10 @@ impl Interpreter {
         constraint: &str,
         base: Option<String>,
     ) -> Value {
-        if let Some(native) = Self::native_nil_seed_value(constraint) {
+        // A user subset spelled like a native type shadows it (#12359).
+        if !self.constraint_is_user_subset(constraint)
+            && let Some(native) = Self::native_nil_seed_value(constraint)
+        {
             native
         } else {
             // A parameterized role constraint (`my Cup of EggNog $mug` /

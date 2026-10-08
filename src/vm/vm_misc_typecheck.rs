@@ -325,7 +325,10 @@ impl Interpreter {
         }
         // Native integer type check: validate value is an integer in range.
         // Native types cannot hold Nil/type objects — reject them.
-        if crate::runtime::native_types::is_native_int_type(base_constraint) {
+        // A user subset spelled like a native type shadows it (#12359).
+        let shadowed_by_subset = self.constraint_is_user_subset(base_constraint);
+        if !shadowed_by_subset && crate::runtime::native_types::is_native_int_type(base_constraint)
+        {
             if value.is_nil() {
                 return Err(RuntimeError::new(format!(
                     "Cannot unbox a type object (Nil) to {}.",
@@ -336,7 +339,7 @@ impl Interpreter {
             return Ok(());
         }
         // Native num/str types cannot hold type objects — reject Nil and Package values.
-        if matches!(base_constraint, "num" | "num32" | "num64" | "str") {
+        if !shadowed_by_subset && matches!(base_constraint, "num" | "num32" | "num64" | "str") {
             if matches!(value.view(), ValueView::Nil | ValueView::Package(_)) {
                 return Err(RuntimeError::new(format!(
                     "Cannot unbox a type object to {}.",

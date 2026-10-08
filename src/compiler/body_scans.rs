@@ -359,6 +359,17 @@ struct TypeAliasScan {
 
 impl<'ast> Visit<'ast> for TypeAliasScan {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        // A user subset spelled like a native type (`subset int8 of Int ...`)
+        // shadows it: recorded as a self-alias, which
+        // `native_default_expr_for_constraint` reads as "not native here".
+        if let Stmt::SubsetDecl { name, .. } = stmt {
+            let n = name.resolve();
+            if crate::runtime::native_types::is_native_int_type(&n)
+                || matches!(n.as_str(), "num" | "num32" | "num64" | "str")
+            {
+                self.out.push((n.clone(), n));
+            }
+        }
         if let Stmt::VarDecl {
             name,
             expr: Expr::BareWord(target),
