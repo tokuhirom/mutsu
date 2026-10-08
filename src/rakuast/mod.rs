@@ -3261,6 +3261,7 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::OnlyStar", "new") => RakuAstClass::OnlyStar,
         ("RakuAST::Regex::MatchTo", "new") => RakuAstClass::RegexMatchTo,
         ("RakuAST::Term::Whatever", "new") => RakuAstClass::TermWhatever,
+        ("RakuAST::Term::HyperWhatever", "new") => RakuAstClass::TermHyperWhatever,
         ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
         ("RakuAST::Name::Part::EmptyEdge", "new") => RakuAstClass::NamePartEmptyEdge,
         _ => return None,
@@ -3621,6 +3622,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::TermNamed
             | RakuAstClass::TermTopicCall
             | RakuAstClass::TermWhatever
+            | RakuAstClass::TermHyperWhatever
             | RakuAstClass::CallName
             | RakuAstClass::CallNameWithoutParentheses
             | RakuAstClass::CallMethod

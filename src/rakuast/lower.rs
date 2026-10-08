@@ -4294,6 +4294,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         // The `*` whatever term — the *value* leaf (`1..*`, `@a[*]`).
         RakuAstClass::TermWhatever => Ok(Expr::Whatever),
+        RakuAstClass::TermHyperWhatever => Ok(Expr::HyperWhatever),
         // The `*` priming-argument leaf (`* + 1`, `* > 3`). ADR-0033 splits the
         // two leaf roles; the enclosing priming *scope* is planted afterwards by
         // `whatever_curry`, not here — see `lower`'s entry point.

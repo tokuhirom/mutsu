@@ -286,6 +286,7 @@ t/collections/lazy-seq/lazy-array-gist.t
 t/collections/lazy-seq/lazy-array-numeric.t
 t/collections/lazy-seq/lazy-array-reify-on-mutation.t
 t/collections/lazy-seq/lazy-array-reify.t
+t/collections/lazy-seq/lazy-gather-and-junction.t
 t/collections/lazy-seq/lazy-gather-elems-cannot-lazy.t
 t/collections/lazy-seq/lazy-gather-grep-map-laziness.t
 t/collections/lazy-seq/lazy-generator-scan-strict-force.t
@@ -578,6 +579,7 @@ t/collections/subscript/hash-subscript-trailing-comma.t
 t/collections/subscript/hyper-assoc-subscript.t
 t/collections/subscript/hyper-postfix-slice.t
 t/collections/subscript/hyper-zen-slice-decontainerizes.t
+t/collections/subscript/hyperwhatever-and-lazy-slice-bind.t
 t/collections/subscript/incdec-autoviv-undefined-base.t
 t/collections/subscript/incdec-element-typed-seed-and-object-hash-key.t
 t/collections/subscript/incdec-nested-keeps-caller-stack.t
@@ -620,6 +622,7 @@ t/collections/subscript/postcircumfix-subscript-call-adverbs.t
 t/collections/subscript/raw-invocant-subscript-receiver.t
 t/collections/subscript/rw-slice-arg-is-not-a-container.t
 t/collections/subscript/scalar-subscript-protocol.t
+t/collections/subscript/scalar-whatevercode-range-slice.t
 t/collections/subscript/seq-whatever-subscript-element-cells.t
 t/collections/subscript/shape-illegal-dimension-bigint.t
 t/collections/subscript/shaped-array-delete-keeps-shape.t
@@ -2019,6 +2022,7 @@ t/lang/parsing/paren-decl-compound-assign.t
 t/lang/parsing/paren-decl-list-assign-flatten.t
 t/lang/parsing/paren-index-bind-positional.t
 t/lang/parsing/paren-list-assign-expr-position.t
+t/lang/parsing/paren-prefix-op-requires-declaration.t
 t/lang/parsing/paren-scalar-list-target.t
 t/lang/parsing/paren-trailing-comma.t
 t/lang/parsing/parser-anonymous-constant.t
@@ -2430,6 +2434,7 @@ t/modules/module-local-type-shadows-builtin.t
 t/modules/module-noarg-default-private-sub-comma.t
 t/modules/module-own-dynamic-does-not-leak.t
 t/modules/module-parse-warning-once.t
+t/modules/module-pod-late-call.t
 t/modules/module-pod-variable.t
 t/modules/module-private-enum-qualified-scope.t
 t/modules/module-private-sub-does-not-leak.t
@@ -3124,6 +3129,8 @@ t/oo/method/augment-core-method-conflict.t
 t/oo/method/augment-method-build-attr-validation.t
 t/oo/method/augment-method-lexical-scoping.t
 t/oo/method/begin-add-method-versioned-class.t
+t/oo/method/blob-buf-method-rows.t
+t/oo/method/blob-decode-method-rows.t
 t/oo/method/bound-nil-method-warn.t
 t/oo/method/builtin-subclass-method-override.t
 t/oo/method/callframe-code-name-method-unit.t
@@ -3399,6 +3406,7 @@ t/oo/method/submethod-defer.t
 t/oo/method/submethod-wrap.t
 t/oo/method/succ-pred-method-rows.t
 t/oo/method/superscript-method-power.t
+t/oo/method/temporal-shift-edit-method-rows.t
 t/oo/method/topic-dynamic-method-call.t
 t/oo/method/topic-method-colon-args-trailing-comma-modifier.t
 t/oo/method/topic-quoted-method-call.t
@@ -3609,6 +3617,7 @@ t/oo/role/role-callable-param-and-custom-container.t
 t/oo/role/role-candidate-language-revision-from-decl.t
 t/oo/role/role-class-prioritization.t
 t/oo/role/role-closure-private-attribute-foreign-arg.t
+t/oo/role/role-composed-by-class-and-parent-mro.t
 t/oo/role/role-composed-method-param-typo.t
 t/oo/role/role-composition-gaps.t
 t/oo/role/role-conflict.t
@@ -3652,6 +3661,7 @@ t/oo/role/role-param-binding-does-not-shadow-caller.t
 t/oo/role/role-param-binding-leaves-outer-lexical-writable.t
 t/oo/role/role-param-composition-no-leak.t
 t/oo/role/role-param-default-declaring-scope.t
+t/oo/role/role-param-escaping-closure.t
 t/oo/role/role-param-imported-qualified-type.t
 t/oo/role/role-param-qualified-type-cross-file-import-no-smiley.t
 t/oo/role/role-param-qualified-type-cross-file-import.t
@@ -3907,6 +3917,7 @@ t/rakuast/rakuast-heredoc-spelling.t
 t/rakuast/rakuast-hyper-function-infix.t
 t/rakuast/rakuast-hyper-infix.t
 t/rakuast/rakuast-hyper-method.t
+t/rakuast/rakuast-hyper-whatever-term.t
 t/rakuast/rakuast-identity.t
 t/rakuast/rakuast-imaginary-literal.t
 t/rakuast/rakuast-index-assign.t
@@ -4050,6 +4061,7 @@ t/regex/match/comb-match-named-captures.t
 t/regex/match/comb-rx-literal.t
 t/regex/match/comb-separated-quantifier-capture.t
 t/regex/match/comb-sub-form.t
+t/regex/match/enum-range-smartmatch.t
 t/regex/match/enum-type-object-smartmatches-itself.t
 t/regex/match/escaping-regex-captured-topic-at-match.t
 t/regex/match/for-match-captures.t
@@ -4156,6 +4168,7 @@ t/regex/match/smartmatch-bare-topic-rhs-no-writeback.t
 t/regex/match/smartmatch-bool-type-object.t
 t/regex/match/smartmatch-code-bearing-sync.t
 t/regex/match/smartmatch-env-dirty.t
+t/regex/match/smartmatch-hyperwhatever.t
 t/regex/match/smartmatch-indirect-lookup-sync.t
 t/regex/match/smartmatch-method-dispatch.t
 t/regex/match/smartmatch-nondestructive-forms.t
@@ -4710,6 +4723,7 @@ t/routines/dispatch/multi-candidates-declaration-order.t
 t/routines/dispatch/multi-chained-named-alias-dispatch.t
 t/routines/dispatch/multi-default-otf-dispatch.t
 t/routines/dispatch/multi-dispatch-coercion-narrowness.t
+t/routines/dispatch/multi-dispatch-incomparable-where.t
 t/routines/dispatch/multi-dispatch-mu-rank.t
 t/routines/dispatch/multi-dispatch-named-before-positional.t
 t/routines/dispatch/multi-dispatch-ordering.t
@@ -5285,6 +5299,7 @@ t/types/bool-raku-repr.t
 t/types/buf-and-list-mutators.t
 t/types/buf-decode-one-decoder-parity.t
 t/types/buf-decode.t
+t/types/buf-mutator-rows.t
 t/types/buf-nested-index-assign-preserves-buf.t
 t/types/buf-numeric-context.t
 t/types/buf-of-and-can.t
@@ -5367,6 +5382,7 @@ t/types/coercion/type-object-sequence-succ.t
 t/types/coercion/type-object-str-context-warning.t
 t/types/coercion/type-object-stringify.t
 t/types/coercion/type-objects.t
+t/types/coercion/type-smiley.t
 t/types/coercion/typecheck-assignment-got.t
 t/types/coercion/typecheck-assignment-message-parity.t
 t/types/coercion/typecheck-assignment-message-prefix.t
@@ -5536,6 +5552,7 @@ t/types/numeric/numeric-real-target.t
 t/types/numeric/numeric-subclass-user-str-interpolation.t
 t/types/numeric/numeric-uninitialized-arith.t
 t/types/numeric/numeric-uninitialized-infix.t
+t/types/numeric/power-unicode-superscript.t
 t/types/numeric/radix-list-iterable-flatten.t
 t/types/numeric/radix-literal-int-and-bigrat-methods.t
 t/types/numeric/radix-literals.t
@@ -5893,6 +5910,7 @@ t/vm/frames/deferred-bind-positional-step.t
 t/vm/frames/deferred-map-callback-frame.t
 t/vm/frames/deferred-map-grep-plan-reuse.t
 t/vm/frames/deferred-map-read-paths.t
+t/vm/frames/frame-env-our-code-var.t
 t/vm/frames/light-call-bare-type-accepts-type-object.t
 t/vm/frames/light-call-definite-return.t
 t/vm/frames/light-call-frame-writes-dedup.t
