@@ -13,23 +13,22 @@
   "dist": "Contact",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "full-card ADR",
-        "nok": 2,
-        "ok": 23,
+        "nok": 0,
+        "ok": 25,
         "plan": 25,
-        "secs": 0.32,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 8.28,
+        "secs": 10.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,7 +40,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 0.3,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,6 +50,50 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-name.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/04-uk-address.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
         "secs": 0.86,
         "skip": 0,
         "todo": 0,
@@ -61,64 +104,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.37,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/03-name.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 0.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/04-uk-address.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 0.77,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "round-trip street",
-        "nok": 4,
-        "ok": 8,
+        "ok": 12,
         "plan": 12,
         "secs": 0.35,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/05-vcard-round-trip.rakutest",
       "raku": {
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 0.6,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -136,10 +134,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-06",
+    "date": "2026-10-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fcd1d5ed",
+    "mutsu_commit": "5c3caa0a",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -150,13 +148,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/ON/CONTACT/86b0babd7fb623d06e2ffee3b1dd8bc94c67208b.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 72,
     "baseline_files": 5,
-    "mutsu_assertions": 66,
-    "parity_files": 3,
-    "regressed_files": 2
+    "mutsu_assertions": 72,
+    "parity_files": 5,
+    "regressed_files": 0
   },
   "version": "0.0.5"
 }

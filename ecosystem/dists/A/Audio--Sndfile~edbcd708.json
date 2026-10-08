@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.21,
+        "secs": 0.09,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.82,
+        "secs": 0.52,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.45,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,99 +49,95 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 5.52,
+        "secs": 3.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Cannot locate native library 'libsndfile.so.1': libsndfile.so.1: dlopen failed",
         "nok": 0,
-        "ok": 0,
+        "ok": 23,
         "plan": 23,
-        "secs": 0.46,
-        "skip": 0,
+        "secs": 0.64,
+        "skip": 23,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/030-constructor.t",
       "raku": {
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 2.28,
+        "secs": 1.67,
         "skip": 23,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "get t/data/1sec-chirp-44100.caf",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 651,
         "plan": 651,
-        "secs": 0.46,
-        "skip": 0,
+        "secs": 0.65,
+        "skip": 651,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/040-read.t",
       "raku": {
         "nok": 0,
         "ok": 651,
         "plan": 651,
-        "secs": 1.43,
+        "secs": 0.86,
         "skip": 651,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "open shorts for writing",
-        "nok": 5,
-        "ok": 0,
+        "nok": 0,
+        "ok": 51,
         "plan": 51,
-        "secs": 0.43,
-        "skip": 0,
+        "secs": 0.79,
+        "skip": 51,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/050-sanity.t",
       "raku": {
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 2.92,
+        "secs": 1.67,
         "skip": 51,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "did we throws-like Str?",
-        "nok": 1,
-        "ok": 0,
+        "nok": 0,
+        "ok": 862,
         "plan": 862,
-        "secs": 0.44,
-        "skip": 0,
+        "secs": 0.75,
+        "skip": 862,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/060-write.t",
       "raku": {
         "nok": 0,
         "ok": 862,
         "plan": 862,
-        "secs": 1.55,
+        "secs": 1.0,
         "skip": 862,
         "todo": 0,
         "verdict": "pass"
@@ -154,10 +150,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-06",
+    "date": "2026-10-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fcd1d5ed",
+    "mutsu_commit": "5c3caa0a",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -168,13 +164,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/UD/AUDIO_SNDFILE/39dfc41cfb3692f34acac26723460d67a8b94180.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 1590,
     "baseline_files": 6,
-    "mutsu_assertions": 3,
-    "parity_files": 2,
-    "regressed_files": 4
+    "mutsu_assertions": 1590,
+    "parity_files": 6,
+    "regressed_files": 0
   },
   "version": "0.0.16"
 }

@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.33,
+        "secs": 0.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,260 +26,250 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 8.0,
+        "secs": 5.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got Bool",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.18,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-env-only.rakutest",
       "raku": {
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 0.88,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got Bool",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.15,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.21,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02.5-external-class-test.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.69,
+        "secs": 1.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got Bool",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.23,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/03-default.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.84,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No matching candidates for method: scalar-build",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.18,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/04-required.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.8,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got Bool",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.15,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/05-bool-interpolation.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.93,
+        "secs": 0.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got Bool",
-        "nok": 4,
-        "ok": 2,
-        "plan": null,
-        "secs": 0.32,
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/06-arrays.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.18,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got List. You have to pass an explicitly typed",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.21,
+        "ok": 6,
+        "plan": 6,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/07-hashes.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.96,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No matching candidates for method: scalar-build",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.21,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/08-attr-single-load.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.74,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '%settings'; expected Associative but got Bool",
-        "nok": 0,
+        "first_failure": "Initial Variable version. Loaded from Package",
+        "nok": 3,
         "ok": 0,
-        "plan": null,
-        "secs": 0.16,
+        "plan": 3,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/09-basic-variable.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.38,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'var' for invocant of type 'Variable'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.16,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/10-json-variable.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.77,
+        "secs": 0.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No matching candidates for method: scalar-build",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.19,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/11-json-attribute.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.9,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -295,10 +285,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-06",
+    "date": "2026-10-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fcd1d5ed",
+    "mutsu_commit": "5c3caa0a",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -313,9 +303,9 @@
   "totals": {
     "baseline_assertions": 39,
     "baseline_files": 12,
-    "mutsu_assertions": 5,
-    "parity_files": 1,
-    "regressed_files": 11
+    "mutsu_assertions": 36,
+    "parity_files": 11,
+    "regressed_files": 1
   },
   "version": "1.1.2"
 }

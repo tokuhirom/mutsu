@@ -23,23 +23,22 @@
   "dist": "Proc::Q",
   "files": [
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Can not remove values from a Map",
         "nok": 0,
-        "ok": 3,
+        "ok": 29,
         "plan": 29,
-        "secs": 64.76,
+        "secs": 64.66,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/01-basic.t",
       "raku": {
         "nok": 0,
         "ok": 29,
         "plan": 29,
-        "secs": 81.69,
+        "secs": 77.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,7 +50,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.23,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -61,7 +60,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.5,
+        "secs": 2.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +82,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.72,
+        "secs": 2.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +94,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 6.14,
+        "secs": 6.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -105,7 +104,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 5.27,
+        "secs": 5.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,7 +116,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.62,
+        "secs": 5.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,7 +126,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 11.46,
+        "secs": 11.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -139,10 +138,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-07",
+    "date": "2026-10-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fcd1d5ed",
+    "mutsu_commit": "5c3caa0a",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -153,13 +152,13 @@
     "index": "fez",
     "url": "https://raw.githubusercontent.com/raku/REA/main/archive/P/Proc%3A%3AQ/Proc%3A%3AQ%3Aver%3C1.001003%3E%3Aauth%3Cgithub%3Araku-community-modules%3E.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 34,
     "baseline_files": 5,
-    "mutsu_assertions": 8,
-    "parity_files": 4,
-    "regressed_files": 1
+    "mutsu_assertions": 34,
+    "parity_files": 5,
+    "regressed_files": 0
   },
   "version": "1.001003"
 }

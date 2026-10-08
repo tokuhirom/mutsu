@@ -12,141 +12,20 @@
     "unresolved": []
   },
   "dist": "Math::Libgsl::Histogram",
-  "files": [
-    {
-      "cmp": "no_baseline",
-      "path": "t/00-use.rakutest",
-      "raku": {
-        "first_failure": "Math::Libgsl::Histogram module can be use-d ok",
-        "nok": 4,
-        "ok": 1,
-        "plan": 5,
-        "secs": 5.68,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/01-raw-1d.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate symbol 'gsl_version' in native library '' [at Math-Libgsl-Histogram-0.1.1/t/01-raw-1d.rakutest:5]",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.5,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/02-raw-2d.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate symbol 'gsl_version' in native library '' [at Math-Libgsl-Histogram-0.1.1/t/02-raw-2d.rakutest:5]",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.39,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/03-oo-1d.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate symbol 'gsl_version' in native library ''",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.73,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/04-oo-1dPDF.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate symbol 'gsl_version' in native library ''",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.75,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/05-oo-2d.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate symbol 'gsl_version' in native library ''",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.76,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/06-oo-2dPDF.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate symbol 'gsl_version' in native library ''",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 0.78,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.1,
-        "skip": 1,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/99-meta.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.44,
-        "skip": 1,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    }
-  ],
+  "files": [],
   "load": {
     "Math::Libgsl::Histogram": "raku_also_fails",
     "Math::Libgsl::Histogram2D": "raku_also_fails",
     "Math::Libgsl::Histogram2D::PDF": "raku_also_fails",
     "Math::Libgsl::Histogram::PDF": "raku_also_fails",
-    "Math::Libgsl::Raw::Histogram": "ok"
+    "Math::Libgsl::Raw::Histogram": "No matching candidate found for the parametric role"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-06",
+    "date": "2026-10-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fcd1d5ed",
+    "mutsu_commit": "5c3caa0a",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -157,12 +36,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/M/AT/MATH_LIBGSL_HISTOGRAM/f140a8a3c0e25add058b903178a37dbbf216b226.tar.gz"
   },
-  "status": "green",
+  "status": "blocked_load",
   "totals": {
-    "baseline_assertions": 1,
-    "baseline_files": 1,
-    "mutsu_assertions": 1,
-    "parity_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.1.1"

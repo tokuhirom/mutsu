@@ -32,7 +32,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.22,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 9.98,
+        "secs": 7.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -54,7 +54,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.2,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -64,29 +64,30 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.8,
+        "secs": 3.47,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "SQL logic error",
         "nok": 0,
-        "ok": 16,
+        "ok": 9,
         "plan": 16,
-        "secs": 2.17,
+        "secs": 2.64,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/03-sqlite.t",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 28.47,
+        "secs": 26.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -98,7 +99,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.62,
+        "secs": 3.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -108,7 +109,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.77,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -122,7 +123,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 6,
-        "secs": 12.89,
+        "secs": 12.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -134,7 +135,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.47,
+        "secs": 2.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -144,7 +145,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.5,
+        "secs": 2.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -156,7 +157,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.64,
+        "secs": 1.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -166,7 +167,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 1.2,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -178,7 +179,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 0.14,
+        "secs": 0.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -188,7 +189,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.6,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -200,7 +201,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.23,
+        "secs": 2.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -210,7 +211,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.56,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -223,10 +224,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-06",
+    "date": "2026-10-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fcd1d5ed",
+    "mutsu_commit": "5c3caa0a",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -237,13 +238,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/B_/DB_XOOS_SQLITE/2b4483dfecaa071a4d18e299dc0551c688e0485c.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 41,
     "baseline_files": 8,
-    "mutsu_assertions": 41,
-    "parity_files": 8,
-    "regressed_files": 0
+    "mutsu_assertions": 34,
+    "parity_files": 7,
+    "regressed_files": 1
   },
   "version": "0.1.1"
 }

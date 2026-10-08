@@ -39,11 +39,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "On Red:api<2> \":model\" is required on \"is referencing\"",
+        "first_failure": "Can't use unknown trait 'is' -> 'referencing' in an attribute declaration.",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.25,
+        "secs": 5.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -53,7 +53,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 30.27,
+        "secs": 170.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,11 +62,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller add-relationship(MetamodelX::Red::Model:D: Person:U, Attribute:D, Array:D); none of these signatures matches:",
+        "first_failure": "X::Dynamic::Postdeclaration with no message",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.27,
+        "secs": 11.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,7 +76,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 5.6,
+        "secs": 9.43,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -85,11 +85,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Could not find symbol '&ClassHOW' in 'GLOBAL::Metamodel'",
-        "nok": 0,
+        "first_failure": "Odd number of elements found where hash initializer expected:",
+        "nok": 2,
         "ok": 0,
         "plan": null,
-        "secs": 1.62,
+        "secs": 4.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -99,7 +99,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.96,
+        "secs": 5.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -111,10 +111,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-06",
+    "date": "2026-10-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fcd1d5ed",
+    "mutsu_commit": "5c3caa0a",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

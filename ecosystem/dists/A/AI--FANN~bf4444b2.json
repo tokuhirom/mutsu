@@ -10,23 +10,94 @@
     "unresolved": []
   },
   "dist": "AI::FANN",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/creation.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libfann.so': libfann.so: cannot open shared object file: No such file or directory [at AI-FANN-0.2.0/t/creation.t:4]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/errors.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libfann.so': libfann.so: cannot open shared object file: No such file or directory [at AI-FANN-0.2.0/t/errors.t:4]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/imports.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libfann.so': libfann.so: cannot open shared object file: No such file or directory [at AI-FANN-0.2.0/t/imports.t:7]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/train-data.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libfann.so': libfann.so: cannot open shared object file: No such file or directory [at AI-FANN-0.2.0/t/train-data.t:4]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/training.t",
+      "raku": {
+        "first_failure": "Cannot locate native library 'libfann.so': libfann.so: cannot open shared object file: No such file or directory [at AI-FANN-0.2.0/t/training.t:4]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.44,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
     "AI::FANN": "raku_also_fails",
     "AI::FANN::Raw": "ok",
     "AI::FANN::Raw::Base": "ok",
     "AI::FANN::Raw::Cascade": "ok",
-    "AI::FANN::Raw::Creation": "Runtime error: No return arguments allowed when return value fann is already specified in the signature",
+    "AI::FANN::Raw::Creation": "ok",
     "AI::FANN::Raw::Error": "ok",
     "AI::FANN::Raw::IO": "ok",
     "AI::FANN::Raw::Training": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-06",
+    "date": "2026-10-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fcd1d5ed",
+    "mutsu_commit": "5c3caa0a",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -37,7 +108,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/A/I_/AI_FANN/3bd5f6105ccebe2920c7704cf3ef8976313c07d4.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

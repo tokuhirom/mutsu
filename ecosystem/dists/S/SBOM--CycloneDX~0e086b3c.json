@@ -22,23 +22,22 @@
   "dist": "SBOM::CycloneDX",
   "files": [
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Ok object with minimal",
-        "nok": 10,
-        "ok": 1,
+        "nok": 0,
+        "ok": 11,
         "plan": 11,
-        "secs": 3.74,
+        "secs": 6.19,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/01-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 118.89,
+        "secs": 57.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -47,11 +46,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Contact: bom-ref, email, name, phone",
+        "first_failure": "Odd number of elements found where hash initializer expected:",
         "nok": 0,
         "ok": 0,
         "plan": 4,
-        "secs": 4.12,
+        "secs": 6.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -61,7 +60,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 5.21,
+        "secs": 7.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,11 +69,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Address: bom-ref, country, locality, postOfficeBoxNumber, postalCode, region, streetAddress",
+        "first_failure": "Odd number of elements found where hash initializer expected:",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 4.21,
+        "secs": 5.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -84,7 +83,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.7,
+        "secs": 3.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -93,11 +92,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Organization: address, bom-ref, contact, name, url",
+        "first_failure": "Odd number of elements found where hash initializer expected:",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 4.42,
+        "secs": 5.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -107,76 +106,74 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.06,
+        "secs": 3.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Property: name, value",
         "nok": 0,
-        "ok": 0,
+        "ok": 4,
         "plan": 4,
-        "secs": 4.32,
+        "secs": 5.83,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/05-property.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.92,
+        "secs": 3.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::EnergyCost: unit, value",
         "nok": 0,
-        "ok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 4.1,
+        "secs": 5.46,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/06-energycost.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.53,
+        "secs": 3.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Analysis: detail, firstIssued, justification, lastUpdated, response, state",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "SBOM::Analysis: complete",
+        "nok": 1,
+        "ok": 2,
         "plan": 3,
-        "secs": 4.39,
+        "secs": 5.84,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/07-analysis.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.02,
+        "secs": 3.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -185,11 +182,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Affects: ref, versions",
+        "first_failure": "Redeclaration of routine 'mapify'. Did you mean to declare a multi-sub?",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 4.19,
+        "secs": 5.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -199,7 +196,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.02,
+        "secs": 3.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -208,11 +205,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Annotation: annotator, bom-ref, subjects, text, timestamp",
+        "first_failure": "Odd number of elements found where hash initializer expected:",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 3.9,
+        "secs": 6.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -222,7 +219,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.12,
+        "secs": 3.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -231,11 +228,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Licensing: altIds, expiration, lastRenewal, licenseTypes, licensee, licensor, purchaseOrder, purchaser",
+        "first_failure": "Redeclaration of routine 'mapify'. Did you mean to declare a multi-sub?",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 4.25,
+        "secs": 5.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -245,7 +242,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.68,
+        "secs": 3.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -254,11 +251,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::License: license",
+        "first_failure": "Odd number of elements found where hash initializer expected:",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 3.89,
+        "secs": 5.98,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -268,7 +265,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.93,
+        "secs": 4.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -277,11 +274,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::SPDXLicense: acknowledgement, bom-ref, expression",
+        "first_failure": "Odd number of elements found where hash initializer expected:",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 4.31,
+        "secs": 5.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -291,53 +288,52 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.56,
+        "secs": 4.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::PublicKey: crv, kty, x, y",
         "nok": 0,
-        "ok": 0,
+        "ok": 3,
         "plan": 3,
-        "secs": 4.84,
+        "secs": 6.32,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/14-publickey.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 3.27,
+        "secs": 4.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Signature: algorithm, certificatePath, value",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "SBOM::Signature: SBOM::Signature complete",
+        "nok": 2,
+        "ok": 4,
         "plan": 6,
-        "secs": 4.45,
+        "secs": 6.52,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/15-signature.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.2,
+        "secs": 4.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -346,11 +342,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::SignatureChain: chain",
+        "first_failure": "Redeclaration of routine 'mapify'. Did you mean to declare a multi-sub?",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 4.57,
+        "secs": 6.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -360,7 +356,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.11,
+        "secs": 3.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -369,11 +365,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::SignatureSigners: signers",
+        "first_failure": "Redeclaration of routine 'mapify'. Did you mean to declare a multi-sub?",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 5.1,
+        "secs": 6.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -383,7 +379,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.01,
+        "secs": 3.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -392,11 +388,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Composition: aggregate, assemblies, dependencies",
+        "first_failure": "Don't know how to handle type bom-ref",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 4.6,
+        "secs": 6.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -406,53 +402,53 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.88,
+        "secs": 3.65,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::ServiceDataset: classification, description, destination, flow, name, source",
-        "nok": 0,
-        "ok": 0,
+        "first_failure": "SBOM::ServiceDataset: complete",
+        "nok": 1,
+        "ok": 2,
         "plan": 3,
-        "secs": 4.2,
+        "secs": 6.42,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/19-servicedataset.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.72,
+        "secs": 4.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Governor: contact",
-        "nok": 0,
+        "first_failure": "SBOM::Governor: complete",
+        "nok": 1,
         "ok": 0,
         "plan": 3,
-        "secs": 4.32,
+        "secs": 6.27,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/20-governor.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.98,
+        "secs": 3.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -461,11 +457,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Governance: custodians, owners, stewards",
+        "first_failure": "Odd number of elements found where hash initializer expected:",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 4.04,
+        "secs": 6.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -475,7 +471,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.87,
+        "secs": 3.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -484,11 +480,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Metadata: manufacture, timestamp",
+        "first_failure": "Type check failed for an element of @!tools; expected SBOM::LegacyTool but got List (({:hashes($({:alg(\"S...)",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 4.05,
+        "secs": 6.01,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -498,7 +494,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.7,
+        "secs": 4.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -507,11 +503,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Tool: components, services",
+        "first_failure": "Redeclaration of routine 'mapify'. Did you mean to declare a multi-sub?",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 4.16,
+        "secs": 6.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -521,7 +517,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.49,
+        "secs": 4.48,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -530,11 +526,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::LegacyTool: hashes, name, vendor, version",
+        "first_failure": "Redeclaration of routine 'mapify'. Did you mean to declare a multi-sub?",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 4.14,
+        "secs": 6.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -544,7 +540,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.56,
+        "secs": 3.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -553,11 +549,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::Identity: confidence, field, methods, tools",
+        "first_failure": "Redeclaration of routine 'mapify'. Did you mean to declare a multi-sub?",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 4.12,
+        "secs": 6.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -567,30 +563,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.82,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "The object is-a 'SBOM::CycloneDX'",
-        "nok": 6,
-        "ok": 0,
-        "plan": 6,
-        "secs": 3.23,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/26-all-methods.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 2.4,
+        "secs": 4.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -599,11 +572,34 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Found extra keys in SBOM::CycloneDX: annotations, bomFormat, components, serialNumber, specVersion, version",
+        "first_failure": "Undeclared name:",
         "nok": 0,
-        "ok": 0,
+        "ok": 2,
+        "plan": 6,
+        "secs": 5.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/26-all-methods.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed for an element of @!tools; expected SBOM::LegacyTool but got Array ([{:hashes($[{:alg(\"S...)",
+        "nok": 0,
+        "ok": 3,
         "plan": 45,
-        "secs": 3.4,
+        "secs": 9.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -613,7 +609,7 @@
         "nok": 0,
         "ok": 45,
         "plan": 45,
-        "secs": 20.14,
+        "secs": 30.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -622,11 +618,11 @@
     {
       "cmp": "partial",
       "mutsu": {
-        "first_failure": "Testing /home/runner/.cache/mutsu-ecosystem/run/ecosweep-_5yvvcb2/dist/SBOM-CycloneDX-0.0.18/t/invalid/invalid-bomformat-1.6.json",
-        "nok": 24,
-        "ok": 0,
+        "first_failure": "Testing /home/runner/.cache/mutsu-ecosystem/run/ecosweep-_csosfgr/dist/SBOM-CycloneDX-0.0.18/t/invalid/invalid-component-ref-1.6.json",
+        "nok": 13,
+        "ok": 11,
         "plan": 24,
-        "secs": 4.38,
+        "secs": 6.67,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -636,7 +632,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 2.78,
+        "secs": 4.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -698,10 +694,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-06",
+    "date": "2026-10-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fcd1d5ed",
+    "mutsu_commit": "5c3caa0a",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -712,13 +708,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/S/BO/SBOM_CYCLONEDX/33aae9f01355a468fdc409dc8a4e4404ace26c2c.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 167,
     "baseline_files": 27,
-    "mutsu_assertions": 1,
-    "parity_files": 0,
-    "regressed_files": 27
+    "mutsu_assertions": 44,
+    "parity_files": 4,
+    "regressed_files": 23
   },
   "version": "0.0.18"
 }

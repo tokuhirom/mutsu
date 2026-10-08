@@ -11,16 +11,108 @@
     "unresolved": []
   },
   "dist": "GD",
-  "files": [],
+  "files": [
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $lib; expected Callable but got Str (\"libgd.so.3\")",
+        "nok": 0,
+        "ok": 1,
+        "plan": 9,
+        "secs": 1.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/010-load.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 11.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "synopsis code ran okay",
+        "nok": 2,
+        "ok": 0,
+        "plan": 2,
+        "secs": 1.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/020-synopsis.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.69,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $lib; expected Callable but got Str (\"libgd.so.3\")",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/030-polygon.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 2.0,
+        "skip": 0,
+        "todo": 2,
+        "verdict": "pass"
+      },
+      "path": "t/040-gd-file.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 2,
+        "secs": 1.0,
+        "skip": 0,
+        "todo": 1,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "GD": "Redeclaration of routine 'guess_library_name'. Did you mean to declare a multi-sub?"
+    "GD": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-06",
+    "date": "2026-10-07",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "fcd1d5ed",
+    "mutsu_commit": "5c3caa0a",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -31,13 +123,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/GD/8cd4621b7f0576b268e5e7556c79565832b9e8c1.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 15,
+    "baseline_files": 4,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
+    "regressed_files": 3
   },
   "version": "0.0.5"
 }
