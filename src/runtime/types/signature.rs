@@ -903,7 +903,9 @@ pub(in crate::runtime) fn bind_named_rename_sub_signature(
         // `:value((:key($k), :value($v)))` is an alias whose value is wrapped
         // in an anonymous positional sub-signature. The wrapper itself is not
         // a rename target; unpack it with the ordinary destructuring binder.
-        if sub_pd.name == "__subsig__"
+        // `:out([$a?, :pass($p) = True])` wraps the pattern in an anonymous `@`
+        // (or `%`) parameter instead; it destructures the same way.
+        if matches!(sub_pd.name.as_str(), "__subsig__" | "@" | "%")
             && let Some(nested) = &sub_pd.sub_signature
         {
             bind_sub_signature_from_value(interpreter, nested, value)?;

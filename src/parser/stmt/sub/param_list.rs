@@ -56,6 +56,34 @@ pub(crate) fn strip_param_sigil(name: &str) -> &str {
         .unwrap_or(name)
 }
 
+/// Collect the variables a named parameter's sub-signature declares.
+///
+/// Placeholders that only hold a pattern (`__subsig__`, an anonymous `@`/`%`
+/// as in `:out([$a?, :pass($p) = True])`) declare nothing themselves; a nested
+/// named alias's own name is an argument KEY, not a variable. Both still
+/// recurse so the names inside them are counted exactly once.
+fn collect_sub_signature_vars(sub_params: &[ParamDef], out: &mut Vec<String>) {
+    for sp in sub_params {
+        let name = sp.name.as_str();
+        let bare = strip_param_sigil(name);
+        let declares = !(sp.named_alias
+            || name.is_empty()
+            || matches!(name, "@" | "%" | "&" | "__subsig__")
+            || bare.starts_with("__ANON_"));
+        if declares {
+            let display = if name.starts_with(['@', '%', '&']) || sp.sigilless {
+                name.to_string()
+            } else {
+                format!("${}", name)
+            };
+            out.push(display);
+        }
+        if let Some(nested) = &sp.sub_signature {
+            collect_sub_signature_vars(nested, out);
+        }
+    }
+}
+
 /// Check for duplicate parameter names in a signature.
 /// Anonymous parameters (e.g. `$`, `@`, `%`) are excluded.
 pub(crate) fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> {
@@ -177,38 +205,7 @@ pub(crate) fn check_duplicate_params(params: &[ParamDef]) -> Result<(), PError> 
                     return Err(PError::fatal_with_exception(msg, Box::new(ex)));
                 }
             }
-            // `:value(($a, $b))`: the inner pattern is the `__subsig__`
-            // placeholder, which declares nothing itself — its own
-            // sub-signature holds the variables. Flatten those in, or two
-            // nested named patterns clash on the shared placeholder name.
-            let mut flat: Vec<&ParamDef> = Vec::new();
-            let mut pending: Vec<&ParamDef> = sub_params.iter().collect();
-            while let Some(sp) = pending.pop() {
-                match (&sp.sub_signature, sp.name.as_str()) {
-                    (Some(nested), "__subsig__") => pending.extend(nested.iter()),
-                    _ => flat.push(sp),
-                }
-            }
-            for sp in flat {
-                let sp_name = &sp.name;
-                let sp_without_sigil = strip_param_sigil(sp_name);
-                if sp_name.is_empty()
-                    || sp_without_sigil.starts_with("__ANON_")
-                    || sp_name == "__subsig__"
-                {
-                    continue;
-                }
-                let sp_display = if sp_name.starts_with('@')
-                    || sp_name.starts_with('%')
-                    || sp_name.starts_with('&')
-                    || sp.sigilless
-                {
-                    sp_name.clone()
-                } else {
-                    format!("${}", sp_name)
-                };
-                all_var_names.push(sp_display);
-            }
+            collect_sub_signature_vars(sub_params, &mut all_var_names);
         }
     }
 
