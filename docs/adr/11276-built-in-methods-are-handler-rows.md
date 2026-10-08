@@ -1992,3 +1992,29 @@ by `invoke_mut` on a detached place.
   else, instead of overwriting it.
 - Left: `STORE` of the baggy bridge, the `BIND-*` family, `Mu`/grammar/metamodel bridges (they need the constructor rows of
   the 3G remainder).
+
+### 9.38 `raku`, `Str` and `fmt` of the collections (2026-10-08)
+
+Fourth step of the rendering and identity names (`refactor/11276-collection-render-identity-rows`), after §9.30, §9.31 and
+§9.36.
+
+- `raku` rows on `Array`, `List`, `Hash`, `Pair`, `Seq` and `Capture`, `Str` rows on `List`, `Hash`, `Pair`, `Seq`,
+  `Capture` and `Range`, `Capture.gist` and `Seq.Stringy` (`collections/render_names.rs`). `Map` and `Array.Str` have no
+  row of their own: an immutable `Map` is a `Hash` shape and `Array` inherits `List.Str` (the table's reach and declared-by
+  tests say so). The `raku` rows are `Handler::Interp`: a typed container's `.raku` names its declared type
+  (`Array[Int].new(...)`), which only the interpreter's container registry holds, and an element whose own `raku` is
+  reachable through method dispatch (a user instance) must be rendered by the interpreter. The row declines in exactly the
+  cases the two gates of `try_native_method_raw` did (`container_needs_raku_dispatch`, a typed `Hash` / `Array`), because
+  the table runs in front of those gates. **A row that replaces a name the family cascade answers has to carry the
+  cascade's pre-gates**: the first version of the `raku` row, a pure handler, printed `Pt<18>` for `[Pt.new(x => 1)].raku`.
+- `fmt` (`collections/fmt.rs`): rows at arities 0, 1 and 2 on `Array`, `List`, `Map`, `Pair`, `Range`, `Seq` and the six
+  quant hashes, all calling `fmt_native` (`methods_narg/fmt_contains.rs`). It replaces the three copies in the 0-, 1- and
+  2-argument cascades (about 330 lines); the interpreter's fourth copy, `dispatch_fmt_with_user_coercion`, stays as the path
+  a declined call takes (a `Format` object, a directive over an item that may carry a user `Str`/`Int`/`Numeric`).
+- The cascades' `raku` arms for `Array`, `Seq`, `Pair`, `Hash` and `Capture`, and the `Capture.Str` arm, call the rows'
+  renderers (`render_names::raku`, `str_row`).
+- Left: `clone` (its typed-container metadata lives in the interpreter's registry, like `raku`), `Junction.Bool`/`gist`,
+  `Nil`'s rows (no `Nil` shape), `Map.gist`, the list terminals, and `Cool.fmt` of a scalar (answered by the same
+  `fmt_native`, reached through the cascade).
+- **Found, not fixed.** `[Nm.new].fmt('%s')` (an item with its own `Str`) answers `nm` where Rakudo dies, because it calls
+  `.fmt` on each item; `<a b>.fmt('%s%s')` answers `a b` where Rakudo dies on the argument count.

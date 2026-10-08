@@ -2,9 +2,7 @@ use super::allomorph::{allomorph_accepts, out_of_range_failure};
 use super::base::{BaseDigits, f64_to_rat, parse_radix_checked, rat_base_repeating, rat_to_base};
 
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
-use super::fmt_contains::{
-    fmt_joinable_target, fmt_single_or_pair, fmt_value_needs_coercion, pair_key_value,
-};
+use super::fmt_contains::fmt_value_needs_coercion;
 use super::indent::str_indent;
 use super::numeric::{int_to_subscript, int_to_superscript};
 use crate::runtime;
@@ -988,130 +986,8 @@ pub(crate) fn native_method_1arg(
                 std::slice::from_ref(arg),
             ))
         }
-        "fmt" => {
-            // A Format object argument is handled by the slow-path Format dispatch
-            // (arity-aware batching, separators, X::Str::Sprintf::Directives::Count).
-            if matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Format")
-            {
-                return None;
-            }
-            let fmt = arg.to_string_value();
-            // A format with no value-consuming directive (a literal string,
-            // or only `%%`) never reads any item at all, so no coercion can
-            // ever be needed regardless of what the items are — skip the
-            // (potentially expensive, over-eager) coercion-need scan
-            // entirely in that case. This also matters for the native-row
-            // introspection invariant tests (`native_method_row.rs`), which
-            // probe this arm with a directive-less dummy format string and
-            // expect the fast path to still answer `Some`.
-            let has_directives = runtime::sprintf_directive_count(&fmt) > 0;
-            if let ValueView::Hash(items) = target.view() {
-                // Hash.fmt(format): format each key-value pair, join with "\n"
-                if has_directives && items.iter().any(|(_, v)| fmt_value_needs_coercion(v)) {
-                    // A value needs `.Str`/`.Int`/`.Numeric` coercion the pure
-                    // formatter can't dispatch; let the interpreter-aware slow
-                    // path (`dispatch_fmt_with_user_coercion`) handle it.
-                    return None;
-                }
-                let rendered = items
-                    .iter()
-                    .map(|(k, v)| {
-                        runtime::format_sprintf_args(&fmt, &[Value::str(k.to_string()), v.clone()])
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                Some(Ok(Value::str(rendered)))
-            } else if let ValueView::Bag(items, _) = target.view() {
-                if has_directives
-                    && items
-                        .iter()
-                        .any(|(k, _)| fmt_value_needs_coercion(&items.typed_key(k)))
-                {
-                    return None;
-                }
-                let rendered = items
-                    .iter()
-                    .map(|(k, v)| {
-                        runtime::format_sprintf_args(
-                            &fmt,
-                            &[items.typed_key(k), Value::from_bigint(v.clone())],
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                Some(Ok(Value::str(rendered)))
-            } else if let ValueView::Set(items, _) = target.view() {
-                if has_directives
-                    && items
-                        .iter()
-                        .any(|k| fmt_value_needs_coercion(&items.typed_key(k)))
-                {
-                    return None;
-                }
-                let rendered = items
-                    .iter()
-                    .map(|k| runtime::format_sprintf_args(&fmt, &[items.typed_key(k), Value::TRUE]))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                Some(Ok(Value::str(rendered)))
-            } else if let ValueView::Mix(items, _) = target.view() {
-                if has_directives
-                    && items
-                        .iter()
-                        .any(|(k, _)| fmt_value_needs_coercion(&items.typed_key(k)))
-                {
-                    return None;
-                }
-                let rendered = items
-                    .iter()
-                    .map(|(k, v)| {
-                        runtime::format_sprintf_args(&fmt, &[items.typed_key(k), Value::num(*v)])
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                Some(Ok(Value::str(rendered)))
-            } else if let Some((k, v)) = pair_key_value(target) {
-                if has_directives && (fmt_value_needs_coercion(&k) || fmt_value_needs_coercion(&v))
-                {
-                    return None;
-                }
-                // Pair.fmt(format): format key and value
-                let rendered = runtime::format_sprintf_args(&fmt, &[k, v]);
-                Some(Ok(Value::str(rendered)))
-            } else if fmt_joinable_target(target) {
-                // Use as_list_items() to bypass itemization — methods like
-                // .fmt still iterate over inner elements of $[...] / $(...).
-                let items: Vec<Value> = if let Some(inner) = target.as_list_items() {
-                    inner.to_vec()
-                } else {
-                    runtime::value_to_list_for_receiver(target)
-                };
-                if has_directives
-                    && items.iter().any(|item| {
-                        if let Some((k, v)) = pair_key_value(item) {
-                            fmt_value_needs_coercion(&k) || fmt_value_needs_coercion(&v)
-                        } else {
-                            fmt_value_needs_coercion(item)
-                        }
-                    })
-                {
-                    return None;
-                }
-                let rendered = items
-                    .into_iter()
-                    .map(|item| fmt_single_or_pair(&fmt, &item))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                Some(Ok(Value::str(rendered)))
-            } else {
-                if has_directives && fmt_value_needs_coercion(target) {
-                    return None;
-                }
-                // Cost: O(f + n), f = chars of the format, n = chars of the rendered value.
-                let rendered = runtime::format_sprintf(&fmt, Some(target));
-                Some(Ok(Value::str(rendered)))
-            }
-        }
+        // The `fmt` rows' implementation (`method_table::collections::fmt`).
+        "fmt" => super::fmt_contains::fmt_native(target, std::slice::from_ref(arg)),
         // Cost: O(f + n), f = chars of the format (the invocant), n = rendered length.
         "sprintf" => {
             // Method form: '%f'.sprintf(value) — target is the format string.

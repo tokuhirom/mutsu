@@ -1,9 +1,8 @@
 /// String and text methods: words, codes, lines, trim, trim-leading, trim-trailing,
 /// flip, so, not, is-lazy, lazy, chomp, chop, comb, fmt, join
-use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
 
-use super::{fmt_0arg_item, is_value_lazy};
+use super::is_value_lazy;
 
 pub(super) fn dispatch(
     target: &Value,
@@ -215,47 +214,8 @@ pub(super) fn dispatch(
             target,
             &[],
         ))),
-        "fmt" => {
-            // .fmt() with no arguments: use default format and separator
-            Some(match target.view() {
-                ValueView::Hash(items) => {
-                    let rendered = items
-                        .iter()
-                        .map(|(k, v)| {
-                            runtime::format_sprintf_args(
-                                "%s\t%s",
-                                &[Value::str(k.to_string()), v.clone()],
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    Some(Ok(Value::str(rendered)))
-                }
-                ValueView::Pair(k, v) => {
-                    let rendered = runtime::format_sprintf_args(
-                        "%s\t%s",
-                        &[Value::str(k.to_string()), v.clone()],
-                    );
-                    Some(Ok(Value::str(rendered)))
-                }
-                ValueView::ValuePair(k, v) => {
-                    let rendered = runtime::format_sprintf_args("%s\t%s", &[k.clone(), v.clone()]);
-                    Some(Ok(Value::str(rendered)))
-                }
-                _ if super::super::methods_narg::fmt_joinable_target(target) => {
-                    let rendered = runtime::value_to_list(target)
-                        .into_iter()
-                        .map(|item| fmt_0arg_item(&item))
-                        .collect::<Vec<_>>()
-                        .join(" ");
-                    Some(Ok(Value::str(rendered)))
-                }
-                _ => {
-                    let rendered = runtime::format_sprintf("%s", Some(target));
-                    Some(Ok(Value::str(rendered)))
-                }
-            })
-        }
+        // The `fmt` rows' implementation (`method_table::collections::fmt`).
+        "fmt" => Some(crate::builtins::fmt_native(target, &[])),
         // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
         // (each element stringified once, one `join` into a single buffer).
         "join" => {

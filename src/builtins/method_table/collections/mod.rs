@@ -10,6 +10,7 @@ use super::{Handler, MethodRow, RowFlags};
 pub(crate) mod any_collection;
 mod any_interp;
 pub(crate) mod capture;
+mod fmt;
 pub(crate) mod lazy;
 pub(crate) mod list;
 pub(crate) mod list_aggregate;
@@ -20,6 +21,7 @@ pub(crate) mod positional;
 pub(crate) mod quanthash;
 pub(crate) mod range;
 pub(crate) mod render;
+pub(crate) mod render_names;
 mod sampling;
 pub(crate) mod seq;
 pub(crate) mod subscript;
@@ -33,6 +35,11 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     render::QUANT_GIST_ROWS,
     render::QUANT_RAKU_ROWS,
     render::RANGE_ROWS,
+    render_names::RAKU_ROWS,
+    render_names::STR_ROWS,
+    render_names::CAPTURE_ROWS,
+    render_names::STRINGY_ROWS,
+    fmt::ROWS,
     capture::ROWS,
     any_interp::ROWS,
     lazy::ROWS,
