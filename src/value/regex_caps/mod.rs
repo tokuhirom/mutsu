@@ -16,7 +16,7 @@ pub(crate) mod stats;
 
 pub(crate) use cap_node::{
     CapChildren, CapNode, OuterBackrefCaps, PosSlot, QuantifiedCaptureEntry,
-    SILENT_ACTION_MARKER_PREFIX,
+    SILENT_ACTION_MARKER_PREFIX, SurvivingSpans,
 };
 pub(crate) use captures::{CaptureAliasMap, RegexCaptures};
 pub(crate) use match_target::MatchTarget;

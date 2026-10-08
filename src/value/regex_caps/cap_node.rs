@@ -247,6 +247,15 @@ pub(crate) struct CapChildren {
 }
 
 impl CapNode {
+    /// Add the rule names and span of this node's descendants to `out`: each
+    /// named child under its capture key and, when aliased, its rule name.
+    // Cost: O(n), n = nodes in the subtree.
+    pub(crate) fn collect_spans(&self, out: &mut SurvivingSpans) {
+        let kids = self.kids();
+        collect_named_spans(&kids.named, out);
+        collect_positional_spans(&kids.positional, out);
+    }
+
     /// Immutable child access: an empty default when this node is a leaf.
     pub(crate) fn kids(&self) -> &CapChildren {
         static EMPTY: std::sync::OnceLock<CapChildren> = std::sync::OnceLock::new();
@@ -345,6 +354,35 @@ impl RegexCaptures {
             action_name,
             ast: self.ast,
             children,
+        }
+    }
+}
+
+/// `(rule name, from, to)` of every named capture node in a successful tree.
+pub(crate) type SurvivingSpans = std::collections::HashSet<(String, usize, usize)>;
+
+pub(super) fn collect_named_spans(named: &NamedCaptureMap, out: &mut SurvivingSpans) {
+    for (key, slot) in named.iter() {
+        for node in slot.nodes.iter() {
+            out.insert((key.as_str().to_string(), node.from, node.to));
+            if let Some(action) = &node.action_name {
+                out.insert((action.as_str().to_string(), node.from, node.to));
+            }
+            node.collect_spans(out);
+        }
+    }
+}
+
+/// Add every named capture nested under `slots` to `out`.
+pub(super) fn collect_positional_spans(slots: &[PosSlot], out: &mut SurvivingSpans) {
+    for slot in slots {
+        if let Some(sub) = &slot.subcap {
+            sub.collect_spans(out);
+        }
+        for (_, _, sub) in slot.quantified.iter().flatten() {
+            if let Some(sub) = sub {
+                sub.collect_spans(out);
+            }
         }
     }
 }
