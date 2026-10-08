@@ -6,7 +6,6 @@ use super::buf::{
     resolve_buf_len,
 };
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
-use super::fmt_contains::{fmt_joinable_target, fmt_single_or_pair};
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};

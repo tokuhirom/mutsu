@@ -2,9 +2,7 @@ use super::allomorph::{allomorph_accepts, out_of_range_failure};
 use super::base::{BaseDigits, f64_to_rat, parse_radix_checked, rat_base_repeating, rat_to_base};
 
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
-use super::fmt_contains::{
-    fmt_joinable_target, fmt_single_or_pair, fmt_value_needs_coercion, pair_key_value,
-};
+use super::fmt_contains::fmt_value_needs_coercion;
 use super::indent::str_indent;
 use super::numeric::{int_to_subscript, int_to_superscript};
 use crate::runtime;

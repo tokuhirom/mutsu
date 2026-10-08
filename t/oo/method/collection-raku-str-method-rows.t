@@ -3,7 +3,7 @@ use Test;
 # raku and Str on the collections are rows of the method table (ADR-11276 §9.38);
 # the answers are the ones the cascades gave before.
 
-plan 33;
+plan 32;
 
 # --- raku
 is [1, 2, 3].raku, '[1, 2, 3]', 'Array.raku';

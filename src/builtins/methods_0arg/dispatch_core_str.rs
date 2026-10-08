@@ -1,6 +1,5 @@
 /// String and text methods: words, codes, lines, trim, trim-leading, trim-trailing,
 /// flip, so, not, is-lazy, lazy, chomp, chop, comb, fmt, join
-use crate::runtime;
 use crate::value::{RuntimeError, Value, ValueView};
 
 use super::is_value_lazy;
