@@ -6,6 +6,7 @@
 //! the cascades call [`read`] for the receivers that have no shape.
 
 use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::NarrowFn;
 use crate::builtins::methods_narg::buf::{
     buf_class_name, buf_get_int_items, buf_get_raw_bytes, is_buf_like, make_buf_from_int_items,
     out_of_range_error, range_bounds, read_byte_offset, read_f32_endian, read_f32_ne,
@@ -100,7 +101,7 @@ macro_rules! readers {
 const fn read_row(
     name: &'static str,
     arity: u8,
-    handler: fn(&Value, &[Value]) -> Option<Result<Value, RuntimeError>>,
+    handler: NarrowFn,
     owner: &'static str,
 ) -> MethodRow {
     MethodRow {

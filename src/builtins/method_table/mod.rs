@@ -81,7 +81,7 @@ pub(crate) use dispatch::{
 pub(crate) use mutating::buf::by_value as buf_by_value;
 pub(crate) use mutating::owners_of as mut_owners_of;
 pub(crate) use place::ReceiverPlace;
-pub(crate) use row::{Handler, MethodRow, Named, RowFlags};
+pub(crate) use row::{Handler, MethodRow, Named, NarrowFn, RowFlags};
 #[cfg(test)]
 use table::all_rows;
 #[cfg(test)]
