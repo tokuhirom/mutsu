@@ -91,7 +91,10 @@ impl Interpreter {
         let Some(c) = crate::value::lookup_cell_constraint(cell) else {
             return Ok(val);
         };
-        let val = Self::wrap_native_int_by_constraint(&c.ty, val)?;
+        // Type-check before narrowing: a user `subset int8 of Int where ...`
+        // shares its name with a native width, and wrapping first would turn
+        // an out-of-range value into an in-range one that then passes (the
+        // native check accepts any `Int`, so the order is free for natives).
         if !matches!(c.ty.as_str(), "Any" | "Mu")
             && !val.is_nil()
             && !self.type_matches_value(&c.ty, &val)
@@ -107,7 +110,7 @@ impl Interpreter {
                 None => self.typecheck_assignment_failure(&c.ty, &val, c.assign_to.as_deref()),
             });
         }
-        Ok(val)
+        Self::wrap_native_int_by_constraint(&c.ty, val)
     }
 
     /// Carry a declared scalar `of` constraint onto a cell created while
