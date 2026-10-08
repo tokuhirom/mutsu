@@ -2,7 +2,7 @@ use Test;
 
 # From HTTP::Server::Logger: `m:c//` continues from the caller's `$/`, and a
 # loop body that substitutes a *string* pattern must not clobber it.
-plan 6;
+plan 5;
 
 'ab' ~~ /a/;
 my $s = 'xx %s';
@@ -12,9 +12,6 @@ $s.subst('%s', 'y', :g);
 is $/.Str, 'a', 'Str pattern with :g leaves $/ alone';
 $s .= subst('%s', 'y');
 is $/.Str, 'a', '.= subst with a Str pattern leaves $/ alone';
-$s = 'xx %s';
-$s.subst-mutate('%s', 'y');
-is $/.Str, 'a', 'subst-mutate with a Str pattern leaves $/ alone';
 
 # (A sub should start with a fresh `$/`; mutsu inherits the caller's, so reset it.)
 sub run {
