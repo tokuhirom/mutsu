@@ -290,6 +290,27 @@ pub(crate) fn angle_words_subscript_index_expr(content: &str) -> Expr {
     }
 }
 
+/// [`angle_words_subscript_index_expr`] with the raw text kept for RakuAST: an
+/// interpolating angle subscript is `LiteralHashIndex(index => QuotedString(
+/// processors => <quotewords val>, ...))`, whose segments the conversion
+/// re-derives from the text (a parse that keeps no spellings gets the plain
+/// expression).
+pub(crate) fn spelled_subscript_index_expr(content: &str) -> Expr {
+    let expr = angle_words_subscript_index_expr(content);
+    if crate::parser::primary::string::word_quote_text_is_plain(content) {
+        Expr::spelled(expr, || Spelling::WordQuote {
+            quotewords: true,
+            val: true,
+            text: content.into(),
+        })
+    } else {
+        Expr::spelled(expr, || Spelling::InterpolatingWords {
+            val: true,
+            text: content.into(),
+        })
+    }
+}
+
 /// `delims` is the list's own `(open, close)` pair when known: a nested copy of
 /// it ends the word it is glued to (`<< a<<b>>c >>` is `("a<<", "b", ">>c")`).
 fn split_quotish_words(content: &str, delims: Option<(&str, &str)>) -> Result<Vec<Expr>, PError> {
