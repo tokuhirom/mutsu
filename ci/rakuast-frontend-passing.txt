@@ -1,7 +1,7 @@
-# t/ files that pass under MUTSU_RAKUAST=1 (ADR-10723 Stage 0, #10733).
 # A ratchet: CI's `scripts/rakuast-frontend.sh check` fails if any listed file
-# stops passing. Grow it with `scripts/rakuast-frontend.sh update`; never remove
 # a file because it regressed -- fix the regression.
+# stops passing. Grow it with `scripts/rakuast-frontend.sh update`; never remove
+# t/ files that pass under MUTSU_RAKUAST=1 (ADR-10723 Stage 0, #10733).
 t/collections/array/array-agnostic.t
 t/collections/array/array-append-itemized-hash.t
 t/collections/array/array-append-range.t
@@ -928,6 +928,7 @@ t/concurrency/supply/supply-block-lexical-thread-lane.t
 t/concurrency/supply/supply-block-nested-whenever-serialize.t
 t/concurrency/supply/supply-block-tap-streams-emits.t
 t/concurrency/supply/supply-block-transform.t
+t/concurrency/supply/supply-callback-pair-positional.t
 t/concurrency/supply/supply-categorize.t
 t/concurrency/supply/supply-chained-live-pipeline.t
 t/concurrency/supply/supply-channel-supply-forward.t
@@ -1209,8 +1210,15 @@ t/control/for-sigilless-rw.t
 t/control/for-topic-dotassign-readonly.t
 t/control/for-topic-restore.t
 t/control/given-expr-succeed-no-double-push.t
+t/control/given-lexical-scope.t
+t/control/given-pointy-ignores-earlier-assignment.t
+t/control/given-pointy-preserves-outer-topic.t
+t/control/given-sigilless-instance.t
+t/control/given-source-rebind-with-pointy.t
 t/control/given-topic-alias.t
 t/control/given-when-tail-assign-value.t
+t/control/given-with-pointy-scalar-readonly-enforcement.t
+t/control/given-with-scalar-pointy-rw-writeback.t
 t/control/given-with-topic-shadows-local.t
 t/control/if-block-args-string-literal.t
 t/control/if-body-let-resolution.t
@@ -1228,6 +1236,7 @@ t/control/labeled-loop.t
 t/control/labeled-repeat-loop-control.t
 t/control/leave-in-if-branch.t
 t/control/leave-keep-undo-in-map-block.t
+t/control/leave-phaser-if-given-fires.t
 t/control/leave-phaser-in-tail-block.t
 t/control/leave-return-prioritization.t
 t/control/line-ending-block-statement.t
@@ -1268,6 +1277,7 @@ t/control/statement-modifier-after-trailing-comma-comment.t
 t/control/statement-modifier-for-regression.t
 t/control/statement-modifier-let-temp-scope.t
 t/control/statement-modifier-sequence.t
+t/control/stmt-terminator-colon-block-arg.t
 t/control/succeed-block-boundary-absorption.t
 t/control/succeed-propagates-through-calls.t
 t/control/ternary-builtin-enum-then.t
@@ -1304,6 +1314,7 @@ t/control/while-pointy-aggregate-failure.t
 t/control/while-recursion-loop-local-leak.t
 t/control/while-until-my-decl.t
 t/control/with-attr-topic-writeback.t
+t/control/with-given-pointy-alias.t
 t/control/with-leave-phaser-value.t
 t/control/with-lvalue-evaluated-once.t
 t/control/with-orwith-in-loop.t
@@ -2436,6 +2447,7 @@ t/modules/name-package-only-on-code.t
 t/modules/namespaced-lexical-class-under-module.t
 t/modules/nested-class-package-array-lexical.t
 t/modules/nested-class-same-name-as-package.t
+t/modules/nested-module-multi-import-not-visible.t
 t/modules/nested-module-package-vars.t
 t/modules/nested-package-not-a-class-static.t
 t/modules/nested-type-name-in-package.t
@@ -2565,6 +2577,7 @@ t/nativecall/dynamic-array-parameterization-push-wrap.t
 t/nativecall/flat-shaped-native-array.t
 t/nativecall/folded-constant-native-multi-dispatch.t
 t/nativecall/gist-str-raku-callsame-native-mu-fallback.t
+t/nativecall/given-with-native-pointy-rw-writeback.t
 t/nativecall/infix-function-native-dispatch.t
 t/nativecall/io-function-native-dispatch.t
 t/nativecall/io-handle-get-native.t
@@ -2902,6 +2915,7 @@ t/oo/attribute/slip-to-array-attribute.t
 t/oo/attribute/start-in-method-attribute-alias.t
 t/oo/attribute/strict-undeclared-accessor.t
 t/oo/attribute/ternary-paren-accessor-assign.t
+t/oo/attribute/topic-dot-assign-attribute-topic.t
 t/oo/attribute/undeclared-attribute-in-every-position.t
 t/oo/attribute/wrap-reaches-accessor-and-rw-lvalue.t
 t/oo/bind-topic-does-not-corrupt-ancestor-frames.t
@@ -3143,6 +3157,7 @@ t/oo/method/end-listop-and-method.t
 t/oo/method/enum-enums-method.t
 t/oo/method/enum-value-type-only-method-param.t
 t/oo/method/fast-method-cache-attributive-param-writeback.t
+t/oo/method/find-method-datetime-declared.t
 t/oo/method/flat-method.t
 t/oo/method/gate-b-class-method-outer-lexical.t
 t/oo/method/gate-b-jit-method-mut-writeback.t
@@ -3349,6 +3364,7 @@ t/oo/method/scoped-overlay-method.t
 t/oo/method/self-longname-method-call.t
 t/oo/method/self-method-decontainerizes.t
 t/oo/method/self-term-in-method-closure.t
+t/oo/method/seq-method-rows.t
 t/oo/method/set-op-after-method.t
 t/oo/method/sink-method-context.t
 t/oo/method/sprintf-method-form-arg-count.t
@@ -3699,6 +3715,7 @@ t/oo/subset-where-placeholder-chain.t
 t/oo/sunk-list-reassign-does-not-leak-containerref.t
 t/oo/tagged-enum-value-does-not-shadow-quote.t
 t/oo/test-isa-can-does-messages.t
+t/oo/topic-alias-does-not-cross-frames.t
 t/oo/trait/anon-class-qualified-trait.t
 t/oo/trait/anon-param-trait.t
 t/oo/trait/anon-sub-return-trait.t
@@ -3760,6 +3777,7 @@ t/rakuast/rakuast-anonymous-packages.t
 t/rakuast/rakuast-anonymous-subsignature.t
 t/rakuast/rakuast-anonymous-variables.t
 t/rakuast/rakuast-any-definedness.t
+t/rakuast/rakuast-array-context-seq-reread.t
 t/rakuast/rakuast-ast.t
 t/rakuast/rakuast-atomic-operators.t
 t/rakuast/rakuast-attribute-default.t
@@ -3860,6 +3878,7 @@ t/rakuast/rakuast-for-signature.t
 t/rakuast/rakuast-for.t
 t/rakuast/rakuast-formatter.t
 t/rakuast/rakuast-frontend-mode.t
+t/rakuast/rakuast-given-pointy-block.t
 t/rakuast/rakuast-given-when.t
 t/rakuast/rakuast-hash-literal.t
 t/rakuast/rakuast-heredoc-spelling.t
@@ -4915,6 +4934,7 @@ t/routines/signature/for-list-multi-param-write-through.t
 t/routines/signature/for-loop-coercion-param.t
 t/routines/signature/for-loop-named-param-alias.t
 t/routines/signature/for-loop-param-getupvalue-hijack.t
+t/routines/signature/for-loop-param-start-sibling-isolation.t
 t/routines/signature/for-loop-param-type-enforced.t
 t/routines/signature/for-loop-sigilless-param-shadows-term.t
 t/routines/signature/for-multi-destructuring-params.t
@@ -4933,6 +4953,7 @@ t/routines/signature/for-single-param-shared-lane.t
 t/routines/signature/for-topic-shadows-topic-param.t
 t/routines/signature/for-topic-sigilless-param-writeback.t
 t/routines/signature/gather-aggregate-param-infinite.t
+t/routines/signature/given-pointy-typed-param-junction.t
 t/routines/signature/hash-composer-nested-signature-topic.t
 t/routines/signature/hash-parametric-keyof.t
 t/routines/signature/implicit-any-param-rejects-mu.t
@@ -5029,6 +5050,7 @@ t/routines/signature/pointy-amp-param-shadows-sub.t
 t/routines/signature/pointy-anon-destructure-later-param.t
 t/routines/signature/pointy-block-destructure-expr.t
 t/routines/signature/pointy-block-destructure.t
+t/routines/signature/pointy-code-param.t
 t/routines/signature/pointy-hash-subsignature-hyper-unspace.t
 t/routines/signature/pointy-param-constraint-no-leak-to-caller.t
 t/routines/signature/pointy-param-typed-sigilless.t
@@ -5318,6 +5340,7 @@ t/types/coercion/typed-container-decl-in-expr.t
 t/types/coercion/typed-container-rebind-and-eqv.t
 t/types/coercion/typed-container-what.t
 t/types/coercion/typed-decl-hoist-block-forms.t
+t/types/coercion/typed-decl-init-proxy-fetch.t
 t/types/coercion/typed-defined-container-attr-default.t
 t/types/coercion/typed-hash-bind-typecheck.t
 t/types/coercion/typed-hash-expr-decl-of.t
@@ -5808,6 +5831,7 @@ t/vm/frames/callers-dynamic-var-repeated-call.t
 t/vm/frames/callframe-annotations-map.t
 t/vm/frames/callframe-file-line-same-frame.t
 t/vm/frames/callframe-for-block-code-defined.t
+t/vm/frames/callframe-for-block-frame.t
 t/vm/frames/callframe-interpolation-block-frame.t
 t/vm/frames/callframe-marker-not-passed-to-shadowing-user-sub.t
 t/vm/frames/callframe-qq-interpolation-block-frame.t
@@ -6124,6 +6148,7 @@ t/vm/writeback/proxy-at-key-decontainerized-args.t
 t/vm/writeback/proxy-binds-container-not-value.t
 t/vm/writeback/proxy-fetch-returns-rw-container.t
 t/vm/writeback/proxy-list-transparency.t
+t/vm/writeback/proxy-lvalue-sub-assign-no-fetch.t
 t/vm/writeback/proxy-renders-through-fetch.t
 t/vm/writeback/proxy-store-boundary.t
 t/vm/writeback/proxy-store-receives-nil.t
