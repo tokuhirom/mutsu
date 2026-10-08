@@ -443,6 +443,9 @@ impl Interpreter {
         // for; the closures of the body that actually runs must see them too.
         if let Some(origin) = analysis_cc.as_deref() {
             code.inherit_authoritative_free_vars(&origin.authoritative_free_vars);
+            // Kept on the chunk so a tree-walk recompile of the same body
+            // (`compile_block_raw_under`) can hand them on as well.
+            code.authoritative_free_vars = origin.authoritative_free_vars.clone();
         }
         let code = std::sync::Arc::new(code);
         let fns = std::sync::Arc::new(fns);

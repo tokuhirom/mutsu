@@ -827,7 +827,17 @@ impl Interpreter {
     }
 
     pub(super) fn run_block(&mut self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
-        self.run_block_with(stmts, None)
+        self.run_block_with(stmts, None, None)
+    }
+
+    /// [`Self::run_block`] for a body written under `origin`'s lexical scopes
+    /// (a gather body, #12384): see [`Self::compile_block_raw_under`].
+    pub(super) fn run_block_under(
+        &mut self,
+        stmts: &[Stmt],
+        origin: Option<&crate::opcode::CompiledCode>,
+    ) -> Result<(), RuntimeError> {
+        self.run_block_with(stmts, None, origin)
     }
 
     /// [`Self::run_block`] for a module's mainline: its main body is compiled
@@ -849,7 +859,7 @@ impl Interpreter {
                 )?;
                 self.run_compiled_block_raw(&code, &fns)
             }
-            slot => self.run_block_with(ast.stmts()?, slot),
+            slot => self.run_block_with(ast.stmts()?, slot, None),
         }
     }
 
@@ -857,6 +867,7 @@ impl Interpreter {
         &mut self,
         stmts: &[Stmt],
         slot: Option<super::module_bytecode::ModuleCodeSlot>,
+        origin: Option<&crate::opcode::CompiledCode>,
     ) -> Result<(), RuntimeError> {
         let (pre_ph, enter_ph, success_ph, failure_ph, post_ph, body_main) =
             self.split_block_phasers(stmts);
@@ -880,6 +891,10 @@ impl Interpreter {
                     super::module_bytecode::MainlineBody::Split(&body_main),
                     slot,
                 )?;
+                self.run_compiled_block_raw(&code, &fns)
+            }
+            _ if origin.is_some() && !body_main.is_empty() => {
+                let (code, fns) = self.compile_block_raw_under(&body_main, origin);
                 self.run_compiled_block_raw(&code, &fns)
             }
             _ => self.run_block_raw(&body_main),
@@ -987,9 +1002,27 @@ impl Interpreter {
         &self,
         stmts: &[Stmt],
     ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
-        let (compiler, compile_unit) = self.block_compiler();
+        self.compile_block_raw_under(stmts, None)
+    }
+
+    /// [`Self::compile_block_raw`] for a body written under `origin`'s
+    /// lexical scopes: the `&`-lexicals `origin` saw stay visible to closures
+    /// nested in the recompiled body (#12384).
+    // Cost: O(n) in the body, plus O(a) for a = `origin`'s `&`-lexicals.
+    pub(crate) fn compile_block_raw_under(
+        &self,
+        stmts: &[Stmt],
+        origin: Option<&crate::opcode::CompiledCode>,
+    ) -> (crate::opcode::CompiledCode, crate::opcode::CompiledFns) {
+        let (mut compiler, compile_unit) = self.block_compiler();
+        if let Some(origin) = origin {
+            compiler.seed_outer_code_var_names(origin.outer_code_var_names.iter().cloned());
+        }
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(compile_unit);
         let (mut code, mut fns) = compiler.compile(stmts);
+        if let Some(origin) = origin {
+            code.inherit_authoritative_free_vars(&origin.authoritative_free_vars);
+        }
         if crate::precomp_codec::roundtrip_enabled() {
             // A diagnostic mode: a codec that cannot reproduce a chunk must
             // stop the run loudly rather than execute something else.

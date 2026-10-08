@@ -1,17 +1,13 @@
 use super::*;
 
 impl Interpreter {
-    /// Run a gather body to its next suspension or its end. The body was
-    /// already compiled when the `gather` was evaluated (`compiled_code`, which
-    /// knows the `&`-lexicals the gather was written under); recompiling the
-    /// AST here would lose them (#12384). A list without compiled code (an
-    /// `EVAL`-built one) compiles its AST fresh.
-    // Cost: the body's run, plus a body compile when none is attached.
+    /// Run a gather body to its next suspension or its end. Recompiling the
+    /// AST must keep the `&`-lexicals the gather was written under, which the
+    /// body compiled at `gather` evaluation (`compiled_code`) recorded
+    /// (#12384).
+    // Cost: the body's run plus its compile.
     fn run_gather_body(&mut self, list: &LazyList) -> Result<(), RuntimeError> {
-        match (&list.compiled_code, &list.compiled_fns) {
-            (Some(code), Some(fns)) => self.run_compiled_block_raw(code, fns),
-            _ => self.run_block(&list.body),
-        }
+        self.run_block_under(&list.body, list.compiled_code.as_deref())
     }
 
     /// Force `list` whole. Its body runs inside the list's iteration, which
