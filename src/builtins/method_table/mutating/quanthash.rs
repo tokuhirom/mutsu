@@ -56,7 +56,42 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Bag", "grabpairs", immutable_grabpairs_row),
     row!("Mix", "grab", immutable_grab_row),
     row!("Mix", "grabpairs", immutable_grabpairs_row),
+    row!("SetHash", "STORE", store_row),
+    row!("BagHash", "STORE", store_row),
+    row!("MixHash", "STORE", store_row),
+    row!("Set", "STORE", store_row),
+    row!("Bag", "STORE", store_row),
+    row!("Mix", "STORE", store_row),
 ];
+
+/// `STORE` of the six quant hashes: re-initialize a mutable one from `args`
+/// (folded by `quanthash_store`: pairs weigh, a bare item counts once); the
+/// immutable `Set`, `Bag` and `Mix` refuse with `X::Assignment::RO`. A named
+/// binding is re-seated, a detached container (an `is BagHash` instance's
+/// backing storage) overwritten. The `INITIALIZE` marker the tied-variable
+/// declaration passes is not an element. Answers the new container.
+// Cost: O(n), n = elements stored.
+fn store_row(
+    interp: &mut Interpreter,
+    place: &mut ReceiverPlace<'_>,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let target = place.value().deref_container().descalarize().clone();
+    let items: Vec<Value> = args
+        .iter()
+        .filter(|a| !matches!(a.view(), ValueView::Pair(k, _) if k == "INITIALIZE"))
+        .cloned()
+        .collect();
+    let Some(stored) = crate::runtime::quanthash_store::quanthash_store(&target, &items) else {
+        return Some(Err(RuntimeError::assignment_ro_typename(
+            crate::runtime::value_type_name(&target),
+            &crate::runtime::utils::gist_value(&target),
+        )));
+    };
+    place.assign(interp, stored.clone());
+    Some(Ok(stored))
+}
 
 /// `SetHash.set`.
 // Cost: O(k), k = keys named by the arguments (one user `WHICH` call each).
