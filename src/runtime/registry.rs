@@ -1229,7 +1229,27 @@ impl Registry {
                 seqs.push(vec![parent.clone()]);
             }
         }
-        seqs.push(parents.clone());
+        // A composed role that a sibling class parent already carries in its own
+        // linearization (`class R does C is M` where `class M does C`) is not an
+        // ordering constraint of its own: listing it ahead of `M` in the
+        // parent list would contradict `M`'s `M, C` order and make the merge
+        // "inconsistent".
+        let carried: std::collections::HashSet<&str> = seqs
+            .iter()
+            .flat_map(|s| s.iter().skip(1))
+            .map(String::as_str)
+            .collect();
+        let local_order: Vec<String> = parents
+            .iter()
+            .filter(|p| {
+                let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p);
+                !(self.roles.contains_key(base)
+                    && !self.classes.contains_key(p.as_str())
+                    && carried.contains(p.as_str()))
+            })
+            .cloned()
+            .collect();
+        seqs.push(local_order);
         let merged = Self::c3_merge(class_name, seqs);
         stack.pop();
         merged
