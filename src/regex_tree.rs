@@ -661,6 +661,11 @@ impl RegexTree {
                     )])
                 }
                 RegexNode::NamedCapture { name, array, regex } => {
+                    // An aliased negated lookahead can never match; the
+                    // runtime parser models that, the tree only carries it.
+                    if matches!(regex.as_ref(), RegexNode::Lookaround { negated: true, .. }) {
+                        return None;
+                    }
                     // A scalar alias around a non-capturing quantified atom
                     // captures the whole run as one Match. This mirrors the
                     // legacy parser's user-alias wrapper; an aliased
@@ -754,6 +759,9 @@ impl RegexTree {
                     negated,
                     is_behind,
                 } => {
+                    if !is_executable_lookaround_body(assertion) {
+                        return None;
+                    }
                     let mut inner_anchor_start = false;
                     let inner_tokens = lower_node(
                         assertion,
@@ -781,6 +789,9 @@ impl RegexTree {
                     is_behind,
                     capturing,
                 } => {
+                    if !is_executable_lookaround_body(assertion) {
+                        return None;
+                    }
                     let mut inner_anchor_start = false;
                     let inner_tokens = lower_node(
                         assertion,
@@ -1152,6 +1163,10 @@ impl RegexNode {
                     }
                 })
                 .collect(),
+            // A single-quoted term interpolates nothing; spell it that way when
+            // the text needs no escape, as it is most often written (rakudo
+            // reports a `~` goal in its source form, quotes included).
+            Self::Quote(text) if !text.contains(['\'', '\\']) => format!("'{text}'"),
             Self::Quote(text) => {
                 // A double-quoted term interpolates `$`, `@` and `{`, so those
                 // are escaped along with the quote and backslash themselves.
@@ -1814,7 +1829,19 @@ impl Parser {
                     spaced_separator,
                 );
             }
-            if let Some(backtrack) = self.parse_atom_backtrack(&atom) {
+            // `'a' : 'b'`: whitespace may precede the modifier; rakudo then
+            // wraps the atom in `WithWhitespace` inside the modified atom.
+            let before_modifier = self.pos;
+            self.skip_whitespace();
+            let spaced_modifier = self.pos != before_modifier;
+            let backtrack = self.parse_atom_backtrack(&atom);
+            if backtrack.is_none() {
+                self.pos = before_modifier;
+            }
+            if let Some(backtrack) = backtrack {
+                if spaced_modifier {
+                    atom = RegexNode::WithWhitespace(Box::new(atom));
+                }
                 atom = RegexNode::Extension(RegexExtension::BacktrackModified {
                     atom: Box::new(atom),
                     backtrack,
@@ -2066,6 +2093,14 @@ impl Parser {
             }
             _ => (false, false, true),
         };
+
+        // `<|w>` is rakudo's spelling of the word boundary `<.wb>`, and the
+        // same node in RakuAST.
+        if !explicit && self.chars[start..].starts_with(&['<', '|', 'w', '>']) {
+            let node = RegexTree::parse_lookaround_body("<.wb>", self.in_unit_parse)?.body;
+            self.pos = start + 4;
+            return Some(node);
+        }
 
         // `<?>` / `<!>`: the bare assertions that always pass / fail.
         if explicit && self.chars.get(self.pos) == Some(&'>') {
@@ -2447,6 +2482,23 @@ impl Parser {
                     quote = Some(ch);
                     self.pos += 1;
                 }
+                // A character class of a nested regex literal (`<["']>`) may
+                // hold quotes and braces that are not code.
+                '<' if self.chars.get(self.pos + 1) == Some(&'[') => {
+                    self.pos += 2;
+                    while let Some(&inner) = self.chars.get(self.pos) {
+                        self.pos += 1;
+                        if inner == '\\' {
+                            self.pos += usize::from(self.pos < self.chars.len());
+                        } else if inner == ']' {
+                            break;
+                        }
+                    }
+                }
+                // A comment may hold quotes and braces of its own.
+                '#' if self.pos == body_start || self.chars[self.pos - 1] != '$' => {
+                    self.skip_comment();
+                }
                 '{' => {
                     depth += 1;
                     self.pos += 1;
@@ -2623,7 +2675,7 @@ impl Parser {
         // also publishes the `before` key. The negated spelling can never
         // match once aliased; the runtime parser models that case.
         match regex {
-            RegexNode::Lookaround { negated: true, .. } => return None,
+            RegexNode::Lookaround { negated: true, .. } => {}
             RegexNode::Lookaround {
                 assertion,
                 negated: false,
@@ -2804,6 +2856,15 @@ impl Parser {
             return None;
         }
         let (backtrack, width) = match self.chars.get(self.pos + 1) {
+            // `:!r` / `:?x` negate or parameterise an adverb instead.
+            Some('!' | '?')
+                if self
+                    .chars
+                    .get(self.pos + 2)
+                    .is_some_and(|next| next.is_alphanumeric()) =>
+            {
+                return None;
+            }
             Some('!') => (RegexBacktrack::Greedy, 2),
             Some('?') => (RegexBacktrack::Frugal, 2),
             Some(next) if next.is_alphanumeric() || matches!(next, ':' | '_' | '<' | '[') => {
@@ -3017,6 +3078,7 @@ impl Parser {
         self.skip_whitespace();
         let goal = spaced(goal, self.pos != before);
         let expr = self.parse_atom(stops, false, false)?;
+        let expr = self.parse_quantified_tail(expr)?;
         let before = self.pos;
         self.skip_whitespace();
         let expr = spaced(expr, self.pos != before);
@@ -3024,6 +3086,31 @@ impl Parser {
             goal: Box::new(goal),
             expr: Box::new(expr),
         }))
+    }
+
+    /// The quantifier (`+`, `**2`, `+ % ','`) written after `atom`, as in the
+    /// sequence loop, for a position that holds a single atom (the `~` expression).
+    // Cost: O(q), q = length of the quantifier and separator source.
+    fn parse_quantified_tail(&mut self, atom: RegexNode) -> Option<RegexNode> {
+        let before_quantifier = self.pos;
+        self.skip_whitespace();
+        let spaced_quantifier = self.pos != before_quantifier
+            && matches!(self.chars.get(self.pos), Some('*' | '+' | '?'));
+        if !spaced_quantifier {
+            self.pos = before_quantifier;
+        }
+        let Some(mut quantifier) = self.parse_quantifier() else {
+            return if spaced_quantifier { None } else { Some(atom) };
+        };
+        let mut spaced_separator = false;
+        if let Some((separator, whitespace_before)) = self.parse_separator() {
+            quantifier.separator = Some(Box::new(separator));
+            spaced_separator = whitespace_before;
+        }
+        Some(spaced(
+            quantified(atom, quantifier, spaced_quantifier),
+            spaced_separator,
+        ))
     }
 
     fn parse_variable_name(&mut self) -> Option<String> {
@@ -3048,13 +3135,49 @@ impl Parser {
         Some(self.chars[start..self.pos].iter().collect())
     }
 
-    fn skip_whitespace(&mut self) {
+    /// Skip whitespace only: inside a character class a `#` is a member.
+    // Cost: O(n), n = length of the skipped whitespace.
+    fn skip_plain_whitespace(&mut self) {
         while self
             .chars
             .get(self.pos)
             .is_some_and(|ch| ch.is_whitespace())
         {
             self.pos += 1;
+        }
+    }
+
+    /// Skip whitespace and comments: a regex's whitespace is the main
+    /// language's `ws`, so `# line`, `#`(embedded)` and `#|{declarator}`
+    /// comments count as written whitespace.
+    // Cost: O(n), n = length of the skipped whitespace and comments.
+    fn skip_whitespace(&mut self) {
+        loop {
+            while self
+                .chars
+                .get(self.pos)
+                .is_some_and(|ch| ch.is_whitespace())
+            {
+                self.pos += 1;
+            }
+            if self.chars.get(self.pos) != Some(&'#') {
+                return;
+            }
+            self.skip_comment();
+        }
+    }
+
+    /// Skip the comment at the `#` under the cursor: an embedded or
+    /// declarator one (`#`(..)`, `#|{..}`), else the rest of the line.
+    // Cost: O(n), n = length of the comment and the rest of the pattern.
+    fn skip_comment(&mut self) {
+        let rest: String = self.chars[self.pos..].iter().collect();
+        if let Some(after) = crate::parser::helpers::skip_bracketed_comment(&rest) {
+            self.pos += rest.chars().count() - after.chars().count();
+        } else {
+            while self.chars.get(self.pos).is_some_and(|&ch| ch != '\n') {
+                self.pos += 1;
+            }
         }
     }
 
@@ -3612,12 +3735,17 @@ fn contains_subrule(node: &RegexNode) -> bool {
     }
 }
 
+/// Whether `node` can be the body of a lookaround in the source tree. A
+/// superset of [`is_executable_lookaround_body`]: the captures and anchors
+/// below exist only for the RakuAST boundary, execution keeps the runtime
+/// parser's plan for them.
+// Cost: O(n), n = nodes in the body.
 fn is_supported_lookaround_body(node: &RegexNode) -> bool {
     match node {
-        RegexNode::Literal(_)
-        | RegexNode::Quote(_)
-        | RegexNode::CharClass(_)
-        | RegexNode::CharClassAssertion(_) => true,
+        RegexNode::NamedCapture { regex, .. } => is_supported_lookaround_body(regex),
+        RegexNode::CapturingGroup(child)
+        | RegexNode::Group(child)
+        | RegexNode::WithWhitespace(child) => is_supported_lookaround_body(child),
         RegexNode::Sequence(nodes)
         | RegexNode::Alternation(nodes)
         | RegexNode::SequentialAlternation(nodes) => nodes.iter().all(is_supported_lookaround_body),
@@ -3628,8 +3756,46 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
                     .as_ref()
                     .is_none_or(|separator| is_supported_lookaround_body(&separator.node))
         }
+        RegexNode::Lookaround { assertion, .. } | RegexNode::NamedLookaround { assertion, .. } => {
+            is_supported_lookaround_body(assertion)
+        }
+        RegexNode::AnchorBeginningOfString
+        | RegexNode::AnchorBeginningOfLine
+        | RegexNode::AnchorEndOfString
+        | RegexNode::AnchorEndOfLine
+        | RegexNode::AnchorLeftWordBoundary
+        | RegexNode::AnchorRightWordBoundary
+        | RegexNode::MatchFrom
+        | RegexNode::MatchTo
+        | RegexNode::AssertionPass
+        | RegexNode::AssertionFail => true,
+        other => is_executable_lookaround_body(other),
+    }
+}
+
+/// The lookaround bodies the execution lowerer handles itself (the supported
+/// bodies minus the RakuAST-only constructs).
+// Cost: O(n), n = nodes in the body.
+fn is_executable_lookaround_body(node: &RegexNode) -> bool {
+    match node {
+        RegexNode::Literal(_)
+        | RegexNode::Quote(_)
+        | RegexNode::CharClass(_)
+        | RegexNode::CharClassAssertion(_) => true,
+        RegexNode::Sequence(nodes)
+        | RegexNode::Alternation(nodes)
+        | RegexNode::SequentialAlternation(nodes) => {
+            nodes.iter().all(is_executable_lookaround_body)
+        }
+        RegexNode::Quantified { atom, quantifier } => {
+            is_executable_lookaround_body(atom)
+                && quantifier
+                    .separator
+                    .as_ref()
+                    .is_none_or(|separator| is_executable_lookaround_body(&separator.node))
+        }
         RegexNode::Group(child) | RegexNode::WithWhitespace(child) => {
-            is_supported_lookaround_body(child)
+            is_executable_lookaround_body(child)
         }
         RegexNode::Interpolation { .. }
         | RegexNode::RegexValueInterpolation { .. }
@@ -3658,7 +3824,7 @@ fn is_supported_lookaround_body(node: &RegexNode) -> bool {
         | RegexNode::InternalModifier { .. }
         | RegexNode::Extension(_) => false,
         RegexNode::Lookaround { assertion, .. } | RegexNode::NamedLookaround { assertion, .. } => {
-            is_supported_lookaround_body(assertion)
+            is_executable_lookaround_body(assertion)
         }
     }
 }

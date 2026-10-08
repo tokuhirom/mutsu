@@ -145,7 +145,7 @@ impl Parser {
         self.pos += 1; // '<'
         let mut elements = Vec::new();
         loop {
-            self.skip_whitespace();
+            self.skip_plain_whitespace();
             if self.consume_if('>') {
                 break;
             }
@@ -163,7 +163,7 @@ impl Parser {
                 '[' | ':' if elements.is_empty() => false,
                 _ => return None,
             };
-            self.skip_whitespace();
+            self.skip_plain_whitespace();
             if self.consume_if('[') {
                 elements.push(CharClassElement::Enumeration {
                     negated,
@@ -248,7 +248,7 @@ impl Parser {
     fn parse_enumeration(&mut self) -> Option<Vec<EnumerationElement>> {
         let mut elements = Vec::new();
         loop {
-            self.skip_whitespace();
+            self.skip_plain_whitespace();
             let ch = self.chars.get(self.pos).copied()?;
             if ch == ']' {
                 self.pos += 1;
@@ -284,11 +284,11 @@ impl Parser {
             };
             // `a..z`
             let before_range = self.pos;
-            self.skip_whitespace();
+            self.skip_plain_whitespace();
             if self.chars.get(self.pos) == Some(&'.') && self.chars.get(self.pos + 1) == Some(&'.')
             {
                 self.pos += 2;
-                self.skip_whitespace();
+                self.skip_plain_whitespace();
                 let from = single_char(&element)?;
                 let to = match self.chars.get(self.pos).copied()? {
                     '\\' => single_char(&self.parse_enumeration_escape()?)?,
