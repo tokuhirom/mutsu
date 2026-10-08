@@ -700,7 +700,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn mix_assignment_weight(value: &Value) -> Result<f64, RuntimeError> {
+    pub(crate) fn mix_assignment_weight(value: &Value) -> Result<f64, RuntimeError> {
         match value.view() {
             ValueView::Int(i) => Ok(i as f64),
             ValueView::Num(n) => Ok(n),
@@ -730,7 +730,7 @@ impl Interpreter {
     /// Coerce a value assigned to a Bag/BagHash weight to an `i64` count, with
     /// the same numeric validation as Mix: a non-numeric `Str` raises
     /// X::Str::Numeric rather than being silently treated as truthy (1).
-    pub(super) fn bag_assignment_count(value: &Value) -> Result<num_bigint::BigInt, RuntimeError> {
+    pub(crate) fn bag_assignment_count(value: &Value) -> Result<num_bigint::BigInt, RuntimeError> {
         use num_bigint::BigInt;
         match value.view() {
             ValueView::Int(i) => Ok(BigInt::from(i)),

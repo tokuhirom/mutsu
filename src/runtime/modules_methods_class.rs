@@ -1,4 +1,4 @@
-mod methods;
+pub(crate) mod methods;
 mod methods_adhoc_slurpy;
 mod methods_aggregate_ctor;
 mod methods_call_dispatch;

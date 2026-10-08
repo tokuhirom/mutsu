@@ -2815,60 +2815,6 @@ impl Interpreter {
                         index.is_some_and(|i| i < items.len() && !items.hole_at(i)),
                     ));
                 }
-                // Cost: O(1) amortized, in place (the element type check reads the
-                // container's `value_type`; only a failing check scans the env, for
-                // the variable name its message reports).
-                ("ASSIGN-POS", [idx, value]) => {
-                    let index = match idx.view() {
-                        ValueView::Int(i) if i >= 0 => Some(i as usize),
-                        ValueView::Num(f) if f >= 0.0 => Some(f as usize),
-                        _ => None,
-                    };
-                    let Some(index) = index else {
-                        // `@a[-1] = $v` refuses the same way.
-                        return Err(RuntimeError::new(format!(
-                            "Index out of range. Is: {}, should be in 0..^Inf",
-                            idx.to_string_value()
-                        )));
-                    };
-
-                    if !value.is_nil()
-                        && let Some(constraint) = element_type.as_deref()
-                        && !self.type_matches_value(constraint, value)
-                    {
-                        let var_name = self.array_binding_name(&items);
-                        return Err(self.type_check_element_failure(&var_name, constraint, value));
-                    }
-
-                    // For shaped arrays, check bounds
-                    if let Some(ref shape) = shape
-                        && !shape.is_empty()
-                        && index >= shape[0]
-                    {
-                        return Err(RuntimeError::new(format!(
-                            "Index {} for dimension 1 out of range 0..{}",
-                            index, shape[0]
-                        )));
-                    }
-                    match items.get(index).map(Value::view) {
-                        Some(ValueView::Scalar(_)) => {
-                            return Err(RuntimeError::assignment_ro(None));
-                        }
-                        // An element `BIND-POS`-bound to a bare value (#10924).
-                        Some(ValueView::ContainerRef(cell)) if cell.is_readonly() => {
-                            return Err(RuntimeError::immutable_value());
-                        }
-                        _ => {}
-                    }
-                    // In place through the shared node, with the same store the
-                    // `[]=` opcode uses: every holder of the array sees the write
-                    // (container identity), and a grown gap stays a hole.
-                    // SAFETY: audited aliased in-place container write (see
-                    // value::aliased_mut); no borrow into the node is live.
-                    let data = unsafe { crate::value::gc_contents_mut(&items) };
-                    data.store_element(index, Self::itemize_value_for_element_store(value.clone()));
-                    return Ok(value.clone());
-                }
                 // Cost: O(1) amortized, in place through the shared node (as ASSIGN-POS).
                 ("BIND-POS", [idx, value]) => {
                     if is_native {
@@ -2888,29 +2834,6 @@ impl Interpreter {
                     data.store_element(index, Value::bound_element(value.clone()));
                     return Ok(value.clone());
                 }
-                // Cost: O(1) amortized (in place through the shared node; plus the
-                // preamble above).
-                ("DELETE-POS", [idx]) => {
-                    if is_native {
-                        return Err(RuntimeError::new(
-                            "Cannot delete from a natively typed array",
-                        ));
-                    }
-                    let index = match idx.view() {
-                        ValueView::Int(i) if i >= 0 => Some(i as usize),
-                        ValueView::Num(f) if f >= 0.0 => Some(f as usize),
-                        _ => None,
-                    };
-                    let Some(index) = index else {
-                        return Err(RuntimeError::new("Cannot DELETE-POS with a negative index"));
-                    };
-                    // Delete through the shared backing node rather than
-                    // rebuilding the array and rewriting the env bindings that
-                    // point at the old one: an array held inside a `Mixin`'s
-                    // `Arc<Value>` (`@a but R`) is not an env binding, so the
-                    // rewrite never reached it and the delete was lost.
-                    return Ok(self.array_delete_pos_value(&target, index));
-                }
                 // Cost: O(e), e = elements of the array.
                 ("clone", _) => {
                     if let Some(copy) = target.array_shallow_clone() {
@@ -2919,15 +2842,6 @@ impl Interpreter {
                 }
                 _ => {}
             }
-        }
-
-        // `%h.DELETE-KEY($k)` on a hash *value*. The name-keyed mut path
-        // (`vm_call_method_mut_ops`) answers this for a plain lexical `%h`; every
-        // other route — a hash reached through a `Mixin` above all, which is what
-        // `:delete` on a `%h but R` dispatches through — had no method to find.
-        if method == "DELETE-KEY" && args.len() == 1 && matches!(target.view(), ValueView::Hash(_))
-        {
-            return self.hash_delete_key_value(&target, &args[0]);
         }
 
         // Mixin dispatch

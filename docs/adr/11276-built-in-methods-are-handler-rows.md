@@ -1971,3 +1971,24 @@ Third step of the rendering and identity names (`refactor/11276-collection-rende
 - The row declines (`None`) exactly when the route says the interpreter must dispatch an element's own `gist`, so a row
   never preempts a user `gist`.
 - Left: `raku`/`Str`/`fmt` of the collections, `Version`, `Capture`, `Nil`, the objects group, `Cool`/`Any`/`Mu`, `clone`.
+
+### 9.37 Slice 4: the subscript protocol's mutators are rows (2026-10-08)
+
+`refactor/11276-4-resolver-cutover`. The storage bridges of §9.29 (`ArrayStorage`, `HashStorage`, `BaggyStorage`) and the
+`Mixin` bridge each carried an inline copy of the subscript protocol's mutators next to the `Handler::Mut` rows of §9.23.
+This step makes those mutators rows, so the bridges become one question ("which native value backs this receiver?") followed
+by `invoke_mut` on a detached place.
+
+- `mutating::subscript`: `ASSIGN-KEY` (2) and `DELETE-KEY` (1) on `Hash`, `SetHash`, `BagHash`, `MixHash` (in place through
+  the shared node, answers as the VM arms did: the value, the old value, `True`/`False`, the old count/weight) and on the
+  immutable `Set`, `Bag`, `Mix` (`X::Assignment::RO`). `Map.DELETE-KEY` keeps `refuse_map_removal`.
+- `mutating::subscript_pos`: `ASSIGN-POS` (2) and `DELETE-POS` (1) on `Array`/`List`, with the element type check, the shaped
+  array dimension check, the bound-element guard and the native-array refusal. The multi-dimension forms and `BIND-POS`
+  (which needs the caller's argument sources) stay with the cascade.
+- Deleted: the VM's `ASSIGN-KEY`/`DELETE-KEY` arms of `CallMethodMut` (about 340 lines; only the undefined-receiver case is
+  left), `assign_key_in_place`, `dispatch_assign_key_method`, the cascade's single-index `ASSIGN-POS`/`DELETE-POS` arms and
+  the `DELETE-KEY` shortcut, and the inline `ASSIGN-KEY`/`DELETE-KEY`/`push`/`append` bodies of the hash, baggy and mixin
+  bridges. `Hash.push`/`append` on an `is Hash` instance's storage now stack a repeated key as `Hash.push` does everywhere
+  else, instead of overwriting it.
+- Left: `STORE` of the baggy bridge, the `BIND-*` family, `Mu`/grammar/metamodel bridges (they need the constructor rows of
+  the 3G remainder).

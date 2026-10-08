@@ -18,6 +18,8 @@ pub(crate) mod baghash;
 pub(crate) mod buf;
 pub(crate) mod hash;
 pub(crate) mod quanthash;
+pub(crate) mod subscript;
+pub(crate) mod subscript_pos;
 pub(crate) mod text;
 
 /// Every family of this group.
@@ -27,6 +29,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     buf::ROWS,
     hash::ROWS,
     quanthash::ROWS,
+    subscript::ROWS,
+    subscript_pos::ROWS,
     text::ROWS,
 ];
 
