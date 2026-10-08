@@ -482,7 +482,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Blob", "reverse", 1, 24),
     ("Blob", "list", 1, 24),
     ("Blob", "contents", 1, 24),
-    ("Blob", "Blob", 1, 8),
+    // `Buf` declares `Blob` (folded owner, ADR-11276 §8.3); `Blob` itself does not.
+    ("Blob", "Blob", 1, 24),
     ("Blob", "Buf", 1, 24),
     ("Blob", "Bool", 1, 24),
     ("Blob", "Str", 3, 24),

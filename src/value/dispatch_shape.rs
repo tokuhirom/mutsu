@@ -141,13 +141,23 @@ pub(crate) enum DispatchShape {
     /// this shape, so a row cannot answer a `Seq` whose method would have consumed
     /// it.
     Seq,
+    /// An immutable byte buffer: a `Blob` or `Blob[uintN]`/`Blob[intN]`, or one
+    /// of the encoding buffers `utf8`, `utf16`, `utf32` (closed). Rakudo
+    /// declares a copy of every `Blob` method on each of them, so the shape's
+    /// rows are those of the owner `Blob`; a user subclass has another class
+    /// name and no shape.
+    Blob,
+    /// A mutable byte buffer: a `Buf` or `Buf[uintN]`/`Buf[intN]` (closed). It
+    /// reaches the rows of the owner `Buf`, the read-only ones registered once
+    /// beside `Blob`'s and the mutators on `Buf` alone.
+    Buf,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 33] = [
+    pub(crate) const ALL: [DispatchShape; 35] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -181,6 +191,8 @@ impl DispatchShape {
         DispatchShape::IoSpecQnx,
         DispatchShape::IoHandle,
         DispatchShape::Seq,
+        DispatchShape::Blob,
+        DispatchShape::Buf,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -221,6 +233,8 @@ impl DispatchShape {
             DispatchShape::IoSpecQnx => "IO::Spec::QNX",
             DispatchShape::IoHandle => "IO::Handle",
             DispatchShape::Seq => "Seq",
+            DispatchShape::Blob => "Blob",
+            DispatchShape::Buf => "Buf",
         }
     }
 
@@ -302,8 +316,8 @@ impl DispatchShape {
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned
 /// class name: a compare of two ids, not of two strings.
-fn instance_shapes() -> &'static [(Symbol, DispatchShape); 11] {
-    static SHAPES: OnceLock<[(Symbol, DispatchShape); 11]> = OnceLock::new();
+fn instance_shapes() -> &'static [(Symbol, DispatchShape); 32] {
+    static SHAPES: OnceLock<[(Symbol, DispatchShape); 32]> = OnceLock::new();
     SHAPES.get_or_init(|| {
         [
             (Symbol::intern("Date"), DispatchShape::Date),
@@ -317,6 +331,27 @@ fn instance_shapes() -> &'static [(Symbol, DispatchShape); 11] {
             (Symbol::intern("IO::Path::Cygwin"), DispatchShape::IoPath),
             (Symbol::intern("IO::Path::QNX"), DispatchShape::IoPath),
             (Symbol::intern("IO::Handle"), DispatchShape::IoHandle),
+            (Symbol::intern("Blob"), DispatchShape::Blob),
+            (Symbol::intern("Buf"), DispatchShape::Buf),
+            (Symbol::intern("utf8"), DispatchShape::Blob),
+            (Symbol::intern("utf16"), DispatchShape::Blob),
+            (Symbol::intern("utf32"), DispatchShape::Blob),
+            (Symbol::intern("Blob[uint8]"), DispatchShape::Blob),
+            (Symbol::intern("Blob[uint16]"), DispatchShape::Blob),
+            (Symbol::intern("Blob[uint32]"), DispatchShape::Blob),
+            (Symbol::intern("Blob[uint64]"), DispatchShape::Blob),
+            (Symbol::intern("Blob[int8]"), DispatchShape::Blob),
+            (Symbol::intern("Blob[int16]"), DispatchShape::Blob),
+            (Symbol::intern("Blob[int32]"), DispatchShape::Blob),
+            (Symbol::intern("Blob[int64]"), DispatchShape::Blob),
+            (Symbol::intern("Buf[uint8]"), DispatchShape::Buf),
+            (Symbol::intern("Buf[uint16]"), DispatchShape::Buf),
+            (Symbol::intern("Buf[uint32]"), DispatchShape::Buf),
+            (Symbol::intern("Buf[uint64]"), DispatchShape::Buf),
+            (Symbol::intern("Buf[int8]"), DispatchShape::Buf),
+            (Symbol::intern("Buf[int16]"), DispatchShape::Buf),
+            (Symbol::intern("Buf[int32]"), DispatchShape::Buf),
+            (Symbol::intern("Buf[int64]"), DispatchShape::Buf),
         ]
     })
 }

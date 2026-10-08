@@ -445,13 +445,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         // an instance attribute named `contents` (`Pod::Block.contents`) still
         // resolves through its own accessor.
         "contents" => match target.view() {
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => Some(Ok(
-                Value::array(crate::value::value_buf::buf_elems_or_empty(&attributes)),
-            )),
+            ValueView::Instance { class_name, .. }
+                if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
+            {
+                crate::builtins::method_table::blob::list(target, &[])
+            }
             _ => None,
         },
         "list" | "Array" => {

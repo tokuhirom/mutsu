@@ -375,62 +375,11 @@ pub(super) fn dispatch(
                 ))))
             }
         }
-        ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) => {
-            if let Some(bytes) = crate::value::value_buf::buf_elems(&attributes) {
-                if method == "raku" || method == "perl" {
-                    // `to_string_value`, not an `Int`-only match: a `uint64`
-                    // element above `i64::MAX` decodes to a `BigInt`, and the
-                    // old fallback printed it as `0`.
-                    let elems: Vec<String> = bytes.iter().map(Value::to_string_value).collect();
-                    // Normalize short names to canonical forms for .raku
-                    let cn = class_name.resolve();
-                    let canonical = match cn.as_str() {
-                        "buf8" => "Buf[uint8]",
-                        "buf16" => "Buf[uint16]",
-                        "buf32" => "Buf[uint32]",
-                        "buf64" => "Buf[uint64]",
-                        "blob8" => "Blob[uint8]",
-                        "blob16" => "Blob[uint16]",
-                        "blob32" => "Blob[uint32]",
-                        "blob64" => "Blob[uint64]",
-                        other => other,
-                    };
-                    Some(Ok(Value::str(format!(
-                        "{}.new({})",
-                        canonical,
-                        elems.join(",")
-                    ))))
-                } else {
-                    // gist — show at most 100 elements, append "..." if truncated.
-                    // An empty Blob/Buf instance gists as `Blob:0x<>` (empty hex
-                    // body), not `Blob()` — the latter is the type-object spelling.
-                    if bytes.is_empty() {
-                        Some(Ok(Value::str(format!("{}:0x<>", class_name))))
-                    } else {
-                        let width = crate::value::value_buf::buf_elem_width(&class_name.resolve());
-                        let truncated = bytes.len() > 100;
-                        let display_bytes = if truncated { &bytes[..100] } else { &bytes[..] };
-                        let mut hex: Vec<String> = display_bytes
-                            .iter()
-                            .map(|b| crate::value::value_buf::elem_hex(b, width))
-                            .collect();
-                        if truncated {
-                            hex.push("...".to_string());
-                        }
-                        Some(Ok(Value::str(format!(
-                            "{}:0x<{}>",
-                            class_name,
-                            hex.join(" ")
-                        ))))
-                    }
-                }
-            } else {
-                Some(Ok(Value::str(format!("{}()", class_name))))
-            }
+        // A buffer's rendering is the `Blob`/`Buf` rows' (`method_table::blob`).
+        ValueView::Instance { class_name, .. }
+            if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
+        {
+            crate::builtins::method_table::blob::render(target, method == "raku" || method == "perl")
         }
         // The renderers the quant hashes' rows share. The rows decline an
         // element that may carry a user `gist`/`raku`; this arm renders it

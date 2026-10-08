@@ -3,7 +3,7 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::str_numeric::str_numifies_to_complex;
-use crate::value::value_buf::{buf_len_or_zero, buf_storage, set_buf_storage};
+use crate::value::value_buf::buf_len_or_zero;
 use crate::value::{RuntimeError, Value, ValueView};
 
 use super::parse_raku_int_from_str;
@@ -156,23 +156,13 @@ pub(super) fn dispatch(
     // as a plain `Buf[uint8]` / `Blob[uint8]`. Humming-Bird's HTTPServer uses
     // `"\r\n".encode.Buf` to build its constant delimiters.
     if matches!(method, "Buf" | "Blob")
-        && let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
+        && let ValueView::Instance { class_name, .. } = target.view()
         && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
     {
-        let mut attrs = crate::value::AttrMap::new();
-        set_buf_storage(
-            &mut attrs,
-            buf_storage(&attributes.as_map()).unwrap_or_else(|| Value::array(Vec::new())),
-        );
-        let target_class = if method == "Buf" { "Buf" } else { "Blob" };
-        return Some(Some(Ok(Value::make_instance(
-            Symbol::intern(target_class),
-            attrs,
-        ))));
+        // The `Blob`/`Buf` rows' implementation (`method_table::blob`).
+        return Some(crate::builtins::method_table::blob::reinterpret(
+            target, method,
+        ));
     }
     // A numeric coercion method invoked on a *type object* of the same type
     // (`Int.Int`, `Num.Num`, `Complex.Complex`) is the identity coercion: raku
