@@ -3,14 +3,33 @@ use Test;
 # TEMPORARY #9930 CI diagnostic -- remove.
 unless %*ENV<DIAG9930> {
     %*ENV<DIAG9930> = '1';
-    my $p = run $*EXECUTABLE, $?FILE, :out, :err;
-    my $o = $p.out.slurp(:close);
-    my $e = $p.err.slurp(:close);
-    if $p.exitcode != 0 {
-        my $msg = "rc={$p.exitcode} err=[{$e.subst("\n", ' | ', :g)}] out=[{$o.subst("\n", ' | ', :g)}]";
-        say "Bail out! $msg";
+    my @variants = (
+        'base' => {},
+        'jit-off' => { MUTSU_JIT => 'off' },
+        'precomp-0' => { MUTSU_PRECOMP => '0' },
+        'bytecode-0' => { MUTSU_PRECOMP_BYTECODE => '0' },
+        'gc-off' => { MUTSU_GC => 'off' },
+        'gc-on' => { MUTSU_GC => 'on' },
+        'trir-0' => { MUTSU_TRIR => '0' },
+        'memo-0' => { MUTSU_PARSE_MEMO => '0' },
+        'fold-0' => { MUTSU_CONST_FOLD => '0' },
+    );
+    my @res;
+    my $first-err = '';
+    for @variants -> $v {
+        my %saved;
+        for $v.value.kv -> $k, $val { %saved{$k} = %*ENV{$k}; %*ENV{$k} = $val }
+        my $p = run $*EXECUTABLE, $?FILE, :out, :err;
+        my $e = $p.err.slurp(:close);
+        $p.out.slurp(:close);
+        for $v.value.keys -> $k { %*ENV{$k}:delete }
+        @res.push("{$v.key}={$p.exitcode}");
+        $first-err ||= $e.subst("\n", ' | ', :g) if $p.exitcode != 0;
     }
-    else { print $o }
+    if @res.grep(* !~~ /'=0'$/) {
+        say "Bail out! variants: {@res.join(' ')} err1=[$first-err]";
+    }
+    else { say "1..1"; say "ok 1 - all variants pass: {@res.join(' ')}" }
     exit 0;
 }
 
