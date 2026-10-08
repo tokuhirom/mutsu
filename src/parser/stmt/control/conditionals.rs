@@ -127,9 +127,35 @@ fn lower_if_clause_binding(
     let Some(param_defs) = binding_params else {
         return (None, then_branch);
     };
+    if_pointy_clause(param_defs, then_branch)
+}
+
+/// The expansion of `if COND -> PARAMS { BODY }`: the `binding_var` the
+/// compiler binds the condition to, and the then-branch, which opens with a
+/// [`crate::ast::SourceForm::IfPointy`] record of the parameters and body as
+/// written. `rakuast::lower` calls it too, so a hand-built `Statement::If`
+/// over a `PointyBlock` expands the same way.
+// Cost: O(n), n = size of the body.
+pub(crate) fn if_pointy_clause(
+    param_defs: Vec<ParamDef>,
+    then_branch: Vec<Stmt>,
+) -> (Option<String>, Vec<Stmt>) {
     if param_defs.is_empty() {
         return (None, then_branch);
     }
+    let record = Stmt::SourceForm(Box::new(crate::ast::SourceForm::IfPointy {
+        param_defs: param_defs.clone(),
+        body: then_branch.clone(),
+    }));
+    let (binding, mut stmts) = expand_if_pointy(param_defs, then_branch);
+    stmts.insert(0, record);
+    (binding, stmts)
+}
+
+fn expand_if_pointy(
+    param_defs: Vec<ParamDef>,
+    then_branch: Vec<Stmt>,
+) -> (Option<String>, Vec<Stmt>) {
     if param_defs.len() == 1 && is_simple_if_binding(&param_defs[0]) {
         // A sigilless pointy (`if EXPR -> \r { }`) is marked with a leading
         // `\` so the compiler binds the value itself (no scalar itemization)

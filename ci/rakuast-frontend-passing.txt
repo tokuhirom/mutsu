@@ -319,6 +319,7 @@ t/collections/lazy-seq/nested-lazy-pipe-reify.t
 t/collections/lazy-seq/nqp-eqaddr-iteration-end.t
 t/collections/lazy-seq/predictive-seq-tail-scope.t
 t/collections/lazy-seq/seq-array-context-reiterate.t
+t/collections/lazy-seq/seq-bind-in-typed-pointy-if.t
 t/collections/lazy-seq/seq-bind-positional-failover.t
 t/collections/lazy-seq/seq-cache-returns-list.t
 t/collections/lazy-seq/seq-consumption-matrix.t
@@ -1222,6 +1223,7 @@ t/control/given-sigilless-instance.t
 t/control/given-source-rebind-with-pointy.t
 t/control/given-topic-alias.t
 t/control/given-when-tail-assign-value.t
+t/control/given-when-tail-if-value.t
 t/control/given-with-pointy-scalar-readonly-enforcement.t
 t/control/given-with-scalar-pointy-rw-writeback.t
 t/control/given-with-topic-shadows-local.t
@@ -1229,6 +1231,8 @@ t/control/if-block-args-string-literal.t
 t/control/if-body-let-resolution.t
 t/control/if-elsif-condition-without-whitespace.t
 t/control/if-given-value-propagation.t
+t/control/if-pointy-sigilless-binding.t
+t/control/if-pointy-topic-under-given.t
 t/control/if-topic-binding-value.t
 t/control/immutable-topic-receiver-oracle.t
 t/control/init-check-class-in-code-timing.t
@@ -1272,6 +1276,7 @@ t/control/proceed-succeed.t
 t/control/proxy-topic-for-alias.t
 t/control/quietly.t
 t/control/repeat-loop.t
+t/control/sigilless-topic-container-identity.t
 t/control/sink-tail-failure.t
 t/control/sink-warning.t
 t/control/state-nested-phaser-block-clone.t
@@ -1314,6 +1319,7 @@ t/control/when-in-deferred-callback-created-inside-sub.t
 t/control/when-statement-modifier.t
 t/control/when-succeed-innermost-block.t
 t/control/when-succeed-stack-base-discipline.t
+t/control/when-value-through-block-local.t
 t/control/while-condition-user-bool.t
 t/control/while-pointy-aggregate-failure.t
 t/control/while-recursion-loop-local-leak.t
@@ -1334,6 +1340,7 @@ t/exceptions/anon-multi-exception-class.t
 t/exceptions/assignment-error-source-line.t
 t/exceptions/backtrace-anonymous-pointy-frames.t
 t/exceptions/backtrace-introspection.t
+t/exceptions/backtrace-method-rows.t
 t/exceptions/backtrace-object.t
 t/exceptions/backtrace-positional-index.t
 t/exceptions/backtrace.t
@@ -1833,6 +1840,7 @@ t/lang/angle-word-leading-zero-no-warn.t
 t/lang/code-line-file-reflection.t
 t/lang/code-var-free-read-ignores-caller-shadow.t
 t/lang/code-var-mention-identity-stable.t
+t/lang/code-var-shadow-slot.t
 t/lang/code-variable.t
 t/lang/constant-sigiled-term.t
 t/lang/deref-bind-value-alias.t
@@ -2291,6 +2299,7 @@ t/modules/import-export/imported-constant-nested-frame-indirect-call.t
 t/modules/import-export/imported-constant-shadows-type-in-block.t
 t/modules/import-export/imported-constant-type-alias.t
 t/modules/import-export/imported-constant-visible-via-code-ref.t
+t/modules/import-export/imported-exception-when.t
 t/modules/import-export/imported-exported-proto-local-multi.t
 t/modules/import-export/imported-listop-angle-arg.t
 t/modules/import-export/imported-my-type-does-not-shadow.t
@@ -2322,6 +2331,7 @@ t/modules/import-export/module-tagged-export-nested.t
 t/modules/import-export/multi-export-rerun-dispatches-by-args.t
 t/modules/import-export/need-bare-module-multi-not-imported.t
 t/modules/import-export/need-bare-module-plain-sub-not-imported.t
+t/modules/import-export/need-hides-dependency-export-constant.t
 t/modules/import-export/need-in-block-keeps-module-imports.t
 t/modules/import-export/need-preserves-nested-use-imports.t
 t/modules/import-export/nested-export-declarations.t
@@ -3919,6 +3929,7 @@ t/rakuast/rakuast-hyper-infix.t
 t/rakuast/rakuast-hyper-method.t
 t/rakuast/rakuast-hyper-whatever-term.t
 t/rakuast/rakuast-identity.t
+t/rakuast/rakuast-if-pointy-block.t
 t/rakuast/rakuast-imaginary-literal.t
 t/rakuast/rakuast-index-assign.t
 t/rakuast/rakuast-index-bind.t
@@ -5021,6 +5032,8 @@ t/routines/signature/gather-aggregate-param-infinite.t
 t/routines/signature/given-pointy-typed-param-junction.t
 t/routines/signature/hash-composer-nested-signature-topic.t
 t/routines/signature/hash-parametric-keyof.t
+t/routines/signature/if-pointy-array-param-seq.t
+t/routines/signature/if-pointy-container-param.t
 t/routines/signature/implicit-any-param-rejects-mu.t
 t/routines/signature/implicit-topic-block-signature-gist.t
 t/routines/signature/invocant-marker-detached-from-type.t

@@ -595,28 +595,11 @@ fn lower_clause_block(block: &RakuAstNode) -> Result<(Vec<Stmt>, Option<String>)
     if block.class != RakuAstClass::PointyBlock {
         return Ok((lower_block(block)?, None));
     }
-    let (names, defs) = signature_positional_params(block)?;
-    let [name] = names.as_slice() else {
-        return Err(unsupported(block));
-    };
-    let [def] = defs.as_slice() else {
-        return Err(unsupported(block));
-    };
-    let plain = def.type_constraint.is_none()
-        && def.type_capture.is_none()
-        && def.default.is_none()
-        && def.where_constraint.is_none()
-        && def.traits.is_empty()
-        && def.sub_signature.is_none()
-        && !def.slurpy
-        && !def.named
-        && !def.sigilless
-        && !def.optional_marker
-        && !name.starts_with(['@', '%', '&', '_']);
-    if !plain {
-        return Err(unsupported(block));
-    }
-    Ok((lower_block(block)?, Some(name.clone())))
+    let (mut names, mut defs) = signature_positional_params(block)?;
+    name_for_unpack_params(&mut names, &mut defs);
+    // The parser's own expansion binds the parameters to the tested value.
+    let (binding_var, body) = crate::parser::if_pointy_clause(defs, lower_block(block)?);
+    Ok((body, binding_var))
 }
 
 /// Lower `with COND { … }` / `without COND { … }` to the conditional mutsu's

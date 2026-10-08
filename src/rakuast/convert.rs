@@ -353,7 +353,8 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(
                 crate::ast::SourceForm::SupplyBlock(_)
                 | crate::ast::SourceForm::WithPointy { .. }
-                | crate::ast::SourceForm::GivenPointy { .. },
+                | crate::ast::SourceForm::GivenPointy { .. }
+                | crate::ast::SourceForm::IfPointy { .. },
             )
             | None => Err(unsupported("source form")),
         },
@@ -3102,7 +3103,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 crate::ast::SourceForm::SupplyBlock(_)
                 | crate::ast::SourceForm::BarePhaser
                 | crate::ast::SourceForm::WithPointy { .. }
-                | crate::ast::SourceForm::GivenPointy { .. },
+                | crate::ast::SourceForm::GivenPointy { .. }
+                | crate::ast::SourceForm::IfPointy { .. },
             )
             | None => Err(unsupported("source form")),
         },
@@ -4262,6 +4264,12 @@ fn clause_block_node(
     then_branch: &[Stmt],
     binding_var: &Option<String>,
 ) -> Result<RakuAstNode, RuntimeError> {
+    // The parser's record of `-> PARAMS { BODY }`, as written.
+    if let Some(Stmt::SourceForm(form)) = then_branch.first()
+        && let crate::ast::SourceForm::IfPointy { param_defs, body } = form.as_ref()
+    {
+        return pointy_block(param_defs, body, None);
+    }
     match binding_var {
         None => signature_block_node(then_branch),
         Some(name) if is_plain_scalar_name(name) => {

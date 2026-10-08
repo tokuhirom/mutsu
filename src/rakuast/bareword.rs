@@ -259,8 +259,15 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 // `given X -> \y { y }`: the parameter is declared by the
                 // expansion's bind, which the record keeps as written.
                 Stmt::SourceForm(form) => {
-                    if let crate::ast::SourceForm::GivenPointy { param_def, .. } = form.as_ref() {
-                        self.visit_param(param_def);
+                    match form.as_ref() {
+                        crate::ast::SourceForm::GivenPointy { param_def, .. } => {
+                            self.visit_param(param_def)
+                        }
+                        // `if X -> \y { y }` likewise.
+                        crate::ast::SourceForm::IfPointy { param_defs, .. } => {
+                            param_defs.iter().for_each(|p| self.visit_param(p))
+                        }
+                        _ => {}
                     }
                 }
                 // `my \x = 5` / `my \x := $s` declares the term `x`.
