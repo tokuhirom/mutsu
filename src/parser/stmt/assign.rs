@@ -147,6 +147,7 @@ mod compound_expr;
 mod lvalue;
 mod op;
 mod paren;
+mod set_compound;
 mod sink;
 mod try_assign;
 
@@ -162,7 +163,7 @@ pub(crate) use bracket::parse_bracket_meta_assign_op;
 pub(crate) use compound_expr::{
     DOTTY_ASSIGN_OP, build_compound_assign_expr, build_custom_compound_assign_expr,
     build_meta_assign_expr, compound_assign_marker, dotty_assign_marker, is_dotty_assign,
-    preserve_compound_assign,
+    preserve_compound_assign, reverse_assign_marker,
 };
 pub(crate) use lvalue::{
     callable_lvalue_assign_expr, dynamic_method_lvalue_assign_expr, list_lvalue_assign_expr,
@@ -173,10 +174,14 @@ pub(crate) use op::{ShortCircuitKeep, short_circuit_keep, short_circuit_test};
 pub(crate) use op::{
     autoviv_set_compound_lhs, compound_assign_op_from_name, compound_assigned_value_expr,
     parse_compound_assign_op, parse_custom_compound_assign_op, parse_meta_compound_assign_op,
-    parse_set_compound_assign_op, short_circuit_compound_assign_expr,
+    short_circuit_compound_assign_expr,
 };
 pub(crate) use paren::{
     looks_like_parenthesized_assignment, paren_list_assign_expr, parenthesized_assign_expr,
+};
+pub(crate) use set_compound::{
+    build_set_compound_assign_expr, parse_set_compound_assign_op, preserve_set_compound_assign,
+    set_op_from_spelling,
 };
 pub(crate) use sink::{
     parse_assign_expr_or_comma, parse_assign_expr_or_comma_no_word_logical,

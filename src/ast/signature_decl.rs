@@ -43,6 +43,15 @@ pub(crate) enum SourceForm {
         param_defs: Vec<super::ParamDef>,
         body: Vec<Stmt>,
     },
+    /// `(LVALUES) »=» VALUE`: the written target, value and dwim flags, which
+    /// open the expansion `hyper_assignment_expr` builds for a literal list of
+    /// lvalues.
+    HyperAssign {
+        target: Expr,
+        value: Expr,
+        dwim_left: bool,
+        dwim_right: bool,
+    },
     /// `BEGIN say 1`: a phaser written over a bare statement (ADR-12199). It
     /// opens a one-statement expansion whose second statement is the phaser;
     /// only a spelling-keeping parse builds it.

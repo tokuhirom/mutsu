@@ -18,6 +18,7 @@ mod set_ops;
 // Re-exports preserving original pub(super) visibility
 pub(super) use arith::{additive_expr, multiplicative_expr, power_expr, power_expr_tight};
 pub(super) use hyper_concat::concat_expr;
+pub(crate) use hyper_concat::lower_hyper_assignment;
 pub(super) use infix_term::{InfixTermOp, infix_term_call, parse_infix_term_op};
 pub(super) use meta_bracket::{
     BracketInfix, block_newline_terminates, cannot_meta_loose_bracket_assign_error,
