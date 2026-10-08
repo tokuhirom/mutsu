@@ -48,6 +48,9 @@ pub(crate) struct ModuleLoadFacts {
     /// Sorted, so equal facts encode alike.
     pub(crate) exported_type_names: Vec<String>,
     pub(crate) our_routine_names: Vec<Symbol>,
+    /// Where the source's Pod blocks are (ADR-12026 §2.4), so `$=pod` is
+    /// rebuilt from those ranges; none when they cannot be isolated.
+    pub(crate) pod_ranges: Option<super::io_pod_blocks::PodRanges>,
 }
 
 impl ModuleLoadFacts {
@@ -56,7 +59,7 @@ impl ModuleLoadFacts {
     /// raises, so it runs where the load runs it, and an entry is only ever
     /// written for a unit that passed it.
     // Cost: O(n), n = size of the AST (a handful of walks).
-    pub(crate) fn compute(stmts: &[Stmt], prologue_len: usize) -> Self {
+    pub(crate) fn compute(stmts: &[Stmt], prologue_len: usize, pod_source: &str) -> Self {
         let mut exported_type_names: Vec<String> = Interpreter::collect_exported_type_names(stmts)
             .into_iter()
             .collect();
@@ -78,6 +81,7 @@ impl ModuleLoadFacts {
             has_state_sub: Interpreter::module_has_state_sub(stmts),
             exported_type_names,
             our_routine_names: Interpreter::module_our_routine_names(stmts),
+            pod_ranges: Interpreter::pod_ranges_of(pod_source),
         }
     }
 }

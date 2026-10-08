@@ -334,7 +334,23 @@ impl Interpreter {
         stmts: &[Stmt],
         docs: Vec<DocComment>,
     ) -> Result<(), RuntimeError> {
-        self.collect_pod_sources(source)?;
+        self.establish_pod_variables_from_stmts_in(source, None, stmts, docs)
+    }
+
+    /// [`Self::establish_pod_variables_from_stmts`], rebuilding the Pod
+    /// blocks from just `pod_ranges` of `source` when a precompiled module
+    /// recorded them (ADR-12026 §2.4).
+    pub(crate) fn establish_pod_variables_from_stmts_in(
+        &mut self,
+        source: &str,
+        pod_ranges: Option<&super::io_pod_blocks::PodRanges>,
+        stmts: &[Stmt],
+        docs: Vec<DocComment>,
+    ) -> Result<(), RuntimeError> {
+        match pod_ranges {
+            Some(ranges) => self.collect_pod_blocks_in_ranges(source, ranges)?,
+            None => self.collect_pod_sources(source)?,
+        }
         self.add_pod_declarator_entries_from_stmts(stmts, docs);
         Ok(())
     }

@@ -967,7 +967,7 @@ impl Interpreter {
                     &entry.facts,
                     path_text,
                 );
-                Self::verify_load_facts(&source_path, &ast, &entry.facts)?;
+                Self::verify_load_facts(&source_path, &ast, &entry.facts, &source_text)?;
                 (ast, entry.facts.clone(), entry.effects.clone(), true)
             }
             None => {
@@ -983,7 +983,11 @@ impl Interpreter {
                     }),
                     None => order(&mut stmts),
                 };
-                let facts = super::module_load_facts::ModuleLoadFacts::compute(&stmts, prologue_len);
+                let facts = super::module_load_facts::ModuleLoadFacts::compute(
+                    &stmts,
+                    prologue_len,
+                    &Self::maybe_preprocess_roast_directives(&source_text),
+                );
                 // Track operator subs exported by this module so EVAL can see them.
                 for name in &facts.exported_operator_names {
                     crate::runtime::cow_table_mut(&mut self.module.imported_operator_names)
@@ -1269,8 +1273,9 @@ impl Interpreter {
             // `parse_module_source` left the module's declarator docs behind
             // (from its parse, or replayed from the precompilation cache).
             let module_docs = crate::parser::decl_doc::take_unit_docs();
-            let result = match self.establish_pod_variables_from_stmts(
+            let result = match self.establish_pod_variables_from_stmts_in(
                 &module_source,
+                facts.pod_ranges.as_ref(),
                 module_ast.materialized_or_empty(),
                 module_docs,
             ) {
