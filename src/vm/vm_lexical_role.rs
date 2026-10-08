@@ -85,6 +85,12 @@ impl Interpreter {
     pub(super) fn bind_lexical_type_keys(&mut self, storage: &str, names: &[&str]) {
         let value = Value::package(Symbol::intern(storage));
         for name in names {
+            // A package-qualified key would pass for a package symbol and
+            // escape the declaring block (`Sto::Client` outside `module Sto`),
+            // so only unqualified spellings get a type-only key.
+            if crate::qualified::is_qualified_str(name) {
+                continue;
+            }
             let key = crate::term_names::lexical_type_key(name);
             self.save_lexical_type_binding_for_scope_exit(&key);
             if let Some(set) = self.lexicals.block_declared_vars.last_mut() {
