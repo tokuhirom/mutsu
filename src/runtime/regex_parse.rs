@@ -1039,7 +1039,17 @@ pub(super) fn check_missing_class_operator(content: &str) -> Result<(), RuntimeE
             let mut chars = remaining.chars();
             while let Some(c) = chars.next() {
                 if c == '\\' {
-                    chars.next();
+                    // `\x[2B]`, `\c[NAME]`, `\o[53]`: the bracket belongs to the escape.
+                    let escape = chars.next();
+                    if matches!(escape, Some('x' | 'X' | 'o' | 'O' | 'c' | 'C'))
+                        && chars.as_str().starts_with('[')
+                    {
+                        for inner in chars.by_ref() {
+                            if inner == ']' {
+                                break;
+                            }
+                        }
+                    }
                 } else if c == ']' {
                     break;
                 }
@@ -1555,6 +1565,17 @@ pub(super) fn skip_char_class_content(
                     current.push('\\');
                     if let Some(esc) = chars.next() {
                         current.push(esc);
+                        // `\x[2B]`, `\c[NAME]`: the bracket belongs to the escape.
+                        if matches!(esc, 'x' | 'X' | 'o' | 'O' | 'c' | 'C')
+                            && chars.peek() == Some(&'[')
+                        {
+                            for inner in chars.by_ref() {
+                                current.push(inner);
+                                if inner == ']' {
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
                 Some(']') => {
