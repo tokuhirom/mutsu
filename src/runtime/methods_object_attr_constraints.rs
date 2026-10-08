@@ -63,7 +63,13 @@ impl Interpreter {
         let saved_package = self.current_package();
         let saved_package_sym = self.current_package_sym();
         self.set_current_package_with_sym(scope.package.as_str().to_string(), scope.package);
+        // The predicate's names (`Term` in `has @.t where { all($_) ~~ Term }`)
+        // resolve relative to the declaring class, not to the method that
+        // happens to be constructing the object: anchor the running-package
+        // lookups on it for the duration of the check.
+        self.push_method_class_sym(scope.package, None);
         let ok = self.check_attribute_where_constraint_in_scope(pred, value);
+        self.pop_method_class();
         self.set_current_package_with_sym(saved_package, saved_package_sym);
         self.current_unit = saved_unit;
         ok

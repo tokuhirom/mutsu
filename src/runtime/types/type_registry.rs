@@ -1018,7 +1018,36 @@ impl Interpreter {
         // `class LLM::Chat::Template::Jinja2`, `LLM::Chat` is not a scope, so
         // `Template::Jinja2` is the imported GLOBAL class, not
         // `LLM::Chat::Template::Jinja2` itself.
-        let mut scope = Some(pkg_sym);
+        if let Some(found) = self.resolve_type_in_scope_chain(pkg_sym, name_sym) {
+            return Some(found);
+        }
+        // A method body runs under GLOBAL, so the walk above found nothing for
+        // a name relative to the class the method belongs to
+        // (`G::Mt` in a method of `class Outer { class G { class Mt {} } }`).
+        // Anchor the same walk on the running frame's packages, as the
+        // unqualified lookups through `lookup_in_running_package` do.
+        if crate::qualified::is_qualified(name_sym) {
+            for candidate in self.running_package_candidates().into_iter().flatten() {
+                let candidate_sym = crate::symbol::Symbol::intern(candidate);
+                if candidate_sym != pkg_sym
+                    && let Some(found) = self.resolve_type_in_scope_chain(candidate_sym, name_sym)
+                {
+                    return Some(found);
+                }
+            }
+        }
+        None
+    }
+
+    /// The declared type `name` names when looked up from `start` and each
+    /// package enclosing it, innermost first.
+    // Cost: O(d), d = nesting depth of `start`.
+    fn resolve_type_in_scope_chain(
+        &self,
+        start: crate::symbol::Symbol,
+        name_sym: crate::symbol::Symbol,
+    ) -> Option<String> {
+        let mut scope = Some(start);
         while let Some(pkg) = scope {
             scope = self.enclosing_lookup_scope(pkg);
             if pkg.as_str().is_empty() || crate::qualified::is_global_package(pkg) {
