@@ -1056,7 +1056,7 @@ impl Interpreter {
                     // reads as the type object like an instance attribute.
                     match (sigil, attr.type_constraint.as_deref()) {
                         ('@' | '%', Some(tc)) => {
-                            let param_key = format!("__mutsu_role_param__{tc}");
+                            let param_key = MetaNs::RoleParam.owned_key_for_str(tc);
                             let resolved = match mixins.get(&param_key).map(Value::view) {
                                 Some(ValueView::Package(name)) => name.resolve(),
                                 _ => tc.to_string(),
