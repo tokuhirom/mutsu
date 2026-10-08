@@ -679,8 +679,12 @@ fn read_back_read(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
         }
         // `@a[I;J]:k:delete`: [var, mode, True, dims..., (marker, cond)].
         Expr::Call { name, args, .. } if *name == Symbol::intern(MULTIDIM_ADVERB_DYN_FN) => {
-            let [Expr::Literal(var), Expr::Literal(mode), Expr::Literal(flag), rest @ ..] =
-                args.as_slice()
+            let [
+                Expr::Literal(var),
+                Expr::Literal(mode),
+                Expr::Literal(flag),
+                rest @ ..,
+            ] = args.as_slice()
             else {
                 return None;
             };
@@ -704,7 +708,10 @@ fn read_back_read(expr: &Expr) -> Option<(Expr, Vec<Adverb>)> {
             let subscript = multidim_from_var_name(var.as_str(), dimensions)?;
             Some((
                 subscript,
-                vec![(key.to_string(), value), ("delete".to_string(), truth(true))],
+                vec![
+                    (key.to_string(), value),
+                    ("delete".to_string(), truth(true)),
+                ],
             ))
         }
         // `@a[I;J]:exists:delete`: [var, negated, True, secondary, dims...].
@@ -837,7 +844,14 @@ mod tests {
     fn a_conflict_or_a_foreign_shape_is_not_an_expansion() {
         let two_values = [adverb("k", on(true)), adverb("v", on(true))];
         assert!(expand(index(true), &two_values, false).is_none());
-        assert!(expand(Expr::ArrayVar("a".to_string()), &[adverb("k", on(true))], false).is_none());
+        assert!(
+            expand(
+                Expr::ArrayVar("a".to_string()),
+                &[adverb("k", on(true))],
+                false
+            )
+            .is_none()
+        );
         // A ternary over a subscript that is not a conditional delete.
         let foreign = Expr::Ternary {
             cond: Box::new(Expr::Var("c".to_string())),
