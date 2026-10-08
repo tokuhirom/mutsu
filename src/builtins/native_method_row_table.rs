@@ -2277,4 +2277,11 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Array", "ASSIGN-POS", 4, 26),
     ("Array", "DELETE-POS", 2, 26),
     ("List", "ASSIGN-POS", 4, 26),
+    // ADR-11276 §9.40: STORE of the quant hashes (slurpy).
+    ("SetHash", "STORE", 8, 26),
+    ("BagHash", "STORE", 8, 26),
+    ("MixHash", "STORE", 8, 26),
+    ("Set", "STORE", 8, 26),
+    ("Bag", "STORE", 8, 26),
+    ("Mix", "STORE", 8, 26),
 ];
