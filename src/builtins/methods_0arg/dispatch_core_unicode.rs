@@ -36,7 +36,6 @@ pub(super) fn dispatch(
             ValueView::Str(s) => Some(Ok(Value::int(s.len() as i64))),
             _ => Some(Ok(Value::int(target.to_string_value().len() as i64))),
         }),
-        "decode" => Some(super::super::decode_buf_method(target, None)),
         // Cost: O(1) amortized: the grapheme count comes from the payload's
         // cached index (built in O(n) on first use, `grapheme_index`).
         "chars" => {

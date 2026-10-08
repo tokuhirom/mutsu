@@ -762,17 +762,6 @@ impl Interpreter {
             }
         }
 
-        if method_name == "decode" {
-            return result.map(|res| {
-                res.map(|value| match value.view() {
-                    ValueView::Str(decoded) => {
-                        Value::str(self.translate_newlines_for_decode(&decoded))
-                    }
-                    _ => value,
-                })
-            });
-        }
-
         // For Hash values with declared_type "Map", override gist/raku/perl
         // to use Map.new((...)) format instead of {...} format. (Method-name
         // gate first: the Hash `view()` probe would materialize a lazy Match

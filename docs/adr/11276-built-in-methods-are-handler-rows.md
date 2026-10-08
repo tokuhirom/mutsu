@@ -1889,3 +1889,19 @@ is mutated on a copy that is the answer (`Buf.new(...).append(...)`), as the by-
 receivers above. `rakudo_method_tables.txt` has no `Blob`/`Buf` lines because its generator skips roles; the rows are
 checked against the folded owner `Blob` of the recognition table, whose `DECLARED` bits this slice completes (the
 mutators, `reallocate`, `Blob.Blob`, seven `read-*` names).
+
+### 9.33 `Blob.decode` and `Buf.decode` (2026-10-08)
+
+Follow-up to §9.32 (`refactor/11276-blob-decode`).
+
+- `decode` at zero and one argument is a `Handler::Interp` row of both `Blob` and `Buf` (`blob_decode.rs`), with
+  `replacement` (and the ignored `strict`) as its named arguments: the encoding registry and the newline mode are
+  the interpreter's, so the pure entries skip it and the entries that have an interpreter answer it.
+- There were four decoders: the pure `decode_buf_method` behind the 0- and 1-argument cascade arms, the
+  interpreter's `dispatch_decode`, the callers' newline translation of the pure answer (`vm_native_dispatch`,
+  `methods_call_dispatch`) and `try_native_encode_decode`. The row and `dispatch_decode` now end in one
+  `Interpreter::decode_buf`; the two pure arms and the two post-hoc translations are deleted. `decode_buf_method`
+  stays for its other callers (`utf8.Str`, the comparison and concatenation coercions), which never needed a
+  registry.
+- Not changed, filed as #12341: an unknown encoding name does not throw, and a 16-bit buffer defaults to UTF-16
+  where Rakudo applies UTF-8 to its bytes.
