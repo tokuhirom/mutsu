@@ -2284,4 +2284,13 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Set", "STORE", 8, 26),
     ("Bag", "STORE", 8, 26),
     ("Mix", "STORE", 8, 26),
+    // ADR-11276 §9.41: the element-binding mutators.
+    ("Hash", "BIND-KEY", 4, 26),
+    ("Array", "BIND-POS", 4, 26),
+    ("SetHash", "BIND-KEY", 4, 26),
+    ("BagHash", "BIND-KEY", 4, 26),
+    ("MixHash", "BIND-KEY", 4, 26),
+    ("Set", "BIND-KEY", 4, 26),
+    ("Bag", "BIND-KEY", 4, 26),
+    ("Mix", "BIND-KEY", 4, 26),
 ];

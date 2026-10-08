@@ -35,6 +35,12 @@ pub(crate) enum ReceiverPlace<'a> {
         name: &'a str,
         value: &'a Value,
         code: Option<&'a CompiledCode>,
+        /// The caller's variable behind each positional argument (`Some("$x")`
+        /// for `@a.BIND-POS(0, $x)`, `None` for a literal or an expression), as
+        /// the call site wrote them. Only a row that binds an element to the
+        /// caller's *variable* reads them ([`Self::arg_source`]); empty when the
+        /// call carried none.
+        arg_sources: &'a [Option<String>],
     },
     /// A container with no binding: an `is Array` instance's storage, a
     /// by-value receiver (`f().push(1)`, `[1, 2].pop`).
@@ -50,6 +56,7 @@ impl<'a> ReceiverPlace<'a> {
             name,
             value,
             code: None,
+            arg_sources: &[],
         }
     }
 
@@ -61,6 +68,53 @@ impl<'a> ReceiverPlace<'a> {
             name,
             value,
             code: Some(code),
+            arg_sources: &[],
+        }
+    }
+
+    /// The same place, carrying the call's argument sources (see
+    /// [`ReceiverPlace::Var`]). A detached place has no caller variables, so
+    /// it is returned unchanged.
+    // Cost: O(1).
+    pub(crate) fn with_arg_sources(mut self, sources: &'a [Option<String>]) -> Self {
+        if let ReceiverPlace::Var { arg_sources, .. } = &mut self {
+            *arg_sources = sources;
+        }
+        self
+    }
+
+    /// Whether the call came through the VM (its chunk maps names to local
+    /// slots), the only entry that carries argument sources.
+    // Cost: O(1).
+    pub(crate) fn from_vm(&self) -> bool {
+        matches!(self, ReceiverPlace::Var { code: Some(_), .. })
+    }
+
+    /// The caller's variable that positional argument `index` was written as,
+    /// if the call site named one.
+    // Cost: O(1).
+    pub(crate) fn arg_source(&self, index: usize) -> Option<&str> {
+        match self {
+            ReceiverPlace::Var { arg_sources, .. } => {
+                arg_sources.get(index).and_then(|s| s.as_deref())
+            }
+            ReceiverPlace::Detached(_) => None,
+        }
+    }
+
+    /// Install `cell` as the container of the caller's variable `name`, in both
+    /// halves of the dual store: a bind to an element promotes the source
+    /// variable into the shared cell, so a later `$x = ...` writes through to
+    /// the element and vice versa.
+    // Cost: O(1) for the env entry, O(l) to find the local slot by name, l =
+    // local slots of the chunk.
+    pub(crate) fn install_source_cell(&self, interp: &mut Interpreter, name: &str, cell: Value) {
+        interp.set_env_with_main_alias(name, cell.clone());
+        if let ReceiverPlace::Var {
+            code: Some(code), ..
+        } = self
+        {
+            interp.update_local_if_exists(code, name, &cell);
         }
     }
 
@@ -139,6 +193,7 @@ impl<'a> ReceiverPlace<'a> {
             name,
             value,
             code: Some(code),
+            ..
         } = self
         else {
             return;

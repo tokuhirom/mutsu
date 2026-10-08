@@ -2049,3 +2049,22 @@ cases). The bridges still answer the invocant, as the tied-variable declaration 
 
 - Left: `BIND-KEY` / `BIND-POS` (they need the call's argument sources; an ADR amendment on the binding descriptor comes first),
   the `Mu`, grammar and metamodel bridges, and asking the storage question in `resolve_sequence`.
+
+### 9.41 Slice 4: `BIND-KEY` and `BIND-POS` are rows; the place carries the argument sources (2026-10-08)
+
+`refactor/12387-bind-key-pos-rows` (item 2 of #12387). Binding an element to the caller's *variable* needs the call's
+argument sources, which a `Handler::Mut` row did not receive. Decision (the amendment §9.37 asked for):
+
+- `ReceiverPlace::Var` carries `arg_sources` (the variable behind each positional, from the call site), set with
+  `with_arg_sources`; a detached place and the interpreter's by-name entries carry none. A row reads one with `arg_source(i)`
+  and asks `from_vm()` whether the call came through the VM. This is the interim form of ADR-0097's binding descriptor: when
+  that lands the accessors change and the handlers do not.
+- `install_source_cell` promotes the source variable into the element's shared cell in both halves of the dual store.
+- Rows (`mutating::subscript_bind`): `Hash.BIND-KEY` (object hashes key by `.WHICH` and keep the key object),
+  `Array.BIND-POS` (one index, scalar-variable source, in place through the node; a natively typed array, a negative index and
+  a non-variable source decline to the cascade), and the `X::Bind` refusal of `BIND-KEY` on the six quant hashes. A call that
+  did not come through the VM declines, exactly as before.
+- Deleted: the VM's `BIND-KEY` arms for `Hash`/`Set`/`Bag`/`Mix` and the `BIND-POS` arm (about 290 lines). The rebuild-and-
+  reinsert fallback of the old `BIND-KEY` arm is gone with them: a bind now always writes the shared node, so every alias of
+  the hash sees it. What stays is `BIND-KEY` on an undefined receiver (it vivifies a hash) and the stash intercept.
+- Left: the `Mu`, grammar and metamodel bridges (item 3) and asking the storage question in `resolve_sequence` (item 4).
