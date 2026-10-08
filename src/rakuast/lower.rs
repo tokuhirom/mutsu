@@ -3836,9 +3836,11 @@ fn lower_anon_regex_declaration(node: &RakuAstNode) -> Result<Expr, RuntimeError
         RakuAstClass::RuleDeclaration => crate::regex_tree::RegexDeclKind::Rule,
         _ => return Err(unsupported(node)),
     };
-    if node.fields.iter().any(|f| {
-        matches!(f.name, Some("scope") | Some("multiness"))
-    }) {
+    if node
+        .fields
+        .iter()
+        .any(|f| matches!(f.name, Some("scope") | Some("multiness")))
+    {
         return Err(unsupported(node));
     }
     let tree = RegexTree {

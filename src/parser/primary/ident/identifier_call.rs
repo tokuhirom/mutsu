@@ -11,7 +11,6 @@ use crate::parser::primary::current_line_number;
 use crate::parser::primary::ident::anon_sub::{
     make_anon_method, parse_anon_method_with_params, parse_anon_sub_with_params, set_anon_sub_rw,
 };
-use crate::parser::stmt::class::token_body::parse_raw_braced_regex_body;
 use crate::parser::primary::ident::listop::{
     callsite_line_arg, export_term_or_call, make_call_expr, make_call_expr_from_listop_args,
     make_listop_expr, operator_term_call, parse_expr_listop_args, parse_listop_arg,
@@ -29,6 +28,7 @@ use crate::parser::primary::misc::{
     anon_class_expr, anon_grammar_expr, anon_role_expr, mark_anon_package_decl, parse_block_body,
     parse_block_body_routine, parse_tracked_block_body,
 };
+use crate::parser::stmt::class::token_body::parse_raw_braced_regex_body;
 use crate::parser::stmt::keyword;
 
 /// Read a `method` / `submethod` declarator keyword, returning what follows it
@@ -2709,12 +2709,11 @@ fn anon_regex_value(
         &body_region[..body_region.len() - after.len()],
         &source,
     );
-    let tree = crate::regex_tree::RegexTree::parse_static_at(&source, true, unit_base).map(
-        |mut tree| {
+    let tree =
+        crate::regex_tree::RegexTree::parse_static_at(&source, true, unit_base).map(|mut tree| {
             tree.declaration_kind = Some(kind);
             tree
-        },
-    );
+        });
     let value = Value::anon_regex_code(finalize_anon_regex_pattern(raw_body, kind), params);
     match tree {
         Some(tree) => value.with_regex_source_tree(tree),

@@ -6383,7 +6383,10 @@ fn anon_regex_declaration(v: &Value, tree: &RegexTree) -> Result<RakuAstNode, Ru
         Some(RegexDeclKind::Rule) => RakuAstClass::RuleDeclaration,
         _ => RakuAstClass::RegexDeclaration,
     };
-    let params = v.regex_signature().map(|p| (*p).clone()).unwrap_or_default();
+    let params = v
+        .regex_signature()
+        .map(|p| (*p).clone())
+        .unwrap_or_default();
     regex_declaration_with_body(class, None, None, None, &params, regex_node(&tree.body)?)
 }
 
