@@ -100,7 +100,26 @@ fn sample(shape: DispatchShape) -> Value {
             Symbol::intern("Buf"),
             vec![Value::int(1), Value::int(2)],
         ),
+        DispatchShape::BacktraceFrame => backtrace_frame_sample(),
+        DispatchShape::Backtrace => {
+            let mut attributes = crate::value::AttrMap::new();
+            attributes.insert(
+                "frames".to_string(),
+                Value::array(vec![backtrace_frame_sample()]),
+            );
+            attributes.insert("text".to_string(), Value::str_from("  in block <unit>\n"));
+            Value::make_instance(Symbol::intern("Backtrace"), attributes)
+        }
     }
+}
+
+/// A `Backtrace::Frame` instance, as the backtrace builder makes one.
+fn backtrace_frame_sample() -> Value {
+    let mut attributes = crate::value::AttrMap::new();
+    attributes.insert("subname".to_string(), Value::str_from("<unit>"));
+    attributes.insert("file".to_string(), Value::str_from("x.raku"));
+    attributes.insert("line".to_string(), Value::int(1));
+    Value::make_instance(Symbol::intern("Backtrace::Frame"), attributes)
 }
 
 /// The owner of the row an instance of `shape` dispatches `method` to, or

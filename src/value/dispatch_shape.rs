@@ -151,13 +151,19 @@ pub(crate) enum DispatchShape {
     /// reaches the rows of the owner `Buf`, the read-only ones registered once
     /// beside `Blob`'s and the mutators on `Buf` alone.
     Buf,
+    /// A `Backtrace`, the built-in class and not a subclass of it (closed): a
+    /// handler reads its `frames` and `text` attributes.
+    Backtrace,
+    /// A `Backtrace::Frame` (closed): a handler reads its `subname`, `file`,
+    /// `line` and marker attributes.
+    BacktraceFrame,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 35] = [
+    pub(crate) const ALL: [DispatchShape; 37] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -193,6 +199,8 @@ impl DispatchShape {
         DispatchShape::Seq,
         DispatchShape::Blob,
         DispatchShape::Buf,
+        DispatchShape::Backtrace,
+        DispatchShape::BacktraceFrame,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -235,6 +243,8 @@ impl DispatchShape {
             DispatchShape::Seq => "Seq",
             DispatchShape::Blob => "Blob",
             DispatchShape::Buf => "Buf",
+            DispatchShape::Backtrace => "Backtrace",
+            DispatchShape::BacktraceFrame => "Backtrace::Frame",
         }
     }
 
@@ -316,11 +326,16 @@ impl DispatchShape {
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned
 /// class name: a compare of two ids, not of two strings.
-fn instance_shapes() -> &'static [(Symbol, DispatchShape); 32] {
-    static SHAPES: OnceLock<[(Symbol, DispatchShape); 32]> = OnceLock::new();
+fn instance_shapes() -> &'static [(Symbol, DispatchShape); 34] {
+    static SHAPES: OnceLock<[(Symbol, DispatchShape); 34]> = OnceLock::new();
     SHAPES.get_or_init(|| {
         [
             (Symbol::intern("Date"), DispatchShape::Date),
+            (Symbol::intern("Backtrace"), DispatchShape::Backtrace),
+            (
+                Symbol::intern("Backtrace::Frame"),
+                DispatchShape::BacktraceFrame,
+            ),
             (Symbol::intern("DateTime"), DispatchShape::DateTime),
             (Symbol::intern("Instant"), DispatchShape::Instant),
             (Symbol::intern("Duration"), DispatchShape::Duration),

@@ -952,10 +952,6 @@ fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
     }
 }
 
-use crate::builtins::backtrace_methods::{
-    frame_is_routine as backtrace_frame_is_routine, frame_str as backtrace_frame_str,
-};
-
 /// Re-export raku_value for backward compatibility.
 pub use raku_repr::raku_value;
 
@@ -1289,194 +1285,58 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
-    // Backtrace methods: .Str, .gist, .list, .elems
+    // Backtrace and Backtrace::Frame: their own methods are rows of the method
+    // table (`method_table::backtrace`, ADR-11276 §9.35); a call the table's
+    // entry did not take reaches the same handlers here. The rest are the
+    // ancestors' (`Any`, `Mu`) answers, read from the `frames` list.
+    if let Some(answer) = crate::builtins::method_table::backtrace::answer(target, method, &[]) {
+        return Some(answer);
+    }
     if let ValueView::Instance {
         class_name,
         attributes,
         ..
     } = target.view()
+        && class_name == "Backtrace"
     {
-        let cn = class_name.resolve();
-        if cn == "Backtrace" {
-            match method {
-                "Str" | "Stringy" => {
-                    let text = attributes
-                        .as_map()
-                        .get("text")
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    return Some(Ok(Value::str(text)));
-                }
-                "gist" => {
-                    let count = attributes
-                        .as_map()
-                        .get("frames")
-                        .map(|v| crate::runtime::utils::value_to_list(v).len())
-                        .unwrap_or(0);
-                    let noun = if count == 1 { "frame" } else { "frames" };
-                    return Some(Ok(Value::str(format!("Backtrace({} {})", count, noun))));
-                }
-                "full" => {
-                    // .full renders every frame (mutsu tracks no hidden/setting
-                    // frames, so this is the frame list verbatim), one per
-                    // line: each frame's `.Str` is newline-terminated, exactly
-                    // as in Rakudo, so the concatenation is line-separated.
-                    let frames = crate::builtins::backtrace_methods::frames_of(&attributes);
-                    let mut out = String::new();
-                    for frame in &frames {
-                        // See the `concise`/`summary` arm: a frame can arrive
-                        // inside an element container once a `.grep` over this
-                        // backtrace has promoted its slots, and matching
-                        // `ValueView::Instance` without dereferencing skips it.
-                        let frame = frame.with_deref(|v| v.clone());
-                        if let ValueView::Instance { attributes: fa, .. } = frame.view() {
-                            out.push_str(&backtrace_frame_str(&fa));
-                        }
-                    }
-                    return Some(Ok(Value::str(out)));
-                }
-                // `.outer-caller-idx` is deliberately absent here: its
-                // `Int $startidx` is mandatory, so a no-argument call must not
-                // silently answer for index 0.
-                "nice" | "next-interesting-index" => {
-                    if let Some(result) =
-                        crate::builtins::backtrace_methods::dispatch(&attributes, method, &[])
-                    {
-                        return Some(result);
-                    }
-                }
-                "list" | "List" | "flat" | "Seq" => {
-                    if let Some(frames) = attributes.as_map().get("frames") {
-                        return Some(Ok(frames.clone()));
-                    }
-                    return Some(Ok(Value::array(vec![])));
-                }
-                // `Backtrace.is-runtime` distinguishes a backtrace captured
-                // while *running* from one attached to a compile-time
-                // diagnosis. The Backtrace builders (`vm_helpers.rs`) stamp
-                // the flag directly; a compile-time backtrace answers False.
-                "is-runtime" => {
-                    let is_runtime = attributes
-                        .as_map()
-                        .get("is-runtime")
-                        .is_some_and(|v| v.truthy());
-                    return Some(Ok(Value::truth(is_runtime)));
-                }
-                "concise" | "summary" => {
-                    let frames = attributes
-                        .as_map()
-                        .get("frames")
-                        .map(crate::runtime::utils::value_to_list)
-                        .unwrap_or_default();
-                    let want_summary = method == "summary";
-                    let mut out = String::new();
-                    for frame in &frames {
-                        // A frame can arrive inside an element container: a
-                        // `.grep` over this backtrace promotes each matched
-                        // source slot to a shared cell so a writeback loop can
-                        // mutate through it, and that promotion is published on
-                        // the frames array itself. Matching `ValueView::Instance`
-                        // without dereferencing silently skipped every promoted
-                        // frame, so `.summary` after a `.grep` came back empty.
-                        let frame = frame.with_deref(|v| v.clone());
-                        if let ValueView::Instance { attributes: fa, .. } = frame.view() {
-                            let is_routine = backtrace_frame_is_routine(&fa);
-                            // concise: only non-hidden, non-setting routines.
-                            // summary: non-hidden items that are routines or
-                            // non-setting. Native setting frames carry the
-                            // explicit marker inserted by the backtrace builder.
-                            let is_setting =
-                                fa.as_map().get("is-setting").is_some_and(Value::truthy);
-                            let keep = if want_summary {
-                                is_routine || !is_setting
-                            } else {
-                                is_routine && !is_setting
-                            };
-                            if keep {
-                                out.push_str(&backtrace_frame_str(&fa));
-                            }
-                        }
-                    }
-                    return Some(Ok(Value::str(out)));
-                }
-                "elems" => {
-                    if let Some(frames) = attributes.as_map().get("frames") {
-                        let count = crate::runtime::utils::value_to_list(frames).len();
-                        return Some(Ok(Value::int(count as i64)));
-                    }
-                    return Some(Ok(Value::int(0)));
-                }
-                _ => {}
+        match method {
+            "Stringy" => {
+                let text = attributes
+                    .as_map()
+                    .get("text")
+                    .map(|v| v.to_string_value())
+                    .unwrap_or_default();
+                return Some(Ok(Value::str(text)));
             }
-        } else if cn == "Backtrace::Frame" {
-            match method {
-                "subname" => {
-                    return Some(Ok(attributes
-                        .as_map()
-                        .get("subname")
-                        .cloned()
-                        .unwrap_or(Value::str(String::new()))));
+            "List" | "Seq" => {
+                if let Some(frames) = attributes.as_map().get("frames") {
+                    return Some(Ok(frames.clone()));
                 }
-                "file" => {
-                    return Some(Ok(attributes
-                        .as_map()
-                        .get("file")
-                        .cloned()
-                        .unwrap_or(Value::str(String::new()))));
-                }
-                "line" => {
-                    return Some(Ok(attributes
-                        .as_map()
-                        .get("line")
-                        .cloned()
-                        .unwrap_or(Value::int(0))));
-                }
-                // `.raku`/`.gist` are NOT handled here: Rakudo's
-                // `Backtrace::Frame` renders both as
-                // `Backtrace::Frame.new(file => ..., line => ..., code => ...,
-                // subname => ...)` (it has no custom `.gist`, so it falls back
-                // to the default `.raku`-shaped one), which needs `&mut self`
-                // to recursively render the synthesized `code` object -- see
-                // `default_instance_repr`'s `"Backtrace::Frame"` arm
-                // (`runtime/methods_instance_ops.rs`).
-                "Str" => {
-                    return Some(Ok(Value::str(backtrace_frame_str(&attributes))));
-                }
-                "code" => {
-                    // The Code object for this frame. mutsu does not retain the
-                    // actual routine, so synthesize a Routine carrying the name
-                    // (`.code.name` is the documented use).
-                    return Some(Ok(crate::builtins::backtrace_methods::frame_code_value(
-                        &attributes,
-                    )));
-                }
-                "name" => {
-                    return Some(Ok(attributes
-                        .as_map()
-                        .get("subname")
-                        .cloned()
-                        .unwrap_or(Value::str(String::new()))));
-                }
-                "is-routine" => {
-                    return Some(Ok(Value::truth(backtrace_frame_is_routine(&attributes))));
-                }
-                "is-hidden" => {
-                    return Some(Ok(attributes
-                        .as_map()
-                        .get("is-hidden")
-                        .cloned()
-                        .unwrap_or(Value::FALSE)));
-                }
-                "is-setting" => {
-                    return Some(Ok(attributes
-                        .as_map()
-                        .get("is-setting")
-                        .cloned()
-                        .unwrap_or(Value::FALSE)));
-                }
-                _ => {}
+                return Some(Ok(Value::array(vec![])));
             }
+            "elems" => {
+                if let Some(frames) = attributes.as_map().get("frames") {
+                    let count = crate::runtime::utils::value_to_list(frames).len();
+                    return Some(Ok(Value::int(count as i64)));
+                }
+                return Some(Ok(Value::int(0)));
+            }
+            _ => {}
         }
+    } else if let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+        && class_name == "Backtrace::Frame"
+        && method == "name"
+    {
+        // A mutsu alias of `subname`; Rakudo's frame has no `name`.
+        return Some(Ok(attributes
+            .as_map()
+            .get("subname")
+            .cloned()
+            .unwrap_or(Value::str(String::new()))));
     }
 
     // .resume on exception objects

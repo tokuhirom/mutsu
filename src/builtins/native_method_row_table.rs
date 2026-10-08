@@ -1577,6 +1577,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Backtrace", "flat", 7, 16),
     ("Backtrace", "defined", 1, 0),
     ("Backtrace", "concise", 1, 48),
+    ("Backtrace", "is-runtime", 1, 48),
     ("Backtrace", "summary", 1, 48),
     ("Backtrace", "Stringy", 1, 0),
     ("Backtrace", "full", 1, 48),
