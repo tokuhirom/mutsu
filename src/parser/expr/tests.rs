@@ -116,7 +116,12 @@ fn parse_ternary_allows_parenthesized_assignment_branches() {
 fn parse_parenthesized_compound_assign_as_lvalue_expression() {
     let (rest, expr) = expression("($x += 2) *= 3").unwrap();
     assert_eq!(rest, "");
-    match expr {
+    // The written operator is kept as a marker; the nested assignment the
+    // compiler runs is its expansion.
+    let Expr::CompoundAssign { expanded, .. } = expr else {
+        panic!("expected a compound-assignment marker, got {expr:?}");
+    };
+    match *expanded {
         Expr::AssignExpr { name, expr, .. } => {
             assert_eq!(name, "x");
             assert!(matches!(*expr, Expr::Binary { .. }));
@@ -129,7 +134,12 @@ fn parse_parenthesized_compound_assign_as_lvalue_expression() {
 fn parse_parenthesized_metaassign_chain_as_lvalue_expression() {
     let (rest, expr) = expression("(@a ||= 42) += 10").unwrap();
     assert_eq!(rest, "");
-    match expr {
+    // The written operator is kept as a marker; the nested assignment the
+    // compiler runs is its expansion.
+    let Expr::CompoundAssign { expanded, .. } = expr else {
+        panic!("expected a compound-assignment marker, got {expr:?}");
+    };
+    match *expanded {
         Expr::AssignExpr { name, expr, .. } => {
             assert_eq!(name, "@a");
             assert!(matches!(*expr, Expr::Binary { .. }));
