@@ -71,6 +71,17 @@ pub(crate) fn later_earlier(
     else {
         return None;
     };
+    // Several named units have no defined order of application; Rakudo
+    // refuses them and asks for a positional list of pairs instead.
+    let named_units = args
+        .iter()
+        .filter(|a| matches!(a.view(), ValueView::Pair(..)))
+        .count();
+    if named_units > 1 && (has_date_attrs(&attributes) || has_datetime_attrs(&attributes)) {
+        return Some(Err(RuntimeError::new(
+            "More than one time unit supplied. Please provide these as a List of\nPairs to indicate order of application if this is intended.",
+        )));
+    }
     if has_datetime_attrs(&attributes) {
         let (year, month, day, hour, minute, second, timezone) =
             temporal::datetime_attrs(&attributes.as_map());
