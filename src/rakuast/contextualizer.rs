@@ -113,6 +113,31 @@ pub(super) fn lower(node: &RakuAstNode, kind: ContextKind) -> Result<Expr, Runti
             }
             _ => return Err(unsupported(node)),
         },
+        // `@$s` / `@.m(...)`: the parser's sugared `.list` call, converted by
+        // [`convert_list_call`], holds the term itself rather than a
+        // `StatementSequence`.
+        // The sugared call is rebuilt as the parser spelled it: `@$h` keeps
+        // the `Grouped` target the `for` lowering keys on, and `sugar: true`
+        // keeps it the re-reading contextualizer.
+        _ if kind == ContextKind::List => {
+            let grouped = target.class == RakuAstClass::CircumfixParentheses;
+            let term = match lower_expr(target)? {
+                Expr::Grouped(inner) => *inner,
+                other => other,
+            };
+            return Ok(Expr::MethodCall {
+                target: Box::new(if grouped {
+                    Expr::Grouped(Box::new(term))
+                } else {
+                    term
+                }),
+                name: crate::symbol::Symbol::intern("list"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+                sugar: true,
+            });
+        }
         _ => return Err(unsupported(node)),
     };
     Ok(Expr::Contextualizer {
@@ -144,6 +169,19 @@ pub(super) fn convert_itemize(inner: &Expr) -> Result<RakuAstNode, RuntimeError>
 pub(super) fn convert_item_call(inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
     Ok(RakuAstNode {
         class: RakuAstClass::ContextualizerItem,
+        fields: vec![node_field(None, convert_expr(inner)?)],
+    })
+}
+
+/// The array contextualizer of a term (`@$s`), which the parser spells as a
+/// sugared `.list` call, as `Contextualizer::List` over the term itself. Keeping
+/// the node (rather than an `ApplyPostfix` `.list`) is what lets the lowering
+/// rebuild the re-reading contextualizer instead of an explicit `.list` call,
+/// which consumes a `Seq` (#9930).
+// Cost: O(n), n = nodes of the term.
+pub(super) fn convert_list_call(inner: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    Ok(RakuAstNode {
+        class: RakuAstClass::ContextualizerList,
         fields: vec![node_field(None, convert_expr(inner)?)],
     })
 }

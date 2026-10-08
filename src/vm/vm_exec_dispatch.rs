@@ -3570,6 +3570,12 @@ impl Interpreter {
                 self.rebind_context().set(true);
                 *ip += 1;
             }
+            // Cost: O(n) when the invocant is a reified Seq of n elements (the
+            // elements are moved into the replacement Seq), O(1) otherwise.
+            OpCode::ConsumeReifiedSeq => {
+                self.exec_consume_reified_seq_op()?;
+                *ip += 1;
+            }
             // Cost: O(1).
             OpCode::MarkAccessorRefContext => {
                 self.accessor_ref_pending = true;

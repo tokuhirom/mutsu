@@ -64,21 +64,30 @@ for @consumes -> $method {
     throws-like { $s.List }, X::Seq::Consumed, '.list consumes a deferred source';
 }
 
-# KNOWN GAP (documented at `reify_or_consume_seq_target`'s `"list"` branch in
-# src/vm/vm_helpers_lazy.rs): an EXPLICIT `.list` call on an ALREADY-
-# `Reified` body (e.g. a `.map`/`.grep` result) consumes in real raku
-# (`(1,2,3).map({$_}).list; .list` throws on the second call), but mutsu's
-# parser desugars the much more common `@$s` sigil array-context deref to
-# the SAME method-name string, and `@$s` must NOT consume a `.map`/`.grep`
-# result (a real Zef regression, pinned by
-# `t/seq-array-context-reiterate.t`). mutsu deliberately keeps `"list"`
-# non-consuming for an already-`Reified` body to keep `@$s` correct there,
-# until the parser can tell the two call shapes apart.
+# An EXPLICIT `.list` call on an ALREADY-`Reified` body (a `.map`/`.grep`
+# result) consumes, as in raku, while the `@$s` / `@($s)` contextualizer over
+# the same Seq keeps re-reading it (#9930; the compiler marks the explicit call
+# with `OpCode::ConsumeReifiedSeq`, the parser tags the contextualizer
+# `sugar: true`). Pinned against `t/seq-array-context-reiterate.t`.
 {
     my $s = (1, 2, 3).map({ $_ });
     $s.list;
-    lives-ok { $s.List },
-        'KNOWN GAP: explicit .list on a Reified body does not consume (raku: it does) -- see comment above';
+    throws-like { $s.List }, X::Seq::Consumed,
+        'explicit .list on a Reified body consumes it';
+}
+{
+    my $s = (1, 2, 3).map({ $_ });
+    $s.list;
+    throws-like { $s.list }, X::Seq::Consumed,
+        'a second explicit .list on the same Seq throws';
+}
+{
+    my $s = (1, 2, 3).map({ $_ });
+    my @a = @$s;
+    my @b = @$s;
+    is-deeply (@a, @b), ([1, 2, 3], [1, 2, 3]), '@$s re-reads a Reified body';
+    is @($s).elems, 3, '@($s) re-reads it too';
+    lives-ok { $s.List }, '@$s / @($s) did not consume the Seq';
 }
 
 done-testing;

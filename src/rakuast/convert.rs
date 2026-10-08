@@ -3508,6 +3508,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 {
                     return super::contextualizer::convert_item_call(target);
                 }
+                if name.as_str() == "list" && !matches!(&**target, Expr::Var(topic) if topic == "_")
+                {
+                    return super::contextualizer::convert_list_call(target);
+                }
             }
             let postfix = method_call_postfix(name.as_str(), args, *modifier, *quoted)?;
             // `.say` / `.foo(1)`: a call on the topic written without an

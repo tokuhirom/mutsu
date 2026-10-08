@@ -152,7 +152,7 @@ fn brace_list_contextualizer(input: &str) -> PResult<'_, Expr> {
             args: vec![],
             modifier: None,
             quoted: false,
-            sugar: false,
+            sugar: true,
         },
     ))
 }
@@ -277,7 +277,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                 args: vec![],
                 modifier: None,
                 quoted: false,
-                sugar: false,
+                sugar: true,
             },
         ));
     }
@@ -294,7 +294,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                     args: vec![],
                     modifier: None,
                     quoted: false,
-                    sugar: false,
+                    sugar: true,
                 },
             ));
         }
@@ -315,7 +315,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                     args: vec![],
                     modifier: None,
                     quoted: false,
-                    sugar: false,
+                    sugar: true,
                 },
             ));
         }
@@ -358,7 +358,7 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
                     args: vec![],
                     modifier: None,
                     quoted: false,
-                    sugar: false,
+                    sugar: true,
                 },
             ));
         }

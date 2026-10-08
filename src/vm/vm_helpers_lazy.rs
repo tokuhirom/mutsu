@@ -244,6 +244,32 @@ impl Interpreter {
         body.take(|source| self.pull_seq_source(source))
     }
 
+    /// [`crate::opcode::OpCode::ConsumeReifiedSeq`]: the invocant of an explicit
+    /// `.list` call, on top of the stack, is consumed when it is a `Seq`
+    /// (#9930). The method dispatch's own `"list"` arm cannot do this, since
+    /// `@$s` reaches it under the same name and must keep re-reading a
+    /// reified body; the compiler marks only the explicit call.
+    // Cost: O(n) to move the n elements of a Seq into the replacement Seq, O(1) otherwise.
+    pub(crate) fn exec_consume_reified_seq_op(&mut self) -> Result<(), RuntimeError> {
+        use crate::value::SeqView;
+        let Some(top) = self.stack.last() else {
+            return Err(RuntimeError::new(
+                "Interpreter stack underflow in ConsumeReifiedSeq",
+            ));
+        };
+        let body = match top.view() {
+            ValueView::Seq(body) if matches!(body.view(), SeqView::Seq | SeqView::ItemSeq) => {
+                Arc::clone(&body)
+            }
+            _ => return Ok(()),
+        };
+        let (items, outcome) = self.take_seq_body(&body)?;
+        if matches!(outcome, SeqTaken::Taken) {
+            *self.stack.last_mut().expect("checked above") = Value::seq(items);
+        }
+        Ok(())
+    }
+
     /// rakudo's `sink`: run the source for side effects and discard.
     pub(crate) fn sink_seq_body(&mut self, body: &Arc<SeqBody>) -> Result<(), RuntimeError> {
         body.sink(|source| self.pull_seq_source(source))
@@ -593,28 +619,15 @@ impl Interpreter {
             return Ok(target);
         }
         if method == "list" {
-            // `"list"` is a genuine ambiguity, not covered by the
-            // `seq_method_consumes` table: mutsu's parser desugars the
-            // sigil array-context deref `@$s` to the SAME method-name
-            // string as an explicit `.list()` call
-            // (`src/parser/primary/var/sigil_vars.rs`), but raku treats
-            // them differently — `@$s; @$s;` never throws (even over a
-            // genuinely deferred `IO::Handle.lines` source), while
-            // `$s.list; $s.list;` throws `X::Seq::Consumed` on the second
-            // call (both measured directly against raku). Two pinned local
-            // tests independently exercise each side and cannot both be
-            // satisfied by one policy without the parser telling the calls
-            // apart: `t/seq-array-context-reiterate.t` (`@$s` on `.map`/
-            // `.grep` results — born `Reified` — must stay re-readable) and
-            // `t/io-handle-lines-words-seq.t` (explicit `.list` on
-            // `IO::Handle.lines`/`.words` — a genuinely deferred source —
-            // must consume). Compromise until the parser can distinguish
-            // them: steal a genuinely deferred source (satisfies the
-            // `IO::Handle.lines` test, which never touches an already-
-            // `Reified` body) but never steal a body already `Reified` at
-            // this touch (satisfies the `@$s`-on-`.map`/`.grep` test). A
-            // bare `@$s` on a deferred source is thus the one case left
-            // over-strict relative to raku (not pinned by any local test).
+            // `@$s` and an explicit `.list` reach this arm under the same name.
+            // The explicit call is consumed before dispatch by
+            // `OpCode::ConsumeReifiedSeq` (#9930), so what arrives here is the
+            // re-readable contextualizer (or an internal caller): steal a
+            // genuinely deferred source (`IO::Handle.lines`, pinned by
+            // `t/io-handle-lines-words-seq.t`) but never a body already
+            // `Reified`, which `@$s` must keep re-reading
+            // (`t/seq-array-context-reiterate.t`). A bare `@$s` on a deferred
+            // source is thus over-strict relative to raku (unpinned).
             if body.has_deferred_source() {
                 let (items, outcome) = self.take_seq_body(&body)?;
                 return Ok(if matches!(outcome, SeqTaken::Taken) {
