@@ -476,6 +476,16 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!("Whatever", mro: ["Whatever", "Any", "Mu"], roles: [], owner: ""),
     row!("HyperWhatever", mro: ["HyperWhatever", "Any", "Mu"], roles: [], owner: ""),
     row!("Proxy", mro: ["Proxy", "Any", "Mu"], roles: [], owner: ""),
+    // ---- Backtrace (ADR-11276 §9.35): the shapes of the method table's rows. ----
+    // raku: `Backtrace.^mro` is `(Backtrace Any Mu)`, `Backtrace::Frame.^mro`
+    // is `(Frame Any Mu)`; neither does a role.
+    row!("Backtrace", mro: ["Backtrace", "Any", "Mu"], roles: [], owner: ""),
+    row!(
+        "Backtrace::Frame",
+        mro: ["Backtrace::Frame", "Any", "Mu"],
+        roles: [],
+        owner: "",
+    ),
     // ---- Match/Capture ----
     row!(
         "Match",

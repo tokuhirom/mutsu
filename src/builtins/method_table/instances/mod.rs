@@ -22,6 +22,7 @@ macro_rules! narrow_row {
 }
 use narrow_row;
 
+pub(crate) mod backtrace;
 pub(crate) mod date;
 pub(crate) mod dateish;
 pub(crate) mod datetime;
@@ -44,6 +45,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     instant::INSTANT_OWN_ROWS,
     instant::DURATION_OWN_ROWS,
     regex_match::ROWS,
+    backtrace::ROWS,
     temporal_shift::ROWS,
     temporal_edit::ROWS,
 ];

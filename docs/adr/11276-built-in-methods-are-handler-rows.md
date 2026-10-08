@@ -1929,3 +1929,30 @@ Follow-up to §9.32 (`refactor/11276-blob-decode`).
   machinery), `clone` (a rendering-and-identity name, plan item 1).
 - **Found, not changed.** Rakudo refuses several named units in one call ("More than one time unit supplied"), mutsu
   applies them in a fixed order; the roast and ecosystem code that exists spells them as a list of pairs.
+
+### 9.35 `Backtrace` and `Backtrace::Frame` (2026-10-08)
+
+3D remainder, the objects group, `Backtrace` first (`refactor/11276-3d-backtrace`).
+
+- **Two closed shapes**, `DispatchShape::Backtrace` and `BacktraceFrame`, decoded from the exact class name (a user
+  subclass has another name and no shape), with catalog rows (`(Backtrace Any Mu)`, `(Frame Any Mu)`, as Rakudo). Both
+  are closed: `elems`, `List`, `Seq` and `Stringy` are ancestor answers (`Any`, `Mu`) read from the `frames` list, and
+  stay in the zero-argument cascade until a slice audits `Any`/`Mu` for the shapes.
+- **23 rows** (`instances/backtrace.rs`), all pure. `Backtrace`: `Str`, `gist`, `list`, `flat`, `full`, `concise`,
+  `summary`, `is-runtime` (a recognition row the table lacked), `AT-POS`, `outer-caller-idx`, and the introspection
+  helpers `nice` (`:oneline`) and `next-interesting-index` (`:named`, `:noproto`, `:setting`) as `Handler::Named` rows,
+  registered at every arity the cascades accepted (the recognition table claims `nice` at one argument and
+  `next-interesting-index` at two). `Backtrace::Frame`: `subname`, `file`, `line`, `Str`, `code`, `is-routine`,
+  `is-hidden`, `is-setting`.
+- **One implementation.** The 0-, 1- and 2-argument cascades lost their `Backtrace` arms (the `.nice`/`.outer-caller-idx`
+  introspection block, the `AT-POS` arm, the 140-line `Str`/`gist`/`full`/`concise`/`summary`/... block, the frame
+  accessors); each now makes one call, `backtrace::answer`, which finds the row by owner, name and positional count and
+  runs its handler. The call is needed because the debug cross-check re-runs every pure row through the cascades, and
+  a generic instance fallback answers a `Backtrace` call differently (`list` rendered the text) — the same reason the
+  `Seq` and `Blob` slices kept their arms as calls into the shared handlers.
+- **Left.** `Backtrace::Frame.name` (a mutsu alias of `subname`; Rakudo has none) and `.raku`/`.gist` of a frame
+  (`default_instance_repr`, which renders the synthesized `code` object); the rest of the objects group (`Mu`, `Code`,
+  `Exception`, `Failure`, `Signature`, `X::AdHoc`, ...).
+- **Found, not changed.** A user subclass of `Backtrace` answers `X::Method::NotFound` for `is-runtime` where Rakudo
+  answers (the class-name decode is exact, as the arms it replaces were); `Backtrace.new` inside a sub has one frame
+  fewer than Rakudo's (mutsu does not record the `new` frame).

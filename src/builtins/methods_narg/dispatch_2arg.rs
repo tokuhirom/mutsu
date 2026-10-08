@@ -39,21 +39,13 @@ pub(crate) fn native_method_2arg(
             &[arg1.clone(), arg2.clone()],
         );
     }
-    // `Backtrace` introspection with two arguments -- a starting index plus a
-    // named flag (`.next-interesting-index(2, :named)`), or two named flags.
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-        && class_name == "Backtrace"
-        && let Some(result) = crate::builtins::backtrace_methods::dispatch(
-            &attributes,
-            method,
-            &[arg1.clone(), arg2.clone()],
-        )
-    {
-        return Some(result);
+    // `Backtrace`: the rows' handlers (ADR-11276 §9.35).
+    if let Some(answer) = crate::builtins::method_table::backtrace::answer(
+        target,
+        method,
+        &[arg1.clone(), arg2.clone()],
+    ) {
+        return Some(answer);
     }
     if method == "flat" {
         let (depth, hammer) = if let Some(depth) = parse_flat_depth(arg1) {

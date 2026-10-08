@@ -148,21 +148,11 @@ pub(crate) fn native_method_1arg(
             after
         ))));
     }
-    // `Backtrace` introspection: `.nice(:oneline)`, `.outer-caller-idx($i)`,
-    // `.next-interesting-index($i)` / `(:named)` / `(:setting)` / `(:noproto)`.
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-        && class_name == "Backtrace"
-        && let Some(result) = crate::builtins::backtrace_methods::dispatch(
-            &attributes,
-            method,
-            std::slice::from_ref(arg),
-        )
+    // `Backtrace` and `Backtrace::Frame`: the rows' handlers (ADR-11276 §9.35).
+    if let Some(answer) =
+        crate::builtins::method_table::backtrace::answer(target, method, std::slice::from_ref(arg))
     {
-        return Some(result);
+        return Some(answer);
     }
     // `Pod::Block::Declarator`'s accumulators. Rakudo builds a declarator pod
     // block by appending each `#|` / `#=` comment through `._add_leading` /
@@ -614,25 +604,6 @@ pub(crate) fn native_method_1arg(
                             return Some(Ok(positional.get(idx).cloned().unwrap_or(Value::NIL)));
                         }
                         Some(Ok(Value::NIL))
-                    }
-                    // `Backtrace` is Positional over its frames (Rakudo's
-                    // Backtrace is a List of Backtrace::Frame), so
-                    // `$!.backtrace.AT-POS($i)` reads the frame at that
-                    // position and an out-of-range index reads back as Nil.
-                    ValueView::Instance {
-                        class_name,
-                        attributes,
-                        ..
-                    } if class_name == "Backtrace" => {
-                        let frames = attributes
-                            .as_map()
-                            .get("frames")
-                            .cloned()
-                            .unwrap_or(Value::NIL);
-                        Some(Ok(crate::runtime::utils::value_to_list(&frames)
-                            .get(idx)
-                            .cloned()
-                            .unwrap_or(Value::NIL)))
                     }
                     ValueView::Instance {
                         class_name,
