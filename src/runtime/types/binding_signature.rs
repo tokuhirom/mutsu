@@ -510,7 +510,7 @@ impl Interpreter {
             if let Some(&slot) = arg_source_slots.get(source) {
                 let owner_depth = self.call_frames.len().saturating_sub(1);
                 self.pending_rw_writeback_slots
-                    .insert(source.clone(), (slot, owner_depth));
+                    .insert(source.clone(), slot, owner_depth);
             }
         }
     }
@@ -2940,16 +2940,18 @@ impl Interpreter {
                                 .varref_slot()
                                 .filter(|slot| *slot != u32::MAX)
                             {
-                                self.pending_rw_writeback_slots
-                                    .entry(source_name.clone())
-                                    .or_insert((slot, self.call_frames.len().saturating_sub(1)));
+                                let owner_depth = self.call_frames.len().saturating_sub(1);
+                                self.pending_rw_writeback_slots.insert_if_absent(
+                                    source_name.clone(),
+                                    slot,
+                                    owner_depth,
+                                );
                                 if writeback_source != source_name {
-                                    self.pending_rw_writeback_slots
-                                        .entry(writeback_source.clone())
-                                        .or_insert((
-                                            slot,
-                                            self.call_frames.len().saturating_sub(1),
-                                        ));
+                                    self.pending_rw_writeback_slots.insert_if_absent(
+                                        writeback_source.clone(),
+                                        slot,
+                                        owner_depth,
+                                    );
                                 }
                             }
                             if !implicit_raw_veto && !raw_readonly_source {

@@ -4,6 +4,7 @@ use std::collections::{HashMap, HashSet};
 
 mod complex_real;
 mod package_keyed;
+mod rw_writeback_slots;
 mod tolerance;
 /// A per-package table of per-name entries: `package -> name -> V`, carrying
 /// the name filter that lets a failed package-chain walk cost one hash probe
@@ -1926,7 +1927,7 @@ pub struct Interpreter {
     /// that owns the slot. The rw writeback drain (`apply_pending_rw_writeback`)
     /// prefers this slot over the by-name resolution only at that depth, so a
     /// nested frame with a same-named local cannot consume the pending writeback.
-    pub(crate) pending_rw_writeback_slots: std::collections::HashMap<String, (u32, usize)>,
+    pub(crate) pending_rw_writeback_slots: rw_writeback_slots::RwWritebackSlots,
     /// The callsite line a pending test assertion should report, set by every
     /// call dispatch and cleared by `exec_nqp_op`.
     ///
