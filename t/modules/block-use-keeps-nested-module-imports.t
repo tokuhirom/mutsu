@@ -24,7 +24,7 @@
 use lib 't/lib';
 use Test;
 
-plan 4;
+plan 5;
 
 {
     use BlockUseNestedOuter;
@@ -57,3 +57,10 @@ nok defined(::('&leaf-probe')),
     use BlockUseNestedInner;
 }
 is outer-probe(), 'visible', 'the chain still resolves after a repeated block-scoped use';
+
+# And the nested module's own import stays invisible to the using scope.
+{
+    use BlockUseNestedMultiOuter;
+}
+my $nested-multi = '&nested-' ~ 'mexp';
+nok defined(::($nested-multi)), "a nested module's multi import is not visible to the user";

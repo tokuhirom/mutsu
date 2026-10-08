@@ -223,6 +223,18 @@ impl Interpreter {
         let _pkg_guard = callback_package
             .filter(|&pkg| pkg != self.current_package_sym())
             .map(|pkg| self.enter_package_guarded_sym(pkg));
+        // And under its DECLARING compunit: the same `run_reuse` bypass skips
+        // the unit switch of `call_compiled_closure_with_topic`, so a Seq
+        // pulled by another unit's routine (`subtest { (1,).map: { is f() } }`
+        // returns the lazy Seq to Test's `subtest`) would resolve the block's
+        // imports against that routine's unit (#12161).
+        let saved_unit = match func.as_ref().map(Value::view) {
+            Some(ValueView::Sub(data)) => {
+                let unit = self.unit_of_source_sym(data.source_file_sym());
+                Some(std::mem::replace(&mut self.current_unit, unit))
+            }
+            _ => None,
+        };
         // The end of the source elements consumed: `end`, unless a grep fed
         // lazily stopped at its last match first.
         let mut consumed_end = end;
@@ -274,6 +286,9 @@ impl Interpreter {
             }
         };
         self.module.fatal_mode = saved_fatal;
+        if let Some(unit) = saved_unit {
+            self.current_unit = unit;
+        }
         self.reconcile_caller_after_lazy_force(caller_code);
         // A `fail` (and `...`, which IS a `fail`) raised by the
         // callback escapes as a `Control::Fail` error, which the next
