@@ -3025,7 +3025,19 @@ impl Interpreter {
                             // environment by a `ContainerRef`; the next use then
                             // cannot follow the imported type alias. Explicit
                             // `is rw` / `is raw` are untouched.
+                            // `\v` bound to the topic `$_` of a `for`/`map` over
+                            // plain values (`for %h.keys { f($_) }`) aliases no
+                            // Scalar: the topic IS the value. Boxing it here
+                            // would make `v =:= v."name"()` False where rakudo
+                            // says True (DB::Xoos' `gen-quote`).
+                            let bare_topic_value = pd.sigilless
+                                && source_name == "_"
+                                && !self
+                                    .env
+                                    .get("_")
+                                    .is_some_and(|v| matches!(v.view(), ValueView::ContainerRef(_)));
                             if param_is_plain_scalar
+                                && !bare_topic_value
                                 && source_is_plain_scalar
                                 && !source_is_indexed
                                 && !implicit_raw_veto
