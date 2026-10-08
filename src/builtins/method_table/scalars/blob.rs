@@ -8,8 +8,8 @@
 //! per shape's own type, `Blob` and `Buf`, sharing one handler each; the
 //! mutators belong to `Buf` alone (`Buf` declares them, `Blob` does not).
 //!
-//! A shape is a built-in buffer class by name ([`DispatchShape::Blob`],
-//! [`DispatchShape::Buf`]); a user subclass or a class composed over a buffer
+//! A shape is a built-in buffer class by name ([`crate::value::DispatchShape::Blob`],
+//! [`crate::value::DispatchShape::Buf`]); a user subclass or a class composed over a buffer
 //! has no shape and reaches the same handlers through the cascade's arms.
 
 use super::{Handler, MethodRow, RowFlags};
