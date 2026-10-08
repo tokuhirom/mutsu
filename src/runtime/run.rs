@@ -527,7 +527,8 @@ impl Interpreter {
                     }
                 })
                 .collect();
-            body_main.splice(0..0, enter_stmts);
+            let our_decls = Self::take_bare_our_decls(&mut body_main);
+            body_main.splice(0..0, our_decls.into_iter().chain(enter_stmts));
         }
         // Re-insert top-level PRE/POST phasers the same way (rather than
         // discarding them, which previously made `PRE`/`POST` at the true
@@ -866,6 +867,11 @@ impl Interpreter {
             if !result.truthy() {
                 return Err(crate::runtime::phaser_prepost_error(true, condition));
             }
+        }
+        let mut body_main = body_main;
+        if !enter_ph.is_empty() {
+            let our_decls = Self::take_bare_our_decls(body_main.to_mut());
+            self.run_block_raw(&our_decls)?;
         }
         self.run_block_raw(&enter_ph)?;
         let body_result = match &slot {

@@ -40,6 +40,29 @@ impl Interpreter {
         stmts.iter().any(Self::splits_off)
     }
 
+    /// Move the bare top-level `our` declarations (`our @log;`, no initializer)
+    /// out of `body`, in source order, so they can run ahead of the block's
+    /// ENTER phasers. rakudo installs an `our` symbol when the unit is
+    /// compiled, so an ENTER sees the same package container the later
+    /// declaration (which only re-loads it) gives the body.
+    // Cost: O(n), n = top-level statements.
+    pub(crate) fn take_bare_our_decls(body: &mut Vec<Stmt>) -> Vec<Stmt> {
+        let is_bare_our = |stmt: &Stmt| {
+            matches!(
+                stmt,
+                Stmt::VarDecl { is_our: true, expr, custom_traits, .. }
+                    if crate::compiler::Compiler::is_synthesized_decl_default(expr)
+                        && !custom_traits.iter().any(|(n, _)| n == "__has_initializer")
+            )
+        };
+        if !body.iter().any(is_bare_our) {
+            return Vec::new();
+        }
+        let (decls, rest) = std::mem::take(body).into_iter().partition(is_bare_our);
+        *body = rest;
+        decls
+    }
+
     pub(super) fn split_block_phasers<'a>(&self, stmts: &'a [Stmt]) -> SplitPhasers<'a> {
         if !Self::block_has_split_phasers(stmts) {
             return (
