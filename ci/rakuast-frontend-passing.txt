@@ -1572,6 +1572,7 @@ t/grammar/grammar-instance-parse.t
 t/grammar/grammar-is-export.t
 t/grammar/grammar-left-recursion-compiled-call.t
 t/grammar/grammar-lexical-and-wrap-subrule-frames.t
+t/grammar/grammar-ltm-unknown-subrule.t
 t/grammar/grammar-make-named-argument.t
 t/grammar/grammar-meta-mro.t
 t/grammar/grammar-method-shaped-top.t
@@ -1596,6 +1597,8 @@ t/grammar/grammar-parse-rule-proto-candidate-fallback.t
 t/grammar/grammar-parse-rule-proto-sym-action.t
 t/grammar/grammar-per-match-dynvar-action.t
 t/grammar/grammar-plain-alias-no-action.t
+t/grammar/grammar-proto-candidate-direct-call.t
+t/grammar/grammar-proto-candidate-ref-no-use.t
 t/grammar/grammar-proto-ltm-fallback.t
 t/grammar/grammar-proto-rule-candidate-trailing-ws.t
 t/grammar/grammar-proto-rule-marker.t
@@ -4015,6 +4018,7 @@ t/rakuast/rakuast-regex-qualified-subrules.t
 t/rakuast/rakuast-regex-quantifiers.t
 t/rakuast/rakuast-regex-quote-escapes.t
 t/rakuast/rakuast-regex-stored-interpolation.t
+t/rakuast/rakuast-regex-sym-adverb.t
 t/rakuast/rakuast-regex-tree-gaps.t
 t/rakuast/rakuast-regex.t
 t/rakuast/rakuast-return-type.t
@@ -4869,6 +4873,7 @@ t/routines/dispatch/proto-rw-redispatch-coherence.t
 t/routines/dispatch/proto-state-cache-writeback-coherence.t
 t/routines/dispatch/proto-sub-declares-infix.t
 t/routines/dispatch/proto-sub.t
+t/routines/dispatch/proto-subrule-variant-reference.t
 t/routines/dispatch/proto-vm-dispatch.t
 t/routines/dispatch/reverse-metaop-numeric-candidate.t
 t/routines/dispatch/routine-candidates-multi-flag.t

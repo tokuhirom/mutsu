@@ -49,6 +49,7 @@ mod regex_code;
 mod regex_enumeration;
 mod regex_extension;
 mod regex_quantifier;
+mod regex_sym;
 mod render;
 mod role;
 mod routine_traits;

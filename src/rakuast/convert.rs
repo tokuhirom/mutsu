@@ -4428,10 +4428,16 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
             args,
             ..
         } => {
-            let name_node = name_from_identifier(name);
+            let mut name_node = name_from_identifier(name);
+            // `<value:sym<number>>`: the adverb belongs to the name.
+            let sym = args.as_deref().and_then(super::regex_sym::name_colonpairs);
+            if let Some(colonpairs) = sym.clone() {
+                name_node.fields.push(colonpairs);
+            }
             let mut fields = vec![node_field(Some("name"), name_node)];
             if let Some(args) = args
                 && !args.args.is_empty()
+                && sym.is_none()
             {
                 fields.push(node_field(Some("args"), regex_arg_list(args)?));
             }
@@ -4439,7 +4445,7 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
                 fields.push(leaf_field(Some("capturing"), Value::truth(true)));
             }
             (
-                if args.is_some() {
+                if args.is_some() && sym.is_none() {
                     RakuAstClass::RegexAssertionNamedArgs
                 } else {
                     RakuAstClass::RegexAssertionNamed
@@ -4453,10 +4459,15 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
             capturing,
             args,
         } => {
-            let name_node = name_from_identifier(name);
+            let mut name_node = name_from_identifier(name);
+            let sym = args.as_deref().and_then(super::regex_sym::name_colonpairs);
+            if let Some(colonpairs) = sym.clone() {
+                name_node.fields.push(colonpairs);
+            }
             let mut assertion_fields = vec![node_field(Some("name"), name_node)];
             if let Some(args) = args
                 && !args.args.is_empty()
+                && sym.is_none()
             {
                 assertion_fields.push(node_field(Some("args"), regex_arg_list(args)?));
             }
@@ -4464,7 +4475,7 @@ pub(super) fn regex_node(node: &RegexNode) -> Result<RakuAstNode, RuntimeError> 
                 assertion_fields.push(leaf_field(Some("capturing"), Value::truth(true)));
             }
             let assertion = RakuAstNode {
-                class: if args.is_some() {
+                class: if args.is_some() && sym.is_none() {
                     RakuAstClass::RegexAssertionNamedArgs
                 } else {
                     RakuAstClass::RegexAssertionNamed
