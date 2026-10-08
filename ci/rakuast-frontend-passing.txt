@@ -1227,6 +1227,8 @@ t/control/ternary-builtin-enum-then.t
 t/control/ternary-call-arg.t
 t/control/ternary-container-increment.t
 t/control/ternary-dot-assign-branch.t
+t/control/ternary-lvalue-assign-reassoc.t
+t/control/ternary-lvalue.t
 t/control/ternary-second-part-diagnoses.t
 t/control/ternary-self-then-branch.t
 t/control/ternary-sigilless-term-then-branch.t
@@ -1869,6 +1871,7 @@ t/lang/operators/negated-pair.t
 t/lang/operators/nonassoc-comparison.t
 t/lang/operators/nonassoc-range-and-unless-else.t
 t/lang/operators/operator-associativity-traits.t
+t/lang/operators/operator-lvalue-defined-or.t
 t/lang/operators/operator-precedence-so-ternary.t
 t/lang/operators/operator-reference-double-angle.t
 t/lang/operators/operators-extra.t
@@ -3768,6 +3771,7 @@ t/rakuast/rakuast-listinfix-bind.t
 t/rakuast/rakuast-loop-label.t
 t/rakuast/rakuast-loop.t
 t/rakuast/rakuast-lowering-semantics.t
+t/rakuast/rakuast-lvalue-expression-assign.t
 t/rakuast/rakuast-members-traits.t
 t/rakuast/rakuast-method-call-assign.t
 t/rakuast/rakuast-method-flags.t
@@ -5735,6 +5739,7 @@ t/vm/nqp-list-setelems-fill.t
 t/vm/nqp-loop-value-context.t
 t/vm/nqp-object-ops-parity.t
 t/vm/nqp-object-ops.t
+t/vm/nqp-op-call-assign.t
 t/vm/nqp-p6-ops.t
 t/vm/nqp-p6scalarwithvalue-bool-container.t
 t/vm/nqp-pointer-ops.t

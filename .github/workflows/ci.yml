@@ -357,6 +357,13 @@ jobs:
         # `[div] 7, -2` was -3). Self-tests its patterns first.
         run: make check-prims
 
+      - name: Opcode router is current and every opcode has one arm
+        # `exec_one_dispatch`'s opcode match is split into `exec_ops_group_NN`
+        # functions (a debug build gives every arm local its own stack slot,
+        # #12299) and `vm_exec_route.rs` is generated from them. Fails when the
+        # router is stale, an opcode has no arm, or two groups claim one.
+        run: make check-exec-route
+
       - name: Bench allocation-count extractor still resolves every allocator
         # The deterministic bench series reads its allocation counts out of
         # callgrind's own output (#8959), and that parse fails by UNDERCOUNTING

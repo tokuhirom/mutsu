@@ -119,6 +119,8 @@ is_doc_path() {
     scripts/check-layer-deps.py) return 1 ;;
     # `make check-interp-fields` (ADR-10779 D4) runs it with --check.
     scripts/interp-field-matrix.py) return 1 ;;
+    # `make check-exec-route` (a `make checks` step, #12299) runs it with --check.
+    scripts/gen-exec-route.py) return 1 ;;
     scripts/*.py) return 0 ;;
     LICENSE) return 0 ;;
     */*) return 1 ;;          # any other nested path: not documentation

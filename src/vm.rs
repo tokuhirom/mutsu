@@ -205,6 +205,7 @@ pub(crate) mod vm_do_block;
 mod vm_element_producers;
 mod vm_env_helpers;
 mod vm_exec_dispatch;
+mod vm_exec_route;
 pub(crate) mod vm_flipflop_ops;
 mod vm_for_loop_alias;
 mod vm_for_loop_body;
