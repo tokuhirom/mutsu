@@ -12,8 +12,8 @@
 //! which also keeps `BIND-POS`: binding a scalar *variable* needs the caller's
 //! argument sources, which a row does not receive.
 //!
-//! A `List` declares neither method in Rakudo, but the cascade answered both for
-//! every array value, so the `List` rows share the handlers.
+//! `List` declares `ASSIGN-POS` too (not `DELETE-POS`); an `Array` receiver reaches
+//! its own row first, so one handler serves both owners.
 
 use crate::builtins::method_table::{Handler, MethodRow, Named, ReceiverPlace, RowFlags};
 use crate::runtime::Interpreter;
@@ -37,7 +37,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Array", "ASSIGN-POS", 2, assign_pos),
     row!("Array", "DELETE-POS", 1, delete_pos),
     row!("List", "ASSIGN-POS", 2, assign_pos),
-    row!("List", "DELETE-POS", 1, delete_pos),
 ];
 
 /// A non-negative index, or `None` for anything else.
