@@ -1012,6 +1012,7 @@ impl Interpreter {
                 self.env
                     .insert(i.to_string(), Value::str(captures.slot_text(v)));
             }
+            let surviving_spans = captures.tree_spans();
             let alias_map = captures.take_capture_alias_map();
             let cursor = captures.take_cursor();
             let match_obj = Value::make_match_object_full_with_regex_vars(
@@ -1060,7 +1061,7 @@ impl Interpreter {
 
             // Invoke action methods if :actions was provided
             let deferred_repeats = if actions_obj.is_some() {
-                Some(self.replay_repeated_reduce_actions(&text))
+                Some(self.replay_repeated_reduce_actions(&text, &surviving_spans))
             } else {
                 None
             };
@@ -1298,8 +1299,10 @@ impl Interpreter {
     pub(crate) fn replay_repeated_reduce_actions(
         &mut self,
         text: &str,
+        surviving: &crate::value::regex_caps::SurvivingSpans,
     ) -> super::methods_grammar_deferred_repeats::DeferredSlot {
-        let entries = super::regex::regex_helpers::ReducedSubruleGuard::take_repeated_entries();
+        let entries =
+            super::regex::regex_helpers::ReducedSubruleGuard::take_repeated_entries(surviving);
         self.defer_repeated_reduce_actions(entries, text)
     }
 
