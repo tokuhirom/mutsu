@@ -67,6 +67,7 @@ mod decls;
 mod phasers;
 mod pragmas;
 mod routines;
+mod var_traits;
 mod walk;
 
 use super::package_phasers::Enclosing;

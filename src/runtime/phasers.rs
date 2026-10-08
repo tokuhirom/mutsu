@@ -520,6 +520,11 @@ fn expr_has_phaser_expr(expr: &Expr) -> bool {
 /// Marks a declaration whose initializer reads its static cell (ADR-0134).
 pub(crate) const BEGIN_STATIC_TRAIT: &str = "__begin_static";
 
+/// The synthetic call a lifted variable-trait application is written as
+/// (`__mutsu_apply_var_trait("name", "trait"[, arg])`); the compiler turns it
+/// into the `ApplyVarTrait` a declaration emits in place.
+pub(crate) const APPLY_VAR_TRAIT_CALL: &str = "__mutsu_apply_var_trait";
+
 /// Marks the static half of a `:D`-typed scalar declaration (`my Int:D $x =
 /// 3`). Its container holds the nominal type object (`Int`), which the `:D`
 /// constraint itself rejects, so the compiler stores the value first and
