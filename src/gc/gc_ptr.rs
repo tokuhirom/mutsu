@@ -113,6 +113,14 @@ pub(crate) trait Trace: Send + Sync {
     /// logic for the GC-off path. The default does nothing (only `Instance`
     /// attributes carry a Raku destructor).
     fn finalize(&self) {}
+
+    /// Whether [`finalize`](Trace::finalize) would do work that clones this
+    /// node's edges (an `Instance` queuing a `DESTROY` snapshot of its
+    /// attributes). The collector uses it to rebalance the strong counts around
+    /// the finalizer in `reclaim`; the default `false` costs nothing.
+    fn finalize_clones_edges(&self) -> bool {
+        false
+    }
 }
 
 /// Bacon-Rajan node header stored alongside the value inside a [`GcBox`].
@@ -1019,6 +1027,10 @@ impl GcBox<dyn Trace> {
     }
     pub(crate) fn gc_strong_inc(&self) {
         self.header.strong.fetch_add(1, Ordering::Relaxed);
+    }
+    /// See [`Trace::finalize_clones_edges`].
+    pub(crate) fn gc_finalize_clones_edges(&self) -> bool {
+        self.val().finalize_clones_edges()
     }
     /// Visit each direct `Gc` child (delegates to the node's [`Trace`] impl).
     pub(crate) fn gc_visit_children(&self, visit: &mut dyn FnMut(&ErasedGc)) {

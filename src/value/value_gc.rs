@@ -425,6 +425,9 @@ impl Trace for InstanceAttrs {
     fn finalize(&self) {
         self.finalize_destroy();
     }
+    fn finalize_clones_edges(&self) -> bool {
+        self.queue_destroy && !self.finalized.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 /// The QuantHash datas hold `Value`s only in their `original_keys` back-map
