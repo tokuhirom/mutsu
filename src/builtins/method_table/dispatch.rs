@@ -244,7 +244,7 @@ fn dispatch(
     if !super::names_a_row(method, arity) {
         return None;
     }
-    let receiver = Receiver::of(target)?;
+    let receiver = Receiver::of_settled(target)?;
     let id = super::resolve(receiver, method, arity)?;
     let row = row(id);
     // The caller's veto, asked once the row is known and before the handler

@@ -192,12 +192,12 @@ fn len(target: &Value) -> i64 {
 
 // Cost: O(1), a length read on the reified items. Also `List.Numeric` and
 // `List.Int`: a list numifies to its element count.
-fn elems(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+pub(crate) fn elems(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(Value::int(len(target)))
 }
 
 // Cost: O(1), a length read on the reified items.
-fn end(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+pub(crate) fn end(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(Value::int(len(target) - 1))
 }
 
@@ -304,7 +304,7 @@ pub(crate) fn is_lazy(target: &Value, args: &[Value]) -> Option<Result<Value, Ru
 }
 
 // Cost: O(1), an emptiness test.
-fn bool(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+pub(crate) fn bool(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(Value::truth(target.truthy()))
 }
 
@@ -524,7 +524,7 @@ pub(crate) fn invert(target: &Value, args: &[Value]) -> Option<Result<Value, Run
 /// only the interpreter path can do (#11838).
 // Cost: O(e + t), e = elements (walked once more for a Proxy, one container
 // level per step), t = total chars of the result.
-fn join(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+pub(crate) fn join(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     // `.join` stringifies every element, so a zero-denominator Rational among
     // them dies like its own `.Str` (GH #9621).
     if let Err(err) = crate::runtime::utils::check_str_coercion_zero_denominator(target) {

@@ -21,6 +21,7 @@ pub(crate) mod quanthash;
 pub(crate) mod range;
 pub(crate) mod render;
 mod sampling;
+pub(crate) mod seq;
 pub(crate) mod subscript;
 mod truth;
 
@@ -50,5 +51,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     sampling::PICK_ROWS,
     sampling::ROLL_ROWS,
     sampling::PICKPAIRS_ROWS,
+    seq::ROWS,
     truth::ROWS,
 ];

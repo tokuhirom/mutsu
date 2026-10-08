@@ -91,6 +91,7 @@ fn sample(shape: DispatchShape) -> Value {
             attributes.insert("path".to_string(), Value::str_from("foo/bar"));
             Value::make_instance(Symbol::intern("IO::Path"), attributes)
         }
+        DispatchShape::Seq => Value::seq(vec![Value::int(1), Value::int(2)]),
     }
 }
 
@@ -112,7 +113,11 @@ fn rows() -> impl Iterator<Item = &'static MethodRow> {
 #[test]
 fn samples_have_their_shape() {
     for shape in DispatchShape::ALL {
-        if shape.has_instances() {
+        if shape == DispatchShape::Seq {
+            // Only the entries after the consumption step decode a `Seq`.
+            assert_eq!(sample(shape).dispatch_shape(), None);
+            assert_eq!(sample(shape).settled_seq_shape(), Some(shape));
+        } else if shape.has_instances() {
             assert_eq!(sample(shape).dispatch_shape(), Some(shape));
         } else {
             assert_eq!(sample(shape).type_object_shape(), Some(shape));

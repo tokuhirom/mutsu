@@ -133,13 +133,21 @@ pub(crate) enum DispatchShape {
     /// subclass (`IO::Socket::INET`, `IO::Pipe`, a user class) has another
     /// class name and reaches the rows through its owner (`invoke_owner`).
     IoHandle,
+    /// A settled, plain `Seq`: reified, not lazy, not a `List` view (what a
+    /// `.cache` returns) and not holding live element containers (closed). Only
+    /// the entries that run after the Seq consumption step decode it
+    /// ([`crate::builtins::method_table::Receiver::of_settled`]); the call-site
+    /// lane and the by-name mutating entry run before that step and never see
+    /// this shape, so a row cannot answer a `Seq` whose method would have consumed
+    /// it.
+    Seq,
 }
 
 impl DispatchShape {
     /// Every shape, in declaration order. The call-site memo packs a shape
     /// into one byte and the table keeps a bit per shape, so this stays under
     /// 64.
-    pub(crate) const ALL: [DispatchShape; 32] = [
+    pub(crate) const ALL: [DispatchShape; 33] = [
         DispatchShape::List,
         DispatchShape::Array,
         DispatchShape::Hash,
@@ -172,6 +180,7 @@ impl DispatchShape {
         DispatchShape::IoSpecCygwin,
         DispatchShape::IoSpecQnx,
         DispatchShape::IoHandle,
+        DispatchShape::Seq,
     ];
 
     /// The built-in type whose MRO a receiver of this shape is dispatched
@@ -211,6 +220,7 @@ impl DispatchShape {
             DispatchShape::IoSpecCygwin => "IO::Spec::Cygwin",
             DispatchShape::IoSpecQnx => "IO::Spec::QNX",
             DispatchShape::IoHandle => "IO::Handle",
+            DispatchShape::Seq => "Seq",
         }
     }
 
