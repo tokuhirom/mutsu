@@ -615,6 +615,11 @@ impl Interpreter {
     // `STRAND_MIN_BYTES` whose join cannot compose); O(n1 + n2) otherwise (a
     // small result, or a join that is renormalized over a bounded window).
     pub(crate) fn concat_values(left: Value, right: Value) -> Result<Value, RuntimeError> {
+        // `$blob.item` / `$sock.read(..).item` hands `~` a Scalar around the Blob;
+        // rakudo decontainerizes it, so the byte-concatenation branch below must
+        // see the Blob itself (LWP::Simple's `($status, $h, $content) = ...item`).
+        let left = Self::peel_scalar_around_buf(left);
+        let right = Self::peel_scalar_around_buf(right);
         // Buf ~ Buf → byte concatenation. Rakudo types the result by whether the
         // two operands have the *same* type: `Blob[uint8] ~ Blob[uint8]` stays
         // `Blob[uint8]` and `utf8 ~ utf8` stays `utf8`, but any mismatch widens to
@@ -651,6 +656,19 @@ impl Interpreter {
             return Ok(crate::builtins::str_prim::concat(left, &right));
         }
         Ok(crate::builtins::str_prim::concat(left, &right))
+    }
+
+    /// A Scalar/container holder around a Blob, peeled; anything else unchanged.
+    // Cost: O(1) — one view match and, for a holder, one clone of the inner handle.
+    fn peel_scalar_around_buf(v: Value) -> Value {
+        match v.view() {
+            ValueView::Scalar(inner) if Self::is_buf_value(inner) => (*inner).clone(),
+            ValueView::ContainerRef(cell) => {
+                let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                if Self::is_buf_value(&inner) { inner } else { v }
+            }
+            _ => v,
+        }
     }
 
     /// A value as `.Stringy` sees it when it may be a Blob: the one rule for
