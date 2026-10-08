@@ -140,15 +140,25 @@ impl Interpreter {
         over_scalar: bool,
     ) -> Result<(), RuntimeError> {
         let name: &'static str = name_sym.as_str();
-        // A lexical `my class foo` is bound in `env` under its own name, the
-        // very key a same-named `$foo` shares, and no other table says which of
-        // several same-named lexical types is the one in scope. Where such a
-        // type exists the `env[name]` read is how the type is found, so the
-        // name keeps the ordinary resolution.
-        // TODO: give lexical type bindings a key space of their own (#12109,
-        // #9962's "decide once"); the `$foo` read there is then no longer
-        // ambiguous.
-        let over_scalar = over_scalar && !self.registry().has_lexical_type_key_for(name);
+        // A lexical `my class foo` is bound under its own `env` key space
+        // (`lexical_type_key`) as well as the bare name a same-named `$foo`
+        // shares, so it is found whatever the scalar wrote there (#12109).
+        let lexical_type = if self.registry().has_lexical_type_key_for(name) {
+            match self
+                .env()
+                .get(&crate::term_names::lexical_type_key(name))
+                .map(Value::view)
+            {
+                Some(ValueView::Package(storage)) => Some(storage),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        if let Some(storage) = lexical_type {
+            self.stack.push(Value::package(storage));
+            return Ok(());
+        }
         let mut preferred_module_bareword = None;
         // `Pkg::tail` split once per symbol; `None` for an unqualified name.
         let name_split = crate::qualified::split_qualified(name_sym);
