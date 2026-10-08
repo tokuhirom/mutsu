@@ -351,7 +351,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             },
             // Only the on-demand lambda opens with a supply record.
             Some(
-                crate::ast::SourceForm::SupplyBlock(_) | crate::ast::SourceForm::WithPointy { .. },
+                crate::ast::SourceForm::SupplyBlock(_)
+                | crate::ast::SourceForm::WithPointy { .. }
+                | crate::ast::SourceForm::GivenPointy { .. },
             )
             | None => Err(unsupported("source form")),
         },
@@ -868,7 +870,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                     class: RakuAstClass::StatementGiven,
                     fields: vec![
                         node_field(Some("source"), convert_expr(topic)?),
-                        node_field(Some("body"), topic_block_node(body)?),
+                        node_field(Some("body"), given_body_node(body)?),
                     ],
                 }))
             }
@@ -3099,7 +3101,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Some(
                 crate::ast::SourceForm::SupplyBlock(_)
                 | crate::ast::SourceForm::BarePhaser
-                | crate::ast::SourceForm::WithPointy { .. },
+                | crate::ast::SourceForm::WithPointy { .. }
+                | crate::ast::SourceForm::GivenPointy { .. },
             )
             | None => Err(unsupported("source form")),
         },
@@ -4775,6 +4778,24 @@ fn topic_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
             node_field(Some("body"), blockoid(body)?),
         ],
     })
+}
+
+/// The body of a `given`: the topic block, or the `PointyBlock` of
+/// `given X -> PARAM { BODY }`, from the record the parser leaves after the
+/// parameter bind.
+// Cost: O(n), n = size of the body.
+fn given_body_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+    for stmt in body {
+        if let Stmt::SourceForm(form) = stmt
+            && let crate::ast::SourceForm::GivenPointy {
+                param_def,
+                body: written,
+            } = form.as_ref()
+        {
+            return pointy_block(std::slice::from_ref(param_def), written, None);
+        }
+    }
+    topic_block_node(body)
 }
 
 /// The body of a `CATCH` / `CONTROL` block: it topicalizes the exception, so

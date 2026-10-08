@@ -463,6 +463,7 @@ pub(super) use for_loops::{
     race_for_body, race_for_stmt,
 };
 pub(super) use for_params::parse_for_params;
+pub(crate) use given_when::given_pointy_body;
 pub(super) use given_when::{default_stmt, given_stmt, when_stmt};
 pub(super) use labeled_loop::labeled_loop_stmt;
 pub(super) use loop_repeat::{loop_stmt, repeat_stmt};

@@ -29,6 +29,13 @@ pub(crate) enum SourceForm {
         param_def: Option<super::ParamDef>,
         body: Vec<Stmt>,
     },
+    /// `given EXPR -> PARAM { BODY }`: the written parameter and body, which
+    /// follow the parameter bind at the head of the expansion
+    /// `given_pointy_body` builds.
+    GivenPointy {
+        param_def: super::ParamDef,
+        body: Vec<Stmt>,
+    },
     /// `BEGIN say 1`: a phaser written over a bare statement (ADR-12199). It
     /// opens a one-statement expansion whose second statement is the phaser;
     /// only a spelling-keeping parse builds it.

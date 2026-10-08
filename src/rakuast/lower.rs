@@ -423,12 +423,27 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // `given`/`when`/`default` — a `when`/`default` sits directly (not
         // Statement::Expression-wrapped) in the enclosing `given` block, so it
         // reaches this dispatch unwrapped.
-        RakuAstClass::StatementGiven => Ok(Stmt::Given {
-            topic: lower_expr(named_child(node, "source")?)?,
-            body: lower_block(named_child(node, "body")?)?,
-            is_statement_modifier: false,
-            with_kind: None,
-        }),
+        RakuAstClass::StatementGiven => {
+            let block = named_child(node, "body")?;
+            let body = if block.class == RakuAstClass::PointyBlock {
+                // `given X -> PARAM { … }`: the parser's own expansion binds
+                // the parameter to the topic.
+                let (mut names, mut defs) = signature_positional_params(block)?;
+                name_for_unpack_params(&mut names, &mut defs);
+                let (1, Some(def)) = (defs.len(), defs.pop()) else {
+                    return Err(unsupported(node));
+                };
+                crate::parser::given_pointy_body(def, lower_block(block)?)
+            } else {
+                lower_block(block)?
+            };
+            Ok(Stmt::Given {
+                topic: lower_expr(named_child(node, "source")?)?,
+                body,
+                is_statement_modifier: false,
+                with_kind: None,
+            })
+        }
         RakuAstClass::StatementWhen => Ok(Stmt::When {
             cond: lower_expr(named_child(node, "condition")?)?,
             body: lower_block(named_child(node, "body")?)?,

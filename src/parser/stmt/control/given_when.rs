@@ -17,28 +17,7 @@ pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
     };
     let (rest, mut body) = block_with_pointy_params(rest, pointy_param.as_slice())?;
     if let Some(pd) = pointy_param {
-        if pointy_param_autothreads(&pd) {
-            // `given %r.all.value -> Any $_ { ... }`: the block is CALLED with
-            // the topic, so a Junction autothreads over a parameter whose type
-            // rejects it (Benchmark's statistics test) instead of failing the
-            // bind. Same lowering as `if COND -> sig { ... }`.
-            body = vec![Stmt::Expr(Expr::CallOn {
-                target: Box::new(Expr::AnonSubParams {
-                    params: vec![pd.name.clone()],
-                    param_defs: vec![pd],
-                    return_type: None,
-                    body,
-                    is_rw: false,
-                    is_raw: false,
-                    custom_traits: Default::default(),
-                    is_whatever_code: false,
-                    declarator: crate::ast::RoutineDeclarator::Block,
-                }),
-                args: vec![Expr::Var("_".to_string())],
-            })];
-        } else {
-            body.insert(0, pointy_topic_bind(&pd));
-        }
+        body = given_pointy_body(pd, body);
     }
     Ok((
         rest,
@@ -49,6 +28,47 @@ pub(crate) fn given_stmt(input: &str) -> PResult<'_, Stmt> {
             with_kind: None,
         },
     ))
+}
+
+/// The body of `given EXPR -> PARAM { BODY }` after the parser's expansion: the
+/// parameter bind (or the autothreading call) around the written body, plus a
+/// [`crate::ast::SourceForm::GivenPointy`] record keeping the parameter and body
+/// as written. `rakuast::lower` calls it too, so a hand-built `Statement::Given`
+/// over a `PointyBlock` expands the same way.
+// Cost: O(n), n = size of the body.
+pub(crate) fn given_pointy_body(pd: crate::ast::ParamDef, body: Vec<Stmt>) -> Vec<Stmt> {
+    let record = Stmt::SourceForm(Box::new(crate::ast::SourceForm::GivenPointy {
+        param_def: pd.clone(),
+        body: body.clone(),
+    }));
+    let mut body = body;
+    if pointy_param_autothreads(&pd) {
+        // `given %r.all.value -> Any $_ { ... }`: the block is CALLED with
+        // the topic, so a Junction autothreads over a parameter whose type
+        // rejects it (Benchmark's statistics test) instead of failing the
+        // bind. Same lowering as `if COND -> sig { ... }`.
+        body = vec![Stmt::Expr(Expr::CallOn {
+            target: Box::new(Expr::AnonSubParams {
+                params: vec![pd.name.clone()],
+                param_defs: vec![pd],
+                return_type: None,
+                body,
+                is_rw: false,
+                is_raw: false,
+                custom_traits: Default::default(),
+                is_whatever_code: false,
+                declarator: crate::ast::RoutineDeclarator::Block,
+            }),
+            args: vec![Expr::Var("_".to_string())],
+        })];
+        body.insert(0, record);
+    } else {
+        // The compiler reads the bind at the head of the body, so the record
+        // follows it.
+        body.insert(0, pointy_topic_bind(&pd));
+        body.insert(1, record);
+    }
+    body
 }
 
 /// Whether a `given ... -> PARAM` binds by calling the block: a plain scalar

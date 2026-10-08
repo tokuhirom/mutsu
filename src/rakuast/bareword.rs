@@ -256,6 +256,13 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                 | Stmt::RoleDecl { name, .. }
                 | Stmt::SubsetDecl { name, .. }
                 | Stmt::Package { name, .. } => self.insert_nested_type(*name),
+                // `given X -> \y { y }`: the parameter is declared by the
+                // expansion's bind, which the record keeps as written.
+                Stmt::SourceForm(form) => {
+                    if let crate::ast::SourceForm::GivenPointy { param_def, .. } = form.as_ref() {
+                        self.visit_param(param_def);
+                    }
+                }
                 // `my \x = 5` / `my \x := $s` declares the term `x`.
                 Stmt::SyntheticBlock(_) => {
                     if let Some(decl) = crate::ast::sigilless_decl::declaration(stmt) {
