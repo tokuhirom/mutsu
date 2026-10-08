@@ -118,7 +118,10 @@ enum SerValue {
         /// legacy shape -- so `.signature ~~ :(Routine, :$native!)` was True on
         /// a cold run and False on a warm one. Carrying the info alongside lets
         /// the value be rebuilt whole, under a fresh id.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ///
+        /// Always serialized, even when `None`: bincode's positional encoding
+        /// cannot decode a field the encoder skipped.
+        #[serde(default)]
         sig_info: Option<crate::value::signature::SigInfo>,
     },
     Mixin(Box<SerValue>, HashMap<String, SerValue>),
@@ -325,10 +328,21 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             let sig_info = (class_name == "Signature")
                 .then(|| crate::value::signature::lookup_sig_info(id))
                 .flatten();
+            // A sig-info `Signature` is rebuilt under a fresh id on decode, so
+            // its recorded id is meaningless; zeroing it keeps the encoding
+            // reproducible across compiles (the precomp verify mode compares
+            // bytes).
+            // The attributes are likewise derived from `sig_info` on decode,
+            // and a `HashMap`'s iteration order would make the bytes vary.
+            let (rec_id, ser_attrs) = if sig_info.is_some() {
+                (0, HashMap::new())
+            } else {
+                (id, ser_attrs?)
+            };
             Ok(SerValue::Instance {
                 class_name,
-                attributes: ser_attrs?,
-                id: crate::ast::stable_hash::ProcessLocalId(id),
+                attributes: ser_attrs,
+                id: crate::ast::stable_hash::ProcessLocalId(rec_id),
                 sig_info,
             })
         }
@@ -688,6 +702,10 @@ impl SerValue {
     fn has_identity(&self) -> bool {
         let any = |vs: &[SerValue]| vs.iter().any(SerValue::has_identity);
         match self {
+            // Rebuilt under a fresh id on decode, so it carries no identity.
+            SerValue::Instance {
+                sig_info: Some(_), ..
+            } => false,
             SerValue::Instance { .. }
             | SerValue::Mixin(..)
             | SerValue::MixinWithAttributes { .. } => true,
