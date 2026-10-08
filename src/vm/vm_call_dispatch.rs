@@ -264,6 +264,17 @@ impl Interpreter {
         if let Some(result) = self.try_native_collection_function(name, &args) {
             return result;
         }
+        // Code-variable calls (e.g. a callback invoking a proto passed as
+        // `&name`) arrive here rather than through `exec_call_func_op`'s
+        // bytecode-first proto dispatch. Keep non-trivial proto bodies on the
+        // same compiled path for both call forms; falling through to
+        // `call_function_fallback` tree-walks the body's `my` declarations and
+        // merges them by name into the caller's env.
+        if let Some(result) =
+            self.vm_try_run_nontrivial_proto_body(name, args.clone(), compiled_fns)
+        {
+            return result;
+        }
         // CARRIER (EVAL/pseudo-package) vs TODO: compile to bytecode (else branch =
         // true tree-walk function fallback). See ledger §2/§C.
         if Self::is_interpreter_carrier_function(name) {
