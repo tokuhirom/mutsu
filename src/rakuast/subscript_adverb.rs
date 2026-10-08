@@ -143,7 +143,12 @@ pub(super) fn lower(subscript: Expr, postfix: &RakuAstNode) -> Result<Expr, Runt
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
-    subscript_adverb::expand(subscript, &adverbs).ok_or_else(|| unsupported(postfix))
+    subscript_adverb::expand(
+        subscript,
+        &adverbs,
+        crate::parser::current_language_version().starts_with("6.e"),
+    )
+    .ok_or_else(|| unsupported(postfix))
 }
 
 /// `RakuAST::Postcircumfix::ArrayIndex.new(index => …, colonpairs => (…),

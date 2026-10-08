@@ -612,6 +612,7 @@ t/collections/subscript/rw-slice-arg-is-not-a-container.t
 t/collections/subscript/scalar-subscript-protocol.t
 t/collections/subscript/seq-whatever-subscript-element-cells.t
 t/collections/subscript/shape-illegal-dimension-bigint.t
+t/collections/subscript/shaped-array-delete-keeps-shape.t
 t/collections/subscript/shaped-array-delete-pos.t
 t/collections/subscript/shaped-array-exists-holes.t
 t/collections/subscript/shaped-array-gist-dimensions.t
@@ -625,6 +626,7 @@ t/collections/subscript/shaped-array-slice-exists.t
 t/collections/subscript/shaped-attr-constant-dimension.t
 t/collections/subscript/shaped-buf-alloc-guard.t
 t/collections/subscript/shaped-enum-value-and-anon-array-type.t
+t/collections/subscript/shaped-typed-array-row-hole-tracking.t
 t/collections/subscript/single-store-slice-a.t
 t/collections/subscript/single-store-slice-c-prime.t
 t/collections/subscript/slice-assign-generic-range.t
@@ -3786,6 +3788,7 @@ t/rakuast/rakuast-method-literal.t
 t/rakuast/rakuast-method-lvalue-assign.t
 t/rakuast/rakuast-method-modifier.t
 t/rakuast/rakuast-method-return-type.t
+t/rakuast/rakuast-multidim-delete.t
 t/rakuast/rakuast-named-parameters.t
 t/rakuast/rakuast-named-type-arguments.t
 t/rakuast/rakuast-names-and-literals.t
@@ -4402,6 +4405,7 @@ t/routines/closure/closure-capture-container-arg-cell.t
 t/routines/closure/closure-capture-expr-assign-callback.t
 t/routines/closure/closure-capture-hash-element-callback.t
 t/routines/closure/closure-capture-instance-cell.t
+t/routines/closure/closure-capture-keeps-container-traits.t
 t/routines/closure/closure-capture-memo.t
 t/routines/closure/closure-capture-named-arg-imported-callee.t
 t/routines/closure/closure-capture-nested-named-sub.t
@@ -4480,6 +4484,7 @@ t/routines/core-postcircumfix-routine.t
 t/routines/core-sleep-timer-routine.t
 t/routines/dispatch/adr0110-trir-call-out-dispatch.t
 t/routines/dispatch/anonymous-any-multi-dispatch.t
+t/routines/dispatch/assoc-multidim-lvalue-edges.t
 t/routines/dispatch/begin-selective-import-proto-multi.t
 t/routines/dispatch/block-local-sub-dispatch.t
 t/routines/dispatch/block-scoped-use-main-not-dispatched.t
@@ -4500,6 +4505,7 @@ t/routines/dispatch/dispatch-control.t
 t/routines/dispatch/dynamic-code-var-imported-test-multi.t
 t/routines/dispatch/enum-multiline-wordlist.t
 t/routines/dispatch/gate-b-rw-redispatch-slot-read.t
+t/routines/dispatch/hash-multislice-container.t
 t/routines/dispatch/heredoc-multibyte-terminator.t
 t/routines/dispatch/lastcall-in-wrapper-callsame-dies.t
 t/routines/dispatch/lastcall-then-nextsame.t
@@ -4583,11 +4589,17 @@ t/routines/dispatch/multidim-assoc-slice-map-writeback.t
 t/routines/dispatch/multidim-associative-subscript-6e.t
 t/routines/dispatch/multidim-associative-subscript-assign.t
 t/routines/dispatch/multidim-compound-assign.t
+t/routines/dispatch/multidim-container-ref-coherence.t
+t/routines/dispatch/multidim-delete-after-ephemeral-block-coherence.t
+t/routines/dispatch/multidim-dim-resolution-and-adverbs.t
+t/routines/dispatch/multidim-dynamic-delete-adverb.t
+t/routines/dispatch/multidim-exists-canonical-hole-predicate.t
 t/routines/dispatch/multidim-hash-pair-subscript.t
 t/routines/dispatch/multidim-hash-read-one-element-list.t
 t/routines/dispatch/multidim-hash-read.t
 t/routines/dispatch/multidim-index-through-itemized-seq.t
 t/routines/dispatch/multidim-list-assign-no-alias.t
+t/routines/dispatch/multidim-shaped-delete-bounds.t
 t/routines/dispatch/multidim-slice-scalar-leaf.t
 t/routines/dispatch/multidim-whatevercode-dimension-list.t
 t/routines/dispatch/multiframe-sigilless-for-rebind-coherence.t
@@ -5955,6 +5967,7 @@ t/vm/writeback/container-cell-raku-render.t
 t/vm/writeback/container-default-survives-reassign.t
 t/vm/writeback/container-default-survives-sibling-declaration.t
 t/vm/writeback/container-identity-bare-value.t
+t/vm/writeback/container-identity-mutation.t
 t/vm/writeback/container-identity-phase2-complete.t
 t/vm/writeback/container-identity-whole-assign.t
 t/vm/writeback/container-lexical-declarator-matrix.t
