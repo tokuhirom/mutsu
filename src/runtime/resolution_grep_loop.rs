@@ -403,7 +403,15 @@ impl Interpreter {
                                 }
                                 break 'body_redo;
                             }
-                            Err(e) => {
+                            Err(mut e) => {
+                                // The Seq keeps the matches so far and resumes
+                                // after this element (#12048).
+                                if !e.has_seq_pull_progress() {
+                                    e.set_seq_pull_progress(crate::value::SeqPullProgress {
+                                        produced: std::mem::take(&mut result),
+                                        consumed: i + arity,
+                                    });
+                                }
                                 return Err(e);
                             }
                         }

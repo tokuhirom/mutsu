@@ -682,7 +682,10 @@ impl Interpreter {
             // per iteration alongside `block_authoritative` — see
             // `Interpreter::frame_owned`.
             let block_owned = &data.owned_captures;
-            let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
+            // Source elements consumed so far, the one in flight included: if
+            // the callback dies, the Seq resumes after it (#12048).
+            let mut consumed = 0usize;
+            let mut loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
                 // Scope this block's `state` variables to the closure instance
                 // (`$n@<ip>#c{id}`): the body was re-compiled fresh above, so
                 // the compile-time `$var@<ip>` key alone is IDENTICAL for two
@@ -696,6 +699,7 @@ impl Interpreter {
                     if arity > 1 && i + arity > list_items.len() {
                         return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
+                    consumed = (i + arity).min(list_items.len());
                     vm.frame_authoritative = block_authoritative.clone();
                     vm.frame_owned = block_owned.clone();
                     {
@@ -862,8 +866,17 @@ impl Interpreter {
                     }
                 }
 
-                Ok(Value::array(result))
+                Ok(Value::array(std::mem::take(&mut result)))
             });
+            if let Err(e) = &mut loop_result
+                && !e.has_seq_pull_progress()
+                && consumed > 0
+            {
+                e.set_seq_pull_progress(crate::value::SeqPullProgress {
+                    produced: std::mem::take(&mut result),
+                    consumed,
+                });
+            }
 
             // Restore original values (was done on every exit of the old loop).
             self.leave_inline_loop_env(saved);

@@ -135,6 +135,20 @@ impl BacktraceText {
     }
 }
 
+/// What a deferred `Seq` pull produced before the exception that aborted it,
+/// carried on that exception (error path only) so the `Seq` can keep the
+/// partial list and resume after the failing element, as rakudo's `.cache`
+/// does (#12048).
+#[derive(Debug, Default)]
+pub(crate) struct SeqPullProgress {
+    /// The elements produced before the failure.
+    pub(crate) produced: Vec<Value>,
+    /// Source elements the pull consumed, the failing one included, counted
+    /// from where the pull started. Unused for an `Iterator` source, which
+    /// keeps its own position.
+    pub(crate) consumed: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct RuntimeErrorCold {
     /// Parse-error classification (set only for parse failures).
@@ -182,6 +196,9 @@ pub struct RuntimeErrorCold {
     /// matched. That region recognises its own token while unwinding and applies
     /// the verdict instead of running the handler a second time.
     pub catch_inline_verdict: Option<(u64, CatchInlineVerdict)>,
+    /// How far a deferred `Seq` pull got before it died (see
+    /// [`SeqPullProgress`]); read by `SeqBody::pull_and_store`.
+    pub seq_pull_progress: Option<Box<SeqPullProgress>>,
     /// See [`CatchInlinePayload`]; only ever set alongside `catch_inline_verdict`.
     pub catch_inline_payload: Option<Box<CatchInlinePayload>>,
     /// The source position the CLI's `------>` snippet should point at, when
@@ -438,6 +455,27 @@ impl RuntimeError {
 
     pub(crate) fn set_failure_original_backtrace(&mut self, v: Option<String>) {
         self.cold_mut().failure_original_backtrace = v;
+    }
+
+    /// Attach the progress of an aborted `Seq` pull (see [`SeqPullProgress`]).
+    // Cost: O(1).
+    pub(crate) fn set_seq_pull_progress(&mut self, v: SeqPullProgress) {
+        self.cold_mut().seq_pull_progress = Some(Box::new(v));
+    }
+    /// Detach the progress attached by [`Self::set_seq_pull_progress`].
+    // Cost: O(1).
+    pub(crate) fn take_seq_pull_progress(&mut self) -> Option<SeqPullProgress> {
+        self.cold
+            .as_mut()
+            .and_then(|c| c.seq_pull_progress.take())
+            .map(|b| *b)
+    }
+    /// Whether progress is attached already (an inner pull's wins).
+    // Cost: O(1).
+    pub(crate) fn has_seq_pull_progress(&self) -> bool {
+        self.cold
+            .as_ref()
+            .is_some_and(|c| c.seq_pull_progress.is_some())
     }
 
     /// See `RuntimeErrorCold::take_suspend_site`.
