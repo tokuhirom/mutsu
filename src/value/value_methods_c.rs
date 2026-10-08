@@ -232,6 +232,8 @@ impl Value {
                 .unwrap_or(0.0),
             // A numeric allomorph (IntStr/NumStr/RatStr) numifies to its inner value.
             ValueView::Mixin(inner, _) => inner.to_f64(),
+            // An enum value numifies to its underlying value (`DEBUG ~~ TRACE..INFO`).
+            ValueView::Enum { value, .. } => value.to_value().to_f64(),
             _ => 0.0,
         }
     }
