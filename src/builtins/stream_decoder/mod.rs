@@ -50,6 +50,28 @@ pub(crate) struct TextQueues {
     pub scanned: usize,
 }
 
+/// Decode `bytes` as a whole stream through the streaming decoder: what an
+/// `IO::Handle` text read hands it (a record, or the rest of the file), so a
+/// malformed or truncated input fails with the decoder's MoarVM-style error
+/// rather than a one-shot decoder's own wording (#11783).
+// Cost: O(n), n = bytes.
+pub(crate) fn decode_stream(codec: Codec, bytes: &[u8]) -> Result<String, RuntimeError> {
+    let cfg = DecoderConfig {
+        codec,
+        translate_nl: false,
+        line_separators: Vec::new(),
+    };
+    let mut buf = BufBytes::new();
+    buf.extend_from_slice(bytes);
+    let mut q = TextQueues::default();
+    StreamDecoder {
+        cfg: &cfg,
+        bytes: &mut buf,
+        q: &mut q,
+    }
+    .take_all_chars()
+}
+
 /// One operation's view of a decoder.
 pub(crate) struct StreamDecoder<'a> {
     pub cfg: &'a DecoderConfig,
