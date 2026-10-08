@@ -431,6 +431,13 @@ impl Interpreter {
                 // typed container instead of inferring its type from values.
                 if matches!(out.view(), ValueView::Array(..) | ValueView::Hash(_))
                     && attr.is_some_and(|attr| matches!(attr.sigil, '@' | '%'))
+                    // A stored container that already carries its element type
+                    // is returned as is: re-tagging a shared `Arc` whose
+                    // metadata spelling differs (`Array[Str:D]` against the
+                    // attribute's `Str:D`) copies it, so every read answered a
+                    // fresh array and `.push`/`.append` on the result never
+                    // reached the attribute (#11902).
+                    && self.container_type_metadata(&out).is_none()
                     && let Some(tc) = self.get_attr_type_constraint(&cn, method)
                     && !matches!(tc.as_str(), "Mu" | "Any")
                 {
