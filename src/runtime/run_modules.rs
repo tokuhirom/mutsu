@@ -1273,6 +1273,17 @@ impl Interpreter {
             // `parse_module_source` left the module's declarator docs behind
             // (from its parse, or replayed from the precompilation cache).
             let module_docs = crate::parser::decl_doc::take_unit_docs();
+            // `$=finish` is the module's own data section, not the importer's:
+            // an absent one reads as undefined, never as the caller's.
+            let importer_had_finish = self.env.contains_key("=finish");
+            match crate::parser::split_finish_section(&module_source).1 {
+                Some(content) => {
+                    self.env.insert("=finish".to_string(), Value::str(content));
+                }
+                None => {
+                    self.env.remove("=finish");
+                }
+            }
             let result = match self.establish_pod_variables_from_stmts_in(
                 &module_source,
                 facts.pod_ranges.as_ref(),
@@ -1548,6 +1559,24 @@ impl Interpreter {
                     .entry(unit.to_string())
                     .or_default()
                     .insert("=pod".to_string(), cell);
+            }
+            // Likewise the module's `$=finish`, which its routines read after
+            // the load; a caller that had none gets none back.
+            if let Some(unit) = unit_name.as_deref()
+                && let Some(finish) = self.env.get("=finish").cloned()
+            {
+                let cell = if finish.is_container_ref() {
+                    finish
+                } else {
+                    finish.into_container_ref()
+                };
+                self.unit_lexicals_cow_mut()
+                    .entry(unit.to_string())
+                    .or_default()
+                    .insert("=finish".to_string(), cell);
+            }
+            if !importer_had_finish {
+                self.env.remove("=finish");
             }
             // Restore every plain caller binding after the module's own lexical
             // values have been extracted above. Qualified package globals and

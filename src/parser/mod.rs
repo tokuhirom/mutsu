@@ -730,6 +730,19 @@ fn render_parse_error(source: &str, e: PError) -> RuntimeError {
     }
 }
 
+/// Split `input` at its `=finish` line: the code before it, and the text after
+/// the `=finish` line (the `$=finish` data section), if there is one.
+// Cost: O(n), n = length of `input`.
+pub(crate) fn split_finish_section(input: &str) -> (&str, Option<String>) {
+    let Some(idx) = input.find("\n=finish") else {
+        return (input, None);
+    };
+    let content = &input[idx + "\n=finish".len()..];
+    // Skip to next newline
+    let content = content.find('\n').map_or("", |nl| &content[nl + 1..]);
+    (&input[..idx], Some(content.to_string()))
+}
+
 /// Parse a full program using the nom-based parser.
 /// Returns `(statements, Option<finish_content>)`.
 pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
@@ -785,18 +798,7 @@ fn parse_program_keeping(
     crate::trace::trace_log!("parse", "parser start memo={}", memo_enabled);
     primary::set_original_source(input);
     // Split off =finish content before parsing
-    let (source, finish_content) = if let Some(idx) = input.find("\n=finish") {
-        let content = &input[idx + "\n=finish".len()..];
-        // Skip to next newline
-        let content = if let Some(nl) = content.find('\n') {
-            &content[nl + 1..]
-        } else {
-            ""
-        };
-        (&input[..idx], Some(content.to_string()))
-    } else {
-        (input, None)
-    };
+    let (source, finish_content) = split_finish_section(input);
     let _doc_unit = decl_doc::begin_unit(source);
     let result = match stmt::program(source) {
         Ok((rest, mut stmts)) => {
@@ -1013,17 +1015,7 @@ pub(crate) fn parse_program_recovering(
     // Its offsets are into `input`, not the enclosing unit's source: keep its
     // declarator comments out of the enclosing unit's doc table.
     let _doc_unit = decl_doc::mute_unit();
-    let (source, finish_content) = if let Some(idx) = input.find("\n=finish") {
-        let content = &input[idx + "\n=finish".len()..];
-        let content = if let Some(nl) = content.find('\n') {
-            &content[nl + 1..]
-        } else {
-            ""
-        };
-        (&input[..idx], Some(content.to_string()))
-    } else {
-        (input, None)
-    };
+    let (source, finish_content) = split_finish_section(input);
     let (mut stmts, skipped) = stmt::stmt_list_partial(source);
     stmt::trace::number_statements(&mut stmts);
     let errors = skipped
