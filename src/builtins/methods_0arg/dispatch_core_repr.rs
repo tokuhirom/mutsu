@@ -306,7 +306,9 @@ pub(super) fn dispatch(
         }
         // Delegate to raku_value which has cycle detection for self-referencing
         // hashes (e.g. %h<b> = %h).
-        ValueView::Hash(..) => crate::builtins::method_table::collection_render_names::raku(target, &[]),
+        ValueView::Hash(..) => {
+            crate::builtins::method_table::collection_render_names::raku(target, &[])
+        }
         _ if target.is_range() && (method == "gist" || method == "raku" || method == "perl") => {
             crate::builtins::method_table::collection_render::range_render(target, &[])
         }

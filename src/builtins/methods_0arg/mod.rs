@@ -807,7 +807,9 @@ fn dispatch_capture(
         "pairs" => capture::pairs(target, &[]),
         "antipairs" => capture::antipairs(target, &[]),
         // The renderers the `Capture` rows share (`method_table::collection_render_names`).
-        "raku" | "perl" => crate::builtins::method_table::collection_render_names::raku(target, &[]),
+        "raku" | "perl" => {
+            crate::builtins::method_table::collection_render_names::raku(target, &[])
+        }
         "gist" => Some(Ok(Value::str(crate::value::capture_text::capture_gist(
             positional, named,
         )))),

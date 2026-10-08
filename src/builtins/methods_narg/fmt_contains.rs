@@ -174,7 +174,9 @@ pub(crate) fn fmt_native(target: &Value, args: &[Value]) -> Option<Result<Value,
     // coercion can be needed: skip the coercion probe entirely.
     let has_directives = default_sep && runtime::sprintf_directive_count(&fmt) > 0;
     let join = |parts: Vec<String>, default: &str| {
-        Some(Ok(Value::str(parts.join(sep.as_deref().unwrap_or(default)))))
+        Some(Ok(Value::str(
+            parts.join(sep.as_deref().unwrap_or(default)),
+        )))
     };
     match target.view() {
         ValueView::Hash(items) => {
