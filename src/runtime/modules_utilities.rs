@@ -1,5 +1,6 @@
 mod lazy_pipe_ctors;
 mod mixin_wrapped_methods;
+mod core_io_candidates;
 mod operator_scope;
 mod plain_fn_resolve_memo;
 mod registry_gen;

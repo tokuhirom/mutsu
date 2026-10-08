@@ -460,10 +460,14 @@ impl Interpreter {
         stage: &[PlanEntry],
         rejected: &mut std::collections::HashSet<u64>,
     ) -> Resolved {
+        let core_outranks = Self::core_io_path_candidate_applies(name, args);
         let mut seen: Vec<u64> = Vec::with_capacity(stage.len());
         let mut ranked: Vec<(CandidateRankKey, Arc<FunctionDef>)> = Vec::with_capacity(stage.len());
         for entry in stage {
             let fp = entry.def.body_fingerprint();
+            if core_outranks && Self::candidate_is_untyped_where(&entry.def) {
+                continue;
+            }
             if rejected.contains(&fp) || seen.contains(&fp) {
                 continue;
             }
