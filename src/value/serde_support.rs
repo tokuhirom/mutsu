@@ -118,7 +118,10 @@ enum SerValue {
         /// legacy shape -- so `.signature ~~ :(Routine, :$native!)` was True on
         /// a cold run and False on a warm one. Carrying the info alongside lets
         /// the value be rebuilt whole, under a fresh id.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        ///
+        /// Always serialized, even when `None`: bincode's positional encoding
+        /// cannot decode a field the encoder skipped.
+        #[serde(default)]
         sig_info: Option<crate::value::signature::SigInfo>,
     },
     Mixin(Box<SerValue>, HashMap<String, SerValue>),
@@ -329,10 +332,16 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             // its recorded id is meaningless; zeroing it keeps the encoding
             // reproducible across compiles (the precomp verify mode compares
             // bytes).
-            let rec_id = if sig_info.is_some() { 0 } else { id };
+            // The attributes are likewise derived from `sig_info` on decode,
+            // and a `HashMap`'s iteration order would make the bytes vary.
+            let (rec_id, ser_attrs) = if sig_info.is_some() {
+                (0, HashMap::new())
+            } else {
+                (id, ser_attrs?)
+            };
             Ok(SerValue::Instance {
                 class_name,
-                attributes: ser_attrs?,
+                attributes: ser_attrs,
                 id: crate::ast::stable_hash::ProcessLocalId(rec_id),
                 sig_info,
             })
