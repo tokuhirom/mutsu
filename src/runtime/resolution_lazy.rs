@@ -1,6 +1,19 @@
 use super::*;
 
 impl Interpreter {
+    /// Run a gather body to its next suspension or its end. The body was
+    /// already compiled when the `gather` was evaluated (`compiled_code`, which
+    /// knows the `&`-lexicals the gather was written under); recompiling the
+    /// AST here would lose them (#12384). A list without compiled code (an
+    /// `EVAL`-built one) compiles its AST fresh.
+    // Cost: the body's run, plus a body compile when none is attached.
+    fn run_gather_body(&mut self, list: &LazyList) -> Result<(), RuntimeError> {
+        match (&list.compiled_code, &list.compiled_fns) {
+            (Some(code), Some(fns)) => self.run_compiled_block_raw(code, fns),
+            _ => self.run_block(&list.body),
+        }
+    }
+
     /// Force `list` whole. Its body runs inside the list's iteration, which
     /// is a method call however late it is forced: a `{*}` in it is `Nil`
     /// (#10746).
@@ -121,7 +134,7 @@ impl Interpreter {
         let pushed_samewith = self.push_captured_samewith_context(&list.env);
         // A lazy gather body runs in its own captured env, not the forcing
         // frame's, so it blocks the inline CATCH chain (ADR-0072).
-        let run_res = self.with_catch_marker(|this| this.run_block(&list.body));
+        let run_res = self.with_catch_marker(|this| this.run_gather_body(list));
         self.pop_captured_samewith_context(pushed_samewith);
         self.pop_block_scope_depth();
         let items = self.async_state.gather_items.pop().unwrap_or_default();
@@ -167,7 +180,7 @@ impl Interpreter {
         let saved_package = self.enter_gather_package(&list.env);
         // A lazy gather body runs in its own captured env, not the forcing
         // frame's, so it blocks the inline CATCH chain (ADR-0072).
-        let run_res = self.with_catch_marker(|this| this.run_block(&list.body));
+        let run_res = self.with_catch_marker(|this| this.run_gather_body(list));
         if let Some(pkg) = saved_package {
             self.set_current_package(pkg);
         }
