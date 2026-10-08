@@ -3504,11 +3504,7 @@ impl Interpreter {
                 };
                 if let Some((lo, hi)) = range_bounds {
                     if lo >= 1 {
-                        return Err(RuntimeError::out_of_range(
-                            "Index",
-                            Value::int(lo),
-                            "0..0",
-                        ));
+                        return Err(RuntimeError::out_of_range("Index", Value::int(lo), "0..0"));
                     }
                     let items = if lo <= 0 && hi >= 0 {
                         vec![target.clone()]
