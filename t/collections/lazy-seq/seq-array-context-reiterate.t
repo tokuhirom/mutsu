@@ -26,8 +26,16 @@ unless %*ENV<DIAG9930> {
         @res.push("{$v.key}={$p.exitcode}");
         $first-err ||= $e.subst("\n", ' | ', :g) if $p.exitcode != 0;
     }
-    if @res.grep(* !~~ /'=0'$/) {
-        say "Bail out! variants: {@res.join(' ')} err1=[$first-err]";
+    my $bc = run $*EXECUTABLE, '--dump-bytecode', $?FILE, :out, :err;
+    my $bco = $bc.out.slurp(:close);
+    my $bcn = +$bco.lines.grep(/ConsumeReifiedSeq/);
+    my $ast = run $*EXECUTABLE, '--dump-ast', $?FILE, :out, :err;
+    my $asto = $ast.out.slurp(:close);
+    my $sugar-t = +$asto.lines.grep(/sugar.*true/);
+    my $sugar-f = +$asto.lines.grep(/sugar.*false/);
+    my $extra = "consume-ops={$bcn} sugar-true={$sugar-t} sugar-false={$sugar-f} exe={$*EXECUTABLE} cwd={$*CWD}";
+    if True {
+        say "Bail out! variants: {@res.join(' ')} $extra err1=[$first-err]";
     }
     else { say "1..1"; say "ok 1 - all variants pass: {@res.join(' ')}" }
     exit 0;
