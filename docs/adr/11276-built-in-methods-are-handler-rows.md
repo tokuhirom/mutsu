@@ -2057,7 +2057,7 @@ argument sources, which a `Handler::Mut` row did not receive. Decision (the amen
 
 - `ReceiverPlace::Var` carries `arg_sources` (the variable behind each positional, from the call site), set with
   `with_arg_sources`; a detached place and the interpreter's by-name entries carry none. A row reads one with `arg_source(i)`
-  and asks `from_vm()` whether the call came through the VM. This is the interim form of ADR-0097's binding descriptor: when
+  and asks `came_through_vm()` whether the call came through the VM. This is the interim form of ADR-0097's binding descriptor: when
   that lands the accessors change and the handlers do not.
 - `install_source_cell` promotes the source variable into the element's shared cell in both halves of the dual store.
 - Rows (`mutating::subscript_bind`): `Hash.BIND-KEY` (object hashes key by `.WHICH` and keep the key object),

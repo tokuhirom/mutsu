@@ -60,7 +60,7 @@ fn hash_bind_key(
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    if !place.from_vm() {
+    if !place.came_through_vm() {
         return None;
     }
     let mut hash = place.value().deref_container().descalarize().clone();
@@ -119,7 +119,7 @@ fn array_bind_pos(
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    if !place.from_vm() {
+    if !place.came_through_vm() {
         return None;
     }
     let source_var = place

@@ -86,7 +86,7 @@ impl<'a> ReceiverPlace<'a> {
     /// Whether the call came through the VM (its chunk maps names to local
     /// slots), the only entry that carries argument sources.
     // Cost: O(1).
-    pub(crate) fn from_vm(&self) -> bool {
+    pub(crate) fn came_through_vm(&self) -> bool {
         matches!(self, ReceiverPlace::Var { code: Some(_), .. })
     }
 
