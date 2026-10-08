@@ -1,8 +1,8 @@
 pub(crate) mod container;
 // Re-exported so other parser subtrees (e.g. crate::parser::expr postfix
 // parsing) can build the same X::Comp::FailGoal for unterminated brackets.
-pub(crate) use container::{angle_words_subscript_index_expr, spelled_subscript_index_expr};
 pub(crate) use container::fail_goal_error_at;
+pub(crate) use container::spelled_subscript_index_expr;
 pub(crate) use container::{lift_list_infix_in_arg_list, try_parse_sequence_arg_list};
 // Exposed for declarator trait-argument sugar (`is TraitName<a b>`), which
 // reuses the same `<...>` word-list parser as ordinary term position.
