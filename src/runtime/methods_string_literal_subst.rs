@@ -23,8 +23,9 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Substitute a string matcher at grapheme boundaries and publish its
-    /// selected spans as `$/` for `.subst-mutate`.
+    /// Substitute a string matcher at grapheme boundaries. A string pattern
+    /// leaves the caller's `$/` alone (Rakudo does the same); only a closure
+    /// replacement sees the selected spans as `$/` while it runs.
     // Cost: O(n + r) plus per-match replacement work, n = bytes of the
     // invocant, r = matches; all matches share one GraphemeIndex.
     #[allow(clippy::too_many_arguments)]
@@ -53,6 +54,9 @@ impl Interpreter {
         let result_is_list =
             !single_nth && (global || x_count.is_some() || nth_is_multi);
         let publish_str_matches = |me: &mut Self, captures: &[RegexCaptures]| {
+            if !is_closure {
+                return;
+            }
             let match_var = Self::subst_match_var(captures, text, result_is_list);
             me.env.insert("/".to_string(), match_var.clone());
             me.publish_subst_capture_env(&match_var);
