@@ -535,6 +535,11 @@ impl Interpreter {
             Some(&module) => {
                 self.module_merged_here(module)
                     || self.module.imported_env_aliases.contains_key(&name)
+                    // An imported sigilless term (`our constant Sym is export`)
+                    // is recorded under its term key (`\Sym`), not the bare name.
+                    || self.module.imported_env_aliases.contains_key(
+                        &Symbol::intern(&crate::term_names::term_key(name.as_str())),
+                    )
                     || self.package_granted_here(name.as_str())
             }
         }
