@@ -155,7 +155,7 @@ impl Interpreter {
         program: &StageProgram,
         rejected: &mut std::collections::HashSet<u64>,
     ) -> Resolved {
-        let mut matches: Vec<Arc<FunctionDef>> = Vec::new();
+        let mut matches: Vec<(CandidateRankKey, Arc<FunctionDef>)> = Vec::new();
         let mut best_key: Option<CandidateRankKey> = None;
         let mut threw: Option<(Arc<FunctionDef>, RuntimeError)> = None;
         let outer_where_exception = self.pending_where_exception.take();
@@ -169,7 +169,10 @@ impl Interpreter {
                     Self::rank_key_ignoring_decl_order(best),
                 ) == std::cmp::Ordering::Greater
             {
-                break;
+                // Incomparable with the best match: still a contender (#11943).
+                if !Self::rank_keys_incomparable(&step.key, &best) {
+                    continue;
+                }
             }
             let ok = step.nominal_ok
                 && self.with_candidate_scope(&step.def, |this| {
@@ -186,12 +189,13 @@ impl Interpreter {
                 continue;
             }
             best_key.get_or_insert(step.key);
-            matches.push(step.def.clone());
+            matches.push((step.key, step.def.clone()));
         }
         if matches.is_empty() && threw.is_none() {
             self.pending_where_exception = outer_where_exception;
             return Ok(None);
         }
+        let matches = Self::prune_incomparable_matches(matches);
         self.settle_ranked_matches(name, args, matches, threw, outer_where_exception)
     }
 
