@@ -255,30 +255,36 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
         };
         if let Some((op, r)) = mixin {
             let (r, _) = ws(r)?;
-            if let Ok((r2, operand)) = expression(r) {
-                // `my @a does R = <a b>` — the operand parser greedily absorbs the
-                // `= <init>` as an assignment (`R = <a b>`). Split it back out: the
-                // role is the bareword LHS and the initializer assigns the declared
-                // variable AFTER the mixin (raku applies the trait, then inits).
-                let (role_operand, init_stmt) = match operand {
-                    Expr::AssignExpr {
-                        name: role_name,
-                        expr: init_expr,
-                        is_bind,
-                    } => {
-                        let assign = Stmt::Assign {
-                            name: s.name.clone(),
-                            expr: *init_expr,
-                            op: if is_bind {
-                                crate::ast::AssignOp::Bind
-                            } else {
-                                crate::ast::AssignOp::Assign
-                            },
-                            target_is_sigilless: false,
-                        };
-                        (Expr::BareWord(role_name), Some(assign))
+            // The role operand binds tighter than assignment: parse it at the
+            // structural level so `R[Str] = <init>` is not swallowed as an
+            // index-assign on `R`, then split the initializer back out.
+            if let Ok((r2, role_operand)) = crate::parser::expr::structural_operand(r) {
+                let (r2, init_stmt) = {
+                    let (after, _) = ws(r2)?;
+                    let op = if after.starts_with(":=") {
+                        Some((AssignOp::Bind, 2))
+                    } else if after.starts_with('=')
+                        && !after.starts_with("==")
+                        && !after.starts_with("=>")
+                    {
+                        Some((AssignOp::Assign, 1))
+                    } else {
+                        None
+                    };
+                    match op {
+                        Some((op, n)) => {
+                            let (after, _) = ws(&after[n..])?;
+                            let (after, init) = parse_assign_expr_or_comma_no_word_logical(after)?;
+                            let assign = Stmt::Assign {
+                                name: s.name.clone(),
+                                expr: init,
+                                op,
+                                target_is_sigilless: false,
+                            };
+                            (after, Some(assign))
+                        }
+                        None => (r2, None),
                     }
-                    other => (other, None),
                 };
                 let mixin_expr = Expr::Binary {
                     left: Box::new(Expr::Var(s.name.clone())),
@@ -291,11 +297,10 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 // desugar mixes the role into the value currently held by the
                 // variable and writes it back, so a later assignment would drop
                 // the mixin. Filling first, then mixing, keeps `Array+{R}`.
-                let mut block_stmts = vec![stmt];
+                let mut block_stmts = vec![stmt, Stmt::Expr(mixin_expr)];
                 if let Some(init_stmt) = init_stmt {
                     block_stmts.push(init_stmt);
                 }
-                block_stmts.push(Stmt::Expr(mixin_expr));
                 let block = Stmt::SyntheticBlock(block_stmts);
                 if s.apply_modifier {
                     return parse_statement_modifier(r2, block);

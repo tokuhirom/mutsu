@@ -3604,9 +3604,11 @@ impl Interpreter {
         }
 
         // .of on Array/Hash
+        // (a role mixed onto the container that declares its own `of` wins)
         if method == "of"
             && args.is_empty()
             && matches!(target.view(), ValueView::Array(..) | ValueView::Hash(_))
+            && !self.mixin_composes_method(&target, "of")
         {
             if let Some(info) = self.container_type_metadata(&target) {
                 return Ok(Value::package(Symbol::intern(&info.value_type)));

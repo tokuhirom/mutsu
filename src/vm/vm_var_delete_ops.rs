@@ -723,8 +723,16 @@ impl Interpreter {
         }
         // For typed arrays (e.g. `my Int @a`), deleted elements become
         // the type object (e.g. `Int`) instead of `Any`.
-        let hole_type =
-            loan_env!(self, var_type_constraint(&var_name)).unwrap_or_else(|| "Any".to_string());
+        // A container without a by-name constraint (a role attribute reached
+        // through a mixin) still carries its element type on the value.
+        let hole_type = loan_env!(self, var_type_constraint(&var_name))
+            .or_else(|| {
+                saved_meta
+                    .as_ref()
+                    .map(|m| m.value_type.clone())
+                    .filter(|t| !t.is_empty())
+            })
+            .unwrap_or_else(|| "Any".to_string());
         // For object hashes, convert index to WHICH-based key format
         let is_obj_hash_del = loan_env!(self, var_hash_key_constraint(&var_name)).is_some();
         let idx = if is_obj_hash_del
