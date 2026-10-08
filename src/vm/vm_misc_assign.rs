@@ -873,6 +873,12 @@ impl Interpreter {
             let sv = source_var.clone();
             self.set_env_with_main_alias(&sv, val.clone());
             self.update_local_if_exists(code, &sv, &val);
+            // An attribute topic (`given $!x { $_ .= new }`) must reach self's
+            // attribute cell, not just the env mirror (see the matching write
+            // in `set_local_value`).
+            if Self::attr_twigil_base(&sv).is_some() && !Self::is_non_mirrorable_attr_value(&val) {
+                self.write_self_attr_cell(&sv, val.clone());
+            }
         }
         // A scalar assignment used as an rvalue yields the *itemized* container
         // value, so a following list context treats it as one element (matching

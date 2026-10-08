@@ -426,6 +426,32 @@ impl Interpreter {
         proxy: Value,
         value: Value,
     ) -> Result<Value, RuntimeError> {
+        let Some(fetcher) = self.store_proxy_lvalue(&proxy, value)? else {
+            return Ok(Value::NIL);
+        };
+        let fetched = self.call_sub_value(fetcher.clone(), vec![proxy], true);
+        match fetched {
+            Ok(value) => Ok(value),
+            Err(err) if err.message.contains("Too many positionals") => {
+                let value = self.call_sub_value(fetcher, Vec::new(), true)?;
+                Ok(value)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    /// Run a Proxy's STORE with `value` and leave the container itself as the
+    /// assignment's value: raku FETCHes only when something reads it, so an
+    /// `f() = 1` statement over an `is rw` routine returning a Proxy must not
+    /// fire FETCH (`CSS::Properties`' struct proxy FETCH builds its children).
+    /// Returns the FETCH routine when the Proxy has one to run, for
+    /// [`Self::assign_proxy_lvalue`].
+    // Cost: O(1) plus the user STORE and the caller-var scan, v = lexicals in scope.
+    pub(crate) fn store_proxy_lvalue(
+        &mut self,
+        proxy: &Value,
+        value: Value,
+    ) -> Result<Option<Value>, RuntimeError> {
         let Some((fetcher, storer, _subclass, _decontainerized)) = proxy.clone().into_proxy_parts()
         else {
             return Err(RuntimeError::new(
@@ -478,17 +504,9 @@ impl Interpreter {
         // (copy-on-write), so two closures from the same scope diverge on mutation.
         self.sync_proxy_closure_envs(&fetcher, &storer);
         if fetcher.is_nil() {
-            return Ok(Value::NIL);
+            return Ok(None);
         }
-        let fetched = self.call_sub_value(fetcher.clone(), vec![proxy], true);
-        match fetched {
-            Ok(value) => Ok(value),
-            Err(err) if err.message.contains("Too many positionals") => {
-                let value = self.call_sub_value(fetcher, Vec::new(), true)?;
-                Ok(value)
-            }
-            Err(err) => Err(err),
-        }
+        Ok(Some(fetcher))
     }
 
     /// Synchronize closure environment overrides between Proxy FETCH and STORE.
