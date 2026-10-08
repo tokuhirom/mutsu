@@ -321,13 +321,6 @@ pub(crate) fn collection_gist(target: &Value) -> Option<Option<Result<Value, Run
     ) {
         return None;
     }
-    // An immutable `Map` gists as `Map.new((...))`, which the interpreter path
-    // renders (the hash arm below is the `{...}` form of a `Hash`).
-    if let ValueView::Hash(map) = target.view()
-        && map.declared_type.as_deref() == Some("Map")
-    {
-        return Some(None);
-    }
     // An element that is a zero-denominator Rational dies when the collection
     // gists it, as `(1/0).gist` does (GH #9608).
     if let Some(err) = runtime::utils::zero_denominator_rational_error(target) {
@@ -386,6 +379,10 @@ pub(crate) fn collection_gist(target: &Value) -> Option<Option<Result<Value, Run
                 _ => runtime::gist_value(k),
             };
             Value::str(format!("{} => {}", key_gist, runtime::gist_value(v)))
+        }
+        // An immutable `Map` gists as `Map.new((...))`: the shared hash renderer.
+        ValueView::Hash(map) if map.declared_type.as_deref() == Some("Map") => {
+            Value::str(runtime::utils::gist_value(target))
         }
         ValueView::Hash(map) => {
             let mut sorted_keys: Vec<&String> = map.keys().collect();
