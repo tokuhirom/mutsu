@@ -3,7 +3,7 @@ use Test;
 # A `|c` capture binds its arguments raw, so forwarding it (`g(|c)`) hands the
 # callee the caller's own containers (#11295).
 
-plan 13;
+plan 14;
 
 sub bump($x is rw) { $x++ }
 sub fwd(|c) { bump(|c) }
@@ -69,4 +69,16 @@ sub fwd2(|c) { fwd(|c) }
     is first(Int).raku, 'Int', 'a type-object argument is passed as a value';
     my \t = 7;
     is first(t), 7, 'a sigilless value binding is passed as a value';
+}
+
+{
+    # #11927: the caller variable, the intermediate `is rw` parameter and the
+    # forwarded capture source all share the name `offset`.
+    sub inner2(\blob, $offset is rw) { $offset += 2 }
+    class Cur11927 { method new(|c) { inner2(|c) } }
+    sub mk(\blob, $offset is rw) { Cur11927.new(blob, $offset) }
+    my $offset = 0;
+    my $b = 1;
+    mk($b, $offset);
+    is $offset, 2, 'a |c forwarded through a method updates a same-named caller variable';
 }

@@ -2451,8 +2451,7 @@ impl Interpreter {
                 // body calls `g($b)` — g's drain must not lose f's `a` slot).
                 let baked_raw = self
                     .pending_rw_writeback_slots
-                    .get(&source)
-                    .copied()
+                    .get(&source, self.call_frames.len())
                     .map(|(slot, owner_depth)| (slot as usize, owner_depth));
                 // A baked slot index is only meaningful in the frame it was baked
                 // in. When a NESTED call drains a source whose slot was baked for an
@@ -2480,7 +2479,8 @@ impl Interpreter {
                 };
                 if let Some(slot) = slot {
                     if baked_raw.is_some() {
-                        self.pending_rw_writeback_slots.remove(&source);
+                        self.pending_rw_writeback_slots
+                            .remove(&source, self.call_frames.len());
                     }
                     if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
                         && let Some(val) = self.env().get(&source).cloned()
@@ -2645,8 +2645,7 @@ impl Interpreter {
         // bearing its name.
         let baked_owner = self
             .pending_rw_writeback_slots
-            .get(name.as_str())
-            .copied()
+            .get(name.as_str(), self.call_frames.len())
             .map(|(slot, owner_depth)| (slot as usize, owner_depth));
         if baked_owner.is_some_and(|(slot, owner_depth)| {
             owner_depth != self.call_frames.len()
@@ -2658,7 +2657,8 @@ impl Interpreter {
             return;
         }
         if baked_owner.is_some() {
-            self.pending_rw_writeback_slots.remove(name.as_str());
+            self.pending_rw_writeback_slots
+                .remove(name.as_str(), self.call_frames.len());
         }
         if !matches!(self.locals[slot].view(), ValueView::HashEntryRef { .. })
             && let Some(val) = self.env().get(name).cloned()

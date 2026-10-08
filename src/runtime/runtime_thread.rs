@@ -562,7 +562,7 @@ impl Interpreter {
             pending_skip_constraint_recheck: false,
             pending_raw_invocant: None,
             pending_call_arg_source_slots: std::collections::HashMap::new(),
-            pending_rw_writeback_slots: std::collections::HashMap::new(),
+            pending_rw_writeback_slots: super::rw_writeback_slots::RwWritebackSlots::new(),
             test_pending_callsite_line: None,
             nqp_arg_scratch: Vec::new(),
             cur_source_line: 1,
