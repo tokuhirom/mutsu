@@ -384,6 +384,14 @@ impl Interpreter {
                 .dispatch_raku_leaf(&dispatch_target)
                 .ok()?
                 .to_string_value();
+            // A user `method raku` is the whole answer: the `$(...)` itemization
+            // marker comes from the core `.raku` seeing its container, which an
+            // override that returns its own text never does.
+            if let ValueView::Instance { class_name, .. } = target.view()
+                && self.has_user_method(class_name.as_str(), "raku")
+            {
+                return Some(rendered);
+            }
             let raw = if raku_leaf_is_iterable(target) {
                 raku_raw_iterable(rendered)
             } else {
