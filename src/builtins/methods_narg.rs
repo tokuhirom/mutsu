@@ -7,7 +7,7 @@
 
 mod allomorph;
 mod base;
-mod buf;
+pub(crate) mod buf;
 mod dispatch_1arg;
 mod dispatch_2arg;
 pub(crate) mod flatten;

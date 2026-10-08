@@ -68,8 +68,8 @@ pub(crate) use collections::{
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::{date, dateish, datetime, regex_match, temporal};
 pub(crate) use scalars::{
-    coerce, complex, complex_math, cool_real, math, numify, real, real_misc, str, str_iter,
-    str_search, succ_pred, truth, uni, unicode, version,
+    blob, blob_read, coerce, complex, complex_math, cool_real, math, numify, real, real_misc, str,
+    str_iter, str_search, succ_pred, truth, uni, unicode, version,
 };
 
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
@@ -78,9 +78,10 @@ pub(crate) use dispatch::try_dispatch;
 pub(crate) use dispatch::{
     admits, answer, invoke, invoke_in, invoke_mut, invoke_owner, invoke_owner_raw, try_dispatch_in,
 };
+pub(crate) use mutating::buf::by_value as buf_by_value;
 pub(crate) use mutating::owners_of as mut_owners_of;
 pub(crate) use place::ReceiverPlace;
-pub(crate) use row::{Handler, MethodRow, Named, RowFlags};
+pub(crate) use row::{Handler, MethodRow, Named, NarrowFn, RowFlags};
 #[cfg(test)]
 use table::all_rows;
 #[cfg(test)]

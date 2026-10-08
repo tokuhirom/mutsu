@@ -9,19 +9,14 @@ pub(super) fn dispatch(
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
         "bytes" => Some(match target.view() {
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if {
-                let cn = class_name.resolve();
-                crate::runtime::utils::is_buf_or_blob_class(&cn)
-            } =>
+            ValueView::Instance { class_name, .. }
+                if {
+                    let cn = class_name.resolve();
+                    crate::runtime::utils::is_buf_or_blob_class(&cn)
+                } =>
             {
-                let elems = crate::value::value_buf::buf_len_or_zero(&attributes) as i64;
-                let bytes_per_elem =
-                    crate::value::value_buf::buf_elem_width(&class_name.resolve()) as i64;
-                Some(Ok(Value::int(elems * bytes_per_elem)))
+                // The `Blob`/`Buf` rows' implementation (`method_table::blob`).
+                crate::builtins::method_table::blob::bytes(target, &[])
             }
             // `Blob.bytes` is `Blob:D:` only: a Buf/Blob type object must
             // throw rather than count the bytes of its name (`$buf //

@@ -11,10 +11,11 @@
 //! chain of the receiver's value kind.
 
 use super::MethodRow;
-use crate::value::{Value, ValueView};
+use crate::value::{DispatchShape, Value, ValueView};
 
 pub(crate) mod array;
 pub(crate) mod baghash;
+pub(crate) mod buf;
 pub(crate) mod hash;
 pub(crate) mod quanthash;
 pub(crate) mod text;
@@ -23,6 +24,7 @@ pub(crate) mod text;
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
     array::ROWS,
     baghash::ROWS,
+    buf::ROWS,
     hash::ROWS,
     quanthash::ROWS,
     text::ROWS,
@@ -49,6 +51,13 @@ pub(crate) fn owners_of(value: &Value, has_name: bool) -> Option<&'static [&'sta
         ValueView::Bag(_, false) => Some(&["Bag"]),
         ValueView::Mix(_, true) => Some(&["MixHash"]),
         ValueView::Mix(_, false) => Some(&["Mix"]),
+        // A mutable byte buffer; a `Blob` and the encoding buffers have no
+        // mutators (Rakudo declares them on `Buf` only).
+        ValueView::Instance { .. }
+            if value.descalarize().dispatch_shape() == Some(DispatchShape::Buf) =>
+        {
+            Some(&["Buf"])
+        }
         _ => None,
     }
 }

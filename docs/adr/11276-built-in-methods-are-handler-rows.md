@@ -1850,3 +1850,42 @@ Second step of the rendering and identity names (`refactor/11276-rendering-colle
   and `Range` arms in `dispatch_core_repr` call the handlers, so the three hand-copied arms are gone.
 - Left: `Array`/`List`/`Hash`/`Map`/`Pair`/`Seq` `gist`/`raku`/`Str`/`fmt` (the cycle- and user-`gist`-aware
   `GistRoute` walk), `Version`, `Blob`, `Capture`, `Nil`, the objects group, `Cool`/`Any`/`Mu`, `clone`.
+
+### 9.32 The `Blob` and `Buf` shapes (2026-10-08)
+
+Slice 3B remainder, item 2.5 of *Plan from here* (`refactor/11276-blob-buf-shape`); it answers §8.3.
+
+**Decision (§8.3).** Rakudo has no inheritance between `Blob`, `Buf` and `utf8`: each is a class of its own
+(`Blob.^mro` is `Blob, Any, Mu`; `Buf`'s is `Buf, Any, Mu`) with its own copy of every method, because the role
+`Blob` is composed into them. mutsu keeps the recognition table's folded owner `Blob` (it is what `.^can` reads), and
+the method table gets two shapes:
+
+- `DispatchShape::Blob`: `Blob`, `Blob[uintN]`/`Blob[intN]`, `utf8`, `utf16`, `utf32`;
+- `DispatchShape::Buf`: `Buf`, `Buf[uintN]`/`Buf[intN]`.
+
+Both are closed, decoded from the instance's class name (`DispatchShape::from_instance_class`); `buf8`, `blob16` and
+the like are normalised to the parameterised spelling before an instance exists, so they need no entry. A user
+subclass, `Blob[num32]` and a class composed over a buffer have no shape and take the cascades.
+
+**Rows.** Each read-only row is registered once per owner, `Blob` and `Buf`, with one shared handler: `elems`, `bytes`,
+`of`, `list`, `contents`, `reverse`, `Bool`, `gist`, `raku`, `Str`, `Buf` (and `Blob`, declared on `Buf` only), the
+twelve `read-*` accessors at one and two arguments and `subbuf` at one and two (`blob_read.rs`). The seven
+mutators and `reallocate` are `Handler::Mut` rows of `Buf` alone, reached through `invoke_mut` (`mutating::owners_of`
+answers `Buf` for a `Buf`-shaped instance). The cascade's arms (`dispatch_core_repr`, `coercion`, `dispatch_core_unicode`,
+`dispatch_1arg`, `dispatch_2arg`, the by-value mutator arms of `methods_call_dispatch`) call the same functions, so
+a receiver with no shape is answered by the code the rows run.
+
+**Declined arguments.** `subbuf` and the `read-*` offset decline a `WhateverCode` (the compiled call evaluates
+it against the length) and any non-number, so `subbuf(*-2)` and a `Str` offset keep their cascade answers.
+
+**Mutators.** A named binding goes through the existing by-name routines (`buf_mutate_method`,
+`buf_pop_shift_splice`, `buf_reallocate`), which re-seat the binding through its shared cell. A receiver with no name
+is mutated on a copy that is the answer (`Buf.new(...).append(...)`), as the by-value arms always did; `pop` and
+`shift` of a temporary answer the element and leave the buffer alone. `Blob.push` still answers
+"Cannot modify immutable Blob" (Rakudo: "Cannot resolve caller push(Blob:D: ...)").
+
+**Left.** `decode` (the encoding registry needs the interpreter: a `Handler::Interp` row), `subbuf-rw` (a write-through
+`Proxy`), `new`/`allocate` (3G remainder), the `write-*` family (no recognition rows), `Capture`, and the shape-less
+receivers above. `rakudo_method_tables.txt` has no `Blob`/`Buf` lines because its generator skips roles; the rows are
+checked against the folded owner `Blob` of the recognition table, whose `DECLARED` bits this slice completes (the
+mutators, `reallocate`, `Blob.Blob`, seven `read-*` names).

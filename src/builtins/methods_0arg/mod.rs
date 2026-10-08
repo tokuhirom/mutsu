@@ -1055,29 +1055,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // decodes (rakudo: `utf8.new(98,117).Str` is "bu", while `Buf`, `Blob` and
     // `Blob[uint8]` all die). Only the type object's own name matters; prefix
     // `~` still dies for utf8 too.
-    if (method == "Str" || method == "Stringy")
-        && let ValueView::Instance { class_name, .. } = target.view()
-        && crate::runtime::Interpreter::is_buf_value(target)
+    if (method == "Str" || method == "Stringy") && crate::runtime::Interpreter::is_buf_value(target)
     {
-        let cn = class_name.resolve();
-        if cn == "utf8"
-            && let Some(decoded) = crate::builtins::decode_buf_method(target, Some("utf-8"))
-        {
-            return Some(decoded);
-        }
-        return Some(Err(crate::runtime::Interpreter::buf_as_str_error(
-            target, method,
-        )));
+        // The `Blob`/`Buf` rows' implementation (`method_table::blob`).
+        return crate::builtins::method_table::blob::str_or_stringy(target, method);
     }
 
     // Buf/Blob .values and .list return the byte values as integers
-    if (method == "values" || method == "list")
-        && let ValueView::Instance { attributes, .. } = target.view()
-        && crate::runtime::Interpreter::is_buf_value(target)
+    if (method == "values" || method == "list") && crate::runtime::Interpreter::is_buf_value(target)
     {
-        return Some(Ok(Value::array(
-            crate::value::value_buf::buf_elems_or_empty(&attributes),
-        )));
+        return crate::builtins::method_table::blob::list(target, &[]);
     }
 
     // CX::Warn methods: message, resume

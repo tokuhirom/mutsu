@@ -1,10 +1,6 @@
 use super::allomorph::{allomorph_accepts, out_of_range_failure};
 use super::base::{BaseDigits, f64_to_rat, parse_radix_checked, rat_base_repeating, rat_to_base};
-use super::buf::{
-    buf_class_name, buf_get_int_items, buf_get_raw_bytes, is_buf_like, make_buf_from_int_items,
-    out_of_range_error, range_bounds, read_byte_offset, read_f32_ne, read_f64_ne,
-    read_int_method_info, read_int_value, resolve_buf_index, to_int_val,
-};
+
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use super::fmt_contains::{
     fmt_joinable_target, fmt_single_or_pair, fmt_value_needs_coercion, pair_key_value,
@@ -1326,53 +1322,15 @@ pub(crate) fn native_method_1arg(
         "pickpairs" => crate::builtins::sampling::pickpairs(target, std::slice::from_ref(arg)),
         // Cost: see `sampling::roll`.
         "roll" => crate::builtins::sampling::roll(target, std::slice::from_ref(arg)),
-        // Buf/Blob read-num methods (1 arg: offset, uses NativeEndian)
-        "read-num32" | "read-num64" => {
-            if let ValueView::Package(type_name) = target.view() {
-                return Some(Err(RuntimeError::new(format!(
-                    "Cannot resolve caller {}({}:U)",
-                    method, type_name,
-                ))));
-            }
-            let (bytes, width) = buf_get_raw_bytes(target)?;
-            let offset_i64 = to_int_val(arg);
-            let size: usize = if method == "read-num32" { 4 } else { 8 };
-            let offset = match read_byte_offset(&bytes, offset_i64, size, width) {
-                Ok(off) => off,
-                Err(e) => return Some(Err(e)),
-            };
-            let result = if size == 4 {
-                read_f32_ne(&bytes[offset..offset + 4])
-            } else {
-                read_f64_ne(&bytes[offset..offset + 8])
-            };
-            Some(Ok(Value::num(result)))
-        }
-        // Buf/Blob read-int/uint methods (1 arg: offset, uses NativeEndian)
-        "read-uint8" | "read-int8" | "read-uint16" | "read-int16" | "read-uint32"
-        | "read-int32" | "read-uint64" | "read-int64" | "read-uint128" | "read-int128" => {
-            if let ValueView::Package(type_name) = target.view() {
-                return Some(Err(RuntimeError::new(format!(
-                    "Cannot resolve caller {}({}:U)",
-                    method, type_name,
-                ))));
-            }
-            let (bytes, width) = buf_get_raw_bytes(target)?;
-            let offset_i64 = to_int_val(arg);
-            let (size, signed) = read_int_method_info(method);
-            let offset = match read_byte_offset(&bytes, offset_i64, size, width) {
-                Ok(off) => off,
-                Err(e) => return Some(Err(e)),
-            };
-            // NativeEndian default
-            let endian: i64 = if cfg!(target_endian = "little") { 1 } else { 2 };
-            Some(Ok(read_int_value(
-                &bytes[offset..offset + size],
-                size,
-                signed,
-                endian,
-            )))
-        }
+        // Buf/Blob `read-*` (1 arg: offset, native byte order): the rows'
+        // implementation (`method_table::blob_read`).
+        "read-num32" | "read-num64" | "read-uint8" | "read-int8" | "read-uint16" | "read-int16"
+        | "read-uint32" | "read-int32" | "read-uint64" | "read-int64" | "read-uint128"
+        | "read-int128" => crate::builtins::method_table::blob_read::read(
+            method,
+            target,
+            std::slice::from_ref(arg),
+        ),
         "AT-KEY" => match target.view() {
             // The associative rows' implementation (`method_table::subscript`).
             ValueView::Hash(_)
@@ -1443,28 +1401,9 @@ pub(crate) fn native_method_1arg(
             }
             _ => None,
         },
+        // The `Blob`/`Buf` rows' implementation (`method_table::blob_read`).
         "subbuf" => {
-            if !is_buf_like(target) {
-                return None;
-            }
-            let items = buf_get_int_items(target)?;
-            let cn = buf_class_name(target);
-            // subbuf(Range)
-            if let Some((start, end)) = range_bounds(arg) {
-                let len = items.len() as i64;
-                if end <= start || start >= len {
-                    return Some(Ok(make_buf_from_int_items(&cn, &[])));
-                }
-                let s = start.max(0) as usize;
-                let e = (end as usize).min(items.len());
-                return Some(Ok(make_buf_from_int_items(&cn, &items[s..e])));
-            }
-            // subbuf(start) - from start to end
-            let start = resolve_buf_index(arg, items.len());
-            if start < 0 || start as usize > items.len() {
-                return Some(Err(out_of_range_error(start, 0, items.len() as i64)));
-            }
-            Some(Ok(make_buf_from_int_items(&cn, &items[start as usize..])))
+            crate::builtins::method_table::blob_read::subbuf(target, std::slice::from_ref(arg))
         }
         "isa" => {
             // Instance, Mixin(Instance), and Package values need interpreter

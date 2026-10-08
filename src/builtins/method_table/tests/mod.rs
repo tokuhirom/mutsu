@@ -92,6 +92,14 @@ fn sample(shape: DispatchShape) -> Value {
             Value::make_instance(Symbol::intern("IO::Path"), attributes)
         }
         DispatchShape::Seq => Value::seq(vec![Value::int(1), Value::int(2)]),
+        DispatchShape::Blob => crate::value::value_buf::make_buf(
+            Symbol::intern("Blob"),
+            vec![Value::int(1), Value::int(2)],
+        ),
+        DispatchShape::Buf => crate::value::value_buf::make_buf(
+            Symbol::intern("Buf"),
+            vec![Value::int(1), Value::int(2)],
+        ),
     }
 }
 

@@ -301,7 +301,7 @@ impl Interpreter {
 
     /// Recursively flatten arguments for Buf mutate methods.
     /// Handles nested arrays, Seq, Slip, and Buf/Blob instances.
-    pub(in crate::runtime) fn flatten_buf_args(args: Vec<Value>) -> Vec<Value> {
+    pub(crate) fn flatten_buf_args(args: Vec<Value>) -> Vec<Value> {
         let mut result = Vec::new();
         for a in args {
             let handled = match a.view() {
@@ -336,6 +336,38 @@ impl Interpreter {
             }
         }
         result
+    }
+
+    /// The `X::TypeCheck` of a `Str` pushed onto a `Buf`.
+    // Cost: O(1).
+    pub(crate) fn buf_element_type_error(got: &Value) -> RuntimeError {
+        let msg = "Type check failed in assignment; expected Int but got Str".to_string();
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
+        ex_attrs.insert("got".to_string(), got.clone());
+        ex_attrs.insert("expected".to_string(), Value::str("Int".to_string()));
+        let exception =
+            Value::make_instance(crate::symbol::Symbol::intern("X::TypeCheck"), ex_attrs);
+        let mut err = RuntimeError::new(msg);
+        err.exception = Some(Box::new(exception));
+        err
+    }
+
+    /// The `X::Cannot::Empty` of a `pop` or `shift` of an empty `Buf`.
+    // Cost: O(1).
+    pub(crate) fn buf_empty_error(method: &str) -> RuntimeError {
+        let message = format!("Cannot {method} from an empty Buf");
+        let mut ex_attrs = HashMap::new();
+        ex_attrs.insert("action".to_string(), Value::str(method.to_string()));
+        ex_attrs.insert("what".to_string(), Value::str("Buf".to_string()));
+        ex_attrs.insert("message".to_string(), Value::str(message.clone()));
+        let exception = Value::make_instance(
+            crate::symbol::Symbol::intern("X::Cannot::Empty"),
+            ex_attrs,
+        );
+        let mut err = RuntimeError::new(message);
+        err.exception = Some(Box::new(exception));
+        err
     }
 
     pub(crate) fn is_buf_like_value(val: &Value) -> bool {
@@ -378,19 +410,8 @@ impl Interpreter {
 
         // Validate and flatten args to int values
         // String args should throw X::TypeCheck
-        for a in &args {
-            if matches!(a.view(), ValueView::Str(_)) {
-                let msg = "Type check failed in assignment; expected Int but got Str".to_string();
-                let mut ex_attrs = HashMap::new();
-                ex_attrs.insert("message".to_string(), Value::str(msg.clone()));
-                ex_attrs.insert("got".to_string(), a.clone());
-                ex_attrs.insert("expected".to_string(), Value::str("Int".to_string()));
-                let exception =
-                    Value::make_instance(crate::symbol::Symbol::intern("X::TypeCheck"), ex_attrs);
-                let mut err = RuntimeError::new(msg);
-                err.exception = Some(Box::new(exception));
-                return Err(err);
-            }
+        if let Some(bad) = args.iter().find(|a| matches!(a.view(), ValueView::Str(_))) {
+            return Err(Self::buf_element_type_error(bad));
         }
         let new_items: Vec<Value> = Self::flatten_buf_args(args);
 
@@ -453,20 +474,7 @@ impl Interpreter {
         match method {
             "pop" => {
                 if bytes.is_empty() {
-                    let mut ex_attrs = HashMap::new();
-                    ex_attrs.insert("action".to_string(), Value::str("pop".to_string()));
-                    ex_attrs.insert("what".to_string(), Value::str("Buf".to_string()));
-                    ex_attrs.insert(
-                        "message".to_string(),
-                        Value::str("Cannot pop from an empty Buf".to_string()),
-                    );
-                    let exception = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Cannot::Empty"),
-                        ex_attrs,
-                    );
-                    let mut err = RuntimeError::new("Cannot pop from an empty Buf".to_string());
-                    err.exception = Some(Box::new(exception));
-                    return Err(err);
+                    return Err(Self::buf_empty_error("pop"));
                 }
                 let popped = bytes.pop().unwrap();
                 let updated = Value::write_back_sharing(
@@ -480,20 +488,7 @@ impl Interpreter {
             }
             "shift" => {
                 if bytes.is_empty() {
-                    let mut ex_attrs = HashMap::new();
-                    ex_attrs.insert("action".to_string(), Value::str("shift".to_string()));
-                    ex_attrs.insert("what".to_string(), Value::str("Buf".to_string()));
-                    ex_attrs.insert(
-                        "message".to_string(),
-                        Value::str("Cannot shift from an empty Buf".to_string()),
-                    );
-                    let exception = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Cannot::Empty"),
-                        ex_attrs,
-                    );
-                    let mut err = RuntimeError::new("Cannot shift from an empty Buf".to_string());
-                    err.exception = Some(Box::new(exception));
-                    return Err(err);
+                    return Err(Self::buf_empty_error("shift"));
                 }
                 let shifted = bytes.remove(0);
                 let updated = Value::write_back_sharing(

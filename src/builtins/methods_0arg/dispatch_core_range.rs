@@ -209,9 +209,7 @@ pub(super) fn dispatch(
             ValueView::Instance { class_name, .. }
                 if crate::runtime::utils::is_native_elems_class(&class_name.resolve()) =>
             {
-                Some(Ok(Value::package(Symbol::intern(
-                    &crate::value::value_buf::buf_elem_type_name(&class_name.resolve()),
-                ))))
+                crate::builtins::method_table::blob::of(target, &[])
             }
             ValueView::Package(_) | ValueView::CustomType(_) => {
                 let name = match target.view() {
