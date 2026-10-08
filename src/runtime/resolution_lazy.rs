@@ -1,6 +1,15 @@
 use super::*;
 
 impl Interpreter {
+    /// Run a gather body to its next suspension or its end. Recompiling the
+    /// AST must keep the `&`-lexicals the gather was written under, which the
+    /// body compiled at `gather` evaluation (`compiled_code`) recorded
+    /// (#12384).
+    // Cost: the body's run plus its compile.
+    fn run_gather_body(&mut self, list: &LazyList) -> Result<(), RuntimeError> {
+        self.run_block_under(&list.body, list.compiled_code.as_deref())
+    }
+
     /// Force `list` whole. Its body runs inside the list's iteration, which
     /// is a method call however late it is forced: a `{*}` in it is `Nil`
     /// (#10746).
@@ -121,7 +130,7 @@ impl Interpreter {
         let pushed_samewith = self.push_captured_samewith_context(&list.env);
         // A lazy gather body runs in its own captured env, not the forcing
         // frame's, so it blocks the inline CATCH chain (ADR-0072).
-        let run_res = self.with_catch_marker(|this| this.run_block(&list.body));
+        let run_res = self.with_catch_marker(|this| this.run_gather_body(list));
         self.pop_captured_samewith_context(pushed_samewith);
         self.pop_block_scope_depth();
         let items = self.async_state.gather_items.pop().unwrap_or_default();
@@ -167,7 +176,7 @@ impl Interpreter {
         let saved_package = self.enter_gather_package(&list.env);
         // A lazy gather body runs in its own captured env, not the forcing
         // frame's, so it blocks the inline CATCH chain (ADR-0072).
-        let run_res = self.with_catch_marker(|this| this.run_block(&list.body));
+        let run_res = self.with_catch_marker(|this| this.run_gather_body(list));
         if let Some(pkg) = saved_package {
             self.set_current_package(pkg);
         }

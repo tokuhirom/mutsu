@@ -332,6 +332,10 @@ impl Interpreter {
         compiler.seed_prebound_placeholders(&data.params);
         if let Some(origin) = data.compiled_code.as_deref() {
             compiler.seed_amp_shadowed_calls_from(origin);
+            // The `&`-lexicals the block was written under: a closure nested
+            // in the recompiled body must still capture a callee named after
+            // one (`-> $n { func $n }` inside `.map({ ... })`, #12384).
+            compiler.seed_outer_code_var_names(origin.outer_code_var_names.iter().cloned());
         }
         let normalized_body = normalize_tail_stmt_for_value(&data.body);
         // The body is compiled as a top-level chunk, where a bare LEAVE /
@@ -421,6 +425,11 @@ impl Interpreter {
         }
         let mut compiler = crate::compiler::Compiler::new();
         compiler.unit_tail_discards = true;
+        // Same as the map/grep recompile: keep the enclosing `&`-lexicals
+        // visible to closures nested in the gather body (#12384).
+        if let Some(origin) = analysis_cc.as_deref() {
+            compiler.seed_outer_code_var_names(origin.outer_code_var_names.iter().cloned());
+        }
         let scoped_body: Vec<crate::ast::Stmt>;
         let compile_target: &[crate::ast::Stmt] =
             if crate::compiler::Compiler::stmts_declare_routines(&gather_body) {
@@ -429,7 +438,15 @@ impl Interpreter {
             } else {
                 &gather_body
             };
-        let (code, fns) = compiler.compile(compile_target);
+        let (mut code, fns) = compiler.compile(compile_target);
+        // The analysis closure knows which captures the creating frame vouches
+        // for; the closures of the body that actually runs must see them too.
+        if let Some(origin) = analysis_cc.as_deref() {
+            code.inherit_authoritative_free_vars(&origin.authoritative_free_vars);
+            // Kept on the chunk so a tree-walk recompile of the same body
+            // (`compile_block_raw_under`) can hand them on as well.
+            code.authoritative_free_vars = origin.authoritative_free_vars.clone();
+        }
         let code = std::sync::Arc::new(code);
         let fns = std::sync::Arc::new(fns);
         if let Some(key) = key {

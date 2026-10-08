@@ -11116,6 +11116,20 @@ impl CompiledCode {
         }
     }
 
+    /// Hand the names a frame vouches for to every closure nested in this
+    /// recompiled body, as `compute_free_vars` does at the declaring frame (a
+    /// `gather` body is compiled afresh at run time, so the pass that already
+    /// ran on its analysis closure never reached the copy that executes).
+    // Cost: O(c * n), c = closures nested in the body, n = `names`.
+    pub(crate) fn inherit_authoritative_free_vars(&mut self, names: &[Symbol]) {
+        if names.is_empty() {
+            return;
+        }
+        for child in &mut self.closure_compiled_codes {
+            Self::propagate_authoritative_down(child, names);
+        }
+    }
+
     /// Append `names` to the authoritative set of `cc` (when it captures them)
     /// and recurse into its closure subtree, stopping at any level that
     /// redeclares a name — from there down the name is a different binding.
