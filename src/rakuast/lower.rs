@@ -2532,14 +2532,21 @@ fn method_call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> 
 fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
     let left = named_child(node, "left")?;
     // `(LVALUES) = rhs`: an assignment to a parenthesised list.
-    if left.class == RakuAstClass::CircumfixParentheses
-        && let Expr::ArrayLiteral(items) = match lower_expr(left)? {
+    if left.class == RakuAstClass::CircumfixParentheses {
+        let inner = match lower_expr(left)? {
             Expr::Grouped(inner) => *inner,
             other => other,
-        }
-    {
+        };
         let value = lower_expr(named_child(node, "right")?)?;
-        return Ok(Some(crate::parser::paren_list_assign_expr(items, value)));
+        return Ok(Some(match inner {
+            Expr::ArrayLiteral(items) => crate::parser::paren_list_assign_expr(items, value),
+            // `(COND ?? $a !! $b) = v`, `($a || $b) = v`, `nqp::op(..) = v`
+            // write through the selected lvalue at run time.
+            target @ (Expr::Ternary { .. } | Expr::Binary { .. } | Expr::Call { .. }) => {
+                crate::parser::callable_lvalue_assign_expr(target, Vec::new(), value)
+            }
+            _ => return Ok(None),
+        }));
     }
     let is_call = left.class == RakuAstClass::CallName
         || (left.class == RakuAstClass::ApplyPostfix
