@@ -124,10 +124,7 @@ pub(crate) fn list_type(target: &Value, args: &[Value]) -> Option<Result<Value, 
 /// `Scalar` containers, so aggregates itemize on the way in
 /// (`((1,2),(3,4)).Seq.Array[0].raku` is `$(1, 2)`); `.list` builds a List.
 // Cost: O(e), e = elements.
-pub(crate) fn listify(
-    target: &Value,
-    want_array: bool,
-) -> Option<Result<Value, RuntimeError>> {
+pub(crate) fn listify(target: &Value, want_array: bool) -> Option<Result<Value, RuntimeError>> {
     cached_items(target).map(|items| {
         items.map(|items| {
             if want_array {
