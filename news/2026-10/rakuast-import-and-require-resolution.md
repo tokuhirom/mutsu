@@ -4,4 +4,4 @@ The RakuAST frontend now keeps imported routines ahead of same-named IO builtins
 
 A literal `require Foo` now crosses the frontend boundary as `RakuAST::Statement::Require`. Lowering restores the package-valued target used by the existing compiler and VM, including lexical require stubs, failed loads and expression-position return values. The focused test checks Rakudo's node shape and EVAL behavior; the existing import and require tests pass in frontend mode.
 
-This is an S10 slice of #7564. Hand-built `Statement::Require` and `Statement::Use` constructors remain a separate qualified-name resolution issue (#12446).
+This is an S10 slice of #7564. The separate `Statement::Require` and `Statement::Use` constructor issue (#12446) was resolved concurrently by #12449.

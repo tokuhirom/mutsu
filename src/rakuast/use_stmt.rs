@@ -124,6 +124,13 @@ pub(super) fn convert_require(args: &[Expr]) -> Option<RakuAstNode> {
 /// Lower `Statement::Require` to the parser's package-valued call operand.
 // Cost: O(1).
 pub(super) fn lower_require(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    if node
+        .fields
+        .iter()
+        .any(|field| matches!(field.name, Some("file" | "argument")))
+    {
+        return Err(super::lower::unsupported(node));
+    }
     let module = match name_parts::name_shape(named_child(node, "module-name")?) {
         Some(NameShape::Identifier(name)) => name,
         _ => return Err(super::lower::unsupported(node)),
