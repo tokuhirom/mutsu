@@ -210,13 +210,12 @@ impl Interpreter {
     /// Auto-FETCH any Proxy values in function call arguments.
     pub(super) fn auto_fetch_proxy_args(
         &mut self,
-        args: Vec<Value>,
+        mut args: Vec<Value>,
     ) -> Result<Vec<Value>, RuntimeError> {
-        let mut out = Vec::with_capacity(args.len());
-        for arg in args {
-            out.push(loan_env!(self, auto_fetch_proxy(&arg))?);
+        for arg in &mut args {
+            *arg = loan_env!(self, auto_fetch_proxy(arg))?;
         }
-        Ok(out)
+        Ok(args)
     }
 
     /// Decode the per-argument-position rw-source names baked by

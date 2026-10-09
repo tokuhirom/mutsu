@@ -785,14 +785,13 @@ impl Interpreter {
         if !Self::atomic_name_possible(name) {
             return None;
         }
-        let name_key = Self::atomic_shared_name_key(name);
+        let name_key = MetaNs::AtomicName.key_for_str(name);
         let value_key = self
             .env
-            .get(&name_key)
+            .get_sym(name_key)
             .cloned()
-            .or_else(|| self.threads.shared_vars.get(&name_key))?;
-        let value_key = value_key.as_str()?.to_string();
-        self.threads.shared_vars.get(&value_key)
+            .or_else(|| self.threads.shared_vars.get(name_key.as_str()))?;
+        self.threads.shared_vars.get(value_key.as_str()?)
     }
 
     pub(super) fn self_attr_cell_target(

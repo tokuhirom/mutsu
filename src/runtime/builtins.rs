@@ -1374,7 +1374,7 @@ impl Interpreter {
             "__mutsu_atomic_post_inc_var" => self.builtin_atomic_post_inc_var(&args),
             "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(&args),
             "__mutsu_atomic_post_dec_var" => self.builtin_atomic_post_dec_var(&args),
-            "__mutsu_cas_var" => self.builtin_cas_var(args),
+            "__mutsu_cas_var" => self.builtin_cas_var(&args),
             "__mutsu_atomic_elem" => self.builtin_atomic_elem(&args),
             "__mutsu_cas_array_elem" => self.builtin_cas_array_elem(args),
             "__mutsu_cas_attr" => self.builtin_cas_attr(args),
