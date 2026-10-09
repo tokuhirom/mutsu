@@ -4375,7 +4375,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     ..
                 }
             ) {
-                return Ok(Expr::PositionalPair(Box::new(lowered)));
+                return Ok(Expr::PositionalPair(Box::new(Expr::Grouped(Box::new(
+                    lowered,
+                )))));
             }
             Ok(lowered)
         }

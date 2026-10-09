@@ -103,6 +103,9 @@ impl VisitMut for Replacer<'_> {
                 }
             }
             Expr::AssignExpr { expr, .. } => self.visit_expr_mut(expr),
+            Expr::PositionalPair(inner) if !matches!(inner.as_ref(), Expr::Grouped(_)) => {
+                self.visit_expr_mut(inner);
+            }
             // A thunk barrier is opaque: each of its operands is its own
             // priming scope (already wrapped in a `WhateverCurry` by
             // `super::plant`, which the compiler expands into its own
