@@ -2198,3 +2198,13 @@ lifted verbatim, in six family files (`collections`, `numeric`, `io_temporal`, `
   `Capture`, `Buf`/`utf8` by predicate) and the parametric branch below the table (`Array[Int].new`, `Hash[Int,Str].new`, roles).
   `native_mu_base_next_candidate` stays: its `Mu.new` row calls `native_builtin_new_next_candidate`, which is the same
   nearest-builtin-ancestor lookup, now table-backed through `try_native_builtin_construct`.
+
+### 9.50 Slice 4: the third constructor ladder joins the table (2026-10-09)
+
+`refactor/12423-ctor-ladder-remainder`, after §9.49. `Int`, `Num`, `Str`, `IntStr`/`NumStr`/`RatStr`/`ComplexStr`,
+`ObjAt`/`ValueObjAt`, `Capture` and `Failure` are `CTORS` entries (`native_ctor/basic.rs`); the `.new` arms of
+`methods_dispatch_new.rs`, the basic-type arms of `dispatch_new` and the matching branches of
+`try_native_builtin_construct` are gone. The `Buf`/`Blob`/`utf8` entries are `fast`; the VM keeps only the
+`is_native_buf_constructible` fallback for spellings the table does not list, and `Date`/`DateTime`. `Capture.new` now also
+dies on a positional argument through the interpreter path, as the VM path already did.
+Left: the parametric branch (`Array[Int].new`, roles) and folding `native_*_next_candidate` into the rows.

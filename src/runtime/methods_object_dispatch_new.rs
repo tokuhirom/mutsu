@@ -2366,10 +2366,6 @@ impl Interpreter {
                 }
                 // Built-in type objects: .new creates a default defined instance
                 match resolved.as_str() {
-                    // Shared with the VM's native fast path.
-                    "Int" => Self::build_native_int_value(&args),
-                    "Str" => Ok(Value::str(String::new())),
-                    "Num" => Self::build_native_num_value(&args),
                     "Bool" => Ok(Value::FALSE),
                     "Attribute" => {
                         // Attribute.new(:name<...>, :type(Int), :package<Foo>)
