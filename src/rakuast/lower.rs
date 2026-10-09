@@ -1158,10 +1158,11 @@ fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         kind,
         body,
         condition: None,
-        // A RakuAST tree is lowered and run at run time, like an `EVAL`, so
-        // its ENDs install where execution reaches them rather than at a
-        // source position of the main compunit.
-        end_index: None,
+        // A hand-built RakuAST tree is lowered and run at run time, like an
+        // `EVAL`, so its ENDs install where execution reaches them rather than
+        // at a source position of the main compunit. One converted from the
+        // parser's tree keeps its number (see `origin`).
+        end_index: super::origin::end_index_of(node),
     })
 }
 
@@ -3940,6 +3941,11 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 }
 
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    // The priming scope the parser planted here (see `thunk`).
+    if super::thunk::is_thunk(node) {
+        let body = lower_expr(&super::thunk::unmark(node))?;
+        return Ok(Expr::WhateverCurry(Box::new(body)));
+    }
     // `⚛$x`, `$x ⚛= 5`, `$x⚛++`, ...: plain operator nodes, the parser's calls.
     if let Some(call) = super::atomic_op::lower(node) {
         return call;

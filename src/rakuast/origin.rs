@@ -38,10 +38,37 @@ pub(super) fn field(line: i64) -> RakuAstField {
     }
 }
 
-/// Whether `field` is the hidden origin, which no renderer shows.
+/// The hidden field a main-compunit `END` phaser carries: the source-order
+/// number the parser gave it. The main program installs every `END` up front
+/// by that number, so a lowered `END` without it would never be installed.
+const END_INDEX: &str = "end-index";
+
+/// The `end-index` field of the `END` phaser numbered `index`.
+// Cost: O(1).
+pub(super) fn end_index_field(index: u32) -> RakuAstField {
+    RakuAstField {
+        name: Some(END_INDEX),
+        value: RakuAstFieldValue::Node(Value::int(i64::from(index))),
+    }
+}
+
+/// The source-order number `node` (an `END` phaser) carries, if any.
+// Cost: O(f), f = fields of `node`.
+pub(super) fn end_index_of(node: &RakuAstNode) -> Option<u32> {
+    let field = node.fields.iter().find(|f| f.name == Some(END_INDEX))?;
+    let RakuAstFieldValue::Node(value) = &field.value else {
+        return None;
+    };
+    match value.view() {
+        ValueView::Int(index) => u32::try_from(index).ok(),
+        _ => None,
+    }
+}
+
+/// Whether `field` is the hidden origin or `END` number, which no renderer shows.
 // Cost: O(1).
 pub(super) fn is_origin(field: &RakuAstField) -> bool {
-    field.name == Some(FIELD)
+    field.name == Some(FIELD) || field.name == Some(END_INDEX)
 }
 
 /// The line `node`'s statement began on, when the node carries one.

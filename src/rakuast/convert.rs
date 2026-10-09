@@ -538,7 +538,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             kind,
             body,
             condition,
-            ..
+            end_index,
         } => {
             if let Some(condition) = condition {
                 return super::phaser_condition::convert(kind, body, condition)?
@@ -549,10 +549,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 Some(c) => c,
                 None => return Err(unsupported("PRE/POST phaser")),
             };
-            Ok(Some(statement_expression(RakuAstNode {
-                class,
-                fields: vec![node_field(None, block_node(body)?)],
-            })))
+            let mut fields = vec![node_field(None, block_node(body)?)];
+            // The source position of a main-compunit `END` (see `origin`).
+            fields.extend(end_index.map(origin::end_index_field));
+            Ok(Some(statement_expression(RakuAstNode { class, fields })))
         }
         Stmt::If {
             cond,
@@ -3074,7 +3074,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // A `WhateverCurry` marker carries no RakuAST node of its own — Rakudo's
         // tree has no priming-scope wrapper (ADR-0033 §5); the scope is derived
         // structurally at lowering. Convert straight through to the body.
-        Expr::WhateverCurry(body) => convert_expr(body),
+        Expr::WhateverCurry(body) => Ok(super::thunk::mark(convert_expr(body)?)),
         // `do { … }` -> `StatementPrefix::Do(Block)`. A labelled do stays the boundary.
         Expr::DoBlock {
             body,
