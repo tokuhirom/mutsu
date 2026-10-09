@@ -33,6 +33,19 @@ pub(crate) fn method_object_wrap_slot(attrs: &AttrMap) -> Option<usize> {
 }
 
 impl Interpreter {
+    /// The `method_wrap_chains` slot a `.wrap`/`.unwrap` on a method Sub with
+    /// `__mutsu_lookup_*` markers addresses: its candidate index, or
+    /// [`DISPATCHER_WRAP_IDX`] when it carries none -- a `proto method` seen
+    /// from its own `trait_mod:<is>` (`apply_method_is_traits_inner`).
+    // Cost: O(1).
+    pub(crate) fn method_sub_wrap_slot(data: &crate::value::SubData) -> Option<usize> {
+        match data.env.get("__mutsu_lookup_candidate_idx").map(Value::view) {
+            Some(ValueView::Int(idx)) => Some(idx as usize),
+            Some(_) => None,
+            None => Some(DISPATCHER_WRAP_IDX),
+        }
+    }
+
     /// Whether a call of the user-declared `method` on `receiver_class` with
     /// `args` would enter a `.wrap` chain — a dispatcher wrap or a wrap of the
     /// candidate that wins — i.e. whether [`Self::enter_method_wrap_chain`]

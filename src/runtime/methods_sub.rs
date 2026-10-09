@@ -1245,12 +1245,9 @@ impl Interpreter {
             if let Some(ValueView::Str(cls)) = data.env.get("__mutsu_lookup_class").map(Value::view)
                 && let Some(ValueView::Str(meth)) =
                     data.env.get("__mutsu_lookup_method").map(Value::view)
-                && let Some(ValueView::Int(idx)) = data
-                    .env
-                    .get("__mutsu_lookup_candidate_idx")
-                    .map(Value::view)
+                && let Some(idx) = Self::method_sub_wrap_slot(data)
             {
-                let (cls, meth, idx) = (cls.to_string(), meth.to_string(), idx as usize);
+                let (cls, meth) = (cls.to_string(), meth.to_string());
                 self.registry_mut()
                     .push_method_wrap(&cls, &meth, idx, handle_id, wrapper);
                 let attrs = method_wrap_handle_attrs(&cls, &meth, idx, handle_id, target);
@@ -1289,12 +1286,9 @@ impl Interpreter {
             if let Some(ValueView::Str(cls)) = data.env.get("__mutsu_lookup_class").map(Value::view)
                 && let Some(ValueView::Str(meth)) =
                     data.env.get("__mutsu_lookup_method").map(Value::view)
-                && let Some(ValueView::Int(idx)) = data
-                    .env
-                    .get("__mutsu_lookup_candidate_idx")
-                    .map(Value::view)
+                && let Some(idx) = Self::method_sub_wrap_slot(data)
             {
-                let (cls, meth, idx) = (cls.to_string(), meth.to_string(), idx as usize);
+                let (cls, meth) = (cls.to_string(), meth.to_string());
                 if args.is_empty() {
                     return Some(
                         match self.registry_mut().pop_method_wrap(&cls, &meth, idx) {
