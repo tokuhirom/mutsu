@@ -529,7 +529,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // source-level marker while reusing the parser's existing execution
         // expansion.
         RakuAstClass::ApplyInfix if infix_is_compound_assignment(node) => {
-            super::compound_stmt::lower(node, lower_compound_assign_expr(node)?)
+            super::compound_stmt::restore_stmt(node, lower_compound_assign_expr(node)?)
         }
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.

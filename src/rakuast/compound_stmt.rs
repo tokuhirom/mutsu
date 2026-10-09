@@ -17,7 +17,7 @@ pub(super) fn mark(mut node: RakuAstNode, name: &str) -> RakuAstNode {
 }
 
 // Cost: O(f), f = fields of the assignment node.
-pub(super) fn lower(node: &RakuAstNode, expr: Expr) -> Result<Stmt, RuntimeError> {
+pub(super) fn restore_stmt(node: &RakuAstNode, expr: Expr) -> Result<Stmt, RuntimeError> {
     let Some(field) = node
         .fields
         .iter()
