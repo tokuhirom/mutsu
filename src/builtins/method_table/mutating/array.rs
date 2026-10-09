@@ -300,9 +300,20 @@ fn grow(
     // `push` and `unshift` take each argument as one element (a lone `Slip` is
     // spread); `append` and `prepend` flatten a single iterable argument (the
     // one-argument rule), and several arguments are appended as they are.
+    // A deferred `Seq` argument (`.append((1,2).map(...))`, ADR-0058) is
+    // reified first, so it flattens like any other finite list.
+    let args: Vec<Value> = args
+        .iter()
+        .map(|arg| match arg.view() {
+            ValueView::Seq(body) if body.needs_touch() => {
+                interp.reify_seq_body(&body).map(Value::seq)
+            }
+            _ => Ok(arg.clone()),
+        })
+        .collect::<Result<_, _>>()?;
     let values = match op {
-        Op::Push | Op::Unshift => Interpreter::normalize_push_unshift_args(args.to_vec()),
-        _ => crate::runtime::flatten_append_args(args.to_vec()),
+        Op::Push | Op::Unshift => Interpreter::normalize_push_unshift_args(args),
+        _ => crate::runtime::flatten_append_args(args),
     };
     check_element_types(interp, name.as_deref(), &target, &values)?;
     // Storing `Nil` into a fresh element resets it to the element default:
