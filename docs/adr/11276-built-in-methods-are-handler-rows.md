@@ -2227,3 +2227,15 @@ throw-in-value-context fallback. `Bool` still defuses the failure through the sh
 arms of `dispatch_core_coerce.rs` (`Bool`/`Str`) stay behind the early answer, now unreachable for a plain `Failure`.
 Left on #12390: `Failure.throw`/`resume` and `Exception.throw` (interpreter rows), `line`/`file`/`filename` (needs `X::Comp`
 recognition rows), `Code`, `Mu`.
+
+### 9.53 Slice 4: a `Native` entry names its bridge (2026-10-09)
+
+`refactor/12423-fold-native-next-candidates`, after §9.51. `DeferralEntry::Native` carries a `NativeBase`
+(`GrammarParse`, `MuBase`, `Metamodel`, `GrammarRule`, `Storage`, `Value`) that `build_method_dispatch_frame` decides from the
+receiver and method name it already computed (`grammar_parse_override`, `mu_base_override`/`new_base_override`, `how_receiver`,
+`grammar_rule_override`, `container_protocol_override`, else the value-decided core-type / default-rendering / mixin base). The
+advance arm of `dispatch_next_candidate` is a `match` on it; the `.or_else` chain that probed four bridges by the dynamic
+`samewith_context_stack` name is gone, so a core-type `parse` augmentation no longer reaches the `Grammar` row. The bodies keep
+their guards and are renamed `native_*_base` (no longer "candidates" of a probe). The `NO_FRAME` fallbacks at the end of
+`dispatch_next_candidate` still call `native_metamodel_base` / `native_builtin_new_base` directly: they run when no frame exists,
+so there is no entry to name a bridge.

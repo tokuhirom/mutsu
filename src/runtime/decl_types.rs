@@ -462,7 +462,29 @@ pub(crate) enum DeferralEntry {
     /// (ADR-11276 slice 4): the last candidate of the receiver's own MRO,
     /// which is a row and not a `MethodDef`. Advancing here runs the builtin
     /// on the frame's current invocant with the augmentation hidden.
-    Native { name: String },
+    Native { name: String, base: NativeBase },
+}
+
+/// Which native behavior a [`DeferralEntry::Native`] runs when advancement
+/// reaches it. Decided once, by the frame builder, from the receiver and the
+/// method name (ADR-11276 slice 4); the entry used to probe every bridge in
+/// turn at advance time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NativeBase {
+    /// A grammar's own `parse` / `subparse` / `parsefile`: the `Grammar` row.
+    GrammarParse,
+    /// A user `new` / `BUILDALL` / `POPULATE` / `clone`: the `Mu` row.
+    MuBase,
+    /// A user method on a subclass of a builtin metamodel HOW.
+    Metamodel,
+    /// A grammar's own `ws` / `alpha` / ...: the built-in rule on the cursor.
+    GrammarRule,
+    /// A container-protocol override on a subclass of `Array` / `Hash` /
+    /// a baggy: the native behavior on the backing storage, else `Value`.
+    Storage,
+    /// Decided by the frame's invocant value: an instance's default rendering,
+    /// a mixin's inner value, or a core-type receiver's builtin.
+    Value,
 }
 
 /// One entry of `Interpreter::samewith_context_stack` (ADR-0019 E9c-1).

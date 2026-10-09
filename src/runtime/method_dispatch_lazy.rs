@@ -257,7 +257,7 @@ impl Interpreter {
         // A user BUILDALL/POPULATE/clone (e.g. installed by a custom HOW via
         // `add_method` — OO::Monitors) likewise needs an MRO frame even as a
         // single candidate, so its `callsame` reaches the NATIVE base
-        // implementation (`native_mu_base_next_candidate`: the built instance
+        // implementation (`native_mu_base`: the built instance
         // for BUILDALL/POPULATE, the native attribute-copying clone for clone).
         // A user `method new` is the same situation, and the one that bites
         // hardest: Raku's `Mu.new(*%attrinit)` is ALWAYS the base candidate of
@@ -302,7 +302,7 @@ impl Interpreter {
             accessor_owner.is_some() && self.has_user_method(receiver_class, method_name);
         // A user method on a subclass of a builtin metamodel HOW (OO::Monitors'
         // `MonitorHOW.new_type`) is the same situation once more: its base
-        // candidate is the native metamethod (`native_metamodel_next_candidate`),
+        // candidate is the native metamethod (`native_metamodel_base`),
         // not a `MethodDef`. Without a frame of its own, a `callsame` in it
         // resolved against an enclosing routine's live frame whenever there was
         // one -- `use-ok 'Terminal::ANSI'` loads a `monitor` from inside the
@@ -445,17 +445,26 @@ impl Interpreter {
                     want_container: false,
                 });
             }
-            if core_type_override
-                || any_base_override
-                || container_protocol_override
-                || grammar_rule_override
-                || how_receiver
-                || grammar_parse_override
-                || mu_base_override
-                || new_base_override
-            {
+            // The bridge, in the order the former advance-time probe tried them.
+            let native_base = if grammar_parse_override {
+                Some(super::NativeBase::GrammarParse)
+            } else if mu_base_override || new_base_override {
+                Some(super::NativeBase::MuBase)
+            } else if how_receiver {
+                Some(super::NativeBase::Metamodel)
+            } else if grammar_rule_override {
+                Some(super::NativeBase::GrammarRule)
+            } else if container_protocol_override {
+                Some(super::NativeBase::Storage)
+            } else if core_type_override || any_base_override {
+                Some(super::NativeBase::Value)
+            } else {
+                None
+            };
+            if let Some(base) = native_base {
                 remaining.push(super::DeferralEntry::Native {
                     name: method_name.to_string(),
+                    base,
                 });
             }
             super::MethodDispatchFrame {

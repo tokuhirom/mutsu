@@ -104,7 +104,7 @@ impl Interpreter {
 }
 
 impl Interpreter {
-    /// The QuantHash twin of `native_hash_storage_next_candidate`: when a user
+    /// The QuantHash twin of `native_hash_storage_base`: when a user
     /// `is BagHash`/`is Set`/... subclass (or a role composed into one)
     /// overrides an Associative-protocol method and calls `nextsame`/`nextwith`
     /// (or `callsame`/`callwith`), the NATIVE QuantHash behavior on the
@@ -114,7 +114,7 @@ impl Interpreter {
     /// { ... nextsame() ... }` land on the real bag: the role's candidate is
     /// the only user one in the MRO, so without a native base the deferral
     /// simply answered `Nil` and the weight was never written.
-    pub(crate) fn native_baggy_storage_next_candidate(
+    pub(crate) fn native_baggy_storage_base(
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {

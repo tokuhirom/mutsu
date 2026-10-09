@@ -2186,7 +2186,7 @@ impl Interpreter {
                 // custom HOW's `add_method` — OO::Monitors seeds the monitor
                 // lock there) runs after the native build; its `callsame`
                 // resolves to the already-built instance as the base
-                // candidate (`native_mu_base_next_candidate`).
+                // candidate (`native_mu_base`).
                 // TODO: Rakudo's BUILDALL *replaces* the build plan (a user
                 // BUILDALL that never calls back skips attribute
                 // initialization entirely); running it post-build is an

@@ -66,7 +66,7 @@ impl Interpreter {
     /// cursor or the method is no built-in rule.
     // Cost: O(k) for the rule's k consumed chars plus O(a) to copy the
     // cursor's a attributes (see `grammar_builtin_rule_on_cursor`).
-    pub(super) fn native_grammar_builtin_rule_next_candidate(
+    pub(super) fn native_grammar_builtin_rule_base(
         &mut self,
     ) -> Option<Result<Value, RuntimeError>> {
         let name = self.dispatch.samewith_context_stack.last()?.name.clone();
