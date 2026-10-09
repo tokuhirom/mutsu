@@ -165,8 +165,8 @@ static EMPTY_HASH_CAPTURES: std::sync::LazyLock<HashCaptureMap> =
 impl RegexCaptures {
     /// The rule name and span of every named capture node in this tree.
     // Cost: O(n), n = nodes in the tree.
-    pub(crate) fn tree_spans(&self) -> super::cap_node::SurvivingSpans {
-        let mut out = super::cap_node::SurvivingSpans::new();
+    pub(crate) fn tree_spans(&self) -> super::cap_node::SurvivingSpans<'_> {
+        let mut out = super::cap_node::SurvivingSpans::default();
         super::cap_node::collect_named_spans(&self.named, &mut out);
         super::cap_node::collect_positional_spans(&self.positional, &mut out);
         out
