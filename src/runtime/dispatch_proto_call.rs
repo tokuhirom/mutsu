@@ -161,7 +161,23 @@ impl Interpreter {
                 Some(&ctx.invocant),
                 boundary_owner,
             );
-            return match resolved {
+            // A `.wrap` on the dispatcher was entered where the proto body was
+            // intercepted (`try_proto_method_body`), before this `{*}`; the
+            // winning candidate must not enter that chain a second time
+            // (#11701). The redispatch bypass is keyed by call depth, which the
+            // proto body's frames have left, so re-key it to the depth the
+            // candidate runs at.
+            let saved_bypass = if self.registry().dispatcher_wrapped_methods.contains(&proto_name) {
+                let key = (
+                    proto_name.clone(),
+                    self.call_frames.len(),
+                    self.routine_stack_len(),
+                );
+                Some(self.dispatch.dispatcher_wrap_bypass.replace(key))
+            } else {
+                None
+            };
+            let outcome = match resolved {
                 Some((resolved_owner, method_def)) => self
                     .run_resolved_instance_method(
                         &receiver_class_name,
@@ -185,6 +201,10 @@ impl Interpreter {
                     )
                     .map(|(v, _)| v),
             };
+            if let Some(saved) = saved_bypass {
+                self.dispatch.dispatcher_wrap_bypass = saved;
+            }
+            return outcome;
         }
         let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args)? else {
             if !self.has_multi_candidates(&proto_name) {

@@ -392,6 +392,10 @@ impl Interpreter {
             _ => return None,
         };
         let (owner, proto) = self.lookup_proto_method(&cn, method)?;
+        // A `.wrap` on the proto's dispatcher runs before the proto body (#11701).
+        if let Some(chain) = self.dispatcher_wrap_chain(&cn, method) {
+            return Some(self.run_dispatcher_wrap_chain(&cn, method, args, target, &chain));
+        }
         // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a multi
         // candidate dispatched through the proto body's `{*}` runs via the slow
         // `run_resolved_instance_method` path, which merges captured-outer caller
