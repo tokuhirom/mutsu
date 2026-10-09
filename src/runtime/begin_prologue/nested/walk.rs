@@ -159,6 +159,11 @@ impl Walker<'_> {
                 if let Some(e) = where_constraint {
                     self.visit_expr_mut(e);
                 }
+                if let Some((index, _)) = loc
+                    && self.lift_var_traits(stmt, index)
+                {
+                    return;
+                }
                 self.bind_decl(stmt, loc.map(|(i, _)| i));
             }
             // The members of a grouped declaration are bound opaquely and not

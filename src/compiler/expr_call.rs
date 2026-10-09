@@ -287,12 +287,48 @@ impl Compiler {
     }
 
     pub(super) fn compile_expr_call(&mut self, name: &Symbol, args: &[Expr]) {
+        if name.resolve() == crate::runtime::phasers::APPLY_VAR_TRAIT_CALL
+            && self.compile_apply_var_trait_call(args)
+        {
+            return;
+        }
         self.fold_lexical_sub_free_vars(name);
         if let Some(named) = Self::named_sub_lvalue_with_target_var(name, args) {
             self.compile_expr_call_inner(name, &named, false);
             return;
         }
         self.compile_expr_call_inner(name, args, false);
+    }
+
+    /// `__mutsu_apply_var_trait("name", "trait"[, arg])`: the variable-trait
+    /// application of a declaration whose trait the BEGIN prologue runs ahead
+    /// of the declaration (ADR-0134). Emits the same `ApplyVarTrait` a
+    /// declaration emits in place, on the already-declared variable.
+    fn compile_apply_var_trait_call(&mut self, args: &[Expr]) -> bool {
+        let (Some(Expr::Literal(var)), Some(Expr::Literal(trait_name))) =
+            (args.first(), args.get(1))
+        else {
+            return false;
+        };
+        let (Some(var), Some(trait_name)) = (var.as_str(), trait_name.as_str()) else {
+            return false;
+        };
+        let (var, trait_name) = (var.to_string(), trait_name.to_string());
+        let arg = args.get(2);
+        if let Some(arg) = arg {
+            let escaping = Self::is_closure_literal_arg(arg);
+            self.with_escape(escaping, |s| s.compile_expr(arg));
+        }
+        let name_idx = self.code.add_constant(Value::str(var.clone()));
+        let trait_name_idx = self.code.add_constant(Value::str(trait_name));
+        self.code.emit(OpCode::ApplyVarTrait {
+            name_idx,
+            trait_name_idx,
+            has_arg: arg.is_some(),
+            slot: self.local_map.get(var.as_str()).copied(),
+        });
+        self.code.emit(OpCode::LoadNil);
+        true
     }
 
     /// `substr-rw($t, ...) = v` / `subbuf-rw($b, ...) = v` reach the runtime as
