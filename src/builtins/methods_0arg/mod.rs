@@ -455,33 +455,13 @@ pub(crate) fn native_method_0arg_cascade(
         return Some(Ok(Value::NIL));
     }
 
-    // Failure safe accessors: `.exception` (the stored exception object) and
-    // `.handled` (read of the global handled flag). Both are in the
-    // interpreter's no-explode safe list, so dispatching them natively is
-    // correct — a *non*-safe method (e.g. `.message`) is not handled here, so it
-    // returns `None` and reaches the interpreter, which explodes an unhandled
-    // Failure. (The `.handled = ...` setter is the 1-arg form, handled
-    // elsewhere; this only covers the 0-arg read.)
-    if let ValueView::Instance {
-        class_name,
-        attributes,
-        ..
-    } = target.view()
-        && class_name == "Failure"
-    {
-        match method {
-            "exception" => {
-                return Some(Ok(attributes
-                    .as_map()
-                    .get("exception")
-                    .cloned()
-                    .unwrap_or(Value::NIL)));
-            }
-            "handled" => {
-                return Some(Ok(Value::truth(target.is_failure_handled())));
-            }
-            _ => {}
-        }
+    // `Failure`'s `exception`, `handled`, `gist`, `raku`, `Str` and `Bool` are rows of
+    // the method table (`method_table::failure`, ADR-11276 §9.51). `exception` and
+    // `handled` are in the interpreter's no-explode safe list, so answering them
+    // here is correct; a non-safe method (`.message`) is not a row, so it reaches
+    // the interpreter, which explodes an unhandled Failure.
+    if let Some(answer) = crate::builtins::method_table::failure::answer(target, method) {
+        return Some(answer);
     }
 
     // An instance of a user subclass of `Int` answers `Int`'s methods on its

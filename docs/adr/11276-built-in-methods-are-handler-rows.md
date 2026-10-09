@@ -2216,3 +2216,14 @@ duplicate: `ctor_array` / `ctor_hash` already receive `type_args` through `CtorC
 `try_native_array_construct` / `try_native_hash_construct`. The copy (about 150 lines, with its own `make_shaped_array`) is
 deleted. The role-pun branch stays: it is role composition, not a built-in constructor. Left on #12423: folding
 `native_*_next_candidate` into the rows' handlers.
+
+### 9.52 Slice 3D: `Failure`'s `exception`, `handled`, `gist`, `raku`, `Str` and `Bool` are rows (2026-10-09)
+
+`refactor/12390-objects-rows-remainder` (the `Failure` item of #12390). The recognition table's `Failure` rows now carry
+`DECLARED` (Rakudo declares all six on `Failure`), and `method_table::failure` registers them as `OWNER_ONLY` narrow rows.
+`failure::answer` is the cascade's single entry: the zero-argument cascade calls it where the `exception`/`handled` safe
+accessors were, and the `Failure` arm of the repr dispatch reaches it for `gist`/`raku`/`perl`/`Str` before its
+throw-in-value-context fallback. `Bool` still defuses the failure through the shared handled registry. The `Failure`
+arms of `dispatch_core_coerce.rs` (`Bool`/`Str`) stay behind the early answer, now unreachable for a plain `Failure`.
+Left on #12390: `Failure.throw`/`resume` and `Exception.throw` (interpreter rows), `line`/`file`/`filename` (needs `X::Comp`
+recognition rows), `Code`, `Mu`.

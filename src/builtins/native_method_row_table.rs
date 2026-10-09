@@ -1119,12 +1119,12 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // `exception_family_rows_are_backed_by_the_cascade` in
     // `native_method_row.rs`.
     ("Failure", "resume", 1, 0),
-    ("Failure", "exception", 1, 0),
-    ("Failure", "handled", 1, 0),
-    ("Failure", "gist", 1, 0),
-    ("Failure", "raku", 1, 0),
-    ("Failure", "Str", 3, 0),
-    ("Failure", "Bool", 1, 0),
+    ("Failure", "exception", 1, 16),
+    ("Failure", "handled", 1, 16),
+    ("Failure", "gist", 1, 16),
+    ("Failure", "raku", 1, 16),
+    ("Failure", "Str", 3, 16),
+    ("Failure", "Bool", 1, 16),
     ("Failure", "throw", 1, 0),
     ("X::AdHoc", "message", 1, 48),
     ("X::AdHoc", "payload", 1, 48),

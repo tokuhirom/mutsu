@@ -27,6 +27,7 @@ pub(crate) mod date;
 pub(crate) mod dateish;
 pub(crate) mod datetime;
 pub(crate) mod exception;
+pub(crate) mod failure;
 pub(crate) mod instant;
 pub(crate) mod rakuast_node;
 pub(crate) mod regex_match;
@@ -50,6 +51,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     regex_match::ROWS,
     backtrace::ROWS,
     exception::ROWS,
+    failure::ROWS,
     signature::ROWS,
     rakuast_node::ROWS,
     temporal_shift::ROWS,

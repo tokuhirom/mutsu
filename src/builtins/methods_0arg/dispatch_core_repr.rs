@@ -96,35 +96,15 @@ pub(super) fn dispatch(
             attributes,
             ..
         } if class_name == "Failure" => {
-            let msg = attributes
-                .as_map()
-                .get("exception")
-                .map(|v| v.to_string_value())
-                .unwrap_or_else(|| "Failed".to_string());
-            if method == "gist" {
-                let gist = if target.is_failure_handled() {
-                    format!("(HANDLED) {}", msg)
-                } else {
-                    msg
-                };
-                Some(Ok(Value::str(gist)))
-            } else if method == "raku" || method == "perl" {
-                let raku_str = if target.is_failure_handled() {
-                    // For handled Failures, produce an expression that when
-                    // EVALed creates a handled Failure, preserving the flag.
-                    format!("do {{ my $f = Failure.new(\"{}\"); $f.Bool; $f }}", msg)
-                } else {
-                    format!("Failure.new(\"{}\")", msg)
-                };
-                Some(Ok(Value::str(raku_str)))
+            // `gist`, `raku` and `Str` are rows (`method_table::failure`). Any other
+            // method (`Numeric`, `Int`, ...) used in a value context throws the
+            // wrapped exception.
+            if let Some(answer) = crate::builtins::method_table::failure::answer(target, method) {
+                Some(answer)
+            } else if let Some(ex) = attributes.as_map().get("exception") {
+                Some(Err(RuntimeError::from_exception_value(ex.clone())))
             } else {
-                // Str, Numeric, Int, etc. -- using a Failure in a value
-                // context throws the wrapped exception.
-                if let Some(ex) = attributes.as_map().get("exception") {
-                    Some(Err(RuntimeError::from_exception_value(ex.clone())))
-                } else {
-                    Some(Err(RuntimeError::new(msg)))
-                }
+                Some(Err(RuntimeError::new("Failed")))
             }
         }
         ValueView::Instance {
