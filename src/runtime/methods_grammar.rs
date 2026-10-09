@@ -1185,7 +1185,7 @@ impl Interpreter {
     /// `new` to install per-grammar regex wrappers (as Grammar::PrettyErrors
     /// does). The parser itself is package-based in mutsu, so preserve the
     /// constructor side effect before entering that shared implementation.
-    pub(super) fn dispatch_instance_parse(
+    pub(crate) fn dispatch_instance_parse(
         &mut self,
         invocant: Value,
         package_name: &str,
