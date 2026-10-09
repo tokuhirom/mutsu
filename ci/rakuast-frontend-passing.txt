@@ -502,6 +502,7 @@ t/collections/set-bag-mix/quanthash-coerce-map-seq.t
 t/collections/set-bag-mix/quanthash-declared-init-identity.t
 t/collections/set-bag-mix/quanthash-delete-with-adverb.t
 t/collections/set-bag-mix/quanthash-element-assign.t
+t/collections/set-bag-mix/quanthash-folding-of-wrapped-values.t
 t/collections/set-bag-mix/quanthash-immutable-ro.t
 t/collections/set-bag-mix/quanthash-lazy-what.t
 t/collections/set-bag-mix/quanthash-list-argument-flatten.t
@@ -3155,6 +3156,8 @@ t/oo/construct/tweak-fail-returns-failure.t
 t/oo/construct/tweak-named-fast-path.t
 t/oo/construct/user-new-declines-default-construct.t
 t/oo/construct/version-subclass-constructor.t
+t/oo/decl-does-mixin.t
+t/oo/decl-mixin-begin.t
 t/oo/delete-adverb-on-mixin.t
 t/oo/does-but-type-errors.t
 t/oo/does-mixin-reaches-the-caller.t
@@ -3172,6 +3175,7 @@ t/oo/issue-7747-hash-mixin.t
 t/oo/issue-7771-unhandled-start.t
 t/oo/issue-7772-phantom-name.t
 t/oo/issue-7779-clone-type-object.t
+t/oo/issue-8884-hash-mixin-assign-key-nextsame.t
 t/oo/itemized-scalar-sink-does-not-force-lazy.t
 t/oo/junction-nqp-getattr-mixin-base.t
 t/oo/loop-body-my-does-not-outlive-the-block.t
@@ -3581,6 +3585,7 @@ t/oo/role/curried-role-name-is-argument-types.t
 t/oo/role/curried-role-value-arguments.t
 t/oo/role/custom-how-explicit-self-and-role-default.t
 t/oo/role/dateish-role-composition.t
+t/oo/role/decl-does-role-with-init.t
 t/oo/role/default-role-pun-curry.t
 t/oo/role/deferred-role-positional-overload.t
 t/oo/role/dependent-role-attribute-default.t
@@ -3694,6 +3699,7 @@ t/oo/role/role-decl-expr-value.t
 t/oo/role/role-default-param-pun-name.t
 t/oo/role/role-default-type-capture-with-named-param.t
 t/oo/role/role-diamond-stub-concrete.t
+t/oo/role/role-does-container-decl.t
 t/oo/role/role-does-parametric-role-attr-default.t
 t/oo/role/role-dotted-name-sibling-not-real-nesting.t
 t/oo/role/role-double-parametric-multi-dispatch.t
@@ -3861,6 +3867,7 @@ t/oo/trait/unrelated-trait-mod-candidate-does-not-swallow-unknown-trait.t
 t/oo/trait/uppercase-is-trait-reaches-trait-mod.t
 t/oo/trait/user-trait-mod-does-not-consume-every-trait.t
 t/oo/trait/variable-custom-traits.t
+t/oo/trait/variable-trait-begin-time-containers.t
 t/oo/trait/variable-trait-begin-time.t
 t/oo/trait/variable-trait-var-assign.t
 t/oo/trait/variable-traits.t
@@ -4117,6 +4124,7 @@ t/rakuast/rakuast-var-dynamic.t
 t/rakuast/rakuast-var-package.t
 t/rakuast/rakuast-vardecl-scoped.t
 t/rakuast/rakuast-variable-container-traits.t
+t/rakuast/rakuast-variable-does-trait.t
 t/rakuast/rakuast-when-modifier.t
 t/rakuast/rakuast-where-parameter.t
 t/rakuast/rakuast-with-pointy-block.t

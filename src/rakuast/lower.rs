@@ -2791,6 +2791,18 @@ pub(super) fn arg_list_exprs(arglist: &RakuAstNode) -> Result<Vec<Expr>, Runtime
 /// attribute forms (which carry `scope`/`type`/`twigil`/`traits` fields) are the
 /// coverage boundary.
 pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    // `my %h does R`: the role is a trait the parser expands separately. An
+    // attribute (`has $.x does R`) reads its own traits.
+    let is_attribute = matches!(leaf_str(node, "scope").as_deref(), Ok("has"))
+        || matches!(leaf_str(node, "twigil").as_deref(), Ok("." | "!"));
+    if !is_attribute && let Some((stripped, roles)) = super::var_does::split(node)? {
+        let declaration = lower_var_decl_plain(&stripped)?;
+        return super::var_does::lower_expansion(node, declaration, &roles);
+    }
+    lower_var_decl_plain(node)
+}
+
+fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // `scope => "has"` is an attribute declaration, not a variable one; it is
     // the only scope that lowers (the converter renders no other).
     // `our $.x` / `my $.x` (a public or private class-level attribute) is one

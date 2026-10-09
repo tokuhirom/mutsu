@@ -2814,6 +2814,7 @@ pub(crate) mod stable_hash;
 pub(crate) mod stub;
 pub(crate) mod subscript_adverb;
 pub(crate) mod temporize;
+pub(crate) mod var_does;
 pub(crate) use signature_decl::{
     ParamTrait, SignatureDecl, SignatureInit, SignatureVar, SourceForm, is_group_declaration,
 };

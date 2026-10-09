@@ -65,6 +65,7 @@ mod type_call;
 mod type_ctor;
 mod type_lower;
 mod use_stmt;
+mod var_does;
 mod word_quote;
 
 pub use formatter::formatter_ast;
