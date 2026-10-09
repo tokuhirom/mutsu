@@ -942,6 +942,15 @@ impl Compiler {
                     if trait_name == "default" && preapply_default {
                         continue;
                     }
+                    // The `@`/`%` branch above already applied every argument-less
+                    // trait (and `default`) before its read-back; applying a
+                    // container trait again would STORE the instance into itself.
+                    if !*is_state
+                        && (name.starts_with('@') || name.starts_with('%'))
+                        && (trait_arg.is_none() || trait_name == "default")
+                    {
+                        continue;
+                    }
                     if let Some(arg) = trait_arg {
                         let escaping = Self::is_closure_literal_arg(arg);
                         self.with_escape(escaping, |s| s.compile_expr(arg));
