@@ -994,9 +994,15 @@ impl Interpreter {
             .entry(data.id)
             .or_insert_with(|| {
                 let (compiled, compiled_fns) = if let Some(ref cc) = data.compiled_code {
+                    // The block's own nested `sub` declarations resolve their
+                    // `RegisterSub` bodies through the functions table the code
+                    // carries; an empty table left such a sub with no body
+                    // (calling it returned Nil).
                     (
                         cc.clone(),
-                        std::sync::Arc::new(crate::opcode::CompiledFns::default()),
+                        cc.compiled_fns.clone().unwrap_or_else(|| {
+                            std::sync::Arc::new(crate::opcode::CompiledFns::default())
+                        }),
                     )
                 } else if data.body.is_empty()
                     && let Some(ref cf) = data.compiled_routine

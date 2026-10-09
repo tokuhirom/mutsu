@@ -144,3 +144,28 @@ pub(crate) fn lexical_type_key(name: &str) -> String {
     key.push_str(name);
     key
 }
+
+/// Bind every lexical (`my class` / `my role`) type recorded under its
+/// [`lexical_type_key`] in `env` to its bare name too, unless the bare name is
+/// already bound.
+///
+/// A routine created inside a module keeps the type-only key in its captured
+/// scope, but the bare binding is withdrawn from the importing scope once the
+/// module is loaded. Code handed to `^add_method` runs as a method of an
+/// unrelated class, so it must carry the bare binding itself or a `MC.new` in
+/// its body no longer finds the module's `my class MC` (hide-methods).
+// Cost: O(e), e = entries of `env`.
+pub(crate) fn bind_lexical_types_by_bare_name(env: &mut crate::env::Env) {
+    let missing: Vec<(String, crate::value::Value)> = env
+        .iter()
+        .filter_map(|(key, value)| {
+            let bare = key.with_str(|k| k.strip_prefix(LEXICAL_TYPE_PREFIX).map(str::to_string))?;
+            matches!(value.view(), crate::value::ValueView::Package(_))
+                .then(|| (bare, value.clone()))
+        })
+        .filter(|(bare, _)| env.get(bare.as_str()).is_none())
+        .collect();
+    for (bare, value) in missing {
+        env.insert(bare, value);
+    }
+}
