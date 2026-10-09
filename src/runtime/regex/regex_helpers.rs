@@ -323,18 +323,23 @@ const REDUCED_SUBRULE_LOG_CAP: usize = 20_000;
 /// Reduce-order log of named-subrule matches — see `REDUCED_SUBRULES`.
 #[derive(Default)]
 pub(crate) struct ReducedSubruleLog {
-    /// `(rule name to dispatch the action under, that rule's captures)`.
-    entries: Vec<(String, std::sync::Arc<CapNode>)>,
+    /// `(rule name to dispatch the action under, that rule's captures)`. The
+    /// name is the atom's interned `lookup_sym`: recording a reduction must not
+    /// allocate a `String` per subrule match (#12409).
+    entries: Vec<(Symbol, std::sync::Arc<CapNode>)>,
     /// De-dups one exact capture node: mutsu's matcher may revisit the same
     /// candidate while enumerating a subrule's possible ends, but distinct
     /// nodes at the same span represent distinct reductions on different
     /// backtracking paths and must remain observable to grammar actions.
-    seen: std::collections::HashSet<(String, usize, usize, usize)>,
+    seen: rustc_hash::FxHashSet<(Symbol, usize, usize, usize)>,
 }
 
 impl ReducedSubruleLog {
     pub(crate) fn into_entries(self) -> Vec<(String, std::sync::Arc<CapNode>)> {
         self.entries
+            .into_iter()
+            .map(|(rule, caps)| (rule.resolve(), caps))
+            .collect()
     }
 
     /// Return reductions that have a later reduction with the same rule and
@@ -351,26 +356,26 @@ impl ReducedSubruleLog {
     ) -> Vec<(String, std::sync::Arc<CapNode>)> {
         let entries = self.entries;
         if entries.is_empty() {
-            return entries;
+            return Vec::new();
         }
         // Built once, and only when a log exists: it walks the whole tree.
         let surviving = surviving();
-        let mut last = std::collections::HashMap::<(&str, usize, usize), usize>::new();
+        let mut last = rustc_hash::FxHashMap::<(Symbol, usize, usize), usize>::default();
         for (index, (rule, caps)) in entries.iter().enumerate() {
-            last.insert((rule.as_str(), caps.from, caps.to), index);
+            last.insert((*rule, caps.from, caps.to), index);
         }
         let repeated: Vec<_> = entries
             .iter()
             .enumerate()
             .map(|(index, (rule, caps))| {
-                last.get(&(rule.as_str(), caps.from, caps.to)).copied() != Some(index)
+                last.get(&(*rule, caps.from, caps.to)).copied() != Some(index)
                     || !surviving.contains(&(rule.as_str(), caps.from, caps.to))
             })
             .collect();
         entries
             .into_iter()
             .zip(repeated)
-            .filter_map(|(entry, repeated)| repeated.then_some(entry))
+            .filter_map(|((rule, caps), repeated)| repeated.then(|| (rule.resolve(), caps)))
             .collect()
     }
 }
@@ -393,10 +398,10 @@ mod reduced_subrule_log_tests {
         };
         let log = ReducedSubruleLog {
             entries: vec![
-                ("a".into(), cap(0, 1)),
-                ("b".into(), cap(0, 1)),
-                ("a".into(), cap(1, 2)),
-                ("a".into(), cap(0, 1)),
+                (Symbol::intern("a"), cap(0, 1)),
+                (Symbol::intern("b"), cap(0, 1)),
+                (Symbol::intern("a"), cap(1, 2)),
+                (Symbol::intern("a"), cap(0, 1)),
             ],
             seen: Default::default(),
         };
@@ -412,7 +417,7 @@ mod reduced_subrule_log_tests {
 /// No-op unless an action-driven parse is live, and never while the matcher is
 /// only *measuring* a declarative prefix or probing the failure position
 /// (ADR-0009: those passes must have no observable side effects).
-pub(crate) fn record_reduced_subrule(rule: &str, caps: &std::sync::Arc<CapNode>) {
+pub(crate) fn record_reduced_subrule(rule: Symbol, caps: &std::sync::Arc<CapNode>) {
     if LTM_DECLARATIVE_MODE.with(Cell::get) || CODE_ATOMS_INERT.with(Cell::get) {
         return;
     }
@@ -425,12 +430,12 @@ pub(crate) fn record_reduced_subrule(rule: &str, caps: &std::sync::Arc<CapNode>)
             return;
         }
         if log.seen.insert((
-            rule.to_string(),
+            rule,
             caps.from,
             caps.to,
             std::sync::Arc::as_ptr(caps) as usize,
         )) {
-            log.entries.push((rule.to_string(), caps.clone()));
+            log.entries.push((rule, caps.clone()));
         }
     });
 }
