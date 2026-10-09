@@ -326,14 +326,13 @@ impl Interpreter {
             // identify which declared signature it came from. A body that
             // failed to compile drops the whole list, so a short list means
             // "no plan bytecode" rather than a shifted one.
-            let plan_compiled = |slot: usize| -> Option<&CompiledFunction> {
-                if compiled_routine_keys.len() != 1 + signature_alternates.len() {
-                    return None;
-                }
-                compiled_fns
-                    .get(&compiled_routine_keys[slot])
-                    .map(|cf| &**cf)
-            };
+            let plan_compiled =
+                |slot: usize| -> Option<&std::sync::Arc<crate::compiled_lazy::LazyFn>> {
+                    if compiled_routine_keys.len() != 1 + signature_alternates.len() {
+                        return None;
+                    }
+                    compiled_fns.get_lazy(&compiled_routine_keys[slot])
+                };
             let primary_compiled = plan_compiled(0);
             let body: &[Stmt] = &[];
             // Compile-time declaration fingerprint for this site (absent for a
@@ -453,8 +452,10 @@ impl Interpreter {
                 }
                 // mutsu#10050: `is export` routines nested in this body are
                 // exported at compile time, not when this routine runs.
-                if let Some(routine) = primary_compiled {
-                    self.register_nested_exported_subs(routine, compiled_fns)?;
+                if let Some(routine) = primary_compiled
+                    && routine.has_nested_exports()
+                {
+                    self.register_nested_exported_subs(routine.get(), compiled_fns)?;
                 }
                 for (slot, (alt_params, alt_param_defs)) in signature_alternates.iter().enumerate()
                 {
@@ -546,7 +547,13 @@ impl Interpreter {
                     let rebinds = primary_compiled
                         .into_iter()
                         .chain((0..signature_alternates.len()).filter_map(|i| plan_compiled(i + 1)))
-                        .any(|c| c.code.free_var_rebinds.iter().any(|s| s.resolve() == name));
+                        .any(|c| {
+                            c.get()
+                                .code
+                                .free_var_rebinds
+                                .iter()
+                                .any(|s| s.resolve() == name)
+                        });
                     let cell = if rebinds && Self::binding_cell_of(&cell).is_none() {
                         let slot = free_var_decl_slots
                             .iter()
@@ -654,15 +661,16 @@ impl Interpreter {
                 let mut rebound_syms: std::collections::HashSet<Symbol> =
                     std::collections::HashSet::new();
                 if let Some(compiled) = primary_compiled {
-                    free_syms.extend(compiled.code.free_var_syms.iter().copied());
-                    free_syms.extend(compiled.code.free_var_writes.iter().copied());
-                    rebound_syms.extend(compiled.code.free_var_rebinds.iter().copied());
+                    free_syms.extend(compiled.get().code.free_var_syms.iter().copied());
+                    free_syms.extend(compiled.get().code.free_var_writes.iter().copied());
+                    rebound_syms.extend(compiled.get().code.free_var_rebinds.iter().copied());
                 }
                 for slot in 0..signature_alternates.len() {
                     if let Some(alt_compiled) = plan_compiled(slot + 1) {
-                        free_syms.extend(alt_compiled.code.free_var_syms.iter().copied());
-                        free_syms.extend(alt_compiled.code.free_var_writes.iter().copied());
-                        rebound_syms.extend(alt_compiled.code.free_var_rebinds.iter().copied());
+                        free_syms.extend(alt_compiled.get().code.free_var_syms.iter().copied());
+                        free_syms.extend(alt_compiled.get().code.free_var_writes.iter().copied());
+                        rebound_syms
+                            .extend(alt_compiled.get().code.free_var_rebinds.iter().copied());
                     }
                 }
                 // A statement-level `$F := 5` neither reads nor writes `$F`, so
@@ -903,7 +911,7 @@ impl Interpreter {
                         def.body.clone(),
                         def.is_rw,
                         self.env().clone(),
-                        def.compiled.clone(),
+                        def.compiled_fn().cloned(),
                     )
                 } else {
                     Value::make_sub(
@@ -1079,7 +1087,7 @@ impl Interpreter {
         // The plan-compiled bytecode for the `{*}`-rewritten body (ADR-0019
         // C8), `None` for a trivial proto or a method proto — see
         // `CompiledProtoDeclPlan::compiled_routine_key`.
-        let compiled = compiled_routine_key.and_then(|key| compiled_fns.get(&key));
+        let compiled = compiled_routine_key.and_then(|key| compiled_fns.get_lazy(&key));
         // A `proto method`/`proto submethod` (`is_method`) is a *method*-level
         // proto: its `{*}` dispatches over the type's multi-method candidates
         // via the class method table, not the package-level proto-sub table.
@@ -1102,7 +1110,7 @@ impl Interpreter {
                 return_type.as_ref(),
                 body,
                 *is_our,
-                compiled.map(|cf| &**cf),
+                compiled,
                 is_lexical_hoist,
             )?;
         }
@@ -1122,7 +1130,7 @@ impl Interpreter {
                     param_defs,
                     return_type.as_ref(),
                     body,
-                    compiled.map(|cf| &**cf),
+                    compiled,
                 )?;
             }
             // Record the export so consumers/MAIN-dispatch see the whole multi

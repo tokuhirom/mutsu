@@ -2774,8 +2774,7 @@ mod tests {
             .get(&key)
             .expect("registered function candidate");
         let compiled = def
-            .compiled
-            .as_ref()
+            .compiled_fn()
             .expect("normalized candidate uses its compiled body");
         assert_eq!(
             format!("{:?}", compiled.param_defs),
@@ -2803,8 +2802,7 @@ mod tests {
             (**def).clone()
         };
         let routine = def
-            .compiled
-            .as_ref()
+            .compiled_fn()
             .expect("the declaration plan attached a compiled body")
             .clone();
         let sub_val = interp.sub_value_from_function_def(def);

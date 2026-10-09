@@ -116,6 +116,15 @@ impl RowFlags {
     /// dropping the ones the row does not list (`Str.subst-mutate`, whose
     /// adverbs `:g`, `:i`, `:x`, ... are the pattern's, not the method's).
     pub(crate) const ANY_NAMED: RowFlags = RowFlags(1 << 5);
+    /// The row is the *base candidate* of a user override's deferral chain
+    /// (`Mu.new`, `Mu.clone`, `Mu.BUILDALL`, `Mu.POPULATE`, ADR-11276 §9.47):
+    /// the last link a `callsame`/`nextsame` reaches after every user method.
+    /// It is found only by [`base_row`](super::base_row), never by a shape or by
+    /// an owner chain (`owner_row`): a receiver whose owners include `Mu`
+    /// (`IO::Special`'s `["IO::Special", "Mu"]`) must not have its own `new` or
+    /// `clone` answered by it. The handler gets the receiver first among its
+    /// arguments.
+    pub(crate) const DEFERRAL_BASE: RowFlags = RowFlags(1 << 6);
 
     /// The flags of both.
     // Cost: O(1).

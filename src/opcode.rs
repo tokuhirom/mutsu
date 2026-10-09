@@ -12426,7 +12426,8 @@ impl CompiledCode {
 /// definition (the on-demand `callframe().code` object, `CodeFrame::Lazy`)
 /// without deep-cloning the signature vectors on every entry, and so a table
 /// clone is a refcount bump per entry rather than a copy of every body.
-pub(crate) type CompiledFnMap = rustc_hash::FxHashMap<crate::symbol::Symbol, Arc<CompiledFunction>>;
+pub(crate) type CompiledFnMap =
+    rustc_hash::FxHashMap<crate::symbol::Symbol, Arc<crate::compiled_lazy::LazyFn>>;
 
 /// The table itself, wrapped so that it carries a **version token** (`id`).
 ///
@@ -12467,8 +12468,7 @@ impl CompiledFns {
     }
 
     pub(crate) fn insert(&mut self, key: crate::symbol::Symbol, value: CompiledFunction) {
-        self.id = Self::next_id();
-        self.map.insert(key, Arc::new(value));
+        self.insert_shared(key, Arc::new(value));
     }
 
     /// Insert a body another table already owns, sharing it instead of
@@ -12479,8 +12479,70 @@ impl CompiledFns {
         key: crate::symbol::Symbol,
         value: Arc<CompiledFunction>,
     ) {
+        self.insert_lazy(key, Arc::new(crate::compiled_lazy::LazyFn::ready(value)));
+    }
+
+    /// Insert a slot, which may still be encoded (ADR-12026 §2.2).
+    pub(crate) fn insert_lazy(
+        &mut self,
+        key: crate::symbol::Symbol,
+        value: Arc<crate::compiled_lazy::LazyFn>,
+    ) {
         self.id = Self::next_id();
         self.map.insert(key, value);
+    }
+
+    /// The routine under `key`, decoding it first if it is still encoded.
+    #[inline]
+    pub(crate) fn get(&self, key: &crate::symbol::Symbol) -> Option<&Arc<CompiledFunction>> {
+        self.map.get(key).map(|slot| slot.get())
+    }
+
+    /// The slot under `key`, without decoding it.
+    #[inline]
+    pub(crate) fn get_lazy(
+        &self,
+        key: &crate::symbol::Symbol,
+    ) -> Option<&Arc<crate::compiled_lazy::LazyFn>> {
+        self.map.get(key)
+    }
+
+    #[inline]
+    pub(crate) fn contains_key(&self, key: &crate::symbol::Symbol) -> bool {
+        self.map.contains_key(key)
+    }
+
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    #[inline]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &crate::symbol::Symbol> {
+        self.map.keys()
+    }
+
+    /// Every slot, decoding none.
+    pub(crate) fn iter_lazy(
+        &self,
+    ) -> impl Iterator<Item = (&crate::symbol::Symbol, &Arc<crate::compiled_lazy::LazyFn>)> {
+        self.map.iter()
+    }
+
+    /// Every routine, decoding the ones still encoded.
+    pub(crate) fn iter(
+        &self,
+    ) -> impl Iterator<Item = (&crate::symbol::Symbol, &Arc<CompiledFunction>)> {
+        self.map.iter().map(|(key, slot)| (key, slot.get()))
+    }
+
+    /// Every routine, decoding the ones still encoded.
+    pub(crate) fn values(&self) -> impl Iterator<Item = &Arc<CompiledFunction>> {
+        self.map.values().map(|slot| slot.get())
     }
 
     /// Nested named subs are compiled as part of their enclosing routine and
@@ -12488,8 +12550,10 @@ impl CompiledFns {
     /// the enclosing routine's definition is known, stamp that file through
     /// the nested table so its unit metadata follows the lexical declaration.
     pub(crate) fn stamp_source_file(&mut self, source_file: Option<String>) {
-        for value in self.map.values_mut() {
-            let function = Arc::make_mut(value);
+        for slot in self.map.values_mut() {
+            let Some(function) = Self::function_mut(slot) else {
+                continue;
+            };
             if function.source_file.is_none() {
                 function.source_file = source_file.clone();
                 function.source_file_sym_cache = std::sync::OnceLock::new();
@@ -12511,14 +12575,16 @@ impl CompiledFns {
     /// means "the main script", which is exactly what the caller passes).
     pub(crate) fn stamp_code_source_file(&mut self, file: crate::symbol::Symbol) {
         let mut changed = false;
-        for value in self.map.values_mut() {
-            // Read before `Arc::make_mut`: an already-stamped body needs no
+        for slot in self.map.values_mut() {
+            // Read before `make_mut`: an already-stamped body needs no
             // write, and a shared body (an imported module's routine lives in
             // two tables) would otherwise be deep-cloned for nothing.
-            if value.code.source_file.is_some() {
+            if slot.get().code.source_file.is_some() {
                 continue;
             }
-            let function = Arc::make_mut(value);
+            let Some(function) = Self::function_mut(slot) else {
+                continue;
+            };
             let file = function.source_file_sym().unwrap_or(file);
             changed |= Arc::make_mut(&mut function.code).stamp_source_file(file);
             if let Some(nested) = &mut function.compiled_fns {
@@ -12532,6 +12598,14 @@ impl CompiledFns {
         }
     }
 
+    /// The body of `slot`, copied out of every sharer first.
+    fn function_mut(slot: &mut Arc<crate::compiled_lazy::LazyFn>) -> Option<&mut CompiledFunction> {
+        if Arc::get_mut(slot).is_none() {
+            *slot = Arc::new(crate::compiled_lazy::LazyFn::ready(slot.get().clone()));
+        }
+        Some(Arc::make_mut(Arc::get_mut(slot)?.body_mut()?))
+    }
+
     /// Mutable access to one body, copying it out of a shared `Arc` first.
     /// Re-draws the version token like every other mutating entry point.
     pub(crate) fn make_mut(
@@ -12539,7 +12613,7 @@ impl CompiledFns {
         key: &crate::symbol::Symbol,
     ) -> Option<&mut CompiledFunction> {
         self.id = Self::next_id();
-        self.map.get_mut(key).map(Arc::make_mut)
+        self.map.get_mut(key).and_then(Self::function_mut)
     }
 
     pub(crate) fn retain(
@@ -12547,19 +12621,11 @@ impl CompiledFns {
         mut f: impl FnMut(&crate::symbol::Symbol, &CompiledFunction) -> bool,
     ) {
         self.id = Self::next_id();
-        self.map.retain(|key, value| f(key, value));
+        self.map.retain(|key, slot| f(key, slot.get()));
     }
 
     pub(crate) fn into_values(self) -> impl Iterator<Item = Arc<CompiledFunction>> {
-        self.map.into_values()
-    }
-}
-
-impl std::ops::Deref for CompiledFns {
-    type Target = CompiledFnMap;
-    #[inline]
-    fn deref(&self) -> &CompiledFnMap {
-        &self.map
+        self.map.into_values().map(|slot| slot.get().clone())
     }
 }
 
@@ -12585,7 +12651,12 @@ impl FromIterator<(crate::symbol::Symbol, CompiledFunction)> for CompiledFns {
     ) -> Self {
         let map: CompiledFnMap = iter
             .into_iter()
-            .map(|(key, value)| (key, Arc::new(value)))
+            .map(|(key, value)| {
+                (
+                    key,
+                    Arc::new(crate::compiled_lazy::LazyFn::ready(Arc::new(value))),
+                )
+            })
             .collect();
         let id = if map.is_empty() { 0 } else { Self::next_id() };
         Self { map, id }
@@ -12598,24 +12669,32 @@ impl Extend<(crate::symbol::Symbol, CompiledFunction)> for CompiledFns {
         iter: T,
     ) {
         self.id = Self::next_id();
-        self.map
-            .extend(iter.into_iter().map(|(key, value)| (key, Arc::new(value))));
+        self.map.extend(iter.into_iter().map(|(key, value)| {
+            (
+                key,
+                Arc::new(crate::compiled_lazy::LazyFn::ready(Arc::new(value))),
+            )
+        }));
     }
 }
 
 impl IntoIterator for CompiledFns {
     type Item = (crate::symbol::Symbol, Arc<CompiledFunction>);
-    type IntoIter = <CompiledFnMap as IntoIterator>::IntoIter;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
-        self.map.into_iter()
+        self.map
+            .into_iter()
+            .map(|(key, slot)| (key, slot.get().clone()))
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 }
 
 impl<'a> IntoIterator for &'a CompiledFns {
     type Item = (&'a crate::symbol::Symbol, &'a Arc<CompiledFunction>);
-    type IntoIter = <&'a CompiledFnMap as IntoIterator>::IntoIter;
+    type IntoIter = Box<dyn Iterator<Item = Self::Item> + 'a>;
     fn into_iter(self) -> Self::IntoIter {
-        self.map.iter()
+        Box::new(self.iter())
     }
 }
 
@@ -13116,6 +13195,19 @@ impl CompiledFunction {
     /// [`Interpreter::routine_is_rw_capable`]: crate::runtime::Interpreter::routine_is_rw_capable
     pub(crate) fn returns_container(&self) -> bool {
         self.is_raw || self.is_rw || self.uses_return_rw
+    }
+
+    /// Whether the body declares an `is export` routine nested in it that
+    /// registration must export at compile time (mutsu#10050). The hoist
+    /// pre-pass registers a stripped copy of the same declaration; the
+    /// in-sequence plan carries the full traits.
+    // Cost: O(p), p = sub declaration plans in the body.
+    pub(crate) fn has_nested_export_plans(&self) -> bool {
+        self.code.sub_decl_plans.iter().any(|plan| {
+            plan.is_export
+                && plan.name_chunk.is_none()
+                && !plan.custom_traits.iter().any(|(t, _)| t == "__hoisted")
+        })
     }
 
     /// Stamp a compiled routine and its nested named-subs with their enclosing

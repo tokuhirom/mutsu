@@ -176,7 +176,7 @@ impl Interpreter {
                     &traits,
                     Some(site_fingerprint),
                     &metadata,
-                    Some(&compiled),
+                    Some(&crate::compiled_lazy::LazyFn::owned(compiled.clone())),
                 );
 
                 if let Ok(crate::runtime::registration_sub::SubRegisterOutcome::Installed {
@@ -236,7 +236,7 @@ impl Interpreter {
                             supersede,
                             &traits,
                             Some(&alt_metadata),
-                            Some(&alt_compiled),
+                            Some(&crate::compiled_lazy::LazyFn::owned(alt_compiled.clone())),
                         )?;
                         if multi
                             && !self.module.suppress_exports

@@ -80,7 +80,7 @@ impl Interpreter {
             .and_then(|plan| plan.compiled_routine_keys.first().copied());
         let cf = def
             .as_ref()
-            .and_then(|def| def.compiled.clone())
+            .and_then(|def| def.compiled_fn().cloned())
             .or_else(|| key.and_then(|k| compiled_fns.get(&k).cloned()));
         let Some(cf) = cf else {
             return Err(RuntimeError::new(format!(

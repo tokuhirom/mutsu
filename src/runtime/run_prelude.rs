@@ -484,7 +484,7 @@ impl Interpreter {
                     &[],
                     None,
                     &metadata,
-                    Some(&compiled),
+                    Some(&crate::compiled_lazy::LazyFn::owned(compiled.clone())),
                 )?;
                 if *is_export {
                     let saved_pkg = self.current_package();
@@ -504,7 +504,7 @@ impl Interpreter {
                         &[],
                         None,
                         &metadata,
-                        Some(&compiled),
+                        Some(&crate::compiled_lazy::LazyFn::owned(compiled.clone())),
                     );
                     self.set_current_package(saved_pkg);
                     global_result?;

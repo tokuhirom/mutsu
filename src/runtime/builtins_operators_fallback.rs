@@ -590,7 +590,7 @@ impl Interpreter {
                 && armed == def.name
                 && !pushed_dispatch
             {
-                self.trir.gen_links.observed = def.compiled.clone();
+                self.trir.gen_links.observed = def.compiled_fn().cloned();
             }
             let def_fp = def.body_fingerprint();
             if pushed_dispatch {
@@ -718,7 +718,7 @@ impl Interpreter {
                 def.body.clone(),
                 def.is_rw,
                 self.env.clone(),
-                def.compiled.clone(),
+                def.compiled_fn().cloned(),
             );
             self.block_stack
                 .push(crate::runtime::CodeFrame::Ready(sub_val));

@@ -205,12 +205,13 @@ impl Interpreter {
     /// A def with no `compiled_routine` at all (so the check cannot be made)
     /// conservatively skips stabilization too.
     pub(crate) fn sub_value_from_function_def(&self, def: crate::runtime::FunctionDef) -> Value {
+        let compiled_body = def.compiled.clone();
         if let Some(code) = def.dispatchee {
             return code;
         }
         // Filtered like a closure capture, not the whole live env: sharing the
         // running frame's tier made its next write copy the tier (#9169).
-        let mut captured_env = self.routine_code_object_env(def.compiled.as_ref());
+        let mut captured_env = self.routine_code_object_env(compiled_body.as_ref().map(|body| body.get()));
         captured_env.remove("__mutsu_callable_type");
         // The routine's return type is its own, never the running frame's: a
         // capture taken inside `sub f(--> Supply)` (whole-env when the callee
@@ -240,7 +241,7 @@ impl Interpreter {
             );
         }
         let empty_sig = def.empty_sig;
-        let writes_free_vars = def.compiled.as_ref().is_none_or(|cf| {
+        let writes_free_vars = compiled_body.as_ref().map(|body| body.get()).is_none_or(|cf| {
             !cf.code.free_var_writes.is_empty() || !cf.code.free_var_container_writes.is_empty()
         });
         let stable_id = if writes_free_vars {
@@ -251,7 +252,7 @@ impl Interpreter {
         // The routine's own bytecode rides along, so calling this code object runs
         // compiled code instead of re-compiling the AST body copied below
         // (ADR-0019 C6c).
-        let compiled_routine = def.compiled.clone();
+        let compiled_routine = compiled_body.as_ref().map(|body| body.get()).cloned();
         let declared_readonly = def.captured_readonly.clone();
         let mut sub_val = Value::make_sub_for_routine(
             def.package,
@@ -270,7 +271,7 @@ impl Interpreter {
         // belong to no running routine frame, so the mentioning frame says
         // nothing about them: they take the snapshot of the frame the
         // declaration registered in instead (#11070).
-        let captured_readonly = def.compiled.as_ref().and_then(|cf| {
+        let captured_readonly = compiled_body.as_ref().map(|body| body.get()).and_then(|cf| {
             if cf.code.declared_in_routine {
                 self.capture_readonly_state(&cf.code)
             } else if writes_free_vars || !cf.code.nested_sub_written_free.is_empty() {
@@ -370,7 +371,7 @@ impl Interpreter {
                     cand.body.clone(),
                     cand.is_rw,
                     env,
-                    cand.compiled.clone(),
+                    cand.compiled_fn().cloned(),
                 )
             })
             .collect();

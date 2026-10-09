@@ -123,6 +123,23 @@ pub(crate) fn invoke_owner_raw(
     call(row(id), Some(interp), args.first()?, args, Named::NONE).map(|(result, _)| result)
 }
 
+/// Answer `method` from the [`RowFlags::DEFERRAL_BASE`] row `owner` declares:
+/// the last candidate of a user override's `callsame`/`nextsame` chain.
+/// `args` is the receiver followed by the override's own arguments, named ones
+/// included as pairs. `None` when `owner` has no such row, or the handler
+/// declines the receiver.
+// Cost: O(k) to find the row, k = rows named `method`, plus the handler's own
+// cost.
+pub(crate) fn invoke_base(
+    interp: &mut Interpreter,
+    owner: &str,
+    method: &str,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    let id = super::base_row(Symbol::intern(owner), Symbol::intern(method))?;
+    call(row(id), Some(interp), args.first()?, args, Named::NONE).map(|(result, _)| result)
+}
+
 /// Answer a receiver-mutating method from its row, or `None` to take the
 /// cascades. The one entry a [`Handler::Mut`] row has: the caller names the
 /// receiver's [`ReceiverPlace`], and the row is found by the owner chain of

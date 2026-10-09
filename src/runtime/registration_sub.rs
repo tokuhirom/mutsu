@@ -615,7 +615,7 @@ impl Interpreter {
         supersede: bool,
         custom_traits: &crate::opcode::DeclTraits,
         metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
-        compiled: Option<&crate::opcode::CompiledFunction>,
+        compiled: Option<&std::sync::Arc<crate::compiled_lazy::LazyFn>>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
         self.register_sub_decl_with_metadata(
             name,
@@ -688,7 +688,7 @@ impl Interpreter {
         custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: &crate::opcode::CompiledRoutineMetadata,
-        compiled: Option<&crate::opcode::CompiledFunction>,
+        compiled: Option<&std::sync::Arc<crate::compiled_lazy::LazyFn>>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
         self.register_sub_decl_with_metadata(
             name,
@@ -709,38 +709,6 @@ impl Interpreter {
         )
     }
 
-    /// Adapt a plan-compiled routine body to the `FunctionDef` it is being
-    /// installed as. The compiler emits one `CompiledFunction` per declared
-    /// signature, but registration derives the authoritative signature
-    /// (normalized `param_defs`, auto `@_`/`%_`, empty-signature and rw/raw
-    /// flags), so the installed bytecode takes its signature-derived data from
-    /// the def and re-precomputes everything keyed on it.
-    fn adapt_compiled_to_def(
-        compiled: &crate::opcode::CompiledFunction,
-        def: &FunctionDef,
-    ) -> std::sync::Arc<crate::opcode::CompiledFunction> {
-        let mut adapted = compiled.clone();
-        adapted.params.clone_from(&def.params);
-        adapted.param_defs.clone_from(&def.param_defs);
-        adapted.return_type.clone_from(&def.return_type);
-        adapted.empty_sig = def.empty_sig;
-        adapted.is_rw = def.is_rw;
-        adapted.is_raw = def.is_raw;
-        adapted.source_file.clone_from(&def.source_file);
-        adapted.stamp_source_file(def.source_file.clone());
-        // `captured_fatal_mode` (#9521) is already correct on `compiled` --
-        // baked in at compile time (`Compiler::fatal_pragma_active`) -- and
-        // `compiled.clone()` above carries it over unchanged. It must NOT be
-        // re-captured here from the live interpreter: this function also runs
-        // for a HOISTED registration (`hoist_sub_decls`), which executes
-        // before the declaring statement's own `use fatal;` (if any, earlier
-        // in the same scope) has run, and would wrongly bake in `false`.
-        adapted.precompute_param_local_slots();
-        adapted.precompute_named_call_plan();
-        adapted.precompute_param_name_syms();
-        std::sync::Arc::new(adapted)
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn register_sub_decl_with_metadata(
         &mut self,
@@ -758,7 +726,7 @@ impl Interpreter {
         custom_traits: &crate::opcode::DeclTraits,
         site_fingerprint: Option<u64>,
         metadata: Option<&crate::opcode::CompiledRoutineMetadata>,
-        compiled: Option<&crate::opcode::CompiledFunction>,
+        compiled: Option<&std::sync::Arc<crate::compiled_lazy::LazyFn>>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
         self.resolve_decl_parameterizations(param_defs, return_type.map(String::as_str));
         if name.starts_with("infix:<") {
@@ -1318,7 +1286,14 @@ impl Interpreter {
             );
         }
         if let Some(compiled) = compiled {
-            new_def.compiled = Some(Self::adapt_compiled_to_def(compiled, &new_def));
+            // Decoded and adapted to this def when the routine is first used
+            // (ADR-12026 §2.2).
+            new_def.compiled = Some(std::sync::Arc::new(
+                crate::compiled_lazy::RoutineBody::adapted_to(
+                    compiled.clone(),
+                    crate::compiled_lazy::AdaptInputs::of(&new_def),
+                ),
+            ));
         }
         let single_key = self.current_package_qualified(name).to_string();
         let single_key_sym = Symbol::intern(&single_key);
@@ -1831,7 +1806,7 @@ impl Interpreter {
                     def.body.clone(),
                     def.is_rw,
                     captured_env,
-                    def.compiled.clone(),
+                    def.compiled_fn().cloned(),
                 )
             } else {
                 Value::make_sub(
@@ -2200,7 +2175,7 @@ impl Interpreter {
         return_type: Option<&String>,
         body: &[Stmt],
         is_our: bool,
-        compiled: Option<&crate::opcode::CompiledFunction>,
+        compiled: Option<&std::sync::Arc<crate::compiled_lazy::LazyFn>>,
         is_lexical_hoist: bool,
     ) -> Result<(), RuntimeError> {
         let key = self.current_package_qualified(name).to_string();
@@ -2335,7 +2310,9 @@ impl Interpreter {
                 source_file: self.current_source_file(),
                 source_line: None,
                 decl_order: crate::runtime::resolution::next_decl_order(),
-                compiled: compiled.cloned().map(std::sync::Arc::new),
+                compiled: compiled.map(|lazy| {
+                    std::sync::Arc::new(crate::compiled_lazy::RoutineBody::plain(lazy.clone()))
+                }),
                 dispatchee: None,
                 body_fp_cache: std::sync::OnceLock::new(),
                 captured_readonly: None,
@@ -2354,7 +2331,7 @@ impl Interpreter {
         param_defs: &[ParamDef],
         return_type: Option<&String>,
         body: &[Stmt],
-        compiled: Option<&crate::opcode::CompiledFunction>,
+        compiled: Option<&std::sync::Arc<crate::compiled_lazy::LazyFn>>,
     ) -> Result<(), RuntimeError> {
         let key = format!("GLOBAL::{}", name);
         if self
@@ -2416,7 +2393,9 @@ impl Interpreter {
                 source_file: self.current_source_file(),
                 source_line: None,
                 decl_order: crate::runtime::resolution::next_decl_order(),
-                compiled: compiled.cloned().map(std::sync::Arc::new),
+                compiled: compiled.map(|lazy| {
+                    std::sync::Arc::new(crate::compiled_lazy::RoutineBody::plain(lazy.clone()))
+                }),
                 dispatchee: None,
                 body_fp_cache: std::sync::OnceLock::new(),
                 captured_readonly: None,

@@ -49,3 +49,34 @@ fn an_identity_carrying_constant_is_refused() {
     assert!(encode(&instance).is_err());
     assert!(encode(&Value::int(42)).is_ok());
 }
+
+/// A decoded routine table leaves each body encoded until it is asked for
+/// (ADR-12026 §2.2), reads the nested-export flag without decoding, and decodes
+/// a body to the same routine the compile produced.
+#[test]
+fn a_decoded_routine_body_stays_encoded_until_used() {
+    let (code, fns) = compile(
+        "sub first-lazy($a) { $a + 1 }\n\
+         sub second-lazy($b) { my sub nested($c) { $c }; nested($b) }\n\
+         say first-lazy(1), second-lazy(2);\n",
+    );
+    let bytes = encode_compiled(&code, &fns).expect("encodes");
+    let (_, decoded) = decode_compiled(&bytes).expect("decodes");
+    assert_eq!(decoded.len(), fns.len());
+    assert!(decoded.iter_lazy().all(|(_, slot)| !slot.is_decoded()));
+    assert!(
+        decoded
+            .iter_lazy()
+            .all(|(_, slot)| !slot.has_nested_exports())
+    );
+    assert!(decoded.iter_lazy().all(|(_, slot)| !slot.is_decoded()));
+    let (key, slot) = decoded.iter_lazy().next().expect("a routine");
+    let original = fns.get(key).expect("the same routine compiled");
+    assert_eq!(slot.get().fingerprint, original.fingerprint);
+    assert_eq!(slot.get().code.ops.len(), original.code.ops.len());
+    assert!(slot.is_decoded());
+    assert_eq!(
+        decoded.iter_lazy().filter(|(_, s)| s.is_decoded()).count(),
+        1
+    );
+}

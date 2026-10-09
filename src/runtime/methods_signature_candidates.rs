@@ -271,7 +271,7 @@ impl Interpreter {
                     def.body.clone(),
                     def.is_rw,
                     env,
-                    def.compiled.clone(),
+                    def.compiled_fn().cloned(),
                 )
             })
             .collect()

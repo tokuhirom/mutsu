@@ -669,7 +669,7 @@ pub(crate) struct FunctionDef {
     /// Bytecode body selected by the declaration plan that installed this
     /// candidate. Temporary ADR-0019 adapter; skipped by the AST/precomp format.
     #[serde(skip)]
-    pub(crate) compiled: Option<std::sync::Arc<crate::opcode::CompiledFunction>>,
+    pub(crate) compiled: Option<std::sync::Arc<crate::compiled_lazy::RoutineBody>>,
     /// The code VALUE this candidate stands for, when `Routine.add_dispatchee`
     /// added an anonymous or closure-carrying sub to a proto (#10929). The
     /// row takes part in candidate selection by its signature like any other;
@@ -727,6 +727,13 @@ pub(crate) struct RoutineBodyFacts {
 }
 
 impl FunctionDef {
+    /// The plan-compiled bytecode of this routine, adapted to the def and decoded
+    /// from the precompilation cache on the first call (ADR-12026 §2.2).
+    // Cost: O(n) on the first call, n = size of the body's metadata; O(1) after.
+    pub(crate) fn compiled_fn(&self) -> Option<&std::sync::Arc<crate::opcode::CompiledFunction>> {
+        self.compiled.as_ref().map(|body| body.get())
+    }
+
     /// Structural identity of this routine: the fingerprint of its signature and
     /// body. Multi-candidate identity, `state`-variable scoping, wrap chains,
     /// `MAIN` candidate dedup, and redeclaration checks all key on it.

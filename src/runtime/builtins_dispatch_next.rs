@@ -357,6 +357,64 @@ impl Interpreter {
         }
     }
 
+    /// `Mu.new(*%attrinit)` as the last candidate of a user `new` override's
+    /// chain (the `Mu.new` row, ADR-11276 §9.48): the nearest builtin
+    /// ancestor's native constructor first, then the positional-argument check,
+    /// then `bless`.
+    // Cost: O(m + a), m = the receiver's MRO length, a = the argument count,
+    // plus the constructor's own cost.
+    pub(crate) fn mu_new_base(
+        &mut self,
+        invocant: Value,
+        args: Vec<Value>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        // The nearest builtin ancestor's native constructor comes
+        // before `Mu.new`/`bless` (`class LoggedVersion is Version {
+        // method new(|c) { nextsame } }`) — same order as the
+        // no-frame fallback at the end of `dispatch_next_candidate`.
+        if let Some(res) = self.native_builtin_new_next_candidate(&invocant, &args) {
+            return Some(res);
+        }
+        // `Mu.new(*%attrinit)` takes named arguments only, whether it
+        // is called directly or reached by `callwith`/`nextwith` from a
+        // user `new` — `bless` would silently drop the positionals
+        // (#9761). Same check as the direct call's.
+        if args
+            .iter()
+            .any(|arg| !matches!(arg.view(), ValueView::Pair(..)))
+        {
+            let class_name = match invocant.view() {
+                ValueView::Package(name) => name.resolve(),
+                ValueView::Instance { class_name, .. } => class_name.resolve(),
+                _ => crate::runtime::value_type_name(&invocant).to_string(),
+            };
+            let mro = self.class_mro(&class_name);
+            // A subclass of a RakuAST node class: rakudo's next
+            // candidate is the node class's own `new`, which takes the
+            // node's positional fields. mutsu does not yet build that
+            // node for a subclass instance.
+            // TODO: construct the parent node and carry it on the
+            // instance (#9761); until then `bless` keeps building the
+            // bare subclass instance, as before, rather than dying.
+            let rakuast_parent = mro
+                .iter()
+                .any(|n| crate::rakuast::is_registered_type_object(&n.resolve()));
+            if !rakuast_parent
+                && !self.class_does_baggy_or_setty(&class_name)
+                && !super::methods_object_dispatch_new::default_new_accepts_positionals(
+                    &mro,
+                )
+            {
+                return Some(Err(
+                    super::methods_object_dispatch_new::constructor_positional_error(
+                        &class_name,
+                    ),
+                ));
+            }
+        }
+        Some(self.call_method_with_values(invocant, "bless", args))
+    }
+
     /// When a user BUILDALL/POPULATE/clone method (typically installed by a
     /// custom HOW's `add_method` — OO::Monitors) exhausts the user MRO via
     /// `callsame`/`nextsame`, provide the NATIVE Mu base behavior as the final
@@ -392,63 +450,23 @@ impl Interpreter {
             .cloned()
             .unwrap_or_else(|| frame.invocant.clone());
         match method_name.as_str() {
-            "BUILDALL" | "POPULATE" => crate::builtins::method_table::invoke_owner_raw(
+            "BUILDALL" | "POPULATE" => crate::builtins::method_table::invoke_base(
                 self,
-                &["Mu"],
+                "Mu",
                 &method_name,
                 std::slice::from_ref(&invocant),
             ),
             "clone" => {
                 let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(frame_args);
-                self.native_instance_clone_value(&invocant, &args)
+                let mut full = vec![invocant];
+                full.extend(args);
+                crate::builtins::method_table::invoke_base(self, "Mu", "clone", &full)
             }
             "new" => {
                 let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(frame_args);
-                // The nearest builtin ancestor's native constructor comes
-                // before `Mu.new`/`bless` (`class LoggedVersion is Version {
-                // method new(|c) { nextsame } }`) — same order as the
-                // no-frame fallback at the end of `dispatch_next_candidate`.
-                if let Some(res) = self.native_builtin_new_next_candidate(&invocant, &args) {
-                    return Some(res);
-                }
-                // `Mu.new(*%attrinit)` takes named arguments only, whether it
-                // is called directly or reached by `callwith`/`nextwith` from a
-                // user `new` — `bless` would silently drop the positionals
-                // (#9761). Same check as the direct call's.
-                if args
-                    .iter()
-                    .any(|arg| !matches!(arg.view(), ValueView::Pair(..)))
-                {
-                    let class_name = match invocant.view() {
-                        ValueView::Package(name) => name.resolve(),
-                        ValueView::Instance { class_name, .. } => class_name.resolve(),
-                        _ => crate::runtime::value_type_name(&invocant).to_string(),
-                    };
-                    let mro = self.class_mro(&class_name);
-                    // A subclass of a RakuAST node class: rakudo's next
-                    // candidate is the node class's own `new`, which takes the
-                    // node's positional fields. mutsu does not yet build that
-                    // node for a subclass instance.
-                    // TODO: construct the parent node and carry it on the
-                    // instance (#9761); until then `bless` keeps building the
-                    // bare subclass instance, as before, rather than dying.
-                    let rakuast_parent = mro
-                        .iter()
-                        .any(|n| crate::rakuast::is_registered_type_object(&n.resolve()));
-                    if !rakuast_parent
-                        && !self.class_does_baggy_or_setty(&class_name)
-                        && !super::methods_object_dispatch_new::default_new_accepts_positionals(
-                            &mro,
-                        )
-                    {
-                        return Some(Err(
-                            super::methods_object_dispatch_new::constructor_positional_error(
-                                &class_name,
-                            ),
-                        ));
-                    }
-                }
-                Some(self.call_method_with_values(invocant, "bless", args))
+                let mut full = vec![invocant];
+                full.extend(args);
+                crate::builtins::method_table::invoke_base(self, "Mu", "new", &full)
             }
             _ => None,
         }
@@ -1598,7 +1616,7 @@ impl Interpreter {
                 // An `add_dispatchee` code value runs as itself (#10929).
                 self.vm_call_on_value(code.clone(), call_args.clone(), None)
             } else {
-                let cf = match &next_def.compiled {
+                let cf = match next_def.compiled_fn() {
                     Some(compiled) => std::sync::Arc::clone(compiled),
                     None => self.otf_compile_function_def(&next_def),
                 };
@@ -1856,7 +1874,7 @@ impl Interpreter {
             next_def.body.clone(),
             next_def.is_rw,
             self.env.clone(),
-            next_def.compiled.clone(),
+            next_def.compiled_fn().cloned(),
         ))
     }
 }
