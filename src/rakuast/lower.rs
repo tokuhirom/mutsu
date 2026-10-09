@@ -125,44 +125,60 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             {
                 return Ok(Stmt::Block(lower_block(expression)?));
             }
-            let mut statement = lower_stmt_inner(expression)?;
-            let loop_modifier = node.fields.iter().find(|f| f.name == Some("loop-modifier"));
-            // A block under postfix while/until is a value evaluated on each
-            // iteration. The parser does not call that block's body.
-            if expression.class == RakuAstClass::Block
-                && let Some(modifier) = loop_modifier
-                && matches!(
-                    child_node(&modifier.value)?.class,
-                    RakuAstClass::StatementModifierWhile | RakuAstClass::StatementModifierUntil
-                )
-            {
-                statement = Stmt::Expr(lower_expr(expression)?);
-            }
-            // A bare block modified by a `for` is the parser's block statement
-            // (not the closure value a block with placeholders is elsewhere),
-            // and gives the loop its placeholders.
-            if let Some(modifier) = loop_modifier
-                && child_node(&modifier.value)?.class == RakuAstClass::StatementModifierFor
-            {
-                let inner = named_child(node, "expression")?;
-                if inner.class == RakuAstClass::Block {
-                    statement = Stmt::Block(lower_block(inner)?);
-                }
-            }
-            // The condition modifier binds tighter than the loop one: in
-            // `X if C for L` the loop runs `X if C`.
-            if let Some(modifier) = node
+            let loop_modifier = node
+                .fields
+                .iter()
+                .find(|f| f.name == Some("loop-modifier"))
+                .map(|field| child_node(&field.value))
+                .transpose()?;
+            let condition_modifier = node
                 .fields
                 .iter()
                 .find(|f| f.name == Some("condition-modifier"))
+                .map(|field| child_node(&field.value))
+                .transpose()?;
+            let conditional_block = condition_modifier.is_some_and(|node| {
+                matches!(
+                    node.class,
+                    RakuAstClass::StatementModifierIf | RakuAstClass::StatementModifierUnless
+                )
+            });
+            // `if`/`unless`/`for`/`given` run a bare block; their placeholders
+            // bind from the modifier. `while`/`until` evaluate it as a value.
+            let mut statement = if expression.class == RakuAstClass::Block
+                && (conditional_block
+                    || loop_modifier.is_some_and(|modifier| {
+                        matches!(
+                            modifier.class,
+                            RakuAstClass::StatementModifierFor
+                                | RakuAstClass::StatementModifierGiven
+                        )
+                    })) {
+                Stmt::Block(lower_block(expression)?)
+            } else if expression.class == RakuAstClass::Block
+                && loop_modifier.is_some_and(|modifier| {
+                    matches!(
+                        modifier.class,
+                        RakuAstClass::StatementModifierWhile | RakuAstClass::StatementModifierUntil
+                    )
+                })
             {
-                statement = lower_condition_modifier(child_node(&modifier.value)?, statement)?;
+                Stmt::Expr(lower_expr(expression)?)
+            } else {
+                lower_stmt_inner(expression)?
+            };
+            // The condition modifier binds tighter than the loop one: in
+            // `X if C for L` the loop runs `X if C`.
+            if let Some(modifier) = condition_modifier {
+                statement = lower_condition_modifier(modifier, statement)?;
             }
             if let Some(modifier) = loop_modifier {
-                let modifier = child_node(&modifier.value)?;
                 if modifier.class == RakuAstClass::StatementModifierGiven {
+                    let topic = lower_expr(named_child_or_positional(modifier)?)?;
+                    statement =
+                        crate::parser::rewrite_placeholder_block_modifier_stmt(statement, &topic);
                     return Ok(Stmt::Given {
-                        topic: lower_expr(named_child_or_positional(modifier)?)?,
+                        topic,
                         body: vec![statement],
                         is_statement_modifier: true,
                         with_kind: None,
@@ -248,7 +264,10 @@ fn lower_condition_modifier(modifier: &RakuAstNode, statement: Stmt) -> Result<S
         RakuAstClass::StatementModifierUnless => true,
         _ => return Err(unsupported(modifier)),
     };
-    let cond = negate_if(lower_expr(named_child_or_positional(modifier)?)?, is_unless);
+    let written_cond = lower_expr(named_child_or_positional(modifier)?)?;
+    let statement =
+        crate::parser::rewrite_placeholder_block_modifier_stmt(statement, &written_cond);
+    let cond = negate_if(written_cond, is_unless);
     // A declaration is split from its gated initializer, as the parser does.
     if let Some(split) = crate::parser::try_split_decl_modifier(&statement, &cond, is_unless) {
         return Ok(split);

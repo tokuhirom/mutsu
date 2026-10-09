@@ -1326,6 +1326,7 @@ t/control/statement-modifier-after-trailing-comma-comment.t
 t/control/statement-modifier-for-regression.t
 t/control/statement-modifier-let-temp-scope.t
 t/control/statement-modifier-sequence.t
+t/control/statement-modifiers.t
 t/control/stmt-terminator-colon-block-arg.t
 t/control/succeed-block-boundary-absorption.t
 t/control/succeed-propagates-through-calls.t
@@ -4082,6 +4083,7 @@ t/rakuast/rakuast-paren-list-assign.t
 t/rakuast/rakuast-parser-decisions-kept.t
 t/rakuast/rakuast-phaser.t
 t/rakuast/rakuast-placeholder-blocks.t
+t/rakuast/rakuast-placeholder-modifiers.t
 t/rakuast/rakuast-placeholders.t
 t/rakuast/rakuast-pointy-slurpy-params.t
 t/rakuast/rakuast-pre-post-phasers.t
@@ -4168,6 +4170,7 @@ t/rakuast/rakuast-var-package.t
 t/rakuast/rakuast-vardecl-scoped.t
 t/rakuast/rakuast-variable-container-traits.t
 t/rakuast/rakuast-variable-does-trait.t
+t/rakuast/rakuast-visit-children-origin.t
 t/rakuast/rakuast-whatever-code.t
 t/rakuast/rakuast-when-modifier.t
 t/rakuast/rakuast-where-parameter.t
