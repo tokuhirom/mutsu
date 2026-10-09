@@ -26,6 +26,7 @@ pub(crate) use dispatch_1arg::native_method_1arg;
 pub(crate) use dispatch_2arg::native_method_2arg;
 pub(crate) use fmt_contains::{
     fmt_joinable_target, fmt_native, native_contains_with_options, pair_key_value,
+    validate_list_item_directives,
 };
 pub(crate) use numeric::compute_roots;
 pub(crate) use str_match::{native_prefix_suffix_with_options, native_substr_eq_with_options};
