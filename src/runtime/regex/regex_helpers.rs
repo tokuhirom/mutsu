@@ -345,11 +345,16 @@ impl ReducedSubruleLog {
     /// `surviving` holds the spans of the successful tree's nodes: a reduction
     /// whose span no surviving node has was inside a failed alternative (the
     /// caller backtracked past it entirely), and Raku preserved its action too.
-    pub(crate) fn into_repeated_entries(
+    pub(crate) fn into_repeated_entries<'a>(
         self,
-        surviving: &crate::value::regex_caps::SurvivingSpans,
+        surviving: impl FnOnce() -> crate::value::regex_caps::SurvivingSpans<'a>,
     ) -> Vec<(String, std::sync::Arc<CapNode>)> {
         let entries = self.entries;
+        if entries.is_empty() {
+            return entries;
+        }
+        // Built once, and only when a log exists: it walks the whole tree.
+        let surviving = surviving();
         let mut last = std::collections::HashMap::<(&str, usize, usize), usize>::new();
         for (index, (rule, caps)) in entries.iter().enumerate() {
             last.insert((rule.as_str(), caps.from, caps.to), index);
@@ -359,7 +364,7 @@ impl ReducedSubruleLog {
             .enumerate()
             .map(|(index, (rule, caps))| {
                 last.get(&(rule.as_str(), caps.from, caps.to)).copied() != Some(index)
-                    || !surviving.contains(&(rule.clone(), caps.from, caps.to))
+                    || !surviving.contains(&(rule.as_str(), caps.from, caps.to))
             })
             .collect();
         entries
@@ -395,8 +400,8 @@ mod reduced_subrule_log_tests {
             ],
             seen: Default::default(),
         };
-        let surviving = [("a", 0, 1), ("b", 0, 1), ("a", 1, 2)].map(|(r, f, t)| (r.to_string(), f, t)).into_iter().collect();
-        let repeated = log.into_repeated_entries(&surviving);
+        let surviving = [("a", 0, 1), ("b", 0, 1), ("a", 1, 2)].into_iter().collect();
+        let repeated = log.into_repeated_entries(|| surviving);
         assert_eq!(repeated.len(), 1);
         assert_eq!(repeated[0].0, "a");
         assert_eq!((repeated[0].1.from, repeated[0].1.to), (0, 1));
@@ -456,12 +461,12 @@ impl ReducedSubruleGuard {
 
     /// Take only reductions superseded by a later node at the same rule/span.
     pub(crate) fn take_repeated_entries(
-        surviving: &crate::value::regex_caps::SurvivingSpans,
+        captures: &crate::value::regex_caps::RegexCaptures,
     ) -> Vec<(String, std::sync::Arc<CapNode>)> {
         REDUCED_SUBRULES.with(|slot| {
             let mut slot = slot.borrow_mut();
             match slot.as_mut() {
-                Some(log) => std::mem::take(log).into_repeated_entries(surviving),
+                Some(log) => std::mem::take(log).into_repeated_entries(|| captures.tree_spans()),
                 None => Vec::new(),
             }
         })
