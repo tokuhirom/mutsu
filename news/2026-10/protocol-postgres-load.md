@@ -1,0 +1,3 @@
+# Protocol::Postgres loads and passes its suite
+
+Three general fixes found by taking Protocol::Postgres from `blocked_load` to green: a package-scoped enum (`Foo::Format`) now satisfies a parameter or multi candidate spelled with its short name, for both values and the type object; a role's stubbed non-multi method is satisfied by a multi dispatch set from another role instead of raising a composition conflict; and a parameterized role body can name a sibling `my role` when instantiated from a class nested in the declaring module. Both test files (`t/02-roundtrip`, `t/03-vectors`) now pass by direct run.

@@ -991,6 +991,14 @@ impl Interpreter {
             if constraint == enum_name || Self::type_matches(constraint, &enum_name) {
                 return true;
             }
+            // A package-scoped enum lives under its qualified key (`Foo::E`)
+            // while the constraint spells the short name the source wrote.
+            if self
+                .resolve_enum_type_key(constraint)
+                .is_some_and(|key| key.as_str() == &*enum_name)
+            {
+                return true;
+            }
             // An `enum Flags does Weird (...)` value does the composed role, the
             // same way an instance of a class that composes it does.
             let constraint_base = constraint.split('[').next().unwrap_or(constraint);
@@ -1007,6 +1015,16 @@ impl Interpreter {
             {
                 return true;
             }
+        }
+        // The type object of a package-scoped enum (`Foo::E`) against the
+        // short spelling the constraint wrote (`E`).
+        if let ValueView::Package(package_name) = value.view()
+            && self.registry().enum_types.contains_key(package_name.resolve().as_str())
+            && self
+                .resolve_enum_type_key(constraint)
+                .is_some_and(|key| key.as_str() == package_name.resolve().as_str())
+        {
+            return true;
         }
         let package_matches_type = |package_name: &str, type_name: &str| -> bool {
             let package_base = package_name.split('[').next().unwrap_or(package_name);
