@@ -828,6 +828,17 @@ impl Interpreter {
         if self.lexicals.unit_lexicals.is_empty() || name.is_empty() {
             return None;
         }
+        // EVAL is its own compilation unit with its own `$=pod` (kept under
+        // `env["=pod"]` while it runs); the calling module's document must
+        // not shadow it.
+        if name == "=pod"
+            && self
+                .env()
+                .get("__mutsu_in_eval")
+                .is_some_and(|v| v.truthy())
+        {
+            return None;
+        }
         // Classified and split once per symbol (`None` for an unqualified name).
         let split = crate::qualified::split_qualified_var(
             name_sym.unwrap_or_else(|| crate::qualified::known_symbol(name)),
