@@ -1151,8 +1151,13 @@ impl Interpreter {
             // `declared_locals`.
             let class_body_static_names = self.lexicals.class_body_static_names.clone();
             let is_method_local = |s: &str| -> bool {
-                matches!(s, "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_")
-                    || method_def.params.iter().any(|p| p == s)
+                // `@_`/`%_` are rebound to the callee's own arguments by the
+                // slow bind path, so they are as frame-local as `_`: merging
+                // them back clobbered a caller's explicit `@_` parameter.
+                matches!(
+                    s,
+                    "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_" | "@_" | "%_"
+                ) || method_def.params.iter().any(|p| p == s)
                     || cc.locals.iter().any(|l| !l.is_empty() && l == s)
                     || cc.env_only_decls.iter().any(|n| n == s)
                     // A composed role's type parameter (`T` of `role R[::T]` /
