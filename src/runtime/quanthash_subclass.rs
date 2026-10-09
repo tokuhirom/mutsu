@@ -143,11 +143,13 @@ impl Interpreter {
         if !attributes.contains_key("__baggy_data__") {
             return None;
         }
-        // The keyed mutators are rows of the quant-hash owners, reached with the
-        // backing storage as a detached place; they write its shared node in
-        // place, so the invocant the user method still holds sees the new
-        // weight (ADR-11276 §9.37).
-        if matches!(method_name.as_str(), "ASSIGN-KEY" | "DELETE-KEY") && !args.is_empty() {
+        // Every mutator (`ASSIGN-KEY`/`DELETE-KEY`, `set`/`unset`, `add`/`remove`,
+        // `grab`, ...) is a `Handler::Mut` row of the quant-hash owners, reached
+        // with the backing storage as a detached place; they write its shared
+        // node in place, so the invocant the user method still holds sees the
+        // new weight (ADR-11276 §9.37). A name with no such row answers `None`
+        // from `invoke_mut` and falls through to the pure entry below.
+        if method_name != "STORE" {
             let outcome = attributes.with_attr_mut("__baggy_data__", |storage| {
                 let mut place = crate::builtins::method_table::ReceiverPlace::detached(storage);
                 crate::builtins::method_table::invoke_mut(
