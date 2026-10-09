@@ -38,18 +38,23 @@ pub(crate) fn pair_key_value(val: &Value) -> Option<(Value, Value)> {
     }
 }
 
-/// Format one item of a `List.fmt` for `.fmt()`. As in Rakudo, every item
-/// (a Pair included) is one `sprintf` argument, and a directive count other
-/// than one raises a plain `X::AdHoc` carrying the count message.
-// Cost: O(f + n), f = chars of the format, n = chars of the rendered value.
-pub(crate) fn fmt_list_item(fmt: &str, item: &Value) -> Result<String, RuntimeError> {
-    validate_list_item_directives(fmt)?;
-    Ok(runtime::format_sprintf(fmt, Some(item)))
-}
-
-/// The one-argument directive check of [`fmt_list_item`].
+/// How one item of a `List.fmt` meets the format, as Rakudo does: a Pair item
+/// under a format of other than one directive is `Pair.fmt` (key and value, the
+/// typed `X::Str::Sprintf::Directives::Count` on a mismatch); every other item,
+/// and a Pair under a one-directive format, is one `sprintf` argument and a
+/// count other than one raises a plain `X::AdHoc` with the count message.
+/// Returns the key and value to format when the item is split.
 // Cost: O(f), f = chars of the format.
-pub(crate) fn validate_list_item_directives(fmt: &str) -> Result<(), RuntimeError> {
+pub(crate) fn list_item_pair_split(
+    fmt: &str,
+    item: &Value,
+) -> Result<Option<(Value, Value)>, RuntimeError> {
+    if let Some(kv) = pair_key_value(item)
+        && runtime::sprintf_directive_count(fmt) != 1
+    {
+        runtime::sprintf::validate_sprintf_directives(fmt, 2)?;
+        return Ok(Some(kv));
+    }
     runtime::sprintf::validate_sprintf_directives(fmt, 1).map_err(|e| {
         let is_count = e.exception.as_ref().is_some_and(|x| {
             matches!(x.view(), ValueView::Instance { class_name, .. }
@@ -62,6 +67,16 @@ pub(crate) fn validate_list_item_directives(fmt: &str) -> Result<(), RuntimeErro
         } else {
             e
         }
+    })?;
+    Ok(None)
+}
+
+/// Format one item of a `List.fmt` (see [`list_item_pair_split`]).
+// Cost: O(f + n), f = chars of the format, n = chars of the rendered value.
+pub(crate) fn fmt_list_item(fmt: &str, item: &Value) -> Result<String, RuntimeError> {
+    Ok(match list_item_pair_split(fmt, item)? {
+        Some((k, v)) => runtime::format_sprintf_args(fmt, &[k, v]),
+        None => runtime::format_sprintf(fmt, Some(item)),
     })
 }
 

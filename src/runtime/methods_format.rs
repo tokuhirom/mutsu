@@ -325,8 +325,11 @@ impl Interpreter {
                     };
                     let mut parts = Vec::with_capacity(items.len());
                     for item in items {
-                        crate::builtins::validate_list_item_directives(&fmt)?;
-                        parts.push(format_one(self, item)?);
+                        let rendered = match crate::builtins::list_item_pair_split(&fmt, &item)? {
+                            Some((k, v)) => format_pair(self, k, v)?,
+                            None => format_one(self, item)?,
+                        };
+                        parts.push(rendered);
                     }
                     return Ok(Value::str(parts.join(" ")));
                 }
