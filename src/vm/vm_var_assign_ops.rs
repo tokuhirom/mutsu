@@ -55,7 +55,7 @@ impl Interpreter {
     /// that exists this stays a best-effort mitigation.
     ///
     /// `pub(crate)` so other fallible allocation sites (e.g. shaped-array
-    /// construction in `make_shaped_array`) can reuse the same guard.
+    /// construction in `make_shaped_array_seeded`) can reuse the same guard.
     pub(crate) fn autoviv_resize(
         items: &mut Vec<Value>,
         new_len: usize,

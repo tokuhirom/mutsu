@@ -2208,3 +2208,11 @@ lifted verbatim, in six family files (`collections`, `numeric`, `io_temporal`, `
 `is_native_buf_constructible` fallback for spellings the table does not list, and `Date`/`DateTime`. `Capture.new` now also
 dies on a positional argument through the interpreter path, as the VM path already did.
 Left: the parametric branch (`Array[Int].new`, roles) and folding `native_*_next_candidate` into the rows.
+
+### 9.51 Slice 4: no second parametric constructor branch (2026-10-09)
+
+`refactor/12423-parametric-ctor`, after §9.50. The "parametric branch below the table" §9.49 listed as left was a stale
+duplicate: `ctor_array` / `ctor_hash` already receive `type_args` through `CtorCall` and run the shared
+`try_native_array_construct` / `try_native_hash_construct`. The copy (about 150 lines, with its own `make_shaped_array`) is
+deleted. The role-pun branch stays: it is role composition, not a built-in constructor. Left on #12423: folding
+`native_*_next_candidate` into the rows' handlers.
