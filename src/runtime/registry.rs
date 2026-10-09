@@ -362,6 +362,10 @@ pub(crate) struct Registry {
     pub(crate) class_trusts: CowTable<HashMap<String, Vec<String>>>,
     /// Per-class metaclass (`HOW`) value override.
     pub(crate) class_how_values: HashMap<String, Value>,
+    /// Roles whose declaration is running a method's `trait_mod:<is>` right
+    /// now. The role is not in `roles` yet, so `.HOW` on its `Package` would
+    /// fall through to `ClassHOW`; rakudo reports `ParametricRoleHOW`.
+    pub(crate) roles_in_trait_dispatch: Vec<String>,
     /// Type name -> the NATIVE `Perl6::Metamodel::*HOW` metaclass that type
     /// reports from `.HOW`. Populated when a type is minted at runtime through
     /// `Metamodel::<X>HOW.new_type(...)`: the metaclass the call was made on is
