@@ -746,7 +746,16 @@ impl Interpreter {
                                 coerced,
                             )
                         } else {
-                            Self::itemize_attr_store_value(sigil, coerced)
+                            // The attribute's type (a `subset` included) and
+                            // `where` clause hold for a blessed value as they
+                            // do for an assigned one, as in `.new`.
+                            let checked = self.check_attr_store_type(
+                                cn_resolved,
+                                &plan.class_attrs[i].name,
+                                sigil,
+                                coerced,
+                            )?;
+                            Self::itemize_attr_store_value(sigil, checked)
                         };
                         attributes.insert(plan.attr_syms[i], coerced)
                     }

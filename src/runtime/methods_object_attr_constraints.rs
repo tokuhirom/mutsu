@@ -182,7 +182,10 @@ impl Interpreter {
             if let Some(constraint) =
                 super::attribute_type_constraint(class_attrs_info, attr, &type_constraints)
                 && (constraint.starts_with(char::is_uppercase)
-                    || crate::qualified::is_type_capture(&constraint))
+                    || crate::qualified::is_type_capture(&constraint)
+                    // A user `subset` may be spelled lower-case (`bom-ref`);
+                    // only the native types (`int`, `str`) stay exempt.
+                    || self.is_subset_type_name(&constraint))
                 && let Some(value) = attrs.get(storage_key)
                 && !value.is_nil()
             {
