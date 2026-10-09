@@ -364,9 +364,9 @@ impl DispatchShape {
 const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 46] = [
     "sin", "cos", "tan", "sec", "cosec", "cotan", "sinh", "cosh", "tanh", "sech", "cosech",
     "cotanh", "asin", "acos", "atan", "asec", "acosec", "acotan", "asinh", "acosh", "atanh",
-    "asech", "acosech", "acotanh", "exp", "log", "log2", "log10", "sqrt", "cis", "atan2",
-    "roots", "unpolar", "abs", "sign", "floor", "ceiling", "truncate", "round", "is-prime",
-    "conj", "chr", "rand", "int", "uint", "byte",
+    "asech", "acosech", "acotanh", "exp", "log", "log2", "log10", "sqrt", "cis", "atan2", "roots",
+    "unpolar", "abs", "sign", "floor", "ceiling", "truncate", "round", "is-prime", "conj", "chr",
+    "rand", "int", "uint", "byte",
 ];
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned

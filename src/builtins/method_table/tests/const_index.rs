@@ -51,7 +51,8 @@ fn legacy() -> Legacy {
             continue;
         };
         for owner in mro.iter() {
-            if !shape.reaches_owner(owner.as_str()) && !shape.may_reach_audited_cool(owner.as_str()) {
+            if !shape.reaches_owner(owner.as_str()) && !shape.may_reach_audited_cool(owner.as_str())
+            {
                 continue;
             }
             for (idx, row) in all.iter().enumerate() {
