@@ -62,7 +62,7 @@ impl Interpreter {
     /// candidate matched, `Ok(None)` when there are no user candidates or none
     /// matched (caller falls through to the native ctor), and `Err` for a real
     /// error raised by the matched candidate.
-    fn try_augmented_builtin_new(
+    pub(super) fn try_augmented_builtin_new(
         &mut self,
         class_key: &str,
         args: &[Value],

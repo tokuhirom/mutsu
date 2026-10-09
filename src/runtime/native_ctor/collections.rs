@@ -2,7 +2,6 @@
 
 use super::CtorCall;
 use crate::runtime::*;
-use crate::symbol::Symbol;
 use crate::value::ValueView;
 
 impl Interpreter {

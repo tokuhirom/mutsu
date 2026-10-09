@@ -2,6 +2,7 @@
 
 use super::CtorCall;
 use crate::runtime::*;
+use crate::meta_ns::MetaNs;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
