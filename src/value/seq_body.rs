@@ -576,7 +576,7 @@ impl SeqBody {
             }
             std::mem::replace(&mut state.source, SeqSource::Taken)
         };
-        let (new_items, exhausted) = pull(&mut source)?;
+        let (new_items, exhausted) = without_pull_progress(pull(&mut source))?;
         let mut combined = self.live_generation().clone();
         combined.extend(new_items);
         // SAFETY: same reasoning as `pull_and_store` — no reference into
@@ -737,7 +737,8 @@ impl SeqBody {
             let mut state = self.core.state.lock().unwrap();
             std::mem::replace(&mut state.source, SeqSource::Taken)
         };
-        let items = self.after_pulled_prefix(&source, pull_source(&source, pull)?);
+        let items =
+            self.after_pulled_prefix(&source, without_pull_progress(pull_source(&source, pull))?);
         Ok((items, SeqTaken::Taken))
     }
 
@@ -865,7 +866,7 @@ impl SeqBody {
             source,
             SeqSource::Iterator(_) | SeqSource::IoLines { .. } | SeqSource::MapGrep { .. }
         ) {
-            pull(&source)?;
+            without_pull_progress(pull(&source))?;
         }
         Ok(())
     }
@@ -1135,7 +1136,7 @@ impl SeqBody {
             SeqSource::Iterator(iterator) => iterator.clone(),
             _ => return Ok(()),
         };
-        let new_items = pull(&iterator, needed - have)?;
+        let new_items = without_pull_progress(pull(&iterator, needed - have))?;
         let exhausted = new_items.len() < needed - have;
         if !new_items.is_empty() {
             let mut combined = self.live_generation().clone();
@@ -1287,6 +1288,17 @@ impl SeqSource {
 }
 
 /// Run `pull` over a deferred `source`, except a [`SeqSource::Pure`],
+/// A pull that does not put its source back on failure (a consuming read, a
+/// sink, a prefix pull) must not let the progress the loops attached travel
+/// on: an enclosing Seq's `pull_and_store` would take it for its own.
+// Cost: O(1).
+fn without_pull_progress<T>(result: Result<T, RuntimeError>) -> Result<T, RuntimeError> {
+    result.map_err(|mut e| {
+        e.take_seq_pull_progress();
+        e
+    })
+}
+
 /// which is cut here: it needs no interpreter.
 // Cost: a full pull of a `Pure` cursor (for a `Str` cursor O(n), n = bytes of
 // its string); otherwise `pull`'s cost.
