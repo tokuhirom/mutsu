@@ -823,7 +823,8 @@ impl Interpreter {
             // the write separately -- never across the `++` itself, which can
             // run user code (#11701).
             let root_cell_addr = crate::gc::Gc::as_ptr(&*arc) as usize;
-            let read_guard = crate::value::container_lock::ContainerStructGuard::acquire(root_cell_addr);
+            let read_guard =
+                crate::value::container_lock::ContainerStructGuard::acquire(root_cell_addr);
             let mut arc = arc.clone();
             loop {
                 let held = arc.lock().unwrap().clone();
@@ -866,7 +867,8 @@ impl Interpreter {
             // (#9488: `my Y @x` captured by `throws-like { @x[0]++ }`).
             self.check_incdec_element_type(&name, declared_constraint_incdec.as_deref(), &new_val)?;
             let mut updated = inner;
-            let _write_guard = crate::value::container_lock::ContainerStructGuard::acquire(root_cell_addr);
+            let _write_guard =
+                crate::value::container_lock::ContainerStructGuard::acquire(root_cell_addr);
             // Container identity (§3): write through the shared backing node.
             if updated
                 .with_hash_mut(|h| {
@@ -1081,7 +1083,7 @@ impl Interpreter {
         });
         let _cell_struct_guard = key_cell.as_ref().and_then(|c| {
             crate::value::container_lock::ContainerStructGuard::acquire(
-                crate::gc::Gc::as_ptr(c) as usize,
+                crate::gc::Gc::as_ptr(c) as usize
             )
         });
         let mut cell_guard = cell
