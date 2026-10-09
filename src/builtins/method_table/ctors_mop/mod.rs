@@ -9,6 +9,7 @@ use super::MethodRow;
 
 mod class_how;
 mod grammar;
+mod mu_base;
 
 /// The HOW classes whose rows answer a metamethod call, in lookup order.
 pub(crate) static MOP_OWNERS: &[&str] = &[
@@ -22,7 +23,7 @@ pub(crate) static MOP_OWNERS: &[&str] = &[
 ];
 
 /// Every family of this group.
-pub(super) static FAMILIES: &[&[MethodRow]] = &[class_how::ROWS, grammar::ROWS];
+pub(super) static FAMILIES: &[&[MethodRow]] = &[class_how::ROWS, grammar::ROWS, mu_base::ROWS];
 
 /// Whether a `Metamodel::*HOW` owner has a row named `method` at any arity a
 /// metamethod call carries (the type object plus up to two arguments).

@@ -392,7 +392,12 @@ impl Interpreter {
             .cloned()
             .unwrap_or_else(|| frame.invocant.clone());
         match method_name.as_str() {
-            "BUILDALL" | "POPULATE" => Some(Ok(invocant)),
+            "BUILDALL" | "POPULATE" => crate::builtins::method_table::invoke_owner_raw(
+                self,
+                &["Mu"],
+                &method_name,
+                std::slice::from_ref(&invocant),
+            ),
             "clone" => {
                 let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(frame_args);
                 self.native_instance_clone_value(&invocant, &args)
