@@ -60,6 +60,7 @@ mod subscript_adverb;
 mod substitution;
 mod symbolic_deref;
 mod temporize;
+mod thunk;
 mod type_args;
 mod type_call;
 mod type_ctor;

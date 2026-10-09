@@ -113,7 +113,19 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementAlso => super::role::lower_also(node),
         RakuAstClass::StatementWhenever => super::react::lower_whenever(node),
         RakuAstClass::StatementExpression => {
-            let mut statement = lower_stmt_inner(named_child(node, "expression")?)?;
+            // A statement that is exactly a bare block runs it once, here and
+            // now, even when it reads placeholders or `@_` / `%_` (`{ say $^a }`
+            // is then called with no arguments and dies "Too few positionals").
+            let expression = named_child(node, "expression")?;
+            if expression.class == RakuAstClass::Block
+                && !node
+                    .fields
+                    .iter()
+                    .any(|f| matches!(f.name, Some("loop-modifier" | "condition-modifier")))
+            {
+                return Ok(Stmt::Block(lower_block(expression)?));
+            }
+            let mut statement = lower_stmt_inner(expression)?;
             let loop_modifier = node.fields.iter().find(|f| f.name == Some("loop-modifier"));
             // A bare block modified by a `for` is the parser's block statement
             // (not the closure value a block with placeholders is elsewhere),
@@ -412,7 +424,8 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // A bare block in statement position runs once, here and now: it is
         // the parser's `Stmt::Block`, not a closure value. One that takes
         // arguments (placeholders, `@_`, `%_`) is a closure value even in
-        // statement position, so it keeps the expression path.
+        // statement position, so it keeps the expression path -- unless the
+        // statement is exactly the block (`lower_stmt`).
         RakuAstClass::Block => {
             let body = lower_block(node)?;
             if crate::ast::collect_placeholders_shallow(&body).is_empty()
@@ -759,8 +772,14 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     let block = named_child(node, "body")?;
     let mut explicit_zero_params = false;
+    // Both a Block and a PointyBlock wrap their statements in a `body` Blockoid.
+    let body = lower_block(block)?;
     let (param, param_def, params, params_def) = match block.class {
-        RakuAstClass::Block => (None, None, Vec::new(), Vec::new()),
+        // A bare block's placeholders (`for 1..8 { $^a + $^b }`) are its signature.
+        RakuAstClass::Block => match crate::parser::placeholder_loop_params(&body) {
+            Some((param, params)) => (param, None, params, Vec::new()),
+            None => (None, None, Vec::new(), Vec::new()),
+        },
         RakuAstClass::PointyBlock => {
             let (mut names, mut defs) = signature_positional_params(block)?;
             name_for_unpack_params(&mut names, &mut defs);
@@ -778,8 +797,6 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     // `<->`: every parameter is a writable container.
     let rw_block = block.class == RakuAstClass::PointyBlock && has_default_rw(block);
-    // Both a Block and a PointyBlock wrap their statements in a `body` Blockoid.
-    let body = lower_block(block)?;
     Ok(Stmt::For {
         iterable,
         param,
@@ -1158,10 +1175,11 @@ fn lower_phaser(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         kind,
         body,
         condition: None,
-        // A RakuAST tree is lowered and run at run time, like an `EVAL`, so
-        // its ENDs install where execution reaches them rather than at a
-        // source position of the main compunit.
-        end_index: None,
+        // A hand-built RakuAST tree is lowered and run at run time, like an
+        // `EVAL`, so its ENDs install where execution reaches them rather than
+        // at a source position of the main compunit. One converted from the
+        // parser's tree keeps its number (see `origin`).
+        end_index: super::origin::end_index_of(node),
     })
 }
 
@@ -3940,6 +3958,11 @@ fn regex_execution_value(tree: &RegexTree) -> Result<Value, RuntimeError> {
 }
 
 pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    // The priming scope the parser planted here (see `thunk`).
+    if super::thunk::is_thunk(node) {
+        let body = lower_expr(&super::thunk::unmark(node))?;
+        return Ok(Expr::WhateverCurry(Box::new(body)));
+    }
     // `⚛$x`, `$x ⚛= 5`, `$x⚛++`, ...: plain operator nodes, the parser's calls.
     if let Some(call) = super::atomic_op::lower(node) {
         return call;
