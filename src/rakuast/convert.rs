@@ -502,6 +502,14 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let decl = crate::ast::sigilless_decl::declaration(stmt).expect("just checked");
             Ok(Some(statement_expression(term_declaration(&decl)?)))
         }
+        // `my $x = 1 and 2` / `my $x = 1, 2, 3`: the declaration and the tail the
+        // parser re-attaches to it are one expression.
+        Stmt::SyntheticBlock(_) if crate::ast::decl_tail::recognize(stmt).is_some() => {
+            match super::decl_tail::convert(stmt) {
+                Some(node) => Ok(Some(statement_expression(node?))),
+                None => Err(unsupported("a declaration with a loose tail")),
+            }
+        }
         // A binding declaration (`my $x := …`, `my @a := …`, `my %h := …`):
         // the statement is exactly `ast::bind_decl::expand`'s form of the
         // declaration inside it.
@@ -2558,7 +2566,7 @@ pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bo
 }
 
 /// The `expression` of a `Statement::Expression` node.
-fn expression_of(statement: &RakuAstNode) -> Option<RakuAstNode> {
+pub(super) fn expression_of(statement: &RakuAstNode) -> Option<RakuAstNode> {
     statement
         .fields
         .iter()
@@ -6213,7 +6221,7 @@ fn anonymous_declaration(sigil: &str, initializer: Option<RakuAstNode>) -> RakuA
 /// 2026.09 renders it; a dynamic one (`$*x`, named `*x` by the parser) is a
 /// `Var::Dynamic` of the whole spelling; anything else is a `Var::Lexical` of
 /// the whole spelling.
-fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
+pub(super) fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
     // A bare `$` / `@` / `%` is the anonymous declaration itself.
     if (sigil == "$" && crate::ast::anon_state::is_scalar(name))
         || (sigil == "@" && crate::ast::anon_state::is_array(name))

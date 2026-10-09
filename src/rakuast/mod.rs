@@ -21,6 +21,7 @@ mod contextualizer;
 mod convert;
 mod core_term_names;
 mod core_type_names;
+mod decl_tail;
 mod decl_traits;
 mod declared_routines;
 mod dynamic_method;
