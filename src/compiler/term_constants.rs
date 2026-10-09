@@ -59,9 +59,7 @@ impl Compiler {
             }
             _ => {
                 if !self.sigilless_locals.contains(name) {
-                    self.code
-                        .shadowed_sigilless_reads
-                        .push(name.to_string());
+                    self.code.shadowed_sigilless_reads.push(name.to_string());
                 }
                 self.code.emit(OpCode::GetGlobal(name_idx));
             }
