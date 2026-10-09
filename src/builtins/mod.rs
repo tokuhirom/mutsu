@@ -121,6 +121,7 @@ pub(crate) use methods_narg::{
     native_contains_with_options, native_method_1arg, native_method_2arg,
     native_prefix_suffix_with_options, native_substr_eq_with_options, pair_key_value,
     read_f32_endian, read_f64_endian, read_int_value, resolve_buf_index,
+    validate_list_item_directives,
 };
 pub(crate) use unicode::{samecase_string, samemark_string};
 

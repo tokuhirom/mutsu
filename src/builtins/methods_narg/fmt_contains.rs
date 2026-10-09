@@ -38,15 +38,31 @@ pub(crate) fn pair_key_value(val: &Value) -> Option<(Value, Value)> {
     }
 }
 
-/// Format a single value or a pair for `.fmt()`.
-/// If the value is a Pair, format with two args (key, value).
-/// Otherwise, format as a single arg.
-pub(crate) fn fmt_single_or_pair(fmt: &str, item: &Value) -> String {
-    if let Some((k, v)) = pair_key_value(item) {
-        runtime::format_sprintf_args(fmt, &[k, v])
-    } else {
-        runtime::format_sprintf(fmt, Some(item))
-    }
+/// Format one item of a `List.fmt` for `.fmt()`. As in Rakudo, every item
+/// (a Pair included) is one `sprintf` argument, and a directive count other
+/// than one raises a plain `X::AdHoc` carrying the count message.
+// Cost: O(f + n), f = chars of the format, n = chars of the rendered value.
+pub(crate) fn fmt_list_item(fmt: &str, item: &Value) -> Result<String, RuntimeError> {
+    validate_list_item_directives(fmt)?;
+    Ok(runtime::format_sprintf(fmt, Some(item)))
+}
+
+/// The one-argument directive check of [`fmt_list_item`].
+// Cost: O(f), f = chars of the format.
+pub(crate) fn validate_list_item_directives(fmt: &str) -> Result<(), RuntimeError> {
+    runtime::sprintf::validate_sprintf_directives(fmt, 1).map_err(|e| {
+        let is_count = e.exception.as_ref().is_some_and(|x| {
+            matches!(x.view(), ValueView::Instance { class_name, .. }
+                if class_name.resolve() == "X::Str::Sprintf::Directives::Count")
+        });
+        if is_count {
+            // Rakudo's `List.fmt` dies with this short, unwrapped message.
+            let first = e.message.lines().next().unwrap_or_default();
+            RuntimeError::new(format!("{first} supplied"))
+        } else {
+            e
+        }
+    })
 }
 
 /// `.contains($needle, $pos?, :i/:ignorecase/:m/:ignoremark?)` on a `Str` receiver —
@@ -253,6 +269,9 @@ pub(crate) fn fmt_native(target: &Value, args: &[Value]) -> Option<Result<Value,
             if has_directives && (fmt_value_needs_coercion(&k) || fmt_value_needs_coercion(&v)) {
                 return None;
             }
+            if let Err(e) = runtime::sprintf::validate_sprintf_directives(&fmt, 2) {
+                return Some(Err(e));
+            }
             Some(Ok(Value::str(runtime::format_sprintf_args(&fmt, &[k, v]))))
         }
         _ if fmt_joinable_target(target) => {
@@ -271,17 +290,21 @@ pub(crate) fn fmt_native(target: &Value, args: &[Value]) -> Option<Result<Value,
             {
                 return None;
             }
-            join(
-                items
-                    .iter()
-                    .map(|item| fmt_single_or_pair(&fmt, item))
-                    .collect(),
-                " ",
-            )
+            match items
+                .iter()
+                .map(|item| fmt_list_item(&fmt, item))
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(parts) => join(parts, " "),
+                Err(e) => Some(Err(e)),
+            }
         }
         _ if sep.is_none() => {
             if has_directives && fmt_value_needs_coercion(target) {
                 return None;
+            }
+            if let Err(e) = runtime::sprintf::validate_sprintf_directives(&fmt, 1) {
+                return Some(Err(e));
             }
             Some(Ok(Value::str(runtime::format_sprintf(&fmt, Some(target)))))
         }

@@ -315,6 +315,7 @@ impl Interpreter {
             }
             _ => {
                 if let Some((k, v)) = crate::builtins::pair_key_value(target) {
+                    super::sprintf::validate_sprintf_directives(&fmt, 2)?;
                     return Ok(Value::str(format_pair(self, k, v)?));
                 }
                 if crate::builtins::fmt_joinable_target(target) {
@@ -324,16 +325,12 @@ impl Interpreter {
                     };
                     let mut parts = Vec::with_capacity(items.len());
                     for item in items {
-                        let rendered = if let Some((k, v)) = crate::builtins::pair_key_value(&item)
-                        {
-                            format_pair(self, k, v)?
-                        } else {
-                            format_one(self, item)?
-                        };
-                        parts.push(rendered);
+                        crate::builtins::validate_list_item_directives(&fmt)?;
+                        parts.push(format_one(self, item)?);
                     }
                     return Ok(Value::str(parts.join(" ")));
                 }
+                super::sprintf::validate_sprintf_directives(&fmt, 1)?;
                 Ok(Value::str(format_one(self, target.clone())?))
             }
         })())
