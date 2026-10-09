@@ -1148,12 +1148,14 @@ pub(crate) enum Expr {
     HyperWhatever,
     BareWord(String),
     /// A function call that the parser resolved to a user-declared or imported
-    /// routine shadowing a container listop.  This parse-time resolution must
+    /// routine shadowing a builtin call. This parse-time resolution must
     /// survive until compilation because the parser's lexical scope stack no
     /// longer exists when the compiler runs.
     UserRoutineCall {
         name: Symbol,
         args: Vec<Expr>,
+        /// Whether source omitted parentheses around the arguments.
+        listop: bool,
     },
     StringInterpolation(Vec<Expr>),
     /// Deferred heredoc interpolation: stores raw content to be interpolated

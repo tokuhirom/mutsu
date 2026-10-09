@@ -1522,7 +1522,7 @@ pub(crate) fn expression_source(expr: &crate::ast::Expr) -> Option<String> {
             expression_source(else_expr)?
         )),
         crate::ast::Expr::Call { name, args, .. }
-        | crate::ast::Expr::UserRoutineCall { name, args } => {
+        | crate::ast::Expr::UserRoutineCall { name, args, .. } => {
             Some(format!("{}({})", name.resolve(), join_args(args)?))
         }
         // A lexical callable invocation (`&name(args)` / `$callable(args)`)

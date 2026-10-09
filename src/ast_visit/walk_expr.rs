@@ -43,7 +43,7 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
         | Expr::RoutineMagic
         | Expr::BlockMagic => {}
         Expr::BareWord(name) => v.visit_name(name, NameKind::Term),
-        Expr::UserRoutineCall { name, args } => {
+        Expr::UserRoutineCall { name, args, .. } => {
             v.visit_name(name.as_str(), NameKind::UserRoutineCall);
             exprs(v, args);
         }

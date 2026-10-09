@@ -1484,27 +1484,22 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         }
         "die" | "fail" => {
             let (r, _) = ws(rest)?;
-            let sym_name = Symbol::intern(&name);
             // die/fail with no argument
             if r.starts_with(';') || r.is_empty() || r.starts_with('}') || r.starts_with(')') {
-                return Ok((
-                    r,
-                    Expr::Call {
-                        name: sym_name,
-                        args: vec![],
-                        listop: !rest.starts_with('('),
-                    },
-                ));
+                let call = if rest.starts_with('(') {
+                    make_call_expr(name, input, vec![])
+                } else {
+                    make_listop_expr(name, input, vec![])
+                };
+                return Ok((r, call));
             }
             let (r, arg) = expression(r)?;
-            return Ok((
-                r,
-                Expr::Call {
-                    name: sym_name,
-                    args: vec![arg],
-                    listop: !rest.starts_with('('),
-                },
-            ));
+            let call = if rest.starts_with('(') {
+                make_call_expr(name, input, vec![arg])
+            } else {
+                make_listop_expr(name, input, vec![arg])
+            };
+            return Ok((r, call));
         }
         "quietly" => {
             let (r, _) = ws(rest)?;

@@ -86,13 +86,18 @@ pub(crate) fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr
     if (matches!(
         name.as_str(),
         "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
-    ) || name == "caller")
+    ) || name == "caller"
+        || matches!(
+            name.as_str(),
+            "say" | "put" | "print" | "note" | "die" | "fail"
+        ))
         && (crate::parser::stmt::simple::is_imported_function(&name)
             || crate::parser::stmt::simple::is_user_declared_sub(&name))
     {
         return Expr::UserRoutineCall {
             name: Symbol::intern(&name),
             args: call_args,
+            listop: false,
         };
     }
     Expr::Call {
@@ -107,6 +112,11 @@ pub(crate) fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr
 pub(crate) fn make_listop_expr(name: String, input: &str, args: Vec<Expr>) -> Expr {
     match make_call_expr(name, input, args) {
         Expr::Call { name, args, .. } => Expr::Call {
+            name,
+            args,
+            listop: true,
+        },
+        Expr::UserRoutineCall { name, args, .. } => Expr::UserRoutineCall {
             name,
             args,
             listop: true,

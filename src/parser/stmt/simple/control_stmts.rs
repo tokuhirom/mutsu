@@ -966,6 +966,7 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     {
         Stmt::Expr(Expr::UserRoutineCall {
             name: Symbol::intern(&name),
+            listop,
             args: args
                 .into_iter()
                 .filter_map(|arg| match arg {

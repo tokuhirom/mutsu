@@ -453,7 +453,7 @@ pub enum RakuAstClass {
     // An argument-less core `use` pragma (`use strict`, `use fatal`, ...).
     Pragma,
     StatementUse,
-    // `require Module;` -- model only; lowering is #7564.
+    // `require Module;` as a model node and a lowered statement.
     StatementRequire,
     // `need Module;` / `import Module :tag;`.
     StatementNeed,
