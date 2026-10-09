@@ -396,6 +396,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         // with as `.expression`, which mutsu stores as the node's single
         // positional field.
         StatementModifierFor
+        | StatementModifierWhile
+        | StatementModifierUntil
         | StatementModifierGiven
         | StatementModifierIf
         | StatementModifierUnless
@@ -460,6 +462,8 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         ContextualizerHash | ContextualizerItem | ContextualizerList => "target",
         ColonPairTrue | ColonPairFalse => "key",
         StatementModifierFor
+        | StatementModifierWhile
+        | StatementModifierUntil
         | StatementModifierGiven
         | StatementModifierIf
         | StatementModifierUnless

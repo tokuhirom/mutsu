@@ -643,12 +643,39 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             body,
             label,
             is_until,
+            is_statement_modifier,
             ..
         } => {
             // mutsu stores `until X` as `while !X` PLUS an `is_until` flag, so
             // the source keyword is recoverable: raku has a `Loop::Until` class
             // and renders the *undecorated* condition, so the `!` the parser
             // added is stripped back off.
+            if *is_statement_modifier && label.is_none() {
+                let mut real = body.iter().filter(|s| !matches!(s, Stmt::SetLine(_)));
+                if let (Some(modified), None) = (real.next(), real.next()) {
+                    let mut statement = convert_stmt(modified)?
+                        .ok_or_else(|| unsupported("empty while/until modifier body"))?;
+                    statement.fields.push(node_field(
+                        Some("loop-modifier"),
+                        RakuAstNode {
+                            class: if *is_until {
+                                RakuAstClass::StatementModifierUntil
+                            } else {
+                                RakuAstClass::StatementModifierWhile
+                            },
+                            fields: vec![node_field(
+                                None,
+                                convert_expr(if *is_until {
+                                    strip_negation(cond)?
+                                } else {
+                                    cond
+                                })?,
+                            )],
+                        },
+                    ));
+                    return Ok(Some(statement));
+                }
+            }
             let mut fields = label_fields(label);
             fields.push(node_field(
                 Some("condition"),

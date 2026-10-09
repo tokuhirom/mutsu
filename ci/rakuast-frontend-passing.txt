@@ -2,6 +2,7 @@
 # a file because it regressed -- fix the regression.
 # stops passing. Grow it with `scripts/rakuast-frontend.sh update`; never remove
 # t/ files that pass under MUTSU_RAKUAST=1 (ADR-10723 Stage 0, #10733).
+t/collections/array/append-deferred-seq-arg.t
 t/collections/array/array-agnostic.t
 t/collections/array/array-append-itemized-hash.t
 t/collections/array/array-append-range.t
@@ -491,6 +492,7 @@ t/collections/set-bag-mix/bag-mix-numeric.t
 t/collections/set-bag-mix/bag-set-mix-flatten-seq.t
 t/collections/set-bag-mix/baggy-hash-type.t
 t/collections/set-bag-mix/baggy-subclass-add.t
+t/collections/set-bag-mix/baggy-subclass-mutator-deferral.t
 t/collections/set-bag-mix/baghash-add-remove.t
 t/collections/set-bag-mix/baghash-mutator-rows.t
 t/collections/set-bag-mix/baghash-subclass-add-remove.t
@@ -1068,6 +1070,7 @@ t/concurrency/supply/whenever-tap-close-ordering.t
 t/concurrency/supply/whenever-typed-pointy-param.t
 t/concurrency/supply/whenever-user-supply-coercion.t
 t/concurrency/thread-lock/array-alias-after-thread.t
+t/concurrency/thread-lock/atomic-cas-read-type-guards.t
 t/concurrency/thread-lock/atomic-cell-shape-refusal-symmetry.t
 t/concurrency/thread-lock/atomic-compound-assign-element.t
 t/concurrency/thread-lock/atomic-container-lane-read-gate.t
@@ -1161,6 +1164,7 @@ t/concurrency/thread-lock/worker-thread-array-push-visible-to-lexical-sub.t
 t/control/bare-block-args-underscore-not-topic.t
 t/control/bare-block-caller-topic-rw.t
 t/control/bare-block-followed-by-word-infix.t
+t/control/bare-block-for-statement-modifier.t
 t/control/bare-block-infix-operand.t
 t/control/begin-compile-time.t
 t/control/begin-forward-call-undeclared.t
@@ -1198,6 +1202,7 @@ t/control/block-scope-env-tier.t
 t/control/block-scope-recursion-decl-leak.t
 t/control/block-scope-registry-skip.t
 t/control/block-use-main-declared-after.t
+t/control/block-value-while-until-modifiers.t
 t/control/block-valued-sigilless-declaration-boundary.t
 t/control/block-vs-sub-what.t
 t/control/check-phaser-sees-earlier-constants.t
@@ -2953,6 +2958,7 @@ t/oo/attribute/attribute-sigil-collision.t
 t/oo/attribute/attribute-table.t
 t/oo/attribute/attribute-trait-adds-method.t
 t/oo/attribute/attribute-trait-any-order.t
+t/oo/attribute/attribute-trait-arg-declared-later-in-composing-class.t
 t/oo/attribute/attribute-trait-compose-sees-later-methods.t
 t/oo/attribute/attribute-trait-core-candidate-redispatch.t
 t/oo/attribute/attribute-trait-mixin-visible-to-compose-hook.t
@@ -3658,6 +3664,7 @@ t/oo/role/mro-excludes-composed-roles.t
 t/oo/role/mro-roles-last-declared-first.t
 t/oo/role/multi-method-nested-role-narrowness.t
 t/oo/role/multi-method-roles.t
+t/oo/role/multi-subset-param-vs-unrelated-role-param-narrowness.t
 t/oo/role/my-role-compound-name-qualification.t
 t/oo/role/my-role-in-role.t
 t/oo/role/nested-class-runs-role-body-at-compile-time.t
@@ -4164,6 +4171,7 @@ t/rakuast/rakuast-variable-does-trait.t
 t/rakuast/rakuast-whatever-code.t
 t/rakuast/rakuast-when-modifier.t
 t/rakuast/rakuast-where-parameter.t
+t/rakuast/rakuast-while-until-modifier.t
 t/rakuast/rakuast-with-pointy-block.t
 t/rakuast/rakuast-with-without-block.t
 t/rakuast/rakuast-with-without-modifier.t
@@ -5020,6 +5028,7 @@ t/routines/eval-return-target-needs-a-real-routine.t
 t/routines/eval-routine-magical-outside-routine.t
 t/routines/eval-sub-shadows-outer-routine.t
 t/routines/for-block-placeholders.t
+t/routines/for-modifier-placeholder-scope.t
 t/routines/for-values-routine-aliases-containers.t
 t/routines/gather-infinite-coroutine.t
 t/routines/generic-where.t
@@ -5065,6 +5074,7 @@ t/routines/placeholder-nested-block-scope.t
 t/routines/placeholder-outer-alias-writeback.t
 t/routines/placeholder-rejects-unexpected-named.t
 t/routines/placeholder-scope-all-positions.t
+t/routines/placeholder-scope-loop-condition.t
 t/routines/placeholder-sub-rejects-extra-positionals.t
 t/routines/placeholder.t
 t/routines/process-stash-routine-symbols.t
