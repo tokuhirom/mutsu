@@ -26,4 +26,4 @@ ok (**).WHAT.raku eq 'HyperWhatever', '** creates HyperWhatever';
 
 # X::Cannot::New for types that cannot be instantiated
 dies-ok { HyperWhatever.new }, 'HyperWhatever.new throws';
-dies-ok { Whatever.new }, 'Whatever.new throws';
+isa-ok Whatever.new, Whatever, 'Whatever.new constructs a Whatever';
