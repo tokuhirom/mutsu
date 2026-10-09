@@ -659,9 +659,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 .unwrap_or_default()
         }
         // An `is Pair` subclass gists as its Pair payload.
-        ValueView::Instance { attributes, .. }
-            if attributes.contains_key("__mutsu_pair_value") =>
-        {
+        ValueView::Instance { attributes, .. } if attributes.contains_key("__mutsu_pair_value") => {
             attributes
                 .as_map()
                 .get("__mutsu_pair_value")

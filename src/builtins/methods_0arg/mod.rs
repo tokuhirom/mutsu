@@ -426,8 +426,22 @@ pub(crate) fn native_method_0arg_cascade(
         && let Some(inner) = attributes.as_map().get("__mutsu_pair_value")
         && matches!(
             method,
-            "key" | "value" | "kv" | "keys" | "values" | "antipair" | "invert" | "pairs"
-                | "elems" | "List" | "Slip" | "Hash" | "Map" | "Bool" | "Numeric" | "Int"
+            "key"
+                | "value"
+                | "kv"
+                | "keys"
+                | "values"
+                | "antipair"
+                | "invert"
+                | "pairs"
+                | "elems"
+                | "List"
+                | "Slip"
+                | "Hash"
+                | "Map"
+                | "Bool"
+                | "Numeric"
+                | "Int"
         )
     {
         return native_method_0arg(inner, method_sym);
