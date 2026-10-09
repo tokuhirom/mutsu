@@ -149,19 +149,22 @@ fn expr_stmt_parses_reverse_assignment_into_var_decl() {
     let (rest, stmt) = simple::expr_stmt("1 R= my $x").unwrap();
     assert_eq!(rest, "");
     // The written `1 R= my $x` is kept as a marker; its expansion declares `$x`.
-    let Stmt::Expr(Expr::CompoundAssign { op, expanded, .. }) = stmt else {
-        panic!("expected a reverse-assignment marker, got {stmt:?}");
-    };
-    assert_eq!(op, "R==");
-    let Expr::DoStmt(declared) = *expanded else {
-        panic!("expected the declaration, got {expanded:?}");
-    };
-    match *declared {
-        Stmt::VarDecl { name, expr, .. } => {
-            assert_eq!(name, "x");
-            assert!(matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(1))));
+    match stmt {
+        Stmt::Expr(Expr::CompoundAssign { op, expanded, .. }) if op == "R==" => {
+            match expanded.as_ref() {
+                Expr::DoStmt(declared) => match declared.as_ref() {
+                    Stmt::VarDecl { name, expr, .. } => {
+                        assert_eq!(name, "x");
+                        assert!(
+                            matches!(expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(1)))
+                        );
+                    }
+                    other => panic!("expected VarDecl, got {other:?}"),
+                },
+                other => panic!("expected the declaration, got {other:?}"),
+            }
         }
-        other => panic!("expected VarDecl, got {other:?}"),
+        other => panic!("expected a reverse-assignment marker, got {other:?}"),
     }
 }
 

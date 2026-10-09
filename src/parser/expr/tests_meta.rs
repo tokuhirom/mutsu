@@ -354,13 +354,14 @@ fn parse_reverse_meta_compound_assign_rhs_target() {
     // `short_circuit_compound_assign_expr`), so the reverse metaop distributes
     // itself into that ternary's branches rather than producing one assignment.
     // The written `10 R+= (...)` is kept as a marker over that expansion.
-    let Expr::CompoundAssign { op, expanded, .. } = expr else {
-        panic!("expected a reverse-assignment marker, got {expr:?}");
-    };
-    assert_eq!(op, "R+=");
     assert!(matches!(
-        *expanded,
-        Expr::DoBlock { .. } | Expr::AssignExpr { .. } | Expr::Ternary { .. }
+        &expr,
+        Expr::CompoundAssign { op, expanded, .. }
+            if op == "R+="
+                && matches!(
+                    expanded.as_ref(),
+                    Expr::DoBlock { .. } | Expr::AssignExpr { .. } | Expr::Ternary { .. }
+                )
     ));
 }
 
@@ -368,11 +369,11 @@ fn parse_reverse_meta_compound_assign_rhs_target() {
 fn parse_reverse_meta_compound_assign_non_lvalue_target() {
     let (rest, expr) = expression("($a ||= 42) R+= 10").unwrap();
     assert_eq!(rest, "");
-    let Expr::CompoundAssign { op, expanded, .. } = expr else {
-        panic!("expected a reverse-assignment marker, got {expr:?}");
-    };
-    assert_eq!(op, "R+=");
-    assert!(matches!(*expanded, Expr::DoBlock { .. }));
+    assert!(matches!(
+        &expr,
+        Expr::CompoundAssign { op, expanded, .. }
+            if op == "R+=" && matches!(expanded.as_ref(), Expr::DoBlock { .. })
+    ));
 }
 
 #[test]
