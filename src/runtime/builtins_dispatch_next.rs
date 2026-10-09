@@ -54,9 +54,6 @@ enum NativeBase {
     GrammarParse,
     GrammarBuiltinRule,
     MuBase,
-    ArrayStorage,
-    HashStorage,
-    BaggyStorage,
     Metamodel,
 }
 
@@ -69,18 +66,7 @@ const NATIVE_BASE_EXHAUSTED: &[NativeBase] = &[
 ];
 
 /// A multi method's candidates are exhausted.
-const NATIVE_BASE_MULTI: &[NativeBase] = &[
-    NativeBase::GrammarBuiltinRule,
-    NativeBase::BaggyStorage,
-    NativeBase::HashStorage,
-    NativeBase::ArrayStorage,
-];
-
-/// A method that pushed no dispatch frame of its own.
-const NATIVE_BASE_NO_FRAME: &[NativeBase] = &[
-    NativeBase::ArrayStorage,
-    NativeBase::HashStorage,
-];
+const NATIVE_BASE_MULTI: &[NativeBase] = &[NativeBase::GrammarBuiltinRule];
 
 impl Interpreter {
     /// Return the built-in implementation of an infix operator for the final
@@ -142,9 +128,6 @@ impl Interpreter {
                 NativeBase::GrammarParse => self.native_grammar_parse_next_candidate(override_args),
                 NativeBase::GrammarBuiltinRule => self.native_grammar_builtin_rule_next_candidate(),
                 NativeBase::MuBase => self.native_mu_base_next_candidate(override_args),
-                NativeBase::ArrayStorage => self.native_array_storage_next_candidate(override_args),
-                NativeBase::HashStorage => self.native_hash_storage_next_candidate(override_args),
-                NativeBase::BaggyStorage => self.native_baggy_storage_next_candidate(override_args),
                 NativeBase::Metamodel => self.native_metamodel_next_candidate(override_args),
             };
             if res.is_some() {
@@ -1802,20 +1785,6 @@ impl Interpreter {
                 }
                 return Ok(result);
             }
-        }
-        // A method invoked through a direct path without a method dispatch
-        // frame can still reach this fallback: an `is Array`/`is Hash`
-        // subclass's Positional/Associative override, a `gist`/`Str`/`raku`
-        // override, a role mixed directly into a native builtin value, or a
-        // method `augment`ed onto a core type.
-        if let Some(res) =
-            self.native_base_next_candidate(NATIVE_BASE_NO_FRAME, override_args.as_deref())
-        {
-            let result = res?;
-            if tail_call {
-                return Err(RuntimeError::return_signal(result));
-            }
-            return Ok(result);
         }
         // If we're inside a method but there's simply no next candidate in the MRO,
         // return Nil (this is the Raku behavior for callsame/callwith at the end of
