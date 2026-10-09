@@ -463,6 +463,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // `use` / `no` statements (see `use_stmt`).
         RakuAstClass::Pragma => super::use_stmt::lower_pragma(node),
         RakuAstClass::StatementUse => super::use_stmt::lower_use(node),
+        RakuAstClass::StatementRequire => Ok(Stmt::Expr(super::use_stmt::lower_require(node)?)),
         RakuAstClass::StatementNeed => super::use_stmt::lower_need(node),
         RakuAstClass::StatementImport => super::use_stmt::lower_import(node),
         RakuAstClass::StatementLanguageVersion => super::use_stmt::lower_language_version(node),
@@ -570,7 +571,8 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses
             if call_name_str(node).is_ok_and(|n| {
                 SHADOWABLE_STATEMENTS.contains(&n.as_str())
-                    && super::declared_routines::is_declared(&n)
+                    && (super::declared_routines::is_declared(&n)
+                        || super::declared_routines::is_user_call(node))
             }) =>
         {
             Ok(Stmt::Expr(lower_expr(node)?))
@@ -2824,11 +2826,20 @@ fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }
         crate::parser::stamp_call_site_markers(&name, line, &mut args);
     }
-    Ok(Expr::Call {
-        name: crate::symbol::Symbol::intern(&name),
-        args,
-        listop: false,
-    })
+    let name = crate::symbol::Symbol::intern(&name);
+    if super::declared_routines::is_user_call(node) {
+        Ok(Expr::UserRoutineCall {
+            name,
+            args,
+            listop: node.class == RakuAstClass::CallNameWithoutParentheses,
+        })
+    } else {
+        Ok(Expr::Call {
+            name,
+            args,
+            listop: false,
+        })
+    }
 }
 
 /// The lowered positional arguments of a call node's `args` (`ArgList`) child, or
@@ -4927,6 +4938,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             Ok(Expr::PseudoStash(stash))
         }
         RakuAstClass::CallName | RakuAstClass::CallNameWithoutParentheses => lower_named_call(node),
+        RakuAstClass::StatementRequire => super::use_stmt::lower_require(node),
         // A comma list `1, 2, 3` (or parenthesised `(1, 2, 3)`) -> ApplyListInfix
         // with a `,` infix. `andthen` / `orelse` / `notandthen` are list infixes
         // in raku too, but mutsu keeps them as ordinary left-nested `Binary`

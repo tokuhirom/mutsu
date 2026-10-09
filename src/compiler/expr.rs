@@ -692,7 +692,7 @@ impl Compiler {
                     self.compile_expr_call(name, args);
                 }
             }
-            Expr::UserRoutineCall { name, args } => {
+            Expr::UserRoutineCall { name, args, .. } => {
                 self.compile_expr_user_routine_call(name, args);
             }
             // A contextualizer is the `.item` / `.list` / `.hash` call rakudo

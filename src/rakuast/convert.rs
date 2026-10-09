@@ -224,7 +224,14 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         {
             convert_stmt(inner)
         }
-        Stmt::Expr(e) => Ok(Some(statement_expression(convert_expr(e)?))),
+        Stmt::Expr(e) => {
+            let node = convert_expr(e)?;
+            if node.class == RakuAstClass::StatementRequire {
+                Ok(Some(node))
+            } else {
+                Ok(Some(statement_expression(node)))
+            }
+        }
         Stmt::TokenDecl {
             name,
             params,
@@ -2938,8 +2945,16 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::RegexLiteral { tree, .. } | Expr::MatchRegexTree { tree, .. } => {
             quoted_regex_node(tree)
         }
-        Expr::Call { name, args, .. } | Expr::UserRoutineCall { name, args } => {
-            let listop = matches!(expr, Expr::Call { listop: true, .. });
+        Expr::Call { name, args, .. } | Expr::UserRoutineCall { name, args, .. } => {
+            if name.as_str() == "require"
+                && let Some(require) = super::use_stmt::convert_require(args)
+            {
+                return Ok(require);
+            }
+            let listop = matches!(
+                expr,
+                Expr::Call { listop: true, .. } | Expr::UserRoutineCall { listop: true, .. }
+            );
             if let Some(prefix) = super::prefix_call::convert(name.as_str(), args) {
                 return prefix;
             }
@@ -2973,7 +2988,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     fields,
                 });
             }
-            Ok(call_name(name.as_str(), args, listop)?)
+            let mut node = call_name(name.as_str(), args, listop)?;
+            if matches!(expr, Expr::UserRoutineCall { .. }) {
+                node.fields
+                    .push(super::declared_routines::user_call_field());
+            }
+            Ok(node)
         }
         Expr::Var(name) => {
             if let Some(capture) = super::match_vars::convert_positional(name) {
@@ -3346,7 +3366,14 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                         "RakuAST: `.AST` does not yet support this construct: {stmt:?}"
                     ))
                 })?,
-                other => statement_expression(convert_expr(other)?),
+                other => {
+                    let node = convert_expr(other)?;
+                    if node.class == RakuAstClass::StatementRequire {
+                        node
+                    } else {
+                        statement_expression(node)
+                    }
+                }
             };
             let semilist = RakuAstNode {
                 class: RakuAstClass::SemiList,

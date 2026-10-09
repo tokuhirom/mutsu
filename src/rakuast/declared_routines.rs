@@ -5,7 +5,9 @@
 //! builtin `take` statement, and a declared sub makes a bare `foo` a call with
 //! a call-site marker. The node says only that a name is called, so lowering
 //! re-derives the choice from the declarations the unit holds: a named `sub`, a
-//! `my &name` and a `&name` parameter.
+//! `my &name` and a `&name` parameter. A parser-resolved call of an imported
+//! routine carries a hidden field, because the import's lexical scope is gone
+//! after parsing and cannot be reconstructed from its printed call node.
 //!
 //! The scan ignores scoping (a declaration anywhere in the unit counts), which
 //! is the same approximation `shadowed_terms` makes for the math constants.
@@ -15,11 +17,37 @@ use std::collections::HashSet;
 
 use super::lower::{call_name_str, leaf_str};
 use super::name_parts::{self, NameShape};
-use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
+use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
+use crate::value::Value;
 use crate::value::ValueView;
 
 thread_local! {
     static DECLARED: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+}
+
+/// The parser's decision that this call targets a user or imported routine.
+/// RakuAST's printed call has no field for that choice, but lowering must not
+/// reclassify it as a builtin after the parser's lexical import scope is gone.
+const USER_CALL: &str = "source-user-routine";
+
+// Cost: O(1).
+pub(super) fn user_call_field() -> RakuAstField {
+    RakuAstField {
+        name: Some(USER_CALL),
+        value: RakuAstFieldValue::Node(Value::TRUE),
+    }
+}
+
+// Cost: O(f), f = fields of the call node.
+pub(super) fn is_user_call(node: &RakuAstNode) -> bool {
+    node.fields
+        .iter()
+        .any(|field| field.name == Some(USER_CALL))
+}
+
+// Cost: O(1).
+pub(super) fn is_user_call_field(field: &RakuAstField) -> bool {
+    field.name == Some(USER_CALL)
 }
 
 /// Record the routine names `root` declares, replacing the previous unit's.

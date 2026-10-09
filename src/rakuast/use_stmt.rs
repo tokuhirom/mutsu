@@ -17,6 +17,7 @@ use super::lower::{leaf_str, list_field, lower_expr, named_child, positional_lea
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, Stmt};
+use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The core pragmas that rakudo represents as `RakuAST::Pragma`.
@@ -100,6 +101,38 @@ pub(super) fn convert_need(module: &str) -> RakuAstNode {
             )))]),
         }],
     }
+}
+
+/// A statically named `require` keeps its package target through the round trip.
+// Cost: O(1).
+pub(super) fn convert_require(args: &[Expr]) -> Option<RakuAstNode> {
+    let [Expr::Literal(target)] = args else {
+        return None;
+    };
+    let ValueView::Package(module) = target.view() else {
+        return None;
+    };
+    Some(RakuAstNode {
+        class: RakuAstClass::StatementRequire,
+        fields: vec![node_field(
+            Some("module-name"),
+            name_from_identifier(&module.resolve()),
+        )],
+    })
+}
+
+/// Lower `Statement::Require` to the parser's package-valued call operand.
+// Cost: O(1).
+pub(super) fn lower_require(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    let module = match name_parts::name_shape(named_child(node, "module-name")?) {
+        Some(NameShape::Identifier(name)) => name,
+        _ => return Err(super::lower::unsupported(node)),
+    };
+    Ok(Expr::Call {
+        name: Symbol::intern("require"),
+        args: vec![Expr::Literal(Value::package(Symbol::intern(&module)))],
+        listop: false,
+    })
 }
 
 /// `import MODULE [:TAG...];` -> `Statement::Import`, its tags as the `use`

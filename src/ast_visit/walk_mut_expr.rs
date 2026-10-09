@@ -36,7 +36,7 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
         | Expr::RoutineMagic
         | Expr::BlockMagic => {}
         Expr::BareWord(_name) => {}
-        Expr::UserRoutineCall { name: _, args } => exprs_mut(v, args),
+        Expr::UserRoutineCall { args, .. } => exprs_mut(v, args),
         Expr::StringInterpolation(parts)
         | Expr::ArrayLiteral(parts)
         | Expr::BracketArray(parts, _)

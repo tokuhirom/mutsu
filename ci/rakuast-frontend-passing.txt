@@ -408,7 +408,9 @@ t/collections/listop-heredoc-and-angle-hash-key.t
 t/collections/listop-loose-bool-prefix-arg.t
 t/collections/listop-map-defers.t
 t/collections/listop-math-functions.t
+t/collections/listop-shadow-block-scoped.t
 t/collections/listop-shadow-declared.t
+t/collections/listop-shadow-imported.t
 t/collections/listop-slip-arg-sink-context.t
 t/collections/listop-trailing-comma.t
 t/collections/listop-unicode-numeric-arg.t
@@ -1113,6 +1115,7 @@ t/concurrency/thread-lock/junction-slurpy-no-autothread.t
 t/concurrency/thread-lock/junction-thread-when.t
 t/concurrency/thread-lock/lexical-sub-escapes-via-side-channel.t
 t/concurrency/thread-lock/lock-async-protect-shared-array.t
+t/concurrency/thread-lock/lock-protect-nested-sub.t
 t/concurrency/thread-lock/lock-protect-passed-in-block.t
 t/concurrency/thread-lock/lock-protect-shared-scalar.t
 t/concurrency/thread-lock/lock-protect-writeback.t
@@ -2192,6 +2195,7 @@ t/lang/word-logical-loosest-precedence.t
 t/lang/word-logical-lvalue-precedence.t
 t/lang/zprintf-g-exponent.t
 t/lang/zprintf-g-strip-zeros.t
+t/modules/add-method-module-lexical-type.t
 t/modules/adr0110-trir-module-linkage.t
 t/modules/anon-type-name-in-package.t
 t/modules/attr-default-closure-package.t
@@ -2383,6 +2387,7 @@ t/modules/import-export/imported-statement-call-leaves-no-value.t
 t/modules/import-export/imported-sub-can-be-shadowed.t
 t/modules/import-export/imported-sub-shadows-builtin-in-sink-position.t
 t/modules/import-export/imported-sub-shadows-builtin.t
+t/modules/import-export/imported-sub-shadows-io-builtin.t
 t/modules/import-export/imported-term-keyword-call-form.t
 t/modules/import-export/imported-type-and-term-in-my-stash.t
 t/modules/import-export/imported-type-name-in-coercion.t
@@ -2429,11 +2434,13 @@ t/modules/import-export/require-dist-selectors.t
 t/modules/import-export/require-in-method-keeps-module-type-alias.t
 t/modules/import-export/require-in-param-default-keeps-imports.t
 t/modules/import-export/require-in-sub-module-curried-lexical-role.t
+t/modules/import-export/require-missing-module-stub.t
 t/modules/import-export/require-quote-keyword-module-name.t
 t/modules/import-export/require-top-level-class-file.t
 t/modules/import-export/require-toplevel-multi-candidate-not-leaked.t
 t/modules/import-export/require-undeclared-bareword.t
 t/modules/import-export/require-unit-proto.t
+t/modules/import-export/require.t
 t/modules/import-export/role-body-exported-class-and-constant.t
 t/modules/import-export/role-body-exported-subset.t
 t/modules/import-export/role-body-lexical-type-used-from-export.t
@@ -3565,6 +3572,7 @@ t/oo/mop/can-methods-drift.t
 t/oo/mop/can-multi-dispatcher.t
 t/oo/mop/can-ok-cool-bridging-methods.t
 t/oo/mop/can-ok-type-object.t
+t/oo/mop/can-returns-mixed-in-method-object.t
 t/oo/mop/core-class-own-constructor-introspection.t
 t/oo/mop/how-metaobject-identity.t
 t/oo/mop/how-mutation-persists.t
@@ -4127,6 +4135,7 @@ t/rakuast/rakuast-regex-stored-interpolation.t
 t/rakuast/rakuast-regex-sym-adverb.t
 t/rakuast/rakuast-regex-tree-gaps.t
 t/rakuast/rakuast-regex.t
+t/rakuast/rakuast-require-statement.t
 t/rakuast/rakuast-return-type.t
 t/rakuast/rakuast-role-parameterization-traits.t
 t/rakuast/rakuast-role.t
@@ -4851,6 +4860,7 @@ t/routines/dispatch/callwith-default-new-rejects-positionals.t
 t/routines/dispatch/callwith-rw-passthrough.t
 t/routines/dispatch/captured-multi-dispatch-no-env-leak.t
 t/routines/dispatch/cas-multidim-cells.t
+t/routines/dispatch/core-routine-user-multi-candidate.t
 t/routines/dispatch/defer-multi-cross-level-proto-block.t
 t/routines/dispatch/defer-multi-plain-cross-level.t
 t/routines/dispatch/defer-multi-single-class.t
@@ -6249,6 +6259,7 @@ t/vm/scope/lexical-decl-and-autoviv.t
 t/vm/scope/lexical-shadow-slots.t
 t/vm/scope/lexical-shadows-builtin-call.t
 t/vm/scope/lexical-type-scalar-same-name.t
+t/vm/scope/lexical-type-scope-exit.t
 t/vm/scope/lexical-type-scope-suppression.t
 t/vm/scope/monkey-typing-lexical.t
 t/vm/scope/my-class-shadows-outer-constant.t
