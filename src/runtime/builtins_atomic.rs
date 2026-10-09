@@ -12,6 +12,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 pub(super) static ATOMIC_VAR_KEY_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+fn is_user_visible_atomic_name(name: &str) -> bool {
+    name != "_"
+        && name != "@_"
+        && name != "?LINE"
+        && !name.starts_with("__mutsu_")
+        && !name.starts_with('&')
+}
+
 impl Interpreter {
     /// VM-native dispatch for the atomic var/element RMW markers (`__mutsu_atomic_*`
     /// / `__mutsu_cas_*`) the parser emits for the `⚛`-operators (`⚛=`/`⚛+=`/`⚛++`/
@@ -41,7 +49,7 @@ impl Interpreter {
             "__mutsu_atomic_pre_inc_var" => self.builtin_atomic_pre_inc_var(args),
             "__mutsu_atomic_post_dec_var" => self.builtin_atomic_post_dec_var(args),
             "__mutsu_atomic_pre_dec_var" => self.builtin_atomic_pre_dec_var(args),
-            "__mutsu_cas_var" => self.builtin_cas_var(args.to_vec()),
+            "__mutsu_cas_var" => self.builtin_cas_var(args),
             "__mutsu_atomic_elem" => self.builtin_atomic_elem(args),
             "__mutsu_cas_array_elem" => self.builtin_cas_array_elem(args.to_vec()),
             "__mutsu_cas_attr" => self.builtin_cas_attr(args.to_vec()),
@@ -61,14 +69,7 @@ impl Interpreter {
         raw_name: &str,
         target_value: Option<&Value>,
     ) -> String {
-        let is_user_visible = |name: &str| {
-            name != "_"
-                && name != "@_"
-                && name != "?LINE"
-                && !name.starts_with("__mutsu_")
-                && !name.starts_with('&')
-        };
-        if is_user_visible(raw_name) && self.env.contains_key(raw_name) {
+        if is_user_visible_atomic_name(raw_name) && self.env.contains_key(raw_name) {
             return raw_name.to_string();
         }
 
@@ -78,7 +79,7 @@ impl Interpreter {
         if let Some(current) = current {
             for (key, value) in &self.env {
                 let key_s = key.resolve();
-                if !is_user_visible(&key_s) {
+                if !is_user_visible_atomic_name(&key_s) {
                     continue;
                 }
                 if crate::runtime::values_identical(value, &current) {
@@ -104,7 +105,7 @@ impl Interpreter {
             Some((name, inner, _)) => {
                 let slot = arg.varref_slot().filter(|slot| *slot != u32::MAX);
                 (
-                    self.canonical_atomic_var_name(&name.resolve(), Some(inner)),
+                    self.canonical_atomic_var_name(name.as_str(), Some(inner)),
                     slot,
                 )
             }
@@ -141,19 +142,21 @@ impl Interpreter {
         name: &str,
         mut value: Value,
     ) -> Result<Value, RuntimeError> {
-        self.check_readonly_for_modify(name)?;
+        let name_sym = Symbol::intern(name);
+        self.check_readonly_for_modify_sym(name, name_sym)?;
         self.refuse_narrow_attribute(name)?;
-        if let Some(constraint) = self.var_type_constraint(name)
+        if let Some(constraint_value) = self.var_type_constraint_value_sym(name_sym)
             && !name.starts_with('%')
             && !name.starts_with('@')
+            && let Some(constraint) = constraint_value.as_str()
         {
             if value.is_nil() {
-                value = Value::package(Symbol::intern(&constraint));
-            } else if !self.type_matches_value(&constraint, &value) {
-                return Err(self.type_check_assignment_failure(name, &constraint, &value));
+                value = Value::package(Symbol::intern(constraint));
+            } else if !self.type_matches_value(constraint, &value) {
+                return Err(self.type_check_assignment_failure(name, constraint, &value));
             }
             if !matches!(value.view(), ValueView::Nil | ValueView::Package(_)) {
-                value = self.try_coerce_value_for_constraint(&constraint, value)?;
+                value = self.try_coerce_value_for_constraint(constraint, value)?;
             }
         }
         // The target is a `$` scalar container, so an aggregate is itemized
@@ -331,6 +334,9 @@ impl Interpreter {
         name: &str,
         slot: u32,
     ) -> Result<Value, RuntimeError> {
+        if is_user_visible_atomic_name(name) && self.env.contains_key(name) {
+            return self.atomic_fetch_named(name, Some(slot));
+        }
         let target = Value::str(name.to_string());
         let name = self.canonical_atomic_var_name(name, Some(&target));
         self.atomic_fetch_named(&name, Some(slot))

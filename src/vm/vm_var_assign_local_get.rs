@@ -285,15 +285,22 @@ impl Interpreter {
         // atomic was registered reads its own same-spelled variable directly.
         if self.atomic_var_seen() && Self::atomic_name_possible(name) {
             let atomic_name = name.strip_prefix('$').unwrap_or(name);
-            let atomic_name_key = MetaNs::AtomicName.owned_key_for_str(atomic_name);
             // Only use the scalar atomic fast path for scalar ($) variables.
             // Array (@) variables with `atomicint` constraint are element-wise
             // atomic and should go through the normal array read path.
             let is_atomic_int = !name.starts_with('@')
-                && (loan_env!(self, var_type_constraint(&name)).as_deref() == Some("atomicint")
-                    || loan_env!(self, var_type_constraint(atomic_name)).as_deref()
-                        == Some("atomicint")
-                    || self.get_shared_var(&atomic_name_key).is_some());
+                && (self
+                    .var_type_constraint_value_sym(
+                        code.local_sym(idx).unwrap_or_else(|| Symbol::intern(name)),
+                    )
+                    .is_some_and(|constraint| constraint.as_str() == Some("atomicint"))
+                    || (atomic_name != name
+                        && self
+                            .var_type_constraint_value_sym(Symbol::intern(atomic_name))
+                            .is_some_and(|constraint| constraint.as_str() == Some("atomicint")))
+                    || self
+                        .get_shared_var(&MetaNs::AtomicName.owned_key_for_str(atomic_name))
+                        .is_some());
             if is_atomic_int {
                 // The read is of THIS slot: a same-named shadow elsewhere in the
                 // frame is another variable (#12006).

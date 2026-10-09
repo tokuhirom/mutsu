@@ -13,7 +13,7 @@ impl Interpreter {
     /// Implements cas (compare-and-swap).
     /// 3-arg form: cas($var_name, $expected, $new) - swap if current == expected, return old
     /// 2-arg form: cas($var_name, &code) - read old, compute new = code(old), store new, return new
-    pub(super) fn builtin_cas_var(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_cas_var(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         if args.len() < 2 {
             return Err(RuntimeError::new(
                 "cas requires 2 or 3 arguments: cas($var, $expected, $new) or cas($var, &code)",
