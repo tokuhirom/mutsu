@@ -536,7 +536,11 @@ impl Interpreter {
         let method_class = self.method_class_stack_top_str();
         if let Some(type_package) = type_package
             && (current_package == type_package
-                || type_package.starts_with(&format!("{current_package}::")))
+                || type_package.starts_with(&format!("{current_package}::"))
+                // Code in a package nested inside the declaring one (a
+                // class's method in `module M { my role R {} class C {} }`)
+                // sits in the lexical scope of the declaration.
+                || current_package.starts_with(&format!("{type_package}::")))
         {
             return true;
         }

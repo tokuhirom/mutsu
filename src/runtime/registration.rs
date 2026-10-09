@@ -431,7 +431,12 @@ impl Interpreter {
                         // If the class itself provides a concrete method (role_origin is None),
                         // it resolves the conflict — no error needed.
                         let class_provides = matching.iter().any(|m| m.role_origin.is_none());
-                        if !class_provides {
+                        // A non-multi stub is satisfied by a multi dispatch set
+                        // (`method f(Int) { ... }` by `multi method f(Int)` +
+                        // `multi method f(16)`): several multi candidates
+                        // are one implementation, not competing ones.
+                        let multi_set = !required.is_multi && matching.iter().all(|m| m.is_multi);
+                        if !class_provides && !multi_set {
                             return Err(RuntimeError::new(format!(
                                 "X::Role::Composition::Conflict: multiple candidates for required method '{}'",
                                 method_name
