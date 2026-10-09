@@ -295,13 +295,23 @@ impl Interpreter {
             }
             // Only the class's own declarations: Rakudo has not yet composed
             // the role's attributes into the class when its body runs.
+            // `is built(...)` is read from the class by `Attribute.is_built`, so
+            // the body's `$?CLASS.^attributes.grep(*.is_built)` needs it too.
+            let built: Vec<(String, bool)> = cx
+                .pending_attrs
+                .iter()
+                .filter(|(_, d)| !(d.is_my || d.is_our || d.is_alias))
+                .filter_map(|(_, d)| d.is_built.map(|b| (d.name.clone(), b)))
+                .collect();
             let mut registry = self.registry_mut();
             if let Some(class) = registry.classes.get_mut(cx.name) {
                 saved_attrs = Some(std::mem::replace(&mut class.attributes, added));
+                class.attribute_built.extend(built);
             } else {
                 // Header roles compose before the class shell is published.
                 let mut shell = cx.class_def.clone();
                 shell.attributes = added;
+                shell.attribute_built.extend(built);
                 registry.classes.insert(cx.name.to_string(), shell.into());
                 unpublished = true;
             }

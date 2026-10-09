@@ -17,3 +17,8 @@ Further SBOM::CycloneDX fixes: `my %m is Map = r => <p q>` keeps its list
 values bare (no `$(...)` itemization); a class's own `multi method` beats an
 equally narrow one composed from a role; `bless` no longer initializes a private
 `has @!x` from a same-named named argument.
+
+Also from SBOM::CycloneDX: attribute `subset` constraints are checked at
+construction (lower-case names too) and in `bless`; `UInt ~~ Cool` is True and a
+subset of `UInt` is a `UInt`; a role body composed into a class sees the class's
+`is built(False)` attributes.
