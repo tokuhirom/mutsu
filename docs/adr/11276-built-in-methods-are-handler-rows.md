@@ -2146,3 +2146,14 @@ regenerating the vendored Rakudo method-table snapshot:
 - `native_grammar_parse_next_candidate` shrinks to building the argument list and asking the row.
 - Still open on #12423: `Mu.BUILDALL`/`POPULATE`/`clone`/`new` as rows (`clone` needs the typed-container registry; `new`
   needs the "user class defines `new`" guard first).
+
+### 9.47 Slice 4: `Mu.BUILDALL` and `Mu.POPULATE` are rows (2026-10-09)
+
+`refactor/12423-mu-buildall-populate-rows` (the `Mu` item of #12423), after §9.46. Rakudo declares both on `Mu` (already in
+the oracle snapshot, so nothing is regenerated). `ctors_mop/mu_base.rs` holds two `OWNER_ONLY` `Handler::Interp` rows that
+answer the receiver, the already-built instance (mutsu builds natively before the user hook, `run_user_buildall_hook`);
+`native_mu_base_next_candidate` asks them through `invoke_owner_raw(&["Mu"], ..)`.
+
+Left for #12423: `Mu.clone` (needs the typed-container registry reachable from a row) and `Mu.new` (about 40 per-type `new`
+sites, each interleaved with a "does the user class define `new`" check, so the constructors need that check as one guard
+first). Both stay in `native_mu_base_next_candidate`.
