@@ -4395,7 +4395,7 @@ impl Compiler {
             // Exception: `constant $x`, a `:=`-bound-to-non-itemized `$x` and the
             // `$=...` Pod document variables bind without a Scalar container, so
             // `for $x` iterates the elements (like sigilless variables).
-            Expr::Var(name) if self.scalar_var_is_item_container(name) => {
+            Expr::Var(name) if name != "_" && self.scalar_var_is_item_container(name) => {
                 Expr::ArrayLiteral(vec![iterable.clone()])
             }
             // A parenthesized single scalar (`for ($x)`) reaches here as
