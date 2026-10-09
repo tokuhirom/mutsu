@@ -228,6 +228,10 @@ impl Interpreter {
         if let Some(payload) = attributes.as_map().get("__mutsu_version_value").cloned() {
             return Some(self.call_method_with_values(payload, method, vec![]));
         }
+        // An `is Pair` subclass renders as its Pair payload.
+        if let Some(payload) = attributes.as_map().get("__mutsu_pair_value").cloned() {
+            return Some(self.call_method_with_values(payload, method, vec![]));
+        }
         if let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() {
             return Some(self.call_method_with_values(storage, method, vec![]));
         }
@@ -601,6 +605,18 @@ impl Interpreter {
             id: target_id,
         } = target.view()
         {
+            // An `is Pair` subclass keeps its built Pair in `__mutsu_pair_value`;
+            // the Pair accessors it does not override run on that payload.
+            if matches!(
+                method,
+                "key" | "value" | "kv" | "keys" | "values" | "antipair" | "invert" | "pairs"
+                    | "Str" | "fmt" | "elems" | "List" | "Slip" | "Hash" | "Map" | "Bool"
+                    | "Numeric" | "Int" | "cmp"
+            ) && !self.has_user_method(&class_name.resolve(), method)
+                && let Some(payload) = attributes.as_map().get("__mutsu_pair_value")
+            {
+                return self.call_method_with_values(payload.clone(), method, args);
+            }
             // `.^lookup`/`.^find_method` return Method/Submethod instances,
             // whose callable payload already carries the invocant as its
             // first parameter. Reuse the callable's normal `.assuming`
