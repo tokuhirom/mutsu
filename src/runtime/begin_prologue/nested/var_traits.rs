@@ -49,7 +49,7 @@ impl Walker<'_> {
         else {
             return false;
         };
-        if name.starts_with(['@', '%', '&'])
+        if name.starts_with('&')
             || custom_traits.iter().any(|(t, _)| {
                 matches!(
                     t.as_str(),
