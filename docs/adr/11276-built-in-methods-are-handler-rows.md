@@ -2116,3 +2116,18 @@ receiver value, no new rows:
   deleted; `NATIVE_BASE_EXHAUSTED` keeps `GrammarParse` and `MuBase`.
 - Left for #12423: `Mu.BUILDALL`/`POPULATE`/`clone`/`new`, the `Grammar` oracle-snapshot decision and the
   `parse`/`subparse`/`parsefile` rows.
+
+### 9.45 Slice 4: the grammar parse and `Mu` bridges are a frame entry; the probe lists are gone (2026-10-09)
+
+`refactor/12423-mu-base-and-grammar-parse-rows` (rest of #12423), after §9.44. The last two bridges move the same way:
+
+- The frame builder pushes `DeferralEntry::Native` for a user `parse`/`subparse`/`parsefile` on a grammar and for a user
+  (or role-provided, so a punned role's `new` counts) `new`/`BUILDALL`/`POPULATE`/`clone`. The `Native` arm asks
+  `native_grammar_parse_next_candidate`, then `native_mu_base_next_candidate`, then the metamodel, grammar-rule and storage
+  bridges, then the default rendering.
+- An exhausted frame now simply answers `Nil`: `NativeBase`, `NATIVE_BASE_EXHAUSTED` and `native_base_next_candidate` are
+  deleted.
+- Deliberately not done: registering `Grammar.parse` and `Mu.*` rows. That needs the `Grammar` owner in the vendored oracle
+  snapshot (`rakudo_method_tables.txt`), a decision for the maintainer; the frame entry does not depend on it. The
+  `native_*_next_candidate` bodies stay as the implementation the `Native` arm calls, and `Mu.clone` still needs the
+  typed-container registry before it can be a row.
