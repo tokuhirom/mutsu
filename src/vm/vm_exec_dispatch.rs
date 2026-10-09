@@ -7057,7 +7057,13 @@ impl Interpreter {
                 restore_outer_topic,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_do_given_expr_op(code, *body_end, *restore_outer_topic, ip, compiled_fns)?;
+                self.exec_do_given_expr_op(
+                    code,
+                    *body_end,
+                    *restore_outer_topic,
+                    ip,
+                    compiled_fns,
+                )?;
             }
 
             // -- Closures and registration --
