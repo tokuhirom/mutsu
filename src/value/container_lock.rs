@@ -249,7 +249,7 @@ pub(crate) fn is_snapshot_read(method: &str) -> bool {
 /// itself a shared container cell stays shared with the live container.
 // Cost: O(n), n = elements, the shallow clone of the backing node.
 pub(crate) fn shared_snapshot(container: &crate::value::Value) -> Option<crate::value::Value> {
-    use crate::value::{Value, ValueView};
+    use crate::value::{ArrayData, HashData, Value, ValueView};
     if !multi_mutator_threads_live() {
         return None;
     }
@@ -257,14 +257,14 @@ pub(crate) fn shared_snapshot(container: &crate::value::Value) -> Option<crate::
         ValueView::Hash(map) => {
             let _guard = ContainerStructGuard::acquire_for(None, container)?;
             Some(Value::hash_with_data_itemized(
-                crate::gc::Gc::new((*map).clone()),
+                crate::gc::Gc::new(HashData::clone(&map)),
                 container.hash_is_itemized(),
             ))
         }
         ValueView::Array(items, kind) => {
             let _guard = ContainerStructGuard::acquire_for(None, container)?;
             Some(Value::array_with_kind(
-                crate::gc::Gc::new((*items).clone()),
+                crate::gc::Gc::new(ArrayData::clone(&items)),
                 kind,
             ))
         }
