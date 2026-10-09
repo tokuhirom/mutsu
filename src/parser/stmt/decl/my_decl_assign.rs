@@ -276,6 +276,27 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                         };
                         (Expr::BareWord(role_name), Some(assign))
                     }
+                    // `my %h does R[&f] = ...`: the parametric role's `[...]`
+                    // absorbed the `=` as an element assignment.
+                    Expr::IndexAssign {
+                        target,
+                        index,
+                        value,
+                        is_positional: true,
+                    } if matches!(*target, Expr::BareWord(_)) => {
+                        let assign = Stmt::Assign {
+                            name: s.name.clone(),
+                            expr: *value,
+                            op: crate::ast::AssignOp::Assign,
+                            target_is_sigilless: false,
+                        };
+                        let role = Expr::Index {
+                            target,
+                            index,
+                            is_positional: true,
+                        };
+                        (role, Some(assign))
+                    }
                     other => (other, None),
                 };
                 let mixin_expr = Expr::Binary {
@@ -288,11 +309,19 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 // desugar mixes the role into the value currently held by the
                 // variable and writes it back, so a later assignment would drop
                 // the mixin. Filling first, then mixing, keeps `Array+{R}`.
+                //
+                // On an `@`/`%` container the role goes in FIRST: the assignment
+                // is then the mixed container's own `STORE` (see
+                // `maybe_mixin_container_store`), so a role's `STORE`/
+                // `STORE_AT_KEY` sees the initializer, as in raku.
                 let mut block_stmts = vec![stmt];
-                if let Some(init_stmt) = init_stmt {
-                    block_stmts.push(init_stmt);
+                if op == "does" && s.name.starts_with(['%', '@']) {
+                    block_stmts.push(Stmt::Expr(mixin_expr));
+                    block_stmts.extend(init_stmt);
+                } else {
+                    block_stmts.extend(init_stmt);
+                    block_stmts.push(Stmt::Expr(mixin_expr));
                 }
-                block_stmts.push(Stmt::Expr(mixin_expr));
                 let block = Stmt::SyntheticBlock(block_stmts);
                 if s.apply_modifier {
                     return parse_statement_modifier(r2, block);

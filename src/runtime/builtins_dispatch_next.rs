@@ -552,9 +552,12 @@ impl Interpreter {
         // Mutating key methods write into the SHARED backing storage in
         // place (interior mutability via `with_attr_mut`), mirroring the
         // Array analog's simple-mutator fast path.
-        if matches!(method_name.as_str(), "ASSIGN-KEY" | "DELETE-KEY") && !args.is_empty() {
+        if matches!(
+            method_name.as_str(),
+            "ASSIGN-KEY" | "STORE_AT_KEY" | "BIND-KEY" | "DELETE-KEY"
+        ) && !args.is_empty() {
             let key = args[0].to_string_value();
-            let is_assign = method_name == "ASSIGN-KEY";
+            let is_assign = method_name != "DELETE-KEY";
             let value = if is_assign {
                 args.get(1).cloned().unwrap_or(Value::NIL)
             } else {
@@ -661,12 +664,15 @@ impl Interpreter {
         {
             return Some(stored);
         }
-        if matches!(method_name.as_str(), "ASSIGN-KEY" | "DELETE-KEY")
+        if matches!(
+            method_name.as_str(),
+            "ASSIGN-KEY" | "STORE_AT_KEY" | "BIND-KEY" | "DELETE-KEY"
+        )
             && !args.is_empty()
             && let ValueView::Hash(gc_ref) = inner.view()
         {
             let key = args[0].to_string_value();
-            let is_assign = method_name == "ASSIGN-KEY";
+            let is_assign = method_name != "DELETE-KEY";
             let value = if is_assign {
                 args.get(1).cloned().unwrap_or(Value::NIL)
             } else {
@@ -677,10 +683,9 @@ impl Interpreter {
             let data = unsafe { crate::gc::gc_contents_mut(&gc_ref) };
             if is_assign {
                 data.insert(key, value.clone());
-            } else {
-                data.remove(&key);
+                return Some(Ok(value));
             }
-            return Some(Ok(value));
+            return Some(Ok(data.remove(&key).unwrap_or(Value::NIL)));
         }
         if matches!(inner.view(), ValueView::Array(..))
             && matches!(

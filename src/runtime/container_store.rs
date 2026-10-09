@@ -30,6 +30,33 @@ impl Interpreter {
         Ok(Self::hash_inplace_reassign_inheriting_meta(gc, &new_gc))
     }
 
+    /// `Hash.STORE` on a hash whose mixed-in role declares `STORE_AT_KEY`:
+    /// the node is emptied and every pair is stored through that method (which
+    /// may `nextwith` into the native one), as Rakudo's `Hash.STORE` does.
+    // Cost: O(n) plus the role's STORE_AT_KEY per pair, n = number of values stored.
+    fn store_into_hash_via_store_at_key(
+        &mut self,
+        gc: &crate::gc::Gc<crate::value::HashData>,
+        target: &Value,
+        values: &Value,
+    ) -> Result<Value, RuntimeError> {
+        let items = crate::runtime::utils::value_to_list(values);
+        let built = self.build_hash_from_items_warning(items)?;
+        let ValueView::Hash(new_gc) = built.view() else {
+            return Ok(built);
+        };
+        let pairs: Vec<(String, Value)> = new_gc
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect();
+        let empty = crate::gc::Gc::new(crate::value::HashData::default());
+        Self::hash_inplace_reassign_inheriting_meta(gc, &empty);
+        for (key, value) in pairs {
+            self.call_method_with_values(target.clone(), "STORE_AT_KEY", vec![Value::str(key), value])?;
+        }
+        Ok(target.clone())
+    }
+
     /// Store `values` into the array node `gc`, keeping its kind and declared
     /// element metadata.
     // Cost: O(n), n = number of values stored.
@@ -62,6 +89,9 @@ impl Interpreter {
             _ => target.clone(),
         };
         match inner.view() {
+            ValueView::Hash(gc) if self.mixin_composes_method(&target, "STORE_AT_KEY") => {
+                Some(self.store_into_hash_via_store_at_key(&gc, &target, &values))
+            }
             ValueView::Hash(gc) => Some(self.store_into_hash(&gc, &values).map(|_| target)),
             ValueView::Array(gc, kind) if !kind.is_immutable_list() => {
                 Self::store_into_array(&gc, kind, &values);
