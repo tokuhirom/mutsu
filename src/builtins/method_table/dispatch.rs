@@ -385,6 +385,13 @@ fn debug_assert_matches_full_path(
 ) {
     #[cfg(debug_assertions)]
     {
+        // The two answers are computed one after the other, so another thread
+        // writing the receiver in between makes them differ legitimately. The
+        // net is for the single-threaded suite; once a second VM mutator thread
+        // exists the comparison proves nothing (#11701).
+        if crate::value::container_lock::multi_mutator_threads_live() {
+            return;
+        }
         let slow = match args {
             [] => super::super::methods_0arg::native_method_0arg_cascade(target, method),
             [a] => super::super::native_method_1arg(target, method, a),
