@@ -395,7 +395,16 @@ impl Interpreter {
             }
             let name_str = name.to_string();
             // Register container type metadata with declared_type "Map"
-            if let Some(container) = self.read_var_trait_target(code, eff_slot, &name_str) {
+            if let Some(mut container) = self.read_var_trait_target(code, eff_slot, &name_str) {
+                // A Map holds its values bare: the declaration's hash
+                // assignment itemized them like a Hash's, so
+                // `my %m is Map = a => (1, 2)` would otherwise keep `$(1, 2)`.
+                container.with_hash_mut(|gc| {
+                    let data = crate::gc::ContainerMakeMut::container_make_mut(gc);
+                    for v in data.map.values_mut() {
+                        *v = v.clone().deitemize_element();
+                    }
+                });
                 let info = crate::runtime::ContainerTypeInfo {
                     value_type: String::new(),
                     key_type: None,

@@ -880,6 +880,22 @@ impl Interpreter {
             || self.has_type(base)
     }
 
+    /// Whether `resolved`, the target an `env` binding of `bare` points at, is
+    /// that same declaration under its real storage name: the lexical mangling
+    /// `bare\0<decl-id>` or a package-qualified `Pkg::bare`. Anything else is
+    /// an unrelated value that merely lives under the same bare key (a scalar
+    /// variable holding a type object).
+    // Cost: O(len of the two names).
+    fn alias_names_same_type(bare: &str, resolved: &str) -> bool {
+        let leaf = |name: &str| {
+            let unmangled = name.split('\u{0}').next().unwrap_or(name);
+            crate::qualified::last_segment(Symbol::intern(unmangled))
+                .as_str()
+                .to_string()
+        };
+        leaf(bare) == leaf(resolved)
+    }
+
     /// Resolve `qualified` against the type registry, tolerating ADR-0047's
     /// unconditional lexical site-key mangling (`Foo\u{0}<decl-id>`). A caller
     /// that RECONSTRUCTS a qualified name from a package/short-name pair
@@ -909,9 +925,17 @@ impl Interpreter {
         // initialized to default value" — a `my class A` after an earlier
         // `class A` under the same computed qualified name dispatched to the
         // FIRST class's methods instead of its own).
+        //
+        // The alias must still name the same type. A scalar `$bom-ref` lives
+        // in `env` under the bare key `bom-ref` too, and an undefined one holds
+        // the type object `Any`; accepting that as the "alias target" of a
+        // `subset bom-ref` made the subset check run against `Any`.
         if let Some(ValueView::Package(target)) = self.env.get(qualified).map(Value::view) {
             let resolved = target.resolve();
-            if resolved != qualified && self.has_type_direct(&resolved) {
+            if resolved != qualified
+                && Self::alias_names_same_type(qualified, &resolved)
+                && self.has_type_direct(&resolved)
+            {
                 return Some(resolved);
             }
         }

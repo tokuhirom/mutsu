@@ -281,7 +281,29 @@ pub(crate) fn capture_wins_over_caller(
             || free_vars.is_some_and(|free| free.contains(k)))
 }
 
+
 impl Interpreter {
+    /// Run one call of an inlined map/grep/first callback body.
+    ///
+    /// A `sub` declared in the callback is lexical to that one call: with
+    /// `declares_routines` the routine registry is put back afterwards, so the
+    /// next call (or another callback declaring a same-named routine) is not a
+    /// redeclaration.
+    // Cost: the body, plus O(1) for the registry snapshot when `declares_routines`.
+    pub(super) fn run_loop_body(
+        &mut self,
+        code: &CompiledCode,
+        compiled_fns: &CompiledFns,
+        declares_routines: bool,
+    ) -> Result<(), RuntimeError> {
+        let snapshot = declares_routines.then(|| self.snapshot_routine_registry());
+        let result = self.run_reuse(code, compiled_fns);
+        if let Some(snapshot) = snapshot {
+            self.restore_routine_registry(snapshot);
+        }
+        result
+    }
+
     /// Compile a map/grep/`.first` callback's tail-normalized body for the
     /// inline-loop fast path, reusing a cached compile when this exact
     /// closure literal was already compiled at this lexical nesting. See
@@ -674,6 +696,7 @@ impl Interpreter {
                 None => self.inline_loop_plan(&data, InlineLoopKind::Map, slot),
             };
             let (code, compiled_fns) = (&plan.code, &plan.fns);
+            let declares_routines = crate::compiler::Compiler::stmts_declare_routines(&data.body);
             // Save/restore only temporary bindings introduced by map itself.
             // Captured lexical vars (in data.env) must keep mutations done inside
             // the mapper block (e.g. `{ $a++ }`).
@@ -790,7 +813,7 @@ impl Interpreter {
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     vm.mark_placeholder_params_readonly(&data.params);
                     set_loop_topic_readonly(vm, immutable_topic);
-                    match vm.run_reuse(code, compiled_fns) {
+                    match vm.run_loop_body(code, compiled_fns, declares_routines) {
                         Ok(()) => {
                             let val = vm
                                 .last_stack_value()
@@ -1034,6 +1057,7 @@ impl Interpreter {
             &mut MapGrepPlanSlot::default(),
         );
         let (code, compiled_fns) = (&plan.code, &plan.fns);
+        let declares_routines = crate::compiler::Compiler::stmts_declare_routines(&data.body);
         let saved = self.enter_inline_loop_env(&data, &plan);
 
         let keeps_outer_topic = plan.keeps_outer_topic;
@@ -1088,7 +1112,7 @@ impl Interpreter {
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     vm.mark_placeholder_params_readonly(&data.params);
                     set_loop_topic_readonly(vm, immutable_topic);
-                    match vm.run_reuse(code, compiled_fns) {
+                    match vm.run_loop_body(code, compiled_fns, declares_routines) {
                         Ok(()) => {
                             let pred = vm
                                 .last_stack_value()

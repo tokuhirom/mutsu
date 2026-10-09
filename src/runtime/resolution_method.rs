@@ -599,11 +599,19 @@ impl Interpreter {
                 .map(|&i| mro_index(all_matches[i].0.as_str()))
                 .min()
                 .unwrap_or(usize::MAX);
-            let mro_narrowed: Vec<usize> = narrowed
+            let mut mro_narrowed: Vec<usize> = narrowed
                 .iter()
                 .copied()
                 .filter(|&i| mro_index(all_matches[i].0.as_str()) == best_mro)
                 .collect();
+            // A candidate the class declares itself outranks an equally narrow
+            // one composed into it from a role (rakudo: the class's own
+            // `multi method new(A:U: :$raw-error)` beats the role's
+            // `new(::?CLASS: :$raw-error = False, *%in)`), whatever order the
+            // registry happened to push them in.
+            if mro_narrowed.iter().any(|&i| all_matches[i].1.role_origin.is_none()) {
+                mro_narrowed.retain(|&i| all_matches[i].1.role_origin.is_none());
+            }
             if let Some(&i) = mro_narrowed.first() {
                 best_idx = i;
             }

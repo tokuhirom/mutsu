@@ -488,7 +488,13 @@ impl Interpreter {
             .iter()
             .map(|a| match a.view() {
                 ValueView::Pair(key, _) if build_owned_attrs.contains(key.as_str()) => None,
-                ValueView::Pair(key, _) => plan.attr_index.get(key.as_str()).copied(),
+                // A private attribute (`has @!tools`) is not built from a named
+                // argument: only `$.x` / `is built` ones are (BUILDALL).
+                ValueView::Pair(key, _) => plan
+                    .attr_index
+                    .get(key.as_str())
+                    .copied()
+                    .filter(|&i| plan.attr_buildable[i as usize]),
                 _ => None,
             })
             .collect();
@@ -740,7 +746,16 @@ impl Interpreter {
                                 coerced,
                             )
                         } else {
-                            Self::itemize_attr_store_value(sigil, coerced)
+                            // The attribute's type (a `subset` included) and
+                            // `where` clause hold for a blessed value as they
+                            // do for an assigned one, as in `.new`.
+                            let checked = self.check_attr_store_type(
+                                cn_resolved,
+                                &plan.class_attrs[i].name,
+                                sigil,
+                                coerced,
+                            )?;
+                            Self::itemize_attr_store_value(sigil, checked)
                         };
                         attributes.insert(plan.attr_syms[i], coerced)
                     }

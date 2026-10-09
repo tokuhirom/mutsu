@@ -479,7 +479,12 @@ impl Interpreter {
                 // intermediate container keeps a lazy HashEntryRef, and a missing
                 // key stays lazy (no entry created). When `terminal` (outermost
                 // bind subscript), promote a container-valued leaf to a cell too.
-                if let Some(slot_ref) = resolved.hash_slot_ref(&key, terminal) {
+                if resolved.is_immutable_map() && !map.map.contains_key(&key) {
+                    // An immutable Map answers `Nil` for a missing key, and
+                    // nothing can later autovivify it: `my $x := %map<z>` binds
+                    // that `Nil`, not a deferred entry that reads back as `Any`.
+                    self.stack.push(Value::NIL);
+                } else if let Some(slot_ref) = resolved.hash_slot_ref(&key, terminal) {
                     self.stack.push(slot_ref);
                 } else {
                     self.stack.push(Value::NIL);
