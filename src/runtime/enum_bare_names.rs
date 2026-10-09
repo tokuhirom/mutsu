@@ -173,7 +173,15 @@ impl Interpreter {
         let running_unit = {
             // The code that is running is the innermost frame's: a closure of
             // the main script called from a module routine is the main unit's.
-            let def_file = self.routine_stack.last().and_then(|frame| frame.def_file);
+            // An attribute default is evaluated inside the declaring unit
+            // (`eval_attr_default_expr` sets `current_unit`), though the
+            // innermost routine frame is the caller of `.new` -- possibly a
+            // method of another file.
+            let def_file = if self.types.constructing_class.is_some() {
+                None
+            } else {
+                self.routine_stack.last().and_then(|frame| frame.def_file)
+            };
             def_file
                 .map(|file| self.unit_of_source_sym(Some(file)))
                 .unwrap_or(self.current_unit)
