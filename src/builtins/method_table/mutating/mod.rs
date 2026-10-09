@@ -19,6 +19,7 @@ pub(crate) mod buf;
 pub(crate) mod hash;
 pub(crate) mod quanthash;
 pub(crate) mod subscript;
+pub(crate) mod subscript_bind;
 pub(crate) mod subscript_pos;
 pub(crate) mod text;
 
@@ -30,6 +31,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     hash::ROWS,
     quanthash::ROWS,
     subscript::ROWS,
+    subscript_bind::ROWS,
     subscript_pos::ROWS,
     text::ROWS,
 ];
