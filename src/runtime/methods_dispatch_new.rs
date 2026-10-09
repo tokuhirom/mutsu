@@ -1005,7 +1005,7 @@ impl Interpreter {
     /// a custom HOW installed via `add_method` (OO::Monitors seeds the monitor
     /// lock attribute there) — is called after the native build, and its
     /// `callsame` resolves to the built instance via
-    /// `native_mu_base_next_candidate`.
+    /// `native_mu_base`.
     pub(crate) fn run_user_buildall_hook(
         &mut self,
         class_key: &str,

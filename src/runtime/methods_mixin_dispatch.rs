@@ -661,6 +661,7 @@ impl Interpreter {
                 // is the one candidate behind the role's method.
                 vec![super::DeferralEntry::Native {
                     name: lookup_name.to_string(),
+                    base: super::NativeBase::Value,
                 }]
             };
             let pushed_base_dispatch = !base_remaining.is_empty() || native_base;

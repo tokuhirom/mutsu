@@ -88,9 +88,9 @@ impl Interpreter {
     /// three storages or the storage has no such method.
     // Cost: O(1) probes plus the storage method's own cost.
     fn native_storage_base_entry(&mut self) -> Option<Result<Value, RuntimeError>> {
-        self.native_array_storage_next_candidate(None)
-            .or_else(|| self.native_hash_storage_next_candidate(None))
-            .or_else(|| self.native_baggy_storage_next_candidate(None))
+        self.native_array_storage_base(None)
+            .or_else(|| self.native_hash_storage_base(None))
+            .or_else(|| self.native_baggy_storage_base(None))
     }
 
     /// ADR-0019 E9b-0: `wrap_dispatch_stack`, `method_dispatch_stack`, and
@@ -301,7 +301,7 @@ impl Interpreter {
     /// MRO, provide the NATIVE metamodel implementation as the final
     /// `callsame` candidate. Native metamodel methods are not `MethodDef`
     /// candidates, so the regular MRO chain cannot reach them.
-    fn native_metamodel_next_candidate(
+    fn native_metamodel_base(
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
@@ -372,7 +372,7 @@ impl Interpreter {
         // before `Mu.new`/`bless` (`class LoggedVersion is Version {
         // method new(|c) { nextsame } }`) — same order as the
         // no-frame fallback at the end of `dispatch_next_candidate`.
-        if let Some(res) = self.native_builtin_new_next_candidate(&invocant, &args) {
+        if let Some(res) = self.native_builtin_new_base(&invocant, &args) {
             return Some(res);
         }
         // `Mu.new(*%attrinit)` takes named arguments only, whether it
@@ -427,7 +427,7 @@ impl Interpreter {
     /// MRO, but mutsu implements it natively (`bless`), so it never appears
     /// among the `MethodDef` candidates. `push_method_dispatch_frame`'s
     /// `new_base_override` is what guarantees the frame this leg exhausts.
-    pub(super) fn native_mu_base_next_candidate(
+    pub(super) fn native_mu_base(
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
@@ -478,9 +478,9 @@ impl Interpreter {
     /// behavior on the instance's backing `__mutsu_array_storage` is the final
     /// base candidate — `Array` is not a user-registered class with real
     /// `MethodDef`s, so the regular MRO chain never reaches it (mirrors
-    /// `native_mu_base_next_candidate`). Without this, e.g. `Array::Rounded`'s
+    /// `native_mu_base`). Without this, e.g. `Array::Rounded`'s
     /// `method AT-POS($index) { nextwith $index.round }` silently returned Nil.
-    fn native_array_storage_next_candidate(
+    fn native_array_storage_base(
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
@@ -496,7 +496,7 @@ impl Interpreter {
         // A single (non-multi, non-wrapped) compiled method pushes no
         // `method_dispatch_stack` frame, so the invocant/args must come from
         // the samewith context and `self` rather than a dispatch frame (mirrors
-        // `native_mu_base_next_candidate`'s `self.env.get("self")` fallback).
+        // `native_mu_base`'s `self.env.get("self")` fallback).
         let invocant = self
             .dispatch
             .method_dispatch_stack
@@ -571,13 +571,13 @@ impl Interpreter {
         })?
     }
 
-    /// The Associative twin of [`Self::native_array_storage_next_candidate`]:
+    /// The Associative twin of [`Self::native_array_storage_base`]:
     /// when a user `is Hash`/`is Map` subclass overrides an Associative
     /// protocol method (`AT-KEY`/`ASSIGN-KEY`/`DELETE-KEY`/...) and calls
     /// `nextsame`/`nextwith` (or `callsame`/`callwith`), the NATIVE hash
     /// behavior on the instance's backing `__mutsu_hash_storage` is the final
     /// base candidate.
-    fn native_hash_storage_next_candidate(
+    fn native_hash_storage_base(
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
@@ -672,7 +672,7 @@ impl Interpreter {
         // `try_native_method` below cannot do (it dispatches pure `&Value`
         // native methods with no mutation story for a bare `Hash`). Write
         // through the inner Gc node directly, mirroring the storage mutation
-        // in `native_hash_storage_next_candidate` — the `Mixin`'s inner value
+        // in `native_hash_storage_base` — the `Mixin`'s inner value
         // IS the hash's real backing storage, so this is the same "aliased
         // shared write" as that attribute-cell case, just reached through the
         // Mixin's `Arc<Value>` instead of an instance attribute.
@@ -752,7 +752,7 @@ impl Interpreter {
     /// call to the nearest builtin ancestor that has a native constructor.
     /// `try_native_builtin_construct` is self-limiting: a builtin with no
     /// native constructor answers `None` and the `bless` fallback still runs.
-    fn native_builtin_new_next_candidate(
+    fn native_builtin_new_base(
         &mut self,
         invocant: &Value,
         args: &[Value],
@@ -830,9 +830,9 @@ impl Interpreter {
     /// `nextsame`/`nextwith` (or `callsame`/`callwith`) and the user MRO is
     /// exhausted, the NATIVE grammar parse is the final base candidate. It is not
     /// a `MethodDef`, so the regular MRO chain never reaches it (mirrors
-    /// `native_metamodel_next_candidate`). YAMLish relies on this: its
+    /// `native_metamodel_base`). YAMLish relies on this: its
     /// `method parse` wraps the native parse to inject `:actions(Actions)`.
-    pub(super) fn native_grammar_parse_next_candidate(
+    pub(super) fn native_grammar_parse_base(
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
@@ -1142,7 +1142,7 @@ impl Interpreter {
                     }
                     return Ok(result);
                 }
-                Some(DeferralEntry::Native { name }) => {
+                Some(DeferralEntry::Native { name, base }) => {
                     // The builtin of a core-type receiver behind an augmented
                     // method: the frame's current invocant and args, or the
                     // `callwith` replacement.
@@ -1163,22 +1163,22 @@ impl Interpreter {
                         frame.in_wrapper = false;
                         (frame.invocant.clone(), frame.args.clone())
                     };
-                    let how_or_rule = self
-                        .native_grammar_parse_next_candidate(Some(&args))
-                        .or_else(|| self.native_mu_base_next_candidate(Some(&args)))
-                        .or_else(|| self.native_metamodel_next_candidate(Some(&args)))
-                        .or_else(|| self.native_grammar_builtin_rule_next_candidate());
-                    let result = if let Some(res) = how_or_rule {
+                    let bridge = match base {
+                        NativeBase::GrammarParse => {
+                            self.native_grammar_parse_base(Some(&args))
+                        }
+                        NativeBase::MuBase => self.native_mu_base(Some(&args)),
+                        NativeBase::Metamodel => self.native_metamodel_base(Some(&args)),
+                        NativeBase::GrammarRule => self.native_grammar_builtin_rule_base(),
+                        NativeBase::Storage => self.native_storage_base_entry(),
+                        NativeBase::Value => None,
+                    };
+                    let result = if let Some(res) = bridge {
                         res?
                     } else if matches!(invocant.view(), ValueView::Instance { .. }) {
-                        // An instance of a container subclass: the native
-                        // behavior on its backing storage is the next candidate
-                        // (the frame builder pushed this entry because the
-                        // receiver carries one).
-                        match self.native_storage_base_entry() {
-                            Some(res) => res?,
-                            None => self.any_base_native_entry(&invocant, &name, &args)?,
-                        }
+                        // An instance whose class has no storage bridge
+                        // (`Storage` handled it above): the default rendering.
+                        self.any_base_native_entry(&invocant, &name, &args)?
                     } else if matches!(invocant.view(), ValueView::Mixin(..)) {
                         self.mixin_base_native_entry(&invocant, &name, &args)
                             .transpose()?
@@ -1670,7 +1670,7 @@ impl Interpreter {
         // A metamodel-HOW method (user subclass of Metamodel::ClassHOW /
         // Metamodel::GrammarHOW) with no user MRO frame at all: the native
         // metamodel implementation is the next (and last) candidate.
-        if let Some(res) = self.native_metamodel_next_candidate(override_args.as_deref()) {
+        if let Some(res) = self.native_metamodel_base(override_args.as_deref()) {
             let result = res?;
             if tail_call {
                 return Err(RuntimeError::return_signal(result));
@@ -1685,7 +1685,7 @@ impl Interpreter {
         // path). `nextsame`/`callsame` (override_args is None) implicitly
         // forward the ORIGINAL call's args rather than an empty list — read
         // them off the method dispatch frame / samewith context, mirroring
-        // `native_array_storage_next_candidate`'s same fallback for a
+        // `native_array_storage_base`'s same fallback for a
         // no-frame single compiled method.
         if matches!(func_name, "nextsame" | "callsame" | "nextwith" | "callwith") {
             let in_new = self
@@ -1716,7 +1716,7 @@ impl Interpreter {
                 // The nearest builtin ancestor's native constructor is the next
                 // MRO candidate *before* `Mu.new`/`bless` (`class LoggedVersion
                 // is Version { method new(|c) { nextsame } }`).
-                if let Some(res) = self.native_builtin_new_next_candidate(&invocant, &call_args) {
+                if let Some(res) = self.native_builtin_new_base(&invocant, &call_args) {
                     let result = res?;
                     if tail_call {
                         return Err(RuntimeError::return_signal(result));

@@ -2634,7 +2634,7 @@ impl Interpreter {
     /// is returned; the caller writes the instance back.
     ///
     /// `pub(crate)`: also reused by the `nextsame`/`callsame` synthesized native
-    /// fallback (`native_array_storage_next_candidate` in
+    /// fallback (`native_array_storage_base` in
     /// `runtime/builtins_dispatch_next.rs`) so a deferred call from a user
     /// override reaches the same mutation as the direct `$a.push(...)` path,
     /// instead of silently no-op'ing through the non-mutating

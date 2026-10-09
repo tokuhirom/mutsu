@@ -4020,7 +4020,7 @@ impl Interpreter {
     /// The native attribute-copying clone of an `Instance` value, with `:attr(v)`
     /// twiddle args applied. Shared between the direct `.clone` dispatch arm and
     /// the `callsame` base candidate of a user `clone` override
-    /// (`native_mu_base_next_candidate`). `None` when the value is not an
+    /// (`native_mu_base`). `None` when the value is not an
     /// Instance.
     // Cost: O(a) in the instance's attribute count.
     pub(crate) fn native_instance_clone_value(
