@@ -74,6 +74,53 @@ impl Interpreter {
         }
     }
 
+    /// Rebind companion of [`Self::writeback_package_scope_var`]: a `:=` of the
+    /// package-block `my` lexical `name` to a value installs a fresh container
+    /// in the package store instead of writing through the cell that every
+    /// name `:=`-bound to the old binding shares (#12129). Reports `false`,
+    /// touching nothing, when the current package's store has no such entry.
+    // Cost: O(1) beyond `rebound_container`'s; the table is copied (O(p)) only
+    // while a thread clone still shares it.
+    pub(super) fn package_scope_lexical_rebind(
+        &mut self,
+        name: &str,
+        val: &Value,
+        source_kind: Option<crate::ast::ReadonlyKind>,
+    ) -> bool {
+        if self.lexicals.package_lexicals.is_empty() {
+            return false;
+        }
+        let cur_sym = self.current_package_sym();
+        let cur: &str = cur_sym.as_str();
+        if !self
+            .lexicals
+            .package_lexicals
+            .get(cur)
+            .is_some_and(|m| m.contains_key(name))
+        {
+            return false;
+        }
+        let scalar = !name.starts_with(['@', '%', '&']);
+        let (container, decision) = Self::rebound_container(val.clone(), scalar, source_kind);
+        if scalar && let ValueView::ContainerRef(fresh) = container.view() {
+            fresh.set_binding_decision(decision);
+        }
+        let Some(slot) = crate::runtime::cow_table_mut(&mut self.lexicals.package_lexicals)
+            .get_value_mut(cur, name)
+        else {
+            return false;
+        };
+        *slot = container.clone();
+        // A live `@`/`%` binding in `env` is read ahead of the store; keep it in
+        // step so a stale entry does not keep resolving to the old container.
+        if self.env().contains_key(name) {
+            self.env_mut().insert(name.to_string(), container);
+        }
+        // TRIR's free-variable cache may hold the replaced container.
+        self.lexicals.unit_lexical_gen = self.lexicals.unit_lexical_gen.wrapping_add(1);
+        true
+    }
+
     /// The stored root of the package-block `@`/`%` lexical `name` resolves
     /// to through [`Self::package_scope_lexical`], for a write chokepoint
     /// that mutates the container in place (`env_root_descended_mut`). A
