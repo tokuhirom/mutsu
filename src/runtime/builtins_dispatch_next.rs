@@ -450,9 +450,9 @@ impl Interpreter {
             .cloned()
             .unwrap_or_else(|| frame.invocant.clone());
         match method_name.as_str() {
-            "BUILDALL" | "POPULATE" => crate::builtins::method_table::invoke_owner_raw(
+            "BUILDALL" | "POPULATE" => crate::builtins::method_table::invoke_base(
                 self,
-                &["Mu"],
+                "Mu",
                 &method_name,
                 std::slice::from_ref(&invocant),
             ),
@@ -460,13 +460,13 @@ impl Interpreter {
                 let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(frame_args);
                 let mut full = vec![invocant];
                 full.extend(args);
-                crate::builtins::method_table::invoke_owner_raw(self, &["Mu"], "clone", &full)
+                crate::builtins::method_table::invoke_base(self, "Mu", "clone", &full)
             }
             "new" => {
                 let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(frame_args);
                 let mut full = vec![invocant];
                 full.extend(args);
-                crate::builtins::method_table::invoke_owner_raw(self, &["Mu"], "new", &full)
+                crate::builtins::method_table::invoke_base(self, "Mu", "new", &full)
             }
             _ => None,
         }

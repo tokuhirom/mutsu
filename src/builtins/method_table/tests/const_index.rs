@@ -33,6 +33,10 @@ fn legacy() -> Legacy {
         let id = RowId::from_bits(idx as u16);
         let owner = Symbol::intern(row.owner);
         let name = Symbol::intern(row.name);
+        // A deferral base is found by `base_row`, never by an owner chain.
+        if row.flags.contains(RowFlags::DEFERRAL_BASE) {
+            continue;
+        }
         for arity in row.arities() {
             t.owners.entry((owner, name, arity)).or_insert(id);
         }
