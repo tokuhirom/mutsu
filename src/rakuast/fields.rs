@@ -373,6 +373,11 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("off", Absent::Zero),
         ],
         StatementUse => &[("module-name", Absent::Required), ("argument", EXPRESSION)],
+        StatementRequire => &[
+            ("module-name", Absent::Required),
+            ("file", EXPRESSION),
+            ("argument", EXPRESSION),
+        ],
         StatementImport => &[("module-name", Absent::Required), ("argument", EXPRESSION)],
         StatementNeed => &[("module-names", Absent::EmptyList)],
         StatementLanguageVersion => &[("version", Absent::Required)],

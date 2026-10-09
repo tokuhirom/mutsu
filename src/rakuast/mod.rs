@@ -453,6 +453,8 @@ pub enum RakuAstClass {
     // An argument-less core `use` pragma (`use strict`, `use fatal`, ...).
     Pragma,
     StatementUse,
+    // `require Module;` -- model only; lowering is #7564.
+    StatementRequire,
     // `need Module;` / `import Module :tag;`.
     StatementNeed,
     StatementImport,
@@ -741,6 +743,7 @@ impl RakuAstClass {
             StubWarn => "RakuAST::Stub::Warn",
             Pragma => "RakuAST::Pragma",
             StatementUse => "RakuAST::Statement::Use",
+            StatementRequire => "RakuAST::Statement::Require",
             StatementNeed => "RakuAST::Statement::Need",
             StatementImport => "RakuAST::Statement::Import",
             StatementLanguageVersion => "RakuAST::Statement::LanguageVersion",
@@ -1041,6 +1044,7 @@ impl RakuAstClass {
             ],
             Pragma
             | StatementUse
+            | StatementRequire
             | StatementNeed
             | StatementTrusts
             | StatementImport
@@ -1255,6 +1259,7 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         ],
         "RakuAST::Pragma"
         | "RakuAST::Statement::Use"
+        | "RakuAST::Statement::Require"
         | "RakuAST::Statement::LanguageVersion"
         | "RakuAST::Statement::Also" => &["RakuAST::Statement"],
         "RakuAST::RegexDeclaration"
@@ -1592,6 +1597,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StubWarn,
     RakuAstClass::Pragma,
     RakuAstClass::StatementUse,
+    RakuAstClass::StatementRequire,
     RakuAstClass::StatementNeed,
     RakuAstClass::StatementImport,
     RakuAstClass::StatementLanguageVersion,
@@ -2882,6 +2888,38 @@ pub fn construct(
             }],
         }))));
     }
+    // `Statement::Use` / `Statement::Require`: a required `module-name` plus
+    // optional named fields, kept in the order rakudo declares them.
+    if method == "new"
+        && let Some((class, optional)) = module_statement_schema(class_name)
+    {
+        let module_name = named_arg(args, "module-name").ok_or_else(|| {
+            RuntimeError::new(format!(
+                "{class_name}.new requires a `module-name` argument"
+            ))
+        })?;
+        require_rakuast_class(
+            &module_name,
+            RakuAstClass::Name,
+            &format!("{class_name}.new"),
+        )?;
+        let mut fields = vec![RakuAstField {
+            name: Some("module-name"),
+            value: RakuAstFieldValue::Node(module_name),
+        }];
+        for &fname in optional {
+            if let Some(value) = named_arg(args, fname) {
+                fields.push(RakuAstField {
+                    name: Some(fname),
+                    value: RakuAstFieldValue::Node(value),
+                });
+            }
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class,
+            fields,
+        }))));
+    }
     // Multi-field named constructors: the named args map to same-named fields in
     // the class's schema order (`ApplyInfix.new(left => …, infix => …, right => …)`).
     if let Some((class, schema)) = multi_field_schema(class_name, method) {
@@ -3278,6 +3316,18 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
     })
 }
 
+/// The class and optional named fields of a module-naming statement
+/// (`module-name` is always required).
+fn module_statement_schema(class_name: &str) -> Option<(RakuAstClass, &'static [&'static str])> {
+    match class_name {
+        "RakuAST::Statement::Use" => Some((RakuAstClass::StatementUse, &["argument"][..])),
+        "RakuAST::Statement::Require" => {
+            Some((RakuAstClass::StatementRequire, &["file", "argument"][..]))
+        }
+        _ => None,
+    }
+}
+
 /// The class and ordered named-field schema for a multi-field constructor.
 fn multi_field_schema(
     class_name: &str,
@@ -3528,6 +3578,8 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::VarPackage
             | RakuAstClass::VarDynamic
             | RakuAstClass::StatementExpression
+            | RakuAstClass::StatementUse
+            | RakuAstClass::StatementRequire
             | RakuAstClass::ApplyInfix
             | RakuAstClass::ApplyPrefix
             | RakuAstClass::ApplyPostfix
