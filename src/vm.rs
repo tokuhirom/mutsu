@@ -312,6 +312,7 @@ pub(crate) use vm_core_type_object_methods::SCHEDULER_USAGE_COLUMNS;
 mod vm_rakudo_internals;
 pub(crate) use vm_rakudo_internals::process_start_epoch_nanos;
 mod vm_decl_lane;
+mod vm_named_root_guard;
 mod vm_range_int_bounds;
 pub(crate) mod vm_raw_invocant_arrival;
 mod vm_raw_invocant_lvalue;

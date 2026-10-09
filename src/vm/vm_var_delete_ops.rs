@@ -207,6 +207,12 @@ impl Interpreter {
         // back through the cell (so every alias observes the delete) and restore
         // the cell in env and the local slot.
         let var_name = Self::const_str(code, name_idx).to_string();
+        // ADR-0068: the delete restructures an aliased container in place. An
+        // attribute hash is shared by the instance and this frame's env, so
+        // two threads deleting from (or inserting into) it race on the backing
+        // map (#11701). Held for the whole op: the region below runs no user
+        // Raku code beyond the key sequence's own evaluation.
+        let _struct_guard = self.named_root_struct_guard(code, slot, &var_name);
         // Materialize a lazy key sequence before refreshing a scalar-held
         // target from its local slot.  The sequence may close over that same
         // target (`$store.pairs.grep(...).map(*.key)`); replacing the env

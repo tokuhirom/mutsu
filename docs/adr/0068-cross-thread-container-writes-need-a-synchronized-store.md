@@ -1,6 +1,6 @@
 # ADR-0068: A cross-thread aliased container write needs a synchronized store, not a name-keyed lane
 
-- Status: **Accepted** (2026-09-06; §4 steps 1-3 implemented — see §13.4; the read-side guard's cost measured in §14)
+- Status: **Accepted** (2026-09-06; §4 steps 1-3 implemented — see §13.4, with four routes added in §15; the read-side guard's cost measured in §14)
 - Date: 2026-09-05
 - Relates to: [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (layer 3c),
   [ADR-0013](0013-container-interior-mutability-cellvalue.md) §1.3-2 / §3 / §5 Q2,
@@ -795,3 +795,57 @@ No change was made. Two process notes for anyone measuring in this area again:
 
 `benchmarks/bench-threads.raku` was added so the bench CI carries a concurrency
 series in `bench-history.tsv` from here on; there was none before.
+
+## 15. Step 3, fourth slice (2026-10-09): four routes §13.4 called complete were not (#11701)
+
+§13.4 declared step 3 complete on the strength of the §1.1 harness and its five
+routes. Method::Protected 0.0.4's own test then died with SIGSEGV 3 times in 3,
+and a bare `has %!hash` hammered from three threads for two seconds died 3 times
+in 8 on a release build — in `HashData`'s drop or in `hashbrown`'s `reserve_rehash`
+— and the runs that finished reported `.elems` of 697..803 for 702 possible keys.
+None of the shapes was in the harness. Four more routes, each found by running a
+reduced class under three threads and reading the backtrace:
+
+1. **`%!h{$k}++` / `@!a[$i]--` on a plain (uncelled) container**
+   (`exec_inc_dec_index_op`, the final `with_hash_mut` / `with_array_mut`
+   writeback). The attribute's container is aliased by the instance and by the
+   frame's env, never reaches a cell, and the arm took no guard. Now guarded: on
+   the cell when there is one, on the unit-lexical cell for a file-scope `my %h`
+   a method reaches by name (a thread whose env was seeded from the cell holds the
+   deref'd container, so keying on the node alone put two threads on two
+   stripes), else on the node.
+2. **The celled arm of the same function.** It reads the element out of the cell's
+   container and then restructures it, with no guard at all. Now a read guard and
+   a write guard, taken separately and keyed on the outermost cell, never held
+   across the `++` itself (`increment_value_smart` can run user code, which §7.4
+   forbids under a stripe).
+3. **`%!h{$k}:delete`** (`exec_delete_index_named_op`). It unwraps the cell into
+   env, removes, and writes back. Now guarded for the whole op by
+   `Interpreter::named_root_struct_guard`, which keys the way the other routes do.
+4. **Leaf reads** (`.keys`, `.values`, `.kv`, `.pairs`, `.antipairs`, `.elems`,
+   `.end`, `.list`, `.Bool`, `AT-KEY`, `AT-POS`, `EXISTS-KEY`, `EXISTS-POS`,
+   `.Numeric`, `.Int`) of a `Hash`/`Array`. §8's method funnel guarded only the
+   mutators, so a reader walked the backing map while another thread rehashed it.
+   `container_lock::is_leaf_structure_read` is the allowlist, taken at
+   `method_table::dispatch::call` (every table row) and at
+   `call_method_with_values`. It is an allowlist of methods that run no user code;
+   a method that takes a callback must never be added.
+
+Acceptance (release build, three threads, 1.5-2 s): the bare `has %!hash`
+program 0 crashes in 12 with `.elems` 702 every time (was 3 in 8, 697..803); the
+file-scope `my %h` variant 8 in 8 correct (was 6 in 8 crashing or torn);
+`%!h{$k}:delete` 0 in 5 (was 5 in 5); `.keys.elems` racing a write 0 in 6 (was
+4 in 5); `t/concurrency/concurrent-attr-hash-writes-do-not-corrupt.t` fails 3 in
+3 on the previous build and passes 5 in 5 on this one.
+
+### 15.1 Still open
+
+Iteration and callback methods on a shared container — `.sort`, `.map`, `.grep`,
+`.gist`, `.Str`, `.raku`, `for %!h.kv` on a fast path — still walk the backing map
+with nothing held (measured: `.sort` 2 in 4 runs, `.map` 2 in 4, `.gist` 4 in 4
+crash with three threads writing). They cannot take the stripe: a callback, or an
+element's own `.gist`, is user code. The sound remedy is a snapshot taken under the
+stripe (an O(n) shallow clone of the `HashData`/`ArrayData`, which those methods
+already pay) with the method then run on the snapshot outside it; that changes
+aliasing for `.map` over an `is rw` element, so it needs its own measurement and
+is filed separately.

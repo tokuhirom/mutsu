@@ -274,7 +274,8 @@ impl Interpreter {
         // the same attribute container share. A no-op (one relaxed load) until
         // a VM mutator thread is spawned.
         let _mutating_guard = if crate::value::container_lock::multi_mutator_threads_live()
-            && Self::method_mutates_container(method)
+            && (Self::method_mutates_container(method)
+                || crate::value::container_lock::is_leaf_structure_read(method))
         {
             crate::value::container_lock::ContainerStructGuard::acquire_for(None, &target)
         } else {

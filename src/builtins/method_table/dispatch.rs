@@ -29,6 +29,17 @@ fn call(
 ) -> Option<Answer> {
     // A random answer cannot be checked by running the call a second time.
     let rerunnable = !row.flags.contains(RowFlags::RANDOM);
+    // ADR-0068: a leaf READ of a container (`%!h.keys`) walks the backing map,
+    // which a concurrent structural write on another thread reallocates (#11701).
+    // A no-op (one relaxed load) until a second VM mutator thread exists, and
+    // for a receiver that is no `Hash`/`Array`.
+    let _read_exclusion = if crate::value::container_lock::multi_mutator_threads_live()
+        && crate::value::container_lock::is_leaf_structure_read(row.name)
+    {
+        crate::value::container_lock::ContainerStructGuard::acquire_for(None, target)
+    } else {
+        None
+    };
     match row.handler {
         Handler::Pure(f) => Some((f(target, positional), rerunnable)),
         Handler::Narrow(f) => f(target, positional).map(|r| (r, rerunnable)),
@@ -374,6 +385,13 @@ fn debug_assert_matches_full_path(
 ) {
     #[cfg(debug_assertions)]
     {
+        // The two answers are computed one after the other, so another thread
+        // writing the receiver in between makes them differ legitimately. The
+        // net is for the single-threaded suite; once a second VM mutator thread
+        // exists the comparison proves nothing (#11701).
+        if crate::value::container_lock::multi_mutator_threads_live() {
+            return;
+        }
         let slow = match args {
             [] => super::super::methods_0arg::native_method_0arg_cascade(target, method),
             [a] => super::super::native_method_1arg(target, method, a),
