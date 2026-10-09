@@ -71,6 +71,19 @@ pub(super) fn is_origin(field: &RakuAstField) -> bool {
     field.name == Some(FIELD) || field.name == Some(END_INDEX)
 }
 
+/// The line recorded in `node`'s `origin` field, ignoring the `END` number.
+// Cost: O(f), f = fields of `node`.
+pub(super) fn statement_line_of(node: &RakuAstNode) -> Option<i64> {
+    let field = node.fields.iter().find(|f| f.name == Some(FIELD))?;
+    let RakuAstFieldValue::Node(value) = &field.value else {
+        return None;
+    };
+    match value.view() {
+        ValueView::Int(line) => Some(line),
+        _ => None,
+    }
+}
+
 /// The line `node`'s statement began on, when the node carries one.
 // Cost: O(f), f = fields of `node`.
 pub(super) fn line_of(node: &RakuAstNode) -> Option<i64> {
