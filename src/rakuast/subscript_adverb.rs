@@ -18,7 +18,8 @@
 //! it with `ast::subscript_adverb::expand`.
 
 use super::convert::{
-    angle_key_text, angle_subscript_node, colonpair_value_expr, leaf_field, subscript_dims_node,
+    angle_key_text, angle_subscript_node, colonpair_value_expr, convert_expr, leaf_field,
+    subscript_dims_node, unsupported as convert_unsupported,
 };
 use super::lower::{list_field, lower_expr, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -47,12 +48,10 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
             pairs @ ..,
         ] = args.as_slice()
         else {
-            return Some(Err(super::convert::unsupported(
-                "named subscript adverb call",
-            )));
+            return Some(Err(convert_unsupported("named subscript adverb call")));
         };
         let ValueView::Str(shape) = shape.view() else {
-            return Some(Err(super::convert::unsupported("named subscript shape")));
+            return Some(Err(convert_unsupported("named subscript shape")));
         };
         let shape = shape.as_str();
         let is_positional = shape.starts_with('[');
@@ -60,21 +59,17 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
             "[; ]" | "{; }" => match index {
                 Expr::ArrayLiteral(items) => items.as_slice(),
                 _ => {
-                    return Some(Err(super::convert::unsupported(
-                        "named multidimensional subscript",
-                    )));
+                    return Some(Err(convert_unsupported("named multidimensional subscript")));
                 }
             },
             "[ ] zen" | "{ } zen" => &[],
             "[ ]" | "{ }" => std::slice::from_ref(index),
-            _ => return Some(Err(super::convert::unsupported("named subscript shape"))),
+            _ => return Some(Err(convert_unsupported("named subscript shape"))),
         };
         return Some(
             pairs
                 .iter()
-                .map(|pair| {
-                    super::convert::convert_expr(pair).map(|node| Value::rakuast(Box::new(node)))
-                })
+                .map(|pair| convert_expr(pair).map(|node| Value::rakuast(Box::new(node))))
                 .collect::<Result<Vec<_>, _>>()
                 .and_then(|pairs| {
                     subscript_dims_node(target, dimensions, is_positional, None, pairs)
@@ -161,7 +156,7 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
 fn convert_named_subscript(subscript: &Expr, pairs: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
     let colonpairs = pairs
         .iter()
-        .map(|pair| super::convert::convert_expr(pair).map(|node| Value::rakuast(Box::new(node))))
+        .map(|pair| convert_expr(pair).map(|node| Value::rakuast(Box::new(node))))
         .collect::<Result<Vec<_>, _>>()?;
     match subscript {
         Expr::Index {
@@ -191,7 +186,7 @@ fn convert_named_subscript(subscript: &Expr, pairs: &[Expr]) -> Result<RakuAstNo
             dimensions,
             is_positional,
         } => subscript_dims_node(target, dimensions, *is_positional, None, colonpairs),
-        _ => Err(super::convert::unsupported("named subscript source form")),
+        _ => Err(convert_unsupported("named subscript source form")),
     }
 }
 
