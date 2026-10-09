@@ -335,6 +335,7 @@ t/collections/lazy-seq/seq-new-user-iterator-is-lazy.t
 t/collections/lazy-seq/seq-new-user-iterator.t
 t/collections/lazy-seq/seq-numeric-aggregation.t
 t/collections/lazy-seq/seq-predictive-iterator-source.t
+t/collections/lazy-seq/seq-pull-progress-stays-with-its-seq.t
 t/collections/lazy-seq/seq-reentrant-generator.t
 t/collections/lazy-seq/seq-reify-preserves-aliases.t
 t/collections/lazy-seq/seq-resumes-after-failed-read.t
@@ -666,6 +667,7 @@ t/collections/subscript/subscript-adverb-forces-gather.t
 t/collections/subscript/subscript-adverb-lazy-truncate.t
 t/collections/subscript/subscript-adverb-whatever-missing.t
 t/collections/subscript/subscript-adverbs.t
+t/collections/subscript/subscript-bind-rows.t
 t/collections/subscript/subscript-delete-cond-exists.t
 t/collections/subscript/subscript-key-mutator-rows.t
 t/collections/subscript/subscript-kind-associative.t
@@ -1358,6 +1360,7 @@ t/exceptions/accepts-exception-propagates.t
 t/exceptions/anon-multi-exception-class.t
 t/exceptions/assignment-error-source-line.t
 t/exceptions/backtrace-anonymous-pointy-frames.t
+t/exceptions/backtrace-frame-gist-raku.t
 t/exceptions/backtrace-introspection.t
 t/exceptions/backtrace-method-rows.t
 t/exceptions/backtrace-new-setting-frames.t
@@ -1502,6 +1505,7 @@ t/exceptions/try-prefix-statement-modifier-next-line.t
 t/exceptions/try-return-failure-fatal.t
 t/exceptions/try-sink-semantics.t
 t/exceptions/try-tail-assign-value.t
+t/exceptions/two-terms-in-a-row-initializer-listop.t
 t/exceptions/two-terms-in-a-row-reports-position.t
 t/exceptions/two-terms-in-a-row-undeclared-word-infix.t
 t/exceptions/typed-exception-class-of-compile-errors.t
@@ -1855,6 +1859,7 @@ t/io/typed-slurpy.t
 t/lang/adverbs/adverbial-pair-variable-name.t
 t/lang/adverbs/colon-args-list-infix-precedence.t
 t/lang/adverbs/colon-call-argument-parsing.t
+t/lang/adverbs/colon-call-trailing-comma.t
 t/lang/adverbs/colon-const-fatarrow-key.t
 t/lang/adverbs/colonpair-braced-hash-value.t
 t/lang/adverbs/colonpair-bracket-trailing-comma-composer.t
@@ -1897,6 +1902,7 @@ t/lang/global-qualified-sigilless-constant.t
 t/lang/hyphenated-imported-type-block-no-gobble.t
 t/lang/issue-7749-adjacent-colonpairs.t
 t/lang/issue-7752-modulo-divisible-failure.t
+t/lang/item-assignment-comma-precedence-value.t
 t/lang/literal-hex-float.t
 t/lang/malformed-my-sigilless.t
 t/lang/operators/amp-bracket-nested-metaop.t
@@ -2042,6 +2048,7 @@ t/lang/ordered-alternation-loser-code-block.t
 t/lang/parsing/bare-adverb-declaration-name.t
 t/lang/parsing/bare-adverb-listop-arg.t
 t/lang/parsing/bare-constant-statement-modifier.t
+t/lang/parsing/bare-decl-andthen.t
 t/lang/parsing/bare-perl5-unary-obsolete.t
 t/lang/parsing/bare-return-expression.t
 t/lang/parsing/bare-return-with-parens.t
@@ -2152,6 +2159,8 @@ t/lang/tight-and-ternary-precedence.t
 t/lang/tolerance-dynamic.t
 t/lang/uri-query-misc-fixes.t
 t/lang/user-op-precedence.t
+t/lang/word-logical-loosest-precedence.t
+t/lang/word-logical-lvalue-precedence.t
 t/lang/zprintf-g-exponent.t
 t/lang/zprintf-g-strip-zeros.t
 t/modules/adr0110-trir-module-linkage.t
@@ -3379,6 +3388,7 @@ t/oo/method/multi-method.t
 t/oo/method/mut-method-receiver-writeback-coherence.t
 t/oo/method/mutating-method-colon.t
 t/oo/method/my-class-method-captures-own-type.t
+t/oo/method/my-decl-bare-dot-method-call.t
 t/oo/method/my-multi-method.t
 t/oo/method/named-method-expression-position.t
 t/oo/method/nested-block-method-capture-persists.t
@@ -3852,6 +3862,7 @@ t/oo/trait/unrelated-trait-mod-candidate-does-not-swallow-unknown-trait.t
 t/oo/trait/uppercase-is-trait-reaches-trait-mod.t
 t/oo/trait/user-trait-mod-does-not-consume-every-trait.t
 t/oo/trait/variable-custom-traits.t
+t/oo/trait/variable-trait-begin-time.t
 t/oo/trait/variable-trait-var-assign.t
 t/oo/trait/variable-traits.t
 t/oo/type-capture-mixin-type.t
@@ -3914,6 +3925,7 @@ t/rakuast/rakuast-control.t
 t/rakuast/rakuast-core-type-names.t
 t/rakuast/rakuast-decl-default-trait.t
 t/rakuast/rakuast-declaration-headers.t
+t/rakuast/rakuast-declaration-loose-tail.t
 t/rakuast/rakuast-declaration-traits.t
 t/rakuast/rakuast-declared-name-nested.t
 t/rakuast/rakuast-declared-name.t
@@ -4447,6 +4459,7 @@ t/regex/subst/str-trans-errors.t
 t/regex/subst/subset-name-vs-subst-operator.t
 t/regex/subst/subst-accessor-element-lhs.t
 t/regex/subst/subst-assign-expr-replacement.t
+t/regex/subst/subst-assign-replacement-precedence.t
 t/regex/subst/subst-assign-thunk-anon-state.t
 t/regex/subst/subst-backrefs.t
 t/regex/subst/subst-capture-markers.t
@@ -4476,6 +4489,7 @@ t/regex/subst/subst-replacement-literal-angle.t
 t/regex/subst/subst-slow-path-linear.t
 t/regex/subst/subst-smartmatch-topic-source.t
 t/regex/subst/subst-string-pattern-closure.t
+t/regex/subst/subst-string-pattern-keeps-match-var.t
 t/regex/subst/subst-string-replacement-capture-spans.t
 t/regex/subst/subst-x-adverb.t
 t/regex/subst/subst-x-range.t
@@ -5037,6 +5051,7 @@ t/routines/signature/callback-aliases-through-code-and-array-params.t
 t/routines/signature/capture-param-forwards-caller-containers.t
 t/routines/signature/capture-param-shadows-outer-sub.t
 t/routines/signature/captured-param-cell-not-in-shared-vars-lane.t
+t/routines/signature/closure-captured-amp-param-in-map-gather.t
 t/routines/signature/closure-captured-bang-var-through-code-param.t
 t/routines/signature/closure-captured-var-ignores-callers-readonly-param.t
 t/routines/signature/closure-rw-param-writeback.t
