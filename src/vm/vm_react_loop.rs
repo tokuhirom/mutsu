@@ -255,7 +255,27 @@ impl Interpreter {
                         crate::runtime::builtins_system_async::rearm_signal_supply(
                             &(attributes).as_map(),
                         );
-                        let supply_id = self.resolve_supply_channel_id(&(attributes).as_map());
+                        // `map`/`grep`/`reduce` over a `Proc::Async` stream run as
+                        // stages of this subscription (see
+                        // `wrap_proc_derived_stages`).
+                        let mut stage_pipeline = None;
+                        let mut stage_base = None;
+                        if let Some((base, cb, lasts)) =
+                            crate::runtime::Interpreter::wrap_proc_derived_stages(
+                                &attributes.as_map(),
+                                callback.clone(),
+                                items
+                                    .get(2)
+                                    .and_then(crate::runtime::Interpreter::value_array_items)
+                                    .unwrap_or_default(),
+                            )
+                        {
+                            stage_pipeline = Some((cb, lasts));
+                            stage_base = Some(base);
+                        }
+                        let supply_attrs =
+                            stage_base.unwrap_or_else(|| (*attributes.as_map()).clone());
+                        let supply_id = self.resolve_supply_channel_id(&supply_attrs);
                         let is_lines = matches!(
                             attributes.as_map().get("is_lines").map(Value::view),
                             Some(ValueView::Bool(true))
@@ -264,7 +284,7 @@ impl Interpreter {
                         if let Some(sid) = supply_id
                             && let Some(rx) = take_supply_channel(sid)
                         {
-                            let last_callbacks = items
+                            let mut last_callbacks = items
                                 .get(2)
                                 .and_then(crate::runtime::Interpreter::value_array_items)
                                 .unwrap_or_default();
@@ -272,6 +292,11 @@ impl Interpreter {
                                 .get(3)
                                 .and_then(crate::runtime::Interpreter::value_array_items)
                                 .unwrap_or_default();
+                            let mut sub_callback = callback.clone();
+                            if let Some((cb, lasts)) = stage_pipeline {
+                                sub_callback = cb;
+                                last_callbacks = lasts;
+                            }
                             react_subs.push(ReactSubscription {
                                 whenever_id,
                                 receiver: Some(rx),
@@ -282,7 +307,7 @@ impl Interpreter {
                                 quit_callbacks,
                                 is_lines,
                                 head_limit,
-                                ..ReactSubscription::new(callback)
+                                ..ReactSubscription::new(sub_callback)
                             });
                             continue;
                         }

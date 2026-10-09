@@ -413,7 +413,7 @@ impl Interpreter {
     /// encoding error" behaviour (roast S17-procasync/encoding.t).
     fn replay_proc_output(&mut self, sid: Option<u64>, value_taps: &[Value], fallback: String) {
         use super::super::native_methods::{
-            get_supply_enc, get_supply_quit_taps, is_supply_live_tapped, mark_supply_replayed,
+            get_supply_done_taps, get_supply_enc, get_supply_quit_taps, is_supply_live_tapped, mark_supply_replayed,
             take_supply_collected_bytes,
         };
         // Replay is once-per-stream: a second `await`/`.result` on the same Proc
@@ -451,11 +451,18 @@ impl Interpreter {
                 let _ = self.call_sub_value(tap.clone(), vec![Value::str(text.clone())], true);
             }
         }
-        if let Some(reason) = quit_reason
-            && let Some(sid) = sid
-        {
-            for quit_tap in get_supply_quit_taps(sid) {
-                let _ = self.call_supply_quit_handler(quit_tap, reason.clone());
+        if let Some(sid) = sid {
+            if let Some(reason) = quit_reason {
+                for quit_tap in get_supply_quit_taps(sid) {
+                    let _ = self.call_supply_quit_handler(quit_tap, reason.clone());
+                }
+            } else {
+                // The stream ended cleanly: now (not at tap time) it is done.
+                for done_tap in get_supply_done_taps(sid) {
+                    if !done_tap.is_nil() {
+                        let _ = self.call_sub_value(done_tap, Vec::new(), true);
+                    }
+                }
             }
         }
     }

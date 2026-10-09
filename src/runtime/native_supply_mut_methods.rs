@@ -209,6 +209,12 @@ impl Interpreter {
                     let sid = sid as u64;
                     if Self::supply_has_active_callback(&tap_cb) {
                         register_supply_tap(sid, tap_cb.clone());
+                        // A Proc::Async output Supply is done when the stream
+                        // ends, not when it is tapped: hand `done =>` to the
+                        // stream's delivery path (live pump or replay).
+                        if attrs.contains_key("proc_output") {
+                            register_supply_done_tap(sid, done_cb.take().unwrap_or(Value::NIL));
+                        }
                     }
                     // A `quit =>` handler on a Proc::Async output Supply fires only
                     // when the stream ends in a decode error; record it so the

@@ -120,6 +120,15 @@ fn supply_quit_taps_map() -> &'static SupplyQuitTapsMap {
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+/// Per Proc::Async output Supply, the `done =>` handler of each registered
+/// value tap, index-aligned with `supply_taps` (`NIL` for a tap without one).
+type SupplyDoneTapsMap = std::sync::Mutex<HashMap<u64, Vec<Value>>>;
+
+fn supply_done_taps_map() -> &'static SupplyDoneTapsMap {
+    static MAP: OnceLock<SupplyDoneTapsMap> = OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
 type SupplyEncMap = std::sync::Mutex<HashMap<u64, String>>;
 
 fn supply_enc_map() -> &'static SupplyEncMap {
@@ -968,6 +977,24 @@ pub(in crate::runtime) fn register_supply_quit_tap(supply_id: u64, tap: Value) {
 
 pub(in crate::runtime) fn get_supply_quit_taps(supply_id: u64) -> Vec<Value> {
     if let Ok(map) = supply_quit_taps_map().lock() {
+        map.get(&supply_id).cloned().unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Register the `done =>` handler (or `NIL`) of the value tap just added with
+/// [`register_supply_tap`]. It fires when the output stream ends, not at tap time.
+// Cost: O(1).
+pub(in crate::runtime) fn register_supply_done_tap(supply_id: u64, done: Value) {
+    if let Ok(mut map) = supply_done_taps_map().lock() {
+        map.entry(supply_id).or_default().push(done);
+    }
+}
+
+// Cost: O(t), t = taps registered on the supply.
+pub(in crate::runtime) fn get_supply_done_taps(supply_id: u64) -> Vec<Value> {
+    if let Ok(map) = supply_done_taps_map().lock() {
         map.get(&supply_id).cloned().unwrap_or_default()
     } else {
         Vec::new()

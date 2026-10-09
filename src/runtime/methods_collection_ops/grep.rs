@@ -120,7 +120,9 @@ impl Interpreter {
             } if class_name == "Supply" => {
                 // On-demand source: the filtered supply taps it per tap of its
                 // own (see `native_methods::supply_derive`).
-                if attributes.as_map().contains_key("on_demand_callback") {
+                if attributes.as_map().contains_key("on_demand_callback")
+                    || Self::is_channel_backed_source(&attributes.as_map())
+                {
                     return Ok(Self::make_on_demand_derived_supply(
                         target.clone(),
                         crate::runtime::native_methods::TransformMode::Grep,
