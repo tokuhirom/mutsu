@@ -105,10 +105,20 @@ effective_live_count() { # effective_live_count <state> <raw_live_count>
 # Only comments by people with write access count: an outsider's
 # `Claiming:` would otherwise set `working` and make every agent skip the
 # issue (docs/security.md, "CI, release and agents").
+#
+# The one exception is this workflow's own stale-claim release: it is posted by
+# `github-actions[bot]`, whose association is CONTRIBUTOR, so without the
+# exception the log never saw it and the claim stayed live -- the next scheduled
+# run then "released" it again, every three hours. The bot's login cannot be
+# spoofed, and a `Releasing:` only ever removes a claim, so admitting just those
+# comments cannot make an issue look taken.
+COMMENT_FILTER='.[] | select(
+    .author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR"
+    or (.user.login == "github-actions[bot]" and ((.body // "") | startswith("Releasing:"))))
+  | [.created_at, ((.body // "") | gsub("\r"; "") | split("\n")[0])] | @tsv'
+
 comment_log() { # comment_log <issue>
-  gh api --paginate "repos/$REPO/issues/$1/comments" \
-    --jq '.[] | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")
-              | [.created_at, ((.body // "") | gsub("\r"; "") | split("\n")[0])] | @tsv'
+  gh api --paginate "repos/$REPO/issues/$1/comments" --jq "$COMMENT_FILTER"
 }
 
 issue_labels() { # issue_labels <issue>
@@ -291,6 +301,35 @@ self_test() {
   check_effective '#8256: a closed issue with no claims stays at zero' closed 0 0
   check_effective '#8256: an open issue keeps its raw live count' open 2 2
   check_effective '#8256: a reopened (open) issue with a live claim is working again' open 1 1
+
+  # The author filter: the stale-claim `Releasing:` the workflow posts as
+  # github-actions[bot] (association CONTRIBUTOR) must reach the log, and nothing
+  # else from a non-collaborator may.
+  if command -v jq >/dev/null 2>&1; then
+    check_filter() { # check_filter <label> <expected first-lines, '|'-joined> <comments json>
+      local label="$1" expected="$2" got
+      got=$(printf '%s' "$3" | jq -r "$COMMENT_FILTER" | cut -f2 | paste -sd'|' -)
+      if [ "$got" != "$expected" ]; then
+        echo "not ok - $label (expected '$expected', got '$got')" >&2
+        failures=$((failures + 1))
+      else
+        echo "ok - $label"
+      fi
+    }
+    c() { # c <association> <login> <body>
+      printf '{"author_association":"%s","user":{"login":"%s"},"created_at":"%s","body":"%s"}' "$1" "$2" "$ts" "$3"
+    }
+    check_filter 'a collaborator claim is read' 'Claiming: br-a' \
+      "[$(c OWNER tokuhirom 'Claiming: br-a\n\nprose')]"
+    check_filter 'an outsider claim is ignored' '' \
+      "[$(c NONE mallory 'Claiming: br-a')]"
+    check_filter 'the bot auto-release is read' 'Releasing: br-a' \
+      "[$(c CONTRIBUTOR 'github-actions[bot]' 'Releasing: br-a\n\nAuto-released')]"
+    check_filter 'a bot comment that is not a release is ignored' '' \
+      "[$(c CONTRIBUTOR 'github-actions[bot]' 'Claiming: br-a')]"
+    check_filter 'another contributor releasing is ignored' '' \
+      "[$(c CONTRIBUTOR mallory 'Releasing: br-a')]"
+  fi
 
   if [ "$failures" -ne 0 ]; then
     echo "sync-working-label self-test: $failures failure(s)" >&2
