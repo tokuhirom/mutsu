@@ -238,7 +238,7 @@ fn log(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
 
 // Cost: O(1) (O(n) for a Str receiver, n = chars of the parse).
 fn log2(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    apply(target, f64::log2, |re, im| {
+    apply(target, crate::builtins::math_prim::log2, |re, im| {
         let (mag, arg) = complex_ln(re, im);
         let ln2 = 2.0f64.ln();
         (mag / ln2, arg / ln2)

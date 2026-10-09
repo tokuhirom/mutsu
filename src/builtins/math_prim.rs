@@ -7,6 +7,13 @@ pub(crate) fn log10(x: f64) -> f64 {
     x.ln() / 10.0f64.ln()
 }
 
+/// `log2` the way Rakudo computes it, `log(x) / log(2)`: the correctly
+/// rounded `f64::log2` differs from it in the last digit (`3.log2`).
+/// Cost: O(1).
+pub(crate) fn log2(x: f64) -> f64 {
+    x.ln() / 2.0f64.ln()
+}
+
 /// Cost: O(1).
 pub(crate) fn atanh(x: f64) -> f64 {
     0.5 * ((1.0 + x) / (1.0 - x)).ln()

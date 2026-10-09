@@ -567,7 +567,7 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             }
             _ => {
                 let x = runtime::to_float_value(arg).unwrap_or(f64::NAN);
-                Some(Ok(Value::num(x.log2())))
+                Some(Ok(Value::num(crate::builtins::math_prim::log2(x))))
             }
         },
         "log10" => match arg.view() {

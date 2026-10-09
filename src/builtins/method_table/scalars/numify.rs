@@ -27,6 +27,9 @@ pub(crate) fn numify(target: &Value) -> Result<Cow<'_, Value>, Value> {
     if let Some(seconds) = temporal_seconds(target) {
         return Ok(Cow::Owned(seconds));
     }
+    if let Some(elems) = numeric_range_elems(target) {
+        return Ok(Cow::Owned(elems));
+    }
     let count = match target.view() {
         ValueView::Hash(map) => Some(map.len()),
         // A `List`, an `Array` and the list-likes (`Seq`, `Slip`, ...).
@@ -35,6 +38,37 @@ pub(crate) fn numify(target: &Value) -> Result<Cow<'_, Value>, Value> {
     Ok(match count {
         Some(count) => Cow::Owned(Value::int(count as i64)),
         None => Cow::Borrowed(target),
+    })
+}
+
+/// The element count of a `Range` with numeric endpoints (`Range.Numeric` is
+/// `elems`): an `Int`, or `Inf` for an endless one. `None` for any other
+/// receiver, a string range included.
+// Cost: O(1) (O(b) for big-Int endpoints, b = size in bits).
+pub(crate) fn numeric_range_elems(target: &Value) -> Option<Value> {
+    match target.view() {
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..) => {}
+        ValueView::GenericRange { start, end, .. }
+            if [start.as_ref(), end.as_ref()].iter().all(|e| {
+                matches!(
+                    e.view(),
+                    ValueView::Int(_)
+                        | ValueView::BigInt(_)
+                        | ValueView::Num(_)
+                        | ValueView::Rat(..)
+                        | ValueView::FatRat(..)
+                )
+            }) => {}
+        _ => return None,
+    }
+    let elems = crate::runtime::Interpreter::range_elems_f64(target).max(0.0);
+    Some(if elems.is_finite() {
+        Value::int(elems as i64)
+    } else {
+        Value::num(elems)
     })
 }
 

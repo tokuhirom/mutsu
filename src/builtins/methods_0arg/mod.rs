@@ -722,7 +722,12 @@ pub(crate) fn native_method_0arg_cascade(
     // candidate. `bool` and the C-width aliases are not coercion methods at all
     // (see `is_native_int_coerce_method`).
     if runtime::native_types::is_native_int_coerce_method(method) && target.isa_check("Cool") {
-        return Some(raku_repr::native_int_coerce_method(target, method));
+        // `Range.Numeric` is its element count.
+        let elems = crate::builtins::method_table::scalars::numify::numeric_range_elems(target);
+        return Some(raku_repr::native_int_coerce_method(
+            elems.as_ref().unwrap_or(target),
+            method,
+        ));
     }
     // Uni types: the rows of `builtins::method_table::uni` answer `elems`, `codes`,
     // `Int`, `Numeric`, `Str`, `list`, `gist`, `raku` and the positional
