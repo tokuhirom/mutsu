@@ -329,6 +329,19 @@ impl Interpreter {
                 let mut composes = Vec::new();
                 if let Err(err) = self.apply_attribute_traits(decl, &decl.name, cx.name, &mut composes)
                 {
+                    // A trait argument naming a declaration that the class
+                    // body has not reached yet (`is xml-serialise(&from)`
+                    // with `sub from` declared in the body) evaluates to Nil
+                    // here (so a typed handler declines it and the trait
+                    // reads as unknown) or is an undeclared routine. The
+                    // real class body run re-applies the trait with the
+                    // argument bound and reports a genuine error there; this
+                    // stand-in pass only skips it.
+                    if err.message.starts_with("Can't use unknown trait")
+                        || err.message.starts_with("Undeclared routine")
+                    {
+                        continue;
+                    }
                     trait_err = Some(err);
                     break;
                 }
