@@ -107,26 +107,15 @@ impl Interpreter {
         }
     }
 
-    /// Build a (possibly multidimensional) shaped array of the given dims.
-    /// Each dimension allocates `dims[i]` slots via a fallible reservation, so
-    /// an absurd declared shape (`my @a[1e15]` = `Array.new(:shape(1e15))`)
-    /// yields a catchable `X::` instead of an uncatchable `handle_alloc_error`
-    /// abort. (raku aborts with a MoarVM panic on the same input.)
-    pub(super) fn make_shaped_array(dims: &[usize]) -> Result<Value, RuntimeError> {
-        // Unused shaped cells hold the Any type object (the untyped element
-        // default), like a statement-form shaped declaration — `(my @b[42])`
-        // must be eqv to `my @a[42]`. A typed shaped decl (`my Int @a[3]`)
-        // re-seeds these cells with its element type via
-        // coerce_typed_array_elements (the unset-seed arm); the `array[T].new`
-        // / `Array[T].new` constructors pass their seed directly.
-        Self::make_shaped_array_seeded(dims, &Value::package(crate::symbol::wk::any()))
-    }
-
-    /// [`Self::make_shaped_array`] with an explicit unset-cell seed, for a
-    /// constructor that already knows its element type. A native element type
-    /// seeds the numeric/string zero (`array[int].new(:shape(5))` is five real
-    /// `0`s, so every slot `:exists`), a boxed one the type object (which stays
-    /// a hole until written).
+    /// Build a (possibly multidimensional) shaped array of the given dims, every
+    /// unset cell holding `seed`. Each dimension allocates `dims[i]` slots via
+    /// a fallible reservation, so an absurd declared shape
+    /// (`my @a[1e15]` = `Array.new(:shape(1e15))`) yields a catchable `X::`
+    /// instead of an uncatchable `handle_alloc_error` abort. (raku aborts with
+    /// a MoarVM panic on the same input.) A native element type seeds the
+    /// numeric/string zero (`array[int].new(:shape(5))` is five real `0`s, so
+    /// every slot `:exists`), a boxed one the type object (which stays a hole
+    /// until written).
     pub(super) fn make_shaped_array_seeded(
         dims: &[usize],
         seed: &Value,
