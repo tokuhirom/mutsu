@@ -345,14 +345,8 @@ impl Interpreter {
         // (`do { ... }`), whose scope fires the phasers on every exit --
         // normal, `next`, `last` or an exception -- and whose value is the
         // body's value.
-        // A body that declares a `sub`/`proto` is likewise run as a block: the
-        // routine is lexical to one call of the callback, and the block's
-        // scope restores the routine registry, so the next call (or the next
-        // callback declaring a same-named routine) is not a redeclaration.
-        let normalized_body = if crate::compiler::Compiler::has_block_leave_worthy_phasers(
-            &normalized_body,
-        ) || crate::compiler::Compiler::stmts_declare_routines(&normalized_body)
-        {
+        let normalized_body =
+            if crate::compiler::Compiler::has_block_leave_worthy_phasers(&normalized_body) {
                 vec![crate::ast::Stmt::Expr(crate::ast::Expr::DoBlock {
                     body: normalized_body,
                     label: None,
@@ -680,6 +674,7 @@ impl Interpreter {
                 None => self.inline_loop_plan(&data, InlineLoopKind::Map, slot),
             };
             let (code, compiled_fns) = (&plan.code, &plan.fns);
+            let declares_routines = crate::compiler::Compiler::stmts_declare_routines(&data.body);
             // Save/restore only temporary bindings introduced by map itself.
             // Captured lexical vars (in data.env) must keep mutations done inside
             // the mapper block (e.g. `{ $a++ }`).
@@ -796,7 +791,16 @@ impl Interpreter {
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     vm.mark_placeholder_params_readonly(&data.params);
                     set_loop_topic_readonly(vm, immutable_topic);
-                    match vm.run_reuse(code, compiled_fns) {
+                    // A `sub` declared in the callback is lexical to one call of
+                    // it: put the routine registry back afterwards so the next
+                    // call (or another callback declaring a same-named routine)
+                    // is not a redeclaration.
+                    let routine_snapshot = declares_routines.then(|| vm.snapshot_routine_registry());
+                    let run_result = vm.run_reuse(code, compiled_fns);
+                    if let Some(snapshot) = routine_snapshot {
+                        vm.restore_routine_registry(snapshot);
+                    }
+                    match run_result {
                         Ok(()) => {
                             let val = vm
                                 .last_stack_value()
@@ -1040,6 +1044,7 @@ impl Interpreter {
             &mut MapGrepPlanSlot::default(),
         );
         let (code, compiled_fns) = (&plan.code, &plan.fns);
+        let declares_routines = crate::compiler::Compiler::stmts_declare_routines(&data.body);
         let saved = self.enter_inline_loop_env(&data, &plan);
 
         let keeps_outer_topic = plan.keeps_outer_topic;
@@ -1094,7 +1099,16 @@ impl Interpreter {
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     vm.mark_placeholder_params_readonly(&data.params);
                     set_loop_topic_readonly(vm, immutable_topic);
-                    match vm.run_reuse(code, compiled_fns) {
+                    // A `sub` declared in the callback is lexical to one call of
+                    // it: put the routine registry back afterwards so the next
+                    // call (or another callback declaring a same-named routine)
+                    // is not a redeclaration.
+                    let routine_snapshot = declares_routines.then(|| vm.snapshot_routine_registry());
+                    let run_result = vm.run_reuse(code, compiled_fns);
+                    if let Some(snapshot) = routine_snapshot {
+                        vm.restore_routine_registry(snapshot);
+                    }
+                    match run_result {
                         Ok(()) => {
                             let pred = vm
                                 .last_stack_value()

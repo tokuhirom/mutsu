@@ -5,7 +5,7 @@ use Test;
 # `sub mapify` inside a `.map` callback. The routine is lexical to one call
 # of the callback, so a same-named one elsewhere is not a redeclaration.
 
-plan 5;
+plan 6;
 
 my @a = (1, 2).map(-> $n { sub h($x) { "m$x" }; h($n) });
 my @b = (1, 2).map(-> $n { sub h($x) { "n$x" }; h($n) });
@@ -25,3 +25,7 @@ class K {
 }
 is (K.new.p.join(','), K.new.q.join(',')).join(';'), 'p1,p2;q1,q2',
     'multi methods each declaring the same local sub in a map callback';
+
+# A local sub that closes over a bound lexical sees this call's binding.
+my @c = (1, 2).map(-> $n { my $type := $n == 1 ?? "X" !! "Y"; sub s($x) { $type }; s(1) });
+is @c.join(','), 'X,Y', 'sub in a map callback closes over the current iteration';
