@@ -4685,6 +4685,13 @@ impl Compiler {
                             let var_name = crate::runtime::term_names::stmt_decl_storage_name(stmt)
                                 .unwrap_or_default();
                             self.compile_stmt(stmt);
+                            // The declaration compiled under its BEGIN-time
+                            // resolved name (`our &infix:["\c[DOUBLE PLUS]"]`).
+                            let var_name = if crate::adverb_name::needs_interp(&var_name) {
+                                self.resolve_adverb_name(&var_name).unwrap_or(var_name)
+                            } else {
+                                var_name
+                            };
                             let slot = self.alloc_local(&var_name);
                             self.code.emit(OpCode::GetLocal(slot));
                             self.emit_unit_tail_result();
