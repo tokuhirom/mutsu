@@ -3533,6 +3533,7 @@ t/oo/method/version-bool-method-rows.t
 t/oo/method/whatevercode-hyper-method.t
 t/oo/method/whatevercode-pseudo-method-curry.t
 t/oo/method/which-method.t
+t/oo/method/wrap-proto-method-dispatcher.t
 t/oo/mixin-array-hash-mutator-override.t
 t/oo/mixin-assign-pos.t
 t/oo/mixin-attr-default-references-sibling.t
@@ -3794,6 +3795,7 @@ t/oo/role/role-parent-multi-shadowed-on-pun.t
 t/oo/role/role-private-stub-not-required.t
 t/oo/role/role-proto-diamond-class.t
 t/oo/role/role-proto-diamond.t
+t/oo/role/role-proxy-at-key-assign.t
 t/oo/role/role-pseudo-type-param.t
 t/oo/role/role-public-private-same-name-method.t
 t/oo/role/role-pun-bindings-do-not-shadow-composed-class.t
@@ -3920,6 +3922,7 @@ t/oo/user-group-dynamic-vars.t
 t/oo/user-infix-symbol-does-not-shadow-longer-builtin.t
 t/oo/user-prefix-does-not-shadow-pointy-lambda.t
 t/oo/when-in-routine-does-not-leak-to-given.t
+t/rakuast/paren-recorded-in-ast.t
 t/rakuast/rakuast-absent-field-accessors.t
 t/rakuast/rakuast-accessors.t
 t/rakuast/rakuast-allomorph-word-quote.t
@@ -4089,6 +4092,7 @@ t/rakuast/rakuast-placeholder-blocks.t
 t/rakuast/rakuast-placeholder-modifiers.t
 t/rakuast/rakuast-placeholders.t
 t/rakuast/rakuast-pointy-slurpy-params.t
+t/rakuast/rakuast-postfix-frozen-whatever.t
 t/rakuast/rakuast-pre-post-phasers.t
 t/rakuast/rakuast-prefix-bitwise-negation.t
 t/rakuast/rakuast-proto-onlystar-coercion.t
@@ -6338,6 +6342,7 @@ t/vm/sigilless-comma-decl.t
 t/vm/sigilless-map-args.t
 t/vm/sigilless-map-assign-ro.t
 t/vm/sigilless-nil-assign-container-default.t
+t/vm/sigilless-scalar-same-name.t
 t/vm/sigilless-shadows-imaginary-i.t
 t/vm/sigilless-store-container-assign.t
 t/vm/sigilless-underscore-eval.t
