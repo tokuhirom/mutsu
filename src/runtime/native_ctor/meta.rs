@@ -113,8 +113,17 @@ impl Interpreter {
             Ok(bt)
     }
 
+    /// `Whatever`: `.new` yields the singleton-like `*` value, as in Rakudo.
+    pub(super) fn ctor_whatever(
+        &mut self,
+        _c: &CtorCall<'_>,
+        _args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        Ok(Value::WHATEVER)
+    }
+
     // Types that cannot be instantiated with .new
-    /// `HyperWhatever`, `Whatever`, `Instant`.
+    /// `HyperWhatever`, `Instant`.
     pub(super) fn ctor_hyperwhatever(
         &mut self,
         c: &CtorCall<'_>,

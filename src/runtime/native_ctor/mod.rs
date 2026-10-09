@@ -125,7 +125,7 @@ static CTORS: &[(&str, CtorFn, bool, bool)] = &[
     ("Uni", Interpreter::ctor_uni, false, true),
     ("ValueObjAt", Interpreter::ctor_objat, false, true),
     ("Version", Interpreter::ctor_version, false, true),
-    ("Whatever", Interpreter::ctor_hyperwhatever, false, false),
+    ("Whatever", Interpreter::ctor_whatever, false, false),
     ("array", Interpreter::ctor_array, false, false),
     ("blob16", Interpreter::ctor_buf, false, true),
     ("blob32", Interpreter::ctor_buf, false, true),
