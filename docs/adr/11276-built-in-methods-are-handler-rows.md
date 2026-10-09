@@ -2088,3 +2088,17 @@ flags decide *whether a frame is forced*, not *whether a bridge applies*, and th
   bridges, so `native_*_next_candidate` and the lists are not deleted yet.
 - Found, not fixed: `class S is SetHash { method set(|c) { callsame } }` does not set (the storage reached through
   `try_native_method` has no mutating rows).
+
+### 9.43 Slice 4: the storage bridges leave every probe list (2026-10-09)
+
+`refactor/12387-storage-bridges-multi-noframe` (item 4 of #12387, second half), after §9.42. With the frame builder pushing a
+`Native` entry for a storage-carrying receiver, emptying `NATIVE_BASE_MULTI` and `NATIVE_BASE_NO_FRAME` of the three storage
+bridges changed no result in the `t/` and roast suites that exercise them (a `multi method` override in a class is a method
+frame, not a sub-style multi dispatcher; a frame-less single compiled method has no deferral to resume). So they were dead
+entries, not a case for a second frame kind:
+
+- `NativeBase::ArrayStorage`, `HashStorage` and `BaggyStorage`, `NATIVE_BASE_NO_FRAME` and its call site are deleted.
+  `NATIVE_BASE_MULTI` keeps `GrammarBuiltinRule`.
+- `native_array_storage_next_candidate`, `native_hash_storage_next_candidate` and `native_baggy_storage_next_candidate` stay
+  as the body of `native_storage_base_entry` (they read the innermost frame); folding them into the storage owners' rows is
+  left with the `Mu` / grammar / metamodel bridges.
