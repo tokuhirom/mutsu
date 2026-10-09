@@ -451,6 +451,9 @@ impl Interpreter {
                 || container_protocol_override
                 || grammar_rule_override
                 || how_receiver
+                || grammar_parse_override
+                || mu_base_override
+                || new_base_override
             {
                 remaining.push(super::DeferralEntry::Native {
                     name: method_name.to_string(),
