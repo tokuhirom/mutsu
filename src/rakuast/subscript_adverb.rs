@@ -18,7 +18,8 @@
 //! it with `ast::subscript_adverb::expand`.
 
 use super::convert::{
-    angle_key_text, angle_subscript_node, colonpair_value_expr, leaf_field, subscript_dims_node,
+    angle_key_text, angle_subscript_node, colonpair_value_expr, convert_expr, leaf_field,
+    subscript_dims_node, unsupported as convert_unsupported,
 };
 use super::lower::{list_field, lower_expr, unsupported};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -30,6 +31,51 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// `None` when it is not one.
 // Cost: O(n), n = AST nodes under `expr`.
 pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
+    if let Expr::Spelled(spelled) = expr
+        && let crate::ast::spelled::Spelling::NamedSubscript { subscript, pairs } =
+            &spelled.spelling
+    {
+        return Some(convert_named_subscript(subscript, pairs));
+    }
+    if let Expr::Call { name, args, .. } = expr
+        && *name == subscript_adverb::SUBSCRIPT_NAMED_ADVERBS_FN
+    {
+        let [
+            target,
+            index,
+            Expr::Literal(_source),
+            Expr::Literal(shape),
+            pairs @ ..,
+        ] = args.as_slice()
+        else {
+            return Some(Err(convert_unsupported("named subscript adverb call")));
+        };
+        let ValueView::Str(shape) = shape.view() else {
+            return Some(Err(convert_unsupported("named subscript shape")));
+        };
+        let shape = shape.as_str();
+        let is_positional = shape.starts_with('[');
+        let dimensions = match shape {
+            "[; ]" | "{; }" => match index {
+                Expr::ArrayLiteral(items) => items.as_slice(),
+                _ => {
+                    return Some(Err(convert_unsupported("named multidimensional subscript")));
+                }
+            },
+            "[ ] zen" | "{ } zen" => &[],
+            "[ ]" | "{ }" => std::slice::from_ref(index),
+            _ => return Some(Err(convert_unsupported("named subscript shape"))),
+        };
+        return Some(
+            pairs
+                .iter()
+                .map(|pair| convert_expr(pair).map(|node| Value::rakuast(Box::new(node))))
+                .collect::<Result<Vec<_>, _>>()
+                .and_then(|pairs| {
+                    subscript_dims_node(target, dimensions, is_positional, None, pairs)
+                }),
+        );
+    }
     if let Some((target, index, is_positional, mode, condition)) =
         subscript_adverb::explicit_value_condition(expr)
     {
@@ -106,6 +152,44 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
     )
 }
 
+// Cost: O(n), n = nodes under the subscript and its adverbs.
+fn convert_named_subscript(subscript: &Expr, pairs: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+    let colonpairs = pairs
+        .iter()
+        .map(|pair| convert_expr(pair).map(|node| Value::rakuast(Box::new(node))))
+        .collect::<Result<Vec<_>, _>>()?;
+    match subscript {
+        Expr::Index {
+            target,
+            index,
+            is_positional: false,
+            spelling: crate::ast::IndexSpelling::Angle,
+        } if angle_key_text(index).is_some() => {
+            angle_subscript_node(target, index, None, colonpairs)
+        }
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } => {
+            let dims = if matches!(index.as_ref(), Expr::Literal(value) if matches!(value.view(), ValueView::Whatever))
+            {
+                &[][..]
+            } else {
+                std::slice::from_ref(index.as_ref())
+            };
+            subscript_dims_node(target, dims, *is_positional, None, colonpairs)
+        }
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => subscript_dims_node(target, dimensions, *is_positional, None, colonpairs),
+        _ => Err(convert_unsupported("named subscript source form")),
+    }
+}
+
 /// `:key` / `:!key` / `:key(value)`.
 fn colonpair((key, value): &Adverb) -> Result<Value, RuntimeError> {
     let flag = match value {
@@ -173,6 +257,24 @@ pub(super) fn lower(subscript: Expr, postfix: &RakuAstNode) -> Result<Expr, Runt
             }
         })
         .collect::<Result<Vec<_>, _>>()?;
+    if adverbs
+        .iter()
+        .any(|(key, _)| !subscript_adverb::is_builtin_name(key))
+    {
+        return subscript_adverb::named_adverb_call(
+            &subscript,
+            adverbs
+                .iter()
+                .map(|(key, value)| Expr::Binary {
+                    left: Box::new(Expr::Literal(Value::str(key.clone()))),
+                    op: crate::token_kind::TokenKind::FatArrow,
+                    right: Box::new(value.clone()),
+                    form: Default::default(),
+                })
+                .collect(),
+        )
+        .ok_or_else(|| unsupported(postfix));
+    }
     subscript_adverb::expand(
         subscript,
         &adverbs,
