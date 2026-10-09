@@ -199,6 +199,16 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         e if crate::parser::is_frozen_whatever(e) => 0,
         e if is_whatever(e) => 1,
         Expr::Grouped(inner) => count_whatever(inner),
+        // The non-bareword `=>` spelling lowers through PositionalPair. A
+        // parenthesized bareword pair has an inner Grouped marker instead and
+        // keeps its Whatever value (`(a => *)`).
+        Expr::PositionalPair(inner) => {
+            if matches!(inner.as_ref(), Expr::Grouped(_)) {
+                0
+            } else {
+                count_whatever(inner)
+            }
+        }
         // The execution half of a compound assignment is an AssignExpr. A
         // `WhateverCurry` wrapped around it must see the RHS placeholder so
         // `$out ~= *` becomes `{ $out ~= $_ }`.

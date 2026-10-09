@@ -1636,6 +1636,7 @@ t/grammar/grammar-parse-missing-rule-error.t
 t/grammar/grammar-parse-override-defer.t
 t/grammar/grammar-parse-override-nextwith.t
 t/grammar/grammar-parse-result-cursor-type.t
+t/grammar/grammar-parse-row-owner.t
 t/grammar/grammar-parse-rule-proto-candidate-fallback.t
 t/grammar/grammar-parse-rule-proto-sym-action.t
 t/grammar/grammar-per-match-dynvar-action.t
@@ -2925,6 +2926,7 @@ t/oo/attribute/attr-handles-angle-word.t
 t/oo/attribute/attr-hash-assign-nested-method-call.t
 t/oo/attribute/attr-nil-default-bless.t
 t/oo/attribute/attr-nil-reset-typed.t
+t/oo/attribute/attr-param-empty-default-is-array.t
 t/oo/attribute/attr-slot-site-cache.t
 t/oo/attribute/attr-subscript-assignment.t
 t/oo/attribute/attr-trait-multi-positional-args.t
@@ -4025,6 +4027,7 @@ t/rakuast/rakuast-eval.t
 t/rakuast/rakuast-expr.t
 t/rakuast/rakuast-fake-signature-whatevercode-where.t
 t/rakuast/rakuast-fat-arrow-key.t
+t/rakuast/rakuast-fat-arrow-whatever.t
 t/rakuast/rakuast-folded-literals.t
 t/rakuast/rakuast-for-destructuring.t
 t/rakuast/rakuast-for-pointy-params.t
@@ -5380,6 +5383,7 @@ t/routines/undeclared-routine-compile-time.t
 t/routines/undeclared-routine-found-in-every-position.t
 t/routines/undeclared-routine-suggests-unit-own-subs.t
 t/routines/user-declared-control-keyword-subroutines.t
+t/routines/whatever-curry-fatarrow.t
 t/routines/with-statement-modifier-placeholder-scope.t
 t/tooling/bail-out-exit-status.t
 t/tooling/cli-lib-repo-chain.t
@@ -5650,6 +5654,7 @@ t/types/junction-self-referential-gather.t
 t/types/junction-threads-through-user-infix-eq.t
 t/types/junction.t
 t/types/map.t
+t/types/mu-buildall-populate-rows.t
 t/types/mu-class-not-any.t
 t/types/mu-say-put-with-args-use-own-print.t
 t/types/mu-set-why-on-instance.t
