@@ -2463,7 +2463,8 @@ pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, Run
     // `$x R-= $y`: assigns to the right operand.
     if let Some(base) = reverse_assign_base(meta) {
         let rhs = lower_expr(named_child(node, "right")?)?;
-        let expanded = crate::parser::expand_reverse_assign_expr(target.clone(), &base, rhs.clone());
+        let expanded =
+            crate::parser::expand_reverse_assign_expr(target.clone(), &base, rhs.clone());
         return Ok(Expr::CompoundAssign {
             target: Box::new(target),
             op: format!("R{base}="),

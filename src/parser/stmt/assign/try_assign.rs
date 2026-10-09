@@ -579,7 +579,10 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                 right: Box::new(rhs.clone()),
             };
             let assign = crate::parser::expr::precedence::assign_to_target_expr(rhs.clone(), value);
-            return Ok((rest, reverse_assign_marker(var_expr_written, &op, rhs, assign)));
+            return Ok((
+                rest,
+                reverse_assign_marker(var_expr_written, &op, rhs, assign),
+            ));
         }
         // The expression-position twin of the statement rewrite in
         // `assign_stmt`: `X`/`Z` over an assignment infix accumulates into the

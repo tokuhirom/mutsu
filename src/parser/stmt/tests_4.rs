@@ -148,7 +148,15 @@ fn statement_accepts_known_call_with_bracket_metaop_assign_argument() {
 fn expr_stmt_parses_reverse_assignment_into_var_decl() {
     let (rest, stmt) = simple::expr_stmt("1 R= my $x").unwrap();
     assert_eq!(rest, "");
-    match stmt {
+    // The written `1 R= my $x` is kept as a marker; its expansion declares `$x`.
+    let Stmt::Expr(Expr::CompoundAssign { op, expanded, .. }) = stmt else {
+        panic!("expected a reverse-assignment marker, got {stmt:?}");
+    };
+    assert_eq!(op, "R==");
+    let Expr::DoStmt(declared) = *expanded else {
+        panic!("expected the declaration, got {expanded:?}");
+    };
+    match *declared {
         Stmt::VarDecl { name, expr, .. } => {
             assert_eq!(name, "x");
             assert!(matches!(&expr, Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(1))));
