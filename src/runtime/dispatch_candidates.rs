@@ -76,18 +76,38 @@ pub(crate) struct RankProfile {
 }
 
 impl RankProfile {
-    const EMPTY: RankProfile = RankProfile {
+    pub(super) const EMPTY: RankProfile = RankProfile {
         scores: [u16::MAX; PROFILE_LEN],
         nominal: [None; PROFILE_LEN],
         refined: false,
     };
+
+    /// Record positional parameter `slot`: its type-hierarchy distance from the
+    /// argument, whether it carries a refinement (`where`, literal, subset) and
+    /// its nominal type. Shared by the sub and method rankers so both feed the
+    /// one [`Self::incomparable`] relation.
+    // Cost: O(1).
+    pub(super) fn record(
+        &mut self,
+        slot: usize,
+        delta: usize,
+        refined: bool,
+        nominal: Option<Symbol>,
+    ) {
+        if slot < PROFILE_LEN {
+            let d = delta.min(20_000) as u16;
+            self.scores[slot] = d * 2 + u16::from(!refined);
+            self.nominal[slot] = nominal;
+            self.refined |= refined;
+        }
+    }
 
     /// Whether neither candidate is narrower than the other because of a
     /// refinement: each wins at least one shared parameter, and at least one of
     /// the two carries a refinement (a purely nominal split stays the
     /// ambiguity the summed key reports).
     // Cost: O(1), the profile length is a constant.
-    fn incomparable(&self, other: &RankProfile, related: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
+    pub(super) fn incomparable(&self, other: &RankProfile, related: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
         if !(self.refined || other.refined) {
             return false;
         }
@@ -211,7 +231,13 @@ impl Interpreter {
 
     /// Whether one of the two named types is the other or conforms to it.
     // Cost: O(h), h = the hierarchy walk of `type_hierarchy_distance`.
-    fn nominal_types_related(&self, a: Symbol, b: Symbol) -> bool {
+    pub(super) fn nominal_types_related(&self, a: Symbol, b: Symbol) -> bool {
+        // `Any` and `Mu` are ancestors of every type, including the ones the
+        // hierarchy walk below cannot place from a type object.
+        let is_top = |s: Symbol| s.with_str(|n| matches!(n, "Any" | "Mu"));
+        if is_top(a) || is_top(b) {
+            return true;
+        }
         let conforms = |sub: Symbol, sup: Symbol| {
             sup.with_str(|sup| {
                 self.type_hierarchy_distance(sup, &Value::package(sub)) < UNRELATED_DISTANCE

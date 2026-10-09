@@ -1,4 +1,5 @@
 use super::*;
+use super::dispatch_candidates::RankProfile;
 
 impl Interpreter {
     pub(super) fn resolve_method(
@@ -405,6 +406,10 @@ impl Interpreter {
         if all_matches.len() <= 1 {
             return all_matches.into_iter().next();
         }
+        self.prune_incomparable_method_matches(arg_values, &mut all_matches);
+        if all_matches.len() == 1 {
+            return all_matches.into_iter().next();
+        }
         // The literal-parameter count leads the nominal tier, ahead of type
         // distance, exactly as in multi-SUB dispatch (`candidate_rank_key`): a
         // literal is nominally as narrow as the argument it equals, so
@@ -671,6 +676,20 @@ impl Interpreter {
     /// keeps `arg_idx` aligned with the positional arguments it is meant to
     /// index.
     fn method_candidate_type_distance(&self, args: &[Value], def: &MethodDef) -> usize {
+        self.method_candidate_type_distance_profile(args, def).0
+    }
+
+    /// [`Self::method_candidate_type_distance`] together with the
+    /// per-parameter [`RankProfile`] the same walk produces, the method half of
+    /// `candidate_type_distance_profile` (one `incomparable` relation for both).
+    // Cost: O(p) plus one hierarchy walk per positional parameter, p = parameters.
+    pub(super) fn method_candidate_type_distance_profile(
+        &self,
+        args: &[Value],
+        def: &MethodDef,
+    ) -> (usize, RankProfile) {
+        let mut profile = RankProfile::EMPTY;
+        let mut slot = 0usize;
         let positional_args: Vec<&Value> =
             args.iter().filter(|v| !v.is_string_pair_value()).collect();
         let args = positional_args.as_slice();
@@ -742,6 +761,8 @@ impl Interpreter {
                 } else {
                     resolved
                 };
+                let before = total;
+                let subset_refined = self.registry().subsets.contains_key(base);
                 if arg_idx < args.len() {
                     // A container argument (a hash element, `%h.values[0]`,
                     // a Pair's value) ranks by its contents, as it type-checks.
@@ -768,6 +789,14 @@ impl Interpreter {
                         // `proto method` `{*}` redispatch, issue #8516).
                         self.type_hierarchy_distance(&resolved, value)
                     };
+                    profile.record(
+                        slot,
+                        total - before,
+                        subset_refined
+                            || pd.literal_value.is_some()
+                            || (pd.where_constraint.is_some() && !pd.is_variadic()),
+                        Some(Symbol::intern(&resolved)),
+                    );
                 }
             } else if (pd.name.starts_with('@') || pd.name.starts_with('%')) && arg_idx < args.len()
             {
@@ -779,17 +808,40 @@ impl Interpreter {
                 } else {
                     "Associative"
                 };
-                total += self
+                let d = self
                     .seq_as_positional_distance(implicit, args[arg_idx])
                     .unwrap_or_else(|| self.type_hierarchy_distance(implicit, args[arg_idx]));
+                total += d;
+                profile.record(
+                    slot,
+                    d,
+                    pd.where_constraint.is_some(),
+                    Some(Symbol::intern(implicit)),
+                );
             } else if arg_idx < args.len() {
                 // An untyped positional that receives no argument is not
                 // compared at all, like a typed one above (#11173).
                 total += 1000;
+                // For the partial order an untyped parameter is an implicit
+                // `Any` and a literal is as narrow as the argument it equals
+                // (rakudo compiles it to the literal's type plus an equality
+                // check), so neither pays the flat charge above.
+                let d = if pd.literal_value.is_some() {
+                    0
+                } else {
+                    self.type_hierarchy_distance("Any", args[arg_idx])
+                };
+                profile.record(
+                    slot,
+                    d,
+                    pd.literal_value.is_some() || pd.where_constraint.is_some(),
+                    None,
+                );
             }
+            slot += 1;
             arg_idx += 1;
         }
-        total
+        (total, profile)
     }
 
     pub(crate) fn constraint_base_for_distance(constraint: &str) -> &str {
