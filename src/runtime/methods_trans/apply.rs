@@ -239,9 +239,24 @@ impl Interpreter {
 
         // Set $_ to the matched text (or Match object) before calling the closure
         let old_topic = self.env().get("_").cloned();
+        // A regex rule's closure also sees the match as `$/`.
+        let old_match = if captures.is_some() {
+            let old = self.env().get("/").cloned();
+            self.env_mut().insert("/".to_string(), topic.clone());
+            Some(old)
+        } else {
+            None
+        };
         self.env_mut().insert("_".to_string(), topic);
 
-        let result = self.call_sub_value(closure.clone(), vec![], true)?;
+        let result = self.call_sub_value(closure.clone(), vec![], true);
+        if let Some(old) = old_match {
+            match old {
+                Some(old) => self.env_mut().insert("/".to_string(), old),
+                None => self.env_mut().remove("/"),
+            };
+        }
+        let result = result?;
 
         // Restore previous $_
         if let Some(old) = old_topic {

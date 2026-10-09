@@ -1452,15 +1452,21 @@ impl Interpreter {
             return Ok(());
         }
         // Cost: O(1) per associative key read, excluding the user method body.
-        // Braces select AT-KEY even when their key is numeric. In particular,
+        // Braces select AT-KEY even when their key is numeric or a Regex (a
+        // `Regex:D` AT-KEY candidate is how Map::Match answers `$m{/^wh/}`). In particular,
         // the inherited Any.AT-POS must not intercept an integer key, and a
         // fractional key must reach AT-KEY without positional truncation.
         if !is_positional
             && let ValueView::Instance { class_name, .. } = target.view()
-            && matches!(
+            && (matches!(
                 index.view(),
-                ValueView::Int(_) | ValueView::Num(_) | ValueView::Rat(..) | ValueView::FatRat(..)
-            )
+                ValueView::Int(_)
+                    | ValueView::Num(_)
+                    | ValueView::Rat(..)
+                    | ValueView::FatRat(..)
+                    | ValueView::Regex(_)
+                    | ValueView::RegexWithAdverbs(_)
+            ) || index.is_regex_code_payload())
             && self.has_user_method_including_role(&class_name.resolve(), "AT-KEY")
         {
             let result = self.try_compiled_method_or_interpret(target, "AT-KEY", vec![index])?;
