@@ -141,7 +141,7 @@ fn split_compound_decl_for_modifier(stmt: Stmt) -> (Option<Stmt>, Stmt) {
     (Some(declaration), Stmt::SyntheticBlock(stmts))
 }
 
-fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
+pub(crate) fn rewrite_placeholder_block_modifier_stmt(stmt: Stmt, cond: &Expr) -> Stmt {
     if let Stmt::Block(body) = &stmt
         && let placeholders = crate::ast::collect_placeholders_shallow(body)
         && !placeholders.is_empty()
