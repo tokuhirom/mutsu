@@ -345,8 +345,14 @@ impl Interpreter {
         // (`do { ... }`), whose scope fires the phasers on every exit --
         // normal, `next`, `last` or an exception -- and whose value is the
         // body's value.
-        let normalized_body =
-            if crate::compiler::Compiler::has_block_leave_worthy_phasers(&normalized_body) {
+        // A body that declares a `sub`/`proto` is likewise run as a block: the
+        // routine is lexical to one call of the callback, and the block's
+        // scope restores the routine registry, so the next call (or the next
+        // callback declaring a same-named routine) is not a redeclaration.
+        let normalized_body = if crate::compiler::Compiler::has_block_leave_worthy_phasers(
+            &normalized_body,
+        ) || crate::compiler::Compiler::stmts_declare_routines(&normalized_body)
+        {
                 vec![crate::ast::Stmt::Expr(crate::ast::Expr::DoBlock {
                     body: normalized_body,
                     label: None,
