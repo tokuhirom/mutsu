@@ -2797,7 +2797,7 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         || matches!(leaf_str(node, "twigil").as_deref(), Ok("." | "!"));
     if !is_attribute && let Some((stripped, roles)) = super::var_does::split(node)? {
         let declaration = lower_var_decl_plain(&stripped)?;
-        return super::var_does::expand(node, declaration, &roles);
+        return super::var_does::lower_expansion(node, declaration, &roles);
     }
     lower_var_decl_plain(node)
 }

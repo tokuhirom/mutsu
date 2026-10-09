@@ -291,7 +291,8 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 // desugar mixes the role into the value currently held by the
                 // variable and writes it back, so a later assignment would drop
                 // the mixin. Filling first, then mixing, keeps `Array+{R}`.
-                let block = crate::ast::var_does::expand(&s.name, stmt, op, role_operand, init_stmt);
+                let block =
+                    crate::ast::var_does::expand(&s.name, stmt, op, role_operand, init_stmt);
                 if s.apply_modifier {
                     return parse_statement_modifier(r2, block);
                 }

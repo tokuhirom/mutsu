@@ -58,7 +58,7 @@ pub(super) fn split(
 /// The parser's expansion of `declaration` (lowered without its role) mixed
 /// with `roles`.
 // Cost: O(n), n = size of the declaration and the role.
-pub(super) fn expand(
+pub(super) fn lower_expansion(
     node: &RakuAstNode,
     declaration: Stmt,
     roles: &[RakuAstNode],
