@@ -1700,9 +1700,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 Expr::CompoundAssign {
                     target, op, rhs, ..
                 } if !is_dotty_assign_op(op) && compound_target_matches_name(target, name) => {
-                    Ok(Some(statement_expression(compound_assignment_infix(
-                        target, op, rhs,
-                    )?)))
+                    Ok(Some(statement_expression(super::compound_stmt::mark(
+                        compound_assignment_infix(target, op, rhs)?,
+                        name,
+                    ))))
                 }
                 _ => Ok(Some(statement_expression(assignment_infix(name, expr)?))),
             },
@@ -2772,13 +2773,7 @@ pub(super) fn angle_subscript_node(
             .fields
             .push(node_field(Some("assignee"), convert_expr(value)?));
     }
-    Ok(RakuAstNode {
-        class: RakuAstClass::ApplyPostfix,
-        fields: vec![
-            node_field(Some("operand"), postfix_operand(target)?),
-            node_field(Some("postfix"), index_node),
-        ],
-    })
+    super::postfix_grouping::convert(target, index_node)
 }
 
 /// [`subscript_node`] over the dimensions of `@a[0;1]`: one statement of the
@@ -2847,13 +2842,7 @@ pub(super) fn subscript_dims_node(
             .fields
             .push(node_field(Some("assignee"), convert_expr(value)?));
     }
-    Ok(RakuAstNode {
-        class: RakuAstClass::ApplyPostfix,
-        fields: vec![
-            node_field(Some("operand"), postfix_operand(target)?),
-            node_field(Some("postfix"), index_node),
-        ],
-    })
+    super::postfix_grouping::convert(target, index_node)
 }
 
 /// The source-form record a parser expansion opens with (`ast::signature_decl`).
@@ -3105,13 +3094,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     .fields
                     .push(node_field(Some("args"), arg_list(args)?));
             }
-            Ok(RakuAstNode {
-                class: RakuAstClass::ApplyPostfix,
-                fields: vec![
-                    node_field(Some("operand"), postfix_operand(target)?),
-                    node_field(Some("postfix"), call_term),
-                ],
-            })
+            super::postfix_grouping::convert(target, call_term)
         }
         // The `*` whatever term (a *value*, not a priming argument).
         Expr::Whatever => Ok(RakuAstNode {
@@ -3679,13 +3662,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 node_field(Some("operand"), convert_expr(expr)?),
             ],
         }),
-        Expr::PostfixOp { op, expr } => Ok(RakuAstNode {
-            class: RakuAstClass::ApplyPostfix,
-            fields: vec![
-                node_field(Some("operand"), postfix_operand(expr)?),
-                node_field(Some("postfix"), postfix_node(op)),
-            ],
-        }),
+        Expr::PostfixOp { op, expr } => super::postfix_grouping::convert(expr, postfix_node(op)),
         // `COND ?? THEN !! ELSE` -> Ternary(condition, then, else). Note raku
         // constant-folds a literal-condition ternary (`1 ?? 2 !! 3` -> IntLiteral(2));
         // mutsu does not, a documented divergence (the const-fold open question).
@@ -3737,13 +3714,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     fields: vec![node_field(None, postfix)],
                 });
             }
-            Ok(RakuAstNode {
-                class: RakuAstClass::ApplyPostfix,
-                fields: vec![
-                    node_field(Some("operand"), postfix_operand(target)?),
-                    node_field(Some("postfix"), postfix),
-                ],
-            })
+            super::postfix_grouping::convert(target, postfix)
         }
         // A dynamically interpolated quoted method name (`$value."$name"()`)
         // keeps the name as a QuotedString expression.  It is distinct from an
@@ -3755,16 +3726,10 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             args,
             modifier: None,
             quoted: true,
-        } => Ok(RakuAstNode {
-            class: RakuAstClass::ApplyPostfix,
-            fields: vec![
-                node_field(Some("operand"), postfix_operand(target)?),
-                node_field(
-                    Some("postfix"),
-                    call_quoted_method_expr(convert_expr(name_expr)?, args)?,
-                ),
-            ],
-        }),
+        } => super::postfix_grouping::convert(
+            target,
+            call_quoted_method_expr(convert_expr(name_expr)?, args)?,
+        ),
         // `$o.$name(1)` / `$o.&f(1)` -> `Call::TermAsMethod` / `Call::NameAsMethod`.
         Expr::DynamicMethodCall {
             target,
@@ -3793,13 +3758,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 class: RakuAstClass::MetaPostfixHyper,
                 fields: vec![node_field(None, inner)],
             };
-            Ok(RakuAstNode {
-                class: RakuAstClass::ApplyPostfix,
-                fields: vec![
-                    node_field(Some("operand"), postfix_operand(target)?),
-                    node_field(Some("postfix"), hyper),
-                ],
-            })
+            super::postfix_grouping::convert(target, hyper)
         }
         // A bare comma list `1, 2, 3` -> ApplyListInfix(infix => ",", operands).
         Expr::ArrayLiteral(items) => comma_list_node(items),
@@ -7157,19 +7116,13 @@ fn literal_hash_index_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
     else {
         return Err(unsupported("literal hash index provenance"));
     };
-    Ok(RakuAstNode {
-        class: RakuAstClass::ApplyPostfix,
-        fields: vec![
-            node_field(Some("operand"), postfix_operand(target)?),
-            node_field(
-                Some("postfix"),
-                RakuAstNode {
-                    class: RakuAstClass::PostcircumfixLiteralHashIndex,
-                    fields: vec![node_field(Some("index"), convert_expr(index)?)],
-                },
-            ),
-        ],
-    })
+    super::postfix_grouping::convert(
+        target,
+        RakuAstNode {
+            class: RakuAstClass::PostcircumfixLiteralHashIndex,
+            fields: vec![node_field(Some("index"), convert_expr(index)?)],
+        },
+    )
 }
 
 /// Whether a call argument is one of mutsu's own injected named arguments

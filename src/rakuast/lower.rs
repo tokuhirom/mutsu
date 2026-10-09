@@ -529,7 +529,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // source-level marker while reusing the parser's existing execution
         // expansion.
         RakuAstClass::ApplyInfix if infix_is_compound_assignment(node) => {
-            Ok(Stmt::Expr(lower_compound_assign_expr(node)?))
+            super::compound_stmt::restore_stmt(node, lower_compound_assign_expr(node)?)
         }
         // `$x = EXPR` is an `ApplyInfix` whose infix is an `Assignment` node; it is
         // a `Stmt::Assign`, not a general binary expression.
@@ -4987,22 +4987,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // and are deferred.
         RakuAstClass::ApplyPostfix => {
             let operand_node = named_child(node, "operand")?;
-            let mut operand = lower_expr(operand_node)?;
-            // Rakudo omits one parenthesis layer around a postfix operand.
-            // A visible Circumfix therefore represents at least two layers
-            // in the source. Restore both for Whatever priming: the second
-            // layer freezes a finished curry before the postfix is applied.
-            if operand_node.class == RakuAstClass::CircumfixParentheses
-                && matches!(
-                    operand,
-                    Expr::Whatever
-                        | Expr::WhateverArg
-                        | Expr::HyperWhatever
-                        | Expr::WhateverCurry(_)
-                )
-            {
-                operand = Expr::Grouped(Box::new(Expr::Grouped(Box::new(operand))));
-            }
+            let operand =
+                super::postfix_grouping::restore(node, operand_node, lower_expr(operand_node)?)?;
             let postfix = named_child(node, "postfix")?;
             match postfix.class {
                 // `.method`, `self!priv`, `."name"`, `.^name`, `.$name` / `.&f`.
@@ -5109,7 +5095,17 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     let index = if postfix.class == RakuAstClass::PostcircumfixLiteralHashIndex {
                         lower_expr(index_node)?
                     } else {
-                        lower_expr(named_child_or_positional(index_node)?)?
+                        let item = named_child_or_positional(index_node)?;
+                        let mut index = lower_expr(item)?;
+                        let source = if item.class == RakuAstClass::StatementExpression {
+                            named_child(item, "expression")?
+                        } else {
+                            item
+                        };
+                        if source.class == RakuAstClass::CircumfixParentheses {
+                            index = Expr::Grouped(Box::new(index));
+                        }
+                        index
                     };
                     // `@a[0] = 1`: rakudo folds an assignment to a subscript
                     // into the postcircumfix's `assignee`; the parser keeps it
