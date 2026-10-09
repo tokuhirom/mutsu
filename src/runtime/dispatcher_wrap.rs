@@ -211,4 +211,19 @@ impl Interpreter {
         self.dispatch.dispatcher_wrap_bypass = saved;
         result
     }
+
+    /// The callable `nextcallee` answers at the end of a dispatcher wrap
+    /// chain: `sub (\obj, |c)` running [`Self::redispatch_after_dispatcher_wrap`]
+    /// through the `__mutsu_dispatcher_redispatch` builtin.
+    // Cost: O(n), n = length of `method` (the snippet is parsed per call).
+    pub(crate) fn dispatcher_redispatch_callee(&mut self, method: &str) -> Option<Value> {
+        let quoted = method.replace('\\', "\\\\").replace('\'', "\\'");
+        let src = format!(
+            "sub (\\obj, |c) {{ __mutsu_dispatcher_redispatch('{quoted}', obj, |c) }}"
+        );
+        let (stmts, _) = crate::runtime::prelude_source::parse_prelude_source(&src).ok()?;
+        let value = self.eval_block_value(&stmts).ok()?;
+        value.as_sub()?;
+        Some(value)
+    }
 }

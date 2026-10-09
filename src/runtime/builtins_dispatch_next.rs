@@ -1789,6 +1789,18 @@ impl Interpreter {
                     None,
                 ));
             }
+            // The end of a multi DISPATCHER wrap chain: hand back a callable
+            // that re-dispatches the multi on the invocant and args it is
+            // given (#11701), as `callsame` does with the frame's own.
+            if let Some(frame) = self.dispatch.method_dispatch_stack.last_mut()
+                && let Some(DeferralEntry::Redispatch { name }) = frame.remaining.first().cloned()
+            {
+                frame.remaining.remove(0);
+                frame.in_wrapper = false;
+                if let Some(callee) = self.dispatcher_redispatch_callee(&name) {
+                    return Ok(callee);
+                }
+            }
             // MRO exhausted: the native base candidate. For the subscript
             // protocol on a container subclass that is an element `Proxy` —
             // see `runtime::container_element_proxy` for why it must be one.
