@@ -46,21 +46,6 @@ enum DispatchFrameKind {
     Multi,
 }
 
-/// The native base candidates a deferral chain can end in (ADR-11276 slice 4):
-/// none of them is a `MethodDef`, so the user MRO walk never reaches them.
-/// Each variant is one `native_*_next_candidate` bridge.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum NativeBase {
-    GrammarParse,
-    MuBase,
-}
-
-/// The user MRO of a method frame is exhausted.
-const NATIVE_BASE_EXHAUSTED: &[NativeBase] = &[
-    NativeBase::GrammarParse,
-    NativeBase::MuBase,
-];
-
 impl Interpreter {
     /// Return the built-in implementation of an infix operator for the final
     /// leg of a `callsame` chain.  Core operators are not represented as
@@ -106,26 +91,6 @@ impl Interpreter {
         self.native_array_storage_next_candidate(None)
             .or_else(|| self.native_hash_storage_next_candidate(None))
             .or_else(|| self.native_baggy_storage_next_candidate(None))
-    }
-
-    /// The first of `order` that supplies a native base candidate for the
-    /// deferral in progress; the one place the bridges are enumerated.
-    // Cost: O(|order|) probes, each O(1) in the receiver.
-    fn native_base_next_candidate(
-        &mut self,
-        order: &[NativeBase],
-        override_args: Option<&[Value]>,
-    ) -> Option<Result<Value, RuntimeError>> {
-        for base in order {
-            let res = match base {
-                NativeBase::GrammarParse => self.native_grammar_parse_next_candidate(override_args),
-                NativeBase::MuBase => self.native_mu_base_next_candidate(override_args),
-            };
-            if res.is_some() {
-                return res;
-            }
-        }
-        None
     }
 
     /// ADR-0019 E9b-0: `wrap_dispatch_stack`, `method_dispatch_stack`, and
@@ -404,7 +369,7 @@ impl Interpreter {
     /// MRO, but mutsu implements it natively (`bless`), so it never appears
     /// among the `MethodDef` candidates. `push_method_dispatch_frame`'s
     /// `new_base_override` is what guarantees the frame this leg exhausts.
-    fn native_mu_base_next_candidate(
+    pub(super) fn native_mu_base_next_candidate(
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
@@ -1023,28 +988,12 @@ impl Interpreter {
                 .cloned()
             {
                 None => {
-                    // User MRO exhausted: a grammar `parse`/`subparse` override, an
-                    // `is Array` subclass's Positional override, or a metamodel-HOW
-                    // dispatch falls through to the native implementation as the
-                    // last candidate before giving up. ADR-0019 E9b-2: a wrapped
-                    // method now always has a frame, so "frame exists, remaining
-                    // empty" is the single exhaustion signal (the #6349
-                    // `wrap_chain_exhausted` bool is retired).
-                    // A role-qualified call's frame (`self.R::new(|%a)`) names a
-                    // method outside every class's chain: there is no native
-                    // base candidate behind it either (#11592).
-                    let role_qualified =
-                        self.dispatch.method_dispatch_stack[frame_idx].role_qualified;
-                    let result = if role_qualified {
-                        Value::NIL
-                    } else {
-                        match self
-                            .native_base_next_candidate(NATIVE_BASE_EXHAUSTED, override_args.as_deref())
-                        {
-                            Some(res) => res?,
-                            None => Value::NIL,
-                        }
-                    };
+                    // User MRO exhausted. Every native base candidate (grammar
+                    // parse, `Mu`, metamodel, grammar built-in rule, container
+                    // storage, default rendering) is a `DeferralEntry::Native` the
+                    // frame builder pushed, so an empty frame has nowhere left to
+                    // defer to. ADR-11276 §9.45.
+                    let result = Value::NIL;
                     if tail_call {
                         return Err(RuntimeError::return_signal(result));
                     }
@@ -1201,7 +1150,9 @@ impl Interpreter {
                         (frame.invocant.clone(), frame.args.clone())
                     };
                     let how_or_rule = self
-                        .native_metamodel_next_candidate(Some(&args))
+                        .native_grammar_parse_next_candidate(Some(&args))
+                        .or_else(|| self.native_mu_base_next_candidate(Some(&args)))
+                        .or_else(|| self.native_metamodel_next_candidate(Some(&args)))
                         .or_else(|| self.native_grammar_builtin_rule_next_candidate());
                     let result = if let Some(res) = how_or_rule {
                         res?

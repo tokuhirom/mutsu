@@ -166,7 +166,6 @@ impl Interpreter {
                 dispatch_token,
                 arg_sources,
                 in_wrapper: true,
-                role_qualified: false,
             });
     }
 

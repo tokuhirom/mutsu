@@ -534,11 +534,6 @@ pub(crate) struct MethodDispatchFrame {
     /// by `dispatch_next_candidate` immediately before each advance so a
     /// NESTED `callwith` call reads the context it is actually running in.
     pub(crate) in_wrapper: bool,
-    /// The frame of a call qualified by a ROLE (`self.R::new(|%a)`, #11592):
-    /// the method is outside every class's dispatch chain, so a deferral in it
-    /// finds no user candidate and no native base candidate either. Only
-    /// `push_qualified_method_dispatch_frame` sets it.
-    pub(crate) role_qualified: bool,
 }
 
 /// Frame for navigating through a SUB wrapper chain during callsame/callwith.
