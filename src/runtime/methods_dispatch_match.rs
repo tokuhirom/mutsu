@@ -337,9 +337,33 @@ impl Interpreter {
             "match" => Some(self.with_regex_closure_scope(args.first().cloned(), |me| {
                 me.dispatch_match_method(target, &args)
             })),
-            "subst" => Some(self.with_regex_closure_scope(args.first().cloned(), |me| {
-                me.dispatch_subst(target, &args)
-            })),
+            "subst" => {
+                // A string (non-regex) pattern leaves the caller's `$/` alone,
+                // as in Rakudo; `dispatch_subst` publishes the match for
+                // `subst-mutate` and for a closure replacement, so restore it.
+                let keep_slash = args
+                    .first()
+                    .is_some_and(|a| matches!(a.deref_container().view(), ValueView::Str(_)))
+                    && !matches!(
+                        args.get(1).map(Value::view),
+                        Some(ValueView::Sub(_)) | Some(ValueView::WeakSub(_)) | Some(ValueView::Routine { .. })
+                    );
+                let saved = keep_slash.then(|| self.env.get("/").cloned());
+                let result = self.with_regex_closure_scope(args.first().cloned(), |me| {
+                    me.dispatch_subst(target, &args)
+                });
+                if let Some(saved) = saved {
+                    match saved {
+                        Some(v) => {
+                            self.env.insert("/".to_string(), v);
+                        }
+                        None => {
+                            self.env.remove("/");
+                        }
+                    }
+                }
+                Some(result)
+            }
             // Cost: see `dispatch_wordcase` (src/runtime/methods_string_wordcase.rs).
             "wordcase" if !args.is_empty() => Some(self.dispatch_wordcase(target, &args)),
             "comb" if !args.is_empty() => {
