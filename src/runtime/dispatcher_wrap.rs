@@ -133,6 +133,30 @@ impl Interpreter {
         chain.last().map(|(_, wrapper)| wrapper.clone())
     }
 
+    /// Run a call of the proto `method` through its dispatcher wrap `chain`:
+    /// invoke the outermost wrapper with `[invocant, ...args]`, whose
+    /// `callsame` reaches the proto body through
+    /// [`Self::redispatch_after_dispatcher_wrap`].
+    pub(crate) fn run_dispatcher_wrap_chain(
+        &mut self,
+        receiver_class: &str,
+        method: &str,
+        args: &[Value],
+        invocant: &Value,
+        chain: &[(u64, Value)],
+    ) -> Result<Value, RuntimeError> {
+        self.push_method_samewith_context(receiver_class, method, args, Some(invocant.clone()));
+        self.push_dispatcher_wrap_frame(receiver_class, method, args, invocant.clone(), chain);
+        let mut call_args = vec![invocant.clone()];
+        call_args.extend(args.iter().cloned());
+        let outermost = chain.last().expect("dispatcher wrap chain is non-empty").1.clone();
+        self.shift_arg_sources_for_wrap_invocant();
+        let result = self.call_sub_value(outermost, call_args, false);
+        self.pop_method_dispatch();
+        self.pop_method_samewith_context();
+        result
+    }
+
     /// Push the `MethodDispatchFrame` for a dispatcher wrap: the
     /// below-outermost wrappers in call order, then the terminal
     /// [`DeferralEntry::Redispatch`]. The caller invokes `chain`'s outermost
