@@ -51,7 +51,7 @@ pub(crate) use stmt::class::token_body::finalize_anon_declarator_pattern;
 pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_type_param_names};
 /// The default the parser plants for a typed scalar attribute with no
 /// initializer; the RakuAST lowering re-plants the same one.
-pub(crate) use stmt::decl::auto_default_expr_for_type;
+pub(crate) use stmt::decl::attribute_type_seed;
 pub(crate) use stmt::decl::build_sigilless_bind_stmt;
 pub(crate) use stmt::decl::destructure::desugar::signature_decl as signature_decl_expansion;
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;

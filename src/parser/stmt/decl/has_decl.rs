@@ -281,6 +281,28 @@ pub(crate) fn auto_default_expr_for_type(tc: &str) -> Expr {
     }
 }
 
+/// The implicit default of a typed attribute with no initializer: only a scalar
+/// that is not `is required` has one -- its type object (a native type's zero,
+/// an `is box_target` attribute's allocated body). A typed `@` / `%` attribute
+/// is an empty container of that element type instead. Shared by the parser and
+/// RakuAST lowering.
+// Cost: O(|tc|).
+pub(crate) fn attribute_type_seed(
+    sigil: char,
+    tc: &str,
+    is_required: bool,
+    is_box_target: bool,
+) -> Option<Expr> {
+    if sigil != '$' || is_required {
+        return None;
+    }
+    Some(if is_box_target {
+        box_target_default_expr(tc)
+    } else {
+        auto_default_expr_for_type(tc)
+    })
+}
+
 /// The seed of an `is box_target` attribute declared with type `tc`.
 ///
 /// MoarVM inlines the box target's body into the object, so the object is
@@ -1238,18 +1260,17 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // Native types (int, atomicint, num, str, etc.) get zero/empty defaults.
     let mut default_is_seed = false;
     if !has_explicit_default
-        && is_required.is_none()
-        && sigil == b'$'
         && let Some(ref tc) = type_constraint
+        && let Some(seed) = attribute_type_seed(
+            sigil as char,
+            tc,
+            is_required.is_some(),
+            unknown_traits
+                .iter()
+                .any(|(kind, name, _)| kind == "is" && name == "box_target"),
+        )
     {
-        let is_box_target = unknown_traits
-            .iter()
-            .any(|(kind, name, _)| kind == "is" && name == "box_target");
-        default = Some(if is_box_target {
-            box_target_default_expr(tc)
-        } else {
-            auto_default_expr_for_type(tc)
-        });
+        default = Some(seed);
         default_is_seed = true;
     }
 

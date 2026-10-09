@@ -3058,6 +3058,19 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     } else {
         initializer
     };
+    // The implicit default of a typed scalar attribute (see `attribute_type_seed`).
+    let type_seed = match (&initializer, type_constraint.as_deref()) {
+        (None, Some(tc)) => crate::parser::attribute_type_seed(
+            sigil_char,
+            tc,
+            traits.is_required.is_some(),
+            traits
+                .unknown_traits
+                .iter()
+                .any(|(kind, name, _)| kind == "is" && name == "box_target"),
+        ),
+        _ => None,
+    };
     Ok(Stmt::HasDecl {
         name: crate::symbol::Symbol::intern(&desigil),
         is_public,
@@ -3065,13 +3078,9 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // (its type object, or a native type's zero); the parser plants it,
         // and the converter skips it on the way out, so re-plant the same one
         // here to keep the two sides symmetric.
-        default_is_seed: initializer.is_none() && type_constraint.is_some(),
+        default_is_seed: type_seed.is_some(),
         default_is_trait,
-        default: initializer.or_else(|| {
-            type_constraint
-                .as_deref()
-                .map(crate::parser::auto_default_expr_for_type)
-        }),
+        default: initializer.or(type_seed),
         handles: traits.handles,
         handles_terms: traits.handles_terms,
         is_rw: traits.is_rw || !is_has,
