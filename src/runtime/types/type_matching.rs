@@ -960,7 +960,10 @@ impl Interpreter {
                 ValueView::Bool(_) => true,
                 ValueView::Package(name) => {
                     let name = name.resolve();
-                    name == "UInt" || name == "Int"
+                    // A user subset of `UInt` (`subset P of UInt where ...`) is one.
+                    name == "UInt"
+                        || name == "Int"
+                        || self.resolve_subset_base_type(&name) == "UInt"
                 }
                 ValueView::Enum {
                     value: crate::value::EnumValue::Int(i),

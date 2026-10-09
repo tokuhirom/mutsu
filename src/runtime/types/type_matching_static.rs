@@ -212,6 +212,10 @@ impl Interpreter {
         if constraint == "Int" && matches!(value_type, "Bool" | "UInt") {
             return true;
         }
+        // ...so a `UInt` type object is whatever an `Int` is (`UInt ~~ Cool`).
+        if value_type == "UInt" && constraint != "UInt" && Self::type_matches(constraint, "Int") {
+            return true;
+        }
         // `Cool` (and any other catalog ancestor or role) comes from the
         // builtin type catalog, the one ancestry oracle (ADR-0051 P2), not
         // from a per-consumer allowlist: `Seq`, `Nil`, `Match`, `IO::Path`,
