@@ -33,6 +33,19 @@ pub(crate) fn method_object_wrap_slot(attrs: &AttrMap) -> Option<usize> {
 }
 
 impl Interpreter {
+    /// The `method_wrap_chains` slot a `.wrap`/`.unwrap` on a method Sub with
+    /// `__mutsu_lookup_*` markers addresses: its candidate index, or
+    /// [`DISPATCHER_WRAP_IDX`] when it carries none -- a `proto method` seen
+    /// from its own `trait_mod:<is>` (`apply_method_is_traits_inner`).
+    // Cost: O(1).
+    pub(crate) fn method_sub_wrap_slot(data: &crate::value::SubData) -> Option<usize> {
+        match data.env.get("__mutsu_lookup_candidate_idx").map(Value::view) {
+            Some(ValueView::Int(idx)) => Some(idx as usize),
+            Some(_) => None,
+            None => Some(DISPATCHER_WRAP_IDX),
+        }
+    }
+
     /// Whether a call of the user-declared `method` on `receiver_class` with
     /// `args` would enter a `.wrap` chain — a dispatcher wrap or a wrap of the
     /// candidate that wins — i.e. whether [`Self::enter_method_wrap_chain`]
@@ -210,5 +223,20 @@ impl Interpreter {
         let result = self.call_method_with_values(invocant, method, args);
         self.dispatch.dispatcher_wrap_bypass = saved;
         result
+    }
+
+    /// The callable `nextcallee` answers at the end of a dispatcher wrap
+    /// chain: `sub (\obj, |c)` running [`Self::redispatch_after_dispatcher_wrap`]
+    /// through the `__mutsu_dispatcher_redispatch` builtin.
+    // Cost: O(n), n = length of `method` (the snippet is parsed per call).
+    pub(crate) fn dispatcher_redispatch_callee(&mut self, method: &str) -> Option<Value> {
+        let quoted = method.replace('\\', "\\\\").replace('\'', "\\'");
+        let src = format!(
+            "sub (\\obj, |c) {{ __mutsu_dispatcher_redispatch('{quoted}', obj, |c) }}"
+        );
+        let (stmts, _) = crate::runtime::prelude_source::parse_prelude_source(&src).ok()?;
+        let value = self.eval_block_value(&stmts).ok()?;
+        value.as_sub()?;
+        Some(value)
     }
 }

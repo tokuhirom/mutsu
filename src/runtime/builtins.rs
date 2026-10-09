@@ -730,6 +730,13 @@ impl Interpreter {
             "RUN-MAIN" => self.builtin_run_main(&args),
             "__mutsu_default_args_to_capture" => self.builtin_default_args_to_capture(&args),
             "__PROTO_DISPATCH__" => self.call_proto_dispatch(),
+            "__mutsu_dispatcher_redispatch" => {
+                let mut it = args.into_iter();
+                let (Some(name), Some(invocant)) = (it.next(), it.next()) else {
+                    return Err(RuntimeError::new("__mutsu_dispatcher_redispatch: bad arguments"));
+                };
+                self.redispatch_after_dispatcher_wrap(invocant, &name.to_string_value(), it.collect())
+            }
             // Multi dispatch control flow
             "callsame" => self.builtin_callsame(),
             "nextsame" => self.builtin_nextsame(),
