@@ -255,7 +255,9 @@ impl Interpreter {
         let multi = defs.len() > 1;
         let mut bind_error: Option<RuntimeError> = None;
         for def in defs {
-            let sym = Self::extract_sym_adverb(&def.name.resolve());
+            // `:sym<x>`, `:<x>` and bare `:x` candidates all name their variant, so
+            // the start-rule action dispatch finds `method rule:x` for each.
+            let sym = Self::extract_variant_ident(&def.name.resolve());
             let evaluated = match self.eval_token_def(&def, arg_values) {
                 Ok(evaluated) => evaluated,
                 Err(err) if multi => {
