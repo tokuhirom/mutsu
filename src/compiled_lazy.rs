@@ -85,8 +85,7 @@ impl LazyFn {
     pub(crate) fn get(&self) -> &Arc<CompiledFunction> {
         self.cell.get_or_init(|| {
             let decoded = self.raw.as_ref().and_then(|raw| {
-                crate::precomp_codec::decode_body::<CompiledFunction>(&raw.bytes, &raw.symbols)
-                    .ok()
+                crate::precomp_codec::decode_body::<CompiledFunction>(&raw.bytes, &raw.symbols).ok()
             });
             match decoded {
                 Some(cf) => Arc::new(cf),
