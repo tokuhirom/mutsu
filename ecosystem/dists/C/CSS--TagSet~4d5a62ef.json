@@ -42,11 +42,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $meta; expected CSS::Module::Property but got Any (Proxy)",
+        "first_failure": "No such method 'children' for invocant of type 'NativeCall::Types::CArray'",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.07,
+        "secs": 3.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -56,7 +56,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 113.25,
+        "secs": 51.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,11 +65,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $meta; expected CSS::Module::Property but got Any (Proxy)",
+        "first_failure": "No such method 'children' for invocant of type 'NativeCall::Types::CArray'",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 13.08,
+        "secs": 10.9,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 12.6,
+        "secs": 9.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -88,11 +88,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $meta; expected CSS::Module::Property but got Any (Proxy)",
+        "first_failure": "No such method 'children' for invocant of type 'NativeCall::Types::CArray'",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 14.83,
+        "secs": 14.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 11.3,
+        "secs": 7.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,10 +117,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-07",
+    "date": "2026-10-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5c3caa0a",
+    "mutsu_commit": "c7f1ec6f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

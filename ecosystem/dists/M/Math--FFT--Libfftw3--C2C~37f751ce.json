@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.34,
+        "secs": 3.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.43,
+        "secs": 3.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.87,
+        "secs": 3.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.99,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.49,
+        "secs": 4.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 1.99,
+        "secs": 1.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.1,
+        "secs": 3.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,7 +90,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.03,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,217 +102,12 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 4.14,
+        "secs": 3.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
       "path": "t/04-raw-r2r.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller plan(Math::FFT::Libfftw3::C2C:D: Int:D, Bool:D); none of these signatures matches:",
-        "nok": 0,
-        "ok": 2,
-        "plan": null,
-        "secs": 4.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/05-c2c.t",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 6.41,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Cannot resolve caller plan(Math::FFT::Libfftw3::R2C:D: Int:D, Bool:D); none of these signatures matches:",
-        "nok": 0,
-        "ok": 2,
-        "plan": null,
-        "secs": 4.73,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/06-r2c.t",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 5.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in assignment to $fftr; expected Math::FFT::Libfftw3::R2R but got Failure (Failure.new(\"X::Libf...)",
-        "nok": 0,
-        "ok": 4,
-        "plan": null,
-        "secs": 4.58,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/07-r2r.t",
-      "raku": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 5.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "partial",
-      "mutsu": {
-        "first_failure": "r2r advanced transform",
-        "nok": 1,
-        "ok": 5,
-        "plan": 6,
-        "secs": 4.71,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "fail"
-      },
-      "path": "t/08-raw-adv.t",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 2.74,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Error 1: Wrong type. Try Int, Rat, Num or Complex",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/09-adv.t",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.74,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 4.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/10-raw-thread.t",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 4.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/11-raw-openmp.t",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in assignment to $fftr; expected Math::FFT::Libfftw3::C2C but got Failure (Failure.new(\"X::Libf...)",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.89,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/12-c2c-thread.t",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "regression",
-      "mutsu": {
-        "first_failure": "Type check failed in assignment to $fftr; expected Math::FFT::Libfftw3::R2C but got Failure (Failure.new(\"X::Libf...)",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 4.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      },
-      "path": "t/13-r2c-thread.t",
       "raku": {
         "nok": 0,
         "ok": 2,
@@ -326,11 +121,216 @@
     {
       "cmp": "regression",
       "mutsu": {
+        "first_failure": "Cannot resolve caller plan(Math::FFT::Libfftw3::C2C:D: Int:D, Bool:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 2,
+        "plan": null,
+        "secs": 3.97,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/05-c2c.t",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 6.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller plan(Math::FFT::Libfftw3::R2C:D: Int:D, Bool:D); none of these signatures matches:",
+        "nok": 0,
+        "ok": 2,
+        "plan": null,
+        "secs": 4.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/06-r2c.t",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 4.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $fftr; expected Math::FFT::Libfftw3::R2R but got Failure (Failure.new(\"X::Libf...)",
+        "nok": 0,
+        "ok": 4,
+        "plan": null,
+        "secs": 4.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/07-r2r.t",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 4.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "r2r advanced transform",
+        "nok": 1,
+        "ok": 5,
+        "plan": 6,
+        "secs": 4.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/08-raw-adv.t",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 2.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Error 1: Wrong type. Try Int, Rat, Num or Complex",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/09-adv.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/10-raw-thread.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 3.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/11-raw-openmp.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $fftr; expected Math::FFT::Libfftw3::C2C but got Failure (Failure.new(\"X::Libf...)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/12-c2c-thread.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Type check failed in assignment to $fftr; expected Math::FFT::Libfftw3::R2C but got Failure (Failure.new(\"X::Libf...)",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/13-r2c-thread.t",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
         "first_failure": "Type check failed in assignment to $fftr; expected Math::FFT::Libfftw3::R2R but got Failure (Failure.new(\"X::Libf...)",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.02,
+        "secs": 3.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -340,7 +340,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.27,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -352,7 +352,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.16,
+        "secs": 0.11,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -362,7 +362,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.57,
+        "secs": 0.66,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -380,10 +380,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-08",
+    "date": "2026-10-09",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5c3caa0a",
+    "mutsu_commit": "c7f1ec6f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

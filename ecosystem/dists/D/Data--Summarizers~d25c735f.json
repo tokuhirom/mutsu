@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.82,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 54.69,
+        "secs": 49.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 27.99,
+        "secs": 26.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,29 +68,30 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 5.32,
+        "secs": 4.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "The iterator of this Seq is already in use/consumed by another Seq (you might solve this by adding .cache on usages of the Seq, or by assigning the Seq into an array)",
         "nok": 0,
-        "ok": 3,
+        "ok": 1,
         "plan": 3,
-        "secs": 1.81,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/03-summarize-over-iterables-of-iterables.rakutest",
       "raku": {
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.74,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +103,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 22.99,
+        "secs": 19.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +113,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 5.68,
+        "secs": 4.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -124,7 +125,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.65,
+        "secs": 1.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +135,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 8.8,
+        "secs": 8.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -146,7 +147,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.65,
+        "secs": 1.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -156,7 +157,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.22,
+        "secs": 1.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -171,10 +172,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-07",
+    "date": "2026-10-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5c3caa0a",
+    "mutsu_commit": "c7f1ec6f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -185,13 +186,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATA_SUMMARIZERS/b749a53127e6cb3a78b5699a9be2708155db475e.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 38,
     "baseline_files": 6,
-    "mutsu_assertions": 38,
-    "parity_files": 6,
-    "regressed_files": 0
+    "mutsu_assertions": 36,
+    "parity_files": 5,
+    "regressed_files": 1
   },
   "version": "0.2.6"
 }

@@ -19,29 +19,30 @@
         "nok": 0,
         "ok": 3,
         "plan": null,
-        "secs": 5.44,
+        "secs": 2.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 0.17,
+        "first_failure": "No such method 'contents' for invocant of type 'Str'",
+        "nok": 1,
+        "ok": 2,
+        "plan": null,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/2-metadata.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 1.08,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -55,29 +56,30 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.78,
+        "secs": 0.39,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 4,
+        "first_failure": "The object is-a 'Pod::Block::Para'",
+        "nok": 2,
+        "ok": 2,
         "plan": 4,
-        "secs": 0.16,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/4-rakudoc.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.83,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,10 +92,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-08",
+    "date": "2026-10-09",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5c3caa0a",
+    "mutsu_commit": "c7f1ec6f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -104,13 +106,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/AK/RAKUDOC_LOAD/247d881e972872872a202c913ea09a4a1b5f6993.tar.gz"
   },
-  "status": "green",
+  "status": "red",
   "totals": {
     "baseline_assertions": 12,
     "baseline_files": 2,
-    "mutsu_assertions": 12,
-    "parity_files": 2,
-    "regressed_files": 0
+    "mutsu_assertions": 4,
+    "parity_files": 0,
+    "regressed_files": 2
   },
   "version": "0.0.2"
 }

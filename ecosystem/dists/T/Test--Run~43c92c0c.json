@@ -9,22 +9,23 @@
   "dist": "Test::Run",
   "files": [
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Unknown function: plan",
         "nok": 0,
         "ok": 1,
-        "plan": 1,
-        "secs": 0.07,
+        "plan": null,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/00-load.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.86,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -33,11 +34,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Runtime error: X::Redeclaration: Redeclaration of symbol '@'",
+        "first_failure": "Two terms in a row",
         "nok": 0,
         "ok": 0,
-        "plan": null,
-        "secs": 0.02,
+        "plan": 10,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -47,7 +48,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 7.01,
+        "secs": 14.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,10 +60,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-08",
+    "date": "2026-10-09",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5c3caa0a",
+    "mutsu_commit": "c7f1ec6f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -73,13 +74,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/ES/TEST_RUN/8f43ad6ac4174e0c6c37175a0f11cac3b2b75685.tar.gz"
   },
-  "status": "partial",
+  "status": "red",
   "totals": {
     "baseline_assertions": 11,
     "baseline_files": 2,
     "mutsu_assertions": 1,
-    "parity_files": 1,
-    "regressed_files": 1
+    "parity_files": 0,
+    "regressed_files": 2
   },
   "version": "0.2.3"
 }

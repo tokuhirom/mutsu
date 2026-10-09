@@ -9,16 +9,106 @@
     "unresolved": []
   },
   "dist": "DateTime::Timezones",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 0.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 0,
+        "plan": 0,
+        "secs": 13.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Parameter '$self' expects a writable container (variable) as an argument,",
+        "nok": 1,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/01-upgrade.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-speed.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-math.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 1.08,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "DateTime::Timezones": "No such method 'wrap' for invocant of type 'Mu'"
+    "DateTime::Timezones": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-07",
+    "date": "2026-10-09",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5c3caa0a",
+    "mutsu_commit": "c7f1ec6f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -29,13 +119,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATETIME_TIMEZONES/05b4011829967f76c965d582725e533b7ac195f7.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
-    "regressed_files": 0
+    "baseline_assertions": 9,
+    "baseline_files": 4,
+    "mutsu_assertions": 3,
+    "parity_files": 3,
+    "regressed_files": 1
   },
   "version": "0.4.2"
 }

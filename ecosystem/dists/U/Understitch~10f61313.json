@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.07,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,30 +24,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.19,
+        "secs": 1.34,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'precedence' for invocant of type 'Sub'",
         "nok": 0,
-        "ok": 0,
+        "ok": 2,
         "plan": 2,
-        "secs": 0.08,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/07-properties.t",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.82,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -59,7 +58,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.07,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -69,7 +68,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.86,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +80,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.09,
+        "secs": 0.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -91,7 +90,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.73,
+        "secs": 3.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -103,7 +102,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.08,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -113,7 +112,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.68,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,10 +124,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-08",
+    "date": "2026-10-09",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5c3caa0a",
+    "mutsu_commit": "c7f1ec6f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -139,13 +138,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/U/ND/UNDERSTITCH/0cd7bdbdc1a588c6c73ad65139b4b2513144508a.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 11,
     "baseline_files": 5,
-    "mutsu_assertions": 9,
-    "parity_files": 4,
-    "regressed_files": 1
+    "mutsu_assertions": 11,
+    "parity_files": 5,
+    "regressed_files": 0
   },
   "version": "0.0.2"
 }

@@ -19,7 +19,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 9,
-        "secs": 1.99,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 11.3,
+        "secs": 11.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -42,7 +42,7 @@
         "nok": 2,
         "ok": 0,
         "plan": 2,
-        "secs": 1.78,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.69,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -65,7 +65,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.13,
+        "secs": 1.78,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -75,29 +75,30 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.23,
+        "secs": 1.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Type check failed in binding to parameter '$array'; expected NativeCall::Types::CArray but got Int (139663406581626)",
         "nok": 0,
         "ok": 0,
-        "plan": 2,
-        "secs": 2.0,
+        "plan": null,
+        "secs": 1.63,
         "skip": 0,
-        "todo": 2,
-        "verdict": "pass"
+        "todo": 0,
+        "verdict": "die"
       },
       "path": "t/040-gd-file.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 2,
-        "secs": 1.0,
+        "secs": 1.34,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -109,10 +110,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-07",
+    "date": "2026-10-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5c3caa0a",
+    "mutsu_commit": "c7f1ec6f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -123,13 +124,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/G/GD/8cd4621b7f0576b268e5e7556c79565832b9e8c1.tar.gz"
   },
-  "status": "partial",
+  "status": "red",
   "totals": {
     "baseline_assertions": 15,
     "baseline_files": 4,
     "mutsu_assertions": 1,
-    "parity_files": 1,
-    "regressed_files": 3
+    "parity_files": 0,
+    "regressed_files": 4
   },
   "version": "0.0.5"
 }

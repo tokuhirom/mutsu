@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 112.78,
+        "secs": 37.3,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 4.67,
+        "secs": 3.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.61,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,7 +83,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 2.78,
+        "secs": 2.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -96,7 +96,7 @@
         "nok": 9,
         "ok": 13,
         "plan": 22,
-        "secs": 7.43,
+        "secs": 5.72,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -106,7 +106,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 2.81,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -119,7 +119,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 4.49,
+        "secs": 3.01,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -129,7 +129,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.46,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -142,7 +142,7 @@
         "nok": 9,
         "ok": 0,
         "plan": 9,
-        "secs": 2.04,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -152,7 +152,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.74,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -165,7 +165,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 8,
-        "secs": 7.09,
+        "secs": 5.43,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -175,7 +175,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 3.51,
+        "secs": 2.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -184,11 +184,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Type check failed in assignment to $meta; expected CSS::Module::Property but got Any (Proxy)",
+        "first_failure": "Type check failed in binding to parameter '$_'; expected UInt but got Any (NativeCall::Types::C...)",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 4.55,
+        "secs": 3.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -198,7 +198,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.24,
+        "secs": 1.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -207,11 +207,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "ignoring @ {...}",
+        "first_failure": "No such method 'children' for invocant of type 'NativeCall::Types::CArray'",
         "nok": 0,
         "ok": 1,
         "plan": 4,
-        "secs": 6.17,
+        "secs": 3.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -221,7 +221,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.08,
+        "secs": 2.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -238,10 +238,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-07",
+    "date": "2026-10-08",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5c3caa0a",
+    "mutsu_commit": "c7f1ec6f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 9.2,
+        "secs": 13.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,7 +37,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 20.35,
+        "secs": 26.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,29 +51,30 @@
         "nok": 0,
         "ok": 3,
         "plan": null,
-        "secs": 4.28,
+        "secs": 6.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 0.2,
+        "first_failure": "No such method 'type' for invocant of type 'Pod::Block::Para'",
+        "nok": 1,
+        "ok": 2,
+        "plan": null,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/02-metadata.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.84,
+        "secs": 1.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -87,7 +88,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.85,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -100,10 +101,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-08",
+    "date": "2026-10-09",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5c3caa0a",
+    "mutsu_commit": "c7f1ec6f",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -114,13 +115,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/OD/POD_LOAD/4dea260b01ab73c22dba63fc79e0fba39695e46f.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 8,
     "baseline_files": 2,
-    "mutsu_assertions": 8,
-    "parity_files": 2,
-    "regressed_files": 0
+    "mutsu_assertions": 3,
+    "parity_files": 1,
+    "regressed_files": 1
   },
   "version": "0.7.2"
 }
