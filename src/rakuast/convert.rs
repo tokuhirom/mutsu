@@ -367,18 +367,20 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             | None => Err(unsupported("source form")),
         },
         // `use` / `no` statements: `RakuAST::Pragma`, `Statement::Use` or
-        // `Statement::LanguageVersion`. `:if(...)` (the `if` distribution's
-        // adverb) is deferred.
+        // `Statement::LanguageVersion`. The `if` distribution's condition is
+        // source provenance: the visible RakuAST use node omits it.
         Stmt::Use {
             module,
             arg,
             tags,
-            condition: None,
-            ..
+            condition,
+            if_imports,
         } => Ok(Some(super::use_stmt::convert_use(
             module,
             arg.as_ref(),
             tags,
+            condition.as_deref(),
+            if_imports,
         )?)),
         // `need Module;` / `import Module :tag;`.
         Stmt::Need { module } => Ok(Some(super::use_stmt::convert_need(module))),

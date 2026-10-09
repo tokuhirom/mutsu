@@ -48,10 +48,15 @@ pub(super) fn convert_use(
     module: &str,
     arg: Option<&Expr>,
     tags: &[String],
+    condition: Option<&Expr>,
+    if_imports: &[String],
 ) -> Result<RakuAstNode, RuntimeError> {
     // The parser keeps `use v6.d`'s version text as the argument of a `v6`
     // pseudo-module.
     if module == "v6" && tags.is_empty() {
+        if condition.is_some() || !if_imports.is_empty() {
+            return Err(super::convert::unsupported("conditional language version"));
+        }
         if let Some(Expr::Literal(version)) = arg
             && let ValueView::Str(text) = version.view()
         {
@@ -87,7 +92,60 @@ pub(super) fn convert_use(
     if let Some(argument) = argument {
         node.fields.push(node_field(Some("argument"), argument));
     }
+    if let Some(condition) = condition {
+        node.fields.push(node_field(
+            Some("source-if-condition"),
+            convert_expr(condition)?,
+        ));
+    }
+    if !if_imports.is_empty() {
+        node.fields.push(RakuAstField {
+            name: Some("source-if-imports"),
+            value: RakuAstFieldValue::List(
+                if_imports
+                    .iter()
+                    .map(|name| Value::str(name.clone()))
+                    .collect(),
+            ),
+        });
+    }
     Ok(node)
+}
+
+// Cost: O(1).
+pub(super) fn is_source_field(field: &RakuAstField) -> bool {
+    matches!(
+        field.name,
+        Some("source-if-condition" | "source-if-imports")
+    )
+}
+
+// Cost: O(i), i = imported names recorded by the `if` adverb.
+fn lower_source_if(node: &RakuAstNode) -> Result<(Option<Expr>, Vec<String>), RuntimeError> {
+    let condition = node
+        .fields
+        .iter()
+        .find(|field| field.name == Some("source-if-condition"))
+        .map(|_| named_child(node, "source-if-condition").and_then(lower_expr))
+        .transpose()?;
+    let imports = match node
+        .fields
+        .iter()
+        .find(|f| f.name == Some("source-if-imports"))
+    {
+        None => Vec::new(),
+        Some(_) => list_field(node, "source-if-imports")?
+            .iter()
+            .map(|value| match value.view() {
+                ValueView::Str(name) => Ok(name.to_string()),
+                _ => Err(super::lower::unsupported(node)),
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    };
+    if condition.is_none() && !imports.is_empty() {
+        return Err(super::lower::unsupported(node));
+    }
+    Ok((condition, imports))
 }
 
 /// `need MODULE;` -> `Statement::Need(module-names => (Name,))`.
@@ -222,8 +280,9 @@ pub(super) fn lower_pragma(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         f.name == Some("off") && matches!(&f.value, RakuAstFieldValue::Node(v) if v.truthy())
     });
     let (arg, tags) = lower_argument(node)?;
+    let (condition, if_imports) = lower_source_if(node)?;
     if off {
-        if arg.is_some() || !tags.is_empty() {
+        if arg.is_some() || !tags.is_empty() || condition.is_some() || !if_imports.is_empty() {
             return Err(super::lower::unsupported(node));
         }
         return Ok(Stmt::No { module, arg: None });
@@ -232,8 +291,8 @@ pub(super) fn lower_pragma(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         module,
         arg,
         tags,
-        condition: None,
-        if_imports: Vec::new(),
+        condition: condition.map(Box::new),
+        if_imports,
     })
 }
 
@@ -244,6 +303,7 @@ pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         _ => return Err(super::lower::unsupported(node)),
     };
     let (mut arg, mut tags) = lower_argument(node)?;
+    let (condition, if_imports) = lower_source_if(node)?;
     // `use newline :crlf` keeps its pair as the argument, where any other
     // module's `:tag` is an import tag.
     if module == "newline"
@@ -262,8 +322,8 @@ pub(super) fn lower_use(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         module,
         arg,
         tags,
-        condition: None,
-        if_imports: Vec::new(),
+        condition: condition.map(Box::new),
+        if_imports,
     })
 }
 

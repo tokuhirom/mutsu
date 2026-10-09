@@ -30,6 +30,47 @@ pub(crate) const SUBSCRIPT_ADVERB_FN: &str = "__mutsu_subscript_adverb";
 /// [`SUBSCRIPT_ADVERB_FN`] call.
 const ADVERB_COND_MARKER: &str = "__adverb_cond__";
 
+/// A value adverb with an explicitly written condition. The ordinary
+/// `adverbs` round-trip deliberately normalizes `:k(True)` to `:k`; this
+/// reader retains the written parentheses for RakuAST's ColonPair::Value.
+// Cost: O(1).
+pub(crate) fn explicit_value_condition(expr: &Expr) -> Option<(&Expr, &Expr, bool, &str, &Expr)> {
+    let Expr::Call { name, args, .. } = expr else {
+        return None;
+    };
+    if *name != Symbol::intern(SUBSCRIPT_ADVERB_FN) {
+        return None;
+    }
+    let [
+        target,
+        index,
+        Expr::Literal(mode),
+        _,
+        Expr::Literal(kind),
+        Expr::Literal(marker),
+        condition,
+    ] = args.as_slice()
+    else {
+        return None;
+    };
+    let ValueView::Str(mode) = mode.view() else {
+        return None;
+    };
+    let key = VALUE_ADVERBS
+        .iter()
+        .find(|(name, _, _)| *name == mode.as_str())?
+        .0;
+    let is_positional = match kind.view() {
+        ValueView::Str(kind) if kind.as_str() == SUBSCRIPT_POSITIONAL_MARKER => true,
+        ValueView::Str(kind) if kind.as_str() == SUBSCRIPT_ASSOCIATIVE_MARKER => false,
+        _ => return None,
+    };
+    if !matches!(marker.view(), ValueView::Str(text) if text.as_str() == ADVERB_COND_MARKER) {
+        return None;
+    }
+    Some((target, index, is_positional, key, condition))
+}
+
 /// The method a `:delete` adverb lowers to on a single-dimension subscript.
 const DELETE_KEY: &str = "DELETE-KEY";
 
