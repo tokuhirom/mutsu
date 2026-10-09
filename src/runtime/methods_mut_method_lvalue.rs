@@ -1129,6 +1129,29 @@ impl Interpreter {
                     method
                 )));
             }
+            // A role mixed into a builtin aggregate (`my %h is Hash::Ordered`,
+            // `self` inside the role is a `Mixin` over a Hash): a user method of
+            // the role that returns an lvalue (`self.AT-KEY($k) = v` where
+            // AT-KEY hands back a Proxy) is assigned through what it returns.
+            ValueView::Mixin(..) => {
+                let was_lvalue = self.in_lvalue_assignment;
+                self.in_lvalue_assignment = true;
+                let saved_sources = self.take_pending_call_arg_sources();
+                let result = self.call_method_with_values(target.clone(), method, method_args);
+                self.set_pending_call_arg_sources(saved_sources);
+                self.in_lvalue_assignment = was_lvalue;
+                let result = result?;
+                if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
+                    return assigned;
+                }
+                if let Some(stored) = self.store_into_aggregate_lvalue(&result, value) {
+                    return Ok(stored);
+                }
+                return Err(RuntimeError::new(format!(
+                    "X::Assignment::RO: cannot assign through .{} on non-instance",
+                    method
+                )));
+            }
             _ => {
                 return Err(RuntimeError::new(format!(
                     "X::Assignment::RO: cannot assign through .{} on non-instance",
