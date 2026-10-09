@@ -262,28 +262,11 @@ fn coerce_to_array_inner(value: Value) -> Value {
         // `value_to_list`. (Note: an array *literal* `[set(...)]` does NOT
         // flatten — that path is handled separately in `exec_make_array_op`.)
         // ADR-0021 I2: data-minted pairs default positional.
-        ValueView::Set(items, _) => Value::real_array(
-            items
-                .iter()
-                .map(|s| Value::value_pair(Value::str(s.clone()), Value::TRUE))
-                .collect(),
-        ),
-        ValueView::Bag(items, _) => Value::real_array(
-            items
-                .iter()
-                .map(|(k, v)| {
-                    Value::value_pair(Value::str(k.clone()), Value::from_bigint(v.clone()))
-                })
-                .collect(),
-        ),
-        ValueView::Mix(items, _) => Value::real_array(
-            items
-                .iter()
-                .map(|(k, v)| {
-                    Value::value_pair(Value::str(k.clone()), crate::value::mix_weight_to_value(*v))
-                })
-                .collect(),
-        ),
+        // `value_to_list` restores each element's original key object (`typed_key`),
+        // so `my @a = bag(1, 2)` holds `1 => 1`, not the internal `Int|1` key.
+        ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+            Value::real_array(value_to_list(&value))
+        }
         // A package Stash is Associative, so assigning it to an array
         // materializes its symbol table as key/value pairs rather than
         // retaining the Stash as one opaque instance.
