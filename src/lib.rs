@@ -246,7 +246,9 @@ pub fn dump_bytecode(input: &str, source_file: Option<&str>) -> Result<String, R
     let mut names: Vec<crate::symbol::Symbol> = compiled_fns.keys().copied().collect();
     names.sort_by_key(|s| s.resolve());
     for name in names {
-        let cf = compiled_fns.get(&name).expect("compiled routine");
+        let Some(cf) = compiled_fns.get(&name) else {
+            continue;
+        };
         disasm_tree(
             &mut out,
             &cf.code,

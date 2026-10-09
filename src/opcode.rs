@@ -12551,7 +12551,9 @@ impl CompiledFns {
     /// the nested table so its unit metadata follows the lexical declaration.
     pub(crate) fn stamp_source_file(&mut self, source_file: Option<String>) {
         for slot in self.map.values_mut() {
-            let function = Self::function_mut(slot);
+            let Some(function) = Self::function_mut(slot) else {
+                continue;
+            };
             if function.source_file.is_none() {
                 function.source_file = source_file.clone();
                 function.source_file_sym_cache = std::sync::OnceLock::new();
@@ -12580,7 +12582,9 @@ impl CompiledFns {
             if slot.get().code.source_file.is_some() {
                 continue;
             }
-            let function = Self::function_mut(slot);
+            let Some(function) = Self::function_mut(slot) else {
+                continue;
+            };
             let file = function.source_file_sym().unwrap_or(file);
             changed |= Arc::make_mut(&mut function.code).stamp_source_file(file);
             if let Some(nested) = &mut function.compiled_fns {
@@ -12595,12 +12599,11 @@ impl CompiledFns {
     }
 
     /// The body of `slot`, copied out of every sharer first.
-    fn function_mut(slot: &mut Arc<crate::compiled_lazy::LazyFn>) -> &mut CompiledFunction {
+    fn function_mut(slot: &mut Arc<crate::compiled_lazy::LazyFn>) -> Option<&mut CompiledFunction> {
         if Arc::get_mut(slot).is_none() {
             *slot = Arc::new(crate::compiled_lazy::LazyFn::ready(slot.get().clone()));
         }
-        let lazy = Arc::get_mut(slot).expect("the slot is unshared here");
-        Arc::make_mut(lazy.body_mut())
+        Some(Arc::make_mut(Arc::get_mut(slot)?.body_mut()?))
     }
 
     /// Mutable access to one body, copying it out of a shared `Arc` first.
@@ -12610,7 +12613,7 @@ impl CompiledFns {
         key: &crate::symbol::Symbol,
     ) -> Option<&mut CompiledFunction> {
         self.id = Self::next_id();
-        self.map.get_mut(key).map(Self::function_mut)
+        self.map.get_mut(key).and_then(Self::function_mut)
     }
 
     pub(crate) fn retain(

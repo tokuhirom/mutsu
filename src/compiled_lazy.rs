@@ -84,16 +84,19 @@ impl LazyFn {
     // Cost: O(n) on the first call, n = size of the body; O(1) after.
     pub(crate) fn get(&self) -> &Arc<CompiledFunction> {
         self.cell.get_or_init(|| {
-            let raw = self
-                .raw
-                .as_ref()
-                .expect("a LazyFn without a body is always ready");
-            match crate::precomp_codec::decode_body::<CompiledFunction>(&raw.bytes, &raw.symbols) {
-                Ok(cf) => Arc::new(cf),
-                Err(e) => panic!(
-                    "the precompilation cache holds a damaged routine body ({e}); \
-                     remove the cache directory and run again"
-                ),
+            let decoded = self.raw.as_ref().and_then(|raw| {
+                crate::precomp_codec::decode_body::<CompiledFunction>(&raw.bytes, &raw.symbols)
+                    .ok()
+            });
+            match decoded {
+                Some(cf) => Arc::new(cf),
+                None => {
+                    eprintln!(
+                        "mutsu: the precompilation cache holds a damaged routine body; \
+                         remove the cache directory and run again"
+                    );
+                    std::process::exit(70)
+                }
             }
         })
     }
@@ -117,11 +120,11 @@ impl LazyFn {
 
     /// Mutable access to the body of a slot nobody else shares.
     // Cost: O(n) when the body is decoded here, n = size of the body.
-    pub(crate) fn body_mut(&mut self) -> &mut Arc<CompiledFunction> {
+    pub(crate) fn body_mut(&mut self) -> Option<&mut Arc<CompiledFunction>> {
         self.get();
         self.nested_exports = None;
         self.raw = None;
-        self.cell.get_mut().expect("decoded just above")
+        self.cell.get_mut()
     }
 }
 
