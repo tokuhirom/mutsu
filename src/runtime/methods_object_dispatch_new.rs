@@ -2116,8 +2116,12 @@ impl Interpreter {
                     // Only plain class element types (`has Int @.nums`). Native
                     // (`has int @.x` -> packed `array[int]`), coercion, and
                     // parametric elements keep their pre-existing construction
-                    // (the uninit branch already tags native packed arrays).
-                    if !Self::is_simple_native_ctor_constraint(&elem_type) {
+                    // (the uninit branch already tags native packed arrays). A
+                    // lowercase user `subset` (`has ne @.r`) is a plain
+                    // predicate check, like an uppercase class element.
+                    if !Self::is_simple_native_ctor_constraint(&elem_type)
+                        && !self.constraint_is_user_subset(&elem_type)
+                    {
                         continue;
                     }
                     if self
