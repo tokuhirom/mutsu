@@ -213,6 +213,65 @@ pub(crate) fn is_leaf_structure_read(method: &str) -> bool {
     )
 }
 
+/// Whether `method` walks a container's elements while running USER code (a
+/// callback, a comparator, an element's own `.gist`/`.Str`/`.raku`), so it
+/// cannot hold the stripe ([`is_leaf_structure_read`] is the no-user-code
+/// allowlist) and instead runs on a [`shared_snapshot`] (#12456).
+// Cost: O(1).
+pub(crate) fn is_snapshot_read(method: &str) -> bool {
+    matches!(
+        method,
+        "sort"
+            | "map"
+            | "grep"
+            | "first"
+            | "gist"
+            | "Str"
+            | "raku"
+            | "perl"
+            | "fmt"
+            | "join"
+            | "reverse"
+            | "reduce"
+            | "min"
+            | "max"
+            | "sum"
+            | "flat"
+            | "unique"
+    )
+}
+
+/// A shallow copy of a shared `Hash`/`Array`, taken while holding the stripe,
+/// for a method that must then run user code over it with nothing held
+/// (ADR-0068 §16). `None` -- run on the original -- when no second mutator
+/// thread exists, when this thread already holds a stripe, or when `container`
+/// is no `Hash`/`Array`. The elements are cloned `Value`s, so an element that is
+/// itself a shared container cell stays shared with the live container.
+// Cost: O(n), n = elements, the shallow clone of the backing node.
+pub(crate) fn shared_snapshot(container: &crate::value::Value) -> Option<crate::value::Value> {
+    use crate::value::{ArrayData, HashData, Value, ValueView};
+    if !multi_mutator_threads_live() {
+        return None;
+    }
+    match container.view() {
+        ValueView::Hash(map) => {
+            let _guard = ContainerStructGuard::acquire_for(None, container)?;
+            Some(Value::hash_with_data_itemized(
+                crate::gc::Gc::new(HashData::clone(&map)),
+                container.hash_is_itemized(),
+            ))
+        }
+        ValueView::Array(items, kind) => {
+            let _guard = ContainerStructGuard::acquire_for(None, container)?;
+            Some(Value::array_with_kind(
+                crate::gc::Gc::new(ArrayData::clone(&items)),
+                kind,
+            ))
+        }
+        _ => None,
+    }
+}
+
 /// The address of `container`'s backing GC node. This is the FALLBACK key, used
 /// only when the container was not reached through a cell -- two threads that
 /// share a cell do not reliably share a node (see `acquire_for`). `None` for
