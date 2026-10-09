@@ -308,6 +308,18 @@ impl Interpreter {
                 .insert(full_name, how.clone());
             return Ok(how);
         }
+        // A role whose method's `is` trait is being dispatched (declaration
+        // time): not registered yet, but its metaobject is a
+        // `ParametricRoleHOW` (not cached; the registered role takes over).
+        if let ValueView::Package(name) = target.view() {
+            let resolved = name.resolve();
+            if self.registry().roles_in_trait_dispatch.contains(&resolved) {
+                return Ok(Self::native_how_instance(
+                    "Perl6::Metamodel::ParametricRoleHOW",
+                    &resolved,
+                ));
+            }
+        }
         // Check for persistent HOW values (set by `$c.HOW does Role`, an
         // EXPORTHOW custom-HOW install, or a previous mint by this function).
         //

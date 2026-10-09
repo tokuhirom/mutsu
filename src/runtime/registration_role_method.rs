@@ -311,7 +311,10 @@ impl Interpreter {
         // A role method's custom `is` traits dispatch to a user
         // `trait_mod:<is>` at declaration time, with `$*PACKAGE` the role --
         // exactly when rakudo runs them.
-        self.apply_method_is_traits(
+        self.registry_mut()
+            .roles_in_trait_dispatch
+            .push(name.to_string());
+        let traits_result = self.apply_method_is_traits(
             name,
             &resolved_method_name,
             &def.params,
@@ -322,7 +325,9 @@ impl Interpreter {
             decl.return_type.as_deref(),
             &decl.custom_traits,
             &def.routine_cell,
-        )?;
+        );
+        self.registry_mut().roles_in_trait_dispatch.pop();
+        traits_result?;
         // `my method` in roles are role-private, skip method table.
         // Submethods (is_submethod) DO get composed even though
         // is_my is true.
