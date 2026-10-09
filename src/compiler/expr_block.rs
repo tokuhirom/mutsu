@@ -132,7 +132,17 @@ impl Compiler {
                     }
                     self.emit_inlined_body_placeholder_binds(body, ArgSupply::Topic);
                 }
-                let given_idx = self.code.emit(OpCode::DoGivenExpr { body_end: 0 });
+                let restore_outer_topic = body.first().is_some_and(|stmt| match stmt {
+                    Stmt::SyntheticBlock(stmts) => stmts.iter().any(|stmt| {
+                        matches!(stmt, Stmt::VarDecl { custom_traits, .. }
+                            if custom_traits.iter().any(|(name, _)| name == "__restore_pointy_given_topic"))
+                    }),
+                    _ => false,
+                });
+                let given_idx = self.code.emit(OpCode::DoGivenExpr {
+                    body_end: 0,
+                    restore_outer_topic,
+                });
                 self.compile_if_value_branch(body, |c| c.compile_block_inline(body));
                 self.code.patch_body_end(given_idx);
             }

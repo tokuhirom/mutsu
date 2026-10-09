@@ -7052,9 +7052,18 @@ impl Interpreter {
                 self.exec_begin_once_expr_op(code, *body_end, *site_id, ip, compiled_fns)?;
             }
             // Cost: O(1) plus the body (the `$_` slot is one probe of the chunk's name index).
-            OpCode::DoGivenExpr { body_end } => {
+            OpCode::DoGivenExpr {
+                body_end,
+                restore_outer_topic,
+            } => {
                 self.sync_source_line(code, *ip);
-                self.exec_do_given_expr_op(code, *body_end, ip, compiled_fns)?;
+                self.exec_do_given_expr_op(
+                    code,
+                    *body_end,
+                    *restore_outer_topic,
+                    ip,
+                    compiled_fns,
+                )?;
             }
 
             // -- Closures and registration --

@@ -2950,7 +2950,14 @@ pub(crate) enum OpCode {
     /// the value a matching `when`/`default` succeeded with (`Nil` otherwise).
     /// `$_` and the topic-source bookkeeping are restored afterwards, and a topic
     /// that is an element (`given @a[i]`) has its final value written back.
-    DoGivenExpr { body_end: u32 },
+    ///
+    /// `restore_outer_topic` mirrors [`Self::Given`]'s flag: a pointy body
+    /// (`do given X -> $p`) leaves the enclosing `$_` visible once its
+    /// synthetic declaration has read the topic.
+    DoGivenExpr {
+        body_end: u32,
+        restore_outer_topic: bool,
+    },
     /// Create a lazy gather list from `stmt_pool[.0]`. `.1` indexes the
     /// analysis-only escaping closure compiled from the same body
     /// (`surface_stashed_body_free_vars`): exec boxes the captured-and-mutated
