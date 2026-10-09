@@ -127,6 +127,17 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             }
             let mut statement = lower_stmt_inner(expression)?;
             let loop_modifier = node.fields.iter().find(|f| f.name == Some("loop-modifier"));
+            // A block under postfix while/until is a value evaluated on each
+            // iteration. The parser does not call that block's body.
+            if expression.class == RakuAstClass::Block
+                && let Some(modifier) = loop_modifier
+                && matches!(
+                    child_node(&modifier.value)?.class,
+                    RakuAstClass::StatementModifierWhile | RakuAstClass::StatementModifierUntil
+                )
+            {
+                statement = Stmt::Expr(lower_expr(expression)?);
+            }
             // A bare block modified by a `for` is the parser's block statement
             // (not the closure value a block with placeholders is elsewhere),
             // and gives the loop its placeholders.
@@ -173,6 +184,21 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                         explicit_zero_params: false,
                         is_statement_modifier: true,
                         uses_block_magic: false,
+                    });
+                }
+                if matches!(
+                    modifier.class,
+                    RakuAstClass::StatementModifierWhile | RakuAstClass::StatementModifierUntil
+                ) {
+                    let is_until = modifier.class == RakuAstClass::StatementModifierUntil;
+                    let cond = lower_expr(named_child_or_positional(modifier)?)?;
+                    return Ok(Stmt::While {
+                        cond: negate_if(cond, is_until),
+                        body: vec![statement],
+                        label: None,
+                        is_statement_modifier: true,
+                        is_until,
+                        is_bare_term: false,
                     });
                 }
                 return Err(unsupported(modifier));
