@@ -2068,3 +2068,23 @@ argument sources, which a `Handler::Mut` row did not receive. Decision (the amen
   reinsert fallback of the old `BIND-KEY` arm is gone with them: a bind now always writes the shared node, so every alias of
   the hash sees it. What stays is `BIND-KEY` on an undefined receiver (it vivifies a hash) and the stash intercept.
 - Left: the `Mu`, grammar and metamodel bridges (item 3) and asking the storage question in `resolve_sequence` (item 4).
+
+### 9.42 Slice 4: the storage bridges are a frame entry, not an exhaustion probe (2026-10-09)
+
+`refactor/12387-storage-bridges-in-resolver` (item 4 of #12387, first half). §9.29 found that the frame builder's override
+flags decide *whether a frame is forced*, not *whether a bridge applies*, and that the question is about the receiver
+**value**. This step asks it there:
+
+- `invocant_carries_native_storage`: the receiver is an `Instance` with `__mutsu_array_storage`, `__mutsu_hash_storage` or
+  `__baggy_data__` (a role punned onto a container has the storage too, whatever its class name). With a user method of that
+  name on the class or a composed role, the frame builder forces the frame and ends it with a `DeferralEntry::Native`, as it
+  does for an augmented core type. It replaces the protocol-name list (`is_container_protocol_method`), so a `keys`, `elems`
+  or `push` override reaches the storage too. `Mu`'s names (`new`, `BUILDALL`, `POPULATE`, `clone`) are excluded: their base
+  candidate is the `Mu` one, not the storage's `Array.new`.
+- The `Native` arm of `dispatch_next_candidate` asks `native_storage_base_entry` first for an instance and falls back to the
+  default rendering (`any_base_native_entry`). The three storage bridges are gone from `NATIVE_BASE_EXHAUSTED`.
+- Left: `NATIVE_BASE_MULTI` and `NATIVE_BASE_NO_FRAME` still list the three bridges (a `multi method` override has its own
+  frame kind; a single compiled method with no frame reads the samewith context), and the `Mu`, grammar and metamodel
+  bridges, so `native_*_next_candidate` and the lists are not deleted yet.
+- Found, not fixed: `class S is SetHash { method set(|c) { callsame } }` does not set (the storage reached through
+  `try_native_method` has no mutating rows).

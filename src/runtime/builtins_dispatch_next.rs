@@ -65,9 +65,6 @@ const NATIVE_BASE_EXHAUSTED: &[NativeBase] = &[
     NativeBase::GrammarParse,
     NativeBase::GrammarBuiltinRule,
     NativeBase::MuBase,
-    NativeBase::ArrayStorage,
-    NativeBase::HashStorage,
-    NativeBase::BaggyStorage,
     NativeBase::Metamodel,
 ];
 
@@ -119,6 +116,17 @@ impl Interpreter {
             return None;
         };
         self.core_prefix_op(op, arg)
+    }
+
+    /// The native behavior on a container subclass instance's backing storage
+    /// as the next candidate of the innermost method frame, whose current
+    /// invocant and args it reads. `None` when the receiver carries none of the
+    /// three storages or the storage has no such method.
+    // Cost: O(1) probes plus the storage method's own cost.
+    fn native_storage_base_entry(&mut self) -> Option<Result<Value, RuntimeError>> {
+        self.native_array_storage_next_candidate(None)
+            .or_else(|| self.native_hash_storage_next_candidate(None))
+            .or_else(|| self.native_baggy_storage_next_candidate(None))
     }
 
     /// The first of `order` that supplies a native base candidate for the
@@ -1219,7 +1227,14 @@ impl Interpreter {
                         (frame.invocant.clone(), frame.args.clone())
                     };
                     let result = if matches!(invocant.view(), ValueView::Instance { .. }) {
-                        self.any_base_native_entry(&invocant, &name, &args)?
+                        // An instance of a container subclass: the native
+                        // behavior on its backing storage is the next candidate
+                        // (the frame builder pushed this entry because the
+                        // receiver carries one).
+                        match self.native_storage_base_entry() {
+                            Some(res) => res?,
+                            None => self.any_base_native_entry(&invocant, &name, &args)?,
+                        }
                     } else if matches!(invocant.view(), ValueView::Mixin(..)) {
                         self.mixin_base_native_entry(&invocant, &name, &args)
                             .transpose()?
