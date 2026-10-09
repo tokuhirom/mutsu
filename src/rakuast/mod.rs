@@ -2894,9 +2894,15 @@ pub fn construct(
         && let Some((class, optional)) = module_statement_schema(class_name)
     {
         let module_name = named_arg(args, "module-name").ok_or_else(|| {
-            RuntimeError::new(format!("{class_name}.new requires a `module-name` argument"))
+            RuntimeError::new(format!(
+                "{class_name}.new requires a `module-name` argument"
+            ))
         })?;
-        require_rakuast_class(&module_name, RakuAstClass::Name, &format!("{class_name}.new"))?;
+        require_rakuast_class(
+            &module_name,
+            RakuAstClass::Name,
+            &format!("{class_name}.new"),
+        )?;
         let mut fields = vec![RakuAstField {
             name: Some("module-name"),
             value: RakuAstFieldValue::Node(module_name),
@@ -2909,7 +2915,10 @@ pub fn construct(
                 });
             }
         }
-        return Ok(Some(Value::rakuast(Box::new(RakuAstNode { class, fields }))));
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class,
+            fields,
+        }))));
     }
     // Multi-field named constructors: the named args map to same-named fields in
     // the class's schema order (`ApplyInfix.new(left => …, infix => …, right => …)`).
