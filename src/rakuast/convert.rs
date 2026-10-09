@@ -502,6 +502,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let decl = crate::ast::sigilless_decl::declaration(stmt).expect("just checked");
             Ok(Some(statement_expression(term_declaration(&decl)?)))
         }
+        // `my %h does R = EXPR`: one declaration with a `Trait::Does`.
+        Stmt::SyntheticBlock(_) if crate::ast::var_does::recognize(stmt).is_some() => {
+            let (decl, role, init) = crate::ast::var_does::recognize(stmt).expect("just checked");
+            does_declaration(decl, role, init)
+        }
         // `my $x = 1 and 2` / `my $x = 1, 2, 3`: the declaration and the tail the
         // parser re-attaches to it are one expression.
         Stmt::SyntheticBlock(_) if crate::ast::decl_tail::recognize(stmt).is_some() => {
@@ -2247,6 +2252,46 @@ fn var_decl_statement(
             .push(node_field(Some("where"), convert_expr(constraint)?));
     }
     Ok(Some(statement_expression(decl)))
+}
+
+/// `my %h does R = EXPR`: the declaration with the role as a `Trait::Does`,
+/// after its other traits and before the initializer. `decl` is the parser's
+/// declaration without its initializer, `init` the assigned expression.
+// Cost: O(n), n = size of the declaration and the role.
+pub(super) fn does_declaration(
+    decl: &Stmt,
+    role: &Expr,
+    init: Option<&Expr>,
+) -> Result<Option<RakuAstNode>, RuntimeError> {
+    let mut parts = var_decl_parts(decl)?;
+    let mut traits = parts.custom_traits.to_vec();
+    if let Some(init) = init {
+        traits.push(("__has_initializer".to_string(), None));
+        parts.expr = init;
+    }
+    parts.custom_traits = &traits;
+    let Some(statement) = var_decl_statement(parts, false)? else {
+        return Ok(None);
+    };
+    let Some(mut declaration) = expression_of(&statement) else {
+        return Ok(None);
+    };
+    let does = Value::rakuast(Box::new(RakuAstNode {
+        class: RakuAstClass::TraitDoes,
+        fields: vec![node_field(None, convert_expr(role)?)],
+    }));
+    match declaration
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("traits"))
+    {
+        Some(RakuAstField {
+            value: RakuAstFieldValue::List(items),
+            ..
+        }) => items.push(does),
+        _ => decl_traits::insert(&mut declaration, vec![does]),
+    }
+    Ok(Some(statement_expression(declaration)))
 }
 
 /// The fields of a `Stmt::VarDecl` that a `VarDeclaration::Simple` renders.

@@ -286,22 +286,12 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                         None => (r2, None),
                     }
                 };
-                let mixin_expr = Expr::Binary {
-                    left: Box::new(Expr::Var(s.name.clone())),
-                    op: crate::token_kind::TokenKind::Ident(op.to_string()),
-                    right: Box::new(role_operand),
-                    form: Default::default(),
-                };
                 let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
                 // Assign the initializer BEFORE mixing the role in: the `does`
                 // desugar mixes the role into the value currently held by the
                 // variable and writes it back, so a later assignment would drop
                 // the mixin. Filling first, then mixing, keeps `Array+{R}`.
-                let mut block_stmts = vec![stmt, Stmt::Expr(mixin_expr)];
-                if let Some(init_stmt) = init_stmt {
-                    block_stmts.push(init_stmt);
-                }
-                let block = Stmt::SyntheticBlock(block_stmts);
+                let block = crate::ast::var_does::expand(&s.name, stmt, op, role_operand, init_stmt);
                 if s.apply_modifier {
                     return parse_statement_modifier(r2, block);
                 }
