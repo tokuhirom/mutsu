@@ -943,6 +943,22 @@ impl Interpreter {
                     // (see `.wrap` in `methods_sub.rs`), as it does for the
                     // `.^lookup` / `.^find_method` object.
                     let candidate_idx = defs.iter().position(|d| std::ptr::eq(d, def));
+                    // A real method with an AST body is answered with the same
+                    // `Method` object `.^lookup` / `.^find_method` build, so a
+                    // role mixed into the method (`$method does R`) and a
+                    // `.wrap` are visible through `.^can` too (hide-methods
+                    // filters `.^can` results by `~~ MethodWrapped`).
+                    if !def.body.is_empty() && !def.is_submethod {
+                        results.push(self.make_method_object_with_owner(
+                            method_name,
+                            def,
+                            false,
+                            def.return_type.clone(),
+                            None,
+                            Some(cn),
+                        ));
+                        continue;
+                    }
                     // Prepend "self" to params so the method can be called
                     // as $meth($invocant) — the first argument binds as self.
                     // Code handed to `^add_method` (`sub ($a, $b = 5) {...}`)

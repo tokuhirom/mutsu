@@ -27,6 +27,7 @@ impl Interpreter {
             } else {
                 let mut env = sub_data.env.clone();
                 env.insert("__mutsu_declared_method_capture".to_string(), Value::int(1));
+                crate::term_names::bind_lexical_types_by_bare_name(&mut env);
                 Some(env)
             };
             let def = MethodDef {
