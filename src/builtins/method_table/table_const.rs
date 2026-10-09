@@ -352,7 +352,7 @@ macro_rules! for_each_registration {
             {
                 let mut m = 0;
                 while m < mro.len() {
-                    if $shape.reaches(mro[m]) {
+                    if $shape.reaches_owner(mro[m]) || $shape.may_reach_audited_cool(mro[m]) {
                         let (lo, hi) = owner_range(mro[m]);
                         let mut k = lo;
                         while k < hi {
@@ -361,7 +361,9 @@ macro_rules! for_each_registration {
                             // A `Mut` row is registered by its owner only (ADR-11276
                             // §9.23): no shape reaches it, so no pure entry, call-site
                             // lane or cross-check can run a handler that has effects.
-                            if !$row.flags.contains(RowFlags::OWNER_ONLY) && !$row.handler.is_mut()
+                            if !$row.flags.contains(RowFlags::OWNER_ONLY)
+                                && !$row.handler.is_mut()
+                                && $shape.reaches(mro[m], $row.name)
                             {
                                 $body
                             }

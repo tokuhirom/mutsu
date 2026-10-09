@@ -268,7 +268,14 @@ impl DispatchShape {
     /// `IO::Spec::Unix`, whose methods its classes inherit, and never `Any`
     /// or `Mu`).
     // Cost: O(1).
-    pub(crate) const fn reaches(self, owner: &str) -> bool {
+    pub(crate) const fn reaches(self, owner: &str, method: &str) -> bool {
+        self.reaches_owner(owner) || self.reaches_audited_cool(owner, method)
+    }
+
+    /// [`Self::reaches`] for the rows of `owner` as a whole, before the
+    /// per-method audit of `Cool` for the closed collection shapes.
+    // Cost: O(1).
+    pub(crate) const fn reaches_owner(self, owner: &str) -> bool {
         self.inherits()
             || const_str_eq(owner, self.type_name())
             // `IO::Handle` renders itself (`Mu.raku`) through a `Mu` row of its own.
@@ -277,6 +284,34 @@ impl DispatchShape {
                 self,
                 DispatchShape::IoSpecWin32 | DispatchShape::IoSpecCygwin | DispatchShape::IoSpecQnx
             ) && const_str_eq(owner, "IO::Spec::Unix"))
+    }
+
+    /// Whether some row of `owner` may reach this shape through the per-method
+    /// audit ([`Self::reaches`] decides which).
+    // Cost: O(1).
+    pub(crate) const fn may_reach_audited_cool(self, owner: &str) -> bool {
+        matches!(self, DispatchShape::Range | DispatchShape::Seq) && const_str_eq(owner, "Cool")
+    }
+
+    /// Whether `Cool`'s `method` row is one a closed `Range` or `Seq` shape
+    /// reaches: the numeric methods whose Rakudo body is `self.Numeric.METHOD`
+    /// and whose handlers read the receiver through `numify` (a `Range` or `Seq`
+    /// numifies to its element count). Audited per method (ADR-11276 §9.16), not
+    /// per owner, so the text, iteration and search rows `Cool` also declares
+    /// stay unreachable.
+    // Cost: O(m), m = audited names.
+    const fn reaches_audited_cool(self, owner: &str, method: &str) -> bool {
+        if !self.may_reach_audited_cool(owner) {
+            return false;
+        }
+        let mut i = 0;
+        while i < COOL_NUMERIC_FOR_COLLECTIONS.len() {
+            if const_str_eq(method, COOL_NUMERIC_FOR_COLLECTIONS[i]) {
+                return true;
+            }
+            i += 1;
+        }
+        false
     }
 
     /// Whether rows owned by an ancestor of this shape's type reach it. The
@@ -323,6 +358,16 @@ impl DispatchShape {
             .map(|&(_, shape)| shape)
     }
 }
+
+/// The `Cool` numeric methods a `Range` or `Seq` reaches
+/// ([`DispatchShape::reaches_audited_cool`]).
+const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 46] = [
+    "sin", "cos", "tan", "sec", "cosec", "cotan", "sinh", "cosh", "tanh", "sech", "cosech",
+    "cotanh", "asin", "acos", "atan", "asec", "acosec", "acotan", "asinh", "acosh", "atanh",
+    "asech", "acosech", "acotanh", "exp", "log", "log2", "log10", "sqrt", "cis", "atan2",
+    "roots", "unpolar", "abs", "sign", "floor", "ceiling", "truncate", "round", "is-prime",
+    "conj", "chr", "rand", "int", "uint", "byte",
+];
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned
 /// class name: a compare of two ids, not of two strings.

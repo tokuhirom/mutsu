@@ -297,7 +297,7 @@ fn a_new_shape_reaches_only_its_own_rows() {
                 continue;
             };
             assert!(
-                shape.reaches(found.owner),
+                shape.reaches(found.owner, row.name),
                 "{shape:?} reached a row its type does not own"
             );
         }
