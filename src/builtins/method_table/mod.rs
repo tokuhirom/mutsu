@@ -81,7 +81,8 @@ pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
 #[cfg(test)]
 pub(crate) use dispatch::try_dispatch;
 pub(crate) use dispatch::{
-    admits, answer, invoke, invoke_base, invoke_in, invoke_mut, invoke_owner, invoke_owner_raw, try_dispatch_in,
+    admits, answer, invoke, invoke_base, invoke_in, invoke_mut, invoke_owner, invoke_owner_raw,
+    try_dispatch_in,
 };
 pub(crate) use mutating::buf::by_value as buf_by_value;
 pub(crate) use mutating::owners_of as mut_owners_of;
@@ -91,7 +92,9 @@ pub(crate) use row::{Handler, MethodRow, Named, NarrowFn, RowFlags};
 use table::all_rows;
 #[cfg(test)]
 pub(crate) use table::names_a_mut_row;
-pub(crate) use table::{Receiver, RowId, base_row, names_a_row, owner_row, resolve, row, shape_has_row};
+pub(crate) use table::{
+    Receiver, RowId, base_row, names_a_row, owner_row, resolve, row, shape_has_row,
+};
 
 #[cfg(test)]
 mod tests;

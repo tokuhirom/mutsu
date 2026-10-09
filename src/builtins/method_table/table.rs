@@ -216,12 +216,10 @@ pub(crate) fn owner_row(owner: Symbol, method: Symbol, arity: usize) -> Option<R
     let rows = rows_named(name_index(method)?);
     let owner = owner.as_str();
     let declared = || {
-        rows.iter()
-            .copied()
-            .filter(|&id| {
-                let row = ALL[usize::from(id)];
-                row.owner == owner && !row.flags.contains(RowFlags::DEFERRAL_BASE)
-            })
+        rows.iter().copied().filter(|&id| {
+            let row = ALL[usize::from(id)];
+            row.owner == owner && !row.flags.contains(RowFlags::DEFERRAL_BASE)
+        })
     };
     if let Some(arity) = u8::try_from(arity).ok()
         && let Some(id) = declared().find(|&id| ALL[usize::from(id)].arities().contains(&arity))
