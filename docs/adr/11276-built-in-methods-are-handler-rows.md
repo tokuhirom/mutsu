@@ -2173,3 +2173,28 @@ first). Both stay in `native_mu_base_next_candidate`.
   is now four `invoke_owner_raw(&["Mu"], ..)` calls.
 - Still open on #12423: the per-type constructor rows and their shared guard, and deleting `native_mu_base_next_candidate`
   with them.
+
+### 9.49 Slice 4: the built-in constructors are one table, not method rows (2026-10-09)
+
+`refactor/12423-per-type-constructor-rows` (the per-type constructor item of #12423), after §9.48.
+
+**Why not rows.** The issue planned a `Type.new` row per built-in type. `rows_are_declared_by_rakudo` forbids that for most of
+them: Rakudo declares `new` on `Array`, `List`, `Seq`, `Date`, `DateTime`, `Promise`, `Pair`, ... but `Hash`, `Map`, `Set`, `Bag`,
+`Mix`, `Version`, `Channel`, `Supplier`, `Uni`, `StrDistance`, `CompUnit` and the rest inherit `Mu.new` (`T.^lookup('new').package`
+is `Mu`), so a row owned by the type is not something the vendored oracle can declare, and regenerating the snapshot cannot
+make Rakudo declare it. That is also the honest model: `Mu.new` allocates by type.
+
+**What was done instead.** The constructors lived in three parallel type-name ladders. `src/runtime/native_ctor/` holds the
+first as data: a sorted `CTORS` table (class name, constructor, `unless_user_new`, `fast`) over one function per former arm,
+lifted verbatim, in six family files (`collections`, `numeric`, `io_temporal`, `concurrency`, `distribution`, `meta`).
+
+- `dispatch_new_unallocated` replaces its 47-arm `match constructor_dispatch_name` (about 570 lines) with one `lookup`.
+  A class a user declared under a builtin's name still skips the table (`constructor_dispatch_name`). `IO::CatHandle` is the
+  one entry flagged `unless_user_new`.
+- The VM's native construct path (`try_native_builtin_construct`) reads the same entries through the `fast` flag, which marks
+  the pure-data ones; its 19 duplicate branches are gone. `Date` and `DateTime` stay out of it: the interpreter arm tries an
+  `augment`ed `new` first, the VM path does not.
+- Left: the third ladder (`methods_dispatch_new.rs`: `ObjAt`, the allomorphs, `Failure`), the VM-only arms (`Int`, `Num`, `Str`,
+  `Capture`, `Buf`/`utf8` by predicate) and the parametric branch below the table (`Array[Int].new`, `Hash[Int,Str].new`, roles).
+  `native_mu_base_next_candidate` stays: its `Mu.new` row calls `native_builtin_new_next_candidate`, which is the same
+  nearest-builtin-ancestor lookup, now table-backed through `try_native_builtin_construct`.

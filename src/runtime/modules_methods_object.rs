@@ -17,6 +17,7 @@ pub(crate) mod methods_signature;
 mod methods_signature_candidates;
 pub(crate) mod methods_signature_errors;
 mod methods_signature_shaped;
+mod native_ctor;
 mod methods_string;
 mod methods_string_codec;
 mod methods_string_encoding;
