@@ -38,7 +38,7 @@ impl Compiler {
             .copied()
     }
 
-    /// A scalar declaration `my $name` while a sigilless binding `\\name` is
+    /// A scalar declaration `my $name` while a sigilless binding `\name` is
     /// visible: both live under the key `name`, so copy the sigilless value
     /// into a slot under the term key before the scalar overwrites it, and
     /// route bare `name` reads there (#11994).
@@ -48,19 +48,25 @@ impl Compiler {
             || !name.starts_with(|c: char| c.is_alphabetic() || c == '_')
             || crate::qualified::is_qualified(Symbol::intern(name))
             || self.shadowed_sigilless_terms.contains(name)
-            || !(self.sigilless_locals.contains(name) || self.enclosing_sigilless.contains(name))
         {
             return;
         }
-        let name_idx = self.code.add_constant(Value::str(name.to_string()));
-        match self.local_map.get(name).copied() {
-            Some(slot) if self.sigilless_locals.contains(name) => {
+        // The sigilless binding is either a local of this frame that already
+        // owns a slot, or an enclosing one. A sigilless name with NO slot yet
+        // is being declared by this very `VarDecl` (a `-> \x` or `my (\a, \b)`
+        // binding is a `VarDecl` of the bare name), not shadowed by it.
+        let slot = self.local_map.get(name).copied();
+        let own = self.sigilless_locals.contains(name);
+        if own && slot.is_none() || !own && !self.enclosing_sigilless.contains(name) {
+            return;
+        }
+        match slot.filter(|_| own) {
+            Some(slot) => {
                 self.code.emit(OpCode::GetLocal(slot));
             }
-            _ => {
-                if !self.sigilless_locals.contains(name) {
-                    self.code.shadowed_sigilless_reads.push(name.to_string());
-                }
+            None => {
+                self.code.shadowed_sigilless_reads.push(name.to_string());
+                let name_idx = self.code.add_constant(Value::str(name.to_string()));
                 self.code.emit(OpCode::GetGlobal(name_idx));
             }
         }
