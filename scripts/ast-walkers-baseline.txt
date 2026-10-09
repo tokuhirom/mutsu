@@ -8,7 +8,6 @@
 
 src/chain_compare.rs                                 1  # build_chain_cmp_expr: lowering of a comparison chain into temps (builds a new tree)
 src/compiler/const_fold.rs                           1  # const_operand_mode is a constant evaluator (folding), not an analysis
-src/compiler/control_if.rs                           1  # code generation (compile_if_construct emits the if/elsif chain)
 src/compiler/decl_plan.rs                            3  # code generation (sub/class/role declaration plans: compile-time op construction, recursing into nested declarations)
 src/compiler/expr_binary.rs                          3  # 3 value-path rewrites/spines (subst_topic_var, retarget_chain_rhs over andthen/orelse chains; native_int_operand_signedness): stay hand-rolled; the chain-root name is Expr::lvalue_root
 src/compiler/expr_call.rs                            1  # code generation (compile_expr_call_inner)

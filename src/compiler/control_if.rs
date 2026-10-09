@@ -52,6 +52,29 @@ impl Compiler {
         is_statement_modifier: bool,
         position: IfPosition,
     ) {
+        // A pointy `-> \v` is the branch's own lexical: it is not a sigilless
+        // binding the program declared for the code after the `if` (#11994).
+        let declared_before = self.sigilless_declared.clone();
+        self.compile_if_construct_inner(
+            cond,
+            then_branch,
+            else_branch,
+            binding_var,
+            is_statement_modifier,
+            position,
+        );
+        self.sigilless_declared = declared_before;
+    }
+
+    fn compile_if_construct_inner(
+        &mut self,
+        cond: &Expr,
+        then_branch: &[Stmt],
+        else_branch: &[Stmt],
+        binding_var: &Option<String>,
+        is_statement_modifier: bool,
+        position: IfPosition,
+    ) {
         let value_mode = position == IfPosition::Value;
         // A pointy `if EXPR -> $_ { }` binds a FRESH lexical `$_` (like `for ->
         // $_`), so its topic must NOT flow back to an enclosing `given $x`'s

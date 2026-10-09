@@ -352,7 +352,10 @@ impl Compiler {
             custom_traits: Vec::new(),
             where_constraint: None,
         };
+        // A pointy parameter binding, not a user's `my $x`.
+        self.decl_is_sigilless = true;
         self.compile_stmt(&var_decl);
+        self.decl_is_sigilless = false;
         (read_expr, None)
     }
 
