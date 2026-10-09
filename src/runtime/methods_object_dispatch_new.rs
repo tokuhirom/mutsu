@@ -959,6 +959,23 @@ impl Interpreter {
                 );
                 return Ok(Value::make_instance(*class_name, attrs));
             }
+            // A user subclass of Pair (`class ValuePair is Pair`, also reached
+            // through `self.Pair::new(...)` from its own `new`) is a tagged
+            // Instance carrying the built Pair under `__mutsu_pair_value`, the
+            // same native-payload convention as the Version subclass above.
+            let is_pair_subclass = cn_resolved != "Pair"
+                && self
+                    .class_mro(class_key)
+                    .iter()
+                    .any(|name| name == "Pair");
+            if is_pair_subclass && (skip_user_new || !self.has_user_method(class_key, "new")) {
+                let mut attrs = HashMap::new();
+                attrs.insert(
+                    "__mutsu_pair_value".to_string(),
+                    Self::build_native_pair_value(&args)?,
+                );
+                return Ok(Value::make_instance(*class_name, attrs));
+            }
             // The native constructor of a builtin class (`native_ctor`): the
             // arms of what used to be a `match` on this name. A user
             // declaration of the same name bypassed it (`constructor_dispatch_name`).

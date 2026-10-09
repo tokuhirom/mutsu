@@ -420,6 +420,33 @@ pub(crate) fn native_method_0arg_cascade(
         return native_method_0arg(inner, method_sym);
     }
 
+    // An `is Pair` subclass instance answers the Pair accessors on its payload
+    // (`__mutsu_pair_value`, see `dispatch_new_unallocated`).
+    if let ValueView::Instance { attributes, .. } = target.view()
+        && let Some(inner) = attributes.as_map().get("__mutsu_pair_value")
+        && matches!(
+            method,
+            "key"
+                | "value"
+                | "kv"
+                | "keys"
+                | "values"
+                | "antipair"
+                | "invert"
+                | "pairs"
+                | "elems"
+                | "List"
+                | "Slip"
+                | "Hash"
+                | "Map"
+                | "Bool"
+                | "Numeric"
+                | "Int"
+        )
+    {
+        return native_method_0arg(inner, method_sym);
+    }
+
     // Cost: O(p), p = number of parts in the Version; `.plus` is O(1), while
     // `.parts` allocates O(p) result storage and `.whatever` scans O(p).
     // Version introspection: `.parts` (list of Int/Str/Whatever parts),
