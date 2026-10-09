@@ -33,6 +33,66 @@ use crate::value::ValueView;
 const CLASS: &str = "__SupplyDerive";
 
 impl Interpreter {
+    /// Whether `attributes` is a `Proc::Async` output stream: it delivers
+    /// nothing until the process is started and tapped, so a derived supply
+    /// must tap it per tap of its own like an on-demand one, never snapshot
+    /// its (empty) `values`.
+    // Cost: O(1).
+    pub(in crate::runtime) fn is_channel_backed_source(attributes: &AttrMap) -> bool {
+        attributes.get("proc_output").is_some_and(Value::truthy)
+            && !attributes.contains_key("supplier_id")
+    }
+
+    /// A `whenever` over `map`/`grep`/`do`/`reduce` stages stacked on a
+    /// `Proc::Async` output stream. The react drive loop reads the stream's
+    /// channel itself, so the stages are folded into the subscription's
+    /// callbacks and run on the react thread, in step with the sibling
+    /// `whenever`s (tapping the stream from a native shim would deliver
+    /// nothing, as no `await` of the process replays it). Returns the stream's
+    /// attributes, the callback to deliver raw values to and the `LAST`
+    /// callbacks, or `None` when the chain is not such a pipeline.
+    // Cost: O(s), s = stages in the chain.
+    pub(crate) fn wrap_proc_derived_stages(
+        attrs: &AttrMap,
+        callback: Value,
+        last_callbacks: Vec<Value>,
+    ) -> Option<(AttrMap, Value, Vec<Value>)> {
+        let mut stages = Vec::new();
+        let mut cur = attrs.clone();
+        while let Some(source) = cur.get("derive_source").cloned() {
+            let mode = cur.get("derive_mode")?.to_string_value();
+            if !matches!(mode.as_str(), "map" | "grep" | "do" | "reduce") {
+                return None;
+            }
+            stages.push((mode, cur.get("derive_callable")?.clone()));
+            let ValueView::Instance { attributes, .. } = source.view() else {
+                return None;
+            };
+            cur = attributes.as_map().clone();
+        }
+        if stages.is_empty() || !cur.get("proc_output").is_some_and(Value::truthy) {
+            return None;
+        }
+        let mut next = callback;
+        let mut lasts = last_callbacks;
+        for (mode, callable) in stages {
+            let mut stage_attrs = HashMap::new();
+            stage_attrs.insert("callable".to_string(), callable);
+            stage_attrs.insert("next".to_string(), next);
+            let is_reduce = mode == "reduce";
+            stage_attrs.insert("mode".to_string(), Value::str(mode));
+            if is_reduce {
+                stage_attrs.insert("reduce_id".to_string(), Value::int(reduce_register() as i64));
+            }
+            let stage = Value::make_instance(Symbol::intern(CLASS), stage_attrs);
+            if is_reduce {
+                lasts.insert(0, native_method_shim(stage.clone(), "__mutsu_stage_flush", false));
+            }
+            next = native_method_shim(stage, "__mutsu_stage_emit", true);
+        }
+        Some((cur, next, lasts))
+    }
+
     /// The derived on-demand Supply for `source.grep(callable)` /
     /// `source.map(callable)`, where `source` is an on-demand supply.
     // Cost: O(1).
@@ -52,6 +112,14 @@ impl Interpreter {
         Self::make_on_demand_derived_supply_named(source, "head", Value::int(count as i64))
     }
 
+    /// The derived on-demand Supply for `source.reduce(callable)`: per tap of
+    /// its own it taps the source, folds every value and emits the result
+    /// (Nil for an empty source) when the source is done.
+    // Cost: O(1).
+    pub(in crate::runtime) fn make_on_demand_reduce_supply(source: Value, callable: Value) -> Value {
+        Self::make_on_demand_derived_supply_named(source, "reduce", callable)
+    }
+
     /// The derived on-demand Supply for `source.lines(:chomp)`, where
     /// `source` is an on-demand supply (`supply { emit $text }`): per tap of
     /// its own it taps the source, buffers the emitted chunks and passes on
@@ -65,9 +133,9 @@ impl Interpreter {
 
     fn make_on_demand_derived_supply_named(source: Value, mode: &str, callable: Value) -> Value {
         let mut producer_attrs = HashMap::new();
-        producer_attrs.insert("source".to_string(), source);
+        producer_attrs.insert("source".to_string(), source.clone());
         producer_attrs.insert("mode".to_string(), Value::str(mode.to_string()));
-        producer_attrs.insert("callable".to_string(), callable);
+        producer_attrs.insert("callable".to_string(), callable.clone());
         let producer = native_method_shim(
             Value::make_instance(Symbol::intern(CLASS), producer_attrs),
             "__mutsu_derive_start",
@@ -79,6 +147,11 @@ impl Interpreter {
         attrs.insert("live".to_string(), Value::FALSE);
         attrs.insert("on_demand_callback".to_string(), producer);
         attrs.insert("derived_on_demand".to_string(), Value::TRUE);
+        // Kept so the react drive loop can run a stage over a `Proc::Async`
+        // channel on its own thread (see `wrap_proc_derived_stages`).
+        attrs.insert("derive_source".to_string(), source);
+        attrs.insert("derive_mode".to_string(), Value::str(mode.to_string()));
+        attrs.insert("derive_callable".to_string(), callable);
         Value::make_instance(Symbol::intern("Supply"), attrs)
     }
 
@@ -174,6 +247,17 @@ impl Interpreter {
                 }
                 Ok(Value::NIL)
             }
+            // Cost: O(1) plus one call of the stage callable.
+            "__mutsu_stage_emit" => self.stage_emit(attributes, arg),
+            // Cost: O(1) plus the downstream callback.
+            "__mutsu_stage_flush" => {
+                let next = attributes.get("next").cloned().unwrap_or(Value::NIL);
+                if let Some(id) = reduce_id(attributes) {
+                    let result = reduce_finish(id).unwrap_or(Value::NIL);
+                    self.call_sub_value(next, vec![result], true)?;
+                }
+                Ok(Value::NIL)
+            }
             // Cost: O(1) plus the source's own tap.
             "__mutsu_derive_start" => self.derive_start(attributes, arg),
             // Cost: O(1) plus one call of the transform callable.
@@ -185,6 +269,17 @@ impl Interpreter {
                     for line in lines_take(id, &arg.to_string_value(), chomp, false) {
                         self.call_method_with_values(emitter.clone(), "emit", vec![line])?;
                     }
+                    return Ok(Value::NIL);
+                }
+                if let Some(id) = reduce_id(attributes) {
+                    // `reduce`: fold into the tap's accumulator; nothing is
+                    // emitted until the source is done.
+                    let acc = reduce_take(id);
+                    let next = match acc {
+                        Some(acc) => self.call_supply_callback(callable, vec![acc, arg], true)?,
+                        None => arg,
+                    };
+                    reduce_put(id, next);
                     return Ok(Value::NIL);
                 }
                 if let Some(id) = head_id(attributes) {
@@ -226,6 +321,11 @@ impl Interpreter {
                         self.call_method_with_values(emitter.clone(), "emit", vec![line])?;
                     }
                 }
+                if let Some(id) = reduce_id(attributes) {
+                    // An empty source reduces to Nil, like Rakudo.
+                    let result = reduce_finish(id).unwrap_or(Value::NIL);
+                    self.call_method_with_values(emitter.clone(), "emit", vec![result])?;
+                }
                 if let Some(id) = head_id(attributes)
                     && !head_finish(id)
                 {
@@ -240,6 +340,9 @@ impl Interpreter {
                 let emitter = attributes.get("emitter").cloned().unwrap_or(Value::NIL);
                 if let Some(id) = lines_id(attributes) {
                     lines_take(id, "", false, true);
+                }
+                if let Some(id) = reduce_id(attributes) {
+                    reduce_finish(id);
                 }
                 if let Some(id) = head_id(attributes)
                     && !head_finish(id)
@@ -261,6 +364,33 @@ impl Interpreter {
                 method, CLASS
             ))),
         }
+    }
+
+    /// One value through a react-side stage: apply the transform and hand the
+    /// result to the next callback (`reduce` only folds; its flush emits).
+    fn stage_emit(&mut self, attributes: &AttrMap, arg: Value) -> Result<Value, RuntimeError> {
+        let next = attributes.get("next").cloned().unwrap_or(Value::NIL);
+        let callable = attributes.get("callable").cloned().unwrap_or(Value::NIL);
+        if let Some(id) = reduce_id(attributes) {
+            let next_acc = match reduce_take(id) {
+                Some(acc) => self.call_supply_callback(callable, vec![acc, arg], true)?,
+                None => arg,
+            };
+            reduce_put(id, next_acc);
+            return Ok(Value::NIL);
+        }
+        let out = match attributes.get("mode").map(Value::to_string_value).as_deref() {
+            Some("map") => Some(self.call_supply_callback(callable, vec![arg], true)?),
+            Some("do") => {
+                self.call_supply_callback(callable, vec![arg.clone()], true)?;
+                Some(arg)
+            }
+            _ => self.smart_match_values(&arg, &callable).then_some(arg),
+        };
+        if let Some(value) = out {
+            self.call_sub_value(next, vec![value], true)?;
+        }
+        Ok(Value::NIL)
     }
 
     /// The derived supply was tapped: tap the source with forwarders bound to
@@ -302,6 +432,12 @@ impl Interpreter {
             .is_some_and(|m| m.to_string_value() == "lines")
         {
             fwd_attrs.insert("lines_id".to_string(), Value::int(lines_register() as i64));
+        }
+        if attributes
+            .get("mode")
+            .is_some_and(|m| m.to_string_value() == "reduce")
+        {
+            fwd_attrs.insert("reduce_id".to_string(), Value::int(reduce_register() as i64));
         }
         let forwarder = Value::make_instance(Symbol::intern(CLASS), fwd_attrs);
         let tap_args = vec![
@@ -388,6 +524,50 @@ fn head_finish(id: u64) -> bool {
     head_counters()
         .lock()
         .is_ok_and(|mut map| map.remove(&id).is_some())
+}
+
+/// The running accumulator of each live `reduce` tap, keyed by a per-tap id
+/// (the forwarder instances are rebuilt per delivery, as for `head`). The
+/// entry exists from registration; its value is `None` until the first emit.
+fn reduce_accs() -> &'static std::sync::Mutex<HashMap<u64, Option<Value>>> {
+    static MAP: std::sync::OnceLock<std::sync::Mutex<HashMap<u64, Option<Value>>>> =
+        std::sync::OnceLock::new();
+    MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+}
+
+fn reduce_register() -> u64 {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    let id = NEXT.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut map) = reduce_accs().lock() {
+        map.insert(id, None);
+    }
+    id
+}
+
+fn reduce_id(attributes: &AttrMap) -> Option<u64> {
+    attributes
+        .get("reduce_id")
+        .and_then(|v| v.as_int())
+        .map(|n| n as u64)
+}
+
+/// Take the accumulator out while the callable runs (no lock held across it).
+fn reduce_take(id: u64) -> Option<Value> {
+    reduce_accs().lock().ok()?.get_mut(&id)?.take()
+}
+
+fn reduce_put(id: u64, value: Value) {
+    if let Ok(mut map) = reduce_accs().lock()
+        && let Some(slot) = map.get_mut(&id)
+    {
+        *slot = Some(value);
+    }
+}
+
+/// Retire the tap's accumulator and return its final value.
+fn reduce_finish(id: u64) -> Option<Value> {
+    reduce_accs().lock().ok()?.remove(&id)?
 }
 
 /// The last value each `.Promise` tap has seen, keyed by a per-call id.

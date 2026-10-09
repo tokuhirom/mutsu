@@ -525,7 +525,9 @@ impl Interpreter {
         }
         // On-demand source: the mapped supply taps it per tap of its own
         // (see `native_methods::supply_derive`).
-        if attributes.contains_key("on_demand_callback") {
+        if attributes.contains_key("on_demand_callback")
+            || Self::is_channel_backed_source(attributes)
+        {
             return Ok(Self::make_on_demand_derived_supply(
                 target.clone(),
                 crate::runtime::native_methods::TransformMode::Map,
@@ -658,14 +660,12 @@ impl Interpreter {
             reduce_attrs.insert("live".to_string(), Value::FALSE);
             return Ok(Value::make_instance(Symbol::intern("Supply"), reduce_attrs));
         }
-        if attributes.get("on_demand_callback").is_some() {
-            let mut reduce_attrs = HashMap::new();
-            reduce_attrs.insert("values".to_string(), Value::array(Vec::new()));
-            reduce_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-            reduce_attrs.insert("live".to_string(), Value::FALSE);
-            reduce_attrs.insert("reduce_source".to_string(), target);
-            reduce_attrs.insert("reduce_callable".to_string(), callable);
-            return Ok(Value::make_instance(Symbol::intern("Supply"), reduce_attrs));
+        // An on-demand or channel-backed source (`Proc::Async` output) emits
+        // only once tapped: fold per tap of the reduced supply.
+        if attributes.contains_key("on_demand_callback")
+            || Self::is_channel_backed_source(attributes)
+        {
+            return Ok(Self::make_on_demand_reduce_supply(target, callable));
         }
         let items = self.supply_list_values(attributes, true)?;
         let reduced = self.reduce_items(callable, items)?;

@@ -698,12 +698,14 @@ impl Interpreter {
                         continue;
                     }
                     let mut quit_cbs = get_supply_quit_taps(sid).into_iter();
+                    let mut done_cbs = get_supply_done_taps(sid).into_iter();
                     for cb in tap_cbs {
                         let Some(rx) = take_supply_channel(sid) else {
                             continue;
                         };
                         mark_supply_live_tapped(sid);
                         let quit_cb = quit_cbs.next();
+                        let done_cb = done_cbs.next().filter(|d| !d.is_nil());
                         let mut thread_interp = self.clone_for_thread();
                         let close_flag = rx.close_flag();
                         let close_id = register_act_loop_close(close_flag.clone());
@@ -714,7 +716,7 @@ impl Interpreter {
                                     &rx,
                                     &cb,
                                     0.0,
-                                    None,
+                                    done_cb,
                                     quit_cb,
                                     Some((close_id, close_flag)),
                                     false,
