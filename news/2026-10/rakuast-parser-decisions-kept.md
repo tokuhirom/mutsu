@@ -18,3 +18,16 @@ parser makes that the converted tree could not say again:
 Both fields are part of the model but not of the constructor form or the gist,
 like the statement `origin`. 27 of the 161 files pass now (the WhateverCode and
 `END` families); `t/rakuast/rakuast-parser-decisions-kept.t` pins the behaviour.
+
+Two more silent differences came out of the same survey:
+
+- A `for` body that declares placeholders (`for 1..8 { $^a + $^b }`) lowered
+  without a signature, so every iteration got one element; its parameters now
+  come from the same `placeholder_loop_params` the parser uses.
+- A statement that is exactly a bare block (`{ say $^a }`) lowered to a closure
+  value that was never called; it runs once with no arguments again and dies
+  "Too few positionals", as the parser's `Stmt::Block` does. A block with a
+  statement modifier keeps the closure-operand path.
+
+Together that is 33 of the 161 files (`t/rakuast/rakuast-placeholder-blocks.t`).
+
