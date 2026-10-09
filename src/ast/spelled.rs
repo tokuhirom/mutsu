@@ -47,6 +47,12 @@ pub(crate) enum Spelling {
     /// expression is the same prefix over the one-statement block
     /// `gather { say 1 }` makes; RakuAST keeps the statement itself.
     BareStatement,
+    /// A subscript whose colonpairs include an unknown adverb. The runtime
+    /// uses a CORE-candidate call, which loses the index's source spelling.
+    NamedSubscript {
+        subscript: Box<Expr>,
+        pairs: Vec<Expr>,
+    },
 }
 
 /// A term and the way it was spelled; see the module documentation.

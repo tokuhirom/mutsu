@@ -25,6 +25,62 @@ use crate::value::{Value, ValueView};
 
 /// The builtin a value adverb (`:k` / `:v` / `:kv` / `:p`) lowers to.
 pub(crate) const SUBSCRIPT_ADVERB_FN: &str = "__mutsu_subscript_adverb";
+pub(crate) const SUBSCRIPT_NAMED_ADVERBS_FN: &str = "__mutsu_subscript_named_adverbs";
+
+// Cost: O(1).
+pub(crate) fn is_builtin_name(name: &str) -> bool {
+    matches!(name, "k" | "v" | "kv" | "p" | "exists" | "delete")
+}
+
+/// The CORE candidate call for a subscript carrying an unknown named adverb.
+/// The parser and RakuAST lowering share this builder so both retain the same
+/// zen-slice descriptor and source variable name.
+// Cost: O(a + d), a = adverbs and d = dimensions.
+pub(crate) fn named_adverb_call(subscript: &Expr, pairs: Vec<Expr>) -> Option<Expr> {
+    let (target, index, shape) = match subscript {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } => {
+            let zen = matches!(index.as_ref(), Expr::Literal(lit) if matches!(lit.view(), ValueView::Whatever))
+                || (!is_positional && matches!(index.as_ref(), Expr::Whatever));
+            let shape = match (is_positional, zen) {
+                (true, false) => "[ ]",
+                (true, true) => "[ ] zen",
+                (false, false) => "{ }",
+                (false, true) => "{ } zen",
+            };
+            (target.as_ref(), index.as_ref().clone(), shape)
+        }
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => {
+            let shape = if *is_positional { "[; ]" } else { "{; }" };
+            (
+                target.as_ref(),
+                Expr::ArrayLiteral(dimensions.clone()),
+                shape,
+            )
+        }
+        _ => return None,
+    };
+    let mut args = vec![
+        target.clone(),
+        index,
+        Expr::Literal(Value::str(target.sigiled_var_name().unwrap_or_default())),
+        Expr::Literal(Value::str(shape.to_string())),
+    ];
+    args.extend(pairs);
+    Some(Expr::Call {
+        name: Symbol::intern(SUBSCRIPT_NAMED_ADVERBS_FN),
+        args,
+        listop: false,
+    })
+}
 
 /// The marker preceding a value adverb's runtime condition (`:k($ok)`) in a
 /// [`SUBSCRIPT_ADVERB_FN`] call.

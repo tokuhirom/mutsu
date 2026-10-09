@@ -13,15 +13,11 @@
 //! of the chain as a named argument.
 
 use crate::ast::Expr;
+use crate::ast::subscript_adverb;
 use crate::parser::helpers::ws;
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::{Value, ValueView};
-
-/// The built-in subscript adverb names (after l10n aliasing).
-fn is_builtin_subscript_adverb(name: &str) -> bool {
-    matches!(name, "k" | "v" | "kv" | "p" | "exists" | "delete")
-}
 
 /// The name of a colonpair expression (`:foo`, `:!foo`, `:foo(1)`, `:$foo`).
 fn colonpair_name(expr: &Expr) -> Option<String> {
@@ -78,7 +74,7 @@ pub(crate) fn scan_subscript_named_adverbs(input: &str) -> Option<(&str, Vec<Exp
         } else {
             pair
         };
-        has_unknown |= !is_builtin_subscript_adverb(&canonical);
+        has_unknown |= !subscript_adverb::is_builtin_name(&canonical);
         pairs.push(pair);
         rest = after;
     }
@@ -94,10 +90,6 @@ pub(crate) fn has_subscript_named_adverb(input: &str) -> bool {
 
 /// The variable name an `X::Adverb` reports as its `.source`, when the target
 /// is a plain variable; empty otherwise (the runtime then names the type).
-fn subscript_source_name(target: &Expr) -> String {
-    target.sigiled_var_name().unwrap_or_default()
-}
-
 /// Lower a subscript (`Expr::Index` / `Expr::MultiDimIndex`) carrying the
 /// colonpair chain `pairs` (at least one of them not a built-in adverb).
 ///
@@ -108,42 +100,31 @@ fn subscript_source_name(target: &Expr) -> String {
 /// which raises what rakudo's candidates raise for these arguments. Returns
 /// `None` for any other expression.
 pub(crate) fn lower_subscript_named_adverbs(subscript: &Expr, pairs: Vec<Expr>) -> Option<Expr> {
-    let (target, index, op_name, shape) = match subscript {
+    let (target, index, op_name) = match subscript {
         Expr::Index {
             target,
             index,
             is_positional,
             ..
         } => {
-            // A zen slice (`@a[]:foo` / `%h{}:foo`) is modelled as a Whatever
-            // index by the empty-subscript paths; only its error descriptor
-            // tells it apart from the whatever slice.
-            let zen = matches!(index.as_ref(), Expr::Literal(lit) if matches!(lit.view(), ValueView::Whatever))
-                || (!is_positional && matches!(index.as_ref(), Expr::Whatever));
-            let (op, shape) = match (is_positional, zen) {
-                (true, false) => ("postcircumfix:<[ ]>", "[ ]"),
-                (true, true) => ("postcircumfix:<[ ]>", "[ ] zen"),
-                (false, false) => ("postcircumfix:<{ }>", "{ }"),
-                (false, true) => ("postcircumfix:<{ }>", "{ } zen"),
+            let op = if *is_positional {
+                "postcircumfix:<[ ]>"
+            } else {
+                "postcircumfix:<{ }>"
             };
-            (target.as_ref(), index.as_ref().clone(), op, shape)
+            (target.as_ref(), index.as_ref().clone(), op)
         }
         Expr::MultiDimIndex {
             target,
             dimensions,
             is_positional,
         } => {
-            let (op, shape) = if *is_positional {
-                ("postcircumfix:<[; ]>", "[; ]")
+            let op = if *is_positional {
+                "postcircumfix:<[; ]>"
             } else {
-                ("postcircumfix:<{; }>", "{; }")
+                "postcircumfix:<{; }>"
             };
-            (
-                target.as_ref(),
-                Expr::ArrayLiteral(dimensions.clone()),
-                op,
-                shape,
-            )
+            (target.as_ref(), Expr::ArrayLiteral(dimensions.clone()), op)
         }
         _ => return None,
     };
@@ -156,16 +137,11 @@ pub(crate) fn lower_subscript_named_adverbs(subscript: &Expr, pairs: Vec<Expr>) 
             listop: false,
         });
     }
-    let mut args = vec![
-        target.clone(),
-        index,
-        Expr::Literal(Value::str(subscript_source_name(target))),
-        Expr::Literal(Value::str(shape.to_string())),
-    ];
-    args.extend(pairs);
-    Some(Expr::Call {
-        name: Symbol::intern("__mutsu_subscript_named_adverbs"),
-        args,
-        listop: false,
-    })
+    let call = subscript_adverb::named_adverb_call(subscript, pairs.clone())?;
+    Some(Expr::spelled(call, || {
+        crate::ast::spelled::Spelling::NamedSubscript {
+            subscript: Box::new(subscript.clone()),
+            pairs,
+        }
+    }))
 }
