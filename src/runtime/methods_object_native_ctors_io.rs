@@ -369,21 +369,9 @@ impl Interpreter {
             };
             return self.run_native_ctor(&ctor, &call, args.to_vec());
         }
+        // A Buf/Blob spelling the table does not list (`Buf[uint16]`, ...).
         if Self::is_native_buf_constructible(&cn) {
             Some(Ok(Self::build_native_buf_value(class_name, args)))
-        } else if cn == "utf8" || cn == "utf16" {
-            Some(Ok(Self::build_native_utf_value(class_name, args)))
-        } else if cn == "Int" {
-            Some(Self::build_native_int_value(args))
-        } else if cn == "Num" {
-            Some(Self::build_native_num_value(args))
-        } else if cn == "Str" {
-            // The default Str constructor ignores positional args and yields the
-            // empty string (mutsu is lenient where raku rejects a positional).
-            // (`Bool` is intentionally NOT native-ized: it is an enum, so
-            // `Bool.new` errors in `dispatch_new` before the basic-type arm —
-            // the native path must preserve that, so it falls through.)
-            Some(Ok(Value::str(String::new())))
         } else if cn == "Date" {
             Some(
                 self.fetch_proxy_ctor_args(args)
@@ -394,49 +382,6 @@ impl Interpreter {
                 self.fetch_proxy_ctor_args(args)
                     .and_then(|a| Self::build_native_datetime(&a)),
             )
-        } else if cn == "Duration" {
-            Some(Self::build_native_duration_value(args))
-        } else if cn == "StrDistance" {
-            Some(Ok(Self::build_native_strdistance_value(args)))
-        } else if cn == "Capture" {
-            // `Capture.new` is named-only (`Mu.new`): a positional arg dies. Its
-            // build signature is `:@list, :%hash`, so a `list`/`hash` named arg
-            // populates the Capture's positional/named parts; every *other* named
-            // arg is dropped (bless ignores unknown attributes), yielding an
-            // empty `\()`. A `\(...)` literal is the other way to build one.
-            if args.iter().any(|a| !a.is_string_pair_value()) {
-                Some(Err(RuntimeError::new(
-                    "Default constructor for 'Capture' only takes named arguments",
-                )))
-            } else {
-                let mut positional = Vec::new();
-                let mut named = ValueMap::default();
-                for a in args {
-                    if let ValueView::Pair(k, v) = a.view() {
-                        match k.as_str() {
-                            "list" => positional = Self::value_to_list(v),
-                            "hash" => {
-                                if let ValueView::Hash(h) = v.view() {
-                                    for (hk, hv) in h.iter() {
-                                        named.insert(hk.clone(), hv.clone());
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                Some(Ok(Value::capture(positional, named)))
-            }
-        } else if matches!(cn.as_str(), "IntStr" | "NumStr" | "RatStr" | "ComplexStr") {
-            // Allomorph `.new(numeric, string)` is pure data assembly (a numeric
-            // value mixed with a `Str` override) — shared with the interpreter's
-            // `dispatch_new_and_constructors` arm.
-            Some(Self::build_native_allomorph_value(&cn, args))
-        } else if matches!(cn.as_str(), "ObjAt" | "ValueObjAt") {
-            // `ObjAt`/`ValueObjAt` `.new(which)` stores the stringified first
-            // positional as the `WHICH` attribute — pure data assembly.
-            Some(Self::build_native_objat_value(class_name, args))
         } else {
             None
         }

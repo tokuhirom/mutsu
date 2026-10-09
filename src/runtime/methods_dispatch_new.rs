@@ -76,29 +76,6 @@ impl Interpreter {
                 });
                 Some(Ok(handle))
             }
-            "new" if matches!(target.view(), ValueView::Package(name) if matches!(name.resolve().as_str(), "ObjAt" | "ValueObjAt")) =>
-            {
-                // Pure data assembly — shared with the VM's `try_native_builtin_construct`.
-                let class_name = match target.view() {
-                    ValueView::Package(n) => n,
-                    _ => unreachable!(),
-                };
-                Some(Self::build_native_objat_value(class_name, &args))
-            }
-            "new" if matches!(target.view(), ValueView::Package(name) if matches!(name.resolve().as_str(), "IntStr" | "NumStr" | "RatStr" | "ComplexStr")) =>
-            {
-                // Pure data assembly — shared with the VM's `try_native_builtin_construct`.
-                let type_name = match target.view() {
-                    ValueView::Package(n) => n.resolve(),
-                    _ => unreachable!(),
-                };
-                Some(Self::build_native_allomorph_value(&type_name, &args))
-            }
-            "new" if matches!(target.view(), ValueView::Package(name) if name == "Failure") => {
-                // Pure data assembly (reads `$!` / MRO) — shared with the VM's
-                // `try_native_failure_construct`.
-                Some(Ok(self.build_native_failure_value(&args)))
-            }
             "handled" if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Failure") =>
             {
                 if args.is_empty() {
