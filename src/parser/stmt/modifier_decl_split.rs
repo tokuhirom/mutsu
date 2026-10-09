@@ -1,7 +1,8 @@
 //! Splitting a `my`/`our` declaration out of a statement modifier: the
 //! declaration takes effect unconditionally, only its initializer is gated.
 
-use crate::ast::{Expr, Stmt};
+use crate::ast::{Expr, SignatureDecl, SourceForm, Stmt};
+use crate::symbol::Symbol;
 use crate::value::Value;
 
 /// A `my`/`our` declaration carrying a conditional statement modifier
@@ -27,6 +28,9 @@ pub(crate) fn try_split_decl_modifier(
     effective_cond: &Expr,
     is_unless: bool,
 ) -> Option<Stmt> {
+    if let Stmt::SyntheticBlock(parts) = stmt {
+        return split_signature_decl(parts, effective_cond, is_unless);
+    }
     let Stmt::VarDecl {
         name,
         expr,
@@ -126,4 +130,78 @@ pub(super) fn split_decl_for_topic_modifier(stmt: &Stmt) -> Option<(Stmt, Option
         decl @ Stmt::VarDecl { .. } => Some((decl, None)),
         _ => None,
     }
+}
+
+/// `my ($a, @b) = RHS if COND`: the list declaration is unconditional, only the
+/// list assignment is gated. Only a declarator list of plain `$`/`@`/`%`
+/// elements is split; anything else keeps the generic modifier wrapping.
+fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) -> Option<Stmt> {
+    let Some(Stmt::SourceForm(form)) = parts.first() else {
+        return None;
+    };
+    let SourceForm::SignatureDecl(decl) = &**form else {
+        return None;
+    };
+    let init = decl.init.as_ref()?;
+    if decl.is_state
+        || decl.is_our
+        || decl.has_nested_group
+        || decl.type_constraint.is_some()
+        || decl.group_default.is_some()
+        || !decl.vars.iter().all(|v| {
+            !v.is_slurpy
+                && !v.is_optional
+                && !v.is_named
+                && v.default.is_none()
+                && v.per_var_type_constraint.is_none()
+                && v.where_constraint.is_none()
+                && !v.sigilless
+                && v.literal_value.is_none()
+                && v.param_trait.is_none()
+        })
+    {
+        return None;
+    }
+    let targets = decl
+        .vars
+        .iter()
+        .map(|v| match v.name.split_at(1) {
+            ("@", n) => Expr::ArrayVar(n.to_string()),
+            ("%", n) => Expr::HashVar(n.to_string()),
+            _ => Expr::Var(v.name.clone()),
+        })
+        .collect();
+    let bare = SignatureDecl {
+        init: None,
+        ..decl.clone()
+    };
+    // TODO: a `:=` list declaration is gated as a list assignment, so the
+    // elements are copied instead of aliased when the condition holds.
+    let rhs = Expr::Call {
+        name: Symbol::intern("__mutsu_list_assign_rhs"),
+        args: vec![init.rhs.clone()],
+        listop: false,
+    };
+    let assign = Stmt::Expr(Expr::Call {
+        name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+        args: vec![
+            Expr::ArrayLiteral(targets),
+            Expr::ArrayLiteral(Vec::new()),
+            rhs,
+        ],
+        listop: false,
+    });
+    let gated = Stmt::If {
+        cond: effective_cond.clone(),
+        then_branch: vec![assign],
+        else_branch: Vec::new(),
+        binding_var: None,
+        is_statement_modifier: true,
+        is_unless,
+        with_kind: None,
+    };
+    Some(Stmt::SyntheticBlock(vec![
+        super::decl::destructure::desugar::signature_decl(bare),
+        gated,
+    ]))
 }
