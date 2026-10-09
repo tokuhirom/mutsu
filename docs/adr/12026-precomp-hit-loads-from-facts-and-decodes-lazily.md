@@ -317,3 +317,28 @@ The steps:
   A heredoc body inside a range, or a Pod error, records no ranges and the
   whole source is scanned as before. Verify mode recomputes the ranges.
   `use Test` load: **33.09M → 32.09M** Ir (−1.0M, same-session paired A/B).
+- **Step 3** (§2.2). A routine body is decoded on first use. `src/compiled_lazy.rs` holds
+  the two handles:
+  - `LazyFn` is one slot of a `CompiledFns` table. The codec writes each entry as
+    `key, nested-export flag, body bytes`, and a decoded table keeps the bytes
+    (with the entry's symbol table as an `Arc<[Symbol]>`) until `get` is called.
+    `precomp_codec::decode_body` reinstalls the thread-local symbol table around the
+    deferred decode. The map no longer derefs to its `HashMap`: `get` decodes,
+    `get_lazy` does not, and `iter`/`values` decode.
+  - `RoutineBody` is `FunctionDef.compiled`. Registration stores the slot and an
+    `AdaptInputs` snapshot of the def's signature; the first `FunctionDef::compiled_fn()`
+    runs the former `adapt_compiled_to_def` (clone, signature fields, source-file stamp,
+    three precomputes) once.
+  - The nested-export scan of `register_nested_exported_subs` is the one registration
+    read of a body that was not avoidable, so its answer (`has_nested_export_plans`) is
+    recorded beside the bytes. Reading it needs no decode.
+  - A body that fails to decode panics with a message naming the cache directory: the
+    entry was already accepted as a whole, so only damage to the file after that can
+    cause it.
+  - A `use Test; ok 1;` run decodes 2 of its 62 routine bodies. Debug-build load
+    (callgrind Ir of the script minus an empty one, paired in one session):
+    **282.7M → 245.5M** (−13%).
+  - Not done here: the head/body split for fingerprint probes (a probe decodes the
+    body today), sharing `params`/`param_defs` instead of the one `AdaptInputs` clone
+    (§2.3 item 2), and the nested `compiled_fns` of a body, which stamps its nested
+    routines (decoding them) on the body's first use.

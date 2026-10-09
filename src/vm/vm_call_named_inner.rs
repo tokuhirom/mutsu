@@ -509,7 +509,7 @@ impl Interpreter {
                 // instead of its declaration scope. Overwrite with the live slot
                 // value, exactly as `capture_closure_env` does for an anonymous
                 // closure.
-                if let Some(callee) = def.compiled.as_ref() {
+                if let Some(callee) = def.compiled_fn() {
                     owned = self.inject_frame_locals_for_free_vars(
                         &cf.code,
                         &callee.code,
@@ -524,7 +524,7 @@ impl Interpreter {
                     def.body.clone(),
                     def.is_rw,
                     captured,
-                    def.compiled.clone(),
+                    def.compiled_fn().cloned(),
                     owned,
                 )
             } else {

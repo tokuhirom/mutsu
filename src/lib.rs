@@ -25,6 +25,7 @@ pub(crate) mod method_signature_shared;
 pub(crate) mod native_types;
 mod op_prec;
 mod op_scan_index;
+mod compiled_lazy;
 mod opcode;
 mod opcode_param_fills;
 mod param_destructure;
@@ -245,7 +246,7 @@ pub fn dump_bytecode(input: &str, source_file: Option<&str>) -> Result<String, R
     let mut names: Vec<crate::symbol::Symbol> = compiled_fns.keys().copied().collect();
     names.sort_by_key(|s| s.resolve());
     for name in names {
-        let cf = &compiled_fns[&name];
+        let cf = compiled_fns.get(&name).expect("compiled routine");
         disasm_tree(
             &mut out,
             &cf.code,

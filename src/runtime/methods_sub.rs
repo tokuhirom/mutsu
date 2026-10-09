@@ -291,7 +291,7 @@ impl Interpreter {
                     if let Some(code) = &def.dispatchee {
                         return code.clone();
                     }
-                    let compiled_routine = def.compiled.clone();
+                    let compiled_routine = def.compiled_fn().cloned();
                     Value::make_sub_for_routine(
                         def.package,
                         def.name,

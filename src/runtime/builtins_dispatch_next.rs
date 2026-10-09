@@ -1598,7 +1598,7 @@ impl Interpreter {
                 // An `add_dispatchee` code value runs as itself (#10929).
                 self.vm_call_on_value(code.clone(), call_args.clone(), None)
             } else {
-                let cf = match &next_def.compiled {
+                let cf = match next_def.compiled_fn() {
                     Some(compiled) => std::sync::Arc::clone(compiled),
                     None => self.otf_compile_function_def(&next_def),
                 };
@@ -1844,7 +1844,7 @@ impl Interpreter {
             next_def.body.clone(),
             next_def.is_rw,
             self.env.clone(),
-            next_def.compiled.clone(),
+            next_def.compiled_fn().cloned(),
         ))
     }
 }

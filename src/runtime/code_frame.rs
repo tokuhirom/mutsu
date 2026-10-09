@@ -149,8 +149,7 @@ impl Interpreter {
     fn with_def_routine_cell(&self, sub_val: Value, l: &LazyRoutineCode) -> Value {
         let key = crate::qualified::qualified(l.package, l.name);
         let cell = self.registry().functions.get(&key).and_then(|def| {
-            def.compiled
-                .as_ref()
+            def.compiled_fn()
                 .is_some_and(|cf| {
                     std::sync::Arc::ptr_eq(cf, &l.cf) || cf.fingerprint == l.cf.fingerprint
                 })
