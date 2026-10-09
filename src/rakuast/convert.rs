@@ -1574,6 +1574,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             is_built,
             default_is_seed,
             default_is_trait,
+            default_is_bind,
             handles_terms,
             trait_order,
             ..
@@ -1619,11 +1620,21 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             };
             let mut decl = var_declaration(
                 &full_name,
-                explicit_default.map(Initializer::Assign),
+                explicit_default.map(|value| {
+                    if *default_is_bind {
+                        Initializer::Bind(value)
+                    } else {
+                        Initializer::Assign(value)
+                    }
+                }),
                 scope,
                 type_name,
                 twigil,
-                explicit_default,
+                if *default_is_bind {
+                    None
+                } else {
+                    explicit_default
+                },
             )?;
             attribute::add_traits(
                 &mut decl,

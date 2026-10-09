@@ -2946,6 +2946,7 @@ t/oo/attribute/attribute-default-array-nil-reset.t
 t/oo/attribute/attribute-default-typecheck.t
 t/oo/attribute/attribute-defaults-and-set-build.t
 t/oo/attribute/attribute-in-list-literal-nested-call.t
+t/oo/attribute/attribute-initializer-copies-its-container.t
 t/oo/attribute/attribute-initializer-self-is-the-object.t
 t/oo/attribute/attribute-is-built.t
 t/oo/attribute/attribute-is-default-plan-chunk.t
@@ -2988,6 +2989,8 @@ t/oo/attribute/callwith-reaches-ancestor-accessor.t
 t/oo/attribute/can-ok-sees-attribute-accessors.t
 t/oo/attribute/cas-attribute-accessor.t
 t/oo/attribute/class-attributes-first-by-name.t
+t/oo/attribute/class-level-attribute-bind.t
+t/oo/attribute/class-level-attribute-list-initializer.t
 t/oo/attribute/class-level-attribute-of.t
 t/oo/attribute/classhow-can-attribute-accessor-rw.t
 t/oo/attribute/datetime-attributes-unmarshal.t
@@ -3937,6 +3940,7 @@ t/rakuast/rakuast-any-definedness.t
 t/rakuast/rakuast-array-context-seq-reread.t
 t/rakuast/rakuast-ast.t
 t/rakuast/rakuast-atomic-operators.t
+t/rakuast/rakuast-attribute-bind.t
 t/rakuast/rakuast-attribute-default.t
 t/rakuast/rakuast-attribute-handles.t
 t/rakuast/rakuast-attribute-smiley-default-built.t

@@ -3037,13 +3037,18 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 /// implicit `WillBuild` beside it carries the same expression).
 fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let traits = super::attribute::lower_traits(node)?;
+    let mut default_is_bind = false;
     let initializer = match node.fields.iter().find(|f| f.name == Some("initializer")) {
         None => None,
         Some(f) => {
             let init = child_node(&f.value)?;
-            if init.class != RakuAstClass::InitializerAssign {
+            if !matches!(
+                init.class,
+                RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind
+            ) {
                 return Err(unsupported(node));
             }
+            default_is_bind = init.class == RakuAstClass::InitializerBind;
             Some(lower_expr(named_child_or_positional(init)?)?)
         }
     };
@@ -3066,6 +3071,11 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             _ => return Err(unsupported(node)),
         },
     };
+    if is_has && default_is_bind {
+        return Err(RuntimeError::new(
+            "Cannot use := to initialize an attribute",
+        ));
+    }
     let (is_public, is_alias) = match node.fields.iter().find(|f| f.name == Some("twigil")) {
         // `has $x`, the alias of a private attribute.
         None if is_has => (false, true),
@@ -3144,9 +3154,7 @@ fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         deprecated_message: traits.deprecated_message,
         is_built: traits.is_built,
         unknown_traits: traits.unknown_traits,
-        // RakuAST models an attribute's initializer as an assignment; rakudo
-        // has no `:=` attribute-declaration node to lower from.
-        default_is_bind: false,
+        default_is_bind,
         trait_order: traits.order,
     })
 }
