@@ -63,6 +63,16 @@ pub(crate) fn parse_regex_call_arg_list(input: &str) -> Option<(&str, Vec<crate:
     primary::parse_call_arg_list(input).ok()
 }
 
+/// The execution shape of the reverse metaop assignment `LHS R<op>= RHS`
+/// (`op` is `-`, or `=` for `R=`): it assigns to its right operand.
+pub(crate) fn expand_reverse_assign_expr(
+    lhs: crate::ast::Expr,
+    op: &str,
+    rhs: crate::ast::Expr,
+) -> crate::ast::Expr {
+    expr::precedence::build_compound_assign_target_expr(rhs, op, lhs)
+}
+
 /// Reuse the parser's proven compound-assignment expansion from consumers that
 /// cannot name the parser's private parse-error type (such as RakuAST lowering).
 pub(crate) fn expand_compound_assign_expr(
@@ -70,8 +80,12 @@ pub(crate) fn expand_compound_assign_expr(
     op: &str,
     rhs: crate::ast::Expr,
 ) -> Result<crate::ast::Expr, String> {
-    let op = compound_assign_op_from_name(op)
-        .ok_or_else(|| format!("unknown compound operator: {op}"))?;
+    let Some(op) = compound_assign_op_from_name(op) else {
+        // `%h<a> ∪= $set`: a set operator has no `CompoundAssignOp`.
+        return stmt::assign::set_op_from_spelling(op)
+            .map(|tok| stmt::assign::build_set_compound_assign_expr(lhs, tok, rhs))
+            .ok_or_else(|| format!("unknown compound operator: {op}"));
+    };
     if let crate::ast::Expr::Var(name) = &lhs
         && let Some(short) =
             stmt::assign::short_circuit_compound_assign_expr(name, lhs.clone(), op, rhs.clone())
@@ -201,6 +215,7 @@ pub use stmt::simple::{
 pub(crate) use expr::precedence::assign_to_target_expr;
 pub(crate) use expr::precedence::lower_feed_node;
 pub(crate) use expr::precedence::{literal_assign_ro_expr, literal_assign_ro_parts};
+pub(crate) use expr::precedence_meta_ops::lower_hyper_assignment as hyper_assignment_expr;
 pub(crate) use stmt::assign::callable_lvalue_assign_expr;
 pub(crate) use stmt::assign::paren_list_assign_expr;
 pub(crate) use stmt::control::{given_pointy_body, if_pointy_clause, with_then_branch};

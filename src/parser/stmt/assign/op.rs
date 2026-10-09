@@ -595,45 +595,6 @@ pub(crate) fn parse_custom_compound_assign_op(input: &str) -> Option<(&str, Stri
     None
 }
 
-/// Parse set operator compound assignment: `(|)=`, `(&)=`, `(-)=`, `(^)=`, `(.)=`, `(+)=`
-/// and their Unicode variants: `∪=`, `∩=`, etc.
-/// Returns (rest_after_equals, TokenKind for the set operator).
-pub(crate) fn parse_set_compound_assign_op(input: &str) -> Option<(&str, TokenKind)> {
-    let (tok, len) = if input.starts_with("(|)") {
-        (TokenKind::SetUnion, 3)
-    } else if input.starts_with("(&)") {
-        (TokenKind::SetIntersect, 3)
-    } else if input.starts_with("(.)") {
-        (TokenKind::SetMultiply, 3)
-    } else if input.starts_with("(-)") {
-        (TokenKind::SetDiff, 3)
-    } else if input.starts_with("(^)") {
-        (TokenKind::SetSymDiff, 3)
-    } else if input.starts_with("(+)") {
-        (TokenKind::SetAddition, 3)
-    } else if input.starts_with('⊎') {
-        (TokenKind::SetAddition, '⊎'.len_utf8())
-    } else if input.starts_with('∪') {
-        (TokenKind::SetUnion, '∪'.len_utf8())
-    } else if input.starts_with('∩') {
-        (TokenKind::SetIntersect, '∩'.len_utf8())
-    } else if input.starts_with('⊍') {
-        (TokenKind::SetMultiply, '⊍'.len_utf8())
-    } else if input.starts_with('∖') {
-        (TokenKind::SetDiff, '∖'.len_utf8())
-    } else if input.starts_with('⊖') {
-        (TokenKind::SetSymDiff, '⊖'.len_utf8())
-    } else {
-        return None;
-    };
-    let after_op = &input[len..];
-    if after_op.starts_with('=') && !after_op.starts_with("==") {
-        Some((&after_op[1..], tok))
-    } else {
-        None
-    }
-}
-
 pub(crate) fn parse_meta_compound_assign_op(input: &str) -> Option<(&str, String, String)> {
     let (meta, after_meta) = if let Some(rest) = input.strip_prefix('R') {
         ("R", rest)

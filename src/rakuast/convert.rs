@@ -354,7 +354,8 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 crate::ast::SourceForm::SupplyBlock(_)
                 | crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
-                | crate::ast::SourceForm::IfPointy { .. },
+                | crate::ast::SourceForm::IfPointy { .. }
+                | crate::ast::SourceForm::HyperAssign { .. },
             )
             | None => Err(unsupported("source form")),
         },
@@ -1676,6 +1677,63 @@ pub(super) fn nqp_op(name: &str) -> Option<&str> {
     (!op.is_empty() && !crate::qualified::is_qualified_str(op)).then_some(op)
 }
 
+/// A hyper infix `LEFT >>OP<< RIGHT` -> `ApplyInfix(left, MetaInfix::Hyper(
+/// [dwim-left,] infix, [dwim-right]), right)`; raku omits a dwim field whose
+/// value is False, and the hyper assignment's infix is the `Assignment` node.
+// Cost: O(n), n = nodes of the operands.
+fn hyper_infix(
+    left: &Expr,
+    op: &str,
+    right: &Expr,
+    dwim_left: bool,
+    dwim_right: bool,
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut hyper_fields = Vec::with_capacity(3);
+    if dwim_left {
+        hyper_fields.push(RakuAstField {
+            name: Some("dwim-left"),
+            value: RakuAstFieldValue::Node(Value::truth(true)),
+        });
+    }
+    hyper_fields.push(node_field(
+        Some("infix"),
+        if op == "=" {
+            RakuAstNode {
+                class: RakuAstClass::Assignment,
+                fields: vec![RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Adverb("item"),
+                }],
+            }
+        } else {
+            RakuAstNode {
+                class: RakuAstClass::Infix,
+                fields: vec![leaf_field(None, Value::str(op.to_string()))],
+            }
+        },
+    ));
+    if dwim_right {
+        hyper_fields.push(RakuAstField {
+            name: Some("dwim-right"),
+            value: RakuAstFieldValue::Node(Value::truth(true)),
+        });
+    }
+    Ok(RakuAstNode {
+        class: RakuAstClass::ApplyInfix,
+        fields: vec![
+            node_field(Some("left"), convert_expr(left)?),
+            node_field(
+                Some("infix"),
+                RakuAstNode {
+                    class: RakuAstClass::MetaInfixHyper,
+                    fields: hyper_fields,
+                },
+            ),
+            node_field(Some("right"), convert_expr(right)?),
+        ],
+    })
+}
+
 /// `$x = EXPR` -> `ApplyInfix(left => Var::Lexical, infix => Assignment, right)`.
 /// The `Assignment` node carries `:item` for scalar (`$`) targets; the list form
 /// (`@`/`%`) has no adverb.
@@ -1954,9 +2012,32 @@ pub(super) fn compound_assignment_with_left(
     rhs: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
     let base_op = op.strip_suffix('=').unwrap_or(op);
-    let meta_assign = RakuAstNode {
-        class: RakuAstClass::MetaInfixAssign,
-        fields: vec![node_field(None, plain_infix(base_op))],
+    let meta_assign = match base_op.strip_prefix('R') {
+        // `$x R-= $y` / `$x R= $y`: the reverse of the assignment infix.
+        Some(inner) if !inner.is_empty() => RakuAstNode {
+            class: RakuAstClass::MetaInfixReverse,
+            fields: vec![node_field(
+                None,
+                if inner == "=" {
+                    RakuAstNode {
+                        class: RakuAstClass::Assignment,
+                        fields: vec![RakuAstField {
+                            name: None,
+                            value: RakuAstFieldValue::Adverb("item"),
+                        }],
+                    }
+                } else {
+                    RakuAstNode {
+                        class: RakuAstClass::MetaInfixAssign,
+                        fields: vec![node_field(None, plain_infix(inner))],
+                    }
+                },
+            )],
+        },
+        _ => RakuAstNode {
+            class: RakuAstClass::MetaInfixAssign,
+            fields: vec![node_field(None, plain_infix(base_op))],
+        },
     };
     Ok(RakuAstNode {
         class: RakuAstClass::ApplyInfix,
@@ -2955,6 +3036,17 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             // it would hand back a node with block semantics (`let`/`temp`
             // resolution) the original never had -- GH-7635.
             if origin != &crate::ast::DoBlockOrigin::SourceBlock {
+                // `(LVALUES) »=» VALUE`: the record that opens the expansion.
+                if let Some(Stmt::SourceForm(form)) = body.first()
+                    && let crate::ast::SourceForm::HyperAssign {
+                        target,
+                        value,
+                        dwim_left,
+                        dwim_right,
+                    } = form.as_ref()
+                {
+                    return hyper_infix(target, "=", value, *dwim_left, *dwim_right);
+                }
                 // `120 = 3`: the written assignment to an immutable literal.
                 if let Some((literal, rhs)) = crate::parser::literal_assign_ro_parts(expr) {
                     return assignment_around(convert_expr(literal)?, false, rhs);
@@ -3134,7 +3226,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 | crate::ast::SourceForm::BarePhaser
                 | crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
-                | crate::ast::SourceForm::IfPointy { .. },
+                | crate::ast::SourceForm::IfPointy { .. }
+                | crate::ast::SourceForm::HyperAssign { .. },
             )
             | None => Err(unsupported("source form")),
         },
@@ -3397,42 +3490,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             right,
             dwim_left,
             dwim_right,
-        } => {
-            let mut hyper_fields = Vec::with_capacity(3);
-            if *dwim_left {
-                hyper_fields.push(RakuAstField {
-                    name: Some("dwim-left"),
-                    value: RakuAstFieldValue::Node(Value::truth(true)),
-                });
-            }
-            hyper_fields.push(node_field(
-                Some("infix"),
-                RakuAstNode {
-                    class: RakuAstClass::Infix,
-                    fields: vec![leaf_field(None, Value::str(op.clone()))],
-                },
-            ));
-            if *dwim_right {
-                hyper_fields.push(RakuAstField {
-                    name: Some("dwim-right"),
-                    value: RakuAstFieldValue::Node(Value::truth(true)),
-                });
-            }
-            Ok(RakuAstNode {
-                class: RakuAstClass::ApplyInfix,
-                fields: vec![
-                    node_field(Some("left"), convert_expr(left)?),
-                    node_field(
-                        Some("infix"),
-                        RakuAstNode {
-                            class: RakuAstClass::MetaInfixHyper,
-                            fields: hyper_fields,
-                        },
-                    ),
-                    node_field(Some("right"), convert_expr(right)?),
-                ],
-            })
-        }
+        } => hyper_infix(left, op, right, *dwim_left, *dwim_right),
         // A hyper infix function `@a >>[&infix:<+>]<< @b` uses the same
         // MetaInfix::Hyper wrapper as an ordinary hyper operator, but its base
         // infix is a FunctionInfix containing the referenced code variable.

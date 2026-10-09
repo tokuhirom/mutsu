@@ -620,6 +620,20 @@ pub(crate) fn dotty_assign_marker(lhs: Expr, method_call: Expr, expanded: Expr) 
     }
 }
 
+/// The marker for the reverse metaop assignment `LHS R-= RHS`, which assigns to
+/// its RIGHT operand (`RHS -= LHS`). `op` is the base operator (`-`, or `=` for
+/// `R=`); the marker's `op` is spelled `R-=` the way the source writes it.
+/// Lowering rebuilds the execution shape through
+/// [`crate::parser::expand_reverse_assign_expr`].
+pub(crate) fn reverse_assign_marker(lhs: Expr, op: &str, rhs: Expr, expanded: Expr) -> Expr {
+    Expr::CompoundAssign {
+        target: Box::new(lhs),
+        op: format!("R{op}="),
+        rhs: Box::new(rhs),
+        expanded: Box::new(expanded),
+    }
+}
+
 /// The `op` spelling [`dotty_assign_marker`] stamps on its `Expr::CompoundAssign`.
 pub(crate) const DOTTY_ASSIGN_OP: &str = ".=";
 

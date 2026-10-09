@@ -2422,12 +2422,37 @@ pub(super) fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
     // `X+=` / `Z+=` hold a metaoperator, not a plain infix: `meta_infix` lowers them.
     named_child(node, "infix")
         .map(|child| {
-            child.class == RakuAstClass::MetaInfixAssign
+            (child.class == RakuAstClass::MetaInfixAssign
                 && named_child_or_positional(child)
                     .map(|inner| inner.class == RakuAstClass::Infix)
-                    .unwrap_or(true)
+                    .unwrap_or(true))
+                || reverse_assign_base(child).is_some()
         })
         .unwrap_or(false)
+}
+
+/// The base operator of `Reverse(MetaInfix::Assign(Infix(OP)))` (`R-=`) or `=`
+/// for `Reverse(Assignment)` (`R=`); `None` for any other infix.
+// Cost: O(1).
+fn reverse_assign_base(infix: &RakuAstNode) -> Option<String> {
+    if infix.class != RakuAstClass::MetaInfixReverse {
+        return None;
+    }
+    let inner = named_child_or_positional(infix).ok()?;
+    match inner.class {
+        RakuAstClass::Assignment => Some("=".to_string()),
+        RakuAstClass::MetaInfixAssign => {
+            let plain = named_child_or_positional(inner).ok()?;
+            if plain.class != RakuAstClass::Infix {
+                return None;
+            }
+            match positional_leaf(plain).ok()?.view() {
+                ValueView::Str(value) => Some(value.to_string()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
 }
 
 /// Lower `ApplyInfix(MetaInfix::Assign(Infix(OP)))` to the parser's existing
@@ -2435,6 +2460,18 @@ pub(super) fn infix_is_compound_assignment(node: &RakuAstNode) -> bool {
 pub(super) fn lower_compound_assign_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     let target = lower_expr(named_child(node, "left")?)?;
     let meta = named_child(node, "infix")?;
+    // `$x R-= $y`: assigns to the right operand.
+    if let Some(base) = reverse_assign_base(meta) {
+        let rhs = lower_expr(named_child(node, "right")?)?;
+        let expanded =
+            crate::parser::expand_reverse_assign_expr(target.clone(), &base, rhs.clone());
+        return Ok(Expr::CompoundAssign {
+            target: Box::new(target),
+            op: format!("R{base}="),
+            rhs: Box::new(rhs),
+            expanded: Box::new(expanded),
+        });
+    }
     let op = match positional_leaf(named_child_or_positional(meta)?)?.view() {
         ValueView::Str(value) => value.to_string(),
         _ => return Err(unsupported(node)),
@@ -3891,6 +3928,11 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if let Some(call) = super::atomic_op::lower(node) {
         return call;
     }
+    // `$x R-= $y`: the reverse metaop assignment is a compound assignment, not
+    // the reverse of an operator.
+    if node.class == RakuAstClass::ApplyInfix && infix_is_compound_assignment(node) {
+        return lower_compound_assign_expr(node);
+    }
     // `@a Z @b`, `@a X+ @b`, `@a R- @b`: the parser's `MetaOp` chain.
     if let Some(meta) = super::meta_infix::lower(node) {
         return meta;
@@ -4673,6 +4715,14 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     dwim_left,
                     dwim_right,
                 });
+            }
+            // `(LVALUES) »=» VALUE`: the hyper assignment's infix is the
+            // `Assignment` node; the parser's own expansion handles a literal
+            // list of lvalues.
+            if infix.class == RakuAstClass::Assignment {
+                return Ok(crate::parser::hyper_assignment_expr(
+                    *left, *right, dwim_left, dwim_right,
+                ));
             }
             let op_value = positional_leaf(infix)?;
             let ValueView::Str(op) = op_value.view() else {

@@ -337,6 +337,7 @@ t/collections/lazy-seq/seq-numeric-aggregation.t
 t/collections/lazy-seq/seq-predictive-iterator-source.t
 t/collections/lazy-seq/seq-reentrant-generator.t
 t/collections/lazy-seq/seq-reify-preserves-aliases.t
+t/collections/lazy-seq/seq-resumes-after-failed-read.t
 t/collections/lazy-seq/seq-reverse.t
 t/collections/lazy-seq/seq-scalar-store-itemization.t
 t/collections/lazy-seq/seq-skip-consumed.t
@@ -512,6 +513,7 @@ t/collections/set-bag-mix/quanthash-set-user-which.t
 t/collections/set-bag-mix/quanthash-slice-adverbs.t
 t/collections/set-bag-mix/quanthash-slice-assign.t
 t/collections/set-bag-mix/quanthash-store-refill.t
+t/collections/set-bag-mix/quanthash-store-row.t
 t/collections/set-bag-mix/quanthash-subclass-backing.t
 t/collections/set-bag-mix/quanthash-subclass-qualified-name.t
 t/collections/set-bag-mix/quanthash-view-rows.t
@@ -523,11 +525,13 @@ t/collections/set-bag-mix/set-elem-identity.t
 t/collections/set-bag-mix/set-elem-scalar-rhs.t
 t/collections/set-bag-mix/set-element-objat-identity.t
 t/collections/set-bag-mix/set-eqv-allomorph.t
+t/collections/set-bag-mix/set-op-compound-assign-indexed.t
 t/collections/set-bag-mix/set-op-list-element-which.t
 t/collections/set-bag-mix/set-op-mutability.t
 t/collections/set-bag-mix/set-op-pending-map-seq-operand.t
 t/collections/set-bag-mix/set-operator-forms-agree.t
 t/collections/set-bag-mix/set-operators.t
+t/collections/set-bag-mix/set-ops-undefined-operands-are-elements.t
 t/collections/set-bag-mix/set-precedes-ops.t
 t/collections/set-bag-mix/set-reduction-one-arg.t
 t/collections/set-bag-mix/set-unique-user-which.t
@@ -787,6 +791,8 @@ t/collections/transform/reduce-numeric-string-whitespace.t
 t/collections/transform/reduce-reverse-metaop.t
 t/collections/transform/reduce-single-element.t
 t/collections/transform/reverse-finite-gather.t
+t/collections/transform/reverse-meta-compound-assign.t
+t/collections/transform/reverse-metaop-assign.t
 t/collections/transform/reverse-metaop-regression.t
 t/collections/transform/rotor-zero-count.t
 t/collections/transform/sort-inline-comparator-container-elements.t
@@ -1931,6 +1937,7 @@ t/lang/operators/fat-arrow-qualified-name-precedence.t
 t/lang/operators/fat-arrow-statement-prefix-key.t
 t/lang/operators/feed-comma-precedence.t
 t/lang/operators/hyper-array-mutators.t
+t/lang/operators/hyper-assign-nested-destructuring.t
 t/lang/operators/hyper-assign.t
 t/lang/operators/hyper-dynamic-call-then-hyper-infix.t
 t/lang/operators/hyper-for-parallel.t
@@ -2216,6 +2223,7 @@ t/modules/compunit/distribution-meta-version.t
 t/modules/compunit/distribution-resource-split.t
 t/modules/compunit/distribution.t
 t/modules/compunit/eval-context-caller-compunit.t
+t/modules/compunit/hyper-assign-list-target-distribution.t
 t/modules/compunit/lib-nested-use-begin-time.t
 t/modules/compunit/lib-path-precedence.t
 t/modules/compunit/module-precomp-type-effects.t
@@ -2458,6 +2466,7 @@ t/modules/module-constant-same-name-as-packageless-module.t
 t/modules/module-file-scope-lexical.t
 t/modules/module-file-scope-type-object-lexical.t
 t/modules/module-file-var-and-callframe.t
+t/modules/module-finish-data-section.t
 t/modules/module-first-loaded-in-eval-keeps-own-package-name.t
 t/modules/module-global-merge-is-lexical.t
 t/modules/module-lexical-rw-arg.t
@@ -2886,6 +2895,7 @@ t/oo/attribute/attr-typed-container-assign.t
 t/oo/attribute/attr-var-default-per-class.t
 t/oo/attribute/attribute-accessor-container-identity.t
 t/oo/attribute/attribute-accessor-overrides-which.t
+t/oo/attribute/attribute-build-unset-is-mu.t
 t/oo/attribute/attribute-container-identity.t
 t/oo/attribute/attribute-container-rw.t
 t/oo/attribute/attribute-default-array-nil-reset.t
@@ -3699,6 +3709,7 @@ t/oo/role/role-mixin-survival.t
 t/oo/role/role-multi-invocant-smiley-across-composition.t
 t/oo/role/role-multi-named-compose.t
 t/oo/role/role-multi-qclass.t
+t/oo/role/role-multi-scalar-vs-positional-same-name.t
 t/oo/role/role-multi-where-candidates-survive-class-multi.t
 t/oo/role/role-my-class-level-attr-accessor.t
 t/oo/role/role-my-subset.t
@@ -3993,6 +4004,7 @@ t/rakuast/rakuast-loop.t
 t/rakuast/rakuast-lowering-semantics.t
 t/rakuast/rakuast-lvalue-expression-assign.t
 t/rakuast/rakuast-members-traits.t
+t/rakuast/rakuast-meta-assignment-forms.t
 t/rakuast/rakuast-method-call-assign.t
 t/rakuast/rakuast-method-flags.t
 t/rakuast/rakuast-method-literal.t
@@ -4878,6 +4890,7 @@ t/routines/dispatch/parallel-dispatch-regression.t
 t/routines/dispatch/placeholder-in-multidim-subscript.t
 t/routines/dispatch/plain-sub-dispatch-resolution-memo.t
 t/routines/dispatch/proto-add-dispatchee.t
+t/routines/dispatch/proto-body-my-lexical-isolation.t
 t/routines/dispatch/proto-candidate-otf-dispatch.t
 t/routines/dispatch/proto-defined-candidate.t
 t/routines/dispatch/proto-dispatch-interpreter-path.t
@@ -5187,6 +5200,7 @@ t/routines/signature/pointy-string-literal-param.t
 t/routines/signature/positional-light-call-rw-param-alias.t
 t/routines/signature/positional-param-copy-and-alias.t
 t/routines/signature/positional-param-deitemizes.t
+t/routines/signature/proxy-argument-typed-param-fetch.t
 t/routines/signature/quanthash-parameterize-values-write-through.t
 t/routines/signature/quanthash-parameterized-pair-elements.t
 t/routines/signature/quanthash-parameterized.t
@@ -6292,6 +6306,7 @@ t/vm/writeback/proxy-binds-container-not-value.t
 t/vm/writeback/proxy-fetch-returns-rw-container.t
 t/vm/writeback/proxy-list-transparency.t
 t/vm/writeback/proxy-lvalue-sub-assign-no-fetch.t
+t/vm/writeback/proxy-named-ctor-arg-fetched.t
 t/vm/writeback/proxy-renders-through-fetch.t
 t/vm/writeback/proxy-store-boundary.t
 t/vm/writeback/proxy-store-receives-nil.t

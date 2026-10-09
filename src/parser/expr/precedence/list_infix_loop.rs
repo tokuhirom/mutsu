@@ -444,7 +444,13 @@ fn parse_list_infix_loop_impl<'a>(
                     r.len(),
                 )
             })?;
-            *left = build_compound_assign_target_expr(rhs, &op_name, left.clone());
+            let expanded = build_compound_assign_target_expr(rhs.clone(), &op_name, left.clone());
+            *left = crate::parser::stmt::assign::reverse_assign_marker(
+                left.clone(),
+                &op_name,
+                rhs,
+                expanded,
+            );
             rest = r;
             continue;
         }

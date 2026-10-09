@@ -10,7 +10,7 @@ use crate::parser::primary::parse_call_arg_list;
 use crate::parser::stmt::assign::{
     CompoundAssignOp, compound_assign_marker, compound_assigned_value_expr,
     parse_assign_expr_or_comma, parse_colon_args, parse_comma_or_expr, parse_compound_assign_op,
-    parse_set_compound_assign_op, preserve_compound_assign,
+    parse_set_compound_assign_op, preserve_compound_assign, preserve_set_compound_assign,
 };
 use crate::parser::stmt::modifier::{is_stmt_modifier_keyword, parse_statement_modifier};
 use crate::parser::stmt::simple::{
@@ -1226,7 +1226,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     // `CompoundAssignOp` path below. Desugar `lhs OP= rhs` to
     // `lhs = lhs OP rhs`, evaluating the index once for an `Index` lvalue.
     if !matches!(expr, Expr::AssignExpr { .. })
-        && let Some((stripped, set_tok)) = parse_set_compound_assign_op(rest)
+        && let Some((stripped, set_tok, spelling)) = parse_set_compound_assign_op(rest)
     {
         let (r, _) = ws(stripped)?;
         let (r, rhs) = parse_assign_expr_or_comma(r).map_err(|err| PError {
@@ -1237,106 +1237,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
         })?;
-        if let Expr::Index {
-            target,
-            index,
-            is_positional,
-            spelling,
-            ..
-        } = &expr
-        {
-            let tmp_idx = format!(
-                "__mutsu_idx_{}",
-                TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
-            );
-            let tmp_idx_expr = Expr::Var(tmp_idx.clone());
-            let lhs_expr = Expr::Index {
-                target: target.clone(),
-                index: Box::new(tmp_idx_expr.clone()),
-                is_positional: *is_positional,
-                spelling: Default::default(),
-            };
-            let assigned_value = Expr::Binary {
-                left: Box::new(crate::parser::stmt::assign::autoviv_set_compound_lhs(
-                    lhs_expr, &set_tok,
-                )),
-                op: set_tok,
-                right: Box::new(rhs),
-                form: Default::default(),
-            };
-            let stmt = Stmt::Expr(Expr::desugar_block(vec![
-                Stmt::VarDecl {
-                    name: tmp_idx,
-                    expr: (*index.clone()),
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: Vec::new(),
-                    where_constraint: None,
-                },
-                Stmt::Expr(Expr::IndexAssign {
-                    target: target.clone(),
-                    index: Box::new(tmp_idx_expr),
-                    value: Box::new(assigned_value),
-                    is_positional: *is_positional,
-                    spelling: *spelling,
-                }),
-            ]));
-            return parse_statement_modifier(r, stmt);
-        }
-        if let Expr::MethodCall {
-            ref target,
-            ref name,
-            ref args,
-            ref modifier,
-            ..
-        } = expr
-        {
-            let assigned_value = Expr::Binary {
-                left: Box::new(crate::parser::stmt::assign::autoviv_set_compound_lhs(
-                    expr.clone(),
-                    &set_tok,
-                )),
-                op: set_tok,
-                right: Box::new(rhs),
-                form: Default::default(),
-            };
-            let topic_name = if let Expr::Var(ref v) = **target {
-                v.clone()
-            } else {
-                "_".to_string()
-            };
-            let method_name = if let Some(m @ ('!' | '^')) = *modifier {
-                format!("{m}{}", name.resolve())
-            } else {
-                name.resolve()
-            };
-            let stmt = Stmt::Expr(Expr::Call {
-                name: Symbol::intern("__mutsu_assign_method_lvalue"),
-                args: vec![
-                    (**target).clone(),
-                    Expr::Literal(crate::value::Value::str(method_name)),
-                    Expr::ArrayLiteral(args.clone()),
-                    assigned_value,
-                    Expr::Literal(crate::value::Value::str(topic_name)),
-                    Expr::Literal(crate::value::Value::truth(true)),
-                ],
-                listop: false,
-            });
-            return parse_statement_modifier(r, stmt);
-        }
-        // Fallback for any other lvalue shape: `lhs = lhs OP rhs`.
-        let stmt = Stmt::Expr(Expr::Binary {
-            left: Box::new(crate::parser::stmt::assign::autoviv_set_compound_lhs(
-                expr, &set_tok,
-            )),
-            op: set_tok,
-            right: Box::new(rhs),
-            form: Default::default(),
-        });
+        let stmt = Stmt::Expr(preserve_set_compound_assign(expr, spelling, set_tok, rhs));
         return parse_statement_modifier(r, stmt);
     }
 

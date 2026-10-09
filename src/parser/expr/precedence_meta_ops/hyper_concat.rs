@@ -60,7 +60,14 @@ fn lower_hyper_assign_target(target: Expr, source: Expr) -> Expr {
     }
 }
 
-fn lower_hyper_assignment(target: Expr, value: Expr, dwim_left: bool, dwim_right: bool) -> Expr {
+/// `TARGET »=» VALUE` (and the `«=«` / `»=«` / `«=»` dwim spellings), as the
+/// compiler runs it. Built here for the parser and for RakuAST lowering.
+pub(crate) fn lower_hyper_assignment(
+    target: Expr,
+    value: Expr,
+    dwim_left: bool,
+    dwim_right: bool,
+) -> Expr {
     // A literal list of lvalues destructures positionally, nested sublists
     // included (`(($a, ($b, $c)), $d) »=« ((4, (5, 6)), 7)`), so it keeps the
     // element-wise lowering below.
@@ -101,6 +108,12 @@ fn lower_hyper_assignment(target: Expr, value: Expr, dwim_left: bool, dwim_right
     //
     // The RHS still evaluates exactly once: it is this hyper op's right
     // operand, and the result is bound to a temp before any target is touched.
+    let record = crate::ast::Stmt::SourceForm(Box::new(crate::ast::SourceForm::HyperAssign {
+        target: target.clone(),
+        value: value.clone(),
+        dwim_left,
+        dwim_right,
+    }));
     let distributed = Expr::HyperOp {
         op: "=".to_string(),
         left: Box::new(Expr::Var(shape_name.clone())),
@@ -121,6 +134,7 @@ fn lower_hyper_assignment(target: Expr, value: Expr, dwim_left: bool, dwim_right
         where_constraint: None,
     };
     Expr::desugar_block(vec![
+        record,
         temp_decl(shape_name, hyper_assign_shape(&target)),
         temp_decl(temp_name.clone(), distributed),
         crate::ast::Stmt::Expr(lower_hyper_assign_target(
