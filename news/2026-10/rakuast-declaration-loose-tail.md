@@ -10,8 +10,11 @@ operand (`ApplyInfix(and, VarDeclaration, 2)`, `ApplyListInfix(",", (VarDeclarat
 
 `ast::decl_tail` builds and recognizes the parser's shape; the converter puts
 the declaration back in place of the re-read (`rakuast/decl_tail.rs`) and
-lowering takes it out again, for any chain of leading operands (infix, postfix,
-list infix). The `.AST` text is identical to rakudo's on every form measured.
+lowering takes it out again, for any chain of leading operands (infix, list
+infix). A postfix is left out on purpose: rakudo drops the parentheses of a
+postfix's operand, so `(my @a).push(1)` and a declaration followed by a method
+call are the same node and cannot be told apart again. The `.AST` text is
+identical to rakudo's on every form measured.
 
 Five `t/` files join the round-trip ratchet; `t/rakuast/rakuast-declaration-loose-tail.t`
 pins the read direction, the `EVAL` direction and the semantics.

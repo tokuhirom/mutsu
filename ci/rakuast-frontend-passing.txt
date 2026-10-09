@@ -3388,7 +3388,6 @@ t/oo/method/multi-method.t
 t/oo/method/mut-method-receiver-writeback-coherence.t
 t/oo/method/mutating-method-colon.t
 t/oo/method/my-class-method-captures-own-type.t
-t/oo/method/my-decl-bare-dot-method-call.t
 t/oo/method/my-multi-method.t
 t/oo/method/named-method-expression-position.t
 t/oo/method/nested-block-method-capture-persists.t

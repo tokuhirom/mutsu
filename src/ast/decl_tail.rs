@@ -1,5 +1,5 @@
 //! A declaration or assignment with a loose tail: `my $x = 1 and 2`,
-//! `my $x = 1, 2, 3`, `my $s = 1 .foo`.
+//! `my $x = 1, 2, 3`.
 //!
 //! The parser parses the declaration first and re-attaches what follows it at
 //! its own, looser precedence, as a scopeless

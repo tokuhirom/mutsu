@@ -1,6 +1,6 @@
 //! A declaration or assignment with a loose tail across the RakuAST boundary.
 //!
-//! `my $x = 1 and 2`, `my $x = 1, 2, 3` and `my $s = 1 .foo` are one expression
+//! `my $x = 1 and 2` and `my $x = 1, 2, 3` are one expression
 //! in RakuAST, with the declaration as the leftmost operand of the whole thing:
 //!
 //! ```text
@@ -18,13 +18,16 @@ use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Stmt;
 use crate::value::{RuntimeError, Value};
 
-/// The operand an expression node starts with: the left of an infix, the
-/// operand of a postfix, the first operand of a list infix.
+/// The operand an expression node starts with: the left of an infix, the first
+/// operand of a list infix.
+///
+/// A postfix is left out on purpose: rakudo drops the parentheses of a
+/// postfix's operand, so `(my @a).push(1)` and a declaration followed by a
+/// method call are the same node and cannot be told apart again.
 // Cost: O(1).
 fn leading_operand(node: &RakuAstNode) -> Option<&RakuAstNode> {
     match node.class {
         RakuAstClass::ApplyInfix => named_child(node, "left").ok(),
-        RakuAstClass::ApplyPostfix => named_child(node, "operand").ok(),
         RakuAstClass::ApplyListInfix => {
             let field = node.fields.iter().find(|f| f.name == Some("operands"))?;
             match &field.value {
@@ -57,7 +60,6 @@ fn replace_leftmost(node: &RakuAstNode, replacement: &RakuAstNode) -> RakuAstNod
     }
     let leading_field = match node.class {
         RakuAstClass::ApplyInfix => "left",
-        RakuAstClass::ApplyPostfix => "operand",
         _ => "operands",
     };
     let fields = node
