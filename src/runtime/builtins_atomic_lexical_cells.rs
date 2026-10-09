@@ -70,7 +70,7 @@ impl Interpreter {
         slot: Option<u32>,
     ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
         if let Some(slot) = slot.and_then(|slot| self.own_local_slot(name, slot)) {
-            return self.atomic_local_slot_cell(name, slot);
+            return self.atomic_local_slot_cell(name, slot, true);
         }
         if let Some(cell) = self.scalar_cell_target(name) {
             return Some(cell);
@@ -84,7 +84,7 @@ impl Interpreter {
             // `CompiledCode`, kept alive for the whole frame by `vm_call_*`.
             let code = unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
             if let Some(slot) = code.locals.iter().position(|n| n == bare) {
-                return self.atomic_local_slot_cell(name, slot);
+                return self.atomic_local_slot_cell(name, slot, false);
             }
         }
         // A class-body `my` variable (e.g. `my atomicint $current-id`) read
@@ -141,6 +141,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         slot: usize,
+        slot_addressed: bool,
     ) -> Option<crate::gc::Gc<crate::value::ContainerCell>> {
         let bare = name.trim_start_matches('$');
         // A slot that already holds a cell IS the binding's shared cell. (The
@@ -178,7 +179,16 @@ impl Interpreter {
         // instead: `cas` counts as a write for the compiler's mutation
         // analysis now, so the two lanes are the same cell before this
         // function is ever consulted (`t/cas-captured-lexical-coherence.t`).
-        if refuses_atomic_cell_shape(&cur) {
+        // A compiler-resolved slot names its binding exactly, while the
+        // name-keyed lane cannot tell two bindings spelled alike apart (#12107):
+        // an object-valued scalar is boxed there, as `box_captured_lexicals`
+        // boxes it for a capture.
+        let refused = if slot_addressed {
+            refuses_slot_addressed_cell_shape(&cur)
+        } else {
+            refuses_atomic_cell_shape(&cur)
+        };
+        if refused {
             return None;
         }
         // Retire the legacy lane now that its value is about to
@@ -281,6 +291,23 @@ fn refuses_atomic_cell_shape(cur: &Value) -> bool {
                 | ValueView::Sub(..)
                 | ValueView::Instance { .. }
                 | ValueView::Proxy { .. }
+                | ValueView::Seq(..)
+                | ValueView::HyperSeq(..)
+                | ValueView::RaceSeq(..)
+                | ValueView::Slip(..)
+        )
+}
+
+/// [`refuses_atomic_cell_shape`] for a binding the compiler addressed by slot:
+/// only the shapes whose `ContainerRef` wrapper trips paths that do not deref
+/// one (a Proxy, the lazy sequence kinds) stay unboxed; objects and aggregates
+/// share through the cell like any captured scalar.
+// Cost: O(1).
+fn refuses_slot_addressed_cell_shape(cur: &Value) -> bool {
+    !cur.is_any_type_object()
+        && matches!(
+            cur.view(),
+            ValueView::Proxy { .. }
                 | ValueView::Seq(..)
                 | ValueView::HyperSeq(..)
                 | ValueView::RaceSeq(..)
