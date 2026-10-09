@@ -144,7 +144,6 @@ impl Interpreter {
                 dispatch_token,
                 arg_sources: None,
                 in_wrapper: false,
-                role_qualified: true,
             });
         true
     }
@@ -468,7 +467,6 @@ impl Interpreter {
                 dispatch_token,
                 arg_sources: None,
                 in_wrapper: false,
-                role_qualified: false,
             }
         }
     }
@@ -489,7 +487,6 @@ impl Interpreter {
             dispatch_token,
             arg_sources: None,
             in_wrapper: false,
-            role_qualified: false,
         }
     }
 }
