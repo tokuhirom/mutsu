@@ -2131,3 +2131,18 @@ receiver value, no new rows:
   snapshot (`rakudo_method_tables.txt`), a decision for the maintainer; the frame entry does not depend on it. The
   `native_*_next_candidate` bodies stay as the implementation the `Native` arm calls, and `Mu.clone` still needs the
   typed-container registry before it can be a row.
+
+### 9.46 Slice 4: `Grammar.parse`, `.subparse` and `.parsefile` are rows; the oracle snapshot gains `Grammar` (2026-10-09)
+
+`refactor/12423-grammar-oracle-snapshot-and-rows` (the `Grammar` item of #12423), after §9.45. The maintainer approved
+regenerating the vendored Rakudo method-table snapshot:
+
+- `raku scripts/gen-rakudo-method-tables.raku > src/builtins/rakudo_method_tables.txt` after `Grammar` joined the owners in
+  `native_method_row_table.rs`. The diff is exactly the three new `Grammar` lines (`declared`, `methods`, `only`); the header
+  and every other owner are unchanged, so nothing else in the catalog moved with the regeneration.
+- `ctors_mop/grammar.rs` holds three `OWNER_ONLY` `Handler::Interp` rows reached through `invoke_owner_raw(&["Grammar"], ..)`
+  with the receiver first, like the `Metamodel::*HOW` rows. The handler is `dispatch_instance_parse`, the function the direct
+  `G.parse(...)` call already uses, so the deferral and the direct call share one implementation.
+- `native_grammar_parse_next_candidate` shrinks to building the argument list and asking the row.
+- Still open on #12423: `Mu.BUILDALL`/`POPULATE`/`clone`/`new` as rows (`clone` needs the typed-container registry; `new`
+  needs the "user class defines `new`" guard first).
