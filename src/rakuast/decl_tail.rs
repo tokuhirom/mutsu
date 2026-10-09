@@ -121,8 +121,8 @@ pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> 
             return Err(unsupported_statement());
         }
         let statement = convert_stmt(head)?.ok_or_else(unsupported_statement)?;
-        let declaration = super::convert::expression_of(&statement)
-            .ok_or_else(unsupported_statement)?;
+        let declaration =
+            super::convert::expression_of(&statement).ok_or_else(unsupported_statement)?;
         Ok(replace_leftmost(&converted, &declaration))
     })())
 }
