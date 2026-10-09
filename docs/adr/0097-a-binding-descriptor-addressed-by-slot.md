@@ -853,11 +853,13 @@ store rather than a frame. The remaining gaps, in the order they were found:
   free-variable memo on it, and a sibling routine that ran before the rebind kept
   using the old container.
 
-Still open: the `package_lexicals` store (a `module Foo { my ... }` block or a
-class body's `my`) still writes through the shared cell on a rebind
-([#12129](https://github.com/tokuhirom/mutsu/issues/12129)). Its declaring body
-writes lexicals back after it runs (ADR-0134), so replacing the slot needs that
-writeback to be taught the new binding first. A rebind from a routine of a
+The `package_lexicals` store (a `module Foo { my ... }` block or a class
+body's `my`) follows the same rule
+([#12129](https://github.com/tokuhirom/mutsu/issues/12129)):
+`package_scope_lexical_rebind` replaces the store's container, and a live
+`@`/`%` entry in `env` (read ahead of the store) with it. A method called while
+the declaring body runs is not undone by the body's end-of-run writeback
+(ADR-0134), since the writeback reads the rebound entry from `env`. A rebind from a routine of a
 script file that itself starts with `unit module` is not seen at all
 ([#12130](https://github.com/tokuhirom/mutsu/issues/12130), not a regression of
 this section: the no-alias form was already broken).
