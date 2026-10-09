@@ -32,7 +32,8 @@ use crate::value::{RuntimeError, Value, ValueView};
 // Cost: O(n), n = AST nodes under `expr`.
 pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
     if let Expr::Spelled(spelled) = expr
-        && let crate::ast::spelled::Spelling::NamedSubscript { subscript, pairs } =
+        && let crate::ast::spelled::Spelling::NamedSubscript { subscript, pairs }
+        | crate::ast::spelled::Spelling::ConflictingSubscript { subscript, pairs } =
             &spelled.spelling
     {
         return Some(convert_named_subscript(subscript, pairs));
@@ -275,12 +276,39 @@ pub(super) fn lower(subscript: Expr, postfix: &RakuAstNode) -> Result<Expr, Runt
         )
         .ok_or_else(|| unsupported(postfix));
     }
-    subscript_adverb::expand(
-        subscript,
+    if let Some(expanded) = subscript_adverb::expand(
+        subscript.clone(),
         &adverbs,
         crate::parser::current_language_version().starts_with("6.e"),
-    )
-    .ok_or_else(|| unsupported(postfix))
+    ) {
+        return Ok(expanded);
+    }
+    if adverbs
+        .iter()
+        .filter(|(key, _)| matches!(key.as_str(), "k" | "v" | "kv" | "p"))
+        .count()
+        >= 2
+        && let Expr::Index { target, index, .. } = &subscript
+    {
+        let names = adverbs
+            .iter()
+            .map(|(key, value)| {
+                if matches!(value, Expr::Literal(v) if matches!(v.view(), ValueView::Bool(false))) {
+                    format!("!{key}")
+                } else {
+                    key.clone()
+                }
+            })
+            .collect::<Vec<_>>();
+        return Ok(subscript_adverb::build_adverb_error_call(
+            subscript_adverb::subscript_what(target, index),
+            &target.sigiled_var_name().unwrap_or_default(),
+            Some(target),
+            &names,
+            &[],
+        ));
+    }
+    Err(unsupported(postfix))
 }
 
 /// `RakuAST::Postcircumfix::ArrayIndex.new(index => …, colonpairs => (…),

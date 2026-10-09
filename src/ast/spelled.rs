@@ -53,6 +53,12 @@ pub(crate) enum Spelling {
         subscript: Box<Expr>,
         pairs: Vec<Expr>,
     },
+    /// Conflicting built-in subscript adverbs lower to an error call, which
+    /// otherwise loses both the index and the colonpair source forms.
+    ConflictingSubscript {
+        subscript: Box<Expr>,
+        pairs: Vec<Expr>,
+    },
 }
 
 /// A term and the way it was spelled; see the module documentation.

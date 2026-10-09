@@ -596,6 +596,7 @@ t/collections/subscript/hash-range-slice-assign.t
 t/collections/subscript/hash-slice-delete-default.t
 t/collections/subscript/hash-slip-slice.t
 t/collections/subscript/hash-string-range-slice.t
+t/collections/subscript/hash-subscript-adverbs.t
 t/collections/subscript/hash-subscript-brace-newline-continues.t
 t/collections/subscript/hash-subscript-trailing-comma.t
 t/collections/subscript/hyper-assoc-subscript.t
@@ -675,6 +676,7 @@ t/collections/subscript/slice-assign-pads-short-rhs.t
 t/collections/subscript/slice-hands-out-element-containers.t
 t/collections/subscript/slice-range-args.t
 t/collections/subscript/slice-single-element-itemize.t
+t/collections/subscript/subscript-adverb-conflict-what.t
 t/collections/subscript/subscript-adverb-forces-gather.t
 t/collections/subscript/subscript-adverb-lazy-truncate.t
 t/collections/subscript/subscript-adverb-whatever-missing.t
@@ -709,6 +711,7 @@ t/collections/subscript/whatever-index-in-subscript-chain.t
 t/collections/subscript/whatever-slice-assign.t
 t/collections/subscript/whatever-slice-on-positional-instance.t
 t/collections/subscript/whatevercode-subscript-compiled.t
+t/collections/subscript/zen-slice-adverb-what.t
 t/collections/subscript/zen-slice-adverbs.t
 t/collections/subscript/zen-slice-angle-spellings.t
 t/collections/subscript/zen-slice-kv-adverbs.t
@@ -4175,6 +4178,7 @@ t/rakuast/rakuast-sub-custom-traits.t
 t/rakuast/rakuast-sub-traits.t
 t/rakuast/rakuast-sub.t
 t/rakuast/rakuast-subclass-node-class.t
+t/rakuast/rakuast-subscript-adverb-conflicts.t
 t/rakuast/rakuast-subscript-adverbs.t
 t/rakuast/rakuast-subscript.t
 t/rakuast/rakuast-subsig.t

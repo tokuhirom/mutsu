@@ -2,7 +2,7 @@ use super::adverb::{
     DeleteAdverb, apply_delete_adverb, build_adverb_error_call, collect_remaining_adverbs,
     delete_with_exists, determine_subscript_what, multidim_delete_fn, multidim_target_var_name,
     normalize_adverb_name, parse_delete_adverb, parse_dynamic_subscript_adverb,
-    parse_subscript_adverb_with_expr, subscript_adverb_expr_with_cond,
+    parse_subscript_adverb_with_expr, source_adverb_pair, subscript_adverb_expr_with_cond,
     supports_postfix_call_adverbs, try_parse_exists_adverb,
 };
 use super::call_method::{
@@ -2479,8 +2479,36 @@ fn postfix_expr_loop_from(
                         normalize_adverb_name(&first_adv),
                         normalize_adverb_name(adv_name),
                     ];
-                    let r = collect_remaining_adverbs(r_after_adv, &mut known);
-                    expr = build_adverb_error_call(&what, &var_name, Some(&args[0]), &known, &[]);
+                    let (r, trailing_pairs) = collect_remaining_adverbs(r_after_adv, &mut known);
+                    let first_condition = match args.get(5..) {
+                        Some([Expr::Literal(marker), condition, ..]) if matches!(marker.view(), ValueView::Str(s) if s.as_str() == "__adverb_cond__") => {
+                            Some(condition.clone())
+                        }
+                        _ => None,
+                    };
+                    let mut pairs = vec![
+                        source_adverb_pair(&first_adv, first_condition),
+                        source_adverb_pair(adv_name, adv_cond.clone()),
+                    ];
+                    pairs.extend(trailing_pairs);
+                    let is_positional = matches!(
+                        args.get(4),
+                        Some(Expr::Literal(marker)) if matches!(marker.view(), ValueView::Str(s) if s.as_str() == crate::ast::SUBSCRIPT_POSITIONAL_MARKER)
+                    );
+                    let subscript = Expr::Index {
+                        target: Box::new(args[0].clone()),
+                        index: Box::new(args[1].clone()),
+                        is_positional,
+                        spelling: Default::default(),
+                    };
+                    let error =
+                        build_adverb_error_call(&what, &var_name, Some(&args[0]), &known, &[]);
+                    expr = Expr::spelled(error, || {
+                        crate::ast::spelled::Spelling::ConflictingSubscript {
+                            subscript: Box::new(subscript),
+                            pairs,
+                        }
+                    });
                     rest = r;
                     continue;
                 }
