@@ -4966,7 +4966,23 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // subscript (`@a[1]`). Associative subscripts carry a different postfix
         // and are deferred.
         RakuAstClass::ApplyPostfix => {
-            let operand = lower_expr(named_child(node, "operand")?)?;
+            let operand_node = named_child(node, "operand")?;
+            let mut operand = lower_expr(operand_node)?;
+            // Rakudo omits one parenthesis layer around a postfix operand.
+            // A visible Circumfix therefore represents at least two layers
+            // in the source. Restore both for Whatever priming: the second
+            // layer freezes a finished curry before the postfix is applied.
+            if operand_node.class == RakuAstClass::CircumfixParentheses
+                && matches!(
+                    operand,
+                    Expr::Whatever
+                        | Expr::WhateverArg
+                        | Expr::HyperWhatever
+                        | Expr::WhateverCurry(_)
+                )
+            {
+                operand = Expr::Grouped(Box::new(Expr::Grouped(Box::new(operand))));
+            }
             let postfix = named_child(node, "postfix")?;
             match postfix.class {
                 // `.method`, `self!priv`, `."name"`, `.^name`, `.$name` / `.&f`.
