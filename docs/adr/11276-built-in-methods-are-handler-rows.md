@@ -2102,3 +2102,17 @@ entries, not a case for a second frame kind:
 - `native_array_storage_next_candidate`, `native_hash_storage_next_candidate` and `native_baggy_storage_next_candidate` stay
   as the body of `native_storage_base_entry` (they read the innermost frame); folding them into the storage owners' rows is
   left with the `Mu` / grammar / metamodel bridges.
+
+### 9.44 Slice 4: the metamodel and grammar built-in rule bridges are a frame entry (2026-10-09)
+
+`refactor/12423-native-base-metamodel-grammar-bridges` (first item of #12423), after §9.43. Same move as §9.42, decided by the
+receiver value, no new rows:
+
+- The frame builder ends the frame with a `DeferralEntry::Native` for a user method on a metamodel-HOW class (or a native
+  HOW mixin), and for a grammar's own `ws`/`alpha`/`ident`/... (`is_builtin_rule_name`, a cheap name test so ordinary grammar
+  tokens do not pay for a frame).
+- The `Native` arm asks `native_metamodel_next_candidate` and `native_grammar_builtin_rule_next_candidate` before the storage
+  and default-rendering fallbacks. `NativeBase::Metamodel`, `NativeBase::GrammarBuiltinRule` and `NATIVE_BASE_MULTI` are
+  deleted; `NATIVE_BASE_EXHAUSTED` keeps `GrammarParse` and `MuBase`.
+- Left for #12423: `Mu.BUILDALL`/`POPULATE`/`clone`/`new`, the `Grammar` oracle-snapshot decision and the
+  `parse`/`subparse`/`parsefile` rows.
