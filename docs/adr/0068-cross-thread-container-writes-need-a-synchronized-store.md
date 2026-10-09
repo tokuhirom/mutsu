@@ -849,3 +849,24 @@ stripe (an O(n) shallow clone of the `HashData`/`ArrayData`, which those methods
 already pay) with the method then run on the snapshot outside it; that changes
 aliasing for `.map` over an `is rw` element, so it needs its own measurement and
 is filed separately.
+
+## 16. Iteration and callback methods run on a snapshot (2026-10-09, #12456)
+
+Resolves §15.1. Once a second mutator thread exists, `.sort`, `.map`, `.grep`,
+`.first`, `.gist`, `.Str`, `.raku`, `.perl`, `.fmt`, `.join`, `.reverse`,
+`.reduce`, `.min`, `.max`, `.sum`, `.flat` and `.unique` on a `Hash`/`Array`
+(`container_lock::is_snapshot_read`) take a shallow clone of the backing
+`HashData`/`ArrayData` while holding the stripe, release it, and run on the clone
+(`shared_snapshot`; wired at `call_method_with_values` and `method_table::dispatch::call`).
+The stripe is therefore never held across user code (§7.4 intact). Elements are
+cloned `Value`s, so an element that is itself a shared cell stays shared.
+
+Trade-off: a `.map`/`.grep` callback that writes through an `is rw` element of a
+*shared* container now writes into the snapshot, not the live container. Programs
+with no second thread are unaffected. A racing iteration already had no defined
+answer; a lost aliasing write in that case was judged better than a crash.
+
+Acceptance (release, three threads inserting for 1.5 s): `.sort`, `.map`, `.gist`
+on `%!h` 0 crashes in 4 each (were 2, 2 and 4 of 4). Pinned by
+`t/concurrency/concurrent-attr-hash-iteration-does-not-corrupt.t`.
+Not measured: `for %!h.kv` on a fast path (separate look needed).
