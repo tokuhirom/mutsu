@@ -3323,6 +3323,14 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if let Some(child) = regex_extension::nested_accessor(node, method) {
         return Some(child);
     }
+    // Only a statement node records where it began; every other node (and a
+    // hand-built one) has no origin, which reads as `Nil` so `with` skips it.
+    if method == "origin" {
+        return Some(match origin::statement_line_of(node) {
+            Some(line) => crate::builtins::method_table::origin_value(line),
+            None => Value::NIL,
+        });
+    }
     for f in &node.fields {
         if f.name == Some(method) {
             return Some(field_to_value(&f.value));

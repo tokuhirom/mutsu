@@ -2056,6 +2056,19 @@ impl Interpreter {
         {
             return result;
         }
+        // `RakuAST::Node.visit-children` and the `RakuAST::Origin` rows are rows
+        // of the method table, found by their owner: none has a dispatch shape.
+        if let Some(owners) = crate::builtins::method_table::rakuast_owners_of(&target)
+            && let Some(result) = crate::builtins::method_table::invoke_owner(
+                self,
+                owners,
+                method,
+                &args,
+                || target.clone(),
+            )
+        {
+            return result;
+        }
         // Buf/Blob.allocate
         if method == "allocate"
             && let ValueView::Package(name) = target.view()
