@@ -816,6 +816,14 @@ impl Interpreter {
             // A scalar `=` share has its own cell around an itemized word for
             // the aggregate cell. Element mutation targets the aggregate,
             // unlike whole-scalar RMW, which targets the outer cell.
+            // ADR-0068: the read below walks, and the write further down
+            // restructures, a container every thread sharing this cell reaches.
+            // Keyed on the outermost cell like every other store route, taken
+            // before any cell's own `Mutex<Value>`, and held around the read and
+            // the write separately -- never across the `++` itself, which can
+            // run user code (#11701).
+            let root_cell_addr = crate::gc::Gc::as_ptr(&*arc) as usize;
+            let read_guard = crate::value::container_lock::ContainerStructGuard::acquire(root_cell_addr);
             let mut arc = arc.clone();
             loop {
                 let held = arc.lock().unwrap().clone();
@@ -838,6 +846,7 @@ impl Interpreter {
                     .unwrap_or(Value::NIL),
                 _ => Value::NIL,
             };
+            drop(read_guard);
             let effective = Self::normalize_incdec_source(if current.is_nil() {
                 Self::value_carried_default(&inner)
                     .or_else(|| self.var_default(&name).cloned())
@@ -857,6 +866,7 @@ impl Interpreter {
             // (#9488: `my Y @x` captured by `throws-like { @x[0]++ }`).
             self.check_incdec_element_type(&name, declared_constraint_incdec.as_deref(), &new_val)?;
             let mut updated = inner;
+            let _write_guard = crate::value::container_lock::ContainerStructGuard::acquire(root_cell_addr);
             // Container identity (§3): write through the shared backing node.
             if updated
                 .with_hash_mut(|h| {
@@ -1049,6 +1059,31 @@ impl Interpreter {
             ValueView::ContainerRef(cell) => Some(cell.clone()),
             _ => None,
         });
+        // ADR-0068: the structural write below mutates an aliased container
+        // through `gc_contents_mut`. An attribute hash (`%!h{$k}++` in a method)
+        // is aliased by the instance's attribute store and by this frame's env,
+        // so nothing else excludes a second thread's write (or its resize) -- a
+        // double free / use after free in `HashData`'s drop (#11701). Keyed on
+        // the cell when there is one, else on the container node (taken below,
+        // once the container is in hand). The stripe is taken BEFORE the cell's
+        // own `Mutex<Value>`, the order `ContainerStructGuard::acquire_for_cell`
+        // readers use, so the two can never be held in opposite orders. A no-op
+        // until a VM mutator thread has been spawned; the guarded region calls
+        // no user Raku code.
+        // A file-scope `my %h` is the same shared hash in every thread, but a
+        // thread whose env was seeded from the unit-lexical cell holds the
+        // deref'd container, not the cell: key on the unit-lexical cell too, or
+        // two threads would lock two different stripes for one hash.
+        let key_cell = cell.clone().or_else(|| {
+            crate::value::container_lock::multi_mutator_threads_live()
+                .then(|| self.unit_lexical_container_cell(&name))
+                .flatten()
+        });
+        let _cell_struct_guard = key_cell.as_ref().and_then(|c| {
+            crate::value::container_lock::ContainerStructGuard::acquire(
+                crate::gc::Gc::as_ptr(c) as usize,
+            )
+        });
         let mut cell_guard = cell
             .as_ref()
             .map(|c| c.lock().unwrap_or_else(|e| e.into_inner()));
@@ -1065,6 +1100,15 @@ impl Interpreter {
                 None => self.env_mut().get_mut_sym(name_sym),
             },
         } {
+            // ADR-0068, uncelled root: see `_cell_struct_guard`.
+            let _node_struct_guard = if key_cell.is_none() {
+                crate::value::container_lock::ContainerStructGuard::acquire_for(
+                    None,
+                    container_value,
+                )
+            } else {
+                None
+            };
             if let Some(done) = container_value.with_hash_mut(|h| {
                 // Mirror the array arm below: when the hash Arc is shared
                 // (strong_count > 1) via a scalar-bound `ContainerRef` cell

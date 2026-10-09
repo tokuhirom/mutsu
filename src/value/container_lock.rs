@@ -184,6 +184,35 @@ impl Drop for ContainerStructGuard {
     }
 }
 
+/// Whether `method` is a READ of a container's structure that runs no user
+/// code: it walks the backing `Vec`/`HashMap`, so it must exclude a concurrent
+/// structural writer (a rehash under an iterating `.keys` is a use after free,
+/// #11701). The allowlist is the leaf reads only -- a method that takes a
+/// callback (`map`, `grep`, `first`, ...) would hold the lock across user code,
+/// which the module docs forbid.
+// Cost: O(1).
+pub(crate) fn is_leaf_structure_read(method: &str) -> bool {
+    matches!(
+        method,
+        "keys"
+            | "values"
+            | "kv"
+            | "pairs"
+            | "antipairs"
+            | "elems"
+            | "end"
+            | "list"
+            | "Bool"
+            | "so"
+            | "AT-KEY"
+            | "AT-POS"
+            | "EXISTS-KEY"
+            | "EXISTS-POS"
+            | "Numeric"
+            | "Int"
+    )
+}
+
 /// The address of `container`'s backing GC node. This is the FALLBACK key, used
 /// only when the container was not reached through a cell -- two threads that
 /// share a cell do not reliably share a node (see `acquire_for`). `None` for
