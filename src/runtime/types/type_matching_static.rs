@@ -306,7 +306,6 @@ impl Interpreter {
                     | "Mix"
                     | "MixHash"
                     | "QuantHash"
-                    | "Capture"
                     | "IO::Path::Parts"
             )
         {

@@ -75,7 +75,7 @@ impl Interpreter {
     /// on `extract_sym_adverb` — leaves the shorthand body untouched), but its
     /// candidates must still get a distinct identity or the dedup walk collapses
     /// `element:<int>` and `element:<word>` into one (YAMLish `Schema::JSON`).
-    pub(super) fn extract_variant_ident(name: &str) -> Option<String> {
+    pub(in crate::runtime) fn extract_variant_ident(name: &str) -> Option<String> {
         if let Some(v) = Self::extract_sym_adverb(name) {
             return Some(v);
         }
