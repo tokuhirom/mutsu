@@ -5061,10 +5061,19 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                     if postfix.class != RakuAstClass::PostcircumfixLiteralHashIndex
                         && index_node.fields.is_empty()
                     {
-                        if named_child(postfix, "assignee").is_ok()
-                            || list_field(postfix, "colonpairs").is_ok_and(|c| !c.is_empty())
-                        {
+                        if named_child(postfix, "assignee").is_ok() {
                             return Err(unsupported(postfix));
+                        }
+                        if list_field(postfix, "colonpairs").is_ok_and(|c| !c.is_empty()) {
+                            return super::subscript_adverb::lower(
+                                Expr::Index {
+                                    target: Box::new(operand),
+                                    index: Box::new(Expr::Literal(Value::WHATEVER)),
+                                    is_positional,
+                                    spelling: Default::default(),
+                                },
+                                postfix,
+                            );
                         }
                         return Ok(Expr::ZenSlice(Box::new(operand)));
                     }

@@ -252,6 +252,7 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
                 || super::declared_routines::is_user_call_field(field)
                 || super::postfix_grouping::is_source_field(field)
                 || super::compound_stmt::is_source_field(field)
+                || super::use_stmt::is_source_field(field)
                 || super::type_call::is_marker(field)
                 || super::thunk::is_marker(field)
                 || node.class == RakuAstClass::RegexNamedCapture && field.name == Some("array")

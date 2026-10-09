@@ -30,6 +30,24 @@ use crate::value::{RuntimeError, Value, ValueView};
 /// `None` when it is not one.
 // Cost: O(n), n = AST nodes under `expr`.
 pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> {
+    if let Some((target, index, is_positional, mode, condition)) =
+        subscript_adverb::explicit_value_condition(expr)
+    {
+        let pair = colonpair_value_expr(&Expr::Binary {
+            left: Box::new(Expr::Literal(Value::str(mode.to_string()))),
+            op: crate::token_kind::TokenKind::FatArrow,
+            right: Box::new(condition.clone()),
+            form: Default::default(),
+        });
+        return Some(pair.and_then(|pair| {
+            let dims = if matches!(index, Expr::Literal(value) if matches!(value.view(), ValueView::Whatever)) {
+                &[][..]
+            } else {
+                std::slice::from_ref(index)
+            };
+            subscript_dims_node(target, dims, is_positional, None, vec![Value::rakuast(Box::new(pair))])
+        }));
+    }
     if !matches!(
         expr,
         Expr::Exists { .. } | Expr::Call { .. } | Expr::MethodCall { .. } | Expr::Ternary { .. }
@@ -51,6 +69,18 @@ pub(super) fn convert(expr: &Expr) -> Option<Result<RakuAstNode, RuntimeError>> 
                     .collect::<Result<Vec<_>, _>>()
                     .and_then(|colonpairs| angle_subscript_node(target, index, None, colonpairs)),
             );
+        }
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            ..
+        } if matches!(index.as_ref(), Expr::Literal(value) if matches!(value.view(), ValueView::Whatever)) =>
+        {
+            // The parser uses a literal Whatever for `[]:adverb`; a written
+            // `[*]:adverb` uses Expr::Whatever. Rakudo keeps the former index
+            // as an empty SemiList, even though both execute as a slice.
+            (target, &[][..], *is_positional)
         }
         Expr::Index {
             target,

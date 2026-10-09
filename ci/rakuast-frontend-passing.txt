@@ -707,7 +707,9 @@ t/collections/subscript/whatever-index-in-subscript-chain.t
 t/collections/subscript/whatever-slice-assign.t
 t/collections/subscript/whatever-slice-on-positional-instance.t
 t/collections/subscript/whatevercode-subscript-compiled.t
+t/collections/subscript/zen-slice-adverbs.t
 t/collections/subscript/zen-slice-angle-spellings.t
+t/collections/subscript/zen-slice-kv-adverbs.t
 t/collections/temp-container-unbinds-elements-for-the-scope.t
 t/collections/temp-element-saves-only-the-element.t
 t/collections/temp-parenthesized-element.t
@@ -1399,6 +1401,7 @@ t/exceptions/backtrace-positional-index.t
 t/exceptions/backtrace.t
 t/exceptions/begin-phaser-catch-handler.t
 t/exceptions/begin-phaser-error-name.t
+t/exceptions/begin-prologue-error-skips-end.t
 t/exceptions/bitwise-failure-operand-throws.t
 t/exceptions/bug-coverage-6c.t
 t/exceptions/caller-error-var-survives-call.t
@@ -2488,6 +2491,9 @@ t/modules/import-export/use-colon-ver-selector.t
 t/modules/import-export/use-dist-selector-param-type.t
 t/modules/import-export/use-dist-selectors.t
 t/modules/import-export/use-fatal-pragma-scope.t
+t/modules/import-export/use-if-begin-time.t
+t/modules/import-export/use-if-false-undeclared-routine.t
+t/modules/import-export/use-if-pragma.t
 t/modules/import-export/use-in-block-env-scope.t
 t/modules/import-export/use-in-do-block-is-scoped.t
 t/modules/import-export/use-in-nested-block-is-begin-time.t
@@ -4213,6 +4219,7 @@ t/rakuast/rakuast-with-without-modifier.t
 t/rakuast/rakuast-word-list-spelling.t
 t/rakuast/rakuast-word-quotes.t
 t/rakuast/rakuast-yada-stubs.t
+t/rakuast/rakuast-zen-slice-adverbs.t
 t/regex/contains-regex.t
 t/regex/dir-test-bare-regex-predicate.t
 t/regex/gate-b-regex-interp-env-sync.t
