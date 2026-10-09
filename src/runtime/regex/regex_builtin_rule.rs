@@ -49,6 +49,29 @@ pub(crate) fn builtin_rule_end(name: &str, chars: &[char], pos: usize) -> Option
     })
 }
 
+/// Whether `name` is one of the built-in rules [`builtin_rule_end`] knows.
+// Cost: O(1).
+pub(crate) fn is_builtin_rule_name(name: &str) -> bool {
+    matches!(
+        name,
+        "ws" | "wb"
+            | "ww"
+            | "ident"
+            | "alpha"
+            | "upper"
+            | "lower"
+            | "digit"
+            | "xdigit"
+            | "space"
+            | "alnum"
+            | "blank"
+            | "cntrl"
+            | "punct"
+            | "graph"
+            | "print"
+    )
+}
+
 impl Interpreter {
     /// Run built-in rule `name` on grammar cursor `invocant` (an instance of a
     /// grammar carrying `orig` and `pos`) and return the resulting cursor: a

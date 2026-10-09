@@ -319,7 +319,19 @@ impl Interpreter {
         let any_base_override = matches!(method_name, "gist" | "Str" | "raku")
             && matches!(invocant.view(), ValueView::Instance { .. })
             && self.has_user_method(receiver_class, method_name);
+        // A grammar's own `method ws` / `alpha` / ...: the built-in rule on the
+        // cursor is the last candidate (`DeferralEntry::Native`).
+        let grammar_rule_override = super::regex::regex_builtin_rule::is_builtin_rule_name(method_name)
+            && matches!(invocant.view(), ValueView::Instance { .. })
+            && self.class_is_grammar(receiver_class)
+            && self.has_user_method(receiver_class, method_name);
+        let how_receiver = metamodel_base_override
+            || (matches!(invocant.view(), ValueView::Mixin(..))
+                && Self::how_target_from_value(&invocant).is_some()
+                && self.has_user_method_including_role(receiver_class, method_name));
         let native_base_override = grammar_parse_override
+            || how_receiver
+            || grammar_rule_override
             || core_type_override
             || any_base_override
             || metamodel_base_override
@@ -434,7 +446,12 @@ impl Interpreter {
                     want_container: false,
                 });
             }
-            if core_type_override || any_base_override || container_protocol_override {
+            if core_type_override
+                || any_base_override
+                || container_protocol_override
+                || grammar_rule_override
+                || how_receiver
+            {
                 remaining.push(super::DeferralEntry::Native {
                     name: method_name.to_string(),
                 });

@@ -52,21 +52,14 @@ enum DispatchFrameKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NativeBase {
     GrammarParse,
-    GrammarBuiltinRule,
     MuBase,
-    Metamodel,
 }
 
 /// The user MRO of a method frame is exhausted.
 const NATIVE_BASE_EXHAUSTED: &[NativeBase] = &[
     NativeBase::GrammarParse,
-    NativeBase::GrammarBuiltinRule,
     NativeBase::MuBase,
-    NativeBase::Metamodel,
 ];
-
-/// A multi method's candidates are exhausted.
-const NATIVE_BASE_MULTI: &[NativeBase] = &[NativeBase::GrammarBuiltinRule];
 
 impl Interpreter {
     /// Return the built-in implementation of an infix operator for the final
@@ -126,9 +119,7 @@ impl Interpreter {
         for base in order {
             let res = match base {
                 NativeBase::GrammarParse => self.native_grammar_parse_next_candidate(override_args),
-                NativeBase::GrammarBuiltinRule => self.native_grammar_builtin_rule_next_candidate(),
                 NativeBase::MuBase => self.native_mu_base_next_candidate(override_args),
-                NativeBase::Metamodel => self.native_metamodel_next_candidate(override_args),
             };
             if res.is_some() {
                 return res;
@@ -1209,7 +1200,12 @@ impl Interpreter {
                         frame.in_wrapper = false;
                         (frame.invocant.clone(), frame.args.clone())
                     };
-                    let result = if matches!(invocant.view(), ValueView::Instance { .. }) {
+                    let how_or_rule = self
+                        .native_metamodel_next_candidate(Some(&args))
+                        .or_else(|| self.native_grammar_builtin_rule_next_candidate());
+                    let result = if let Some(res) = how_or_rule {
+                        res?
+                    } else if matches!(invocant.view(), ValueView::Instance { .. }) {
                         // An instance of a container subclass: the native
                         // behavior on its backing storage is the next candidate
                         // (the frame builder pushed this entry because the
@@ -1558,7 +1554,6 @@ impl Interpreter {
             let is_override = override_args.is_some();
             // Kept for the native-base fallback at the exhaustion point below,
             // which needs the override args after `call_args` consumes them.
-            let override_for_native = override_args.clone();
             let mut call_args = override_args.unwrap_or(orig_args);
             // nextsame/callsame+rw chaining (§D capstone): forward each scalar rw
             // param's CURRENT value (it was mutated by the first candidate's body
@@ -1615,22 +1610,6 @@ impl Interpreter {
                 let native_op = Self::native_infix_next_candidate(&_name, &call_args)
                     .or_else(|| self.native_prefix_next_candidate(&_name, &call_args));
                 if let Some(result) = native_op {
-                    let result = result?;
-                    if tail_call {
-                        return Err(RuntimeError::return_signal(result));
-                    }
-                    return Ok(result);
-                }
-                // A `multi method` that overrides a native container
-                // protocol (`multi method ASSIGN-KEY` on an `is BagHash` /
-                // `is Hash` / `is Array` subclass, typically contributed by a
-                // role) has the native behavior on the instance's backing
-                // storage as its final candidate, exactly as the single-method
-                // path above does — without it the deferral answered Nil and
-                // the write was silently dropped.
-                let native_base = self
-                    .native_base_next_candidate(NATIVE_BASE_MULTI, override_for_native.as_deref());
-                if let Some(result) = native_base {
                     let result = result?;
                     if tail_call {
                         return Err(RuntimeError::return_signal(result));
