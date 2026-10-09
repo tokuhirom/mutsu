@@ -12,7 +12,7 @@ plan 4;
 my @words = (('a'..'z').list, (('a'..'z') X~ ('a'..'z')).list).flat.list;   # 702 keys
 
 sub hammer(&body) {
-    await (^3).map: { start { for ^3000 { body() } } };
+    await (^3).map: { start { my $end = now + 0.6; while now < $end { body() } } };
 }
 
 class Sorter { has %!h; method go { %!h{@words.pick} = 1; %!h.sort.elems } }
