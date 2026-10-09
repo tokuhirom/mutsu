@@ -3,7 +3,7 @@ pub(crate) use crate::ast::subscript_adverb::{
     build_adverb_error_call, multidim_target_var_name, subscript_adverb_expr_with_cond,
 };
 use crate::ast::subscript_adverb::{conditional_delete, deleting, exists_node};
-use crate::ast::{ExistsAdverb, Expr};
+use crate::ast::{BinaryForm, ExistsAdverb, Expr};
 use crate::parser::expr::expression;
 use crate::parser::helpers::{is_ident_char, ws};
 use crate::parser::parse_result::parse_char;
@@ -235,43 +235,7 @@ pub(crate) fn try_parse_adverb_expr(input: &str) -> Option<(&str, Expr)> {
 /// Determine "element access" vs "slice" from the target and index.
 /// Hash access is always "slice"; array single-element is "element access".
 pub(crate) fn determine_subscript_what(target: &Expr, index_expr: &Expr) -> String {
-    // A *zen* slice (`@a[]` / `%h{}`, modelled as a `Literal(Whatever)` index by
-    // the empty-subscript-with-adverb path) reports "zen slice".
-    if matches!(index_expr, Expr::Literal(lit) if matches!(lit.view(), crate::value::ValueView::Whatever))
-    {
-        return "zen slice".to_string();
-    }
-    // A whatever slice (`@a[*]`, parsed as a bare Whatever index) reports
-    // "whatever slice". A hash zen slice keeps the bracket-kind descriptor
-    // (`{} slice`), which the runtime downgrades to plain "slice" on a nogo
-    // conflict (see `builtin_subscript_adverb_error`).
-    if matches!(index_expr, Expr::Whatever) {
-        return if matches!(target, Expr::HashVar(_)) {
-            "{} slice".to_string()
-        } else {
-            "whatever slice".to_string()
-        };
-    }
-    if matches!(target, Expr::HashVar(_)) {
-        return "slice".to_string();
-    }
-    // A Range subscript (`@a[1..2]`) is a multi-element slice.
-    if let Expr::Binary { op, .. } = index_expr
-        && matches!(
-            op,
-            crate::token_kind::TokenKind::DotDot
-                | crate::token_kind::TokenKind::DotDotCaret
-                | crate::token_kind::TokenKind::CaretDotDot
-                | crate::token_kind::TokenKind::CaretDotDotCaret
-        )
-    {
-        return "slice".to_string();
-    }
-    match index_expr {
-        Expr::ArrayLiteral(items) if items.len() != 1 => "slice".to_string(),
-        Expr::ArrayVar(_) => "slice".to_string(),
-        _ => "element access".to_string(),
-    }
+    crate::ast::subscript_adverb::subscript_what(target, index_expr).to_string()
 }
 
 /// Normalize an adverb name (strip "not-" prefix and "0" suffix).
@@ -283,18 +247,45 @@ pub(crate) fn normalize_adverb_name(s: &str) -> String {
 /// Consume all remaining built-in adverbs after a subscript. (A chain with a
 /// non-built-in adverb never gets here: it is lowered whole by
 /// `named_adverb::lower_subscript_named_adverbs`.)
-pub(crate) fn collect_remaining_adverbs<'a>(start: &'a str, known: &mut Vec<String>) -> &'a str {
+pub(crate) fn source_adverb_pair(name: &str, condition: Option<Expr>) -> Expr {
+    let key = normalize_adverb_name(name);
+    let negated = name.starts_with("not-") || name.ends_with('0');
+    let (right, form) = match condition {
+        Some(value) => (value, BinaryForm::ColonPairValue),
+        None if negated => (
+            Expr::Literal(crate::value::Value::FALSE),
+            BinaryForm::ColonPairFalse,
+        ),
+        None => (
+            Expr::Literal(crate::value::Value::TRUE),
+            BinaryForm::ColonPairTrue,
+        ),
+    };
+    Expr::Binary {
+        left: Box::new(Expr::Literal(crate::value::Value::str(key))),
+        op: crate::token_kind::TokenKind::FatArrow,
+        right: Box::new(right),
+        form,
+    }
+}
+
+pub(crate) fn collect_remaining_adverbs<'a>(
+    start: &'a str,
+    known: &mut Vec<String>,
+) -> (&'a str, Vec<Expr>) {
     let mut r = start;
+    let mut pairs = Vec::new();
     loop {
         let r2 = ws(r).map_or(r, |(r2, _)| r2);
-        if let Some((r3, next_adv, _)) = parse_subscript_adverb_with_expr(r2) {
+        if let Some((r3, next_adv, condition)) = parse_subscript_adverb_with_expr(r2) {
+            pairs.push(source_adverb_pair(next_adv, condition));
             known.push(normalize_adverb_name(next_adv));
             r = r3;
         } else {
             break;
         }
     }
-    r
+    (r, pairs)
 }
 
 /// The `:delete` lowering target for a multi-dim subscript.

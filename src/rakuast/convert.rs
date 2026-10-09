@@ -2884,7 +2884,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             } => Ok(word_quote_with(*quotewords, *val, text)),
             Spelling::InterpolatingWords { val, text } => super::word_quote::convert(*val, text),
             Spelling::BareStatement => super::bare_prefix::bare_statement_node(&spelled.expr),
-            Spelling::NamedSubscript { .. } => Err(unsupported("named subscript source form")),
+            Spelling::NamedSubscript { .. } | Spelling::ConflictingSubscript { .. } => {
+                Err(unsupported("subscript adverb source form"))
+            }
         },
         // `pi` / `e` / `tau` are setting terms in raku; the parser folds them to
         // numeric literals, so recover the term from the source spelling kept

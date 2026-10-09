@@ -32,6 +32,44 @@ pub(crate) fn is_builtin_name(name: &str) -> bool {
     matches!(name, "k" | "v" | "kv" | "p" | "exists" | "delete")
 }
 
+/// The descriptor an invalid subscript adverb reports for its index shape.
+// Cost: O(1).
+pub(crate) fn subscript_what(target: &Expr, index: &Expr) -> &'static str {
+    if matches!(index, Expr::Literal(lit) if matches!(lit.view(), ValueView::Whatever)) {
+        return if matches!(target, Expr::HashVar(_)) {
+            "{} slice"
+        } else {
+            "zen slice"
+        };
+    }
+    if matches!(index, Expr::Whatever) {
+        return if matches!(target, Expr::HashVar(_)) {
+            "{} slice"
+        } else {
+            "whatever slice"
+        };
+    }
+    if matches!(target, Expr::HashVar(_)) {
+        return "slice";
+    }
+    if let Expr::Binary { op, .. } = index
+        && matches!(
+            op,
+            crate::token_kind::TokenKind::DotDot
+                | crate::token_kind::TokenKind::DotDotCaret
+                | crate::token_kind::TokenKind::CaretDotDot
+                | crate::token_kind::TokenKind::CaretDotDotCaret
+        )
+    {
+        return "slice";
+    }
+    match index {
+        Expr::ArrayLiteral(items) if items.len() != 1 => "slice",
+        Expr::ArrayVar(_) => "slice",
+        _ => "element access",
+    }
+}
+
 /// The CORE candidate call for a subscript carrying an unknown named adverb.
 /// The parser and RakuAST lowering share this builder so both retain the same
 /// zen-slice descriptor and source variable name.
