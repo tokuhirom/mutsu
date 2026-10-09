@@ -240,6 +240,7 @@ impl Compiler {
         // shares the `x` local key) is not mistaken for a sigilless bind and
         // stored un-itemized (#11228).
         let sigilless_before = self.sigilless_locals.clone();
+        let shadowed_terms_before = self.shadowed_sigilless_terms.clone();
         // A genuine source `{ ... }` is a Raku callframe (it contributes an
         // anonymous frame to a backtrace captured inside it); a synthesized
         // if/while/loop body is not. `synthetic_block_body` is set by those
@@ -275,6 +276,7 @@ impl Compiler {
             self.fatal_pragma_active = saved;
         }
         self.sigilless_locals = sigilless_before;
+        self.shadowed_sigilless_terms = shadowed_terms_before;
         self.user_listop_shadows = saved_listop_shadows;
         if let Some(saved) = saved_dynamic_scope {
             self.pop_dynamic_scope_lexical(saved);

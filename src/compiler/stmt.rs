@@ -1167,7 +1167,10 @@ impl Compiler {
                         self.code.emit(OpCode::SinkPop(false, true));
                         continue;
                     }
+                    self.decl_is_sigilless = matches!(s, Stmt::VarDecl { name, .. }
+                        if has_mark_sigilless || sigilless_readonly_names.contains(name));
                     self.compile_stmt(s);
+                    self.decl_is_sigilless = false;
                 }
                 if restore_pointy_given_topic {
                     self.code.emit(OpCode::ExitPointyTopic);
@@ -1287,6 +1290,15 @@ impl Compiler {
                 // that unrelated declaration bind-context treatment and
                 // skipping the array-from-Range materialization it needs
                 // ("Cannot modify an immutable Range").
+                let declares_sigilless = std::mem::take(&mut self.decl_is_sigilless);
+                if !declares_sigilless
+                    && !*is_our
+                    && !*is_state
+                    && !*is_dynamic
+                    && std::ptr::eq(name, spelled)
+                {
+                    self.shadow_sigilless_term(name);
+                }
                 let bind_vardecl = self.bind_vardecl;
                 self.bind_vardecl = false;
                 let sigilless_bind_vardecl = self.sigilless_bind_vardecl;

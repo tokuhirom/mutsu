@@ -7,6 +7,9 @@
 //! compiler maps between a constant's spelling and its storage key.
 
 use super::Compiler;
+use crate::opcode::OpCode;
+use crate::symbol::Symbol;
+use crate::value::Value;
 
 impl Compiler {
     /// The package-store name of an `our` declaration spelled `spelled` whose
@@ -33,6 +36,61 @@ impl Compiler {
         self.local_map
             .get(crate::runtime::term_names::term_key(name).as_str())
             .copied()
+    }
+
+    /// A scalar declaration `my $name` while a sigilless binding `\\name` is
+    /// visible: both live under the key `name`, so copy the sigilless value
+    /// into a slot under the term key before the scalar overwrites it, and
+    /// route bare `name` reads there (#11994).
+    // Cost: O(|name|).
+    pub(super) fn shadow_sigilless_term(&mut self, name: &str) {
+        if name.is_empty()
+            || !name.starts_with(|c: char| c.is_alphabetic() || c == '_')
+            || crate::qualified::is_qualified(Symbol::intern(name))
+            || self.shadowed_sigilless_terms.contains(name)
+            || !(self.sigilless_locals.contains(name) || self.enclosing_sigilless.contains(name))
+        {
+            return;
+        }
+        let name_idx = self.code.add_constant(Value::str(name.to_string()));
+        match self.local_map.get(name).copied() {
+            Some(slot) if self.sigilless_locals.contains(name) => {
+                self.code.emit(OpCode::GetLocal(slot));
+            }
+            _ => {
+                if !self.sigilless_locals.contains(name) {
+                    self.code
+                        .shadowed_sigilless_reads
+                        .push(name.to_string());
+                }
+                self.code.emit(OpCode::GetGlobal(name_idx));
+            }
+        }
+        let slot = self.alloc_local(&crate::runtime::term_names::term_key(name));
+        self.code.emit(OpCode::SetLocal(slot));
+        self.shadowed_sigilless_terms.insert(name.to_string());
+        self.sigilless_locals.remove(name);
+    }
+
+    /// The read of a bare `name` whose sigilless binding a scalar declaration
+    /// shadowed (see [`Compiler::shadow_sigilless_term`]); `false` when
+    /// `name` is not such a name.
+    // Cost: O(1) expected.
+    pub(super) fn emit_shadowed_sigilless_read(&mut self, name: &str) -> bool {
+        if !self.shadowed_sigilless_terms.contains(name) {
+            return false;
+        }
+        let key = crate::runtime::term_names::term_key(name);
+        if let Some(&slot) = self.local_map.get(key.as_str()) {
+            self.code.emit(OpCode::GetLocal(slot));
+        } else {
+            if !self.code.shadowed_sigilless_reads.contains(&key) {
+                self.code.shadowed_sigilless_reads.push(key.clone());
+            }
+            let idx = self.code.add_constant(Value::str(key));
+            self.code.emit(OpCode::GetGlobal(idx));
+        }
+        true
     }
 
     /// A lexical type declaration (`my class NAME`, `my role NAME`) shadows a

@@ -346,6 +346,11 @@ impl Compiler {
                     self.code.emit(OpCode::NqpOp { id, arity: 0 });
                     return;
                 }
+                // A sigilless binding whose key a same-named `my $name` took
+                // over (#11994): its value was parked under the term key.
+                if self.emit_shadowed_sigilless_read(name) {
+                    return;
+                }
                 // A lexical type shadowing an enclosing constant (#11517): the
                 // type's own `MY::` binding, read by name so a nested closure
                 // captures it. `GetBareWord` would find the constant's term key.
