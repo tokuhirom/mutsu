@@ -295,6 +295,7 @@ t/collections/lazy-seq/lazy-gather-and-junction.t
 t/collections/lazy-seq/lazy-gather-elems-cannot-lazy.t
 t/collections/lazy-seq/lazy-gather-grep-map-laziness.t
 t/collections/lazy-seq/lazy-generator-scan-strict-force.t
+t/collections/lazy-seq/lazy-grep-feed-prefix-pull.t
 t/collections/lazy-seq/lazy-grep-infinite-exclusive-range.t
 t/collections/lazy-seq/lazy-infinite-sequence-strict-force.t
 t/collections/lazy-seq/lazy-list-adaptors-stream.t
@@ -525,6 +526,7 @@ t/collections/set-bag-mix/quanthash-store-row.t
 t/collections/set-bag-mix/quanthash-subclass-backing.t
 t/collections/set-bag-mix/quanthash-subclass-qualified-name.t
 t/collections/set-bag-mix/quanthash-view-rows.t
+t/collections/set-bag-mix/quanthash-whatever-subscript.t
 t/collections/set-bag-mix/set-bag-mix-nested-array.t
 t/collections/set-bag-mix/set-bag-mix-which-keys.t
 t/collections/set-bag-mix/set-build-dynamic-hash-live.t
@@ -601,6 +603,7 @@ t/collections/subscript/hyper-postfix-slice.t
 t/collections/subscript/hyper-zen-slice-decontainerizes.t
 t/collections/subscript/hyperwhatever-and-lazy-slice-bind.t
 t/collections/subscript/incdec-autoviv-undefined-base.t
+t/collections/subscript/incdec-element-root-evaluated-once.t
 t/collections/subscript/incdec-element-typed-seed-and-object-hash-key.t
 t/collections/subscript/incdec-nested-keeps-caller-stack.t
 t/collections/subscript/incdec-subscript-evaluated-once.t
@@ -1092,6 +1095,7 @@ t/concurrency/thread-lock/atomic-read-gate.t
 t/concurrency/thread-lock/atomic-scalar-follows-its-binding.t
 t/concurrency/thread-lock/atomic-store-expression-and-metaop.t
 t/concurrency/thread-lock/atomic-subtract-assign.t
+t/concurrency/thread-lock/atomicint-cas-object-shadowed-by-inner-declaration.t
 t/concurrency/thread-lock/atomicint-class-body-static-attribute-default.t
 t/concurrency/thread-lock/atomicint-closure-reset-writeback.t
 t/concurrency/thread-lock/atomicint-rw-named-sub-prior-same-name.t
@@ -1297,6 +1301,7 @@ t/control/loop-expression-values.t
 t/control/loop-keep-trailing-say.t
 t/control/loop-label-in-expression-control.t
 t/control/loop-phaser-value-position-result.t
+t/control/loop-phasers-dynamic-next.t
 t/control/loop-spec-malformed.t
 t/control/modifier-cond-block-terminates-statement.t
 t/control/modifier-cond-ending-in-block.t
@@ -1644,6 +1649,7 @@ t/grammar/grammar-parse-rule-proto-candidate-fallback.t
 t/grammar/grammar-parse-rule-proto-sym-action.t
 t/grammar/grammar-per-match-dynvar-action.t
 t/grammar/grammar-plain-alias-no-action.t
+t/grammar/grammar-proto-bare-adverb-start-rule-action.t
 t/grammar/grammar-proto-candidate-direct-call.t
 t/grammar/grammar-proto-candidate-ref-no-use.t
 t/grammar/grammar-proto-ltm-fallback.t
@@ -2290,11 +2296,13 @@ t/modules/compunit/signature-literal-precomp-bytecode-hit.t
 t/modules/compunit/signature-literal-precomp-warm-cache.t
 t/modules/compunit/trait-mod-candidate-is-compunit-scoped.t
 t/modules/constant-package-alias-container-store.t
+t/modules/constant-package-alias-variable.t
 t/modules/core-skip-list.t
 t/modules/cross-module-short-name-types.t
 t/modules/declarator-doc-why-module-declarations.t
 t/modules/dynamic-var-not-package-qualified.t
 t/modules/end-phaser-module-order.t
+t/modules/enum-attr-default-cross-module.t
 t/modules/enum-member-nested-module-load.t
 t/modules/eval-context-package.t
 t/modules/eval-module-lexical-subs.t
@@ -2642,6 +2650,7 @@ t/modules/role-but-init-module-lexical-role.t
 t/modules/role-does-sibling-in-unit-module.t
 t/modules/role-group-module-candidate-mixin.t
 t/modules/role-method-closure-module-names.t
+t/modules/role-method-trait-package-how.t
 t/modules/role-type-object-package-scope.t
 t/modules/routine-do-bind-same-name-module.t
 t/modules/rw-arg-from-packageless-module-sub.t
@@ -3733,6 +3742,7 @@ t/oo/role/role-body-bind-group.t
 t/oo/role/role-body-class-is-composing-class.t
 t/oo/role/role-body-guard-parameterisation.t
 t/oo/role/role-body-lexicals-sub-parameterised.t
+t/oo/role/role-body-qualified-incdec-from-routine.t
 t/oo/role/role-body-sees-composing-class-attributes.t
 t/oo/role/role-body-statics-only-declared.t
 t/oo/role/role-body-sub-proto.t
@@ -4105,6 +4115,7 @@ t/rakuast/rakuast-placeholder-modifiers.t
 t/rakuast/rakuast-placeholders.t
 t/rakuast/rakuast-pointy-slurpy-params.t
 t/rakuast/rakuast-postfix-frozen-whatever.t
+t/rakuast/rakuast-postfix-grouping.t
 t/rakuast/rakuast-pre-post-phasers.t
 t/rakuast/rakuast-prefix-bitwise-negation.t
 t/rakuast/rakuast-proto-onlystar-coercion.t
@@ -4182,6 +4193,7 @@ t/rakuast/rakuast-uninitialized-decl-default.t
 t/rakuast/rakuast-unless.t
 t/rakuast/rakuast-until-loop.t
 t/rakuast/rakuast-use-pragma.t
+t/rakuast/rakuast-use-require-ctor.t
 t/rakuast/rakuast-use-statement.t
 t/rakuast/rakuast-user-control-keyword-subroutines.t
 t/rakuast/rakuast-user-routine-shadows-statement.t
@@ -4242,6 +4254,7 @@ t/regex/match/match-join-captures.t
 t/regex/match/match-method-rows.t
 t/regex/match/match-named-capture-kv-values-flatten.t
 t/regex/match/match-nonregex-matcher.t
+t/regex/match/match-not-associative.t
 t/regex/match/match-nth-ordinal.t
 t/regex/match/match-positional-iteration.t
 t/regex/match/match-quantified-group-capture-semantics.t
@@ -5674,6 +5687,7 @@ t/types/junction.t
 t/types/map.t
 t/types/mu-buildall-populate-rows.t
 t/types/mu-class-not-any.t
+t/types/mu-clone-new-rows.t
 t/types/mu-say-put-with-args-use-own-print.t
 t/types/mu-set-why-on-instance.t
 t/types/my-typed-decl-in-loop.t
@@ -5776,6 +5790,7 @@ t/types/state-typed-scalar-reads-as-type-object.t
 t/types/state-typed-scalar.t
 t/types/string/chomp-cr.t
 t/types/string/chop-numeric-arg.t
+t/types/string/concat-assign-local-in-place.t
 t/types/string/concat-assign-undefined-identity.t
 t/types/string/concat-user-stringy.t
 t/types/string/contains-ignoremark.t
@@ -5812,6 +5827,7 @@ t/types/string/sprintf-type-object-str-context.t
 t/types/string/sprintf-unsupported-directive.t
 t/types/string/sprintf-utf8-literal.t
 t/types/string/str-accepts-user-stringify.t
+t/types/string/str-arith-failure.t
 t/types/string/str-bitwise-compound-assign.t
 t/types/string/str-complex-string-coercion.t
 t/types/string/str-date-coercion.t
@@ -5947,6 +5963,7 @@ t/vm/binding/bind-expr-position-scalar-flattens.t
 t/vm/binding/bind-expression-level.t
 t/vm/binding/bind-hash-value-pairs.t
 t/vm/binding/bind-index-temp-not-an-outer-frame-source.t
+t/vm/binding/bind-into-non-container.t
 t/vm/binding/bind-invalid-lhs.t
 t/vm/binding/bind-outer-immutable-rebind-from-sub.t
 t/vm/binding/bind-pos-bare-value-readonly.t
