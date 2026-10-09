@@ -888,6 +888,14 @@ impl Compiler {
         // constant's is its term key (#9962).
         let storage = crate::runtime::term_names::stmt_decl_storage_name(stmt);
         let name = storage.as_deref().unwrap_or(name);
+        // The declaration was compiled under its BEGIN-time resolved name
+        // (`our &infix:["\c[DOUBLE PLUS]"]`), so read it back under that one.
+        let resolved = if crate::adverb_name::needs_interp(name) {
+            self.resolve_adverb_name(name).ok()
+        } else {
+            None
+        };
+        let name = resolved.as_deref().unwrap_or(name);
         if let Some(&slot) = self.local_map.get(name) {
             self.code.emit(OpCode::GetLocal(slot));
         } else if global_fallback {

@@ -635,6 +635,24 @@ impl Interpreter {
                     if live_single_is_captured || captured_match {
                         return self.call_user_family_by_name(&name, call_args);
                     }
+                    // The family is not reachable by its bare name from here
+                    // (a module's `our &op = &concat` called from the
+                    // importer), but its declaring package still names it:
+                    // dispatch through the qualified family so the ordinary
+                    // narrowness ranking applies, not declaration order.
+                    if let Some(pkg) = candidates.first().and_then(|c| match c.view() {
+                        ValueView::Sub(d) => Some(d.package),
+                        _ => None,
+                    }) && !crate::qualified::is_global_package(pkg)
+                    {
+                        let qname = crate::qualified::qualified(pkg, Symbol::intern(&name));
+                        let all_declared_there = candidates.iter().all(|c| {
+                            matches!(c.view(), ValueView::Sub(d) if d.package == pkg)
+                        });
+                        if all_declared_there && self.has_proto(qname.as_str()) {
+                            return self.call_user_family_by_name(qname.as_str(), call_args);
+                        }
+                    }
                     // A compunit-scoped family (#11004) that the calling unit
                     // cannot see by name, such as a module invoking a `&sha256`
                     // its importer passed in. Dispatch it from the unit that

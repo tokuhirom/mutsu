@@ -297,7 +297,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 // `┇` alias) exports a routine under the same `&name` a
                 // `sub name is export` would.
                 if *is_export && name.len() > 1 && name.starts_with('&') {
-                    self.export(name[1..].to_string());
+                    self.export(literal_marked_name(&name[1..]));
                 }
                 self.off_spine(|v| walk_stmt(v, stmt));
             }
@@ -424,4 +424,44 @@ impl<'ast> Visit<'ast> for DeclScan {
         }
         self.off_spine(|v| walk_expr(v, expr));
     }
+}
+
+/// An operator name whose `(...)` adverb value is a single string literal
+/// (`&infix:["\c[DOUBLE PLUS]"]`) spelled out, as the compiler resolves it at
+/// BEGIN time. The scan has no constant environment, so any other marked value
+/// keeps its sentinel spelling.
+// Cost: O(n), n = length of the name.
+fn literal_marked_name(name: &str) -> String {
+    use crate::adverb_name::INTERP_MARK;
+    if !crate::adverb_name::needs_interp(name) {
+        return name.to_string();
+    }
+    let mut out = String::with_capacity(name.len());
+    let mut rest = name;
+    while let Some(open) = rest.find(INTERP_MARK) {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + INTERP_MARK.len_utf8()..];
+        let Some(close) = after.find(INTERP_MARK) else {
+            return name.to_string();
+        };
+        let marked = &after[..close];
+        let literal = marked
+            .strip_prefix('(')
+            .and_then(|m| m.strip_suffix(')'))
+            .and_then(|content| crate::parser::parse_fragment(content).ok())
+            .and_then(|(stmts, _)| match stmts.as_slice() {
+                [Stmt::Expr(Expr::Literal(v))]
+                | [Stmt::SetLine(_), Stmt::Expr(Expr::Literal(v))] => Some(v.to_string_value()),
+                _ => None,
+            });
+        let Some(text) = literal else {
+            return name.to_string();
+        };
+        out.push('<');
+        out.push_str(&text);
+        out.push('>');
+        rest = &after[close + INTERP_MARK.len_utf8()..];
+    }
+    out.push_str(rest);
+    out
 }
