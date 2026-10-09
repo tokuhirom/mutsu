@@ -281,6 +281,15 @@ impl Interpreter {
         } else {
             None
         };
+        // #12456: a method that runs user code over the elements cannot hold the
+        // stripe, so it runs on a snapshot taken under it (ADR-0068 §16).
+        let target = if crate::value::container_lock::multi_mutator_threads_live()
+            && crate::value::container_lock::is_snapshot_read(method)
+        {
+            crate::value::container_lock::shared_snapshot(&target).unwrap_or(target)
+        } else {
+            target
+        };
         if !args.iter().any(|a| a.is_string_pair_value()) {
             return self.call_method_with_values_inner(target, method, args, true);
         }
