@@ -2157,3 +2157,19 @@ answer the receiver, the already-built instance (mutsu builds natively before th
 Left for #12423: `Mu.clone` (needs the typed-container registry reachable from a row) and `Mu.new` (about 40 per-type `new`
 sites, each interleaved with a "does the user class define `new`" check, so the constructors need that check as one guard
 first). Both stay in `native_mu_base_next_candidate`.
+
+### 9.48 Slice 4: `Mu.clone` and `Mu.new` are rows; the `Mu` base candidate is complete (2026-10-09)
+
+`refactor/12423-mu-clone-row` (the `Mu` item of #12423), after §9.47.
+
+- `Mu.clone`: the §9.38 obstacle (the typed-container registry) applies to cloning a *container* (`Array`, `Hash`), not to
+  the instance clone this bridge answers. That clone needs only the interpreter's class-attribute registry, which a
+  `Handler::Interp` row has, so `ctors_mop/mu_base.rs` holds an `OWNER_ONLY` row over `native_instance_clone_value`, the
+  function the direct `.clone` call shares. The container clones stay with their own rows.
+- `Mu.new`: an `OWNER_ONLY` row over `Interpreter::mu_new_base` (the nearest builtin ancestor's native constructor, the
+  named-arguments-only check, then `bless`), the body the bridge used to hold inline. It is the base of a *deferral* only.
+  The "user class defines `new`" guard the issue names as a prerequisite is for the **per-type** constructors, which this
+  step does not touch: a plain `Foo.new(...)` still reaches `methods_object_dispatch_new.rs`, and `native_mu_base_next_candidate`
+  is now four `invoke_owner_raw(&["Mu"], ..)` calls.
+- Still open on #12423: the per-type constructor rows and their shared guard, and deleting `native_mu_base_next_candidate`
+  with them.

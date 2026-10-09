@@ -4006,7 +4006,8 @@ impl Interpreter {
     /// the `callsame` base candidate of a user `clone` override
     /// (`native_mu_base_next_candidate`). `None` when the value is not an
     /// Instance.
-    pub(super) fn native_instance_clone_value(
+    // Cost: O(a) in the instance's attribute count.
+    pub(crate) fn native_instance_clone_value(
         &mut self,
         target: &Value,
         args: &[Value],
