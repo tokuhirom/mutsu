@@ -71,6 +71,7 @@ impl Compiler {
                 // single-pointy-param path does, so BareWord resolves to GetLocal.
                 if sp.sigilless {
                     compiler.sigilless_locals.insert(sp.name.clone());
+                    compiler.sigilless_declared.insert(sp.name.clone());
                 }
             }
             if let Some(nested) = &sp.sub_signature {
@@ -346,6 +347,7 @@ impl Compiler {
                 // GetLocal for them but not for `$`-sigiled params.
                 if pd.sigilless {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
+                    sub_compiler.sigilless_declared.insert(pd.name.clone());
                 }
             }
             // Also allocate locals for sub_signature parameters (array unpacking)
@@ -1378,6 +1380,7 @@ impl Compiler {
                 sub_compiler.declare_param(&pd.name);
                 if pd.sigilless {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
+                    sub_compiler.sigilless_declared.insert(pd.name.clone());
                 }
             }
             // A destructured sub-signature param (`-> (\i, \j) { i + j }`) carries

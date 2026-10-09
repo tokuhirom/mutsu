@@ -568,7 +568,10 @@ impl Compiler {
             .collect();
         self.push_local_scope();
         for s in &bind_prefix {
+            // Parameter bindings, not a user's `my $x` (see `decl_is_sigilless`).
+            self.decl_is_sigilless = matches!(s, Stmt::VarDecl { .. } | Stmt::SyntheticBlock(_));
             self.compile_stmt(s);
+            self.decl_is_sigilless = false;
         }
         // Hand the declarations to the body's frame without restoring anything
         // yet: the bindings stay visible until the body's scope exits.

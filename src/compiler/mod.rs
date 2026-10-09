@@ -1715,6 +1715,10 @@ pub(crate) struct Compiler {
     /// degrade to the literal name string once the creating frame is gone
     /// (escaping closure / `.^add_method`).
     enclosing_sigilless: std::collections::HashSet<String>,
+    /// The subset of `sigilless_locals` the program declared itself: `\\x`
+    /// parameters of the routine and `my \\x` bindings (not loop/`with`/`if`
+    /// pointy parameters). Scoped like `sigilless_locals`.
+    sigilless_declared: std::collections::HashSet<String>,
     /// Names whose visible sigilless binding (`\\t` parameter, `my \\t`) was
     /// shadowed by a same-spelled scalar declaration (`my $t`, #11994). Both
     /// symbols share the scalar storage key `t`, so the declaration first
@@ -1722,8 +1726,9 @@ pub(crate) struct Compiler {
     /// (`runtime::term_names::term_key`), and a bare `t` reads that copy for
     /// the rest of the scope. Handed down to nested closures.
     shadowed_sigilless_terms: std::collections::HashSet<String>,
-    /// Set by a block that declares `my \\x` just before compiling that
-    /// `VarDecl`, so the declaration is not mistaken for a scalar `my $x`.
+    /// Set just before compiling a `VarDecl` that is a sigilless declaration
+    /// (`my \\x`) or a synthesized parameter binding (`for`/`with`/`if`
+    /// pointy params), so it is not mistaken for a user's scalar `my $x`.
     decl_is_sigilless: bool,
     /// Local names visible in enclosing compiled frames. A same-named local
     /// declaration in this compiler shadows a captured binding even though the
@@ -2022,6 +2027,7 @@ impl Compiler {
             outer_constant_names: std::collections::HashSet::new(),
             sigilless_locals: std::collections::HashSet::new(),
             enclosing_sigilless: std::collections::HashSet::new(),
+            sigilless_declared: std::collections::HashSet::new(),
             shadowed_sigilless_terms: std::collections::HashSet::new(),
             decl_is_sigilless: false,
             enclosing_local_names: std::collections::HashSet::new(),

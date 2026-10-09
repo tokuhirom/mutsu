@@ -1088,6 +1088,8 @@ impl Compiler {
                     .patch_loop_exit_guard(idx, LoopExitGuardField::End);
             }
             Stmt::SyntheticBlock(stmts) => {
+                // Set by a caller that binds parameters (the `for` bind stmts).
+                let params_bind = std::mem::take(&mut self.decl_is_sigilless);
                 // Detect `:=` bind context for `@` variables: the parser wraps
                 // `my @a := expr` in a SyntheticBlock containing VarDecl followed
                 // by `__mutsu_record_bound_array_len`.  Set bind_vardecl so the
@@ -1149,6 +1151,7 @@ impl Compiler {
                         // `\x = ...` binds the value itself — no Scalar
                         // container, so SetLocal must not itemize it).
                         self.sigilless_locals.insert(name.clone());
+                        self.sigilless_declared.insert(name.clone());
                         let key = crate::runtime::sigilless_readonly_key(name);
                         let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));
                         let false_idx = self.code.add_constant(Value::FALSE);
@@ -1167,8 +1170,9 @@ impl Compiler {
                         self.code.emit(OpCode::SinkPop(false, true));
                         continue;
                     }
-                    self.decl_is_sigilless = matches!(s, Stmt::VarDecl { name, .. }
-                        if has_mark_sigilless || sigilless_readonly_names.contains(name));
+                    self.decl_is_sigilless = params_bind
+                        || matches!(s, Stmt::VarDecl { name, .. }
+                            if has_mark_sigilless || sigilless_readonly_names.contains(name));
                     self.compile_stmt(s);
                     self.decl_is_sigilless = false;
                 }
@@ -1199,6 +1203,7 @@ impl Compiler {
                 // MarkSigillessReadonly this does NOT set the readonly flag: a typed
                 // sigilless bind (`my Int \d := 7`) keeps container mutability.
                 self.sigilless_locals.insert(name.clone());
+                self.sigilless_declared.insert(name.clone());
                 // Whether this term is writable depends on what the declaration
                 // bound it to, which only the runtime knows. The verdict is
                 // taken with the bind source still on the stack, by the
@@ -1213,6 +1218,7 @@ impl Compiler {
                 // Track sigilless locals so BareWord compilation can
                 // distinguish them from `$`-sigiled variables.
                 self.sigilless_locals.insert(name.clone());
+                self.sigilless_declared.insert(name.clone());
                 // Set __mutsu_sigilless_readonly::NAME = true in env
                 let key = crate::runtime::sigilless_readonly_key(name);
                 let key_idx = self.code.add_constant(Value::str(key.as_str().to_string()));

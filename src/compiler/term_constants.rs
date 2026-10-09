@@ -56,8 +56,14 @@ impl Compiler {
         // is being declared by this very `VarDecl` (a `-> \x` or `my (\a, \b)`
         // binding is a `VarDecl` of the bare name), not shadowed by it.
         let slot = self.local_map.get(name).copied();
+        // Only a binding the program wrote itself counts (`sigilless_declared`):
+        // the `for`/`with`/`if` pointy parameters of the same spelling are
+        // compiler-synthesized `VarDecl`s and register in `sigilless_locals`
+        // too, but are rebinding, not shadowing.
         let own = self.sigilless_locals.contains(name);
-        if own && slot.is_none() || !own && !self.enclosing_sigilless.contains(name) {
+        if own && (slot.is_none() || !self.sigilless_declared.contains(name))
+            || !own && !self.enclosing_sigilless.contains(name)
+        {
             return;
         }
         match slot.filter(|_| own) {
