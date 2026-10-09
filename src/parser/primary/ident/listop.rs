@@ -87,7 +87,10 @@ pub(crate) fn make_call_expr(name: String, input: &str, args: Vec<Expr>) -> Expr
         name.as_str(),
         "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
     ) || name == "caller"
-        || matches!(name.as_str(), "say" | "put" | "print" | "note"))
+        || matches!(
+            name.as_str(),
+            "say" | "put" | "print" | "note" | "die" | "fail"
+        ))
         && (crate::parser::stmt::simple::is_imported_function(&name)
             || crate::parser::stmt::simple::is_user_declared_sub(&name))
     {
