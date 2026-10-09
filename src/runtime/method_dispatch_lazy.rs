@@ -44,40 +44,22 @@ impl PendingMethodDispatch {
 }
 
 impl Interpreter {
-    /// The subscript/`STORE` protocol whose native implementation on a
-    /// container subclass's backing storage is a deferral base candidate. See
-    /// `container_protocol_override` in [`Self::push_method_dispatch_frame`].
-    fn is_container_protocol_method(method: &str) -> bool {
+    /// Whether `invocant` is an instance of a class that inherits a builtin
+    /// container, so its data lives in a backing attribute
+    /// (`__mutsu_hash_storage` / `__mutsu_array_storage` / `__baggy_data__`) and
+    /// the native behavior on that storage is a deferral base candidate
+    /// (`native_storage_base_entry`). Decided by the receiver VALUE, not its
+    /// class name: a role punned onto a container (`my %h is MK`) has a role as
+    /// its receiver class and still carries the storage.
+    // Cost: O(1), three attribute probes.
+    fn invocant_carries_native_storage(invocant: &Value) -> bool {
         matches!(
-            method,
-            "AT-KEY"
-                | "ASSIGN-KEY"
-                | "BIND-KEY"
-                | "DELETE-KEY"
-                | "EXISTS-KEY"
-                | "AT-POS"
-                | "ASSIGN-POS"
-                | "BIND-POS"
-                | "DELETE-POS"
-                | "EXISTS-POS"
-                | "STORE"
+            invocant.view(),
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_array_storage")
+                    || attributes.contains_key("__mutsu_hash_storage")
+                    || attributes.contains_key("__baggy_data__")
         )
-    }
-
-    /// True when `class_key` inherits a builtin container whose data lives in a
-    /// backing attribute (`__mutsu_hash_storage` / `__mutsu_array_storage` /
-    /// `__baggy_data__`), i.e. one of the `native_*_storage_next_candidate`
-    /// fallbacks can serve as a deferral base.
-    fn class_has_native_container_backing(&mut self, class_key: &str) -> bool {
-        self.class_mro(class_key).iter().any(|n| {
-            let name = n.resolve();
-            Self::is_associative_base(&name)
-                || Self::is_positional_base(&name)
-                || matches!(
-                    name.as_str(),
-                    "Set" | "SetHash" | "Bag" | "BagHash" | "Mix" | "MixHash"
-                )
-        })
     }
 
     // Cost: O(1) in a program that names no deferral builtin; otherwise
@@ -299,8 +281,11 @@ impl Interpreter {
         // is a base candidate that is not a `MethodDef`, so without a frame the
         // override's `nextsame`/`callsame` answered Nil and the write was
         // dropped (`AccountableBagHash`'s `multi method ASSIGN-KEY`).
-        let container_protocol_override = Self::is_container_protocol_method(method_name)
-            && self.class_has_native_container_backing(receiver_class)
+        // `Mu`'s own names (`new`, `BUILDALL`, `POPULATE`, `clone`) are answered
+        // by the `Mu` base candidate above the storage's: `Array.new` on the
+        // backing array is not what `nextwith` from a user `new` reaches.
+        let container_protocol_override = Self::invocant_carries_native_storage(&invocant)
+            && !matches!(method_name, "new" | "BUILDALL" | "POPULATE" | "clone")
             && self.has_user_method_including_role(receiver_class, method_name);
         // A user method that shadows an ancestor's auto-generated public
         // attribute accessor of the same name (`has $.body = ""` in a parent,
@@ -449,7 +434,7 @@ impl Interpreter {
                     want_container: false,
                 });
             }
-            if core_type_override || any_base_override {
+            if core_type_override || any_base_override || container_protocol_override {
                 remaining.push(super::DeferralEntry::Native {
                     name: method_name.to_string(),
                 });
