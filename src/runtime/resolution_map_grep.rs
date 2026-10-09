@@ -281,7 +281,29 @@ pub(crate) fn capture_wins_over_caller(
             || free_vars.is_some_and(|free| free.contains(k)))
 }
 
+
 impl Interpreter {
+    /// Run one call of an inlined map/grep/first callback body.
+    ///
+    /// A `sub` declared in the callback is lexical to that one call: with
+    /// `declares_routines` the routine registry is put back afterwards, so the
+    /// next call (or another callback declaring a same-named routine) is not a
+    /// redeclaration.
+    // Cost: the body, plus O(1) for the registry snapshot when `declares_routines`.
+    pub(super) fn run_loop_body(
+        &mut self,
+        code: &CompiledCode,
+        compiled_fns: &CompiledFns,
+        declares_routines: bool,
+    ) -> Result<(), RuntimeError> {
+        let snapshot = declares_routines.then(|| self.snapshot_routine_registry());
+        let result = self.run_reuse(code, compiled_fns);
+        if let Some(snapshot) = snapshot {
+            self.restore_routine_registry(snapshot);
+        }
+        result
+    }
+
     /// Compile a map/grep/`.first` callback's tail-normalized body for the
     /// inline-loop fast path, reusing a cached compile when this exact
     /// closure literal was already compiled at this lexical nesting. See
@@ -791,16 +813,7 @@ impl Interpreter {
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     vm.mark_placeholder_params_readonly(&data.params);
                     set_loop_topic_readonly(vm, immutable_topic);
-                    // A `sub` declared in the callback is lexical to one call of
-                    // it: put the routine registry back afterwards so the next
-                    // call (or another callback declaring a same-named routine)
-                    // is not a redeclaration.
-                    let routine_snapshot = declares_routines.then(|| vm.snapshot_routine_registry());
-                    let run_result = vm.run_reuse(code, compiled_fns);
-                    if let Some(snapshot) = routine_snapshot {
-                        vm.restore_routine_registry(snapshot);
-                    }
-                    match run_result {
+                    match vm.run_loop_body(code, compiled_fns, declares_routines) {
                         Ok(()) => {
                             let val = vm
                                 .last_stack_value()
@@ -1099,16 +1112,7 @@ impl Interpreter {
                         crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                     vm.mark_placeholder_params_readonly(&data.params);
                     set_loop_topic_readonly(vm, immutable_topic);
-                    // A `sub` declared in the callback is lexical to one call of
-                    // it: put the routine registry back afterwards so the next
-                    // call (or another callback declaring a same-named routine)
-                    // is not a redeclaration.
-                    let routine_snapshot = declares_routines.then(|| vm.snapshot_routine_registry());
-                    let run_result = vm.run_reuse(code, compiled_fns);
-                    if let Some(snapshot) = routine_snapshot {
-                        vm.restore_routine_registry(snapshot);
-                    }
-                    match run_result {
+                    match vm.run_loop_body(code, compiled_fns, declares_routines) {
                         Ok(()) => {
                             let pred = vm
                                 .last_stack_value()

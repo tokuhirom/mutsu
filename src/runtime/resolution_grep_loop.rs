@@ -236,6 +236,8 @@ impl Interpreter {
                 None => self.inline_loop_plan(&data, InlineLoopKind::Grep, slot),
             };
             let (code, compiled_fns) = (&plan.code, &plan.fns);
+            let declares_routines =
+                crate::compiler::Compiler::stmts_declare_routines(&data.body);
             let topic_source_key = crate::symbol::wk::grep_topic_source();
             let saved = self.enter_inline_loop_env(&data, &plan);
 
@@ -338,7 +340,7 @@ impl Interpreter {
                             crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
                         vm.mark_placeholder_params_readonly(&data.params);
                         super::resolution_map_grep::set_loop_topic_readonly(vm, immutable_topic);
-                        match vm.run_reuse(code, compiled_fns) {
+                        match vm.run_loop_body(code, compiled_fns, declares_routines) {
                             Ok(()) => {
                                 let pred = vm
                                     .last_stack_value()
