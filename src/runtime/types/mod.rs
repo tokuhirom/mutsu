@@ -857,7 +857,19 @@ impl Interpreter {
         // attribute yields that List instead of its elements (YAMLish's
         // `Sequence.new(:$elems)`, where `$elems` came out of a list-assignment
         // destructure).
-        let value = if name.starts_with('@') {
+        let value = if name.starts_with("@!") || name.starts_with("@.") {
+            // `:@!attr = Empty` / `= ()` initialises an `@` attribute, which is
+            // always an Array: a Slip or List left in the slot would make a
+            // later `self.attr = |@x` store a Slip.
+            let value = Self::normalize_positional_param_value(value);
+            match value.view() {
+                ValueView::Slip(items) => Value::real_array(items.to_vec()),
+                ValueView::Array(items, ArrayKind::List) => {
+                    Value::array_with_kind(items.clone(), ArrayKind::Array)
+                }
+                _ => value,
+            }
+        } else if name.starts_with('@') {
             Self::normalize_positional_param_value(value)
         } else {
             value
