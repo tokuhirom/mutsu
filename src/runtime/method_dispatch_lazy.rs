@@ -272,9 +272,9 @@ impl Interpreter {
         // dispatcher, but a method call always establishes its own, so the leak
         // is only ever wrong.)
         let new_base_override =
-            method_name == "new" && self.has_user_method(receiver_class, method_name);
+            method_name == "new" && self.has_user_method_including_role(receiver_class, method_name);
         let mu_base_override = matches!(method_name, "BUILDALL" | "POPULATE" | "clone")
-            && self.has_user_method(receiver_class, method_name);
+            && self.has_user_method_including_role(receiver_class, method_name);
         // A user (or role-composed) override of a native container protocol
         // method on an `is Hash`/`is Array`/`is BagHash`-style subclass is the
         // same situation: the native behavior on the instance's backing storage
