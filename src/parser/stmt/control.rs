@@ -459,11 +459,11 @@ mod with_stmt;
 // Re-exports preserving each function's original visibility (all `pub(super)`).
 pub(crate) use conditionals::if_pointy_clause;
 pub(super) use conditionals::{if_stmt, unless_stmt};
+pub(crate) use for_loops::placeholder_loop_params;
 pub(super) use for_loops::{
     for_stmt, foreach_stmt, hyper_for_body, hyper_for_stmt, lazy_for_body, race_for_body,
     race_for_stmt,
 };
-pub(crate) use for_loops::placeholder_loop_params;
 pub(super) use for_params::parse_for_params;
 pub(crate) use given_when::given_pointy_body;
 pub(super) use given_when::{default_stmt, given_stmt, when_stmt};

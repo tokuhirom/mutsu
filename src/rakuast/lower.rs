@@ -118,12 +118,10 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             // is then called with no arguments and dies "Too few positionals").
             let expression = named_child(node, "expression")?;
             if expression.class == RakuAstClass::Block
-                && !node.fields.iter().any(|f| {
-                    matches!(
-                        f.name,
-                        Some("loop-modifier" | "condition-modifier")
-                    )
-                })
+                && !node
+                    .fields
+                    .iter()
+                    .any(|f| matches!(f.name, Some("loop-modifier" | "condition-modifier")))
             {
                 return Ok(Stmt::Block(lower_block(expression)?));
             }

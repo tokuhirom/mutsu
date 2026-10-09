@@ -47,6 +47,11 @@ pub(super) fn is_thunk(node: &RakuAstNode) -> bool {
 pub(super) fn unmark(node: &RakuAstNode) -> RakuAstNode {
     RakuAstNode {
         class: node.class,
-        fields: node.fields.iter().filter(|f| !is_marker(f)).cloned().collect(),
+        fields: node
+            .fields
+            .iter()
+            .filter(|f| !is_marker(f))
+            .cloned()
+            .collect(),
     }
 }
