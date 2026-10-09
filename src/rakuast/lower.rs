@@ -273,6 +273,10 @@ const SHADOWABLE_STATEMENTS: [&str; 14] = [
 ];
 
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    // `my $x = 1 and 2`: a declaration is the leftmost operand of the statement.
+    if let Some(stmt) = super::decl_tail::lower(node) {
+        return stmt;
+    }
     match node.class {
         RakuAstClass::StatementPrefixReact => super::react::lower_react(node),
         // A bare `done` is the react/supply completion unless a lexical
