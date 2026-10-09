@@ -8,6 +8,7 @@ pub(crate) mod binding_desc;
 mod builtin_types;
 mod builtins;
 pub(crate) mod chain_compare;
+mod compiled_lazy;
 mod compiled_operator;
 mod compiler;
 pub mod crash_report;
@@ -245,7 +246,9 @@ pub fn dump_bytecode(input: &str, source_file: Option<&str>) -> Result<String, R
     let mut names: Vec<crate::symbol::Symbol> = compiled_fns.keys().copied().collect();
     names.sort_by_key(|s| s.resolve());
     for name in names {
-        let cf = &compiled_fns[&name];
+        let Some(cf) = compiled_fns.get(&name) else {
+            continue;
+        };
         disasm_tree(
             &mut out,
             &cf.code,

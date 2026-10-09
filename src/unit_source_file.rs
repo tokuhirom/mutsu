@@ -186,7 +186,7 @@ mod tests {
         let mut seen_module = false;
         let mut seen_script = false;
         for def in interp.registry().functions.values() {
-            let Some(compiled) = &def.compiled else {
+            let Some(compiled) = def.compiled_fn() else {
                 continue;
             };
             let mut chunks = Vec::new();

@@ -2713,7 +2713,7 @@ impl Interpreter {
         // routine's. A proto declared with signature *alternates* shares one
         // `state` cell across them the same way an ordinary multi does
         // (`t/multi-signature-alternates.t`).
-        let (cf, pkg_sym) = if let Some(compiled) = proto.compiled.clone() {
+        let (cf, pkg_sym) = if let Some(compiled) = proto.compiled_fn().cloned() {
             (compiled, proto.package)
         } else {
             // Fallback for a proto with no plan-compiled body — defensive; every

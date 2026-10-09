@@ -508,7 +508,7 @@ impl Interpreter {
         // `def.name` / `def.package` are already interned; only the probes
         // below that still take `&str` need the text form (#7766).
         let name = def.name.resolve();
-        let cf = match &def.compiled {
+        let cf = match def.compiled_fn() {
             Some(compiled) => Arc::clone(compiled),
             None => self.otf_compile_function_def(def),
         };
@@ -724,7 +724,7 @@ impl Interpreter {
         if let Some(code) = &def.dispatchee {
             return self.vm_call_on_value(code.clone(), args, None);
         }
-        let cf = match &def.compiled {
+        let cf = match def.compiled_fn() {
             Some(compiled) => Arc::clone(compiled),
             None => self.otf_compile_function_def(def),
         };

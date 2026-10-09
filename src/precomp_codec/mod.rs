@@ -36,7 +36,7 @@ pub(crate) use compiled::{decode_compiled, encode_compiled};
 /// What the decoder carries: the entry's symbol table, already interned, and
 /// shared with every nested decode of the same entry.
 pub(crate) struct DecodeCtx {
-    symbols: std::rc::Rc<[Symbol]>,
+    symbols: std::sync::Arc<[Symbol]>,
 }
 
 /// The string table an [`encode`] call is building.
@@ -51,7 +51,7 @@ thread_local! {
     /// The symbols of the entry being decoded, for a value that reaches the
     /// codec through a serde impl and so cannot see the decoder's context
     /// (see [`decode_nested`]).
-    static DECODE_SYMBOLS: RefCell<Option<std::rc::Rc<[Symbol]>>> = const { RefCell::new(None) };
+    static DECODE_SYMBOLS: RefCell<Option<std::sync::Arc<[Symbol]>>> = const { RefCell::new(None) };
 }
 
 /// Whether an [`encode`] call is running on this thread.
@@ -119,8 +119,8 @@ pub(crate) fn encode<T: Encode>(value: &T) -> Result<Vec<u8>, EncodeError> {
 // interned once).
 pub(crate) fn decode<T: Decode<DecodeCtx>>(bytes: &[u8]) -> Result<T, DecodeError> {
     let (strings, used): (Vec<&str>, usize) = bincode::borrow_decode_from_slice(bytes, config())?;
-    let symbols: std::rc::Rc<[Symbol]> = strings.iter().map(|s| Symbol::intern(s)).collect();
-    struct Restore(Option<std::rc::Rc<[Symbol]>>);
+    let symbols: std::sync::Arc<[Symbol]> = strings.iter().map(|s| Symbol::intern(s)).collect();
+    struct Restore(Option<std::sync::Arc<[Symbol]>>);
     impl Drop for Restore {
         fn drop(&mut self) {
             let outer = self.0.take();
@@ -131,6 +131,30 @@ pub(crate) fn decode<T: Decode<DecodeCtx>>(bytes: &[u8]) -> Result<T, DecodeErro
     let _restore = Restore(outer);
     let ctx = DecodeCtx { symbols };
     let (value, _) = bincode::decode_from_slice_with_context(&bytes[used..], config(), ctx)?;
+    Ok(value)
+}
+
+/// Decode a body written by [`encode_nested`], after the entry it belongs to was
+/// decoded: `symbols` is that entry's table. Serde-decoded symbols inside the body
+/// read the thread-local table, so it is installed around the call.
+// Cost: O(n), n = size of the body.
+pub(crate) fn decode_body<T: Decode<DecodeCtx>>(
+    bytes: &[u8],
+    symbols: &std::sync::Arc<[Symbol]>,
+) -> Result<T, DecodeError> {
+    struct Restore(Option<std::sync::Arc<[Symbol]>>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let outer = self.0.take();
+            DECODE_SYMBOLS.with(|s| *s.borrow_mut() = outer);
+        }
+    }
+    let outer = DECODE_SYMBOLS.with(|s| s.borrow_mut().replace(symbols.clone()));
+    let _restore = Restore(outer);
+    let ctx = DecodeCtx {
+        symbols: symbols.clone(),
+    };
+    let (value, _) = bincode::decode_from_slice_with_context(bytes, config(), ctx)?;
     Ok(value)
 }
 

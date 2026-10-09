@@ -22,7 +22,7 @@ mod function;
 mod trir;
 
 use super::DecodeCtx;
-use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction};
+use crate::opcode::{CompiledCode, CompiledFns};
 use crate::symbol::Symbol;
 use bincode::de::Decoder;
 use bincode::enc::Encoder;
@@ -149,31 +149,48 @@ fn require_empty(empty: bool, what: &'static str) -> Result<(), EncodeError> {
     }
 }
 
-/// The routine table, sorted by key; each routine is decoded into a fresh
-/// table, which mints its own version token.
+/// The routine table, sorted by key. Each entry is `key, nested-export flag, body`,
+/// the body being the routine's own encoding as a length-prefixed byte string, so a
+/// decoded table can leave a body encoded until something calls the routine
+/// (ADR-12026 §2.2). Each routine is decoded into a fresh table, which mints its own
+/// version token.
 impl Encode for CompiledFns {
     // Cost: O(n), n = size of the routines.
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
-        let mut entries: Vec<(&Symbol, &Arc<CompiledFunction>)> = self.iter().collect();
+        let mut entries: Vec<(&Symbol, &Arc<crate::compiled_lazy::LazyFn>)> =
+            self.iter_lazy().collect();
         entries.sort_by(|a, b| a.0.as_str().cmp(b.0.as_str()));
         (entries.len() as u64).encode(encoder)?;
-        for (key, func) in entries {
+        for (key, slot) in entries {
             key.encode(encoder)?;
-            func.as_ref().encode(encoder)?;
+            // The bytes of a still-encoded body index the table it was read with,
+            // not this one, so the body is decoded and written afresh.
+            let func = slot.get();
+            func.has_nested_export_plans().encode(encoder)?;
+            super::encode_nested(func.as_ref())?.encode(encoder)?;
         }
         Ok(())
     }
 }
 
 impl Decode<DecodeCtx> for CompiledFns {
-    // Cost: O(n), n = size of the routines.
+    // Cost: O(n), n = bytes of the routines (copied, not decoded).
     fn decode<D: Decoder<Context = DecodeCtx>>(decoder: &mut D) -> Result<Self, DecodeError> {
         let len = u64::decode(decoder)? as usize;
         let mut fns = CompiledFns::default();
         for _ in 0..len {
             let key = Symbol::decode(decoder)?;
-            let func = CompiledFunction::decode(decoder)?;
-            fns.insert_shared(key, Arc::new(func));
+            let nested_exports = bool::decode(decoder)?;
+            let bytes = Vec::<u8>::decode(decoder)?;
+            let symbols = decoder.context().symbols.clone();
+            fns.insert_lazy(
+                key,
+                Arc::new(crate::compiled_lazy::LazyFn::encoded(
+                    bytes,
+                    symbols,
+                    nested_exports,
+                )),
+            );
         }
         Ok(fns)
     }
