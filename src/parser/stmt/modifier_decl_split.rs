@@ -148,7 +148,17 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
         || decl.has_nested_group
         || decl.type_constraint.is_some()
         || decl.group_default.is_some()
-        || !decl.vars.iter().all(|v| v.is_plain())
+        || !decl.vars.iter().all(|v| {
+            !v.is_slurpy
+                && !v.is_optional
+                && !v.is_named
+                && v.default.is_none()
+                && v.per_var_type_constraint.is_none()
+                && v.where_constraint.is_none()
+                && !v.sigilless
+                && v.literal_value.is_none()
+                && v.param_trait.is_none()
+        })
     {
         return None;
     }
@@ -170,6 +180,7 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
     let rhs = Expr::Call {
         name: Symbol::intern("__mutsu_list_assign_rhs"),
         args: vec![init.rhs.clone()],
+        listop: false,
     };
     let assign = Stmt::Expr(Expr::Call {
         name: Symbol::intern("__mutsu_assign_callable_lvalue"),
@@ -178,6 +189,7 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
             Expr::ArrayLiteral(Vec::new()),
             rhs,
         ],
+        listop: false,
     });
     let gated = Stmt::If {
         cond: effective_cond.clone(),
