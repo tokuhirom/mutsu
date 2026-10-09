@@ -400,7 +400,7 @@ mod reduced_subrule_log_tests {
             ],
             seen: Default::default(),
         };
-        let surviving = [("a", 0, 1), ("b", 0, 1), ("a", 1, 2)].map(|(r, f, t)| (r.to_string(), f, t)).into_iter().collect();
+        let surviving = [("a", 0, 1), ("b", 0, 1), ("a", 1, 2)].into_iter().collect();
         let repeated = log.into_repeated_entries(|| surviving);
         assert_eq!(repeated.len(), 1);
         assert_eq!(repeated[0].0, "a");
