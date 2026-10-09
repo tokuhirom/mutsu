@@ -837,6 +837,18 @@ impl Interpreter {
                     h.remove(&idx.to_string_value());
                 }
             });
+        } else if delete_after && var_name.is_none() && target_is_real_hash {
+            // A subscript on a non-`%` expression (`$h<a b>:delete:kv` over a
+            // scalar holding a Hash, `($x // {})<a>:delete:k`) names no
+            // variable, but the Hash value is the shared container itself, so
+            // remove the keys from it directly.
+            let mut container = target.clone();
+            container.with_hash_mut(|map| {
+                let h = crate::value::gc_data_mut(map);
+                for idx in &indices {
+                    h.remove(&idx.to_string_value());
+                }
+            });
         }
 
         Ok(Self::format_adverb_rows(rows, kind, keep_missing, is_multi))

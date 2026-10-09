@@ -342,6 +342,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         body_end: u32,
+        restore_outer_topic: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -378,6 +379,7 @@ impl Interpreter {
         // the body and is restored afterwards.
         let saved_container_ref = self.take_container_ref_for(code);
         let saved_topic_source = self.topic_state.topic_source_var.take();
+        let saved_source_for_restore = saved_topic_source.clone();
         let saved_container_source = self.topic_state.topic_container_source.take();
         if let Some((src, _)) = &saved_container_ref
             && element_source.is_none()
@@ -390,12 +392,35 @@ impl Interpreter {
         if let Some(slot) = topic_local_slot {
             self.locals[slot] = topic.clone();
         }
+        // A pointy block (`do given X -> $p { ... }`) reads the topic once for
+        // its synthetic parameter declaration via `GetGivenPointyTopic`, same
+        // as the statement-position `Given` (which pushes it when the body
+        // binds one). Pushing unconditionally is O(1) and harmless otherwise.
+        let given_pointy_topic_value_depth = self.topic_state.given_pointy_topic_values.len();
+        self.topic_state
+            .given_pointy_topic_values
+            .push(topic.clone().into_deref());
+        // The generated declaration closes this save right after binding
+        // (`ExitPointyTopic`); drained below if the body exits early.
+        let saved_pointy_depth = self.topic_state.topic_source_save_stack.len();
+        if restore_outer_topic {
+            self.topic_state.topic_source_save_stack.push((
+                saved_topic.clone().unwrap_or(Value::NIL),
+                saved_source_for_restore.clone(),
+            ));
+        }
         self.env_mut().insert("_".to_string(), topic);
         loan_env!(self, set_when_matched(false));
 
         let mut last = Value::NIL;
         let stack_base = self.stack.len();
         let body_result = self.run_range(code, body_start, end, compiled_fns);
+        self.topic_state
+            .given_pointy_topic_values
+            .truncate(given_pointy_topic_value_depth);
+        while self.topic_state.topic_source_save_stack.len() > saved_pointy_depth {
+            self.topic_state.topic_source_save_stack.pop();
+        }
         match body_result {
             Ok(()) => {
                 if self.stack.len() > stack_base {
