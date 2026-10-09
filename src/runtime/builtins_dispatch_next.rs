@@ -814,7 +814,7 @@ impl Interpreter {
     /// a `MethodDef`, so the regular MRO chain never reaches it (mirrors
     /// `native_metamodel_next_candidate`). YAMLish relies on this: its
     /// `method parse` wraps the native parse to inject `:actions(Actions)`.
-    fn native_grammar_parse_next_candidate(
+    pub(super) fn native_grammar_parse_next_candidate(
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
@@ -827,18 +827,9 @@ impl Interpreter {
             return None;
         }
         let frame = self.dispatch.method_dispatch_stack.last()?;
-        let receiver_class = frame.receiver_class.clone();
-        let orig_args = frame.args.clone();
-        if !self.class_is_grammar(&receiver_class) {
-            return None;
-        }
-        let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(orig_args);
-        Some(self.dispatch_instance_parse(
-            frame.invocant.clone(),
-            &receiver_class,
-            &method_name,
-            &args,
-        ))
+        let mut args = vec![frame.invocant.clone()];
+        args.extend(override_args.map(<[Value]>::to_vec).unwrap_or_else(|| frame.args.clone()));
+        crate::builtins::method_table::invoke_owner_raw(self, &["Grammar"], &method_name, &args)
     }
 
     /// Shared implementation for callsame/nextsame/callwith/nextwith.
