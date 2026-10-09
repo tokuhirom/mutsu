@@ -1,6 +1,9 @@
 use super::*;
 use super::dispatch_candidates::RankProfile;
 
+/// (literals, distance, narrowness, profile) of one matched method candidate.
+type MethodRank = (usize, usize, (usize, usize, usize, usize), RankProfile);
+
 impl Interpreter {
     /// Number of positional parameters that participate in method specificity.
     /// Named and variadic parameters bind differently from ordinary positions.
@@ -83,7 +86,7 @@ impl Interpreter {
         let related = |a: Symbol, b: Symbol| self.nominal_types_related(a, b);
         // (literals, distance, narrowness) -- the order `pick_method_winner`
         // applies its filters in; the first is higher-is-narrower.
-        let keys: Vec<(usize, usize, (usize, usize, usize, usize), RankProfile)> = all_matches
+        let keys: Vec<MethodRank> = all_matches
             .iter()
             .map(|(_, def)| {
                 let literals = def
