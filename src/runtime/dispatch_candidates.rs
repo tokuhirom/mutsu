@@ -69,12 +69,16 @@ const PROFILE_LEN: usize = 6;
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct RankProfile {
     scores: [u16; PROFILE_LEN],
+    /// Each parameter's nominal type (`None`: not recorded), so a score
+    /// difference is only read as "narrower" between related types.
+    nominal: [Option<Symbol>; PROFILE_LEN],
     refined: bool,
 }
 
 impl RankProfile {
     const EMPTY: RankProfile = RankProfile {
         scores: [u16::MAX; PROFILE_LEN],
+        nominal: [None; PROFILE_LEN],
         refined: false,
     };
 
@@ -83,13 +87,23 @@ impl RankProfile {
     /// the two carries a refinement (a purely nominal split stays the
     /// ambiguity the summed key reports).
     // Cost: O(1), the profile length is a constant.
-    fn incomparable(&self, other: &RankProfile) -> bool {
+    fn incomparable(&self, other: &RankProfile, related: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
         if !(self.refined || other.refined) {
             return false;
         }
         let (mut self_wins, mut other_wins) = (false, false);
-        for (a, b) in self.scores.iter().zip(other.scores.iter()) {
-            if *a == u16::MAX || *b == u16::MAX {
+        for i in 0..PROFILE_LEN {
+            let (a, b) = (self.scores[i], other.scores[i]);
+            if a == u16::MAX || b == u16::MAX {
+                continue;
+            }
+            // Unrelated nominal types (`Node` refined by a subset vs an
+            // unrelated role) are tied in rakudo's per-parameter comparison;
+            // their distances and the refinement bit say nothing.
+            if let (Some(na), Some(nb)) = (self.nominal[i], other.nominal[i])
+                && na != nb
+                && !related(na, nb)
+            {
                 continue;
             }
             self_wins |= a < b;
@@ -191,8 +205,19 @@ impl Interpreter {
 
     /// Whether `a` and `b` are incomparable in rakudo's parameter-wise
     /// narrowness order (see [`RankProfile`]).
-    pub(super) fn rank_keys_incomparable(a: &CandidateRankKey, b: &CandidateRankKey) -> bool {
-        a.6.incomparable(&b.6)
+    pub(super) fn rank_keys_incomparable(&self, a: &CandidateRankKey, b: &CandidateRankKey) -> bool {
+        a.6.incomparable(&b.6, &|x, y| self.nominal_types_related(x, y))
+    }
+
+    /// Whether one of the two named types is the other or conforms to it.
+    // Cost: O(h), h = the hierarchy walk of `type_hierarchy_distance`.
+    fn nominal_types_related(&self, a: Symbol, b: Symbol) -> bool {
+        let conforms = |sub: Symbol, sup: Symbol| {
+            sup.with_str(|sup| {
+                self.type_hierarchy_distance(sup, &Value::package(sub)) < UNRELATED_DISTANCE
+            })
+        };
+        conforms(a, b) || conforms(b, a)
     }
 
     /// Drop the matches another match out-narrows and, when what is left is
@@ -202,6 +227,7 @@ impl Interpreter {
     /// [`Self::settle_ranked_matches`] still sees it.
     // Cost: O(m^2), m = candidates that bound.
     pub(super) fn prune_incomparable_matches(
+        &self,
         matches: Vec<(CandidateRankKey, Arc<FunctionDef>)>,
     ) -> Vec<Arc<FunctionDef>> {
         let best = matches.first().map(|(k, _)| *k);
@@ -218,7 +244,7 @@ impl Interpreter {
         let keys: Vec<CandidateRankKey> = matches.iter().map(|(k, _)| *k).collect();
         let dominated = |k: &CandidateRankKey| {
             keys.iter().any(|o| {
-                !Self::rank_keys_incomparable(o, k)
+                !self.rank_keys_incomparable(o, k)
                     && Self::candidate_rank_cmp(
                         Self::rank_key_ignoring_decl_order(*o),
                         Self::rank_key_ignoring_decl_order(*k),
@@ -403,7 +429,7 @@ impl Interpreter {
                     Self::rank_key_ignoring_decl_order(best),
                 ) == std::cmp::Ordering::Greater
             {
-                if Self::rank_keys_incomparable(&key, &best) {
+                if self.rank_keys_incomparable(&key, &best) {
                     // fall through to the bind attempt
                 } else {
                     continue;
@@ -445,7 +471,7 @@ impl Interpreter {
                 matches.push((key, def));
             }
         }
-        let matches = Self::prune_incomparable_matches(matches);
+        let matches = self.prune_incomparable_matches(matches);
         self.settle_ranked_matches(name, args, matches, threw, outer_where_exception)
     }
 
@@ -996,6 +1022,9 @@ impl Interpreter {
                     } else {
                         base
                     };
+                    if slot > 0 && slot <= PROFILE_LEN {
+                        profile.nominal[slot - 1] = Some(Symbol::intern(base));
+                    }
                     if pd.name.starts_with('&')
                         && let Some(return_type) = self.callable_return_type(&arg)
                     {

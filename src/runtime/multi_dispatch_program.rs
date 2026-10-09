@@ -170,7 +170,7 @@ impl Interpreter {
                 ) == std::cmp::Ordering::Greater
             {
                 // Incomparable with the best match: still a contender (#11943).
-                if !Self::rank_keys_incomparable(&step.key, &best) {
+                if !self.rank_keys_incomparable(&step.key, &best) {
                     continue;
                 }
             }
@@ -195,7 +195,7 @@ impl Interpreter {
             self.pending_where_exception = outer_where_exception;
             return Ok(None);
         }
-        let matches = Self::prune_incomparable_matches(matches);
+        let matches = self.prune_incomparable_matches(matches);
         self.settle_ranked_matches(name, args, matches, threw, outer_where_exception)
     }
 
