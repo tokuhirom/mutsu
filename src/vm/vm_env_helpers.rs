@@ -831,7 +831,12 @@ impl Interpreter {
         // EVAL is its own compilation unit with its own `$=pod` (kept under
         // `env["=pod"]` while it runs); the calling module's document must
         // not shadow it.
-        if name == "=pod" && self.env().get("__mutsu_in_eval").is_some_and(|v| v.truthy()) {
+        if name == "=pod"
+            && self
+                .env()
+                .get("__mutsu_in_eval")
+                .is_some_and(|v| v.truthy())
+        {
             return None;
         }
         // Classified and split once per symbol (`None` for an unqualified name).
