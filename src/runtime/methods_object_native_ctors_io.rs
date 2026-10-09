@@ -357,18 +357,23 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let cn = class_name.resolve();
+        // Pure-data constructors shared with the interpreter's `dispatch_new`
+        // (`native_ctor`): one table, so the two paths cannot drift.
+        if let Some(ctor) = super::native_ctor::lookup(&cn)
+            && ctor.fast
+        {
+            let call = super::native_ctor::CtorCall {
+                class_name,
+                class_key: &cn,
+                base_class_name: &cn,
+                type_args: &None,
+            };
+            return self.run_native_ctor(&ctor, &call, args.to_vec());
+        }
         if Self::is_native_buf_constructible(&cn) {
             Some(Ok(Self::build_native_buf_value(class_name, args)))
         } else if cn == "utf8" || cn == "utf16" {
             Some(Ok(Self::build_native_utf_value(class_name, args)))
-        } else if cn == "Uni" {
-            Some(Ok(Self::build_native_uni_value(args)))
-        } else if cn == "Version" {
-            Some(Ok(Self::version_from_value(
-                args.first().cloned().unwrap_or(Value::NIL),
-            )))
-        } else if cn == "Complex" {
-            Some(Ok(Self::build_native_complex_value(args)))
         } else if cn == "Int" {
             Some(Self::build_native_int_value(args))
         } else if cn == "Num" {
@@ -380,18 +385,6 @@ impl Interpreter {
             // `Bool.new` errors in `dispatch_new` before the basic-type arm —
             // the native path must preserve that, so it falls through.)
             Some(Ok(Value::str(String::new())))
-        } else if cn == "Slip" {
-            Some(Ok(Value::slip(args.to_vec())))
-        } else if cn == "IterationBuffer" {
-            Some(Ok(Self::build_native_iterationbuffer_value(
-                class_name, args,
-            )))
-        } else if cn == "Rat" {
-            Some(Ok(Self::build_native_rat_value(args)))
-        } else if cn == "FatRat" {
-            Some(Ok(Self::build_native_fatrat_value(args)))
-        } else if cn == "Pair" {
-            Some(Self::build_native_pair_value(args))
         } else if cn == "Date" {
             Some(
                 self.fetch_proxy_ctor_args(args)
@@ -406,66 +399,6 @@ impl Interpreter {
             Some(Self::build_native_duration_value(args))
         } else if cn == "StrDistance" {
             Some(Ok(Self::build_native_strdistance_value(args)))
-        } else if is_stash_class_name(cn.as_str()) {
-            // A `Stash` is an empty Hash-typed instance.
-            Some(Ok(Value::make_instance(class_name, HashMap::new())))
-        } else if matches!(
-            cn.as_str(),
-            "ThreadPoolScheduler" | "CurrentThreadScheduler" | "Tap"
-        ) {
-            // These take no construction args — just an empty instance.
-            Some(Ok(Value::make_instance(class_name, HashMap::new())))
-        } else if cn == "Cancellation" {
-            Some(Ok(Self::cancellation_instance()))
-        } else if matches!(cn.as_str(), "Lock" | "Lock::Async" | "Lock::Soft") {
-            // A lock is pure data: a fresh global lock id (and an `async` flag for
-            // `Lock::Async`). `next_lock_id` only bumps a process-global counter —
-            // no env / registry / user code — so the VM builds it directly,
-            // byte-identical to the interpreter's `dispatch_new` arm.
-            let mut attrs = HashMap::new();
-            attrs.insert(
-                "lock-id".to_string(),
-                Value::int(super::native_methods::next_lock_id() as i64),
-            );
-            if cn == "Lock::Async" {
-                attrs.insert("async".to_string(), Value::TRUE);
-            }
-            Some(Ok(Value::make_instance(class_name, attrs)))
-        } else if cn == "Promise" {
-            // `Promise.new(:$scheduler = $*SCHEDULER)`: an empty planned
-            // promise bound to its scheduler (ADR-0105 D1). Shared with the
-            // interpreter's `dispatch_new` arm.
-            let explicit = Self::named_value(args, "scheduler");
-            Some(Ok(Value::promise(
-                self.new_bound_promise(class_name, explicit),
-            )))
-        } else if cn == "Channel" {
-            // Likewise an empty channel.
-            Some(Ok(Value::channel(crate::value::SharedChannel::new())))
-        } else if matches!(cn.as_str(), "Supplier" | "Supplier::Preserving") {
-            // A supplier is pure data: an empty emission log, a not-done flag, and
-            // a fresh process-global supplier id. Shared with the interpreter's
-            // `dispatch_new` arm.
-            let mut attrs = HashMap::new();
-            attrs.insert("emitted".to_string(), Value::array(Vec::new()));
-            attrs.insert("done".to_string(), Value::FALSE);
-            attrs.insert(
-                "supplier_id".to_string(),
-                Value::int(super::native_methods::next_supplier_id() as i64),
-            );
-            if cn == "Supplier::Preserving" {
-                // Marks the supplier (and, propagated via `.Supply`, its
-                // supplies) as backlog-preserving: values emitted while no tap
-                // listens replay to the next tap.
-                attrs.insert("preserving".to_string(), Value::TRUE);
-            }
-            Some(Ok(Value::make_instance(class_name, attrs)))
-        } else if cn == "Proc::Async" {
-            // `Proc::Async.new(@cmd, :w, :enc)` is pure data: arg parsing +
-            // process-global supply ids + empty Supply attributes. The process is
-            // only spawned later by `.start`. Shared with the interpreter's
-            // `dispatch_new` arm via the single `build_native_proc_async_value`.
-            Some(Self::build_native_proc_async_value(class_name, args))
         } else if cn == "Capture" {
             // `Capture.new` is named-only (`Mu.new`): a positional arg dies. Its
             // build signature is `:@list, :%hash`, so a `list`/`hash` named arg
@@ -496,12 +429,6 @@ impl Interpreter {
                 }
                 Some(Ok(Value::capture(positional, named)))
             }
-        } else if cn == "FakeScheduler" {
-            Some(Ok(Self::build_native_fakescheduler_value()))
-        } else if cn == "Proxy" {
-            Some(Ok(Self::build_native_proxy_value(args)))
-        } else if cn == "Match" {
-            Some(Ok(Self::build_native_match_value(args)))
         } else if matches!(cn.as_str(), "IntStr" | "NumStr" | "RatStr" | "ComplexStr") {
             // Allomorph `.new(numeric, string)` is pure data assembly (a numeric
             // value mixed with a `Str` override) — shared with the interpreter's
