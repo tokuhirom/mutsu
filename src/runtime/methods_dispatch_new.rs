@@ -488,7 +488,13 @@ impl Interpreter {
             .iter()
             .map(|a| match a.view() {
                 ValueView::Pair(key, _) if build_owned_attrs.contains(key.as_str()) => None,
-                ValueView::Pair(key, _) => plan.attr_index.get(key.as_str()).copied(),
+                // A private attribute (`has @!tools`) is not built from a named
+                // argument: only `$.x` / `is built` ones are (BUILDALL).
+                ValueView::Pair(key, _) => plan
+                    .attr_index
+                    .get(key.as_str())
+                    .copied()
+                    .filter(|&i| plan.attr_buildable[i as usize]),
                 _ => None,
             })
             .collect();

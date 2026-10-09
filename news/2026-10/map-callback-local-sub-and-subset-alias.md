@@ -12,3 +12,8 @@ inside a routine that had a `$bom-ref` lexical: the scalar lives in `env`
 under the bare key `bom-ref`, and an undefined one holds `Any`, which
 `resolve_lexical_type_key` took for an alias of the subset. An alias must now
 name the same type (same leaf name).
+
+Further SBOM::CycloneDX fixes: `my %m is Map = r => <p q>` keeps its list
+values bare (no `$(...)` itemization); a class's own `multi method` beats an
+equally narrow one composed from a role; `bless` no longer initializes a private
+`has @!x` from a same-named named argument.
