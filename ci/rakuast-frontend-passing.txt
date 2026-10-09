@@ -36,6 +36,7 @@ t/collections/array/array-mutator-rows.t
 t/collections/array/array-oob-any.t
 t/collections/array/array-pos-methods-store-in-place.t
 t/collections/array/array-push-byref-coherence.t
+t/collections/array/array-push-typed-element-check.t
 t/collections/array/array-shift-is-constant-time.t
 t/collections/array/array-sigil-scalar-deref.t
 t/collections/array/array-single-listy-raku-comma.t
@@ -78,6 +79,7 @@ t/collections/concat-append-in-place-elements.t
 t/collections/constant-hash-element-ro.t
 t/collections/constant-sigilless-element-lvalue.t
 t/collections/container-bind-element.t
+t/collections/cool-numeric-range-seq.t
 t/collections/count-only.t
 t/collections/deep-element-bind-writeback-coherence.t
 t/collections/dot-self-element-store.t
@@ -523,6 +525,7 @@ t/collections/set-bag-mix/set-bag-mix-nested-array.t
 t/collections/set-bag-mix/set-bag-mix-which-keys.t
 t/collections/set-bag-mix/set-build-dynamic-hash-live.t
 t/collections/set-bag-mix/set-compare-ops-junction-operands.t
+t/collections/set-bag-mix/set-compound-assign-array-target.t
 t/collections/set-bag-mix/set-elem-identity.t
 t/collections/set-bag-mix/set-elem-scalar-rhs.t
 t/collections/set-bag-mix/set-element-objat-identity.t
@@ -2584,6 +2587,7 @@ t/modules/package-block-my-sub-hoist.t
 t/modules/package-body-routine-family-is-lexical.t
 t/modules/package-constant-alias-qualified-sub.t
 t/modules/package-hash-subscript-vivify.t
+t/modules/package-lexical-rebind-keeps-alias.t
 t/modules/package-lexical-subrule.t
 t/modules/package-main-lexical-capture.t
 t/modules/package-module-how.t
@@ -2728,6 +2732,7 @@ t/nativecall/native-ctor-array-attrs.t
 t/nativecall/native-ctor-plan-invalidation.t
 t/nativecall/native-ctor-required-attrs.t
 t/nativecall/native-ctor-typed-attrs.t
+t/nativecall/native-ctor-typed-container-attrs.t
 t/nativecall/native-cunion-construct.t
 t/nativecall/native-date-construct.t
 t/nativecall/native-datetime-construct.t
@@ -2769,6 +2774,7 @@ t/nativecall/native-method-accepted-nameds.t
 t/nativecall/native-method-implicit-slurpy-named.t
 t/nativecall/native-method-proxy-argument-fetch.t
 t/nativecall/native-method-short-name-collision.t
+t/nativecall/native-method-user-shadow.t
 t/nativecall/native-mixhash-coerce.t
 t/nativecall/native-multi-candidates.t
 t/nativecall/native-namespaced-and-exception-ctor.t
@@ -2796,6 +2802,7 @@ t/nativecall/native-value-smartmatch.t
 t/nativecall/native-where-construct.t
 t/nativecall/nativecall-bare-carray-param.t
 t/nativecall/nativecall-box-into-box-target-class.t
+t/nativecall/nativecall-box-target-callsite.t
 t/nativecall/nativecall-buf-lifetime.t
 t/nativecall/nativecall-carray.t
 t/nativecall/nativecall-cglobal.t
@@ -2950,7 +2957,9 @@ t/oo/attribute/attribute-trait-compose-sees-later-methods.t
 t/oo/attribute/attribute-trait-core-candidate-redispatch.t
 t/oo/attribute/attribute-trait-mixin-visible-to-compose-hook.t
 t/oo/attribute/attribute-trait-mod.t
+t/oo/attribute/attribute-type-check-in-method.t
 t/oo/attribute/attribute-type-lexical-class-introspection.t
+t/oo/attribute/attribute-typed-container-smiley.t
 t/oo/attribute/attribute-undeclared.t
 t/oo/attribute/attribute-where-block-rejects-out-of-range.t
 t/oo/attribute/attribute-where-implicit-topic.t
@@ -2970,6 +2979,7 @@ t/oo/attribute/callwith-reaches-ancestor-accessor.t
 t/oo/attribute/can-ok-sees-attribute-accessors.t
 t/oo/attribute/cas-attribute-accessor.t
 t/oo/attribute/class-attributes-first-by-name.t
+t/oo/attribute/class-level-attribute-of.t
 t/oo/attribute/classhow-can-attribute-accessor-rw.t
 t/oo/attribute/datetime-attributes-unmarshal.t
 t/oo/attribute/dollar-dot-underscore-accessor.t
@@ -3138,6 +3148,7 @@ t/oo/comment-does-not-load-provider.t
 t/oo/construct/bless-attr-seed-plan.t
 t/oo/construct/bless-build-owns-named-attr.t
 t/oo/construct/bless-coercion-typed-attr.t
+t/oo/construct/bless-container-attr-defaults.t
 t/oo/construct/bless-default-order.t
 t/oo/construct/bless-enforces-is-required.t
 t/oo/construct/bless-hash-attr-coercion.t
@@ -4137,6 +4148,7 @@ t/rakuast/rakuast-type-method-table.t
 t/rakuast/rakuast-type-methods.t
 t/rakuast/rakuast-type-objects.t
 t/rakuast/rakuast-type-parameterized.t
+t/rakuast/rakuast-typed-container-attribute.t
 t/rakuast/rakuast-uninitialized-decl-default.t
 t/rakuast/rakuast-unless.t
 t/rakuast/rakuast-until-loop.t
@@ -5141,6 +5153,7 @@ t/routines/signature/for-multi-param-type-constraint.t
 t/routines/signature/for-multi-param-writethrough-metadata.t
 t/routines/signature/for-multiparam-array-bind.t
 t/routines/signature/for-multiparam-copy-rw.t
+t/routines/signature/for-param-restore-on-return.t
 t/routines/signature/for-param.t
 t/routines/signature/for-single-param-shared-lane.t
 t/routines/signature/for-topic-shadows-topic-param.t
@@ -5160,6 +5173,7 @@ t/routines/signature/is-copy-param-ignores-caller-variable-constraint.t
 t/routines/signature/is-default.t
 t/routines/signature/is-raw-param-container-identity.t
 t/routines/signature/is-rw-traits.t
+t/routines/signature/issue-7774-typed-container-param.t
 t/routines/signature/lazy-array-param-pull.t
 t/routines/signature/lexical-amp-param-shadow.t
 t/routines/signature/list-destructuring-param-traits.t
@@ -5522,6 +5536,7 @@ t/types/coercion/typecheck-assignment-message-parity.t
 t/types/coercion/typecheck-assignment-message-prefix.t
 t/types/coercion/typecheck-binding-vs-argument.t
 t/types/coercion/typecheck-expected-nil.t
+t/types/coercion/typecheck-got-object-repr.t
 t/types/coercion/typecheck-got-value-repr.t
 t/types/coercion/typed-array-alias-reassign.t
 t/types/coercion/typed-array-bound-cell-writethrough.t
@@ -5542,6 +5557,7 @@ t/types/coercion/typed-container-rebind-and-eqv.t
 t/types/coercion/typed-container-what.t
 t/types/coercion/typed-decl-hoist-block-forms.t
 t/types/coercion/typed-decl-init-proxy-fetch.t
+t/types/coercion/typed-defined-collection-attr.t
 t/types/coercion/typed-defined-container-attr-default.t
 t/types/coercion/typed-hash-bind-typecheck.t
 t/types/coercion/typed-hash-expr-decl-of.t
