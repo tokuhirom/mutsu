@@ -12648,7 +12648,12 @@ impl FromIterator<(crate::symbol::Symbol, CompiledFunction)> for CompiledFns {
     ) -> Self {
         let map: CompiledFnMap = iter
             .into_iter()
-            .map(|(key, value)| (key, Arc::new(crate::compiled_lazy::LazyFn::ready(Arc::new(value)))))
+            .map(|(key, value)| {
+                (
+                    key,
+                    Arc::new(crate::compiled_lazy::LazyFn::ready(Arc::new(value))),
+                )
+            })
             .collect();
         let id = if map.is_empty() { 0 } else { Self::next_id() };
         Self { map, id }

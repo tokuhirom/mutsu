@@ -326,12 +326,13 @@ impl Interpreter {
             // identify which declared signature it came from. A body that
             // failed to compile drops the whole list, so a short list means
             // "no plan bytecode" rather than a shifted one.
-            let plan_compiled = |slot: usize| -> Option<&std::sync::Arc<crate::compiled_lazy::LazyFn>> {
-                if compiled_routine_keys.len() != 1 + signature_alternates.len() {
-                    return None;
-                }
-                compiled_fns.get_lazy(&compiled_routine_keys[slot])
-            };
+            let plan_compiled =
+                |slot: usize| -> Option<&std::sync::Arc<crate::compiled_lazy::LazyFn>> {
+                    if compiled_routine_keys.len() != 1 + signature_alternates.len() {
+                        return None;
+                    }
+                    compiled_fns.get_lazy(&compiled_routine_keys[slot])
+                };
             let primary_compiled = plan_compiled(0);
             let body: &[Stmt] = &[];
             // Compile-time declaration fingerprint for this site (absent for a
@@ -546,7 +547,13 @@ impl Interpreter {
                     let rebinds = primary_compiled
                         .into_iter()
                         .chain((0..signature_alternates.len()).filter_map(|i| plan_compiled(i + 1)))
-                        .any(|c| c.get().code.free_var_rebinds.iter().any(|s| s.resolve() == name));
+                        .any(|c| {
+                            c.get()
+                                .code
+                                .free_var_rebinds
+                                .iter()
+                                .any(|s| s.resolve() == name)
+                        });
                     let cell = if rebinds && Self::binding_cell_of(&cell).is_none() {
                         let slot = free_var_decl_slots
                             .iter()
@@ -662,7 +669,8 @@ impl Interpreter {
                     if let Some(alt_compiled) = plan_compiled(slot + 1) {
                         free_syms.extend(alt_compiled.get().code.free_var_syms.iter().copied());
                         free_syms.extend(alt_compiled.get().code.free_var_writes.iter().copied());
-                        rebound_syms.extend(alt_compiled.get().code.free_var_rebinds.iter().copied());
+                        rebound_syms
+                            .extend(alt_compiled.get().code.free_var_rebinds.iter().copied());
                     }
                 }
                 // A statement-level `$F := 5` neither reads nor writes `$F`, so

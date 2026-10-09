@@ -66,11 +66,7 @@ impl LazyFn {
 
     /// A slot that decodes `bytes` (written by `encode_nested`) on first use.
     // Cost: O(1).
-    pub(crate) fn encoded(
-        bytes: Vec<u8>,
-        symbols: Arc<[Symbol]>,
-        nested_exports: bool,
-    ) -> Self {
+    pub(crate) fn encoded(bytes: Vec<u8>, symbols: Arc<[Symbol]>, nested_exports: bool) -> Self {
         Self {
             cell: OnceLock::new(),
             raw: Some(RawBody {
@@ -220,9 +216,7 @@ impl RoutineBody {
     pub(crate) fn get(&self) -> &Arc<CompiledFunction> {
         match &self.adapt {
             None => self.source.get(),
-            Some(inputs) => self
-                .adapted
-                .get_or_init(|| inputs.adapt(self.source.get())),
+            Some(inputs) => self.adapted.get_or_init(|| inputs.adapt(self.source.get())),
         }
     }
 }
