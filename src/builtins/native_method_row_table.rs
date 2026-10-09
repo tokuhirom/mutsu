@@ -1962,6 +1962,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Any", "raku", 1, 0),
     ("Any", "Numeric", 8, 4),
     ("Any", "Int", 8, 4),
+    ("Mu", "BUILDALL", 8, 60),
+    ("Mu", "POPULATE", 8, 60),
     ("Mu", "WHAT", 8, 60),
     ("Mu", "WHERE", 1, 56),
     ("Mu", "HOW", 8, 60),
