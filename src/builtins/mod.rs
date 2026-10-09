@@ -433,6 +433,18 @@ fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8
     }
 }
 
+/// The encoding `.decode` assumes when none is named: only `utf16` decodes as
+/// UTF-16; `buf16`/`blob16` apply `utf-8` to their (little-endian expanded)
+/// bytes, as Rakudo does.
+// Cost: O(1).
+pub(crate) fn default_decode_encoding(class_name: &str) -> &'static str {
+    if class_name == "utf16" {
+        "utf-16"
+    } else {
+        "utf-8"
+    }
+}
+
 pub(crate) fn decode_buf_method(
     target: &Value,
     encoding: Option<&str>,
@@ -445,15 +457,7 @@ pub(crate) fn decode_buf_method(
     }
 
     let cn = class_name.resolve();
-    // See the matching `is_wide` comment in `decode_buf_target_bytes` above:
-    // `buf_elem_width` catches every 16-bit spelling, including `Blob[uint16]`
-    // (`blob16`), which this explicit name list previously missed.
-    let default_encoding = if crate::value::value_buf::buf_elem_width(&cn) == 2 {
-        "utf-16"
-    } else {
-        "utf-8"
-    };
-    let encoding_name = encoding.unwrap_or(default_encoding);
+    let encoding_name = encoding.unwrap_or(default_decode_encoding(&cn));
     let normalized = normalize_builtin_encoding_label(encoding_name)?;
     let bytes = decode_buf_target_bytes(target, &normalized)?;
     Some(decode_bytes_with_builtin_encoding(&bytes, &normalized).map(Value::str))

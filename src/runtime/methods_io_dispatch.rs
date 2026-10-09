@@ -261,7 +261,7 @@ impl Interpreter {
 
     /// `Blob.decode($encoding, :$replacement)`: the buffer as text, by the
     /// encoding named (the buffer's own default when absent: UTF-16 for a
-    /// 16-bit buffer, UTF-8 otherwise), with the platform's newline translation.
+    /// `utf16`, UTF-8 otherwise, 16-bit buffers included), with the platform's newline translation.
     /// `None` for a receiver that is not a `Buf`/`Blob`. The one implementation:
     /// the `Blob`/`Buf` `decode` rows (`method_table::blob_decode`) and the
     /// cascade for a receiver with no shape both end here.
@@ -287,7 +287,7 @@ impl Interpreter {
             // `blob16.new(...)` — see the matching fix + comment in
             // `builtins::decode_buf_target_bytes`.
             let is_wide = crate::value::value_buf::buf_elem_width(&cn) == 2;
-            let default_encoding = if is_wide { "utf-16" } else { "utf-8" };
+            let default_encoding = crate::builtins::default_decode_encoding(&cn);
             let encoding = encoding
                 .map(|v| v.to_string_value())
                 .unwrap_or_else(|| default_encoding.to_string());
@@ -302,6 +302,13 @@ impl Interpreter {
                 .find_encoding(&encoding)
                 .map(|e| e.name.as_str().to_lowercase())
                 .unwrap_or_else(|| encoding.to_lowercase());
+            if self.find_encoding(&encoding).is_none()
+                && crate::builtins::normalize_builtin_encoding_label(&encoding).is_none()
+            {
+                return Some(Err(RuntimeError::new(format!(
+                    "Unknown string encoding: '{encoding}'"
+                ))));
+            }
             let bytes = if is_wide {
                 with_buf_elems(&attributes, |items| {
                     let use_be = normalized_encoding == "utf-16be";
