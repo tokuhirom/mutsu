@@ -166,7 +166,7 @@ impl Interpreter {
             // This subrule has just REDUCED. Log it so a parse that fails
             // overall can still run its action, the way Rakudo (which
             // dispatches at reduce time) does — see `REDUCED_SUBRULES`.
-            super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
+            super::regex_helpers::record_reduced_subrule(spec.lookup_sym, &subcap);
             // Both slots reference the SAME node, the way Rakudo stores the
             // same cursor under both names (`$<x> === $<num>` is `True`).
             // Cloning the node here instead — as this did until the
@@ -214,7 +214,7 @@ impl Interpreter {
             // Keep the silent subrule's inline blocks on its own (marker) node
             // for the reduce-time walk to run once — see the non-silent branch.
             let subcap = Arc::new(subcap.into_cap_node());
-            super::regex_helpers::record_reduced_subrule(&spec.lookup_name, &subcap);
+            super::regex_helpers::record_reduced_subrule(spec.lookup_sym, &subcap);
             sink.file_node(spec.silent_marker_sym, subcap);
         } else {
             // Childless silent subrule with no action to run (`<.ws>`,
