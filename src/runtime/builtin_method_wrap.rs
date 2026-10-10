@@ -31,6 +31,32 @@ impl Interpreter {
         Some(self.run_builtin_method_wrap(class_name, invocant, method, args, &chain))
     }
 
+    /// [`Self::try_builtin_method_wrap`] for any call target: the class is the
+    /// instance's class or the built-in type of a plain value. A class with a
+    /// user method of that name is left to the user-method wrap sites.
+    ///
+    // Cost: O(1) once `has_any_wrap_chains()` holds; the caller checks it.
+    pub(crate) fn try_builtin_value_method_wrap(
+        &mut self,
+        target: &Value,
+        method_sym: Symbol,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let class_name: String = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            _ => crate::runtime::utils::value_type_name(target).to_string(),
+        };
+        let method = method_sym.resolve();
+        self.builtin_method_wrap_chain(&class_name, &method)?;
+        // A class declared in the program (its generated accessors too) is
+        // wrapped at the user-method sites; running the chain here as well
+        // would wrap twice.
+        if self.has_user_method_sym(&class_name, method_sym) || self.has_class(&class_name) {
+            return None;
+        }
+        self.try_builtin_method_wrap(&class_name, target, &method, args)
+    }
+
     /// The `.wrap` chain of `method` on the built-in class `class_name`, if any.
     /// `None` too inside the chain's own terminal re-dispatch.
     ///

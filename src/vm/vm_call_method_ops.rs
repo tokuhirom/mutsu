@@ -815,6 +815,15 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // `Str.^find_method('uc').wrap(...)`: a wrapped method of a built-in
+        // class (#11314). O(1) when nothing in the program is wrapped.
+        if matches!(modifier, None | Some("?"))
+            && self.has_any_wrap_chains()
+            && let Some(result) = self.try_builtin_value_method_wrap(&target, method_sym, &args)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         if method == "message"
             && args.is_empty()
             && let ValueView::Instance { attributes, .. } = target.view()
