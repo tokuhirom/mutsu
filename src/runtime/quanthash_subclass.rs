@@ -116,27 +116,10 @@ impl Interpreter {
     /// simply answered `Nil` and the weight was never written.
     pub(crate) fn native_baggy_storage_base(
         &mut self,
-        override_args: Option<&[Value]>,
+        invocant: &Value,
+        method_name: &str,
+        args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let ctx = self.dispatch.samewith_context_stack.last().cloned();
-        let method_name = ctx.as_ref().map(|c| c.name.clone())?;
-        let invocant = self
-            .dispatch
-            .method_dispatch_stack
-            .last()
-            .map(|f| f.invocant.clone())
-            .or_else(|| ctx.as_ref().and_then(|c| c.invocant.clone()))
-            .or_else(|| self.env.get("self").cloned())?;
-        let args: Vec<Value> = match override_args {
-            Some(a) => a.to_vec(),
-            None => self
-                .dispatch
-                .method_dispatch_stack
-                .last()
-                .map(|f| f.args.clone())
-                .or_else(|| ctx.as_ref().and_then(|c| c.args.clone()))
-                .unwrap_or_default(),
-        };
         let ValueView::Instance { attributes, .. } = invocant.view() else {
             return None;
         };
