@@ -1438,20 +1438,7 @@ impl Interpreter {
                 // (S12-construction/roles-6e.t). Promoting such constants to
                 // by-value snapshots requires a complete mutation analysis and is
                 // deferred to a later phase.
-                if resolved.is_container_ref() {
-                    return Some(resolved);
-                }
-                // A method/sub body's free variable that no local slot owns is
-                // one the routine itself captured. Freeze it for a closure made
-                // here: read live by name later, a same-named lexical of the
-                // CALLER of that closure would shadow it (`Env::get_sym_frame_first`).
-                if code.is_routine
-                    && Self::resolve_capture_slot(code, &cc.upvalue_parent_slots, i, *sym).is_none()
-                    && let Some(v) = self.env().get_sym_frame_first(*sym)
-                {
-                    return Some(v.clone());
-                }
-                None
+                resolved.is_container_ref().then_some(resolved)
             })
             .collect()
     }

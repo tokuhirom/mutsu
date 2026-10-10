@@ -2250,36 +2250,6 @@ impl Env {
         self.get_sym_walk(key)
     }
 
-    /// `key` as the running closure frame itself binds it: the frame's own
-    /// overlay (and the block scopes inside it), then the frame's captured
-    /// env -- both BEFORE the caller chain.
-    ///
-    /// [`Self::get_sym`] resolves a closure's free variable through the caller
-    /// chain first and the capture last, so a differently-bound lexical of the
-    /// same name in the CALLER shadows the closure's own free variable
-    /// (`-> { "c$n" }` returned by a method and called inside `-> $n {...}`
-    /// read the caller's `$n`). A free read of a name the frame captured is
-    /// lexical, not dynamic: the capture wins over the caller. `None` when the
-    /// frame neither binds nor captured the name (the caller then falls back
-    /// to the ordinary walk), so only a capture that the chain used to shadow
-    /// changes its answer.
-    // Cost: O(d), d = block scopes between the leaf and the closure frame.
-    pub(crate) fn get_sym_frame_first(&self, key: Symbol) -> Option<&Value> {
-        let mut cur = self;
-        loop {
-            if let Some(v) = cur.inner.get(&key) {
-                return Some(v);
-            }
-            if cur.is_tombstoned(key) {
-                return None;
-            }
-            if let Some(fb) = &cur.fallback {
-                return fb.get_below_base(&key);
-            }
-            cur = cur.parent.as_deref()?;
-        }
-    }
-
     /// [`Self::get_sym`] without the never-an-env-key filter — the walk itself.
     #[inline]
     fn get_sym_walk(&self, key: Symbol) -> Option<&Value> {
