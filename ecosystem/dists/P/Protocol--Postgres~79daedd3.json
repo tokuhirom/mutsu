@@ -14,16 +14,61 @@
     "unresolved": []
   },
   "dist": "Protocol::Postgres",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-roundtrip.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 9.82,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-vectors.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Protocol::Postgres": "Cannot resolve caller map-type(Format:U); none of these signatures matches"
+    "Protocol::Postgres": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-09",
+    "date": "2026-10-10",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "c7f1ec6f",
+    "mutsu_commit": "bbb03b41",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -34,12 +79,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/RO/PROTOCOL_POSTGRES/53dbb5d1e0854f606ca1d8b6d22334db5f77c9f5.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 16,
+    "baseline_files": 2,
+    "mutsu_assertions": 16,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.0.13"

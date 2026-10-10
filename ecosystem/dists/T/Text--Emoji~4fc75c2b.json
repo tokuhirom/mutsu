@@ -11,16 +11,39 @@
     "unresolved": []
   },
   "dist": "Text::Emoji",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 0.32,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 5.37,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "Text::Emoji": "X::Hash::Store::OddNumber()"
+    "Text::Emoji": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-10-09",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "c7f1ec6f",
+    "mutsu_commit": "bbb03b41",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -31,12 +54,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/EX/TEXT_EMOJI/8108814d899e0014a07e4e40c9d2f8cb4a70e51d.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 21,
+    "baseline_files": 1,
+    "mutsu_assertions": 21,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.11"

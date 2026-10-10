@@ -18,7 +18,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.58,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 5.4,
+        "secs": 4.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.29,
+        "secs": 1.22,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -50,30 +50,29 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.84,
+        "secs": 1.12,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "double free or corruption (out)",
         "nok": 0,
         "ok": 2,
-        "plan": null,
-        "secs": 2.97,
+        "plan": 2,
+        "secs": 1.41,
         "skip": 1,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-oo.rakutest",
       "raku": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 1.18,
+        "secs": 0.93,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -85,7 +84,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.1,
+        "secs": 0.09,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +94,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.8,
+        "secs": 0.64,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +111,7 @@
     "date": "2026-10-09",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "c7f1ec6f",
+    "mutsu_commit": "bbb03b41",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -123,13 +122,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/L/IN/LINUX_NFTABLES/1142a605a13231915be89a4e93d2c28da4f66b16.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 8,
     "baseline_files": 4,
     "mutsu_assertions": 8,
-    "parity_files": 3,
-    "regressed_files": 1
+    "parity_files": 4,
+    "regressed_files": 0
   },
   "version": "0.0.3"
 }

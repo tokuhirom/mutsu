@@ -34,11 +34,11 @@
       "cmp": "no_baseline",
       "path": "t/01-config.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/mcp-shell-file-2-1791503280: Read-only file system",
+        "first_failure": "Failed to open file /tmp/mcp-shell-file-2-1791587534: Read-only file system",
         "nok": 0,
         "ok": 4,
         "plan": 11,
-        "secs": 28.62,
+        "secs": 31.21,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -48,11 +48,11 @@
       "cmp": "no_baseline",
       "path": "t/02-run.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/mcp-shell-cwd-2-1791503289' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/mcp-shell-cwd-2-1791587543' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 4,
         "plan": 12,
-        "secs": 3.61,
+        "secs": 3.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -65,7 +65,7 @@
         "nok": 3,
         "ok": 0,
         "plan": 3,
-        "secs": 1.3,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -75,7 +75,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 30.26,
+        "secs": 32.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -88,7 +88,7 @@
         "nok": 1,
         "ok": 3,
         "plan": 4,
-        "secs": 1.07,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -98,7 +98,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.09,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -111,7 +111,7 @@
         "nok": 2,
         "ok": 6,
         "plan": 8,
-        "secs": 1.32,
+        "secs": 1.7,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -121,7 +121,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.69,
+        "secs": 2.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +134,7 @@
         "nok": 6,
         "ok": 1,
         "plan": 7,
-        "secs": 1.59,
+        "secs": 1.67,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -144,7 +144,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 3.97,
+        "secs": 4.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -157,7 +157,7 @@
         "nok": 7,
         "ok": 4,
         "plan": 11,
-        "secs": 6.38,
+        "secs": 6.58,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -167,7 +167,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 10.92,
+        "secs": 11.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -180,7 +180,7 @@
         "nok": 7,
         "ok": 0,
         "plan": 7,
-        "secs": 62.05,
+        "secs": 62.24,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -190,7 +190,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 6.45,
+        "secs": 6.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -203,7 +203,7 @@
         "nok": 3,
         "ok": 1,
         "plan": 4,
-        "secs": 1.17,
+        "secs": 1.74,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -213,7 +213,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 5.46,
+        "secs": 6.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -226,7 +226,7 @@
         "nok": 1,
         "ok": 8,
         "plan": 9,
-        "secs": 1.55,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -236,7 +236,7 @@
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 2.74,
+        "secs": 4.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -246,11 +246,11 @@
       "cmp": "no_baseline",
       "path": "t/11-isolation.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/mcp-shell-isolation-2-1791503594' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/mcp-shell-isolation-2-1791587857' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 3.4,
+        "secs": 2.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -263,7 +263,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.23,
+        "secs": 1.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -273,7 +273,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.65,
+        "secs": 3.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -286,7 +286,7 @@
         "nok": 2,
         "ok": 3,
         "plan": 5,
-        "secs": 1.47,
+        "secs": 1.75,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -296,7 +296,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 3.45,
+        "secs": 3.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -308,7 +308,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.61,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -318,7 +318,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.32,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -333,10 +333,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-08",
+    "date": "2026-10-09",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "c7f1ec6f",
+    "mutsu_commit": "bbb03b41",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
