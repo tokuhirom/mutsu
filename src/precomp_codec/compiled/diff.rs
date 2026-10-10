@@ -163,6 +163,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         uses_callframe,
         uses_samewith,
         needs_reflective_capture,
+        indirect_name_lookup,
         uses_dispatcher,
         may_observe_named_slurpy,
         is_supply_block_body,

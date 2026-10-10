@@ -400,6 +400,40 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    ADR-0024) rather than through its callers. Same FunctionalParsers probe:
    `capture_layers` 47,961 → 23,187 and `capture_own_entries` 81,639 →
    67,246.
+
+   **Slice 3 done** (`perf/12529-phase3-detached-routine-frames`): the
+   first lookups that resolve through a static link rather than the caller
+   chain. A named routine declared outside every routine body
+   (`CompiledCode::declared_in_routine` clear) has the program scope as its
+   lexical outer. When its own code looks names up reflectively (`EVAL`, a
+   symbolic `::('$x')`, a pseudo-package; `links_static_outer_to_unit`), its
+   frame root carries a `StaticLink::UnitOuter` (`src/env/static_link.rs`)
+   pointing at the program scope's tiers -- the chain below the deepest
+   caller frame. A by-name lookup of a plain user lexical that misses the
+   frame continues there, past every caller frame; dynamics, `self`, the
+   topic and system names still walk the whole chain. Only lookups follow
+   the link: a flattened copy stays faithful to the whole chain, since a
+   deep chain or a frame's saved env *is* its flattening, and the writeback
+   that carries a runtime-named write across frame exits reads where the
+   value is (`Env::get_through_callers`), not what the name means there.
+   The link lives on the root's overlay tier (`Tier::static_link`), not on
+   `Env`, which every call moves and clones; a chain-level latch
+   (`chain_has_static_link`, like `chain_has_fallback`) sends only chains
+   that hold one through the walk that follows it. Release-build Ir against
+   the merge base, same machine: `bench-fib` +0.20%, `bench-tak` -0.50%,
+   `method-call` -0.03%, `poly-call` -0.07%, `bench-ctor` +0.16%,
+   `bench-multi-dispatch` +0.29% -- within the layout noise of two builds. The pins for §1.3's sub
+   case and the symbolic lookup pass. Only frames that ask get the link, so
+   the call paths that reuse or skip a frame root (`overlay_is_shared_empty`
+   reuse, the fast path's unscoped calls) give such a body a root of its
+   own and are unchanged for everything else.
+
+   Two limits remain. `EVAL $code, context => $ctx` resolves through the
+   whole chain while it runs, because a `PseudoStash` does not carry a
+   frame's lexicals yet; vendored `Test`'s string `throws-like` depends on
+   it. And a closure's frame is not linked: its capture is a snapshot below
+   the caller chain, so moving it above the chain needs the capture to share
+   cells with the creating frame first (the closure EVAL pins).
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

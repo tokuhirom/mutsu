@@ -124,7 +124,6 @@ plan 21;
 {
     sub g() { (try EVAL q[$secret]) // 'not visible' }
     sub h() { my $secret = 'caller lexical'; g() }
-    todo 'ADR-12529 phase 3: EVAL resolves through the static chain';
     is h(), 'not visible', 'EVAL in a sub does not see its caller\'s lexical (ADR §1.3)';
 }
 
@@ -138,7 +137,6 @@ plan 21;
 {
     sub g() { (try ::('$secret')) // 'not visible' }
     sub h() { my $secret = 'caller lexical'; g() }
-    todo 'ADR-12529 phase 3: symbolic lookup resolves through the static chain';
     is h(), 'not visible', 'a symbolic ::(\'$x\') lookup in a callee does not see the caller\'s lexical';
 }
 

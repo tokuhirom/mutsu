@@ -89,13 +89,21 @@ impl Interpreter {
         // lexical view flattens a scoped env first, which is why the
         // positional-light path has always installed this overlay without
         // consulting the flag.
+        // A body that links its frame to the program scope needs a root of
+        // its own to carry the link (ADR-12529 phase 3).
+        let links_static_outer = cf.code.links_static_outer_to_unit();
+        let links_static_outer = links_static_outer && !cf.has_inner_subs;
         let use_scoped =
-            (has_locals || (cf.code.is_routine && cf.code.has_env_writes)) && !cf.has_inner_subs;
+            (links_static_outer || has_locals || (cf.code.is_routine && cf.code.has_env_writes))
+                && !cf.has_inner_subs;
         let caller_env: Option<Env> = if use_scoped {
             // Chain a child over the whole caller env (itself possibly scoped):
             // no flatten, so nested fast calls don't pay the O(env) merge.
             let parent = self.env().clone();
-            let scoped = crate::env::Env::scoped_child(parent);
+            let mut scoped = crate::env::Env::scoped_child(parent);
+            if links_static_outer {
+                scoped.link_static_outer_to_unit();
+            }
             Some(std::mem::replace(self.env_mut(), scoped))
         } else {
             None

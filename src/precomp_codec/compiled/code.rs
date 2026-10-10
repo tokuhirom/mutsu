@@ -126,6 +126,7 @@ impl Encode for CompiledCode {
             uses_capture,
             uses_samewith,
             needs_reflective_capture,
+            indirect_name_lookup,
             uses_dispatcher,
             may_observe_named_slurpy,
             is_supply_block_body,
@@ -270,6 +271,7 @@ impl Encode for CompiledCode {
         uses_capture.encode(encoder)?;
         uses_samewith.encode(encoder)?;
         needs_reflective_capture.encode(encoder)?;
+        indirect_name_lookup.encode(encoder)?;
         uses_dispatcher.encode(encoder)?;
         may_observe_named_slurpy.encode(encoder)?;
         is_supply_block_body.encode(encoder)?;
@@ -403,6 +405,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             uses_capture: Decode::decode(decoder)?,
             uses_samewith: Decode::decode(decoder)?,
             needs_reflective_capture: Decode::decode(decoder)?,
+            indirect_name_lookup: Decode::decode(decoder)?,
             uses_dispatcher: Decode::decode(decoder)?,
             may_observe_named_slurpy: Decode::decode(decoder)?,
             is_supply_block_body: Decode::decode(decoder)?,

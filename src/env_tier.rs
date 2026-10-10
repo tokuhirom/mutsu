@@ -91,6 +91,12 @@ pub(crate) struct Tier {
     /// ([`flags::CAPTURE_VOLATILE`], whose value the memo does not hold) leaves
     /// it alone. See [`CaptureSys`].
     capture_sys: OnceLock<Arc<CaptureSys>>,
+    /// A frame root's static link (ADR-12529 phase 3,
+    /// [`crate::env::static_link`]). Kept on the root's overlay rather than on
+    /// `Env`, so the env -- moved and cloned on every call -- does not grow
+    /// for what only a reflective routine's frame has; such a frame's
+    /// overlay is its own, never the shared empty one.
+    static_link: Option<Arc<crate::env::static_link::StaticLink>>,
 }
 
 /// What a closure capture takes from one wide env tier, built once per
@@ -120,6 +126,7 @@ impl Clone for Tier {
             capture_asked: AtomicBool::new(self.capture_asked.load(Ordering::Relaxed)),
             container_ref_keys: self.container_ref_keys.clone(),
             capture_sys: self.capture_sys.clone(),
+            static_link: self.static_link.clone(),
         }
     }
 }
@@ -231,7 +238,21 @@ impl Tier {
             capture_asked: AtomicBool::new(false),
             container_ref_keys: OnceLock::new(),
             capture_sys: OnceLock::new(),
+            static_link: None,
         }
+    }
+
+    /// This tier's frame-root static link, if it has one.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn static_link(&self) -> Option<&crate::env::static_link::StaticLink> {
+        self.static_link.as_deref()
+    }
+
+    /// Install this frame root's static link.
+    // Cost: O(1).
+    pub(crate) fn set_static_link(&mut self, link: Arc<crate::env::static_link::StaticLink>) {
+        self.static_link = Some(link);
     }
 
     /// The system names a closure capture keeps from this tier -- see
