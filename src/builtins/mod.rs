@@ -35,6 +35,7 @@ pub(crate) mod pack;
 pub(crate) mod parse_base;
 pub(crate) mod primality;
 pub(crate) mod quanthash_coerce;
+pub(crate) mod rakudo_candidates;
 pub(crate) mod range_bounds_int;
 pub(crate) mod rng;
 pub(crate) mod sampling;

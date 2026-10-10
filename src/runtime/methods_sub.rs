@@ -221,7 +221,14 @@ impl Interpreter {
             );
         }
         if matches!(method, "candidates" | "dispatchees") && args.is_empty() {
-            return Some(Ok(Value::array(self.routine_candidate_subs(package, name))));
+            let declared = self.routine_candidate_subs(package, name);
+            if declared.is_empty() {
+                let builtin = self.builtin_routine_candidates(package, name);
+                if !builtin.is_empty() {
+                    return Some(Ok(Value::array(builtin)));
+                }
+            }
+            return Some(Ok(Value::array(declared)));
         }
         if matches!(method, "rw" | "readonly") && args.is_empty() {
             // A `Routine` handle reached through `.^can` on an auto-generated
@@ -273,6 +280,14 @@ impl Interpreter {
         }
         if method == "cando" && args.len() == 1 {
             let call_args = Self::capture_to_call_args(&args[0]);
+            let builtin = self.builtin_routine_candidates(package, name);
+            if !builtin.is_empty() {
+                let matching: Vec<Value> = builtin
+                    .into_iter()
+                    .filter(|cand| self.candidate_matches_call_args(cand, &call_args))
+                    .collect();
+                return Some(Ok(Value::array(matching)));
+            }
             let matching = self
                 .resolve_all_matching_candidates(name, &call_args)
                 .into_iter()
@@ -1159,6 +1174,15 @@ impl Interpreter {
                 .get("__mutsu_multi_dispatch_candidates")
                 .map(Value::view)
             {
+                if cands.is_empty() {
+                    let builtin = self.builtin_routine_candidates(
+                        &data.package.resolve(),
+                        &data.name.resolve(),
+                    );
+                    if !builtin.is_empty() {
+                        return Some(Ok(Value::array(builtin)));
+                    }
+                }
                 return Some(Ok(Value::array(cands.to_vec())));
             }
             if let Some(ValueView::Str(cls)) = data.env.get("__mutsu_lookup_class").map(Value::view)
@@ -1167,6 +1191,11 @@ impl Interpreter {
             {
                 let candidates = self.classhow_lookup_all_candidates(&cls, &meth, data.package);
                 return Some(Ok(Value::array(candidates)));
+            }
+            let builtin =
+                self.builtin_routine_candidates(&data.package.resolve(), &data.name.resolve());
+            if !builtin.is_empty() {
+                return Some(Ok(Value::array(builtin)));
             }
             return Some(Ok(Value::array(vec![target.clone()])));
         }
@@ -1213,6 +1242,19 @@ impl Interpreter {
                 .map(Value::view)
             {
                 let call_args = Self::capture_to_call_args(&args[0]);
+                if cands.is_empty() {
+                    let builtin = self.builtin_routine_candidates(
+                        &data.package.resolve(),
+                        &data.name.resolve(),
+                    );
+                    if !builtin.is_empty() {
+                        let matches: Vec<Value> = builtin
+                            .into_iter()
+                            .filter(|c| self.candidate_matches_call_args(c, &call_args))
+                            .collect();
+                        return Some(Ok(Value::array(matches)));
+                    }
+                }
                 let matches: Vec<Value> = cands
                     .iter()
                     .filter(|c| self.candidate_matches_call_args(c, &call_args))
@@ -1221,6 +1263,15 @@ impl Interpreter {
                 return Some(Ok(Value::array(matches)));
             }
             let call_args = Self::capture_to_call_args(&args[0]);
+            let builtin =
+                self.builtin_routine_candidates(&data.package.resolve(), &data.name.resolve());
+            if !builtin.is_empty() {
+                let matches: Vec<Value> = builtin
+                    .into_iter()
+                    .filter(|c| self.candidate_matches_call_args(c, &call_args))
+                    .collect();
+                return Some(Ok(Value::array(matches)));
+            }
             let matches = if self.candidate_matches_call_args(target, &call_args) {
                 vec![target.clone()]
             } else {
