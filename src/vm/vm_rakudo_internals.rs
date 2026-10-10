@@ -65,6 +65,43 @@ impl Interpreter {
         }))
     }
 
+    /// Dispatch a `Rakudo::Sorting.<method>` call. Only `MERGESORT-str` is
+    /// answered: it sorts a native `str` array (an `nqp::list_s`) by codepoint
+    /// and returns the sorted native array, as Rakudo's does (ValueMap's
+    /// `WHICH` sorts its keys with it). Returns `None` for anything else.
+    pub(crate) fn try_rakudo_sorting_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if method != "MERGESORT-str" {
+            return None;
+        }
+        let ValueView::Package(name) = target.view() else {
+            return None;
+        };
+        if name.resolve() != "Rakudo::Sorting" {
+            return None;
+        }
+        let (clean_args, _) = self.sanitize_call_args(args);
+        let [list] = clean_args.as_slice() else {
+            return None;
+        };
+        let ValueView::Array(items, ..) = list.view() else {
+            return None;
+        };
+        let mut keys: Vec<String> = items.iter().map(|v| v.to_string_value()).collect();
+        // Cost: O(n log n) comparisons, each O(p) (p = common prefix).
+        // The sort is stable, matching the merge sort it stands in for.
+        keys.sort_by(|a, b| crate::builtins::str_prim::str_order(a, b));
+        let sorted = keys.into_iter().map(Value::str).collect();
+        Some(Ok(Value::nqp_typed_list(
+            sorted,
+            crate::value::NqpElemKind::Str,
+        )))
+    }
+
     /// `%*COMPILING<%?OPTIONS><I>` as a `List`: absent is the empty list, a
     /// single `-I` is stored as a bare `Str`, several as an array.
     fn rakudo_internals_include(&self) -> Value {
