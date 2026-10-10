@@ -57,7 +57,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        // `of`, `returns`, `arity`, `count` and `signature` are `Code` rows (`method_table::code`, ADR-12523).
+        // `of`, `returns`, `arity`, `count`, `signature`, `line` and `file` are `Code` rows (`method_table::code`, ADR-12523).
         if args.is_empty()
             && let Some(answer) = crate::builtins::method_table::code::answer(self, target, method)
         {
@@ -245,23 +245,6 @@ impl Interpreter {
             } else {
                 !is_rw
             })));
-        }
-        if matches!(method, "line" | "file") && args.is_empty() {
-            // A `Routine` value names a routine by (package, name) and carries
-            // no body of its own — a proto/token reached by name, or a core
-            // builtin/operator implemented in Rust. See `routine_decl_location`
-            // for why the latter answers `Nil` rather than a synthesized
-            // `SETTING::` path.
-            let (line, file) = self.routine_decl_location(package, name);
-            return Some(Ok(if method == "line" {
-                line.map(|l| Value::int(l as i64)).unwrap_or(Value::NIL)
-            } else {
-                file.map(|f| {
-                    let source_file = Symbol::intern(&f);
-                    Value::str(self.format_routine_file(f, Some(source_file)))
-                })
-                .unwrap_or(Value::NIL)
-            }));
         }
         // `is implementation-detail` -- see the matching arm in
         // `dispatch_sub_method` below (a bare `&name` reference reaches this
@@ -758,6 +741,113 @@ impl Interpreter {
         Some(Ok(self.sub_signature_value(data)))
     }
 
+    /// `Code.line` and `Code.file` (`method` is one of them): the declaration
+    /// location of a `Sub`, a `&name` handle or a `WeakSub`'s referent. A regex
+    /// records none, and `None` is any other value.
+    // Cost: O(1) for a routine carrying its own location; otherwise one registry
+    // lookup by name.
+    pub(crate) fn code_line_file(
+        &mut self,
+        target: &Value,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        match target.view() {
+            ValueView::Routine { name, package, .. } => {
+                self.routine_line_file(&name.resolve(), &package.resolve(), method)
+            }
+            ValueView::Sub(data) => {
+                let data = data.clone();
+                self.sub_line_file(&data, method)
+            }
+            ValueView::WeakSub(weak) => {
+                let strong = weak.upgrade()?;
+                self.code_line_file(&Value::sub_value(strong), method)
+            }
+            // mutsu records no declaration location for a regex literal (a
+            // constant in the pool) or a grammar `token`/`rule` body
+            // (`Registry::token_defs` keeps the declaring file but no line).
+            ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => Some(Ok(Value::NIL)),
+            _ => None,
+        }
+    }
+
+    fn routine_line_file(
+        &mut self,
+        name: &str,
+        package: &str,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        // A `Routine` value names a routine by (package, name) and carries
+        // no body of its own — a proto/token reached by name, or a core
+        // builtin/operator implemented in Rust. See `routine_decl_location`
+        // for why the latter answers `Nil` rather than a synthesized
+        // `SETTING::` path.
+        let (line, file) = self.routine_decl_location(package, name);
+        Some(Ok(if method == "line" {
+            line.map(|l| Value::int(l as i64)).unwrap_or(Value::NIL)
+        } else {
+            file.map(|f| {
+                let source_file = Symbol::intern(&f);
+                Value::str(self.format_routine_file(f, Some(source_file)))
+            })
+            .unwrap_or(Value::NIL)
+        }))
+    }
+
+    fn sub_line_file(
+        &mut self,
+        data: &crate::value::SubData,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        // A declared routine, closure or block carries its own declaration
+        // location; a multi *dispatcher* (`&mm` for a `multi sub mm`) is
+        // built by name with no compiled body behind it, so it answers from
+        // its first candidate the way Rakudo does.
+        let (line, file) = if data.source_line.is_some() || data.source_file.is_some() {
+            (data.source_line, data.source_file.clone())
+        } else {
+            self.routine_decl_location(&data.package.resolve(), &data.name.resolve())
+        };
+        Some(Ok(if method == "line" {
+            line.map(|l| Value::int(l as i64)).unwrap_or(Value::NIL)
+        } else {
+            file.map(|f| {
+                let source_file = Symbol::intern(&f);
+                Value::str(self.format_routine_file(f, Some(source_file)))
+            })
+            .unwrap_or(Value::NIL)
+        }))
+    }
+
+    /// `Code.name`: the name of a `Sub`, a `&name` handle, a regex or a
+    /// `WeakSub`'s referent, `""` when anonymous. `None` for any other value.
+    // Cost: O(1) for a routine with its own name; O(n) to unqualify and format a
+    // handle's name, n = its length.
+    pub(crate) fn code_name_value(&self, target: &Value) -> Option<Value> {
+        match target.view() {
+            ValueView::Routine { name, .. } => Some(Value::str(super::methods_instance_ops::format_operator_name(
+                crate::qualified::unqualified_part(name).as_str(),
+            ))),
+            // The name lives with the routine's `$!do` (#11462).
+            ValueView::Sub(data) => Some(Value::str(super::methods_instance_ops::format_operator_name(
+                self.code_name(&data).as_str(),
+            ))),
+            ValueView::WeakSub(weak) => {
+                let strong = weak.upgrade()?;
+                self.code_name_value(&Value::sub_value(strong))
+            }
+            // A regex is a `Code`, and an anonymous one's name is "" until
+            // `set_name` gives it one.
+            ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => Some(Value::str(
+                target
+                    .regex_name()
+                    .map(|name| name.resolve())
+                    .unwrap_or_default(),
+            )),
+            _ => None,
+        }
+    }
+
     /// Dispatch methods on Sub.
     /// Returns Some(result) if handled, None to fall through.
     pub(super) fn dispatch_sub_method(
@@ -1231,26 +1321,6 @@ impl Interpreter {
                 "{} {} {}{{ #`(Sub|{}) ... }}",
                 keyword, name, sig_part, id
             ))));
-        }
-        if matches!(method, "line" | "file") && args.is_empty() {
-            // A declared routine, closure or block carries its own declaration
-            // location; a multi *dispatcher* (`&mm` for a `multi sub mm`) is
-            // built by name with no compiled body behind it, so it answers from
-            // its first candidate the way Rakudo does.
-            let (line, file) = if data.source_line.is_some() || data.source_file.is_some() {
-                (data.source_line, data.source_file.clone())
-            } else {
-                self.routine_decl_location(&data.package.resolve(), &data.name.resolve())
-            };
-            return Some(Ok(if method == "line" {
-                line.map(|l| Value::int(l as i64)).unwrap_or(Value::NIL)
-            } else {
-                file.map(|f| {
-                    let source_file = Symbol::intern(&f);
-                    Value::str(self.format_routine_file(f, Some(source_file)))
-                })
-                .unwrap_or(Value::NIL)
-            }));
         }
         // `is implementation-detail` -- read back from the registered
         // `FunctionDef` (see `registration_sub.rs`'s `is_implementation_detail:

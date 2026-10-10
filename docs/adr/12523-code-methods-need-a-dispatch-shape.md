@@ -100,3 +100,9 @@ Slice 3 (2026-10-10) moved `signature`. The `&name`-handle arm and the `Sub` arm
 through the same function), and the row calls it; behaviour is unchanged. Remaining differences from Rakudo are listed by the probe in
 `t/routines/signature/routine-signature-rows.t`'s neighbours: a regex's `:(;; Mu |)` against `:(|)`, a multi method's and builtins'
 signatures.
+
+Slice 4 (2026-10-10) moved `name`, `line` and `file`. The two `line`/`file` arms (a `&name` handle and a `Sub`) became
+`Interpreter::code_line_file`, and `name`'s `Routine`/`Sub`/regex branches in `methods_instance_ops.rs` became
+`Interpreter::code_name_value`; the rows call them and the old `name` arm uses the same function for its `Code` receivers, keeping its
+branches for the container descriptors and type objects (Rakudo declares those on other owners). Behaviour is unchanged. Left on
+#12523: the pure rows (`Bool`, `Str`, `Capture`, `clone`) and `gist`/`raku`; the open questions of section 4 stand.
