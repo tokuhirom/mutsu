@@ -1605,6 +1605,14 @@ impl Interpreter {
             // Under `no strict` an undeclared name is the package variable,
             // which outlives the block whose write auto-declared it (#10622).
             .or_else(|| self.no_strict_package_var(name, sym))
+            // A module's top-level qualified `constant` is a package symbol,
+            // never a frame-env entry (ADR-12529 phase 1). Miss path only: an
+            // env binding of the same name shadows it.
+            .or_else(|| {
+                crate::qualified::is_qualified(sym)
+                    .then(|| self.toplevel_package_symbol(name).cloned())
+                    .flatten()
+            })
     }
 
     /// The cross-thread atomic lane entry for an `@`/`%` name, unless this
