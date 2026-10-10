@@ -415,7 +415,14 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    the link: a flattened copy stays faithful to the whole chain, since a
    deep chain or a frame's saved env *is* its flattening, and the writeback
    that carries a runtime-named write across frame exits reads where the
-   value is (`Env::get_through_callers`), not what the name means there. The pins for §1.3's sub
+   value is (`Env::get_through_callers`), not what the name means there.
+   The link lives on the root's overlay tier (`Tier::static_link`), not on
+   `Env`, which every call moves and clones; a chain-level latch
+   (`chain_has_static_link`, like `chain_has_fallback`) sends only chains
+   that hold one through the walk that follows it. Release-build Ir against
+   the merge base, same machine: `bench-fib` +0.20%, `bench-tak` -0.50%,
+   `method-call` -0.03%, `poly-call` -0.07%, `bench-ctor` +0.16%,
+   `bench-multi-dispatch` +0.29% -- within the layout noise of two builds. The pins for §1.3's sub
    case and the symbolic lookup pass. Only frames that ask get the link, so
    the call paths that reuse or skip a frame root (`overlay_is_shared_empty`
    reuse, the fast path's unscoped calls) give such a body a root of its
