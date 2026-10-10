@@ -411,8 +411,11 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    pointing at the program scope's tiers -- the chain below the deepest
    caller frame. A by-name lookup of a plain user lexical that misses the
    frame continues there, past every caller frame; dynamics, `self`, the
-   topic and system names still walk the whole chain, and so do the
-   flatten family's copies (`apply_static_links`). The pins for §1.3's sub
+   topic and system names still walk the whole chain. Only lookups follow
+   the link: a flattened copy stays faithful to the whole chain, since a
+   deep chain or a frame's saved env *is* its flattening, and the writeback
+   that carries a runtime-named write across frame exits reads where the
+   value is (`Env::get_through_callers`), not what the name means there. The pins for §1.3's sub
    case and the symbolic lookup pass. Only frames that ask get the link, so
    the call paths that reuse or skip a frame root (`overlay_is_shared_empty`
    reuse, the fast path's unscoped calls) give such a body a root of its

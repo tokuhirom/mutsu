@@ -2534,7 +2534,11 @@ impl Interpreter {
         self.pending_runtime_name_writes
             .iter()
             .filter(|name| !is_local(name))
-            .filter_map(|name| current.get(name).map(|v| (name.clone(), v.clone())))
+            .filter_map(|name| {
+                current
+                    .get_through_callers(name)
+                    .map(|v| (name.clone(), v.clone()))
+            })
             .collect()
     }
 
@@ -2571,7 +2575,7 @@ impl Interpreter {
             if callee_private(name) {
                 continue;
             }
-            if let Some(v) = self.env().get(name).cloned() {
+            if let Some(v) = self.env().get_through_callers(name).cloned() {
                 restored_env.insert(name.clone(), v);
             }
         }

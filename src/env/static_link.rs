@@ -20,12 +20,19 @@
 //! the running one. mutsu does not carry a frame's lexical scope in a
 //! `PseudoStash` yet, so such an EVAL resolves through the whole chain, as
 //! every lookup did before the static link existed ([`suppressed`]).
+//!
+//! Only the lookups follow the link. A flattened copy of the chain
+//! (`Env::flattened` and kin) stays faithful to the whole chain, because it is
+//! not only a view: a deep chain is replaced by its flattening, and a frame's
+//! saved and restored env is one, so dropping the caller frames' names there
+//! would lose their writes (a closure's write to `$z` that its caller has not
+//! merged back yet is in exactly such a tier).
 
-use super::{Env, SymMap};
+use super::Env;
 use crate::symbol::Symbol;
+use crate::value::Value;
 use std::cell::Cell;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// How a frame root's lookups treat the frames chained below it.
 pub(crate) enum StaticLink {
@@ -34,11 +41,6 @@ pub(crate) enum StaticLink {
     /// lexical that misses the frame continues here.
     UnitOuter(Arc<Env>),
 }
-
-/// Whether any frame root in the process ever carried a static link. The
-/// flatten family asks it before walking a chain for hidden names, so a
-/// program with no reflective routine pays one relaxed load per flatten.
-static STATIC_LINKS_USED: AtomicBool = AtomicBool::new(false);
 
 thread_local! {
     /// Depth of `EVAL ..., context => ...` calls running on this thread. While
@@ -99,8 +101,17 @@ impl Env {
             }
         }
         let seg = Arc::clone(seg);
-        STATIC_LINKS_USED.store(true, Ordering::Relaxed);
         self.static_link = Some(Arc::new(StaticLink::UnitOuter(seg)));
+    }
+
+    /// [`Self::get`] through the whole chain, callers included, whatever
+    /// static links it holds. For the writeback machinery that carries a
+    /// value *across* frames (a runtime-named write a callee frame holds for
+    /// its caller): it reads where a value currently is, not what a name
+    /// means in this frame's scope.
+    // Cost: O(d), d = chain tiers.
+    pub(crate) fn get_through_callers(&self, key: &str) -> Option<&Value> {
+        with_static_links_suppressed(|| self.get(key))
     }
 
     /// Where a lookup of `key` that missed this env continues, when this env
@@ -114,57 +125,5 @@ impl Env {
         }
         let StaticLink::UnitOuter(target) = link;
         Some(target)
-    }
-
-    /// Make `merged`, a flattening of this env's whole chain, agree with the
-    /// static links in it: a plain user lexical that only a skipped caller
-    /// frame binds is dropped, and one a skipped frame shadows takes the value
-    /// the program scope gives it.
-    // Cost: O(1) when no static link was ever made; otherwise O(d + h * d),
-    // d = chain tiers, h = plain user lexicals the skipped frames bind.
-    pub(super) fn apply_static_links(&self, merged: &mut SymMap) {
-        if !STATIC_LINKS_USED.load(Ordering::Relaxed) || suppressed() {
-            return;
-        }
-        let mut hidden: Vec<Symbol> = Vec::new();
-        let mut target: Option<*const Env> = None;
-        let mut cur = self;
-        loop {
-            if target.is_some_and(|t| std::ptr::eq(t, cur)) {
-                target = None;
-            }
-            if target.is_some() {
-                hidden.extend(
-                    cur.inner
-                        .keys()
-                        .copied()
-                        .filter(|k| k.is_plain_user_lexical()),
-                );
-                if let Some(fb) = &cur.fallback {
-                    hidden.extend(
-                        fb.iter()
-                            .map(|(k, _)| *k)
-                            .filter(|k| k.is_plain_user_lexical()),
-                    );
-                }
-            } else if let Some(link) = &cur.static_link {
-                let StaticLink::UnitOuter(seg) = &**link;
-                target = Some(Arc::as_ptr(seg));
-            }
-            match &cur.parent {
-                Some(parent) => cur = parent,
-                None => break,
-            }
-        }
-        for key in hidden {
-            match self.get_sym_walk(key) {
-                Some(v) => {
-                    merged.insert(key, v.clone());
-                }
-                None => {
-                    merged.remove(&key);
-                }
-            }
-        }
     }
 }

@@ -1476,11 +1476,7 @@ impl Env {
             // the copy deferred to the first write via `cow_mut`. This is the
             // same "empty tier is not a tier" rule `scoped_child` applies when
             // it chains over an empty parent instead of stacking on it.
-            Some(parent)
-                if self.inner.is_empty()
-                    && self.tombstones.is_none()
-                    && self.static_link.is_none() =>
-            {
+            Some(parent) if self.inner.is_empty() && self.tombstones.is_none() => {
                 let mut flat = parent.flattened();
                 // The collapsed tier is this frame's and the parent's is the
                 // caller's, so a frame-write log the parent happens to carry
@@ -1516,7 +1512,6 @@ impl Env {
                         merged.insert(*k, v.clone());
                     }
                 }
-                self.apply_static_links(&mut merged);
                 let dyn_base = cur.dyn_base.clone();
                 let any_tombstone = {
                     let mut cur = self;
@@ -1665,7 +1660,6 @@ impl Env {
                 merged.insert(*k, v.clone());
             }
         }
-        self.apply_static_links(&mut merged);
         // A tombstone that hides a base-tier dynamic has to survive the
         // collapse -- see `flattened`'s general arm, which this mirrors.
         let tombstones = any_tombstone
