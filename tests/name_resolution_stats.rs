@@ -99,21 +99,24 @@ fn counters_track_calls_and_closure_creations() {
     // The loop resolves names by walking the caller chain. Only a debug
     // binary counts walks (`Env::get_sym` says why); a release one prints
     // `n/a`, and the test binary is built in the same profile.
-    match (
+    let walks = (
         c10.chain_walks,
         c20.chain_walks,
         c10.chain_hops,
         c20.chain_hops,
-    ) {
-        (Some(w10), Some(w20), Some(h10), Some(h20)) => {
-            assert!(cfg!(debug_assertions), "a release binary counted walks");
-            assert!(w20 > w10, "chain walks must be counted");
-            assert!(h20 >= h10, "hops never decrease");
-        }
-        (None, None, None, None) => {
-            assert!(!cfg!(debug_assertions), "a debug binary must count walks");
-        }
-        other => panic!("walk counters half present: {other:?}"),
+    );
+    if cfg!(debug_assertions) {
+        let (Some(w10), Some(w20), Some(h10), Some(h20)) = walks else {
+            panic!("a debug binary must count walks: {walks:?}");
+        };
+        assert!(w20 > w10, "chain walks must be counted");
+        assert!(h20 >= h10, "hops never decrease");
+    } else {
+        assert_eq!(
+            walks,
+            (None, None, None, None),
+            "a release binary counted walks"
+        );
     }
 }
 
