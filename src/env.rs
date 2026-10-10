@@ -665,6 +665,12 @@ pub struct Env {
     /// below it (ADR-12529 phase 3, [`static_link`]). `None` on every env but
     /// the root of a frame that asked for a static view.
     static_link: Option<Arc<static_link::StaticLink>>,
+    /// True when this env, or any tier below it, carries a
+    /// [`static_link`](Self::static_link): the lookup loops then take the
+    /// walk that follows links ([`Self::get_sym_with_fallback`]), and every
+    /// other chain keeps the plain loop with no per-tier test. Inherited like
+    /// [`chain_has_fallback`](Self::chain_has_fallback).
+    chain_has_static_link: bool,
     /// The by-name writes this env's **frame tier** has taken since the frame
     /// opened, recorded only for an env whose tier was collapsed into the flat
     /// map by [`Self::flattened_for_frame`]. `None` everywhere else — a scoped
@@ -847,6 +853,7 @@ impl Env {
             static_link: None,
             fallback: None,
             chain_has_fallback: false,
+            chain_has_static_link: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -975,13 +982,15 @@ impl Env {
                     static_link: None,
                     fallback: None,
                     chain_has_fallback: flat_chf,
+                    chain_has_static_link: false,
                     capture_merged: OnceLock::new(),
                     frame_writes: None,
                     code_entries: None,
                     dyn_base: None,
                 };
             }
-            let (arc_depth, arc_chf) = (arc.depth, arc.chain_has_fallback);
+            let (arc_depth, arc_chf, arc_csl) =
+                (arc.depth, arc.chain_has_fallback, arc.chain_has_static_link);
             return Self {
                 inner: empty_overlay(),
                 depth: arc_depth + 1,
@@ -993,6 +1002,7 @@ impl Env {
                 static_link: None,
                 fallback: None,
                 chain_has_fallback: arc_chf,
+                chain_has_static_link: arc_csl,
                 capture_merged: OnceLock::new(),
                 frame_writes: None,
                 code_entries: None,
@@ -1004,7 +1014,11 @@ impl Env {
         } else {
             parent
         };
-        let (parent_depth, parent_chf) = (parent.depth, parent.chain_has_fallback);
+        let (parent_depth, parent_chf, parent_csl) = (
+            parent.depth,
+            parent.chain_has_fallback,
+            parent.chain_has_static_link,
+        );
         Self {
             inner: empty_overlay(),
             depth: parent_depth + 1,
@@ -1016,6 +1030,7 @@ impl Env {
             static_link: None,
             fallback: None,
             chain_has_fallback: parent_chf,
+            chain_has_static_link: parent_csl,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1040,7 +1055,11 @@ impl Env {
         }
         let file_sym = parent.file_sym;
         let frame_ids = parent.frame_ids;
-        let (parent_depth, parent_chf) = (parent.depth, parent.chain_has_fallback);
+        let (parent_depth, parent_chf, parent_csl) = (
+            parent.depth,
+            parent.chain_has_fallback,
+            parent.chain_has_static_link,
+        );
         let parent = Arc::new(parent);
         let child = Self {
             inner: empty_overlay(),
@@ -1053,6 +1072,7 @@ impl Env {
             static_link: None,
             fallback: None,
             chain_has_fallback: parent_chf,
+            chain_has_static_link: parent_csl,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1075,6 +1095,7 @@ impl Env {
             static_link: None,
             fallback: None,
             chain_has_fallback: false,
+            chain_has_static_link: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1547,6 +1568,7 @@ impl Env {
                     // writes when a light frame needs them (#7630).
                     fallback: None,
                     chain_has_fallback: false,
+                    chain_has_static_link: false,
                     capture_merged: OnceLock::new(),
                     frame_writes: None,
                     code_entries: None,
@@ -1677,6 +1699,7 @@ impl Env {
             static_link: None,
             fallback: None,
             chain_has_fallback: false,
+            chain_has_static_link: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1849,6 +1872,7 @@ impl Env {
             static_link: None,
             fallback: None,
             chain_has_fallback: false,
+            chain_has_static_link: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -2012,6 +2036,7 @@ impl Env {
             static_link: None,
             fallback: None,
             chain_has_fallback: false,
+            chain_has_static_link: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -2177,6 +2202,7 @@ impl Env {
             frame_root: false,
             static_link: None,
             chain_has_fallback: fallback.is_some(),
+            chain_has_static_link: false,
             capture_merged: OnceLock::new(),
             fallback,
             frame_writes: None,
@@ -2310,7 +2336,7 @@ impl Env {
         // capture below it, which is nearly all of them. The fallback walk is
         // a separate copy of this loop rather than a flag inside it, so the
         // common path pays no per-tier test.
-        if self.chain_has_fallback {
+        if self.chain_has_fallback | self.chain_has_static_link {
             return self.get_sym_with_fallback(key);
         }
         // Walk the parent chain (each tier may itself be scoped) as a LOOP, not
@@ -2333,11 +2359,6 @@ impl Env {
             if cur.is_tombstoned(key) {
                 return None;
             }
-            // A frame root with a static link skips its callers for a lexical.
-            if let Some(outer) = cur.static_skip(key) {
-                cur = outer;
-                continue;
-            }
             match &cur.parent {
                 Some(parent) => cur = parent,
                 None => break,
@@ -2353,7 +2374,8 @@ impl Env {
 
     /// [`Self::get_sym`] for a chain that carries a capture
     /// [`fallback`](Self::fallback), which is only ever a frame executing a
-    /// closure.
+    /// closure, or a [`static_link`](Self::static_link), which only a frame
+    /// that looks names up reflectively has (ADR-12529 phase 3).
     ///
     /// The fallback tiers are below the base, so this cannot answer from one
     /// until the whole chain and the base have missed — but it collects them in
@@ -2431,7 +2453,7 @@ impl Env {
     /// [`Self::contains_key_sym`] without the filter — the walk itself.
     #[inline]
     fn contains_key_sym_walk(&self, key: Symbol) -> bool {
-        if self.chain_has_fallback {
+        if self.chain_has_fallback | self.chain_has_static_link {
             return self.get_sym_with_fallback(key).is_some();
         }
         // Loop, not recursion — see `get_sym` for why.
@@ -2442,10 +2464,6 @@ impl Env {
             }
             if cur.is_tombstoned(key) {
                 return false;
-            }
-            if let Some(outer) = cur.static_skip(key) {
-                cur = outer;
-                continue;
             }
             match &cur.parent {
                 Some(parent) => cur = parent,
@@ -3084,6 +3102,7 @@ impl From<ValueMap> for Env {
             static_link: None,
             fallback: None,
             chain_has_fallback: false,
+            chain_has_static_link: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -3107,6 +3126,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             static_link: None,
             fallback: None,
             chain_has_fallback: false,
+            chain_has_static_link: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,

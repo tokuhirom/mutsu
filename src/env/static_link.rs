@@ -102,6 +102,7 @@ impl Env {
         }
         let seg = Arc::clone(seg);
         self.static_link = Some(Arc::new(StaticLink::UnitOuter(seg)));
+        self.chain_has_static_link = true;
     }
 
     /// [`Self::get`] through the whole chain, callers included, whatever
