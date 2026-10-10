@@ -87,7 +87,7 @@ These are absolute; if a task seems to require breaking one, stop and ask the us
 - **Only ever touch `tokuhirom/mutsu`.** Never open a PR or file, label, comment on or close an
   issue in any other repository — above all not a Raku-org one (`roast`, `raku-doc`, `rakudo`),
   where an AI has actually mis-filed a mutsu issue before.
-- **Never commit to `main`**; always a feature branch and a PR. Never stack PRs (`gh stack`).
+- **Never commit to `main`**; always a feature branch and a PR.
 - **Preserve unrelated working-tree changes**, and never use a destructive Git operation
   (`reset --hard`, `checkout -- .`, `clean -f`) to discard work you did not create.
 - **Never close a PR without preserving its knowledge.** A conflicted PR gets rebased (by you or an
