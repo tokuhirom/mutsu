@@ -17,6 +17,7 @@ use std::process::Command;
 
 struct Counts {
     scoped_overlays: u64,
+    capture_layers: u64,
     /// `None` from a release binary, which does not count walks.
     chain_walks: Option<u64>,
     chain_hops: Option<u64>,
@@ -58,9 +59,9 @@ fn run(src: &str) -> (String, Counts) {
         chain_hops: walk_field("chain_hops"),
         captures: field("captures"),
         capture_own_entries: field("capture_own_entries"),
+        // Present even when zero, so a reader can tell "none" from "not counted".
+        capture_layers: field("capture_layers"),
     };
-    // Present even when zero, so a reader can tell "none" from "not counted".
-    field("capture_layers");
     (String::from_utf8_lossy(&out.stdout).into_owned(), counts)
 }
 
@@ -135,5 +136,36 @@ fn no_stats_line_without_the_switch() {
     assert!(
         !stderr.contains("name-resolution:"),
         "stats printed without MUTSU_VM_STATS: {stderr}"
+    );
+}
+
+/// A closure body that calls itself `depth` times, then creates two closures
+/// at the bottom of that dynamic nesting.
+fn closure_depth(depth: u32) -> String {
+    format!(
+        "my &run; &run = -> Int $d, &k {{ $d == 0 ?? k() !! run($d - 1, &k) }};\n\
+         my $n = 0; for ^5 {{ $n += run({depth}, -> {{ my &c = -> {{ 1 }}; c() }}) }}; say $n;"
+    )
+}
+
+#[test]
+fn a_closure_capture_ignores_the_calling_closures() {
+    // ADR-12529 phase 3 (#12519): a closure created while a closure body runs
+    // captures that body's scope, not the closure frames that called it, so
+    // its capture does not grow with the dynamic nesting.
+    let (out5, c5) = run(&closure_depth(5));
+    let (out40, c40) = run(&closure_depth(40));
+    assert_eq!(out5, "5\n");
+    assert_eq!(out40, "5\n");
+    assert_eq!(c5.captures, c40.captures, "same closures created");
+    assert_eq!(
+        c5.capture_layers, c40.capture_layers,
+        "capture layers followed the dynamic nesting"
+    );
+    assert!(
+        c5.capture_layers <= c5.captures,
+        "a capture took the callers' layers: {} layers for {} captures",
+        c5.capture_layers,
+        c5.captures
     );
 }

@@ -654,6 +654,12 @@ pub struct Env {
     /// derived env inherits it: a scoped child or block tier from its parent,
     /// a flattened or captured env from the env it was built from.
     frame_ids: FrameIds,
+    /// Whether this env is the root tier of a call frame: [`Self::scoped_child`]
+    /// sets it, every other constructor (block tiers, flattened envs,
+    /// captures) leaves it clear. A closure capture stops its walk at the
+    /// running frame's root when that frame runs a closure body (ADR-12529
+    /// phase 3, see [`Self::layered_capture`]).
+    frame_root: bool,
     /// The by-name writes this env's **frame tier** has taken since the frame
     /// opened, recorded only for an env whose tier was collapsed into the flat
     /// map by [`Self::flattened_for_frame`]. `None` everywhere else — a scoped
@@ -832,6 +838,7 @@ impl Env {
             depth: 0,
             file_sym: None,
             frame_ids: FrameIds::NONE,
+            frame_root: false,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -956,6 +963,7 @@ impl Env {
                     tombstones: None,
                     file_sym,
                     frame_ids,
+                    frame_root: true,
                     fallback: None,
                     chain_has_fallback: flat_chf,
                     capture_merged: OnceLock::new(),
@@ -972,6 +980,7 @@ impl Env {
                 tombstones: None,
                 file_sym,
                 frame_ids,
+                frame_root: true,
                 fallback: None,
                 chain_has_fallback: arc_chf,
                 capture_merged: OnceLock::new(),
@@ -993,6 +1002,7 @@ impl Env {
             tombstones: None,
             file_sym,
             frame_ids,
+            frame_root: true,
             fallback: None,
             chain_has_fallback: parent_chf,
             capture_merged: OnceLock::new(),
@@ -1028,6 +1038,7 @@ impl Env {
             tombstones: None,
             file_sym,
             frame_ids,
+            frame_root: false,
             fallback: None,
             chain_has_fallback: parent_chf,
             capture_merged: OnceLock::new(),
@@ -1048,6 +1059,7 @@ impl Env {
             depth: 0,
             file_sym: None,
             frame_ids: FrameIds::NONE,
+            frame_root: false,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -1515,6 +1527,7 @@ impl Env {
                     // Flattening preserves every visible value, `?FILE` included.
                     file_sym: self.file_sym,
                     frame_ids: self.frame_ids,
+                    frame_root: false,
                     // The merged map is no longer any one frame's tier;
                     // `flattened_for_frame` is what records the collapsed tier's
                     // writes when a light frame needs them (#7630).
@@ -1646,6 +1659,7 @@ impl Env {
             depth: 0,
             file_sym: self.file_sym,
             frame_ids: self.frame_ids,
+            frame_root: false,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -1816,6 +1830,7 @@ impl Env {
             depth: 0,
             file_sym,
             frame_ids: self.frame_ids,
+            frame_root: false,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -1977,6 +1992,7 @@ impl Env {
             depth: 0,
             file_sym,
             frame_ids: self.frame_ids,
+            frame_root: false,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -2031,6 +2047,24 @@ impl Env {
             }
             nodes.push(env);
             cur = env.parent.as_deref();
+        }
+        // ADR-12529 phase 3 (#12519): a closure created while a closure body
+        // runs captures that body's lexical scope -- its own tiers down to
+        // the running frame's root, which holds its capture (`fallback`), and
+        // that capture --
+        // not the caller frames chained below it. Those are the CALLER's
+        // names: lexically invisible here, and the reason a capture's layer
+        // count used to follow the dynamic nesting of closure creation. The
+        // chain's flat tail stays: it is the program scope every chain
+        // bottoms out at, which this phase has not yet replaced. A frame with
+        // no capture of its own (a named sub's) keeps the whole chain.
+        if let Some(frame_root) = nodes.iter().position(|env| env.frame_root)
+            && nodes[frame_root].fallback.is_some()
+            && frame_root + 2 < nodes.len()
+        {
+            let tail = nodes[nodes.len() - 1];
+            nodes.truncate(frame_root + 1);
+            nodes.push(tail);
         }
         let mut own = SymMap::default();
         let mut layers: Vec<Layer> = Vec::new();
@@ -2123,6 +2157,7 @@ impl Env {
             depth: 0,
             file_sym: None,
             frame_ids: self.frame_ids,
+            frame_root: false,
             chain_has_fallback: fallback.is_some(),
             capture_merged: OnceLock::new(),
             fallback,
@@ -3014,6 +3049,7 @@ impl From<ValueMap> for Env {
             depth: 0,
             file_sym,
             frame_ids: FrameIds::NONE,
+            frame_root: false,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -3035,6 +3071,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             depth: 0,
             file_sym,
             frame_ids: FrameIds::NONE,
+            frame_root: false,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
