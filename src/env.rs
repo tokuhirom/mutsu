@@ -657,8 +657,7 @@ pub struct Env {
     /// Whether this env is the root tier of a call frame: [`Self::scoped_child`]
     /// sets it, every other constructor (block tiers, flattened envs,
     /// captures) leaves it clear. A closure capture stops its walk at the
-    /// running frame's root when that frame runs a closure body (ADR-12529
-    /// phase 3, see [`Self::layered_capture`]).
+    /// running frame's root (ADR-12529 phase 3, see [`Self::layered_capture`]).
     frame_root: bool,
     /// The by-name writes this env's **frame tier** has taken since the frame
     /// opened, recorded only for an env whose tier was collapsed into the flat
@@ -2048,18 +2047,18 @@ impl Env {
             nodes.push(env);
             cur = env.parent.as_deref();
         }
-        // ADR-12529 phase 3 (#12519): a closure created while a closure body
-        // runs captures that body's lexical scope -- its own tiers down to
-        // the running frame's root, which holds its capture (`fallback`), and
-        // that capture --
-        // not the caller frames chained below it. Those are the CALLER's
-        // names: lexically invisible here, and the reason a capture's layer
-        // count used to follow the dynamic nesting of closure creation. The
-        // chain's flat tail stays: it is the program scope every chain
-        // bottoms out at, which this phase has not yet replaced. A frame with
-        // no capture of its own (a named sub's) keeps the whole chain.
+        // ADR-12529 phase 3 (#12519): a closure captures the running frame's
+        // lexical scope -- its own tiers down to the frame's root and, for a
+        // closure body, the capture that root holds (`fallback`) -- not the
+        // caller frames chained below it. Those are the CALLER's names:
+        // lexically invisible here, and the reason a capture's layer count
+        // used to follow the dynamic nesting of calls. The chain's flat tail
+        // stays: it is the program scope every chain bottoms out at, which
+        // this phase has not yet replaced. A named sub's frame holds no
+        // capture; its lexical outer is the program scope and the
+        // declaration-scoped stores (unit lexicals, ADR-0024) its free
+        // variables already resolve through.
         if let Some(frame_root) = nodes.iter().position(|env| env.frame_root)
-            && nodes[frame_root].fallback.is_some()
             && frame_root + 2 < nodes.len()
         {
             let tail = nodes[nodes.len() - 1];

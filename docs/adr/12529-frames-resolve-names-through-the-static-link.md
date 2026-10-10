@@ -391,6 +391,15 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    (`tests/name_resolution_stats.rs`). A frame with no capture of its own
    -- a named sub's -- still keeps its whole chain; its lexical outer is
    the next step.
+
+   **Slice 2 done** (`perf/12529-phase3-named-sub-capture`): the same cut
+   for every frame. A closure created in a named sub's frame takes that
+   frame's tiers and the program-scope tail, not the frames that called the
+   sub: a named sub has no capture of its own, and its free variables
+   already resolve through the declaration-scoped stores (unit lexicals,
+   ADR-0024) rather than through its callers. Same FunctionalParsers probe:
+   `capture_layers` 47,961 → 23,187 and `capture_own_entries` 81,639 →
+   67,246.
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

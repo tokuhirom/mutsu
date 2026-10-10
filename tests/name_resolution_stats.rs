@@ -169,3 +169,29 @@ fn a_closure_capture_ignores_the_calling_closures() {
         c5.captures
     );
 }
+
+/// A named sub that calls itself `depth` times through a closure, then
+/// creates two closures at the bottom of that dynamic nesting.
+fn named_sub_depth(depth: u32) -> String {
+    format!(
+        "sub run(Int $d, &k) {{ $d == 0 ?? k() !! (-> {{ run($d - 1, &k) }})() }}\n\
+         sub make() {{ my &c = -> {{ 1 }}; c() }}\n\
+         my $n = 0; for ^5 {{ $n += run({depth}, &make) }}; say $n;"
+    )
+}
+
+#[test]
+fn a_named_sub_capture_ignores_its_callers() {
+    // ADR-12529 phase 3: a closure created in a named sub's frame captures
+    // that frame and the program scope, not the frames that called the sub.
+    let (out5, c5) = run(&named_sub_depth(5));
+    let (out40, c40) = run(&named_sub_depth(40));
+    assert_eq!(out5, "5\n");
+    assert_eq!(out40, "5\n");
+    assert!(
+        c40.capture_layers <= c5.capture_layers,
+        "capture layers followed the dynamic nesting: {} at depth 5, {} at depth 40",
+        c5.capture_layers,
+        c40.capture_layers
+    );
+}
