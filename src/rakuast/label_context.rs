@@ -2,6 +2,7 @@
 
 use std::cell::RefCell;
 
+use crate::ast::Expr;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value};
 
@@ -48,4 +49,13 @@ pub(super) fn lookup(name: &str) -> Option<Value> {
             .find(|(label, _)| *label == name)
             .map(|(_, value)| value.clone())
     })
+}
+
+// Cost: O(n), n = label name length.
+pub(super) fn expression_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::BareWord(name) => Some(name.clone()),
+        Expr::Literal(value) => crate::value::label::label_name(value),
+        _ => None,
+    }
 }

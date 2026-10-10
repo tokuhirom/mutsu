@@ -2523,6 +2523,7 @@ t/modules/import-export/test-namespace-export-use-args.t
 t/modules/import-export/trait-mod-is-export-symbol.t
 t/modules/import-export/unit-class-also-is.t
 t/modules/import-export/unit-class-code-static-assignment.t
+t/modules/import-export/unit-class-constant-isolation.t
 t/modules/import-export/unit-class-is-export.t
 t/modules/import-export/unit-class-role-and-composition.t
 t/modules/import-export/unit-class-use-before-decl-operator.t
@@ -2605,6 +2606,7 @@ t/modules/module-pod-late-call.t
 t/modules/module-pod-variable.t
 t/modules/module-private-enum-qualified-scope.t
 t/modules/module-private-sub-does-not-leak.t
+t/modules/module-qualified-code-constants-off-env.t
 t/modules/module-qualified-self-after-namespace-load.t
 t/modules/module-reuse-class-in-block.t
 t/modules/module-reused-role-does-in-nested-decl.t
@@ -4379,6 +4381,7 @@ t/regex/match/match-global-positional-vars.t
 t/regex/match/match-hash-map.t
 t/regex/match/match-join-captures.t
 t/regex/match/match-method-rows.t
+t/regex/match/match-multidim-whatever-slice.t
 t/regex/match/match-named-capture-kv-values-flatten.t
 t/regex/match/match-nonregex-matcher.t
 t/regex/match/match-not-associative.t
@@ -4819,6 +4822,7 @@ t/routines/call/captured-outer-container-cell-sharing.t
 t/routines/call/captured-outer-pair-container-alias.t
 t/routines/call/captured-scalar-array-share-shadow.t
 t/routines/call/cas-captured-lexical-coherence.t
+t/routines/call/code-capture-clone-rows.t
 t/routines/call/concat-assign-captured-and-attr.t
 t/routines/call/container-capture-cell-dichotomy.t
 t/routines/call/cross-metaop-thunk-captured-writeback-coherence.t
@@ -5265,6 +5269,7 @@ t/routines/reduce-bracketed-callable-op.t
 t/routines/routine-arity-count-rows.t
 t/routines/routine-body-let-resolution.t
 t/routines/routine-body-scans-reach-expressions.t
+t/routines/routine-name-line-file-rows.t
 t/routines/routine-nested-sub-shadowed-free-var.t
 t/routines/routine-of-returns-rows.t
 t/routines/routine-own-bind-ignores-caller-binding.t
@@ -5319,6 +5324,7 @@ t/routines/signature/defaulted-param-positional-light.t
 t/routines/signature/destructure-anonymous-type-constraint.t
 t/routines/signature/destructure-bind-arity.t
 t/routines/signature/destructure-decl-bare-type.t
+t/routines/signature/destructure-decl-default.t
 t/routines/signature/destructure-keeps-source-itemization.t
 t/routines/signature/destructure-literal-postconstraint.t
 t/routines/signature/destructure-named-alias.t

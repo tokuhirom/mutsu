@@ -687,7 +687,9 @@ fn node_label(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
 fn loop_label(node: &RakuAstNode, args: Vec<Expr>) -> Result<Option<String>, RuntimeError> {
     match args.as_slice() {
         [] => Ok(None),
-        [Expr::BareWord(label)] => Ok(Some(label.clone())),
+        [expr] => super::label_context::expression_name(expr)
+            .map(Some)
+            .ok_or_else(|| unsupported(node)),
         _ => Err(unsupported(node)),
     }
 }
@@ -2833,9 +2835,13 @@ fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         };
         match args.as_slice() {
             [] => return Ok(flow(None, None)),
-            [Expr::BareWord(label)] => return Ok(flow(Some(label.clone()), None)),
-            [_] if name != "redo" => {
-                if let Some(expr) = crate::parser::loop_control_expr(&name, args.clone()) {
+            [expr] => {
+                if let Some(label) = super::label_context::expression_name(expr) {
+                    return Ok(flow(Some(label), None));
+                }
+                if name != "redo"
+                    && let Some(expr) = crate::parser::loop_control_expr(&name, args.clone())
+                {
                     return Ok(expr);
                 }
             }

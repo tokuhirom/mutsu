@@ -19,6 +19,10 @@ dies-ok { run-tree(Q{L: do { last L }}) },
     'a labelled do does not become a loop';
 dies-ok { run-tree(Q{L: { next L }}) },
     'a labelled bare block does not become a loop';
+is run-tree(Q{my $n = 0; OUTER: for 1..3 { for 1..3 { $n++; next OUTER } }; $n}), 3,
+    'resolved label terms retain labelled loop control';
+is run-tree(Q{my $n = 0; OUTER: for 1..3 { $n++; (last OUTER) }; $n}), 1,
+    'resolved label terms retain expression-position loop control';
 
 # Inspect the standalone compiler variables through a routine body too.
 my $routine = Q{sub recurse { &?ROUTINE }}.AST.statements[0].expression;
