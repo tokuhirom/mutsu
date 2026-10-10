@@ -24,6 +24,7 @@ impl Interpreter {
             package: self.current_package_sym(),
             routine: self.routine_stack.last().copied(),
             synthetic: false,
+            routine_depth: self.routine_stack.len(),
         });
     }
 
@@ -87,6 +88,7 @@ impl Interpreter {
                 package: self.current_package_sym(),
                 routine: None,
                 synthetic: true,
+                routine_depth: self.routine_stack.len(),
             });
         }
     }

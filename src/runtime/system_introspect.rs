@@ -40,7 +40,8 @@ impl Interpreter {
         }
 
         // depth >= 1: walk up the caller env stack
-        let stack_len = self.callframe_stack.len();
+        let frames = self.effective_callframes();
+        let stack_len = frames.len();
         if depth > stack_len {
             // One level past the outermost real frame is the synthetic "setting"
             // frame: raku always has an outer setting/bootstrap frame above the
@@ -57,7 +58,7 @@ impl Interpreter {
             }
             return None;
         }
-        let entry = &self.callframe_stack[stack_len - depth];
+        let entry = &frames[stack_len - depth];
         let code = entry
             .code
             .as_ref()
@@ -74,6 +75,51 @@ impl Interpreter {
         attrs.insert("__depth".to_string(), Value::int(depth as i64));
         attrs.insert("annotations".to_string(), self.build_annotations(&attrs));
         Some(Value::make_instance(Symbol::intern("CallFrame"), attrs))
+    }
+
+    /// `callframe_stack` plus an entry for every routine frame that a frameless
+    /// light/fast call path pushed on `routine_stack` without pushing a
+    /// `callframe_stack` entry (those paths skip `push_caller_env`). The
+    /// synthesized entry's line/file are the call site recorded on the routine
+    /// frame; its lexicals are unavailable (empty env).
+    // Cost: O(r + c), r = routine_stack depth, c = callframe_stack depth.
+    fn effective_callframes(&self) -> std::borrow::Cow<'_, [CallFrameEntry]> {
+        let claimed = |k: usize| self.callframe_stack.iter().any(|e| e.routine_depth == k);
+        let missing = |f: &RoutineFrame| {
+            !f.is_block && !f.is_inlined_block && !f.is_method && !f.name.is_empty()
+        };
+        if !self
+            .routine_stack
+            .iter()
+            .enumerate()
+            .any(|(k, f)| missing(f) && !claimed(k))
+        {
+            return std::borrow::Cow::Borrowed(&self.callframe_stack);
+        }
+        let mut out = Vec::with_capacity(self.callframe_stack.len() + 4);
+        let mut real = self.callframe_stack.iter().peekable();
+        for k in 0..=self.routine_stack.len() {
+            while let Some(e) = real.next_if(|e| e.routine_depth <= k) {
+                out.push(e.clone());
+            }
+            if let Some(f) = self.routine_stack.get(k)
+                && missing(f)
+                && !claimed(k)
+            {
+                out.push(CallFrameEntry {
+                    file: f.file.map(|s| s.resolve()).unwrap_or_default(),
+                    line: f.line.map_or(0, i64::from),
+                    code: None,
+                    env: Env::new(),
+                    package: f.package,
+                    routine: k.checked_sub(1).and_then(|p| self.routine_stack.get(p)).copied(),
+                    synthetic: false,
+                    routine_depth: k,
+                });
+            }
+        }
+        out.extend(real.cloned());
+        std::borrow::Cow::Owned(out)
     }
 
     /// The code object for a frame whose entry carries no code: a method (its
