@@ -189,8 +189,12 @@ impl Interpreter {
             // Big integers compare exactly; the f64 fallback below would
             // collapse neighbours beyond 2**53 into `Same`.
             (ValueView::BigInt(a), ValueView::BigInt(b)) => a.as_ref().cmp(b.as_ref()),
-            (ValueView::BigInt(a), ValueView::Int(b)) => a.as_ref().cmp(&num_bigint::BigInt::from(b)),
-            (ValueView::Int(a), ValueView::BigInt(b)) => num_bigint::BigInt::from(a).cmp(b.as_ref()),
+            (ValueView::BigInt(a), ValueView::Int(b)) => {
+                a.as_ref().cmp(&num_bigint::BigInt::from(b))
+            }
+            (ValueView::Int(a), ValueView::BigInt(b)) => {
+                num_bigint::BigInt::from(a).cmp(b.as_ref())
+            }
             (ValueView::Int(a), ValueView::Num(b)) => (a as f64)
                 .partial_cmp(&b)
                 .unwrap_or(std::cmp::Ordering::Equal),
