@@ -702,7 +702,10 @@ impl Compiler {
                         // itemized like an ordinary `my $x = EXPR`.
                         if is_constant_decl {
                             let bare_idx = self.code.add_constant(Value::str(name.clone()));
-                            self.code.emit(OpCode::SetGlobalRaw(bare_idx));
+                            self.code.emit(OpCode::SetGlobalRaw {
+                                name_idx: bare_idx,
+                                constant: true,
+                            });
                         } else {
                             self.emit_set_named_var(name);
                         }
@@ -715,7 +718,10 @@ impl Compiler {
                         }
                         let idx = self.code.add_constant(Value::str(qualified));
                         if is_constant_decl {
-                            self.code.emit(OpCode::SetGlobalRaw(idx));
+                            self.code.emit(OpCode::SetGlobalRaw {
+                                name_idx: idx,
+                                constant: true,
+                            });
                         } else {
                             self.code.emit(OpCode::SetGlobal(idx));
                         }

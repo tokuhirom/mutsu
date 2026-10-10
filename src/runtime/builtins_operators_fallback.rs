@@ -875,7 +875,14 @@ impl Interpreter {
         }
         // Check for callable in env (e.g. &name) before proto dispatch failure.
         // This handles subs with CALL-ME mixed in via trait_mod.
-        let callable_from_code_sigil = self.env.get(&format!("&{}", name)).cloned();
+        let code_sigil_key = format!("&{}", name);
+        // A module's top-level `constant &Pkg::name` is a package symbol, not
+        // a frame-env entry (ADR-12529 phase 1).
+        let callable_from_code_sigil = self.env.get(&code_sigil_key).cloned().or_else(|| {
+            crate::qualified::is_qualified_str(name)
+                .then(|| self.toplevel_package_symbol(&code_sigil_key).cloned())
+                .flatten()
+        });
         let callable_from_plain = self.env.get(name).cloned();
         if let Some(callable) = callable_from_code_sigil
             .filter(|v| {
