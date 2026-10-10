@@ -170,6 +170,8 @@ struct Frame {
     routines: Vec<Routine>,
     /// Edits to this scope's statement list, applied once it has been walked.
     edits: Vec<(usize, Edit)>,
+    /// Phasers prepended to this scope's statements once it has been walked.
+    entry: Vec<Stmt>,
     /// The package this scope is the body of, when a lifted `INIT` or `CHECK`
     /// has to re-enter it ([`phasers`]).
     package: Option<Enclosing>,

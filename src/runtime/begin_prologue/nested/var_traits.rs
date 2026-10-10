@@ -19,9 +19,25 @@ use crate::runtime::phasers::APPLY_VAR_TRAIT_CALL;
 /// the lifted traits that follow file their `Variable.block` phasers under.
 pub(crate) const VAR_TRAIT_SITE: &str = "__site";
 
-/// The marker trait of a lifted declaration: its argument is the site whose
-/// phasers the declaration replays on every entry.
-pub(crate) const VAR_TRAIT_REPLAY: &str = "__replay_phasers";
+/// The prefix of the synthetic trait that replays one kind of phaser (the
+/// suffix) filed under the site given as its argument.
+pub(crate) const VAR_TRAIT_REPLAY: &str = "__replay_phasers:";
+
+/// The marker of a lifted declaration whose block's ENTER queue may seed the
+/// variable: the declaration stashes the slot's value before it runs and puts
+/// a defined one back after (`VAR_TRAIT_SEED_STASH` / `_RESTORE`).
+pub(crate) const VAR_TRAIT_SEEDED: &str = "__seeded_decl";
+pub(crate) const VAR_TRAIT_SEED_STASH: &str = "__seed_stash";
+pub(crate) const VAR_TRAIT_SEED_RESTORE: &str = "__seed_restore";
+
+/// The block phasers a lifted declaration's scope gets, with the kind name
+/// `Variable.block.add_phaser` files each under.
+const REPLAYED_KINDS: [(PhaserKind, &str); 4] = [
+    (PhaserKind::Enter, "ENTER"),
+    (PhaserKind::Leave, "LEAVE"),
+    (PhaserKind::Keep, "KEEP"),
+    (PhaserKind::Undo, "UNDO"),
+];
 
 /// Traits the VM applies itself, or that mark the declaration for something
 /// other than a `trait_mod:<is>` handler. They are never lifted.
@@ -110,13 +126,31 @@ impl Walker<'_> {
         let mut stripped = stmt.clone();
         if let Stmt::VarDecl { custom_traits, .. } = &mut stripped {
             custom_traits.retain(|(t, _)| t.starts_with("__"));
-            custom_traits.push((
-                VAR_TRAIT_REPLAY.to_string(),
-                Some(Expr::Literal(crate::value::Value::str(site))),
-            ));
+            custom_traits.push((VAR_TRAIT_SEEDED.to_string(), None));
         }
         self.bind_decl(&stripped, Some(index));
         if self.lift(&body, None, &PhaserKind::Begin) {
+            // The scope's own phaser queues replay what the handlers add
+            // through `Variable.block.add_phaser`, ahead of its body.
+            for (kind, replay) in REPLAYED_KINDS {
+                let call = Stmt::Expr(Expr::Call {
+                    name: crate::symbol::Symbol::intern(APPLY_VAR_TRAIT_CALL),
+                    args: vec![
+                        Expr::Literal(crate::value::Value::str(name.clone())),
+                        Expr::Literal(crate::value::Value::str(format!(
+                            "{VAR_TRAIT_REPLAY}{replay}"
+                        ))),
+                        Expr::Literal(crate::value::Value::str(site.clone())),
+                    ],
+                    listop: false,
+                });
+                self.current_frame().entry.push(Stmt::Phaser {
+                    kind: kind.clone(),
+                    body: vec![call],
+                    condition: None,
+                    end_index: None,
+                });
+            }
             *stmt = stripped;
             return true;
         }

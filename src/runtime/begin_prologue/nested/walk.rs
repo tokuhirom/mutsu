@@ -56,7 +56,7 @@ impl Walker<'_> {
     pub(super) fn finish_scope(&mut self, list: &mut Vec<Stmt>) {
         let len = list.len();
         let frame = self.frames.pop().expect("a scope is being walked");
-        if frame.edits.is_empty() {
+        if frame.edits.is_empty() && frame.entry.is_empty() {
             return;
         }
         let mut edits: Vec<Option<Edit>> = (0..len).map(|_| None).collect();
@@ -76,6 +76,7 @@ impl Walker<'_> {
                 }
             }
         }
+        head.extend(frame.entry);
         head.append(&mut out);
         *list = head;
     }

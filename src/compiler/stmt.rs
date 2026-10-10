@@ -1242,6 +1242,37 @@ impl Compiler {
                 self.compile_slurpy_out_args(exprs);
                 self.code.emit(OpCode::Note(exprs.len() as u32));
             }
+            // A lifted declaration whose block's ENTER queue may already have
+            // seeded the variable through `Variable.var` (ADR-12131): the
+            // declaration keeps that value, as Rakudo's pre-allocated
+            // lexical does.
+            Stmt::VarDecl {
+                name,
+                custom_traits,
+                ..
+            } if custom_traits
+                .iter()
+                .any(|(t, _)| t == crate::runtime::begin_prologue::VAR_TRAIT_SEEDED) =>
+            {
+                let mut plain = stmt.clone();
+                if let Stmt::VarDecl { custom_traits, .. } = &mut plain {
+                    custom_traits
+                        .retain(|(t, _)| t != crate::runtime::begin_prologue::VAR_TRAIT_SEEDED);
+                }
+                let name_idx = self.code.add_constant(Value::str(name.clone()));
+                let apply = |s: &mut Self, trait_name: &str| {
+                    let trait_name_idx = s.code.add_constant(Value::str(trait_name.to_string()));
+                    s.code.emit(OpCode::ApplyVarTrait {
+                        name_idx,
+                        trait_name_idx,
+                        has_arg: false,
+                        slot: s.local_map.get(name.as_str()).copied(),
+                    });
+                };
+                apply(self, crate::runtime::begin_prologue::VAR_TRAIT_SEED_STASH);
+                self.compile_stmt(&plain);
+                apply(self, crate::runtime::begin_prologue::VAR_TRAIT_SEED_RESTORE);
+            }
             Stmt::VarDecl {
                 name,
                 expr,
@@ -2230,22 +2261,7 @@ impl Compiler {
                         .emit(OpCode::RegisterVarExport { name_idx, tags_idx });
                 }
                 for (trait_name, trait_arg) in custom_traits {
-                    // Skip internal markers (not real traits), except the one
-                    // that replays the ENTER phasers a lifted variable trait
-                    // added through `Variable.block` (ADR-12131).
-                    if trait_name == crate::runtime::begin_prologue::VAR_TRAIT_REPLAY
-                        && let Some(arg) = trait_arg
-                    {
-                        self.compile_expr(arg);
-                        let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
-                        self.code.emit(OpCode::ApplyVarTrait {
-                            name_idx,
-                            trait_name_idx,
-                            has_arg: true,
-                            slot: self.local_map.get(name.as_str()).copied(),
-                        });
-                        continue;
-                    }
+                    // Skip internal markers (not real traits).
                     if trait_name.starts_with("__") {
                         continue;
                     }
