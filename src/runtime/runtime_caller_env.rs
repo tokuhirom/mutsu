@@ -215,12 +215,19 @@ impl Interpreter {
         // caller_env_stack[stack_len - depth] is the depth-th caller (depth 1 =
         // the immediate caller at the top); older callers are at lower indices.
         // Cascade from there toward index 0.
+        // A lexical routine (`&name`) needs no `is dynamic`: the caller pads
+        // are searched for the routine itself, and a routine declared in a
+        // caller's compilation unit (not bound in its env) resolves by name.
+        let is_routine = name.starts_with('&');
         for env in self.caller_env_stack[..=stack_len - depth].iter().rev() {
             if let Some(val) = env.get(name)
-                && self.is_var_dynamic(name)
+                && (is_routine || self.is_var_dynamic(name))
             {
                 return Ok(val.clone());
             }
+        }
+        if is_routine {
+            return Ok(self.resolve_code_var(&name[1..]));
         }
         Ok(Value::NIL)
     }

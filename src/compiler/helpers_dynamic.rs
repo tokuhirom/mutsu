@@ -453,7 +453,7 @@ impl Compiler {
     /// Whether a `CALLERS::` bare name cascades: true for a `$*`-twigil dynamic
     /// name (the sigil already stripped, so it begins with `*`), false otherwise.
     pub(crate) fn callers_name_cascades(bare: &str) -> bool {
-        bare.starts_with('*')
+        bare.starts_with(['*', '&'])
     }
 
     /// Which lexical-scope walk an `OUTER::` / `OUTERS::` pseudo-stash names.

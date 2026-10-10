@@ -817,13 +817,21 @@ impl Interpreter {
             // just call-syntax macros. They dispatch through the builtin-function
             // path (see `builtins.rs`), so expose them as Routine values here.
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
-        } else if bare_name.starts_with('*') {
-            // Dynamic code vars (&*foo) can point to routines that are resolved
-            // at call time (including builtins not listed in is_builtin_function).
+        } else if bare_name.starts_with('*') && Self::is_dynamic_core_routine(lookup_name) {
+            // Core routines reachable as dynamic code vars (`&*chdir`) that
+            // are resolved at call time and not listed in
+            // is_builtin_function. Any other `&*name` that nothing bound is
+            // unbound (`so &*NOPE` is False, `&*NOPE // 1` takes the default).
             Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
         } else {
             Value::NIL
         }
+    }
+
+    /// The core routines Rakudo binds in the PROCESS stash as `&*name`.
+    // Cost: O(1), a fixed-size name table.
+    fn is_dynamic_core_routine(name: &str) -> bool {
+        matches!(name, "chdir" | "ARGS-TO-CAPTURE" | "GENERATE-USAGE" | "EXIT")
     }
 
     /// True when the innermost (last) stripped pseudo-package prefix is a

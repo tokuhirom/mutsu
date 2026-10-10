@@ -325,7 +325,7 @@ impl Compiler {
         } else if Self::body_mutates_topic(branch) {
             self.synthetic_block_body = true;
             self.compile_stmt(&Stmt::Block(branch.to_vec()));
-        } else if Self::branch_declares_block_local(branch) {
+        } else if !is_statement_modifier && Self::branch_declares_block_local(branch) {
             if Self::has_let_deep(branch) {
                 self.compile_block_local_branch_with_let(branch);
             } else {

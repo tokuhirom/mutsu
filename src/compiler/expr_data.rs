@@ -616,8 +616,11 @@ impl Compiler {
             && let Expr::Literal(lit) = index
             && let ValueView::Str(key) = lit.view()
         {
+            // A `&` key keeps its sigil: a lexical routine lives under `&name`,
+            // and `CALLERS::` walks every caller scope for it.
             let bare: String = match key.chars().next() {
-                Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
+                Some('&') => String::clone(&key),
+                Some('$' | '@' | '%') => key.chars().skip(1).collect(),
                 _ => String::clone(&key),
             };
             // Immediate-block `CALLERS::<$x>` is the lexical `OUTERS::` walk, the

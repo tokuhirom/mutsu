@@ -272,8 +272,13 @@ impl Compiler {
             match stmt {
                 // A `given` in final position is handled by compile_block_inline
                 // (it leaves the block value on the stack); only a non-final
-                // `given` is unsupported here.
-                Stmt::Given { .. } if i != last => return false,
+                // `given` is unsupported here. A statement-modifier `given`
+                // (`with`/`without` desugar to one) opens no block and sinks
+                // its value like any other statement, so it stays supported.
+                Stmt::Given {
+                    is_statement_modifier: false,
+                    ..
+                } if i != last => return false,
                 Stmt::If {
                     then_branch,
                     else_branch,
