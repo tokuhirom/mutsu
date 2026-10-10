@@ -878,7 +878,10 @@ pub(crate) fn native_method_0arg_cascade(
             if let Some(Ok(res)) = &result
                 && let ValueView::Array(items, kind) = res.view()
                 && items.len() == 1
-                && items.iter().next().is_some_and(|e| e.deref_container() == *inner.as_ref())
+                && items
+                    .iter()
+                    .next()
+                    .is_some_and(|e| e.deref_container() == *inner.as_ref())
             {
                 return Some(Ok(Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(vec![target.clone()])),
