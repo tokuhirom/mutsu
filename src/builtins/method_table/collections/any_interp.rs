@@ -36,14 +36,35 @@ pub(super) static ROWS: &[MethodRow] = &[
     any_row!("Any", "collate", 0, RowFlags::NONE, collate),
     any_row!("Any", "map", 1, ARGS, map),
     any_row!("Any", "grep", 1, ARGS, grep, &["k", "v", "kv", "p"]),
-    any_row!("Any", "first", 0, ARGS, first, &["k", "v", "kv", "p", "end"]),
-    any_row!("Any", "first", 1, ARGS, first, &["k", "v", "kv", "p", "end"]),
+    any_row!(
+        "Any",
+        "first",
+        0,
+        ARGS,
+        first,
+        &["k", "v", "kv", "p", "end"]
+    ),
+    any_row!(
+        "Any",
+        "first",
+        1,
+        ARGS,
+        first,
+        &["k", "v", "kv", "p", "end"]
+    ),
     any_row!("Any", "reduce", 1, ARGS, reduce),
     any_row!("Any", "produce", 1, ARGS, produce),
     any_row!("Any", "iterator", 0, RowFlags::NONE, iterator),
     any_row!("Any", "eager", 0, RowFlags::NONE, eager),
     any_row!("Any", "squish", 0, ARGS, squish, &["as", "with"]),
-    any_row!("Any", "rotor", 0, ARGS.or(RowFlags::SLURPY), rotor, &["partial"]),
+    any_row!(
+        "Any",
+        "rotor",
+        0,
+        ARGS.or(RowFlags::SLURPY),
+        rotor,
+        &["partial"]
+    ),
     any_row!("Any", "skip", 0, ARGS.or(RowFlags::SLURPY), skip),
     any_row!("Any", "match", 1, ARGS_NAMED, match_),
     any_row!("Any", "classify", 1, ARGS, classify, &["as", "into"]),
@@ -200,6 +221,12 @@ handler!(classify_list, "classify-list", |interp, target, args| Some(
     interp.dispatch_classify_list_method(target, "classify-list", args)
 ));
 // Cost: O(e) test calls, e = elements of the list.
-handler!(categorize_list, "categorize-list", |interp, target, args| Some(
-    interp.dispatch_classify_list_method(target, "categorize-list", args)
-));
+handler!(
+    categorize_list,
+    "categorize-list",
+    |interp, target, args| Some(interp.dispatch_classify_list_method(
+        target,
+        "categorize-list",
+        args
+    ))
+);
