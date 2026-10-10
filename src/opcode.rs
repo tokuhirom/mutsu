@@ -8543,9 +8543,9 @@ impl CompiledCode {
                     continue;
                 }
                 keys.push(sym);
-                keys.push(sym.with_str(|name| {
-                    Symbol::intern(&format!("{}{name}", crate::symbol::TYPE_META_PREFIX))
-                }));
+                for prefix in crate::symbol::SHADOW_META_PREFIXES {
+                    keys.push(sym.with_str(|name| Symbol::intern(&format!("{prefix}{name}"))));
+                }
             }
             keys.into_boxed_slice()
         })
@@ -8589,9 +8589,11 @@ impl CompiledCode {
                         continue;
                     }
                     hidden.insert(sym);
-                    hidden.insert(sym.with_str(|name| {
-                        Symbol::intern(&format!("{}{name}", crate::symbol::TYPE_META_PREFIX))
-                    }));
+                    for prefix in crate::symbol::SHADOW_META_PREFIXES {
+                        hidden.insert(
+                            sym.with_str(|name| Symbol::intern(&format!("{prefix}{name}"))),
+                        );
+                    }
                 }
                 (!hidden.is_empty()).then(|| Arc::new(hidden))
             })
@@ -13632,13 +13634,13 @@ impl CompiledFunction {
         // Gated on the memoized flag rather than resolving the symbol to a
         // `&str` and `strip_prefix`-ing it: this runs for every key of the
         // return merge, and almost none of them are metadata keys.
-        if sym.flags() & crate::symbol::flags::TYPE_META == 0 {
+        if sym.flags() & crate::symbol::flags::SHADOW_META == 0 {
             return false;
         }
-        // `type_meta_subject` memoizes the unwrapping: resolving the symbol,
+        // `shadow_meta_subject` memoizes the unwrapping: resolving the symbol,
         // re-scanning the prefix and re-interning the suffix (a string hash)
         // ran per metadata key per named call.
-        sym.type_meta_subject()
+        sym.shadow_meta_subject()
             .is_some_and(|base| self.is_callee_local_sym_direct(base))
     }
 
