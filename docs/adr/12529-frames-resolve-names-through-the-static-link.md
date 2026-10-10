@@ -253,6 +253,27 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `MUTSU_VM_STATS` counters for env overlays created per call, by-name lookups
    per call and capture entries per closure, so each later phase states what it
    took to zero.
+   **Done** (`test/12529-phase0-pins-and-counters`, base `00ac3b84`):
+   `t/vm/scope/lexical-name-resolution-static-link.t` pins one case per §2.1
+   row (21 tests, all passing under rakudo). Six fail in mutsu and are
+   `todo` with the phase that fixes them: phase 2 for a closure's captured
+   `my sub`; phases 1 and 3 for a caller's `my class`; phase 3 for EVAL in a
+   closure (it reads the caller's same-named lexical, not its outer), for
+   §1.3's two cases, and for a symbolic `::('$x')` lookup. The #12519 shape
+   probed there already passes and stays pinned. The counters are a
+   `name-resolution` vm-stats line (`src/env/stats.rs`, pinned by
+   `tests/name_resolution_stats.rs`): `scoped_overlays`, `chain_walks` /
+   `chain_hops`, and `captures` / `capture_own_entries` / `capture_layers`.
+   The walk counters are counted in debug builds only, because in a release
+   build any call in `Env::get_sym` changed its inlining for +0.4% Ir. With
+   them gated out, release Ir is unchanged: +0.003% on a FunctionalParsers
+   parse and -0.0002% on `bench-fib`.
+
+   Baseline for the later phases (debug build, one parse of #12520's
+   `$ebnfCode13` block including module load): `scoped_overlays=15674`
+   `chain_walks=825502` `chain_hops=1801367` `captures=11859`
+   `capture_own_entries=120705` `capture_layers=49859`. That is ~10 copied
+   entries and ~4 layers per closure, and ~2.2 tiers walked per lookup.
 1. **The program's names leave the frame.** Finish ADR-0084: type, package and
    constant names resolve through the symbol table; `__mutsu_*` per-frame
    metadata (`__mutsu_callable_id`, state-scope ids) becomes frame fields.
