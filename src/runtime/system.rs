@@ -96,6 +96,10 @@ impl Interpreter {
         let user_sub_names = self.collect_eval_user_sub_names();
         let user_type_names = self.collect_eval_user_type_names();
         let user_value_term_names = self.collect_eval_user_value_term_names();
+        // Parsing and static module probes can reset parser import tables.
+        // Capture the calling unit's names before either step.
+        let caller_names = crate::rakuast::frontend::covers(crate::rakuast::frontend::Unit::Eval)
+            .then(|| (self.eval_caller_type_names(), self.eval_caller_enum_value_names()));
         // Make module search paths visible to the parser so that `use Foo`
         // inside the EVAL'd code can resolve and register Foo's exported sub
         // names (needed for parenless calls like `use Foo; bar`).
@@ -131,11 +135,11 @@ impl Interpreter {
                 // Diagnose the source unit before converting it. Invalid names
                 // must keep the ordinary frontend's typed CHECK-time errors,
                 // rather than becoming a RakuAST conversion refusal.
-                let stmts = crate::rakuast::frontend::round_trip_eval_if_enabled(
-                    stmts,
-                    || self.eval_caller_type_names(),
-                    || self.eval_caller_enum_value_names(),
-                )?;
+                let stmts = if let Some((types, terms)) = caller_names {
+                    crate::rakuast::frontend::round_trip_eval_if_enabled(stmts, || types, || terms)?
+                } else {
+                    stmts
+                };
                 // Lowering resolves spelled and deferred names that the source
                 // checks cannot yet classify, including dynamic EXPORT terms.
                 if crate::rakuast::frontend::covers(crate::rakuast::frontend::Unit::Eval) {

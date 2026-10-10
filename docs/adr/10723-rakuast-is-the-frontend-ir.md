@@ -429,4 +429,6 @@ run ordinary statements, and valid units still convert and lower before
 execution. The same validation runs after lowering to check names resolved
 from spelled terms and dynamic exports. `t/rakuast/rakuast-eval-source-diagnostics.t`
 pins both boundaries.
+Caller type and term names are captured before static module probes can reset
+the parser's import tables, so cold and cached module loads use the same names.
 Mainline diagnostic conversion remains a separate residual path.

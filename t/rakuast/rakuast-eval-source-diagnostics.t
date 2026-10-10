@@ -1,6 +1,7 @@
 use Test;
 use MONKEY-SEE-NO-EVAL;
 use lib 't/lib';
+use EvalImportedConstantClass;
 
 # In frontend mode the source checks precede conversion. A source error must
 # retain its typed exception even when the invalid construct cannot convert.
@@ -37,5 +38,8 @@ is EVAL('use EvalExportHookTerm <U>; U.k'), 1,
     'a dynamic export remains valid after source checking';
 throws-like { EVAL('use EvalExportHookTerm <U>; NoSuchTerm') },
     X::Undeclared::Symbols, 'resolved names are checked again after lowering';
+
+is EVAL('EVAL_IMPORTED_CLASS_CONST'), 42,
+    'source-check module probes preserve imported caller constant names';
 
 done-testing;

@@ -269,6 +269,16 @@ impl Interpreter {
             names.push("_".to_string());
         }
         names.extend(crate::parser::imported_value_term_names());
+        // Runtime import aliases survive nested parses and cold module loads,
+        // unlike the parser's current import table. Their display spelling
+        // distinguishes sigilless terms from ordinary exported variables.
+        names.extend(self.module.imported_env_aliases.iter().filter_map(|(key, spelling)| {
+            let value = self.env.get_sym(*key)?;
+            if matches!(value.view(), ValueView::Package(_)) {
+                return None;
+            }
+            term_name(&spelling.resolve())
+        }));
         names.sort_unstable();
         names.dedup();
         names
