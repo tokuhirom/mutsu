@@ -209,8 +209,12 @@ pub(crate) mod flags {
     /// never copy back into the caller. Mirrors
     /// `is_routine_scoped_implicit_var`.
     pub(crate) const ROUTINE_SCOPED_IMPLICIT: u16 = 1 << 0;
-    /// A `__mutsu_type::<name>` typed-lexical metadata key.
-    pub(crate) const TYPE_META: u16 = 1 << 2;
+    /// A *shadow metadata* key: `__mutsu_type::<name>` (a typed lexical's
+    /// constraint) or `__mutsu_var_source_name::<name>` (the caller variable a
+    /// `@`/`%`/raw parameter was bound from). Nothing can observe one except
+    /// through `<name>` itself, so every consumer decides it by that subject
+    /// ([`super::Symbol::shadow_meta_subject`]).
+    pub(crate) const SHADOW_META: u16 = 1 << 2;
     /// An `nqp::<op>` routine name: a compiler-known primitive in a reserved
     /// namespace no user routine can be declared in, so a call op carrying
     /// this name dispatches straight to the op table
@@ -299,9 +303,16 @@ pub(crate) mod flags {
     pub(crate) const COMPUTED: u16 = 1 << 15;
 }
 
-/// The `__mutsu_type::` prefix `flags::TYPE_META` marks. Kept next to the flag
+/// The `__mutsu_type::` prefix `flags::SHADOW_META` marks. Kept next to the flag
 /// so the two cannot drift.
 pub(crate) const TYPE_META_PREFIX: &str = "__mutsu_type::";
+
+/// The `__mutsu_var_source_name::` prefix `flags::SHADOW_META` also marks.
+pub(crate) const VAR_SOURCE_META_PREFIX: &str = "__mutsu_var_source_name::";
+
+/// Every shadow-metadata prefix, for the consumers that build a subject's
+/// shadow keys (the closure capture's probe and hidden sets).
+pub(crate) const SHADOW_META_PREFIXES: [&str; 2] = [TYPE_META_PREFIX, VAR_SOURCE_META_PREFIX];
 
 /// The `nqp::` prefix `flags::NQP_OP` marks.
 pub(crate) const NQP_OP_PREFIX: &str = "nqp::";
@@ -398,8 +409,8 @@ fn compute_flags(s: &str) -> u16 {
     if matches!(s, "_" | "@_" | "%_") {
         f |= flags::CAPTURE_VOLATILE;
     }
-    if s.starts_with(TYPE_META_PREFIX) {
-        f |= flags::TYPE_META;
+    if s.starts_with(TYPE_META_PREFIX) || s.starts_with(VAR_SOURCE_META_PREFIX) {
+        f |= flags::SHADOW_META;
     }
     if s.starts_with(NQP_OP_PREFIX) {
         f |= flags::NQP_OP;
@@ -530,7 +541,7 @@ pub(crate) fn maybe_env_key(sym: Symbol) -> bool {
     }
 }
 
-/// The "not computed yet" sentinel of [`TYPE_META_SUBJECT_TABLE`]. Symbol id 0
+/// The "not computed yet" sentinel of [`SHADOW_META_SUBJECT_TABLE`]. Symbol id 0
 /// is a real symbol, so the empty state cannot be zero; no symbol can ever have
 /// id `u32::MAX` (ids are assigned from a `Vec`'s length).
 const NO_SUBJECT: u32 = u32::MAX;
@@ -548,19 +559,19 @@ const NO_SUBJECT: u32 = u32::MAX;
 ///
 /// Only ids that are actually `__mutsu_type::` keys ever reach the store, so a
 /// program with no typed lexical allocates no chunk at all.
-static TYPE_META_SUBJECT_TABLE: [OnceLock<Box<[AtomicU32; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS] =
+static SHADOW_META_SUBJECT_TABLE: [OnceLock<Box<[AtomicU32; FLAG_CHUNK_LEN]>>; FLAG_CHUNKS] =
     [const { OnceLock::new() }; FLAG_CHUNKS];
 
 /// The already-allocated subject slot for `idx`, if any.
 #[inline]
 fn subject_slot(idx: usize) -> Option<&'static AtomicU32> {
-    let chunk = TYPE_META_SUBJECT_TABLE.get(idx >> FLAG_CHUNK_BITS)?.get()?;
+    let chunk = SHADOW_META_SUBJECT_TABLE.get(idx >> FLAG_CHUNK_BITS)?.get()?;
     Some(&chunk[idx & (FLAG_CHUNK_LEN - 1)])
 }
 
 /// Memoize `subject` as the type-metadata subject of symbol id `idx`.
 fn store_subject(idx: usize, subject: Symbol) {
-    let Some(cell) = TYPE_META_SUBJECT_TABLE.get(idx >> FLAG_CHUNK_BITS) else {
+    let Some(cell) = SHADOW_META_SUBJECT_TABLE.get(idx >> FLAG_CHUNK_BITS) else {
         return;
     };
     let chunk =
@@ -936,8 +947,8 @@ impl Symbol {
     /// resolving the symbol, re-scanning the prefix, and re-interning the
     /// suffix — a string hash — every single time.
     #[inline]
-    pub(crate) fn type_meta_subject(self) -> Option<Symbol> {
-        if self.flags() & flags::TYPE_META == 0 {
+    pub(crate) fn shadow_meta_subject(self) -> Option<Symbol> {
+        if self.flags() & flags::SHADOW_META == 0 {
             return None;
         }
         let idx = self.0 as usize;
@@ -947,16 +958,20 @@ impl Symbol {
                 return Some(Symbol(raw));
             }
         }
-        self.compute_and_store_type_meta_subject(idx)
+        self.compute_and_store_shadow_meta_subject(idx)
     }
 
-    /// The miss half of [`Symbol::type_meta_subject`]: reached once per
+    /// The miss half of [`Symbol::shadow_meta_subject`]: reached once per
     /// metadata symbol (plus the losing side of a race), and it interns, so it
     /// must not be inlined into the capture filter.
     #[cold]
     #[inline(never)]
-    fn compute_and_store_type_meta_subject(self, idx: usize) -> Option<Symbol> {
-        let subject = Symbol::intern(self.as_str().strip_prefix(TYPE_META_PREFIX)?);
+    fn compute_and_store_shadow_meta_subject(self, idx: usize) -> Option<Symbol> {
+        let text = self.as_str();
+        let subject = Symbol::intern(
+            text.strip_prefix(TYPE_META_PREFIX)
+                .or_else(|| text.strip_prefix(VAR_SOURCE_META_PREFIX))?,
+        );
         store_subject(idx, subject);
         Some(subject)
     }
@@ -1389,7 +1404,7 @@ mod tests {
     }
 
     #[test]
-    fn type_meta_subject_round_trips_and_is_stable() {
+    fn shadow_meta_subject_round_trips_and_is_stable() {
         // The capture filter decides a `__mutsu_type::<name>` key by running
         // its predicate on `<name>`, so the unwrapping has to be exact -- and
         // the memo must answer the same thing on the second ask as the first.
@@ -1402,24 +1417,31 @@ mod tests {
         ] {
             let subject = Symbol::intern(name);
             let meta = Symbol::intern(&format!("{TYPE_META_PREFIX}{name}"));
-            assert_eq!(meta.flags() & flags::TYPE_META, flags::TYPE_META);
-            assert_eq!(meta.type_meta_subject(), Some(subject));
-            assert_eq!(meta.type_meta_subject(), Some(subject));
+            assert_eq!(meta.flags() & flags::SHADOW_META, flags::SHADOW_META);
+            assert_eq!(meta.shadow_meta_subject(), Some(subject));
+            assert_eq!(meta.shadow_meta_subject(), Some(subject));
             // A name that is not a metadata key has no subject, and asking does
             // not invent one.
-            assert_eq!(subject.type_meta_subject(), None);
+            assert_eq!(subject.shadow_meta_subject(), None);
         }
     }
 
     #[test]
-    fn type_meta_subject_is_visible_across_threads() {
+    fn var_source_shadow_meta_has_its_variable_as_subject() {
+        let meta = Symbol::intern(&format!("{VAR_SOURCE_META_PREFIX}@kh"));
+        assert_eq!(meta.flags() & flags::SHADOW_META, flags::SHADOW_META);
+        assert_eq!(meta.shadow_meta_subject(), Some(Symbol::intern("@kh")));
+    }
+
+    #[test]
+    fn shadow_meta_subject_is_visible_across_threads() {
         // The memo is process-global (an `AtomicU32` table indexed by symbol
         // id), so a subject resolved on one thread is already answered on
         // another -- closures are captured on every thread.
         let meta = Symbol::intern("__mutsu_type::cross_thread_subject_probe");
         let expected = Symbol::intern("cross_thread_subject_probe");
-        assert_eq!(meta.type_meta_subject(), Some(expected));
-        let handle = std::thread::spawn(move || meta.type_meta_subject());
+        assert_eq!(meta.shadow_meta_subject(), Some(expected));
+        let handle = std::thread::spawn(move || meta.shadow_meta_subject());
         assert_eq!(handle.join().unwrap(), Some(expected));
     }
 

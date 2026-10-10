@@ -173,10 +173,10 @@ pub(crate) enum CaptureWalk<'a> {
 pub(crate) fn capture_never_keeps(key: Symbol) -> bool {
     let mut k = key;
     let mut f = k.flags();
-    if f & flags::TYPE_META != 0 {
+    if f & flags::SHADOW_META != 0 {
         // `None` cannot happen (the flag is a pure string property of the
         // prefix), but keeping the key is the conservative answer.
-        let Some(subject) = k.type_meta_subject() else {
+        let Some(subject) = k.shadow_meta_subject() else {
             return false;
         };
         k = subject;
@@ -208,7 +208,7 @@ pub(crate) fn capture_walk_skips(key: Symbol) -> bool {
     if capture_never_keeps(key) {
         return true;
     }
-    let subject = key.type_meta_subject().unwrap_or(key);
+    let subject = key.shadow_meta_subject().unwrap_or(key);
     subject.flags() & flags::PLAIN_USER_LEXICAL != 0
 }
 

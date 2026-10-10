@@ -339,7 +339,7 @@ impl MetaNs {
     ///
     /// This is the ONLY place these strings are spelled out. `Symbol`'s own
     /// [`TYPE_META_PREFIX`](crate::symbol::TYPE_META_PREFIX) is reused rather
-    /// than respelled, because `Symbol::type_meta_subject` parses keys back
+    /// than respelled, because `Symbol::shadow_meta_subject` parses keys back
     /// with it and the two must not drift.
     pub(crate) const fn prefix(self) -> &'static str {
         match self {
@@ -379,7 +379,7 @@ impl MetaNs {
             MetaNs::SharedDirty => "__mutsu_shared_dirty::",
             MetaNs::VarMeta => "__mutsu_var_meta::",
             MetaNs::VarDefault => "__mutsu_var_default::",
-            MetaNs::VarSourceName => "__mutsu_var_source_name::",
+            MetaNs::VarSourceName => crate::symbol::VAR_SOURCE_META_PREFIX,
             MetaNs::LexicalDynamic => "__mutsu_lexical_dynamic::",
             MetaNs::AttrAlias => "__mutsu_attr_alias::",
             MetaNs::Role => "__mutsu_role__",
@@ -584,7 +584,7 @@ mod tests {
             MetaNs::Type.key_for_str("$x").as_str(),
             "__mutsu_type::$x",
             "the Type namespace must agree with symbol::TYPE_META_PREFIX, which \
-             Symbol::type_meta_subject parses keys back with"
+             Symbol::shadow_meta_subject parses keys back with"
         );
     }
 

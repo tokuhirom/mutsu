@@ -320,6 +320,16 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    its own tier, and the five return-merge loops that skipped
    `__mutsu_callable_id` by name have nothing to skip. Same probe:
    `capture_own_entries` 120,625 → 92,578 (−23%).
+
+   **Slice 3 done** (`refactor/12529-phase1-shadow-meta`):
+   `__mutsu_var_source_name::<param>`, the caller variable a `@`/`%`/raw
+   parameter was bound from, is *shadow metadata* like `__mutsu_type::`
+   (`flags::SHADOW_META`): only `<param>` itself can observe it, so a
+   closure capture keeps it exactly when `<param>` is a free variable, and a
+   return merge treats it as callee-local when `<param>` is. Same probe:
+   `capture_own_entries` 120,625 → 111,150 (−8%; measured before slice 2
+   landed), `chain_walks` 663,269 → 526,375 (−21%).
+
 2. **Routine names bind lexically.** `sub` declarations and imports become
    bindings read like lexicals; multis get a dispatcher value and a call-site
    cache (§2.4). The call-site cache is the one

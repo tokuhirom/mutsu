@@ -1904,10 +1904,10 @@ pub(crate) fn capture_keeps(
     // variable" is what keeps a typed *dynamic* (`my Int $*x`) — a
     // system name that is captured without ever being a free
     // variable — constrained inside the closure.
-    if flags & crate::symbol::flags::TYPE_META != 0 {
+    if flags & crate::symbol::flags::SHADOW_META != 0 {
         // `None` cannot happen (the flag is a pure string property of
         // the prefix), but keeping the key is the pre-#7565 behaviour.
-        let Some(subject) = k.type_meta_subject() else {
+        let Some(subject) = k.shadow_meta_subject() else {
             return true;
         };
         k = subject;
