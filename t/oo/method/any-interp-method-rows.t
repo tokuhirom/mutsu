@@ -60,7 +60,7 @@ is-deeply Counter.new.map(* * 2).list, (2, 4, 6), 'map on a user iterator';
 is-deeply Counter.new.grep(* > 1).list, (2, 3), 'grep on a user iterator';
 
 # --- an error is the interpreter's -----------------------------------------------------------
-throws-like { @a.map(5) }, X::Cannot::Map, 'map refuses a non-callable';
+throws-like { (1, 2, 3).map(5) }, X::Cannot::Map, 'map refuses a non-callable';
 
 # --- the table lists them -------------------------------------------------------------
 ok Any.^can('map'), '.^can sees map';
