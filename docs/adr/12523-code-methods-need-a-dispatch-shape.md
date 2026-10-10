@@ -106,3 +106,13 @@ Slice 4 (2026-10-10) moved `name`, `line` and `file`. The two `line`/`file` arms
 `Interpreter::code_name_value`; the rows call them and the old `name` arm uses the same function for its `Code` receivers, keeping its
 branches for the container descriptors and type objects (Rakudo declares those on other owners). Behaviour is unchanged. Left on
 #12523: the pure rows (`Bool`, `Str`, `Capture`, `clone`) and `gist`/`raku`; the open questions of section 4 stand.
+
+Slice 5 (2026-10-10) moved the pure rows `Capture` and `clone`, reached from the zero-argument cascade through
+`method_table::code::pure_answer`. Still no shape was needed. This fixed `Regex.clone`, `&say.clone` (both threw "No such method") and
+`&say.Capture` (returned a Capture where Rakudo throws `X::Cannot::Capture`). `clone` keeps returning the same object (`&f.clone === &f` is
+`False` in Rakudo); a real copy has to share the closure's captured cells with the original, which is a TODO on the row.
+
+`Bool`, `Str`, `gist` and `raku` of a code object stay in the cascades, each for a stated reason: `Str` answers the routine's name
+through `code_name` (the interpreter), and `Regex.Bool` matches against `$_`; `gist`/`raku` render the signature and the declaration
+(`methods_sub.rs`) and are the next slice if the open questions of section 4 are settled. With them the decision on
+`DispatchShape::Code` is closed: **no shape**. This ADR's status stays Proposed until `gist`/`raku` land.
