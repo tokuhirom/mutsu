@@ -135,7 +135,8 @@ or on "looks abandoned".
 
 Hand over to [`ecosystem-dist-fix`](../ecosystem-dist-fix/SKILL.md) and follow it as written: read
 the record, `checkout-dist.py`, load probe, rakudo first and mutsu second per file, reduce into
-`tmp/`, fix what is bounded and file a `tokuhirom/mutsu` issue for what is not, pin every fix with a
+`tmp/`, fix what is bounded and file a `tokuhirom/mutsu` issue for what is not (label it `ecosystem`
+besides its kind label), pin every fix with a
 `t/` test, and open the PR with auto-merge.
 
 Three things that belong to this wrapper rather than that one:
