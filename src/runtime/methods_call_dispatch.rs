@@ -2861,12 +2861,6 @@ impl Interpreter {
                     data.store_element(index, Value::bound_element(value.clone()));
                     return Ok(value.clone());
                 }
-                // Cost: O(e), e = elements of the array.
-                ("clone", _) => {
-                    if let Some(copy) = target.array_shallow_clone() {
-                        return Ok(copy);
-                    }
-                }
                 _ => {}
             }
         }

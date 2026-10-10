@@ -225,62 +225,10 @@ pub(super) fn dispatch(
                 ValueView::LazyList(ll) => Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
                     (**ll).clone(),
                 ))))),
-                // Clone the whole `ArrayData`, not just its elements, so
-                // per-slot metadata (`initialized` deletion holes, `default`,
-                // `shape`, element type) survives the copy — e.g.
-                // `@a[3]:delete; my @b := @a.clone` keeps `@b[3]:exists` False
-                // (S02-types/array.t test 108). Elements are `Value`-cloned
-                // (shared handles), matching a shallow `.clone` — EXCEPT for a
-                // shaped array, whose rows are its own storage: rakudo's
-                // `.clone` gives independent containers per dimension
-                // (rakudo#3334, S09-multidim/methods.t), and with in-place
-                // element writes (container identity §3) shared rows would
-                // alias `@a[1;1] = v` into the clone.
-                ValueView::Array(items, kind) => {
-                    let mut data = (**items).clone();
-                    // The clone gets containers of its own: a slot promoted to a
-                    // shared cell (a `for ... is rw` alias, a `:=` bind) must
-                    // not keep aliasing the source (`my @c = @a.clone; @c[0] = 9`
-                    // leaves `@a` alone, as in rakudo).
-                    for item in data.live_mut().iter_mut() {
-                        if item.is_container_ref() {
-                            *item = item.deref_container();
-                        }
-                    }
-                    if kind == crate::value::ArrayKind::Shaped || data.shape.is_some() {
-                        fn clone_rows(v: &Value) -> Value {
-                            match v.view() {
-                                ValueView::Array(rows, k) => {
-                                    let mut d = (**rows).clone();
-                                    for item in d.live_mut().iter_mut() {
-                                        *item = clone_rows(item);
-                                    }
-                                    Value::array_with_kind(crate::gc::Gc::new(d), k)
-                                }
-                                _ => v.clone(),
-                            }
-                        }
-                        for item in data.live_mut().iter_mut() {
-                            *item = clone_rows(item);
-                        }
-                    }
-                    // Itemization is a property of the CONTAINER, not of the
-                    // object, and `.clone` copies the object. So the clone comes
-                    // back de-itemized, exactly as rakudo has it:
-                    // `my $v = <a b c>; $v.raku` is `$("a", "b", "c")` but
-                    // `$v.clone.raku` is `("a", "b", "c")` — which is why
-                    // `my @a; @a = $v.clone` flattens where `@a = $v` does not.
-                    // (Crane's `Crane::In.in(container, @path) = $value.clone`
-                    // depends on exactly that: a List value must land in the
-                    // target array as elements, not as one nested list.)
-                    Some(Some(Ok(Value::array_with_kind(
-                        crate::gc::Gc::new(data),
-                        kind.decontainerize(),
-                    ))))
-                }
-                ValueView::Hash(map) => Some(Some(Ok(Value::hash_with_data(Value::hash_arc(
-                    (**map).clone(),
-                ))))),
+                ValueView::Array(..) | ValueView::Hash(..) => Some(
+                    crate::builtins::method_table::collection_clone::container_clone(target)
+                        .map(Ok),
+                ),
                 // A Seq clone is a new eager Seq with the same elements.  A
                 // Slip is likewise copied while retaining its itemization
                 // marker; both are first-class values even though their
@@ -305,12 +253,10 @@ pub(super) fn dispatch(
                 ValueView::Sub(_) => Some(crate::builtins::method_table::code::pure_answer(
                     target, "clone",
                 )),
-                ValueView::Pair(key, value) => {
-                    Some(Some(Ok(Value::pair(key.clone(), value.clone()))))
-                }
-                ValueView::ValuePair(key, value) => {
-                    Some(Some(Ok(Value::value_pair(key.clone(), value.clone()))))
-                }
+                ValueView::Pair(..) | ValueView::ValuePair(..) => Some(
+                    crate::builtins::method_table::collection_clone::container_clone(target)
+                        .map(Ok),
+                ),
                 // Immutable value types: `.clone` (Mu.clone) yields a copy, which
                 // for an immutable scalar is the value itself. These otherwise fell
                 // through to the slow path and errored with NoSuchMethod.
