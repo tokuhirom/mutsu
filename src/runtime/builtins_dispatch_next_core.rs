@@ -68,10 +68,9 @@ impl Interpreter {
     // cursor's a attributes (see `grammar_builtin_rule_on_cursor`).
     pub(super) fn native_grammar_builtin_rule_base(
         &mut self,
+        invocant: &Value,
+        name: &str,
     ) -> Option<Result<Value, RuntimeError>> {
-        let name = self.dispatch.samewith_context_stack.last()?.name.clone();
-        let invocant = self.dispatch.method_dispatch_stack.last()?.invocant.clone();
-        self.grammar_builtin_rule_on_cursor(&invocant, &name)
-            .map(Ok)
+        self.grammar_builtin_rule_on_cursor(invocant, name).map(Ok)
     }
 }

@@ -83,14 +83,19 @@ impl Interpreter {
     }
 
     /// The native behavior on a container subclass instance's backing storage
-    /// as the next candidate of the innermost method frame, whose current
-    /// invocant and args it reads. `None` when the receiver carries none of the
+    /// as the next candidate, called with the advancing frame's current
+    /// invocant, the entry's method name and the args. `None` when the receiver carries none of the
     /// three storages or the storage has no such method.
     // Cost: O(1) probes plus the storage method's own cost.
-    fn native_storage_base_entry(&mut self) -> Option<Result<Value, RuntimeError>> {
-        self.native_array_storage_base(None)
-            .or_else(|| self.native_hash_storage_base(None))
-            .or_else(|| self.native_baggy_storage_base(None))
+    fn native_storage_base_entry(
+        &mut self,
+        invocant: &Value,
+        method_name: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        self.native_array_storage_base(invocant, method_name, args)
+            .or_else(|| self.native_hash_storage_base(invocant, method_name, args))
+            .or_else(|| self.native_baggy_storage_base(invocant, method_name, args))
     }
 
     /// ADR-0019 E9b-0: `wrap_dispatch_stack`, `method_dispatch_stack`, and
@@ -303,22 +308,11 @@ impl Interpreter {
     /// candidates, so the regular MRO chain cannot reach them.
     fn native_metamodel_base(
         &mut self,
-        override_args: Option<&[Value]>,
+        receiver: &str,
+        method_name: &str,
+        args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let (_depth, receiver, method_name, orig_args) =
-            self.dispatch.metamodel_dispatch_stack.last().cloned()?;
-        // Only fire when the innermost method dispatch is the metamodel method
-        // itself (not some helper method it called).
-        if self
-            .dispatch
-            .samewith_context_stack
-            .last()
-            .is_none_or(|ctx| ctx.name != method_name)
-        {
-            return None;
-        }
-        let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(orig_args);
-        match method_name.as_str() {
+        match method_name {
             "find_method" => {
                 let obj = args.first()?.clone();
                 let name = args.get(1)?.to_string_value();
@@ -344,17 +338,40 @@ impl Interpreter {
                 // such override produced a typeless `Nil`
                 // (Test::Async's `BundleHOW`/`ReporterHOW`, and
                 // `HubHOW.construct-suite`'s `::?CLASS.new_type(:$name)`).
-                None => self.metamodel_new_type(&receiver, &args),
+                None => self.metamodel_new_type(receiver, &args),
             }),
             // Any other native ClassHOW metamethod (`add_method`, `compose`,
             // `add_attribute`, `attributes`, ...) is the final base candidate
             // when the user MRO is exhausted — same routing as the direct
             // native fallback for methods a user HOW does not override.
-            _ if Self::is_classhow_method(&method_name) => {
-                Some(self.dispatch_classhow_method(&method_name, args))
+            _ if Self::is_classhow_method(method_name) => {
+                Some(self.dispatch_classhow_method(method_name, args))
             }
             _ => None,
         }
+    }
+
+    /// The metamodel base with NO method frame to name it: the innermost
+    /// `metamodel_dispatch_stack` entry supplies the receiver class, method
+    /// name and original args (`override_args` replaces the latter). Only
+    /// fires when the innermost method dispatch is the metamodel method
+    /// itself (not some helper method it called).
+    // Cost: O(1) plus the metamodel method's own cost.
+    fn native_metamodel_base_no_frame(
+        &mut self,
+        override_args: Option<Vec<Value>>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let (_depth, receiver, method_name, orig_args) =
+            self.dispatch.metamodel_dispatch_stack.last().cloned()?;
+        if self
+            .dispatch
+            .samewith_context_stack
+            .last()
+            .is_none_or(|ctx| ctx.name != method_name)
+        {
+            return None;
+        }
+        self.native_metamodel_base(&receiver, &method_name, override_args.unwrap_or(orig_args))
     }
 
     /// `Mu.new(*%attrinit)` as the last candidate of a user `new` override's
@@ -429,44 +446,26 @@ impl Interpreter {
     /// `new_base_override` is what guarantees the frame this leg exhausts.
     pub(super) fn native_mu_base(
         &mut self,
-        override_args: Option<&[Value]>,
+        frame_invocant: &Value,
+        method_name: &str,
+        args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let method_name = self
-            .dispatch
-            .samewith_context_stack
-            .last()
-            .map(|ctx| ctx.name.clone())?;
-        if !matches!(
-            method_name.as_str(),
-            "BUILDALL" | "POPULATE" | "clone" | "new"
-        ) {
-            return None;
-        }
-        let frame = self.dispatch.method_dispatch_stack.last()?;
-        let frame_args = frame.args.clone();
         let invocant = self
             .env
             .get("self")
             .cloned()
-            .unwrap_or_else(|| frame.invocant.clone());
-        match method_name.as_str() {
+            .unwrap_or_else(|| frame_invocant.clone());
+        match method_name {
             "BUILDALL" | "POPULATE" => crate::builtins::method_table::invoke_base(
                 self,
                 "Mu",
-                &method_name,
+                method_name,
                 std::slice::from_ref(&invocant),
             ),
-            "clone" => {
-                let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(frame_args);
+            "clone" | "new" => {
                 let mut full = vec![invocant];
-                full.extend(args);
-                crate::builtins::method_table::invoke_base(self, "Mu", "clone", &full)
-            }
-            "new" => {
-                let args: Vec<Value> = override_args.map(<[Value]>::to_vec).unwrap_or(frame_args);
-                let mut full = vec![invocant];
-                full.extend(args);
-                crate::builtins::method_table::invoke_base(self, "Mu", "new", &full)
+                full.extend_from_slice(args);
+                crate::builtins::method_table::invoke_base(self, "Mu", method_name, &full)
             }
             _ => None,
         }
@@ -482,46 +481,10 @@ impl Interpreter {
     /// `method AT-POS($index) { nextwith $index.round }` silently returned Nil.
     fn native_array_storage_base(
         &mut self,
-        override_args: Option<&[Value]>,
+        invocant: &Value,
+        method_name: &str,
+        args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        // ADR-0019 E9c-1: read name/invocant/args off the SAME
-        // `samewith_context_stack` entry (a single clone) rather than
-        // name/invocant from one stack and args from a separately
-        // pushed/popped stack — the former dual-stack shape could pair the
-        // top-of-args-stack entry with a DIFFERENT (deeper, stale)
-        // context if a raw push sat above the pairing `push_method_
-        // samewith_context` push; see `SamewithContext`'s doc comment.
-        let ctx = self.dispatch.samewith_context_stack.last().cloned();
-        let method_name = ctx.as_ref().map(|c| c.name.clone())?;
-        // A single (non-multi, non-wrapped) compiled method pushes no
-        // `method_dispatch_stack` frame, so the invocant/args must come from
-        // the samewith context and `self` rather than a dispatch frame (mirrors
-        // `native_mu_base`'s `self.env.get("self")` fallback).
-        let invocant = self
-            .dispatch
-            .method_dispatch_stack
-            .last()
-            .map(|f| f.invocant.clone())
-            .or_else(|| ctx.as_ref().and_then(|c| c.invocant.clone()))
-            .or_else(|| self.env.get("self").cloned())?;
-        let args: Vec<Value> = match override_args {
-            Some(a) => a.to_vec(),
-            None => self
-                .dispatch
-                .method_dispatch_stack
-                .last()
-                .map(|f| f.args.clone())
-                // A single (non-multi, non-wrapped) compiled method — the
-                // common case for a `method push(...) { nextsame }` override on
-                // an `is Array` subclass — pushes no `method_dispatch_stack`
-                // frame at all, so the original call args live only in the
-                // samewith context's own `args` field (set by
-                // `push_method_samewith_context`). Without this, `args`
-                // silently defaulted to empty and the deferred push appended
-                // nothing.
-                .or_else(|| ctx.as_ref().and_then(|c| c.args.clone()))
-                .unwrap_or_default(),
-        };
         let ValueView::Instance {
             class_name,
             attributes,
@@ -552,22 +515,22 @@ impl Interpreter {
         // — the SAME instance (same id, same attribute cell), so `===` and
         // `.^name` come out right; `pop`/`shift` return the removed element as-is.
         if matches!(
-            method_name.as_str(),
+            method_name,
             "push" | "append" | "prepend" | "unshift" | "pop" | "shift" | "ASSIGN-POS" | "DELETE-POS"
         ) {
             let outcome = attributes.with_attr_mut("__mutsu_array_storage", |storage| {
-                self.native_array_storage_mut(storage, &method_name, &args)
+                self.native_array_storage_mut(storage, method_name, args)
             })?;
             if let Some(outcome) = outcome {
-                return Some(outcome.map(|value| match method_name.as_str() {
+                return Some(outcome.map(|value| match method_name {
                     "push" | "append" | "prepend" | "unshift" => invocant.clone(),
                     _ => value,
                 }));
             }
         }
-        let method_sym = Symbol::intern(&method_name);
+        let method_sym = Symbol::intern(method_name);
         attributes.with_attr_mut("__mutsu_array_storage", |storage| {
-            self.try_native_method(storage, method_sym, &args)
+            self.try_native_method(storage, method_sym, args)
         })?
     }
 
@@ -579,29 +542,12 @@ impl Interpreter {
     /// base candidate.
     fn native_hash_storage_base(
         &mut self,
-        override_args: Option<&[Value]>,
+        invocant: &Value,
+        method_name: &str,
+        args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let ctx = self.dispatch.samewith_context_stack.last().cloned();
-        let method_name = ctx.as_ref().map(|c| c.name.clone())?;
-        let invocant = self
-            .dispatch
-            .method_dispatch_stack
-            .last()
-            .map(|f| f.invocant.clone())
-            .or_else(|| ctx.as_ref().and_then(|c| c.invocant.clone()))
-            .or_else(|| self.env.get("self").cloned())?;
-        let args: Vec<Value> = match override_args {
-            Some(a) => a.to_vec(),
-            None => self
-                .dispatch
-                .method_dispatch_stack
-                .last()
-                .map(|f| f.args.clone())
-                .or_else(|| ctx.as_ref().and_then(|c| c.args.clone()))
-                .unwrap_or_default(),
-        };
         // A `role R is Hash` pun reaches here as a Mixin around its instance.
-        let invocant = Self::hash_pun_inner(&invocant).unwrap_or(invocant);
+        let invocant = Self::hash_pun_inner(invocant).unwrap_or_else(|| invocant.clone());
         let ValueView::Instance {
             class_name,
             attributes,
@@ -626,7 +572,7 @@ impl Interpreter {
         // `Hash` rows reached with the backing storage as a detached place; they
         // write the storage's shared node in place (ADR-11276 §9.37).
         if matches!(
-            method_name.as_str(),
+            method_name,
             "ASSIGN-KEY" | "DELETE-KEY" | "push" | "append"
         ) {
             let outcome = attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
@@ -634,20 +580,20 @@ impl Interpreter {
                 crate::builtins::method_table::invoke_mut(
                     self,
                     &mut place,
-                    Symbol::intern(&method_name),
-                    &args,
+                    Symbol::intern(method_name),
+                    args,
                 )
             })?;
             if let Some(result) = outcome {
-                return Some(match method_name.as_str() {
+                return Some(match method_name {
                     "push" | "append" => result.map(|_| invocant.clone()),
                     _ => result,
                 });
             }
         }
-        let method_sym = Symbol::intern(&method_name);
+        let method_sym = Symbol::intern(method_name);
         attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
-            self.try_native_method(storage, method_sym, &args)
+            self.try_native_method(storage, method_sym, args)
         })?
     }
     /// The builtin of a `Mixin`'s native inner value, the last candidate behind
@@ -834,20 +780,13 @@ impl Interpreter {
     /// `method parse` wraps the native parse to inject `:actions(Actions)`.
     pub(super) fn native_grammar_parse_base(
         &mut self,
-        override_args: Option<&[Value]>,
+        invocant: &Value,
+        method_name: &str,
+        args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        let method_name = self
-            .dispatch
-            .samewith_context_stack
-            .last()
-            .map(|ctx| ctx.name.clone())?;
-        if !matches!(method_name.as_str(), "parse" | "subparse" | "parsefile") {
-            return None;
-        }
-        let frame = self.dispatch.method_dispatch_stack.last()?;
-        let mut args = vec![frame.invocant.clone()];
-        args.extend(override_args.map(<[Value]>::to_vec).unwrap_or_else(|| frame.args.clone()));
-        crate::builtins::method_table::invoke_owner_raw(self, &["Grammar"], &method_name, &args)
+        let mut full = vec![invocant.clone()];
+        full.extend_from_slice(args);
+        crate::builtins::method_table::invoke_owner_raw(self, &["Grammar"], method_name, &full)
     }
 
     /// Shared implementation for callsame/nextsame/callwith/nextwith.
@@ -1146,7 +1085,7 @@ impl Interpreter {
                     // The builtin of a core-type receiver behind an augmented
                     // method: the frame's current invocant and args, or the
                     // `callwith` replacement.
-                    let (invocant, args) = {
+                    let (invocant, args, receiver_class) = {
                         let frame = &mut self.dispatch.method_dispatch_stack[frame_idx];
                         frame.remaining.remove(0);
                         if let Some(new_args) = override_args {
@@ -1161,16 +1100,26 @@ impl Interpreter {
                             }
                         }
                         frame.in_wrapper = false;
-                        (frame.invocant.clone(), frame.args.clone())
+                        (
+                            frame.invocant.clone(),
+                            frame.args.clone(),
+                            frame.receiver_class.clone(),
+                        )
                     };
                     let bridge = match base {
                         NativeBase::GrammarParse => {
-                            self.native_grammar_parse_base(Some(&args))
+                            self.native_grammar_parse_base(&invocant, &name, &args)
                         }
-                        NativeBase::MuBase => self.native_mu_base(Some(&args)),
-                        NativeBase::Metamodel => self.native_metamodel_base(Some(&args)),
-                        NativeBase::GrammarRule => self.native_grammar_builtin_rule_base(),
-                        NativeBase::Storage => self.native_storage_base_entry(),
+                        NativeBase::MuBase => self.native_mu_base(&invocant, &name, &args),
+                        NativeBase::Metamodel => {
+                            self.native_metamodel_base(&receiver_class, &name, args.clone())
+                        }
+                        NativeBase::GrammarRule => {
+                            self.native_grammar_builtin_rule_base(&invocant, &name)
+                        }
+                        NativeBase::Storage => {
+                            self.native_storage_base_entry(&invocant, &name, &args)
+                        }
                         NativeBase::Value => None,
                     };
                     let result = if let Some(res) = bridge {
@@ -1670,7 +1619,7 @@ impl Interpreter {
         // A metamodel-HOW method (user subclass of Metamodel::ClassHOW /
         // Metamodel::GrammarHOW) with no user MRO frame at all: the native
         // metamodel implementation is the next (and last) candidate.
-        if let Some(res) = self.native_metamodel_base(override_args.as_deref()) {
+        if let Some(res) = self.native_metamodel_base_no_frame(override_args.clone()) {
             let result = res?;
             if tail_call {
                 return Err(RuntimeError::return_signal(result));
