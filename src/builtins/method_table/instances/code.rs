@@ -1,4 +1,5 @@
-//! `Code`'s `of`, `returns`, `arity`, `count` and `signature`, `line`, `file` and `name` (ADR-12523, slices 1-4).
+//! `Code`'s `of`, `returns`, `arity`, `count` and `signature`, `line`, `file` and `name` (ADR-12523, slices 1-4), then the
+//! pure `Capture` and `clone` (slice 5).
 //!
 //! A code object is a `Sub` (a routine, closure or block, with or without a
 //! body of its own), a `&name` handle on a routine reached through the
@@ -35,6 +36,24 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("line", line),
     row!("file", file),
     row!("name", name),
+    // The pure rows: they read nothing but the value, so the zero-argument
+    // cascade reaches them through [`pure_answer`].
+    MethodRow {
+        owner: "Code",
+        name: "Capture",
+        arity: 0,
+        handler: Handler::Narrow(capture),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Code",
+        name: "clone",
+        arity: 0,
+        handler: Handler::Narrow(clone),
+        flags: RowFlags::OWNER_ONLY,
+        named: &[],
+    },
 ];
 
 /// The answer of the `Code` row for `method`, or `None` when `target` is not a
@@ -53,6 +72,20 @@ pub(crate) fn answer(
         return None;
     }
     crate::builtins::method_table::invoke_owner(interp, &["Code"], method, &[], || target.clone())
+}
+
+/// The answer of the pure `Code` row for `method` (`Capture` or `clone`), or
+/// `None` when `target` is not a code object.
+// Cost: O(1).
+pub(crate) fn pure_answer(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
+    if !is_code(target) {
+        return None;
+    }
+    match method {
+        "Capture" => capture(target, &[]),
+        "clone" => clone(target, &[]),
+        _ => None,
+    }
 }
 
 fn is_code(target: &Value) -> bool {
@@ -185,4 +218,30 @@ fn name(
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     interp.code_name_value(target).map(Ok)
+}
+
+/// `Code.Capture`: a code object cannot be unpacked.
+// Cost: O(1).
+fn capture(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let type_name = crate::value::types::what_type_name(target);
+    Some(Err(
+        crate::builtins::methods_0arg::coercion::cannot_capture(&type_name),
+    ))
+}
+
+/// `Code.clone`: a `Sub` is copied as a new routine object, with an id of its
+/// own so its state variables are independent and its own composition cell,
+/// starting from the original's (ADR-11827 section 2.3). A regex and a name-based
+/// `&name` handle carry no state of their own and are returned as they are.
+// Cost: O(1) for a `Sub` (the captured environment is shared, not copied).
+fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Sub(data) => {
+            let mut new_data = (**data).clone();
+            new_data.id = crate::value::next_instance_id();
+            new_data.routine_cell = new_data.routine_cell.forked();
+            Some(Ok(Value::sub_value(crate::gc::Gc::new(new_data))))
+        }
+        _ => Some(Ok(target.clone())),
+    }
 }

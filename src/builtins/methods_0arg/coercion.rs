@@ -1071,7 +1071,7 @@ pub(crate) fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
     }
 }
 
-fn cannot_capture(type_name: &str) -> RuntimeError {
+pub(crate) fn cannot_capture(type_name: &str) -> RuntimeError {
     let mut attrs = ValueMap::default();
     attrs.insert("what".to_string(), Value::str(type_name.to_string()));
     attrs.insert(

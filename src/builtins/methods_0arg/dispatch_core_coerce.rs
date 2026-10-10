@@ -301,15 +301,10 @@ pub(super) fn dispatch(
                     crate::gc::Gc::new((**data).clone()),
                     mutable,
                 )))),
-                ValueView::Sub(data) => {
-                    // Clone the sub with a new id so state variables are independent
-                    let mut new_data = (**data).clone();
-                    new_data.id = crate::value::next_instance_id();
-                    // A clone is a new routine object: its own composition
-                    // cell, starting from the original's (ADR-11827 §2.3).
-                    new_data.routine_cell = new_data.routine_cell.forked();
-                    Some(Some(Ok(Value::sub_value(crate::gc::Gc::new(new_data)))))
-                }
+                // The `Code.clone` row's implementation (`method_table::code`).
+                ValueView::Sub(_) => Some(crate::builtins::method_table::code::pure_answer(
+                    target, "clone",
+                )),
                 ValueView::Pair(key, value) => {
                     Some(Some(Ok(Value::pair(key.clone(), value.clone()))))
                 }

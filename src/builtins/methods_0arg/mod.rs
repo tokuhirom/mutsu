@@ -993,6 +993,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             && attributes.contains_key("timezone")
     }
 
+    // `Code.Capture` and `Code.clone` are rows of the method table
+    // (`method_table::code`, ADR-12523 slice 5).
+    if matches!(method, "Capture" | "clone")
+        && let Some(answer) = crate::builtins::method_table::code::pure_answer(target, method)
+    {
+        return Some(answer);
+    }
+
     // Date/DateTime 0-arg methods
     match target.view() {
         ValueView::Instance {
