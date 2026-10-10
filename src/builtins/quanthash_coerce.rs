@@ -37,8 +37,11 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
     // A role mixin WRAPS the value without replacing it: rakudo's `%h does R` is
     // a `Hash+{R}`, still a Hash, so the coercion folds the inner value's
     // elements rather than taking the whole mixin as one element.
-    if let ValueView::Mixin(inner, _) = target.view() {
-        let inner = inner.as_ref().clone();
+    // Only an aggregate's mixin folds into its elements; a scalar object with
+    // a role mixed in (`$attr does R`) stays one whole element.
+    let unwrapped = crate::runtime::utils::strip_quanthash_mixin_elem(&target);
+    if !std::ptr::eq(unwrapped, &target) {
+        let inner = unwrapped.clone();
         return to_set(inner, what);
     }
     let mut elems = HashSet::new();
@@ -249,8 +252,11 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
     // A role mixin WRAPS the value without replacing it: rakudo's `%h does R` is
     // a `Hash+{R}`, still a Hash, so the coercion folds the inner value's
     // elements rather than taking the whole mixin as one element.
-    if let ValueView::Mixin(inner, _) = target.view() {
-        let inner = inner.as_ref().clone();
+    // Only an aggregate's mixin folds into its elements; a scalar object with
+    // a role mixed in (`$attr does R`) stays one whole element.
+    let unwrapped = crate::runtime::utils::strip_quanthash_mixin_elem(&target);
+    if !std::ptr::eq(unwrapped, &target) {
+        let inner = unwrapped.clone();
         return to_bag(inner, what);
     }
     let mut counts: HashMap<String, BigInt> = HashMap::new();
@@ -667,8 +673,11 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
     // A role mixin WRAPS the value without replacing it: rakudo's `%h does R` is
     // a `Hash+{R}`, still a Hash, so the coercion folds the inner value's
     // elements rather than taking the whole mixin as one element.
-    if let ValueView::Mixin(inner, _) = target.view() {
-        let inner = inner.as_ref().clone();
+    // Only an aggregate's mixin folds into its elements; a scalar object with
+    // a role mixed in (`$attr does R`) stays one whole element.
+    let unwrapped = crate::runtime::utils::strip_quanthash_mixin_elem(&target);
+    if !std::ptr::eq(unwrapped, &target) {
+        let inner = unwrapped.clone();
         return to_mix(inner, what);
     }
     // Weights are folded as exact `Value`s (so `0.1 + 0.02` stays `0.12`) and

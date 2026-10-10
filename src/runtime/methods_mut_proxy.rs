@@ -83,18 +83,16 @@ impl Interpreter {
         new_value: Value,
     ) -> Result<Value, RuntimeError> {
         let proxy_val = Value::proxy_parts(Value::NIL, storer.clone(), None, false);
-        let (_result, updated) =
+        let (_result, _unchanged) =
             self.call_proxy_callback(storer, vec![proxy_val, new_value.clone()], attributes)?;
         // Propagate attribute changes back to the instance's live cell.
         if let Some(var_name) = target_var {
-            // A VM-dispatched callback mutates captured instance cells directly.
-            // It returns the input snapshot here because it has no AST-env
-            // attribute overlay to merge; committing that unchanged snapshot
-            // would roll the just-completed STORE back. The legacy callback path
-            // still returns a changed map when it performed an overlay write.
-            if &updated != attributes {
-                attrs_cell.commit_attrs(updated);
-            }
+            // The callback mutates captured instance cells directly and
+            // `call_proxy_callback` hands back the very snapshot it was given,
+            // so there is nothing to commit: replaying that (by now stale)
+            // snapshot would roll back whatever the STORE body just wrote to
+            // this instance. (It used to compare the maps first, but a map
+            // holding a `Proxy` never compares equal to its own clone.)
             self.env.insert(
                 var_name.to_string(),
                 Value::instance_sharing_cell(attrs_cell, class_name, attrs_cell.instance_id()),

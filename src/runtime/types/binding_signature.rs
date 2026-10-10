@@ -3643,6 +3643,7 @@ impl Interpreter {
                         // callsame'd original's param, caller variable — observes
                         // one write (the wrap-chain relay no longer depends on
                         // same-name env-merge coincidence).
+                        let had_cell_key = rw_shared_cell_key.is_some();
                         if let Some(cell_key) = rw_shared_cell_key.take() {
                             let descriptor = cell_key.clone();
                             // ADR-0040 §9 states the `Proxy` boundary from the
@@ -3709,6 +3710,18 @@ impl Interpreter {
                         // binds `$v` as `$[1, 2]`); rw/raw cells and sigilless
                         // params pass through untouched (a ContainerRef has no
                         // Array view, so the itemize helper is a no-op on it).
+                        // An `is rw`/`is raw` parameter handed a bare `Proxy`
+                        // (a container-returning routine's result such as
+                        // `Attribute.get_value`, no caller variable to alias)
+                        // binds that Proxy, not the value the type check
+                        // FETCHed from it: `$p = ...` in the body must fire its
+                        // STORE (RedX::HashedPassword's `deflate(Str $p is raw)`).
+                        let value = if (is_rw || is_raw) && !had_cell_key {
+                            let proxy = unwrap_varref_value(args[positional_idx].clone());
+                            if proxy.is_proxy_value() { proxy } else { value }
+                        } else {
+                            value
+                        };
                         let value = Self::itemize_plain_scalar_param(pd, value);
                         self.bind_param_value_sym(binding_name, pd_name_sym(), value);
                         self.bind_param_type_constraint_sym(
