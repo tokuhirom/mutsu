@@ -12,6 +12,7 @@ mod methods_mut_method_lvalue;
 mod methods_mut_proxy;
 mod methods_mut_rw_attr;
 mod methods_mut_substr_buf;
+mod methods_mut_wildcard_delegate;
 mod methods_native_bypass;
 mod methods_object;
 mod methods_object_attr_constraints;

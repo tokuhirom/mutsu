@@ -745,10 +745,16 @@ impl Interpreter {
                     .get(&crate::symbol::Symbol::intern(module))?;
                 let key =
                     crate::qualified::qualified(*declared, crate::symbol::Symbol::intern(name));
-                self.env.get_sym(key).cloned().or_else(|| {
-                    self.has_type_or_package_kind(key.as_str())
-                        .then(|| Value::package(key))
-                })
+                // An exported enum value lives in the package-symbol table
+                // under the declared package, not in the env.
+                self.env
+                    .get_sym(key)
+                    .or_else(|| self.toplevel_package_symbol(key.as_str()))
+                    .cloned()
+                    .or_else(|| {
+                        self.has_type_or_package_kind(key.as_str())
+                            .then(|| Value::package(key))
+                    })
             })
             .or_else(|| self.enum_bare_value(name).cloned())
             // A qualified package exported as itself (`unit module A::B::C is
