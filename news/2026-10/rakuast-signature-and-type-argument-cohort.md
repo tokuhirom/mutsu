@@ -13,6 +13,13 @@ Parameterized role arguments share the ordinary colonpair conversion, covering
 boolean, variable and bracketed pairs without splitting expression text.
 
 The bidirectional regression suite checks these contracts against Rakudo.
+The cohort also covers anonymous methods in statement position, declarations
+and modified statements used as values, and semicolon-separated array composers.
+The parser retains composer sections in its existing source-spelling wrapper;
+lowering reuses the ordinary section builder, including empty sections.
+Constructed array composers accept every semilist statement. Expression-position
+proto sub declarations return their registered dispatcher through bytecode.
+
 Initialized grouped declarations losing `is default` in ordinary execution
 are tracked separately in #12547; nested declarator groups still need a
 representation that preserves their structure.

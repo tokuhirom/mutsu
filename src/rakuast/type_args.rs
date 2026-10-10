@@ -83,13 +83,37 @@ pub(super) fn parameterized_type_node(
     let sources = ArgSources {
         rest: &inner[open + 1..],
     };
+    // Role-to-role forwarding keeps its ::T spelling even though the parser
+    // represents the executable argument as the bare name T.
+    let captures: Vec<_> = (ArgSources {
+        rest: &inner[open + 1..],
+    })
+    .enumerate()
+    .filter(|(_, source)| source.starts_with("::"))
+    .collect();
     let mut fields = Vec::new();
     if let Some(parsed) = parsed {
-        for expr in parsed {
+        for (index, expr) in parsed.iter().enumerate() {
             // BinaryForm already retains every colonpair spelling, including
             // booleans, variable pairs and bracketed values. Use the same
             // conversion as a pair outside a type application.
-            let node = if let Expr::BareWord(name) = expr
+            let capture = captures.iter().find(|(position, _)| *position == index);
+            let node = if let Some((_, source)) = capture {
+                if !matches!(expr, Expr::BareWord(name) if source.strip_prefix("::") == Some(name.as_str()))
+                {
+                    return Err(unsupported("ambiguous type capture argument spelling"));
+                }
+                RakuAstNode {
+                    class: RakuAstClass::TypeSimple,
+                    fields: vec![node_field(
+                        None,
+                        super::name_parts::name_from_parts(vec![
+                            super::name_parts::leading_empty(),
+                            super::name_parts::simple_part(source.strip_prefix("::").unwrap()),
+                        ]),
+                    )],
+                }
+            } else if let Expr::BareWord(name) = expr
                 && is_type_spelling(name)
             {
                 build_type_node(name)?

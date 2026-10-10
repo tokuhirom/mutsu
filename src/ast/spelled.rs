@@ -20,6 +20,8 @@ use std::cell::Cell;
 /// How a term was written, when that is not recoverable from its value.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Spelling {
+    /// Semicolon-separated array composer sections before execution lowering.
+    ArraySections(Vec<Vec<Expr>>),
     /// `<a b  c>`: the raw text between the brackets, whitespace included.
     Words(Box<str>),
     /// `q:to/END/`: the terminator line as written, indentation and newline

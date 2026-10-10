@@ -116,6 +116,7 @@ pub enum RakuAstClass {
     CompUnit,
     StatementList,
     StatementExpression,
+    StatementEmpty,
     StatementAlso,
     StatementPrefixReact,
     StatementPrefixSupply,
@@ -484,6 +485,7 @@ impl RakuAstClass {
             CompUnit => "RakuAST::CompUnit",
             StatementList => "RakuAST::StatementList",
             StatementExpression => "RakuAST::Statement::Expression",
+            StatementEmpty => "RakuAST::Statement::Empty",
             StatementAlso => "RakuAST::Statement::Also",
             StatementPrefixReact => "RakuAST::StatementPrefix::React",
             StatementPrefixSupply => "RakuAST::StatementPrefix::Supply",
@@ -794,6 +796,7 @@ impl RakuAstClass {
                 | RakuAstClass::RegexAssertionRecurse
                 | RakuAstClass::RegexMatchTo
                 | RakuAstClass::OnlyStar
+                | RakuAstClass::StatementEmpty
                 | RakuAstClass::RegexQuantifierRange
                 | RakuAstClass::RegexQuantifierBlockRange
                 | RakuAstClass::RegexCharClass(_)
@@ -866,6 +869,7 @@ impl RakuAstClass {
         const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
         const EXPR: &[&str] = &["RakuAST::Expression"];
         match self {
+            StatementEmpty => &["RakuAST::Statement", "RakuAST::Blorst", "RakuAST::ProducesNil", "RakuAST::ImplicitLookups"],
             IntLiteral
             | NumLiteral
             | RatLiteral
@@ -1338,6 +1342,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CompUnit,
     RakuAstClass::StatementList,
     RakuAstClass::StatementExpression,
+    RakuAstClass::StatementEmpty,
     RakuAstClass::StatementAlso,
     RakuAstClass::StatementPrefixReact,
     RakuAstClass::StatementPrefixSupply,
@@ -3241,6 +3246,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
         ("RakuAST::Var::Dynamic", "new") => RakuAstClass::VarDynamic,
         ("RakuAST::Circumfix::Parentheses", "new") => RakuAstClass::CircumfixParentheses,
+        ("RakuAST::Circumfix::ArrayComposer", "new") => RakuAstClass::CircumfixArrayComposer,
         ("RakuAST::VarDeclaration::Placeholder::Positional", "new") => {
             RakuAstClass::VarDeclarationPlaceholderPositional
         }
@@ -3325,6 +3331,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
 
 fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass> {
     Some(match (class_name, method) {
+        ("RakuAST::Statement::Empty", "new") => RakuAstClass::StatementEmpty,
         ("RakuAST::VarDeclaration::Placeholder::SlurpyArray", "new") => {
             RakuAstClass::VarDeclarationPlaceholderSlurpyArray
         }
@@ -3620,6 +3627,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::VarPackage
             | RakuAstClass::VarDynamic
             | RakuAstClass::StatementExpression
+            | RakuAstClass::StatementEmpty
             | RakuAstClass::StatementUse
             | RakuAstClass::StatementRequire
             | RakuAstClass::ApplyInfix
@@ -3659,6 +3667,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::PointyBlock
             | RakuAstClass::Blockoid
             | RakuAstClass::CircumfixParentheses
+            | RakuAstClass::CircumfixArrayComposer
             | RakuAstClass::VarDeclarationPlaceholderPositional
             | RakuAstClass::VarDeclarationPlaceholderNamed
             | RakuAstClass::VarDeclarationPlaceholderSlurpyArray

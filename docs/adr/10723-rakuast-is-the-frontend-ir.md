@@ -349,3 +349,14 @@ the existing typed name visitor.
 Role application arguments use their parsed expressions and `BinaryForm` for
 colonpairs, rather than splitting their source strings a second time. The
 executable contract is `t/rakuast/rakuast-signature-type-cohort.t`.
+
+The same cohort retains declarations and modified statements in expression
+context, including nameless methods in a statement list. Semicolon-separated
+array composer sections use the existing `Spelling` metadata: the compiler
+still consumes the normalized execution tree, while conversion sees every
+written section and lowering shares the parser's section builder. Empty sections
+are `Statement::Empty` nodes and keep their ordinary `Any` array element.
+Constructed composers lower every statement rather than only the first.
+Expression-position proto subs return the registered code value, using the same
+bytecode path as named sub declarations. The executable contract is
+`t/rakuast/rakuast-expression-context-cohort.t`.

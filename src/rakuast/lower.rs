@@ -109,6 +109,7 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 
 pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     match node.class {
+        RakuAstClass::StatementEmpty => Ok(Stmt::Expr(Expr::Literal(Value::NIL))),
         // A declaration wrapped in Statement::Expression lowers to its own
         // statement (a `my $x = …` is a `Stmt::VarDecl`, not a `Stmt::Expr`).
         RakuAstClass::StatementAlso => super::role::lower_also(node),
@@ -447,6 +448,11 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         | RakuAstClass::RuleDeclaration => lower_regex_declaration(node),
         RakuAstClass::Role => super::role::lower(node),
         RakuAstClass::Method if super::proto::is_proto(node) => super::proto::lower(node),
+        RakuAstClass::Method | RakuAstClass::Submethod
+            if !node.fields.iter().any(|f| f.name == Some("name")) =>
+        {
+            Ok(Stmt::Expr(lower_method_literal(node)?))
+        }
         RakuAstClass::Method | RakuAstClass::Submethod => lower_method(node),
         RakuAstClass::Module | RakuAstClass::Package => {
             super::package_header::lower_with_header(node, lower_package)
@@ -4342,6 +4348,31 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // single `Statement::Expression` (a comma list, or a lone element).
         RakuAstClass::CircumfixArrayComposer => {
             let semilist = named_child_or_positional(node)?;
+            if semilist.fields.len() > 1
+                || semilist.fields.first().is_some_and(|field| {
+                    child_node(&field.value)
+                        .is_ok_and(|child| child.class == RakuAstClass::StatementEmpty)
+                })
+            {
+                let mut sections = Vec::new();
+                for field in &semilist.fields {
+                    let statement = child_node(&field.value)?;
+                    if statement.class == RakuAstClass::StatementEmpty {
+                        sections.push(Vec::new());
+                        continue;
+                    }
+                    sections.push(match lower_expr(statement)? {
+                        Expr::ArrayLiteral(items) => items,
+                        other => vec![other],
+                    });
+                }
+                return Ok(crate::parser::finalize_array_sections(
+                    sections,
+                    Vec::new(),
+                    true,
+                    false,
+                ));
+            }
             // `[]`: a semilist with no statement at all.
             if semilist.fields.is_empty() {
                 return Ok(Expr::BracketArray(Vec::new(), false));

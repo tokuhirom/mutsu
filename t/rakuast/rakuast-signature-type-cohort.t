@@ -81,4 +81,9 @@ is EVAL(Q[my ($a, $b = 8) := (1,) and $b + 2].AST), 10,
 is EVAL(Q[class Receiver {}; my $m = anon method (\SELF: |) { SELF.^name }; $m(Receiver.new)].AST),
     'Receiver', 'folded sigilless method invocant stays a declared term';
 
+is EVAL(Q{role ForwardBase[::T] { method value { T.^name } }; role ForwardRole[::T] does ForwardBase[::T] {}; class ForwardUser does ForwardRole[Int] {}; ForwardUser.new.value}.AST),
+    'Int', 'role-to-role type capture forwarding retains its spelling';
+dies-ok { EVAL(Q{role RejectCapture[::T] {}; class RejectUser does RejectCapture[::T] {}}.AST) },
+    'a class application still rejects an unbound type capture';
+
 done-testing;

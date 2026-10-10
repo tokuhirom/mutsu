@@ -15,6 +15,7 @@
 mod allomorph;
 mod angle_words;
 mod array;
+pub(crate) use array::finalize_array_sections;
 mod meta_ops;
 mod paren;
 mod sigil_context;
