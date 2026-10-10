@@ -1566,6 +1566,15 @@ impl Interpreter {
                 skip_native = true;
             }
         }
+        // A callback that binds `$_` rw writes back into the named array
+        // (`@a.map({ $_++ })`): the interpreter's rw-writeback dispatch must
+        // see the call, not the `Any` rows (ADR-11276 §9.60).
+        if !skip_native
+            && matches!(method, "map" | "grep" | "first")
+            && target_name.starts_with('@')
+        {
+            skip_native = true;
+        }
         // A `role R is Hash` pun (a Mixin around its storage instance) whose
         // role declares `method keys`/`elems`/...: the role's method wins over
         // the native Hash one.
