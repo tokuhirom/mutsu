@@ -1111,10 +1111,7 @@ impl Interpreter {
                 && let Err(ref be) = body_result
                 && be.is_return()
             {
-                let current_id = match self.env().get("__mutsu_callable_id").map(Value::view) {
-                    Some(ValueView::Int(id)) => Some(id as u64),
-                    _ => None,
-                };
+                let current_id = self.env().callable_id().map(|id| id as u64);
                 let body_target = be.return_target_callable_id();
                 if body_target.is_none()
                     || body_target == current_id

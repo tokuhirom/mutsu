@@ -245,13 +245,11 @@ impl Interpreter {
         sig.is_leave = true;
         sig.return_value = Self::leave_return_value(args);
 
-        let current_callable_id =
-            self.env
-                .get("__mutsu_callable_id")
-                .and_then(|v| match v.view() {
-                    ValueView::Int(i) if i > 0 => Some(i as u64),
-                    _ => None,
-                });
+        let current_callable_id = self
+            .env
+            .callable_id()
+            .filter(|i| *i > 0)
+            .map(|i| i as u64);
         let current_block_id = self.env.get("&?BLOCK").and_then(|v| match v.view() {
             ValueView::WeakSub(weak) => weak.upgrade().map(|sub| sub.id),
             ValueView::Sub(sub) => Some(sub.id),
@@ -287,11 +285,9 @@ impl Interpreter {
                 let caller_callable_id = self
                     .caller_env_stack
                     .last()
-                    .and_then(|env| env.get("__mutsu_callable_id"))
-                    .and_then(|v| match v.view() {
-                        ValueView::Int(i) if i > 0 => Some(i as u64),
-                        _ => None,
-                    });
+                    .and_then(|env| env.callable_id())
+                    .filter(|i| *i > 0)
+                    .map(|i| i as u64);
                 if let Some(id) = caller_callable_id {
                     sig.set_leave_callable_id(Some(id));
                 } else if let Some(frame) = self.routine_stack_top() {

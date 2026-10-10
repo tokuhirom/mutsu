@@ -1203,7 +1203,6 @@ impl Interpreter {
             k == "_"
                 || k == "@_"
                 || k == "%_"
-                || k == "__mutsu_callable_id"
                 || k.with_str(|s| s.starts_with('?'))
                 || (bang_is_callee_private
                     && k.with_str(crate::symbol::is_routine_scoped_implicit_var))
