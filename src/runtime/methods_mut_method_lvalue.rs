@@ -1282,6 +1282,34 @@ impl Interpreter {
                 }
             }
             if found_public_rw {
+                // A `$` attribute that holds a `Proxy` (bound there by
+                // `Attribute.set_value`, as Red does for every model column)
+                // is assigned through the Proxy: the accessor hands out that
+                // very container, so `$obj.attr = v` is its STORE. Replacing
+                // the slot would drop the Proxy and its STORE side effects
+                // (RedX::HashedPassword: the dirty flag never got set).
+                // The storer is cloned out so the attribute map's read guard
+                // is gone before STORE runs: a STORE body that writes this
+                // very instance's attributes would otherwise queue behind it.
+                let proxy_storer = if attr_sigil == '$' {
+                    match attributes.as_map().get(method).map(Value::view) {
+                        Some(ValueView::Proxy { storer, .. }) => Some(Value::clone(storer)),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+                if let Some(storer) = proxy_storer {
+                    let current_attrs = attributes.to_map();
+                    return self.proxy_store(
+                        &storer,
+                        target_var,
+                        class_name,
+                        &current_attrs,
+                        &attributes,
+                        value,
+                    );
+                }
                 // Check type constraint on the attribute before assignment.
                 // For @ and % attributes, the type constraint applies to elements/values,
                 // not to the container itself, so skip the container-level check.

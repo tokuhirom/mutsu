@@ -463,6 +463,26 @@ impl Interpreter {
             }
         }
 
+        // The accessor handed back a `Set`/`Bag`/`Mix` (`has $.seen = SetHash.new`,
+        // then `$o.seen<k> = True` / `$o.seen<k>++`). A quant hash is a keyed
+        // container of its own: the element store goes through its
+        // `ASSIGN-KEY`, which mutates the shared node in place (every alias,
+        // the attribute included, sees it) and refuses an immutable one with
+        // `X::Assignment::RO`. The Hash/Array rebuild below would drop it.
+        if !is_bind
+            && matches!(
+                current.view(),
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+            )
+        {
+            let key = match index.view() {
+                ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                _ => index.clone(),
+            };
+            self.call_method_with_values(current.clone(), "ASSIGN-KEY", vec![key, value.clone()])?;
+            return Ok(value);
+        }
+
         // Save Arc pointers before modifying (for shared container propagation)
         let old_array_arc = match current.view() {
             ValueView::Array(arc, ..) => Some(arc.clone()),

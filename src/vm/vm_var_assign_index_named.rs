@@ -6029,6 +6029,27 @@ impl Interpreter {
                 };
                 self.stack.push(result);
             }
+            // A `Set`/`Bag`/`Mix` reached through an expression
+            // (`$attr.get_value($o){$k}++`, `f(){$k} = True`): the store goes
+            // through its `ASSIGN-KEY`, which mutates the shared node in place
+            // and refuses an immutable one with `X::Assignment::RO`.
+            ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) if !was_bind => {
+                let key_value = match idx.view() {
+                    ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                    _ => idx.clone(),
+                };
+                self.call_method_with_values(
+                    target.clone(),
+                    "ASSIGN-KEY",
+                    vec![key_value, val.clone()],
+                )?;
+                let result = if idx_is_single_element {
+                    Self::itemize_value(val)
+                } else {
+                    val
+                };
+                self.stack.push(result);
+            }
             _ => {
                 // A `:=` bind of a positional/associative element requires a
                 // bindable container (Array/Hash) as the target. Binding into a

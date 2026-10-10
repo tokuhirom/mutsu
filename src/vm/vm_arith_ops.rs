@@ -457,17 +457,25 @@ impl Interpreter {
                 });
         if let Some(candidates) = captured_candidates {
             for candidate in &candidates {
-                if let ValueView::Sub(candidate_data) = candidate.view()
-                    && self
+                if let ValueView::Sub(candidate_data) = candidate.view() {
+                    // This is a trial bind: `call_sub_value` binds again in the
+                    // callee's own frame. A rejected candidate may already have
+                    // bound its earlier parameters into the env, and without the
+                    // rollback they surface as the caller's same-named lexicals
+                    // (`$a`/`$b` of a stored closure, #12512).
+                    let saved_env = self.env().clone();
+                    let bound = self
                         .bind_function_args_values(
                             &candidate_data.param_defs,
                             &candidate_data.params,
                             &args,
                         )
-                        .is_ok()
-                {
-                    let result = self.call_sub_value(candidate.clone(), args, false)?;
-                    return Ok(Some(result));
+                        .is_ok();
+                    self.restore_env_preserving_dynamics(saved_env);
+                    if bound {
+                        let result = self.call_sub_value(candidate.clone(), args, false)?;
+                        return Ok(Some(result));
+                    }
                 }
             }
             return Ok(None);
