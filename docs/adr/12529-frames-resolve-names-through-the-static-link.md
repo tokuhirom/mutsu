@@ -378,6 +378,19 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay
    go. Exit: §1.3's pins pass, #12519 closes.
+
+   **Slice 1 done** (`perf/12529-phase3-closure-capture-frame-root`): the
+   first piece of the outer link, for closures created while a closure
+   body runs. `Env` marks the root tier of a call frame (`frame_root`, set
+   by `scoped_child`), and `layered_capture` stops its walk at the running
+   frame's root when that root holds a closure capture: the new closure
+   takes the body's own tiers and its capture, plus the chain's flat tail
+   (the program scope, which later slices replace), never the caller
+   frames in between. A capture made at the bottom of a 40-deep nest of
+   closure calls now has as many layers as one made at depth 5
+   (`tests/name_resolution_stats.rs`). A frame with no capture of its own
+   -- a named sub's -- still keeps its whole chain; its lexical outer is
+   the next step.
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
