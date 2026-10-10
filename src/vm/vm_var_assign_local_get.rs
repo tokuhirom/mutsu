@@ -101,7 +101,13 @@ impl Interpreter {
                     let name = Self::const_str(code, name_idx);
                     // The frame's own capture beats a same-named lexical of
                     // the CALLER (see `Env::get_sym_frame_first`).
-                    if let Some(v) = self.env().get_sym_frame_first(code.const_sym(name_idx)) {
+                    // Only for a block/pointy closure: a method or sub body's free
+                    // read still resolves through the chain (a class-body `our`
+                    // shadows the outer lexical a method captured).
+                    let frame_first = (!code.is_routine)
+                        .then(|| self.env().get_sym_frame_first(code.const_sym(name_idx)))
+                        .flatten();
+                    if let Some(v) = frame_first {
                         v.clone()
                     } else {
                         // NB: a module sub's free read of its own compunit's
