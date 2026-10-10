@@ -248,7 +248,7 @@ impl Interpreter {
     }
 
     fn flip_flop_scope_key(&self) -> String {
-        if let Some(ValueView::Int(id)) = self.env().get("__mutsu_callable_id").map(Value::view) {
+        if let Some(id) = self.env().callable_id() {
             return format!("callable:{id}");
         }
         if let Some(frame) = self.routine_stack_top() {

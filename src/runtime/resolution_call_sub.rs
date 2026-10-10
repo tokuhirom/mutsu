@@ -1033,10 +1033,7 @@ impl Interpreter {
                     data.id,
                 );
             }
-            self.env.insert(
-                "__mutsu_callable_id".to_string(),
-                Value::int(data.id as i64),
-            );
+            self.env.set_callable_id(data.id as i64);
             let invocation_id = self.take_invocation_id();
             let frame = RoutineFrame {
                 package: data.package,
@@ -1366,14 +1363,6 @@ impl Interpreter {
                     if k == "_" || k == "@_" {
                         continue;
                     }
-                    // The ambient callable-instance id is frame-scoped: leaking a
-                    // callee's (or a nested callee's) id into the caller env makes
-                    // closures created later in the caller capture the WRONG
-                    // non-local-return target (a quit-handler `return` then
-                    // escapes its routine instead of returning from it).
-                    if k == "__mutsu_callable_id" {
-                        continue;
-                    }
                     if is_body_private(*k) {
                         continue;
                     }
@@ -1417,11 +1406,6 @@ impl Interpreter {
                 }
                 for (k, v) in self.env.iter() {
                     if k == "_" || k == "@_" || subsig_names.contains(&k.resolve()) {
-                        continue;
-                    }
-                    // See the merge_all branch: the ambient callable-instance id
-                    // is frame-scoped and must never leak into the caller env.
-                    if k == "__mutsu_callable_id" {
                         continue;
                     }
                     if is_body_private(*k) {
@@ -1521,10 +1505,10 @@ impl Interpreter {
                 && e.is_return()
             {
                 // Only propagate non-local return if we can identify the target
-                // routine (via __mutsu_callable_id in captured env or already set).
+                // routine (via the captured env's callable id, or already set).
                 // If no target exists, catch it locally (e.g., supply block done+return).
                 let has_target = e.return_target_callable_id().is_some()
-                    || data.env.contains_key("__mutsu_callable_id");
+                    || data.env.callable_id().is_some();
                 if has_target {
                     let mut e = result.unwrap_err();
                     if e.return_target_callable_id().is_none()

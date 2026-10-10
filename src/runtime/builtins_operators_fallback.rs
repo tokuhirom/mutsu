@@ -741,14 +741,13 @@ impl Interpreter {
             };
             self.record_profile_routine_frame(&frame);
             self.routine_stack.push(frame);
-            // Set __mutsu_callable_id so blocks defined inside this routine
+            // Set the frame's callable id so blocks defined inside this routine
             // capture the correct target for non-local return.
             let callable_key = MetaNs::CallableId.key_pair(def.package, def.name);
             let mut registration_id: Option<u64> = None;
             if let Some(id) = self.registration_callable_id(callable_key) {
                 registration_id = Some(id as u64);
-                self.env
-                    .insert("__mutsu_callable_id".to_string(), Value::int(id));
+                self.env.set_callable_id(id);
             }
             // Set current_package to the function's defining package so that
             // unqualified function lookups inside the body resolve correctly
@@ -811,9 +810,6 @@ impl Interpreter {
                 if k != "_"
                     && k != "@_"
                     && k != "%_"
-                    // Per-frame non-local-return target marker: writing the callee's
-                    // id back would retarget blocks the caller creates afterwards.
-                    && k != "__mutsu_callable_id"
                     && ((restored_env.contains_key_sym(*k)
                         && !excluded_names.contains(&k_str)
                         && matches!(v.view(), ValueView::Array(..) | ValueView::Hash(..)))

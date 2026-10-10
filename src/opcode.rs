@@ -9800,7 +9800,6 @@ impl CompiledCode {
             || name == "_"
             || name == "!"
             || name == "/"
-            || name == "__mutsu_callable_id"
             || name.starts_with('!')
             || name.starts_with('.')
             || name.starts_with("@!")

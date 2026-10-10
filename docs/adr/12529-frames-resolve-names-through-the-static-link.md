@@ -309,6 +309,17 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    copied into the closure's own tier; and in the shared layers the module
    mainline's `Any`, `?FILE`, `=pod` and its own package name. The topic,
    `$/`, `$!` and `@_` are phase 3's (§5).
+
+   **Slice 2 done** (`refactor/12529-phase1-frame-metadata`): the
+   return-targeting ids `__mutsu_callable_id`, `__mutsu_block_return_owner`
+   and `__mutsu_block_return_target` are no longer names. They are an
+   `Env` field (`FrameIds`) that every derived env inherits: a scoped child
+   or block tier from its parent, a flattened env or a closure capture from
+   the env it was built from. The capture still knows which routine a
+   `return` in the closure targets, but no longer copies three entries into
+   its own tier, and the five return-merge loops that skipped
+   `__mutsu_callable_id` by name have nothing to skip. Same probe:
+   `capture_own_entries` 120,625 → 92,578 (−23%).
 2. **Routine names bind lexically.** `sub` declarations and imports become
    bindings read like lexicals; multis get a dispatcher value and a call-site
    cache (§2.4). The call-site cache is the one

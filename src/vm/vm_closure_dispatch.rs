@@ -805,8 +805,7 @@ impl Interpreter {
                 data.id,
             );
         }
-        self.env_mut()
-            .insert_sym(crate::symbol::wk::callable_id(), Value::int(data.id as i64));
+        self.env_mut().set_callable_id(data.id as i64);
 
         if data.empty_sig && !args.is_empty() {
             self.truncate_routine_stack(routine_base);
@@ -1335,7 +1334,7 @@ impl Interpreter {
                         // If no target exists (e.g., supply block done+return),
                         // catch it locally.
                         let has_target = e.return_target_callable_id().is_some()
-                            || data.env.contains_key("__mutsu_callable_id");
+                            || data.env.callable_id().is_some();
                         if has_target {
                             if e.return_target_callable_id().is_none()
                                 && let Some(id) =

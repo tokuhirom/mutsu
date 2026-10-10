@@ -842,8 +842,8 @@ impl Interpreter {
         {
             return format!("m{}::{}::{op_ip}", frame.package, frame.name);
         }
-        match self.env.get("__mutsu_callable_id").map(Value::view) {
-            Some(ValueView::Int(id)) if id >= 0 => format!("c{id}::{op_ip}"),
+        match self.env.callable_id() {
+            Some(id) if id >= 0 => format!("c{id}::{op_ip}"),
             _ => format!(
                 "r{}::{op_ip}",
                 self.control.once_scope_stack.last().copied().unwrap_or(0)

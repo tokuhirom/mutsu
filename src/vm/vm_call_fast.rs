@@ -355,7 +355,6 @@ impl Interpreter {
                 k == "_"
                     || k == "@_"
                     || k == "%_"
-                    || k == "__mutsu_callable_id"
                     || (bang_is_callee_private
                         && k.with_str(crate::symbol::is_routine_scoped_implicit_var))
                     || cf.is_callee_local_sym(k)

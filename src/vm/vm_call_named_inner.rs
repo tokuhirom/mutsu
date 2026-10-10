@@ -121,14 +121,9 @@ impl Interpreter {
                 crate::runtime::Interpreter::callable_id_key_for_syms(fn_package_sym, fn_name_sym);
             let resolved_callable_id = self.registration_callable_id(callable_key).unwrap_or(0);
             callable_id = (resolved_callable_id != 0).then_some(resolved_callable_id as u64);
-            // Only insert __mutsu_callable_id when non-zero; readers handle
-            // the missing/None case correctly. This avoids triggering
-            // Arc::make_mut deep clone on the CoW env for simple functions.
+            // Only bound when non-zero; readers handle the missing case.
             if resolved_callable_id != 0 {
-                self.env_mut().insert_sym(
-                    crate::symbol::wk::callable_id(),
-                    Value::int(resolved_callable_id),
-                );
+                self.env_mut().set_callable_id(resolved_callable_id);
             }
         }
         let is_test_assertion = if fn_name.is_empty() {
@@ -771,15 +766,8 @@ impl Interpreter {
             let topic_sym = crate::symbol::wk::topic();
             let positional_slurpy_sym = crate::symbol::wk::positional_slurpy();
             let named_slurpy_sym = crate::symbol::wk::named_slurpy();
-            let callable_id_sym = crate::symbol::wk::callable_id();
             for (k, v) in self.env().iter() {
                 if *k == topic_sym || *k == positional_slurpy_sym || *k == named_slurpy_sym {
-                    continue;
-                }
-                // __mutsu_callable_id must not leak from callee back to
-                // caller; it identifies the current routine scope for
-                // non-local return targeting.
-                if *k == callable_id_sym {
                     continue;
                 }
                 // One memoized byte answers both string predicates this loop

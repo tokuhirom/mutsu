@@ -631,14 +631,6 @@ pub(crate) mod wk {
         role_decl => "?ROLE";
         /// The per-routine `$!`, reset to Nil on entry.
         error_var => "!";
-        /// The invocation id a non-local return from an inner block targets.
-        callable_id => "__mutsu_callable_id";
-        /// The routine a `return` inside a running bare/pointy block targets
-        /// (see `runtime::return_target`); valid only while
-        /// `block_return_owner` names the running block.
-        block_return_target => "__mutsu_block_return_target";
-        /// The block invocation `block_return_target` was recorded for.
-        block_return_owner => "__mutsu_block_return_owner";
         /// The implicit `*%_` named slurpy every method carries.
         named_slurpy => "%_";
         /// The legacy `@_` positional slurpy every call binds.
@@ -728,14 +720,13 @@ pub(crate) mod wk {
     /// method-entry family above covers. Only used by debug assertions and
     /// tests that check the string-keyed and symbol-keyed spellings agree.
     #[cfg(test)]
-    pub(crate) fn method_entry_keys() -> [(Symbol, &'static str); 7] {
+    pub(crate) fn method_entry_keys() -> [(Symbol, &'static str); 6] {
         [
             (self_(), "self"),
             (anon_state(), "__ANON_STATE__"),
             (class_decl(), "?CLASS"),
             (role_decl(), "?ROLE"),
             (error_var(), "!"),
-            (callable_id(), "__mutsu_callable_id"),
             (named_slurpy(), "%_"),
         ]
     }

@@ -646,6 +646,14 @@ pub struct Env {
     depth: u16,
     /// This env's visible `?FILE`, pre-interned — see [`Env::source_file_sym`].
     file_sym: Option<Symbol>,
+    /// The running frame's identity for non-local `return` and per-callable
+    /// state (`once`, flip-flops) -- see [`FrameIds`]. A field, not an entry
+    /// of the name map: it is per frame, so a closure capture copies it as
+    /// one value instead of carrying it as a captured name, and a callee's
+    /// return merge has nothing to leak back (ADR-12529 phase 1). Every
+    /// derived env inherits it: a scoped child or block tier from its parent,
+    /// a flattened or captured env from the env it was built from.
+    frame_ids: FrameIds,
     /// The by-name writes this env's **frame tier** has taken since the frame
     /// opened, recorded only for an env whose tier was collapsed into the flat
     /// map by [`Self::flattened_for_frame`]. `None` everywhere else — a scoped
@@ -704,6 +712,30 @@ pub struct Env {
     /// so the `Arc` refcount is not touched on the per-call frame path, and a
     /// chain walk reaches the tail's copy anyway.
     dyn_base: Option<Arc<SymMap>>,
+}
+
+/// Per-frame identity an [`Env`] carries beside its name map (ADR-12529
+/// phase 1). It used to live in the map as `__mutsu_callable_id`,
+/// `__mutsu_block_return_owner` and `__mutsu_block_return_target`, which made
+/// every closure capture copy them as names and every return merge skip them
+/// by name.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FrameIds {
+    /// The invocation id of the running callable (routine, method, block or
+    /// closure). `return`, `leave`, `once` and flip-flops key on it.
+    callable_id: Option<i64>,
+    /// For a running block: `(block id, routine id)`, the routine its `return`
+    /// targets. Tagged with the block's id so a routine called from inside the
+    /// block, which rebinds `callable_id`, no longer matches it (see
+    /// `runtime::return_target`).
+    block_return: Option<(u64, u64)>,
+}
+
+impl FrameIds {
+    pub(crate) const NONE: FrameIds = FrameIds {
+        callable_id: None,
+        block_return: None,
+    };
 }
 
 /// A closed block tier (see [`Env::close_block_tier`]): what the block wrote by
@@ -799,6 +831,7 @@ impl Env {
             tombstones: None,
             depth: 0,
             file_sym: None,
+            frame_ids: FrameIds::NONE,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -880,6 +913,7 @@ impl Env {
         // and flatten paths below, which only skip/collapse tiers that were
         // already invisible to lookups. See `source_file_sym`.
         let file_sym = parent.file_sym;
+        let frame_ids = parent.frame_ids;
         // Empty-tier reuse: a scoped parent whose overlay never received a
         // write (and has no tombstones) is invisible to lookups, so chain the
         // new child over the parent's own parent instead of stacking another
@@ -921,6 +955,7 @@ impl Env {
                     parent: Some(Arc::new(flat)),
                     tombstones: None,
                     file_sym,
+                    frame_ids: frame_ids,
                     fallback: None,
                     chain_has_fallback: flat_chf,
                     capture_merged: OnceLock::new(),
@@ -936,6 +971,7 @@ impl Env {
                 parent: Some(arc),
                 tombstones: None,
                 file_sym,
+                frame_ids: frame_ids,
                 fallback: None,
                 chain_has_fallback: arc_chf,
                 capture_merged: OnceLock::new(),
@@ -956,6 +992,7 @@ impl Env {
             parent: Some(Arc::new(parent)),
             tombstones: None,
             file_sym,
+            frame_ids: frame_ids,
             fallback: None,
             chain_has_fallback: parent_chf,
             capture_merged: OnceLock::new(),
@@ -981,6 +1018,7 @@ impl Env {
             return Err(parent);
         }
         let file_sym = parent.file_sym;
+        let frame_ids = parent.frame_ids;
         let (parent_depth, parent_chf) = (parent.depth, parent.chain_has_fallback);
         let parent = Arc::new(parent);
         let child = Self {
@@ -989,6 +1027,7 @@ impl Env {
             parent: Some(Arc::clone(&parent)),
             tombstones: None,
             file_sym,
+            frame_ids: frame_ids,
             fallback: None,
             chain_has_fallback: parent_chf,
             capture_merged: OnceLock::new(),
@@ -1008,6 +1047,7 @@ impl Env {
             tombstones: None,
             depth: 0,
             file_sym: None,
+            frame_ids: FrameIds::NONE,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -1053,6 +1093,34 @@ impl Env {
             tombstones,
             parent,
         })
+    }
+
+    /// The running callable's invocation id -- see [`FrameIds::callable_id`].
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn callable_id(&self) -> Option<i64> {
+        self.frame_ids.callable_id
+    }
+
+    /// Bind the running callable's invocation id -- see [`FrameIds`].
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn set_callable_id(&mut self, id: i64) {
+        self.frame_ids.callable_id = Some(id);
+    }
+
+    /// The `(block id, routine id)` return-target record of a running block
+    /// -- see [`FrameIds::block_return`].
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn block_return(&self) -> Option<(u64, u64)> {
+        self.frame_ids.block_return
+    }
+
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn set_block_return(&mut self, block_id: u64, target: u64) {
+        self.frame_ids.block_return = Some((block_id, target));
     }
 
     /// This env's visible `?FILE` as a `Symbol`, or `None` when `?FILE` is
@@ -1440,6 +1508,7 @@ impl Env {
                     depth: 0,
                     // Flattening preserves every visible value, `?FILE` included.
                     file_sym: self.file_sym,
+                    frame_ids: self.frame_ids,
                     // The merged map is no longer any one frame's tier;
                     // `flattened_for_frame` is what records the collapsed tier's
                     // writes when a light frame needs them (#7630).
@@ -1569,6 +1638,7 @@ impl Env {
             tombstones,
             depth: 0,
             file_sym: self.file_sym,
+            frame_ids: self.frame_ids,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -1737,6 +1807,7 @@ impl Env {
             tombstones,
             depth: 0,
             file_sym,
+            frame_ids: self.frame_ids,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -1896,6 +1967,7 @@ impl Env {
             tombstones,
             depth: 0,
             file_sym,
+            frame_ids: self.frame_ids,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -2041,6 +2113,7 @@ impl Env {
             tombstones: None,
             depth: 0,
             file_sym: None,
+            frame_ids: self.frame_ids,
             chain_has_fallback: fallback.is_some(),
             capture_merged: OnceLock::new(),
             fallback,
@@ -2931,6 +3004,7 @@ impl From<ValueMap> for Env {
             tombstones: None,
             depth: 0,
             file_sym,
+            frame_ids: FrameIds::NONE,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -2951,6 +3025,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             tombstones: None,
             depth: 0,
             file_sym,
+            frame_ids: FrameIds::NONE,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -3103,6 +3178,34 @@ mod tests {
         env.remove("&g");
         code_entries_are_a_superset(&mut env);
         assert!(env.overlay_get_sym(s("&g")).is_none());
+    }
+
+    /// ADR-12529 phase 1: the per-frame ids are fields every derived env
+    /// carries, never names a capture copies or a lookup can find.
+    #[test]
+    fn frame_ids_ride_along_without_being_names() {
+        let mut root = Env::new();
+        root.insert("$a".into(), Value::int(1));
+        root.set_callable_id(7);
+        root.set_block_return(7, 3);
+        let mut leaf = scoped_with(root, &[("$b", 2)]);
+        assert_eq!(leaf.callable_id(), Some(7));
+        assert_eq!(leaf.block_return(), Some((7, 3)));
+        leaf.set_callable_id(9);
+        let flat = leaf.flattened();
+        assert_eq!(flat.callable_id(), Some(9));
+        assert_eq!(flat.block_return(), Some((7, 3)));
+        let keep = |_: Symbol, _: &Value| true;
+        let capture = leaf
+            .layered_capture(&keep, &[], None)
+            .expect("no tombstones");
+        assert_eq!(capture.callable_id(), Some(9));
+        assert!(
+            flat.iter()
+                .chain(capture.iter())
+                .all(|(k, _)| !k.as_str().starts_with("__mutsu_")),
+            "a frame id leaked into the name map"
+        );
     }
 
     #[test]

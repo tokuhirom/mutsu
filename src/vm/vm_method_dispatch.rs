@@ -523,10 +523,7 @@ impl Interpreter {
         // Assign a unique callable ID for this method invocation so that
         // non-local returns from blocks defined inside this method can target it.
         let method_callable_id = crate::value::next_instance_id();
-        self.env_mut().insert_sym(
-            crate::symbol::wk::callable_id(),
-            Value::int(method_callable_id as i64),
-        );
+        self.env_mut().set_callable_id(method_callable_id as i64);
 
         // Role param bindings. The per-class map (`class_role_param_bindings`)
         // carries more than type-param bindings (`T => Int`) — composing a
@@ -2220,10 +2217,7 @@ impl Interpreter {
             env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
             env.insert_sym(crate::symbol::wk::topic(), any_val.clone());
             env.insert_sym(crate::symbol::wk::error_var(), Value::NIL);
-            env.insert_sym(
-                crate::symbol::wk::callable_id(),
-                Value::int(method_callable_id as i64),
-            );
+            env.set_callable_id(method_callable_id as i64);
             if let Some(ref role_name) = role_context {
                 env.insert_sym(
                     crate::symbol::wk::role_decl(),
@@ -2363,7 +2357,6 @@ impl Interpreter {
                         }
                     }
                     "!" => Value::NIL,
-                    "__mutsu_callable_id" => Value::int(method_callable_id as i64),
                     name => {
                         // Check params first (handles $_ invocant binding too)
                         if let Some((_, _, val)) = param_values.iter().find(|(n, _, _)| *n == name)
@@ -2950,7 +2943,6 @@ impl MethodFrameSyms<'_> {
             || k == wk::role_decl()
             || k == wk::topic()
             || k == wk::error_var()
-            || k == wk::callable_id()
             || self.params.contains(&k)
             || self.locals.contains(&k)
     }
@@ -3074,11 +3066,6 @@ fn merge_method_env(
                     // Nil on entry, so merging it back would wipe the caller's
                     // error variable (`$!.message; $!.rc` must both see it).
                     || crate::symbol::is_routine_scoped_implicit_var(s)
-                    // Per-frame non-local-return target marker: writing the
-                    // callee's id back would retarget blocks the caller creates
-                    // afterwards (a later closure's `return` then escapes its
-                    // routine instead of returning from it).
-                    || s == "__mutsu_callable_id"
                     // A typed method-lexical's env-scoped constraint metadata
                     // (`__mutsu_type::<local>`, from a typed param bind or
                     // `SetVarTypeScoped`) is frame state: merging it back would
