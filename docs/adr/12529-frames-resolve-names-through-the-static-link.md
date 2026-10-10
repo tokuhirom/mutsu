@@ -27,7 +27,8 @@
   (carrier), [#12520](https://github.com/tokuhirom/mutsu/issues/12520)
   (FunctionalParsers `t/08` is 4.9x rakudo),
   [#12519](https://github.com/tokuhirom/mutsu/issues/12519) (closures capture
-  the caller's dynamic env)
+  the caller's dynamic env); the other open issues with the same root cause
+  are mapped to phases in §7
 
 ## 1. Context
 
@@ -254,11 +255,25 @@ regresses one of those rows is fixed on its branch, not landed with a note.
 1. **The program's names leave the frame.** Finish ADR-0084: type, package and
    constant names resolve through the symbol table; `__mutsu_*` per-frame
    metadata (`__mutsu_callable_id`, state-scope ids) becomes frame fields.
+   This phase is already under way as
+   [#7817](https://github.com/tokuhirom/mutsu/issues/7817): its slices 1-7
+   (#11092, #11250, #11747, #11820, #11848, #11856, #11882) moved a loaded
+   module's callable-id markers, top-level types, enum values, constant and
+   type markers, qualified packages and bind markers out of the frame env.
+   Per-iteration deep-copy entries on its Cro probe fell from 24,293 to about
+   2,600. Its open remainder is this phase's work list: qualified names below
+   a module's top level or under an alias, qualified `&` code bindings
+   (#11913), and the main program's own top-level routine markers.
    Exit: a closure with no free variables captures no system names; ADR-0094's
    and ADR-9170's kept set is empty in the FunctionalParsers profile.
 2. **Routine names bind lexically.** `sub` declarations and imports become
    bindings read like lexicals; multis get a dispatcher value and a call-site
-   cache (§2.4). Exit: `has_multi_function`, `any_candidate_key_of` and
+   cache (§2.4). The call-site cache is the one
+   [#10109](https://github.com/tokuhirom/mutsu/issues/10109) asks for (extend
+   ADR-0066's inline cache to multis). There must be one design, keyed and
+   invalidated the same way (`fn_resolve_gen`, `.wrap`, a new candidate,
+   per-scope operator visibility per #9944), not two caches. Exit:
+   `has_multi_function`, `any_candidate_key_of` and
    `resolve_function_with_types` are absent from the per-call profile of
    FunctionalParsers and `bench-multi-dispatch`.
 3. **The static link.** Frames carry the outer link; the reflective name view
@@ -337,3 +352,31 @@ with dynamic depth (#12519, #12476) or with declarations in scope (ADR-0094
 - **A MoarVM-style frame and moving-GC redesign.** Not needed: the outer link
   is an ordinary `Gc`/`Arc` handle under the existing refcount plus cycle
   collector (ADR-0001), and a moving GC stays rejected.
+
+## 7. Open issues with the same root cause
+
+These issues were filed before this ADR. Each one traced a symptom back to
+names resolving through the shared, caller-chained env, and each proposes a
+local remedy. Under this ADR they become work items of a phase, or are closed
+by one. A slice that works one of them follows the phase's design rather than
+the issue's original local remedy.
+
+| issue | what it is | phase |
+| --- | --- | --- |
+| [#12519](https://github.com/tokuhirom/mutsu/issues/12519) | closures capture the caller's dynamic env | 3 (closes) |
+| [#12478](https://github.com/tokuhirom/mutsu/issues/12478) | a named `sub` in a recursive `.map` callback reads another activation's lexicals: the hoisted sub resolves them by name through the shared env (blocks SBOM::CycloneDX `t/90-valid.rakutest`) | 3 (closes). The issue's "decline the inline loop" is a workaround |
+| [#10511](https://github.com/tokuhirom/mutsu/issues/10511) | `EVAL`'s undeclared-variable check reads the runtime env, not the static pad | 3: the reflective name view of §2.3 is the static pad it asks for |
+| [#8335](https://github.com/tokuhirom/mutsu/issues/8335) | a closure call has no light path. Of its remaining 9,176 Ir/call, ~4,300 is the env frame (`Env` create/drop, caller-env push/pop, four `insert_sym`) | 3 removes the frame; 1 removes the `&?BLOCK` / callable-id inserts. Its "option 2" keeps `set_capture_fallback`, which phase 4 deletes, so take it only as a stopgap |
+| [#9170](https://github.com/tokuhirom/mutsu/issues/9170) | scope entry/exit and closure creation walk the env. The open remainder: `ImportScope` key-set snapshot, `RoutineScope`'s O(routines) restore diff, the BlockScope-exit sigilless-alias sync | 2 (routine and import scope stop being registry snapshots); 4 retires what ADR-9170 built for its closure rows |
+| [#10109](https://github.com/tokuhirom/mutsu/issues/10109) | a cached multi call costs 2.4x a plain sub | 2: one call-site cache design (see phase 2) |
+| [#10419](https://github.com/tokuhirom/mutsu/issues/10419) | a block-scoped `use` import leaks into a later `EVAL` because the alias and the module's own definition share a global registry key | 2: an imported routine is a lexical binding, so it has no registry key to collide on. Reconcile with the ADR-0081 amendment its re-triage asks for |
+| [#9171](https://github.com/tokuhirom/mutsu/issues/9171) | pseudo-stash reads (`GLOBAL::`, `DYNAMIC::`, `PROCESS::`, a whole `P::`) and `PackageScope` still build or diff the whole env | 1 for package stashes (a real symbol table), 3 for `DYNAMIC::` (the call-frame stack) |
+| [#7817](https://github.com/tokuhirom/mutsu/issues/7817) | ADR-0084's tracker | 1 (see phase 1) |
+| [#12526](https://github.com/tokuhirom/mutsu/issues/12526) | an `@x` parameter costs ~12x a `$x` one (generic binder + copy-out writeback) | partly 3: the writeback becomes unnecessary (§2.3). The binder half is independent and can land first |
+
+**Out of scope.** [#12204](https://github.com/tokuhirom/mutsu/issues/12204)
+(the cross-thread shared store is keyed by bare name; `tier:icebox` by a
+maintainer decision) has the same character: names instead of bindings as
+identity. Phase 3 makes keying that store by binding identity natural, but
+this ADR does not reverse the icebox decision, and does not commit to
+re-keying the store.
