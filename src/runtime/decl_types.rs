@@ -602,8 +602,8 @@ impl crate::value::signature::SubsetBases for crate::runtime::Interpreter {
         self.cached_meta_parameterized_type(constraint)
     }
 
-    // Cost: O(1) expected, one env probe.
+    // Cost: O(1) expected, two env probes.
     fn type_term(&self, name: &str) -> Option<Value> {
-        self.imported_type_term(name)
+        self.scoped_type_object(name)
     }
 }
