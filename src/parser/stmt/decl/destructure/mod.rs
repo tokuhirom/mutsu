@@ -323,7 +323,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
             is_our,
             is_binding,
             has_nested_group,
-            type_constraint,
+            (type_constraint, group_default_expr),
         );
     }
     // A sigilless term in a grouped declaration (`my (\a)`, `my (\a, \b)`)
@@ -389,7 +389,7 @@ fn parse_destructuring_with_rhs(
     is_our: bool,
     is_binding: bool,
     has_nested_group: bool,
-    type_constraint: Option<String>,
+    (type_constraint, group_default): (Option<String>, Option<Expr>),
 ) -> PResult<'_, Stmt> {
     let rest = if let Some(stripped) = input.strip_prefix("::=") {
         stripped
@@ -429,7 +429,7 @@ fn parse_destructuring_with_rhs(
         is_state,
         is_our,
         type_constraint,
-        group_default: None,
+        group_default,
         has_nested_group,
         init: Some(SignatureInit {
             is_binding,
