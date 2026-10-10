@@ -91,14 +91,16 @@ pub(crate) fn round_trip(stmts: &[Stmt]) -> Result<Vec<Stmt>, RuntimeError> {
 
 /// [`round_trip_if_enabled`] for an `EVAL` string, whose bare names may be
 /// declared by the scope that called it: `types` and `terms` are those names.
-pub(crate) fn round_trip_eval_if_enabled(
-    stmts: Vec<Stmt>,
+pub(crate) fn round_trip_eval(
+    stmts: &[Stmt],
     types: impl FnOnce() -> Vec<String>,
     terms: impl FnOnce() -> Vec<String>,
 ) -> Result<Vec<Stmt>, RuntimeError> {
-    if !covers(Unit::Eval) {
-        return Ok(stmts);
-    }
     let _caller = super::bareword::CallerNames::install(types(), terms());
-    round_trip_if_enabled(stmts, Unit::Eval)
+    round_trip(stmts).map_err(|err| {
+        RuntimeError::new(format!(
+            "MUTSU_RAKUAST: this compilation unit does not round-trip through RakuAST: {}",
+            err.message
+        ))
+    })
 }

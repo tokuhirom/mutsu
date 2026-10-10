@@ -3,7 +3,7 @@ use MONKEY-SEE-NO-EVAL;
 use lib 't/lib';
 use EvalImportedConstantClass;
 
-# In frontend mode the source checks precede conversion. A source error must
+# In frontend mode source checks diagnose refused conversions. A source error must
 # retain its typed exception even when the invalid construct cannot convert.
 for 'say missing-control-term;',
     'my $value = missing-control-term; $value',
@@ -41,5 +41,7 @@ throws-like { EVAL('use EvalExportHookTerm <U>; NoSuchTerm') },
 
 is EVAL('EVAL_IMPORTED_CLASS_CONST'), 42,
     'source-check module probes preserve imported caller constant names';
+is EVAL('use EvalImportedConstantClass; EVAL_IMPORTED_CLASS_CONST'), 42,
+    'imports declared inside EVAL resolve before validation';
 
 done-testing;

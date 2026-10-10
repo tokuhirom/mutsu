@@ -131,20 +131,21 @@ impl Interpreter {
                 // `throws-like`, which is why `roast/S32-exceptions/misc2.t`
                 // passed there and failed under the real `Test` module, whose
                 // `throws-like` EVALs its string through this ordinary path.
-                self.validate_eval_source(&stmts)?;
-                // Diagnose the source unit before converting it. Invalid names
-                // must keep the ordinary frontend's typed CHECK-time errors,
-                // rather than becoming a RakuAST conversion refusal.
+                // A refused conversion must not hide the source unit's typed
+                // CHECK-time diagnostic. Valid converted units are checked
+                // after lowering, when imported names have been resolved.
                 let stmts = if let Some((types, terms)) = caller_names {
-                    crate::rakuast::frontend::round_trip_eval_if_enabled(stmts, || types, || terms)?
+                    match crate::rakuast::frontend::round_trip_eval(&stmts, || types, || terms) {
+                        Ok(lowered) => lowered,
+                        Err(refusal) => {
+                            self.validate_eval_source(&stmts)?;
+                            return Err(refusal);
+                        }
+                    }
                 } else {
                     stmts
                 };
-                // Lowering resolves spelled and deferred names that the source
-                // checks cannot yet classify, including dynamic EXPORT terms.
-                if crate::rakuast::frontend::covers(crate::rakuast::frontend::Unit::Eval) {
-                    self.validate_eval_source(&stmts)?;
-                }
+                self.validate_eval_source(&stmts)?;
                 // When EVAL is called inside a class body, MethodDecl statements
                 // should be added to the enclosing class rather than lowered to subs.
                 let mut stmts = self.inject_eval_methods_into_class(stmts);

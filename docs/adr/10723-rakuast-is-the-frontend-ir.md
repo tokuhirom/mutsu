@@ -422,13 +422,14 @@ itemization agrees with the parser's tree. The read, constructed-tree and
 semantic contracts are pinned in
 `t/rakuast/rakuast-control-signature-cohort.t`.
 
-EVAL's existing static source validation precedes conversion, so invalid
-source retains its typed CHECK-time exception instead of a conversion refusal.
-This ordering introduces no execution during validation: rejected units never
-run ordinary statements, and valid units still convert and lower before
-execution. The same validation runs after lowering to check names resolved
-from spelled terms and dynamic exports. `t/rakuast/rakuast-eval-source-diagnostics.t`
-pins both boundaries.
-Caller type and term names are captured before static module probes can reset
-the parser's import tables, so cold and cached module loads use the same names.
+When EVAL conversion refuses a unit, its existing static source validation
+supplies any typed CHECK-time diagnostic before the refusal is returned.
+Valid converted units are checked after lowering, when imports and deferred
+names have been resolved. No refused unit executes the original parser tree.
+`t/rakuast/rakuast-eval-source-diagnostics.t` pins these boundaries.
+Caller type and term names are captured before parsing or static module probes
+can reset import tables. Runtime import aliases also supply caller terms,
+so cold and cached module loads use the same names.
 Mainline diagnostic conversion remains a separate residual path.
+An ordinary-frontend gap for lowercase constants imported inside EVAL is
+tracked separately in #12574.
