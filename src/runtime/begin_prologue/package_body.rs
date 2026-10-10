@@ -18,7 +18,7 @@
 //! The two parts share the body's lexicals through the package's static
 //! store, the way the body's methods already do.
 
-use crate::ast::{Expr, PackageRuntimeDecl, Stmt};
+use crate::ast::{Expr, PackageRuntimeDecl, PhaserKind, Stmt};
 
 /// Split a declaration the prologue takes into its BEGIN-time declaration and
 /// its run-time part. A declaration with no run-time part comes back
@@ -120,6 +120,12 @@ fn split_body(body: Vec<Stmt>) -> Result<(Vec<Stmt>, Vec<Stmt>), Vec<Stmt>> {
     for stmt in body {
         split_body_stmt(stmt, &mut decls, &mut runtime);
     }
+    // The run-time part compiles its statements in the package scope without
+    // a block of its own, so the body's block phasers need one to queue in:
+    // `ENTER` before the statements, `LEAVE` after them.
+    if runtime.iter().any(is_block_phaser) {
+        runtime = vec![block_of(runtime)];
+    }
     Ok((decls, runtime))
 }
 
@@ -208,6 +214,11 @@ fn splittable_var_decl(stmt: &Stmt) -> bool {
 /// A statement that runs at run time in Rakudo and declares nothing.
 fn is_runtime_stmt(stmt: &Stmt) -> bool {
     match stmt {
+        // The variable-trait applications and phaser replays a body's `my $x
+        // is foo` hoists (ADR-12131) run with the body, not when it composes.
+        _ if is_var_trait_stmt(stmt) => true,
+        // A body's own block phasers run with the body.
+        _ if is_block_phaser(stmt) => true,
         // An anonymous method (`method { $!x }`) is validated against the
         // class's attributes while the class composes.
         Stmt::Expr(Expr::AnonSubParams { params, .. }) => {
@@ -231,6 +242,34 @@ fn is_runtime_stmt(stmt: &Stmt) -> bool {
         | Stmt::Fail(_) => true,
         _ => false,
     }
+}
+
+/// The statements `body` as one block statement.
+fn block_of(body: Vec<Stmt>) -> Stmt {
+    Stmt::Block(body)
+}
+
+/// A phaser of the queues a block runs around its statements.
+fn is_block_phaser(stmt: &Stmt) -> bool {
+    let Stmt::Phaser { kind, .. } = stmt else {
+        return false;
+    };
+    [
+        PhaserKind::Enter,
+        PhaserKind::Leave,
+        PhaserKind::Keep,
+        PhaserKind::Undo,
+    ]
+    .contains(kind)
+}
+
+/// A variable-trait application or replay
+/// ([`super::nested::var_traits::lift_package_var_traits`]).
+fn is_var_trait_stmt(stmt: &Stmt) -> bool {
+    let Stmt::Expr(Expr::Call { name, .. }) = stmt else {
+        return false;
+    };
+    name.resolve() == crate::runtime::phasers::APPLY_VAR_TRAIT_CALL
 }
 
 /// A call the parser synthesizes as a marker (`__MUTSU_EXPORT_TYPE__`,

@@ -43,7 +43,7 @@ use crate::ast::{Expr, PhaserKind, Stmt};
 use std::collections::HashSet;
 pub(crate) use use_if::if_condition_slot;
 pub(crate) use nested::var_traits::{
-    VAR_TRAIT_REPLAY, VAR_TRAIT_SEED_RESTORE, VAR_TRAIT_SEED_STASH, VAR_TRAIT_SEEDED,
+    VAR_TRAIT_REPLAY, lift_package_var_traits, lift_unit_var_traits, VAR_TRAIT_SEED_RESTORE, VAR_TRAIT_SEED_STASH, VAR_TRAIT_SEEDED,
     VAR_TRAIT_SITE,
 };
 use use_if::{if_condition_check, next_if_condition_slot};

@@ -487,6 +487,8 @@ impl Interpreter {
         // does not install a second phaser; it only records the scope the body
         // closes over. See `runtime::end_phasers`.
         self.preregister_main_end_phasers(&stmts);
+        crate::runtime::begin_prologue::lift_package_var_traits(&mut stmts);
+        crate::runtime::begin_prologue::lift_unit_var_traits(&mut stmts);
         let (pre_ph, enter_ph, success_ph, failure_ph, post_ph, body_main) =
             self.split_block_phasers(&stmts);
         // A top-level END is dropped from the body outright: it is installed

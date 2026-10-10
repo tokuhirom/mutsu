@@ -45,7 +45,9 @@ pub(crate) const ATTACH_TARGET_CLASS: &str = "Mutsu::AttachTarget";
 /// declaration (`Variable.block`).
 /// The phaser kinds `Variable.block.add_phaser` accepts: the ones a block's
 /// own queue runs around its body.
-pub(crate) const VAR_TRAIT_PHASER_KINDS: &[&str] = &["ENTER", "LEAVE", "KEEP", "UNDO"];
+pub(crate) const VAR_TRAIT_PHASER_KINDS: &[&str] = &[
+    "ENTER", "LEAVE", "KEEP", "UNDO", "FIRST", "NEXT", "LAST", "PRE", "POST",
+];
 
 pub(crate) const VARIABLE_BLOCK_MARK: &str = "__mutsu_var_block";
 
@@ -379,7 +381,7 @@ impl Interpreter {
             .filter(|(k, _)| k == kind)
             .map(|(_, code)| code.clone())
             .collect();
-        if kind != "ENTER" {
+        if !matches!(kind, "ENTER" | "FIRST" | "NEXT" | "LAST" | "PRE") {
             phasers.reverse();
         }
         if phasers.is_empty() {

@@ -1,7 +1,7 @@
 use v6.d;
 use Test;
 
-plan 13;
+plan 18;
 
 # Rakudo runs a variable trait handler while compiling the declaration, so
 # nothing here logs from the handler itself: only the phasers it adds do.
@@ -71,10 +71,45 @@ multi trait_mod:<is>(Variable:D $v, :$bad!) {
     $v.block.add_phaser("NOPE", { });
 }
 throws-like { EVAL 'my $q is bad;' }, Exception, 'an unsupported phaser kind is refused';
-multi trait_mod:<is>(Variable:D $v, :$lateleave!) {
-    $v.block.add_phaser("LEAVE", { });
+
+# The loop kinds attach to a loop body; PRE and POST run without a verdict.
+my @loop;
+multi trait_mod:<is>(Variable:D $v, :$lp!) {
+    $v.block.add_phaser("FIRST", { @loop.push("first") });
+    $v.block.add_phaser("NEXT", { @loop.push("next") });
+    $v.block.add_phaser("LAST", { @loop.push("last") });
 }
-throws-like { EVAL 'my $q is lateleave;' }, Exception, 'a LEAVE phaser from an unlifted trait is refused';
+for 1..2 { my $l is lp; @loop.push("it") }
+is-deeply @loop, ["first", "it", "next", "it", "next", "last"],
+    'FIRST, NEXT and LAST added from a trait run around a loop body';
+my @cond;
+multi trait_mod:<is>(Variable:D $v, :$cond!) {
+    $v.block.add_phaser("PRE", { @cond.push("pre"); False });
+    $v.block.add_phaser("POST", { @cond.push("post"); False });
+}
+sub with-cond { my $c is cond; @cond.push("body"); "ret" }
+is with-cond(), "ret", 'PRE and POST added from a trait are not checked';
+is-deeply @cond, ["pre", "body", "post"], '... and run around the body';
+
+# Unit-level declarations run their phasers in the unit's own queues.
+my @unit;
+multi trait_mod:<is>(Variable:D $v, :$unit!) {
+    $v.block.add_phaser("ENTER", { @unit.push("enter") });
+    $v.block.add_phaser("LEAVE", { @unit.push("leave") });
+}
+my $u is unit;
+is-deeply @unit, ["enter"], 'a unit-level trait runs its ENTER phaser before the mainline';
+END is-deeply @unit, ["enter", "leave"], 'a unit-level LEAVE phaser runs when the mainline ends';
+
+# A class body is a block of its own: ENTER before its statements, LEAVE after.
+my @body;
+multi trait_mod:<is>(Variable:D $v, :$in-class!) {
+    $v.block.add_phaser("ENTER", { @body.push("enter") });
+    $v.block.add_phaser("LEAVE", { @body.push("leave") });
+}
+class WithTrait { my $k is in-class; BEGIN @body.push("begin"); @body.push("body"); }
+is-deeply @body, ["begin", "enter", "body", "leave"],
+    'a class body trait runs its phasers around the body';
 
 # Variable.block does not break the other reflective methods.
 my $name;
