@@ -340,6 +340,20 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `has_multi_function`, `any_candidate_key_of` and
    `resolve_function_with_types` are absent from the per-call profile of
    FunctionalParsers and `bench-multi-dispatch`.
+
+   **Slice 1 done** (`perf/12529-phase2-routine-resolution`): a method body
+   enters its own compilation unit, as a sub body (`enter_compilation_unit`)
+   and a closure (`call_compiled_closure_with_topic`) already did, so a
+   routine name it calls resolves in the compunit it was written in. The
+   plain-routine resolution memo (#9081) now keys a compunit-scoped name by
+   the executing units as well, which lets it record the unit-private
+   fallback and a statically visible package routine for such a name; before,
+   a module's own exported routines (FunctionalParsers' `apply`, `many`,
+   `alternatives`, ...) paid the whole resolution walk on every call. Same
+   probe: `function-full-resolve` 11,581 → 5,383. What is left there is the
+   multi families (`sequence`, `success`, `postcircumfix:<[ ]>`), a `constant
+   &sp` called by name, and `reduce` -- the multi call-site cache and the
+   routine-as-lexical-binding steps below.
 3. **The static link.** Frames carry the outer link; the reflective name view
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay

@@ -472,6 +472,17 @@ impl Interpreter {
         if self.env.contains_key_sym(MetaNs::ModuleMerge.key(module)) {
             return true;
         }
+        self.module_merged_in_anchor_units(module)
+    }
+
+    /// The table half of [`Self::module_merged_here`]: whether `module` is
+    /// merged into the unit the running code belongs to, without the frame
+    /// env's block-scoped merge marker. Its answer depends only on the two
+    /// anchor units and the merge tables, which is what lets a resolution
+    /// memo keyed by those units record it
+    /// ([`Self::module_routine_visible_statically`]).
+    // Cost: O(d), d = EVAL nesting of the anchor units (at most 64).
+    pub(crate) fn module_merged_in_anchor_units(&self, module: Symbol) -> bool {
         let own_unit = self
             .module
             .module_visibility
@@ -499,6 +510,39 @@ impl Interpreter {
             }
         }
         false
+    }
+
+    /// Whether [`Self::module_routine_visible_here`] holds for `key` for a
+    /// reason that does not depend on the frame env or on a block-scoped
+    /// import: no module published the name, or the publishing module is
+    /// merged into the running code's unit by the merge tables. `false` means
+    /// "maybe", never "invisible"; a resolution memo records a routine only
+    /// when this is `true` (ADR-12529 phase 2).
+    // Cost: O(1) when no module published the name; otherwise
+    // `module_merged_in_anchor_units`.
+    pub(crate) fn module_routine_visible_statically(&self, key: Symbol) -> bool {
+        if self
+            .module
+            .module_visibility
+            .module_routine_providers
+            .is_empty()
+        {
+            return true;
+        }
+        let Some(name) =
+            key.with_str(|k| Self::toplevel_global_routine_name(k).and_then(Symbol::lookup))
+        else {
+            return true;
+        };
+        match self
+            .module
+            .module_visibility
+            .module_routine_providers
+            .get(&name)
+        {
+            None => true,
+            Some(&module) => self.module_merged_in_anchor_units(module),
+        }
     }
 
     /// Whether the bare name `name` resolves from the code running right
