@@ -503,3 +503,33 @@ the same binding. The shared-variable publication path must be able to update
 that binding without re-inserting the qualified key into `Env`. Pin direct,
 indirect, stash, module-owned and thread reads against Rakudo, then re-measure
 the frame-env copy count. No interpreter change from this trial was retained.
+
+### 7.10 Slice 9 — a top-level `constant` leaves the env for real
+
+§7.8's store to `ModuleToplevel::package_symbols` did not keep the qualified
+name out of the frame env: the same `SetGlobal` handler then called
+`set_shared_var`, which inserts the key into the env as part of publishing it
+to the cross-thread store. The §7.8 probe's single saved entry came from that
+interplay, not from the move. This is the same re-insertion §7.9 found for
+`our &`.
+
+A `constant` binding never changes after its declaration, so it needs neither
+the env nor the shared store. `SetGlobalRaw` now carries a `constant` flag (the
+other raw store, an `our` aggregate that already holds its coerced container,
+is a mutable variable and keeps the old path), and a constant that a module's
+mainline publishes under a qualified name goes to the package-symbol table
+only. That covers `constant &name`, which a module publishes as
+`&Pkg::name`: the qualified code-variable read (`resolve_code_var`) and the
+qualified call fallback now consult the table after the env, like the other
+qualified readers, and so does the miss path of the by-name chokepoint
+`get_env_with_main_alias` for a qualified name. That last reader is what an
+`EXPORTHOW::DECLARE` keyword's HOW lookup goes through: before this slice it
+found `EXPORTHOW::DECLARE::monitor` only because the shared-store publication
+had put it back into the env.
+
+Measured on ADR-12529's FunctionalParsers probe, whose module declares twelve
+`constant &alt is export = &alternatives`-style shortcuts: those names left
+every closure capture's shared layer, and by-name chain walks fell 19%.
+`t/modules/module-qualified-code-constants-off-env.t` pins the direct,
+qualified, indirect, stash, module-owned, closure and thread reads against
+Rakudo.

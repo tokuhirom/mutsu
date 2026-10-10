@@ -2186,7 +2186,10 @@ impl Compiler {
                                 // A defaulted `our @a` publishes that same
                                 // default-aware container for the same reason.
                                 self.code.emit(OpCode::GetLocal(slot));
-                                self.code.emit(OpCode::SetGlobalRaw(idx));
+                                self.code.emit(OpCode::SetGlobalRaw {
+                                    name_idx: idx,
+                                    constant: is_constant,
+                                });
                             } else {
                                 // A `:=` bind of an `our` container var (`our %g := %h`)
                                 // marks the var readonly as the bind signal; re-mark the

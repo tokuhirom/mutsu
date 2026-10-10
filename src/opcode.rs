@@ -1192,8 +1192,15 @@ pub(crate) enum OpCode {
     /// package (`$x` inside `grammar G` compiles to `G::x`) is redirected to
     /// the captured outer lexical when no such package variable exists.
     SetGlobal(u32),
-    /// Like SetGlobal but skips @/% coercion (used for `constant @x` / `constant %x`).
-    SetGlobalRaw(u32),
+    /// Like SetGlobal but skips @/% coercion (used for `constant @x` / `constant %x`,
+    /// and for an `our` aggregate that already holds its coerced container).
+    ///
+    /// `constant` marks a `constant` declaration's package publication. Its
+    /// binding never changes after the declaration, so when a module's mainline
+    /// publishes a package-qualified constant it goes to the package-symbol
+    /// table only, never to the frame env or the cross-thread shared store
+    /// (ADR-0084, ADR-12529 phase 1).
+    SetGlobalRaw { name_idx: u32, constant: bool },
     /// Store a compiler-internal call-site temporary into the frame env under
     /// its pre-interned name. Stack: `[value] -> []`.
     ///
@@ -8063,7 +8070,7 @@ impl CompiledCode {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
                 | OpCode::SetGlobal(idx)
-                | OpCode::SetGlobalRaw(idx)
+                | OpCode::SetGlobalRaw { name_idx: idx, .. }
                 | OpCode::PostIncrement(idx, _)
                 | OpCode::PostDecrement(idx, _)
                 | OpCode::PreIncrement(idx, _)
@@ -8642,7 +8649,7 @@ impl CompiledCode {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
                 | OpCode::SetGlobal(idx)
-                | OpCode::SetGlobalRaw(idx)
+                | OpCode::SetGlobalRaw { name_idx: idx, .. }
                 | OpCode::PostIncrement(idx, _)
                 | OpCode::PostDecrement(idx, _)
                 | OpCode::PreIncrement(idx, _)
@@ -9256,7 +9263,7 @@ impl CompiledCode {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
                 | OpCode::SetGlobal(idx)
-                | OpCode::SetGlobalRaw(idx)
+                | OpCode::SetGlobalRaw { name_idx: idx, .. }
                 | OpCode::PostIncrement(idx, _)
                 | OpCode::PostDecrement(idx, _)
                 | OpCode::PreIncrement(idx, _)
@@ -9752,7 +9759,7 @@ impl CompiledCode {
             | OpCode::GetGlobal(idx)
             | OpCode::GetScalarContainer { name_idx: idx, .. }
             | OpCode::SetGlobal(idx)
-            | OpCode::SetGlobalRaw(idx)
+            | OpCode::SetGlobalRaw { name_idx: idx, .. }
             | OpCode::PostIncrement(idx, _)
             | OpCode::PostDecrement(idx, _)
             | OpCode::PreIncrement(idx, _)
@@ -9827,7 +9834,7 @@ impl CompiledCode {
         match op {
             OpCode::GetScalarContainer { name_idx: idx, .. }
             | OpCode::SetGlobal(idx)
-            | OpCode::SetGlobalRaw(idx)
+            | OpCode::SetGlobalRaw { name_idx: idx, .. }
             | OpCode::PostIncrement(idx, _)
             | OpCode::PostDecrement(idx, _)
             | OpCode::PreIncrement(idx, _)
@@ -11456,7 +11463,7 @@ impl CompiledCode {
                     // caller's named-capture key directly.
                     | OpCode::SmartMatchExpr { .. }
                     | OpCode::SetGlobal(_)
-                    | OpCode::SetGlobalRaw(_)
+                    | OpCode::SetGlobalRaw { .. }
                     | OpCode::SetCallTemp(_)
                     | OpCode::AssignExpr(..)
                     | OpCode::TopicDotAssign(_)

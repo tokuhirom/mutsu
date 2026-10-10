@@ -671,6 +671,13 @@ impl Interpreter {
             }
             return val;
         }
+        // A module's top-level `constant &Pkg::name` lives in the
+        // package-symbol table, not the frame env (ADR-12529 phase 1).
+        if crate::qualified::is_qualified_str(bare_name)
+            && let Some(val) = self.toplevel_package_symbol(&var_key)
+        {
+            return val.clone();
+        }
         // `return` is a control-flow keyword that also resolves as &return
         // so that it can be rebound (proxied return pattern).
         // `take` is the same kind of keyword-with-a-callable-form: `&take`,

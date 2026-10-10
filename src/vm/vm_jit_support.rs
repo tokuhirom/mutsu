@@ -70,7 +70,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::GetUpvalue { .. }
             // Variable writes / declarations
             | OpCode::SetGlobal(_)
-            | OpCode::SetGlobalRaw(_)
+            | OpCode::SetGlobalRaw { .. }
             | OpCode::SetCallTemp(_)
             | OpCode::GetCallTempRaw(_)
             | OpCode::SetVarDynamic { .. }

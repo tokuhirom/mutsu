@@ -43,7 +43,7 @@ impl Interpreter {
             | OpCode::RoleGroupToCandidate
             | OpCode::SetCallTemp(..)
             | OpCode::SetGlobal(..)
-            | OpCode::SetGlobalRaw(..) => self.exec_ops_group_02(code, ip, compiled_fns),
+            | OpCode::SetGlobalRaw { .. } => self.exec_ops_group_02(code, ip, compiled_fns),
             OpCode::Add
             | OpCode::BoolBitNeg
             | OpCode::DeSlip

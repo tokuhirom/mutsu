@@ -288,6 +288,27 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    (#11913), and the main program's own top-level routine markers.
    Exit: a closure with no free variables captures no system names; ADR-0094's
    and ADR-9170's kept set is empty in the FunctionalParsers profile.
+
+   **Slice 1 done** (`refactor/12529-phase1-qualified-code-constants`,
+   ADR-0084 §7.10): a module's top-level `constant` publishes its qualified
+   name (`&FunctionalParsers::alt`, `Pkg::VERSION`) to the package-symbol
+   table only. ADR-0084 §7.8 had already routed that store there, but the
+   cross-thread publication right after it re-inserted the qualified key into
+   the frame env, so the move had not taken effect. `SetGlobalRaw` now says
+   whether it publishes a `constant`, and such a store skips the env and the
+   shared store. The 12 `&FunctionalParsers::*` names (`constant &alt is
+   export = &alternatives` and kin) were in almost every capture layer of the
+   parse; they are gone. Same probe as phase 0: `chain_walks` 825,502 →
+   666,397 (−19%), `chain_hops` 1,801,367 → 1,380,855 (−23%);
+   `scoped_overlays`, `captures` and `capture_layers` are unchanged.
+
+   What the kept set still holds there, per capture (from a dump of the
+   captured keys): the per-frame metadata `__mutsu_callable_id`, `&?BLOCK`,
+   `__mutsu_block_return_target` / `__mutsu_block_return_owner`,
+   `__mutsu_var_source_name::*`, and `self`, `?CLASS`, `__ANON_STATE__`,
+   copied into the closure's own tier; and in the shared layers the module
+   mainline's `Any`, `?FILE`, `=pod` and its own package name. The topic,
+   `$/`, `$!` and `@_` are phase 3's (§5).
 2. **Routine names bind lexically.** `sub` declarations and imports become
    bindings read like lexicals; multis get a dispatcher value and a call-site
    cache (§2.4). The call-site cache is the one

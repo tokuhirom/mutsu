@@ -1315,8 +1315,11 @@ impl Interpreter {
             // reverse-alias propagation probes each candidate from
             // `sigilless_alias_index`; 0 in a program that never binds one); plus O(e)
             // when an `@`/`%` target copies its container.
-            OpCode::SetGlobalRaw(name_idx) | OpCode::SetGlobal(name_idx) => {
-                let raw_mode = matches!(code.ops[*ip], OpCode::SetGlobalRaw(_));
+            OpCode::SetGlobalRaw { name_idx, .. } | OpCode::SetGlobal(name_idx) => {
+                let (raw_mode, constant_decl) = match code.ops[*ip] {
+                    OpCode::SetGlobalRaw { constant, .. } => (true, constant),
+                    _ => (false, false),
+                };
                 let is_bind_ctx = self.bind_context().get();
                 let is_rebind = self.rebind_context().get();
                 self.bind_context().set(false);
@@ -2906,16 +2909,21 @@ impl Interpreter {
                         .carrier_writes
                         .as_ref()
                         .is_some_and(|s| s.contains(name.as_str()));
-                if unit_lexical_write || our_scalar_write {
-                    // nothing further: the cell is the only home for this name
-                } else if raw_mode
+                // A module's top-level `constant` publishes a package symbol,
+                // not a frame lexical: the qualified readers and the stash
+                // consult that shared table after the env. Its binding never
+                // changes, so the table is its only home -- the frame env and
+                // the cross-thread shared store below are skipped, or every
+                // frame env of the importing program (and every closure
+                // capture of it) carries the qualified name again (ADR-12529
+                // phase 1).
+                let package_constant = constant_decl
                     && crate::qualified::is_qualified(name_sym)
                     && self.at_module_toplevel()
-                    && !self.env().contains_key_sym(name_sym)
-                {
-                    // A module's top-level `our constant` publishes a package
-                    // symbol, not a frame lexical. The qualified readers and
-                    // stash already consult this shared table after the env.
+                    && !self.env().contains_key_sym(name_sym);
+                if unit_lexical_write || our_scalar_write {
+                    // nothing further: the cell is the only home for this name
+                } else if package_constant {
                     self.bind_package_symbol(name.clone(), val.clone());
                 } else if raw_mode && name.starts_with('@') {
                     // For `constant @x`, bypass set_shared_var's List→Array
@@ -3017,6 +3025,7 @@ impl Interpreter {
                 // Skip for raw_mode @-variables to preserve List kind.
                 if !(unit_lexical_write
                     || our_scalar_write
+                    || package_constant
                     || raw_mode && name.starts_with('@')
                     || is_attr_twigil)
                 {
