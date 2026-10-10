@@ -95,3 +95,8 @@ Slice 2 (2026-10-10) moved `arity` and `count`. The two arms (a `&name` handle a
 which the `Code` rows call, so the regex introspection, the bound-signature, dispatcher and multi-candidate paths are one implementation.
 Behaviour is unchanged (the pre-existing differences from Rakudo remain: `&say.count`, `&infix:<+>.arity` and a multi method's
 `.arity`/`.count` from `.^lookup`).
+
+Slice 3 (2026-10-10) moved `signature`. The `&name`-handle arm and the `Sub` arm became `Interpreter::code_signature` (a regex goes
+through the same function), and the row calls it; behaviour is unchanged. Remaining differences from Rakudo are listed by the probe in
+`t/routines/signature/routine-signature-rows.t`'s neighbours: a regex's `:(;; Mu |)` against `:(|)`, a multi method's and builtins'
+signatures.

@@ -1,4 +1,4 @@
-//! `Code`'s `of`, `returns`, `arity` and `count` (ADR-12523, slices 1 and 2).
+//! `Code`'s `of`, `returns`, `arity`, `count` and `signature` (ADR-12523, slices 1-3).
 //!
 //! A code object is a `Sub` (a routine, closure or block, with or without a
 //! body of its own), a `&name` handle on a routine reached through the
@@ -31,6 +31,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("returns", of),
     row!("arity", arity),
     row!("count", count),
+    row!("signature", signature),
 ];
 
 /// The answer of the `Code` row for `method`, or `None` when `target` is not a
@@ -41,7 +42,7 @@ pub(crate) fn answer(
     target: &Value,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
-    if !matches!(method, "of" | "returns" | "arity" | "count") || !is_code(target) {
+    if !matches!(method, "of" | "returns" | "arity" | "count" | "signature") || !is_code(target) {
         return None;
     }
     crate::builtins::method_table::invoke_owner(interp, &["Code"], method, &[], || target.clone())
@@ -128,4 +129,17 @@ fn count(
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     interp.code_arity_count(target, "count")
+}
+
+/// `Code.signature`: the routine's `Signature` (a multi dispatcher answers its
+/// proto's, a multi method's several candidates a junction of theirs).
+// Cost: O(p) for a routine with p parameters; O(c * p) for a multi method's
+// dispatcher with c candidates.
+fn signature(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    interp.code_signature(target)
 }
