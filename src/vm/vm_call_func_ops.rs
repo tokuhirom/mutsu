@@ -1335,7 +1335,7 @@ impl Interpreter {
         let args = if skip_proxy_fetch {
             args
         } else {
-            self.auto_fetch_proxy_args(args)?
+            self.auto_fetch_proxy_args_for_callee(name.as_str(), args)?
         };
         loan_env!(self, set_pending_callsite_line(callsite_line));
         // `nqp::` ops are compiler-known primitives in a RESERVED namespace: no
