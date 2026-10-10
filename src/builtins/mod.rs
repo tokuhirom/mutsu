@@ -5,6 +5,7 @@ pub(crate) mod buf_bits;
 pub(crate) mod buf_write_int;
 pub(crate) mod buf_write_num;
 pub(crate) mod builtin_type_methods;
+pub(crate) mod rakudo_candidates;
 pub(crate) mod cclass;
 pub(crate) mod collation;
 pub(crate) mod comb;

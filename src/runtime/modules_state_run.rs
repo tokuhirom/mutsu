@@ -7,6 +7,7 @@ pub(crate) mod lexical_state;
 pub(crate) mod module_state;
 mod prelude_source;
 pub(crate) mod return_target;
+mod builtin_candidates;
 mod routine_candidate_defs;
 pub(crate) mod routine_stack;
 mod run;
