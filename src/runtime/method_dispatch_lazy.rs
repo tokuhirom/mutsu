@@ -280,7 +280,8 @@ impl Interpreter {
             || (!Self::invocant_carries_native_storage(&invocant)
                 && (matches!(
                     method_name,
-                    "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist"
+                    "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist" | "say" | "print"
+                        | "put" | "note"
                 ) || (matches!(method_name, "Str" | "raku")
                     && matches!(invocant.view(), ValueView::Package(_))))))
             && self.has_user_method_including_role(receiver_class, method_name);

@@ -4,7 +4,7 @@ impl Interpreter {
     /// Whether `v` is an `IO::CatHandle` instance. Used to keep the generic
     /// 0-arg `.say`/`.print`/`.put`/`.printf` "stringify the invocant" behavior
     /// from shadowing the cat's own (X::NYI) write methods.
-    fn is_io_cathandle(v: &Value) -> bool {
+    pub(crate) fn is_io_cathandle(v: &Value) -> bool {
         matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "IO::CatHandle")
     }
 
