@@ -72,6 +72,21 @@ pub(crate) const CORE_TYPE_NAMES: &[&str] = &[
 ];
 
 impl Interpreter {
+    fn validate_eval_source(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+        self.check_eval_mainline_placeholders(stmts)?;
+        self.check_eval_class_redeclarations(stmts)?;
+        self.check_eval_undeclared_trusts(stmts)?;
+        self.check_eval_undeclared_type_args(stmts)?;
+        self.check_eval_undeclared_vars(stmts)?;
+        self.check_eval_undeclared_names(stmts)?;
+        self.check_eval_undeclared_routines(stmts)?;
+        Self::check_eval_routine_magicals(stmts)?;
+        self.check_eval_post_declared_types(stmts)?;
+        self.check_eval_begin_forward_calls(stmts)?;
+        self.check_eval_param_type_constraints(stmts)?;
+        self.check_type_capture_inheritance(stmts)
+    }
+
     pub(super) fn parse_and_eval_with_operators(
         &mut self,
         src: &str,
@@ -112,18 +127,7 @@ impl Interpreter {
                 // `throws-like`, which is why `roast/S32-exceptions/misc2.t`
                 // passed there and failed under the real `Test` module, whose
                 // `throws-like` EVALs its string through this ordinary path.
-                self.check_eval_mainline_placeholders(&stmts)?;
-                self.check_eval_class_redeclarations(&stmts)?;
-                self.check_eval_undeclared_trusts(&stmts)?;
-                self.check_eval_undeclared_type_args(&stmts)?;
-                self.check_eval_undeclared_vars(&stmts)?;
-                self.check_eval_undeclared_names(&stmts)?;
-                self.check_eval_undeclared_routines(&stmts)?;
-                Self::check_eval_routine_magicals(&stmts)?;
-                self.check_eval_post_declared_types(&stmts)?;
-                self.check_eval_begin_forward_calls(&stmts)?;
-                self.check_eval_param_type_constraints(&stmts)?;
-                self.check_type_capture_inheritance(&stmts)?;
+                self.validate_eval_source(&stmts)?;
                 // Diagnose the source unit before converting it. Invalid names
                 // must keep the ordinary frontend's typed CHECK-time errors,
                 // rather than becoming a RakuAST conversion refusal.
@@ -132,6 +136,11 @@ impl Interpreter {
                     || self.eval_caller_type_names(),
                     || self.eval_caller_enum_value_names(),
                 )?;
+                // Lowering resolves spelled and deferred names that the source
+                // checks cannot yet classify, including dynamic EXPORT terms.
+                if crate::rakuast::frontend::covers(crate::rakuast::frontend::Unit::Eval) {
+                    self.validate_eval_source(&stmts)?;
+                }
                 // When EVAL is called inside a class body, MethodDecl statements
                 // should be added to the enclosing class rather than lowered to subs.
                 let mut stmts = self.inject_eval_methods_into_class(stmts);

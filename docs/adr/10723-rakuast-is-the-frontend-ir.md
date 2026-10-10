@@ -426,5 +426,7 @@ EVAL's existing static source validation precedes conversion, so invalid
 source retains its typed CHECK-time exception instead of a conversion refusal.
 This ordering introduces no execution during validation: rejected units never
 run ordinary statements, and valid units still convert and lower before
-execution. `t/rakuast/rakuast-eval-source-diagnostics.t` pins both boundaries.
+execution. The same validation runs after lowering to check names resolved
+from spelled terms and dynamic exports. `t/rakuast/rakuast-eval-source-diagnostics.t`
+pins both boundaries.
 Mainline diagnostic conversion remains a separate residual path.

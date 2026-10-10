@@ -1,5 +1,6 @@
 use Test;
 use MONKEY-SEE-NO-EVAL;
+use lib 't/lib';
 
 # In frontend mode the source checks precede conversion. A source error must
 # retain its typed exception even when the invalid construct cannot convert.
@@ -31,5 +32,10 @@ is EVAL('my $x = 4; if $x -> $value { $value + 3 }'), 7,
     'a valid control signature still executes after checking';
 is EVAL('do with Any { 0 } orwith (3, 4) -> ($a, $b) { $a + $b }'), 7,
     'a valid orwith destructure still crosses the frontend boundary';
+
+is EVAL('use EvalExportHookTerm <U>; U.k'), 1,
+    'a dynamic export remains valid after source checking';
+throws-like { EVAL('use EvalExportHookTerm <U>; NoSuchTerm') },
+    X::Undeclared::Symbols, 'resolved names are checked again after lowering';
 
 done-testing;
