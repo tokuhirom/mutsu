@@ -1682,7 +1682,8 @@ pub(in crate::runtime) fn code_signature_matches_value(
         .as_ref()
         .map(|rt| resolve_captured_constraint(interpreter, rt));
     let expected_info = param_defs_to_sig_info(&specialized_expected, specialized_return);
-    // Function-type compatibility: candidate callable must be at least as general
-    // as the required signature to safely accept all required calls.
-    signature_smartmatch(&actual_info, &expected_info)
+    // Rakudo binds `&c:(Int $x)` with `expected ~~ actual` direction on parameter
+    // types: each parameter type of the expected signature must accept the
+    // candidate's (`-> Int:D $y` and `-> Int:U $y` bind, `-> Any $y` does not).
+    signature_smartmatch(&expected_info, &actual_info)
 }
