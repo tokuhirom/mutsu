@@ -1962,7 +1962,11 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         None
     };
     let mut sigilless = false;
-    let invocant = match parameter.fields.iter().find(|f| f.name == Some("invocant")) {
+    let invocant = match parameter
+        .fields
+        .iter()
+        .find(|f| matches!(f.name, Some("invocant" | "capture-invocant")))
+    {
         Some(field) => match &field.value {
             RakuAstFieldValue::Node(value) => match value.view() {
                 ValueView::Bool(b) => b,

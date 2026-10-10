@@ -3270,6 +3270,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // A declaration in expression position (`class { }`, `role { }`,
         // `push my @u, 1`): the parser wraps the declaration in a `DoStmt`,
         // rakudo has the node itself.
+        Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::Expr(_)) => {
+            let Stmt::Expr(expr) = stmt.as_ref() else {
+                unreachable!()
+            };
+            convert_expr(expr)
+        }
         Expr::DoStmt(stmt)
             if matches!(
                 stmt.as_ref(),
@@ -5607,6 +5613,11 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             fields.push(node_field(Some("type"), type_setting_any()));
         }
         fields.push(type_captures_field(type_capture));
+        if pd.is_invocant {
+            // Rakudo omits the invocant flag of a bare capture from .raku.
+            // Retain it as metadata so lowering does not add an argument.
+            fields.push(leaf_field(Some("capture-invocant"), Value::truth(true)));
+        }
         match &pd.default {
             Some(default) => fields.push(node_field(Some("default"), convert_expr(default)?)),
             None => fields.push(RakuAstField {
@@ -5745,7 +5756,11 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         node.fields.insert(
             target_index,
             RakuAstField {
-                name: Some("invocant"),
+                name: Some(if implicit_invocant && type_capture_name(pd).is_some() {
+                    "capture-invocant"
+                } else {
+                    "invocant"
+                }),
                 value: RakuAstFieldValue::Node(Value::truth(true)),
             },
         );

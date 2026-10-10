@@ -1,8 +1,6 @@
 //! Source spelling and parsed expressions for parameterized type arguments.
 
-use super::convert::{
-    build_type_node, colonpair_value_expr, convert_expr, is_simple_type, node_field, unsupported,
-};
+use super::convert::{build_type_node, convert_expr, is_simple_type, node_field, unsupported};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::value::RuntimeError;
@@ -66,8 +64,8 @@ fn is_type_spelling(source: &str) -> bool {
     is_simple_type(base)
 }
 
-/// Convert a type application, using parser expressions for argument values
-/// and its retained spelling for the colonpair form of a named argument.
+/// Convert a type application using its parsed argument expressions. Only a
+/// type-only constraint without parsed arguments needs the spelling scanner.
 pub(super) fn parameterized_type_node(
     spelling: &str,
     parsed: Option<&[Expr]>,
@@ -82,33 +80,23 @@ pub(super) fn parameterized_type_node(
     if !is_simple_type(base) {
         return Err(unsupported("parameterised type over a non-simple base"));
     }
-    let mut sources = ArgSources {
+    let sources = ArgSources {
         rest: &inner[open + 1..],
     };
     let mut fields = Vec::new();
     if let Some(parsed) = parsed {
         for expr in parsed {
-            let source = sources
-                .next()
-                .ok_or_else(|| unsupported("parameterised type argument count"))?;
-            let node = if let Some(stripped) = source.strip_prefix(':') {
-                // The ordinary expression AST stores `:key(value)` as the
-                // same FatArrow as `key => value`; its source spelling is
-                // retained on the declaration and selects the RakuAST form.
-                if stripped.contains('(') && source.ends_with(')') {
-                    colonpair_value_expr(expr)?
-                } else {
-                    return Err(unsupported("parameterised type colonpair form"));
-                }
-            } else if matches!(expr, Expr::BareWord(_)) && is_type_spelling(source) {
-                build_type_node(source)?
+            // BinaryForm already retains every colonpair spelling, including
+            // booleans, variable pairs and bracketed values. Use the same
+            // conversion as a pair outside a type application.
+            let node = if let Expr::BareWord(name) = expr
+                && is_type_spelling(name)
+            {
+                build_type_node(name)?
             } else {
                 convert_expr(expr)?
             };
             fields.push(node_field(None, node));
-        }
-        if sources.next().is_some() {
-            return Err(unsupported("parameterised type argument count"));
         }
     } else {
         for source in sources {

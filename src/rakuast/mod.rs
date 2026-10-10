@@ -63,6 +63,7 @@ mod routine_source;
 mod routine_traits;
 mod shadowed_terms;
 mod signature_decl;
+mod signature_literal;
 mod subscript_adverb;
 mod substitution;
 mod symbolic_deref;
@@ -453,6 +454,7 @@ pub enum RakuAstClass {
     Submethod,
     // `self` — a term with no fields of its own.
     TermSelf,
+    TermDeclaration,
     /// `...` / `!!!` / `???` (the yada-yada stubs).
     StubFail,
     StubDie,
@@ -745,6 +747,7 @@ impl RakuAstClass {
             Package => "RakuAST::Package",
             Submethod => "RakuAST::Submethod",
             TermSelf => "RakuAST::Term::Self",
+            TermDeclaration => "RakuAST::Term::Declaration",
             StubFail => "RakuAST::Stub::Fail",
             StubDie => "RakuAST::Stub::Die",
             StubWarn => "RakuAST::Stub::Warn",
@@ -770,6 +773,7 @@ impl RakuAstClass {
                 | RakuAstClass::WhateverCodeArgument
                 | RakuAstClass::TermHyperWhatever
                 | RakuAstClass::TermSelf
+                | RakuAstClass::TermDeclaration
                 | RakuAstClass::StubFail
                 | RakuAstClass::StubDie
                 | RakuAstClass::StubWarn
@@ -899,7 +903,7 @@ impl RakuAstClass {
             // `RakuAST::Term::` name prefix already answers `~~ RakuAST::Term`
             // for an instance, but `RakuAST::Expression` is only reachable
             // through this list.
-            | TermSelf => TERM,
+            | TermSelf | TermDeclaration => TERM,
             // Measured MRO: `Fail, Stub, Term, Termish, Expression, ..., Node`.
             StubFail | StubDie | StubWarn => &["RakuAST::Stub", "RakuAST::Term", "RakuAST::Expression"],
             ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | ApplyDottyInfix | Ternary => {
@@ -1599,6 +1603,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Package,
     RakuAstClass::Submethod,
     RakuAstClass::TermSelf,
+    RakuAstClass::TermDeclaration,
     RakuAstClass::StubFail,
     RakuAstClass::StubDie,
     RakuAstClass::StubWarn,
@@ -2042,9 +2047,19 @@ pub fn construct(
     if class_name == "RakuAST::Signature" && method == "new" {
         let parameters = named_arg(args, "parameters")
             .map(|value| {
-                value.as_list_items().map(<[Value]>::to_vec).ok_or_else(|| {
-                    RuntimeError::new("RakuAST::Signature.new expects `parameters` to be a list")
-                })
+                value
+                    .as_list_items()
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|item| item.with_deref(|value| value.descalarize().clone()))
+                            .collect::<Vec<_>>()
+                    })
+                    .ok_or_else(|| {
+                        RuntimeError::new(
+                            "RakuAST::Signature.new expects `parameters` to be a list",
+                        )
+                    })
             })
             .transpose()?
             .unwrap_or_default();
@@ -2069,6 +2084,9 @@ pub fn construct(
             class: RakuAstClass::Signature,
             fields,
         }))));
+    }
+    if class_name == "RakuAST::VarDeclaration::Signature" && method == "new" {
+        return signature_decl::construct(args).map(Some);
     }
     if class_name == "RakuAST::Parameter" && method == "new" {
         let target = named_arg(args, "target");
@@ -2139,6 +2157,17 @@ pub fn construct(
                 });
             }
         }
+        if let Some(default_rw) = named_arg(args, "default-rw") {
+            if !matches!(default_rw.view(), ValueView::Bool(_)) {
+                return Err(RuntimeError::new(
+                    "RakuAST::Parameter.new expects `default-rw` to be Bool",
+                ));
+            }
+            fields.push(RakuAstField {
+                name: Some("default-rw"),
+                value: RakuAstFieldValue::Node(default_rw),
+            });
+        }
         if let Some(target) = target {
             fields.push(RakuAstField {
                 name: Some("target"),
@@ -2186,6 +2215,12 @@ pub fn construct(
             fields.push(RakuAstField {
                 name: Some("sub-signature"),
                 value: RakuAstFieldValue::Node(sub_signature),
+            });
+        }
+        if let Some(value) = named_arg(args, "value") {
+            fields.push(RakuAstField {
+                name: Some("value"),
+                value: RakuAstFieldValue::Node(value),
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
@@ -3636,6 +3671,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::ParameterTargetVar
             | RakuAstClass::ParameterTargetTerm
             | RakuAstClass::VarDeclarationSimple
+            | RakuAstClass::VarDeclarationSignature
             | RakuAstClass::InitializerAssign
             | RakuAstClass::InitializerCallAssign
             | RakuAstClass::InitializerBind

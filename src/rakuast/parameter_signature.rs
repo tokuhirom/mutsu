@@ -96,7 +96,10 @@ pub(super) fn lower_pointy(node: &RakuAstNode) -> Result<crate::ast::Expr, Runti
 
 // Cost: O(1).
 pub(super) fn is_metadata(field: &RakuAstField) -> bool {
-    matches!(field.name, Some(CONSTRAINT | "multi-invocant"))
+    matches!(
+        field.name,
+        Some(CONSTRAINT | "multi-invocant" | "capture-invocant" | "group-default")
+    )
 }
 
 // Cost: O(s), s = size of the callable signature.
