@@ -229,11 +229,19 @@ fn capture(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
     ))
 }
 
-/// `Code.clone`: the code object itself.
-// TODO: Rakudo returns a new closure object (`&f.clone === &f` is `False`);
-// mutsu hands back the same one, as its `Sub` clone always did. A copy needs the
-// closure's captured cells shared with the original, not snapshotted.
-// Cost: O(1).
+/// `Code.clone`: a `Sub` is copied as a new routine object, with an id of its
+/// own so its state variables are independent and its own composition cell,
+/// starting from the original's (ADR-11827 section 2.3). A regex and a name-based
+/// `&name` handle carry no state of their own and are returned as they are.
+// Cost: O(1) for a `Sub` (the captured environment is shared, not copied).
 fn clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    Some(Ok(target.clone()))
+    match target.view() {
+        ValueView::Sub(data) => {
+            let mut new_data = (**data).clone();
+            new_data.id = crate::value::next_instance_id();
+            new_data.routine_cell = new_data.routine_cell.forked();
+            Some(Ok(Value::sub_value(crate::gc::Gc::new(new_data))))
+        }
+        _ => Some(Ok(target.clone())),
+    }
 }

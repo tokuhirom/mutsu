@@ -109,8 +109,9 @@ branches for the container descriptors and type objects (Rakudo declares those o
 
 Slice 5 (2026-10-10) moved the pure rows `Capture` and `clone`, reached from the zero-argument cascade through
 `method_table::code::pure_answer`. Still no shape was needed. This fixed `Regex.clone`, `&say.clone` (both threw "No such method") and
-`&say.Capture` (returned a Capture where Rakudo throws `X::Cannot::Capture`). `clone` keeps returning the same object (`&f.clone === &f` is
-`False` in Rakudo); a real copy has to share the closure's captured cells with the original, which is a TODO on the row.
+`&say.Capture` (returned a Capture where Rakudo throws `X::Cannot::Capture`). A `Sub`'s `clone` is the existing ADR-11827 copy (a new id and
+a forked composition cell), moved into the row so the cascade arm and the row share it; a regex and a `&name` handle are returned as
+they are. (`&f.clone === &f` stays `True` for a named sub: `===` compares routines by name; unchanged.)
 
 `Bool`, `Str`, `gist` and `raku` of a code object stay in the cascades, each for a stated reason: `Str` answers the routine's name
 through `code_name` (the interpreter), and `Regex.Bool` matches against `$_`; `gist`/`raku` render the signature and the declaration
