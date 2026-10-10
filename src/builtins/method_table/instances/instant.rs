@@ -69,6 +69,22 @@ macro_rules! real_rows {
                 flags: RowFlags::ANY_ARGS,
                 named: &[],
             },
+            MethodRow {
+                owner: $owner,
+                name: "base",
+                arity: 1,
+                handler: Handler::Narrow(base_with),
+                flags: RowFlags::ANY_ARGS,
+                named: &[],
+            },
+            MethodRow {
+                owner: $owner,
+                name: "base",
+                arity: 2,
+                handler: Handler::Narrow(base_with_digits),
+                flags: RowFlags::ANY_ARGS,
+                named: &[],
+            },
             row!($owner, "Numeric", itself),
             row!($owner, "Real", itself),
             row!($owner, "conj", itself),
@@ -196,6 +212,22 @@ fn of_seconds_with(
         return None;
     };
     crate::builtins::native_method_1arg(&seconds(target), Symbol::intern(method), epsilon)
+}
+
+/// `Real.base($radix)`: the seconds written in that radix.
+// Cost: O(d), d = digits written.
+fn base_with(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    of_seconds_with(target, args, "base")
+}
+
+/// `Real.base($radix, $digits)`: the seconds written in that radix with that many
+/// fractional digits (`*` for as many as needed).
+// Cost: O(d), d = digits written.
+fn base_with_digits(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let [radix, digits] = args else {
+        return None;
+    };
+    crate::builtins::native_method_2arg(&seconds(target), Symbol::intern("base"), radix, digits)
 }
 
 /// `Real.Rat($epsilon)`.

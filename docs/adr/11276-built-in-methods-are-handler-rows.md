@@ -2287,3 +2287,16 @@ The last six declared `Mu` names stay in the cascade, each for a stated reason, 
   not a missing row, and a base row would have to reproduce the same error.
 
 Left on #12390: `Code.gist`/`raku` (ADR-12523), `Backtrace`'s ancestors, `Date.IO`, `Instant`, `Match`, `RakuAST::*`.
+
+### 9.58 Slice 3D: `Date.IO`, `DateTime.IO` and `Instant`/`Duration` `base` are rows (2026-10-10)
+
+`refactor/12390-temporal-io-base-polymod`. `Date.IO` and `DateTime.IO` are interpreter rows (`method_table::instances::dateish_io`): `IO` is
+`Cool`'s, the rendering of the date becomes an `IO::Path` through `Interpreter::make_io_path_instance` (the `$*CWD`/`$*SPEC` factory), and
+`:CWD`/`:SPEC` are accepted and ignored, as the generic `IO` arm of `methods_dispatch_match.rs` does. `Instant.base` and `Duration.base`
+(radix, and radix with digits) are pure rows in `instances::instant` that hand the seconds they hold to the `Num`/`Rat` `base` of
+`native_method_1arg`/`native_method_2arg`, the way `Rat($epsilon)` already does.
+
+`Instant.polymod` and `Duration.polymod` stay in the cascade: the row is variadic, and the cascade's answer is wrong where Rakudo keeps
+the invocant's numeric type in the remainders ([#12557](https://github.com/tokuhirom/mutsu/issues/12557)); a row would have to reproduce
+the wrong answer or fix it first. Left on #12390: `Backtrace`'s ancestor answers, `Match`'s seven pure rows, `RakuAST::*`, `Code.Str`
+(ADR-12523).
