@@ -57,6 +57,12 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // `of` and `returns` are `Code` rows (`method_table::code`, ADR-12523).
+        if args.is_empty()
+            && let Some(answer) = crate::builtins::method_table::code::answer(self, target, method)
+        {
+            return Some(answer);
+        }
         match target.view() {
             ValueView::Routine {
                 name,
@@ -1144,38 +1150,6 @@ impl Interpreter {
                 .get(&key)
                 .is_some_and(|def| def.is_implementation_detail);
             return Some(Ok(Value::truth(is_impl_detail)));
-        }
-        if matches!(method, "of" | "returns") && args.is_empty() {
-            if let Some(ty) = data.routine_cell.return_type() {
-                return Some(Ok(ty));
-            }
-            let type_name = self
-                .callable_return_type(target)
-                .unwrap_or_else(|| "Mu".to_string());
-            // `--> C[T]` for a `C` with its own `^parameterize` denotes the
-            // type object that meta-method returns, not a name.
-            if let Some(ty) = self.meta_parameterized_type(&type_name) {
-                return Some(Ok(ty));
-            }
-            // The return constraint is recorded by its source spelling; a
-            // lexical type (`my subset ofTest ...; --> ofTest`) lives under a
-            // mangled storage name (ADR-0047), so answer the type object the
-            // spelling is bound to in the closure's scope, which is the one
-            // the bare `ofTest` term evaluates to. Otherwise it is the type
-            // object the bare spelling evaluates to here
-            // ([`Self::imported_type_term`]).
-            let type_name = match data.env.get(&type_name).map(Value::view) {
-                Some(ValueView::Package(p)) if p.as_str().contains('\u{0}') => {
-                    p.resolve().to_string()
-                }
-                _ => {
-                    if let Some(term) = self.imported_type_term(&type_name) {
-                        return Some(Ok(term));
-                    }
-                    self.lexical_env_remap_name(&type_name)
-                }
-            };
-            return Some(Ok(Value::package(Symbol::intern(&type_name))));
         }
         if method == "rw" && args.is_empty() {
             return Some(Ok(Value::truth(data.is_rw)));

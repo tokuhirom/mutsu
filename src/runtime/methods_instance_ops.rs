@@ -2957,6 +2957,17 @@ impl Interpreter {
             {
                 Ok(Value::NIL)
             }
+            // `Regex.of` / `Regex.returns` are `Code` rows (`method_table::code`).
+            "of" | "returns"
+                if args.is_empty()
+                    && matches!(
+                        target.view(),
+                        ValueView::Regex(..) | ValueView::RegexWithAdverbs(..)
+                    ) =>
+            {
+                crate::builtins::method_table::code::answer(self, &target, method)
+                    .unwrap_or_else(|| Ok(Value::package(Symbol::intern("Mu"))))
+            }
             // A Raku `Regex` is a `Method`, so it answers the `Routine`
             // introspection surface too — and with the cursor invocant and
             // implicit `*%_` every method signature carries, so even a

@@ -23,6 +23,7 @@ macro_rules! narrow_row {
 use narrow_row;
 
 pub(crate) mod backtrace;
+pub(crate) mod code;
 pub(crate) mod date;
 pub(crate) mod dateish;
 pub(crate) mod datetime;
@@ -52,6 +53,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     regex_match::ROWS,
     backtrace::ROWS,
     exception::ROWS,
+    code::ROWS,
     failure::ROWS,
     signature::ROWS,
     supply::ROWS,
