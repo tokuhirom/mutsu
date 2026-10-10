@@ -551,13 +551,10 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     }
                 }
                 ValueView::Channel(_) => None, // fall through to runtime for drain
-                ValueView::Hash(map) => Some(Ok(wrap(
-                    crate::builtins::method_table::map::list_pairs(&map),
+                // The `Any.list` row's reading of the rest.
+                _ => Some(Ok(wrap(
+                    crate::builtins::method_table::collection_any_list_hash::list_of(target),
                 ))),
-                ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _) => {
-                    Some(Ok(wrap(crate::runtime::utils::value_to_list(target))))
-                }
-                _ => Some(Ok(wrap(vec![target.clone()]))),
             }
         }
         "Range" => match target.view() {
