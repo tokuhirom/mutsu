@@ -521,7 +521,11 @@ mainline publishes under a qualified name goes to the package-symbol table
 only. That covers `constant &name`, which a module publishes as
 `&Pkg::name`: the qualified code-variable read (`resolve_code_var`) and the
 qualified call fallback now consult the table after the env, like the other
-qualified readers.
+qualified readers, and so does the miss path of the by-name chokepoint
+`get_env_with_main_alias` for a qualified name. That last reader is what an
+`EXPORTHOW::DECLARE` keyword's HOW lookup goes through: before this slice it
+found `EXPORTHOW::DECLARE::monitor` only because the shared-store publication
+had put it back into the env.
 
 Measured on ADR-12529's FunctionalParsers probe, whose module declares twelve
 `constant &alt is export = &alternatives`-style shortcuts: those names left
