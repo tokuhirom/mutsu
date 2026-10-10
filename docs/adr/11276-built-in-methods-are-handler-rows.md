@@ -2362,3 +2362,18 @@ No behaviour change; pinned in `t/oo/method/collection-clone-method-rows.t` agai
 - **Left on #12389**: `Junction`/`Nil` shapes, `Map.gist`, `Hash.join`, `Any.batch`/`hash`/`list`/`serial`, `List.chrs`, `Map.AT-KEY`/`Str`.
   The remaining `clone` arms belong to other owners (`Set`/`Bag`/`Mix`, `Seq`/`Slip`, scalars, `Match`, the mixin path, `Mu`).
 
+### 9.63 `Any.join` (2026-10-10)
+
+`refactor/11276-join-rows` (issue #12389, item 4). Rakudo declares `join` on `Any`, `List` and `Seq` only (the oracle snapshot): `List` and `Seq` had
+rows, so the one row owed is `Any.join` at arities 0 and 1 (`Handler::Narrow`, `method_table::collections::join`). `Hash.join` needs no row of
+its own: `Hash` and `Map` inherit `Any`'s. `join_core` is the one body, shared by the row and the zero- and one-argument cascade arms (which had
+two diverging copies): a hash reads as its `key\tvalue` pairs, a `Pair` as a one-element list, a `Capture` and a `Match` as their positionals, a
+`Range` expanded, a `Uni` as its codepoints, the scalars and the four temporal classes (`Date`, `DateTime`, `Instant`, `Duration`, never a subclass)
+as their own `.Str`. It answers `Joined::{Done, NeedsInterpreter, NotCovered}`: the row declines the last two, and the arms keep their old tails
+for an instance, a `Nil`, a `Thread` and a lazy list.
+
+- **Behaviour toward Rakudo**: `\(1, 2).join` is `"12"` (the zero-argument arm used to answer the Capture's rendering, `"1 2"`); a consumed `Seq`
+  now dies the same way in the one-argument form. Pinned in `t/oo/method/any-join-method-rows.t`.
+- **Left**: `Set`/`Bag`/`Mix` (closed shapes, and no recognition row: `join` dies with `X::Method::NotFound`), `Nil.join` (answers `Nil`, Rakudo `""`),
+  both filed as issues.
+

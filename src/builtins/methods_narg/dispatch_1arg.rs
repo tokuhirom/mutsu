@@ -785,96 +785,18 @@ pub(crate) fn native_method_1arg(
         }
         // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
         // (each element stringified once, one `join` into a single buffer).
+        // The `Any.join` row's implementation (`method_table::collections::join`).
         "join" => {
-            if crate::builtins::is_join_lazy(target) {
-                return Some(Ok(Value::str("...".to_string())));
-            }
-            // `.join` stringifies every element, so a zero-denominator Rational
-            // among them dies like its own `.Str` (GH #9621).
-            if let Err(err) = crate::runtime::utils::check_str_coercion_zero_denominator(target) {
-                return Some(Err(err));
-            }
-            // A Uni/NFC/NFD/NFKC/NFKD value has no itemization wrapper of its
-            // own and decomposes into its codepoints in their original
-            // (unsorted) order -- matching Rakudo (`'ba'.NFC.join(',')` is
-            // `"98,97"`). Same idiom as `.map`/`.grep`/`.sort` (issue #8532).
-            if let ValueView::Uni(u) = target.view() {
-                let sep = arg.to_string_value();
-                let joined = u
-                    .codepoints()
-                    .iter()
-                    .map(|cp| cp.to_string())
-                    .collect::<Vec<_>>()
-                    .join(&sep);
-                return Some(Ok(Value::str(joined)));
-            }
-            // Shaped arrays: join over leaves
-            if crate::runtime::utils::is_shaped_array(target) {
-                let leaves = crate::runtime::utils::shaped_array_leaves(target);
-                let sep = arg.to_string_value();
-                return crate::builtins::method_table::list::join_items(&leaves, &sep).map(Ok);
-            }
-            // A list's elements (a hole reads as the array's `is default`
-            // value): the `List.join` row's implementation (ADR-11276,
-            // `method_table::list`).
-            if let Some(items) = crate::builtins::method_table::list::join_source_items(target) {
-                return crate::builtins::method_table::list::join_items(
-                    &items,
-                    &arg.to_string_value(),
-                )
-                .map(Ok);
-            }
-            match target.view() {
-                ValueView::Capture { positional, .. } => {
-                    let sep = arg.to_string_value();
-                    let joined = positional
-                        .iter()
-                        .map(Value::to_string_value)
-                        .collect::<Vec<_>>()
-                        .join(&sep);
-                    Some(Ok(Value::str(joined)))
-                }
-                // Match.join joins the POSITIONAL CAPTURES (`.list`), not the
-                // matched string: `($s ~~ /(..)(..)/).join("-")` is "ab-cd",
-                // and a captureless match joins to "" (its .list is empty).
-                ValueView::Instance { .. } if target.is_match_instance() => {
-                    let sep = arg.to_string_value();
-                    let items: Vec<Value> = target
-                        .match_list()
-                        .and_then(|v| v.as_list_items().map(|i| i.to_vec()))
-                        .unwrap_or_default();
-                    let joined = items
-                        .iter()
-                        .map(Value::to_str_context)
-                        .collect::<Vec<_>>()
-                        .join(&sep);
-                    Some(Ok(Value::str(joined)))
-                }
-                // A Pair is a one-element list (`Any.join` is `self.list.join`),
-                // so the separator never appears: the result is the Pair's
-                // own `.Str`, `key\tvalue`.
-                ValueView::Pair(..) | ValueView::ValuePair(..) => {
-                    Some(Ok(Value::str(target.to_string_value())))
-                }
-                ValueView::Hash(map) => {
-                    let sep = arg.to_string_value();
-                    let joined = map
-                        .iter()
-                        .map(|(k, v)| format!("{}\t{}", k, v.to_string_value()))
-                        .collect::<Vec<_>>()
-                        .join(&sep);
-                    Some(Ok(Value::str(joined)))
-                }
-                // Scalar values: .join returns the value as a string
-                ValueView::Str(_)
-                | ValueView::Int(_)
-                | ValueView::Num(_)
-                | ValueView::Rat(..)
-                | ValueView::Bool(_)
-                | ValueView::Instance { .. }
-                | ValueView::Nil => Some(Ok(Value::str(target.to_string_value()))),
-                // Other types (LazyList, etc.) fall through to the runtime handler
-                _ => None,
+            use crate::builtins::method_table::collection_join::{Joined, join_core};
+            match join_core(target, &arg.to_string_value()) {
+                Joined::Done(result) => Some(result),
+                Joined::NeedsInterpreter => None,
+                Joined::NotCovered => match target.view() {
+                    ValueView::Instance { .. } | ValueView::Nil => {
+                        Some(Ok(Value::str(target.to_string_value())))
+                    }
+                    _ => None,
+                },
             }
         }
         "flat" => {
