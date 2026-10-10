@@ -143,7 +143,10 @@ macro_rules! handler {
                 return None;
             }
             let $args = joined(args, named);
-            let $target = target.clone();
+            // An invocant held in a scalar (`my $l = <a b>; $l.skip`) or itemized
+            // by a hyper call (`@a».reduce(&[+])`) is the list, not one item of
+            // it: these methods read its elements.
+            let $target = target.clone().deitemize_for_sigil_bind();
             let $interp = interp;
             $body
         }
@@ -198,15 +201,13 @@ handler!(eager, "eager", |interp, target, args| args
 handler!(squish, "squish", |interp, target, args| Some(
     interp.dispatch_squish_method(target, args)
 ));
-// An invocant held in a scalar (`my $l = <a b>; $l.rotor(1)`) is the list, not
-// one item of it: the method reads its elements, so it is decontainerized.
 // Cost: O(e), e = elements of the invocant.
 handler!(rotor, "rotor", |interp, target, args| Some(
-    interp.dispatch_rotor_method(target.deitemize_for_sigil_bind(), args)
+    interp.dispatch_rotor_method(target, args)
 ));
 // Cost: O(1) at the call on a lazy source; O(e) otherwise, e = elements.
 handler!(skip, "skip", |interp, target, args| Some(
-    interp.dispatch_skip_method(target.deitemize_for_sigil_bind(), args)
+    interp.dispatch_skip_method(target, args)
 ));
 // Cost: O(n) in the haystack for a plain pattern.
 handler!(match_, "match", |interp, target, args| Some(
