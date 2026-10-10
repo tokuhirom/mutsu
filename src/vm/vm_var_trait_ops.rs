@@ -1004,7 +1004,10 @@ impl Interpreter {
         let mixin_writeback = self.trait_mod_writeback_value.take();
         match call_result {
             Ok(_) => {
-                if let Some(mixed) = mixin_writeback {
+                // A role mixed into the reflective `Variable` object itself
+                // (`$v does R`) is not a mixin of the variable it reflects.
+                if let Some(mixed) = mixin_writeback.filter(|m| !Self::is_mixed_variable_object(m))
+                {
                     let name_owned = name.to_string();
                     if !self.write_var_trait_target(code, eff_slot, &name_owned, mixed.clone()) {
                         self.set_env_with_main_alias(&name_owned, mixed);
@@ -1028,6 +1031,19 @@ impl Interpreter {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// Whether `value` is the reflective `Variable` object of a variable trait
+    /// handler with a role mixed in.
+    // Cost: O(1).
+    pub(crate) fn is_mixed_variable_object(value: &Value) -> bool {
+        let ValueView::Mixin(inner, _) = value.view() else {
+            return false;
+        };
+        matches!(
+            inner.view(),
+            ValueView::Instance { class_name, .. } if class_name == "Variable"
+        )
     }
 
     /// Generalizes the `is ClassName` STORE-re-feed compensation above

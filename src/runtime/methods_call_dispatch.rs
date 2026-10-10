@@ -2865,6 +2865,21 @@ impl Interpreter {
             }
         }
 
+        // The reflective `Variable` a variable trait handler receives keeps
+        // answering `var` / `name` / `block` after the handler mixes a role into
+        // it (`$v does R`): the mixin only adds to the object.
+        if matches!(method, "var" | "name" | "block")
+            && args.is_empty()
+            && let ValueView::Mixin(inner, _) = target.view()
+            && matches!(
+                inner.view(),
+                ValueView::Instance { class_name, .. } if class_name == "Variable"
+            )
+            && !self.mixin_composes_method(&target, method)
+        {
+            return self.call_method_with_values((**inner).clone(), method, args);
+        }
+
         // Mixin dispatch
         if let ValueView::Mixin(..) = target.view()
             && let Some(result) = self.dispatch_mixin_method_call(&target, method, args.clone())
@@ -3849,6 +3864,7 @@ impl Interpreter {
             let source_value = self
                 .trait_mod_writeback_value
                 .clone()
+                .filter(|v| !Self::is_mixed_variable_object(v))
                 .filter(|_| self.trait_mod_writeback_key.as_deref() == Some(source_name.as_str()))
                 .or_else(|| self.get_env_with_main_alias(&source_name))
                 .or_else(|| match target.view() {

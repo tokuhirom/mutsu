@@ -260,12 +260,20 @@ impl Interpreter {
         if method == "var"
             && method_args.is_empty()
             && self.trait_mod_writeback_key.is_some()
-            && matches!(
-                target.view(),
-                ValueView::Instance { class_name, attributes, .. }
-                    if class_name == "Variable"
+            && match target.view() {
+                // The handler may have mixed a role into the `Variable`.
+                ValueView::Mixin(inner, _) => matches!(
+                    inner.view(),
+                    ValueView::Instance { class_name, attributes, .. }
+                        if class_name == "Variable"
+                            && attributes.as_map().contains_key("__mutsu_var_target")
+                ),
+                ValueView::Instance { class_name, attributes, .. } => {
+                    class_name == "Variable"
                         && attributes.as_map().contains_key("__mutsu_var_target")
-            )
+                }
+                _ => false,
+            }
         {
             self.trait_mod_writeback_value = Some(value.clone());
             return Ok(value);
