@@ -90,8 +90,8 @@ impl Compiler {
                 if Self::has_block_enter_leave_phasers(inner) {
                     // Only a genuine `{ ... }` is a lexical scope for the
                     // `X::Dynamic::Postdeclaration` bookkeeping.
-                    let saved = matches!(stmt, Stmt::Block(_))
-                        .then(|| self.push_dynamic_scope_lexical());
+                    let saved =
+                        matches!(stmt, Stmt::Block(_)).then(|| self.push_dynamic_scope_lexical());
                     self.with_import_scope_region(inner, |c| {
                         c.compile_phaser_block_scope(inner, PhaserBlockResult::Push)
                     });

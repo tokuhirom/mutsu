@@ -1765,10 +1765,8 @@ impl Compiler {
                                 if matches!(stmt, Stmt::Block(_)) {
                                     sub_compiler.compile_real_phaser_block_scope(stmts);
                                 } else {
-                                    sub_compiler.compile_phaser_block_scope(
-                                        stmts,
-                                        PhaserBlockResult::Push,
-                                    );
+                                    sub_compiler
+                                        .compile_phaser_block_scope(stmts, PhaserBlockResult::Push);
                                 }
                             } else if matches!(stmt, Stmt::SyntheticBlock(_)) {
                                 // A parser wrapper, not a real scope -- see

@@ -12,11 +12,7 @@ impl Interpreter {
     /// its own copy, so two types calling `^model` see separate containers.
     /// Keying the state scope by the receiver type name reproduces that.
     // Cost: O(n), n = length of the receiver type name.
-    fn scope_metamethod_state(
-        &self,
-        method_name: &str,
-        receiver_class_name: &str,
-    ) {
+    fn scope_metamethod_state(&self, method_name: &str, receiver_class_name: &str) {
         if method_name.starts_with('^') {
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
