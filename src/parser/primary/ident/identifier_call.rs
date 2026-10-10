@@ -370,9 +370,9 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
                 if shadowed {
                     (
                         r_mod,
-                        Expr::Literal(Value::package(Symbol::intern(
-                            &normalize_raku_identifier(bare_name),
-                        ))),
+                        Expr::Literal(Value::package(Symbol::intern(&normalize_raku_identifier(
+                            bare_name,
+                        )))),
                     )
                 } else {
                     (r_term, term)
