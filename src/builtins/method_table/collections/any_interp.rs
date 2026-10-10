@@ -12,17 +12,22 @@ use crate::builtins::method_table::Named;
 use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value, ValueView};
 
-const ARGS: RowFlags = RowFlags::ANY_ARGS.or(RowFlags::ANY_NAMED);
+const ARGS: RowFlags = RowFlags::ANY_ARGS;
+/// `match` binds the regex adverbs (`:g`, `:ov`, `:x`, ...), which are open-ended.
+const ARGS_NAMED: RowFlags = RowFlags::ANY_ARGS.or(RowFlags::ANY_NAMED);
 
 macro_rules! any_row {
     ($owner:literal, $name:literal, $arity:literal, $flags:expr, $handler:ident) => {
+        any_row!($owner, $name, $arity, $flags, $handler, &[])
+    };
+    ($owner:literal, $name:literal, $arity:literal, $flags:expr, $handler:ident, $named:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
             arity: $arity,
             handler: Handler::Interp($handler),
             flags: $flags,
-            named: &[],
+            named: $named,
         }
     };
 }
@@ -30,21 +35,21 @@ macro_rules! any_row {
 pub(super) static ROWS: &[MethodRow] = &[
     any_row!("Any", "collate", 0, RowFlags::NONE, collate),
     any_row!("Any", "map", 1, ARGS, map),
-    any_row!("Any", "grep", 1, ARGS, grep),
-    any_row!("Any", "first", 0, ARGS, first),
-    any_row!("Any", "first", 1, ARGS, first),
+    any_row!("Any", "grep", 1, ARGS, grep, &["k", "v", "kv", "p"]),
+    any_row!("Any", "first", 0, ARGS, first, &["k", "v", "kv", "p", "end"]),
+    any_row!("Any", "first", 1, ARGS, first, &["k", "v", "kv", "p", "end"]),
     any_row!("Any", "reduce", 1, ARGS, reduce),
     any_row!("Any", "produce", 1, ARGS, produce),
     any_row!("Any", "iterator", 0, RowFlags::NONE, iterator),
     any_row!("Any", "eager", 0, RowFlags::NONE, eager),
-    any_row!("Any", "squish", 0, ARGS, squish),
-    any_row!("Any", "rotor", 0, ARGS.or(RowFlags::SLURPY), rotor),
+    any_row!("Any", "squish", 0, ARGS, squish, &["as", "with"]),
+    any_row!("Any", "rotor", 0, ARGS.or(RowFlags::SLURPY), rotor, &["partial"]),
     any_row!("Any", "skip", 0, ARGS.or(RowFlags::SLURPY), skip),
-    any_row!("Any", "match", 1, ARGS, match_),
-    any_row!("Any", "classify", 1, ARGS, classify),
-    any_row!("Any", "categorize", 1, ARGS, categorize),
-    any_row!("Hash", "classify-list", 2, ARGS, classify_list),
-    any_row!("Hash", "categorize-list", 2, ARGS, categorize_list),
+    any_row!("Any", "match", 1, ARGS_NAMED, match_),
+    any_row!("Any", "classify", 1, ARGS, classify, &["as", "into"]),
+    any_row!("Any", "categorize", 1, ARGS, categorize, &["as", "into"]),
+    any_row!("Hash", "classify-list", 2, ARGS, classify_list, &["as"]),
+    any_row!("Hash", "categorize-list", 2, ARGS, categorize_list, &["as"]),
 ];
 
 /// The call's arguments as the cascades take them: the positional ones, then
@@ -64,8 +69,15 @@ fn joined(args: &[Value], named: Named<'_>) -> Vec<Value> {
 /// declines the same calls.
 // Cost: O(1) tag probes; O(m) method-table lookups for an instance, m = MRO length.
 fn deferred_to_interpreter(interp: &mut Interpreter, target: &Value, name: &str) -> bool {
+    // An associative or quantity receiver reads as its pairs, which the pure
+    // cascades build for `squish`/`eager`/`produce` and the interpreter's own
+    // routines do not.
     if !matches!(name, "map" | "grep" | "first") {
-        return false;
+        return matches!(name, "squish" | "eager" | "produce")
+            && matches!(
+                target.view(),
+                ValueView::Hash(..) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+            );
     }
     if crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
         return true;
