@@ -436,7 +436,26 @@ impl Interpreter {
             .or_else(|| self.module.class_declaring_units.get(decl_package).copied())
             .or_else(|| self.module.class_declaring_units.get(class_key).copied())
             .unwrap_or(saved_unit);
+        // Closures built by the default (`has &.p = -> { helper() }`) stamp the
+        // file of the innermost routine frame as their own `source_file`, and
+        // resolve routine names against that compunit when called later.
+        // Construction runs under the caller's frame, so without a frame for
+        // the declaring unit the closure belongs to whoever called `.new`
+        // (#12517).
+        let decl_file = if self.current_unit == crate::runtime::main_unit() {
+            self.io.program_path_sym
+        } else {
+            Some(self.current_unit)
+        };
+        self.push_block_routine_with_location(
+            Symbol::intern(decl_package),
+            Symbol::intern(""),
+            None,
+            self.executing_source_file_sym(),
+            decl_file,
+        );
         let result = self.eval_decl_trait_arg_with_captured_env(arg, captured_env);
+        self.pop_routine();
         self.current_unit = saved_unit;
         self.types.constructing_class = saved_constructing;
         self.set_current_package(saved_package);
