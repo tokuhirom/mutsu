@@ -35,7 +35,8 @@ nothing. The settled defaults:
 | Add a test? Write `news/`? `Closes #NNNN`? | Yes to all three, on every code fix. |
 | May I open the PR / enable auto-merge? | Yes. The request already said so; use the merge method, then watch CI and fix forward. |
 | Shall I continue to the next ticket? | Yes, straight on, up to the five-ticket run cap below. |
-| This one turns out to be deep / already fixed — is that OK? | Yes. Re-triage to `todo:deep` or close it with the evidence; both are legitimate outcomes. |
+| This `todo:ticket` turns out to be deep / already fixed — is that OK? | Yes. Re-triage to `todo:deep` or close it with the evidence; both are legitimate outcomes. |
+| This issue is *already* `todo:deep` and looks too hard — may I skip it? | **No.** Work one remainder or write the design and implement it; see "'It is too hard' is not an outcome". |
 
 Ask only when the answer is genuinely the user's — a decision `AGENTS.md` reserves for them (a
 rung-3 native provider, a new or superseding ADR, weakening a CI gate, dropping a whitelisted test),
@@ -134,9 +135,40 @@ moves:
   followed by a bulleted list of the specific routes still unclassified. It is workable *now*, and
   **the unit of work is one named remainder, not the issue.**
 - **A single deep problem** has no design yet — one bug or feature too big for a PR. Here the first
-  deliverable is usually a `Proposed` ADR, or a narrower issue recording what you learned, **not
-  code**. Shipping an undersized fix to look productive is the failure mode; `AGENTS.md`'s "Refactor
-  boldly" governs once a design exists.
+  commit is usually a `Proposed` ADR, or a narrower issue recording what you learned — but that is
+  where the work *starts*, not where it ends. Write the design, then **implement it in the same run**
+  (`AGENTS.md`'s "Refactor boldly"). Shipping an undersized fix to look productive is one failure
+  mode; stopping at the design document is the other.
+
+### "It is too hard" is not an outcome
+
+`todo:deep` means *needs design and several steps*, not *do not attempt*. Whoever picks one up has
+already been handed the permission to spend a whole session on it. So:
+
+- **Do not give up, defer, or hand it back because it is large, risky, cross-cutting or unfamiliar.**
+  Size, blast radius and a missing prerequisite are the *content* of the task. `AGENTS.md` says it
+  outright: "Do not hide behind 'too risky — I'll ship a tiny slice / just document the design'", and
+  "a known-hard prerequisite is itself a gain to pursue, not a reason to stop". CI and roast catch
+  regressions deterministically; fixing forward is cheap.
+- **A prerequisite is the next slice, not a stop sign.** If the fix needs X first, do X in this run
+  (or this PR) and then the fix. Only when X is itself a separate, independently mergeable PR do you
+  ship X as the slice and file/continue the rest — and say what comes next.
+- **Re-triaging a `todo:deep` back to anything else, or posting `Releasing:` with "too difficult",
+  is not allowed.** The only legitimate exits are: the remainder is done; the evidence shows it is
+  already fixed or not a bug (cite it); or a decision genuinely reserved to the user is in the way
+  (see the table above) — and then you park *that* issue with the question stated, not silently
+  drop it.
+- **Work in measured steps, not in a retreat.** Reproduce, find the owning code, write the failing
+  test first, then change the mechanism. Use the `debugging` skill (gdb, `MUTSU_TRACE`, AST dumps)
+  instead of concluding that the cause is unreachable. If one approach dead-ends, record why in the
+  ADR/issue comment and take the next approach; two dead ends are information, not a verdict.
+- **Partial progress ships.** If after a real attempt the whole design cannot land in one PR, land
+  the largest coherent, green piece (tests included), record exactly what remains in the issue, and
+  keep the issue open for the next slice. That is a complete slice; "I looked and it is hard" with
+  nothing merged is not.
+- **The final report names what was done**, never only what was difficult. If you stopped short, the
+  report must state the concrete blocker (a failing command, an ADR decision, a file you could not
+  explain), not a general impression of difficulty.
 
 ### The slice loop for a campaign issue
 

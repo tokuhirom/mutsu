@@ -344,7 +344,9 @@ just document the design."** When the right fix is a substantial refactor, do th
 full, iterate on targeted tests, pass the pre-publication gate, and fix forward on the branch if CI
 still catches something. One coherent architectural PR beats ten micro-PRs dancing around the
 problem. Do not fear complex features: when a test needs several unrelated features, implement
-them all in the same PR.
+them all in the same PR. **A `todo:deep` issue is not a license to give up**: "too hard / too
+large / too risky" is never a reason to stop or release it — write the design, then implement it, or
+land the largest green slice and record the remainder (see `mutsu-ticket-flow`).
 
 ### ADRs
 
