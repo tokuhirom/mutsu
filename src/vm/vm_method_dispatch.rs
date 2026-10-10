@@ -6,6 +6,25 @@ use crate::value::AttrMap;
 pub(crate) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
 
 impl Interpreter {
+    /// A `^`-metamethod's anonymous `state` (`method ^model($f) is rw { $ }`)
+    /// belongs to the metaobject it runs on, not to the one method body that
+    /// every type sharing the metamethod inherits: Rakudo gives each type's HOW
+    /// its own copy, so two types calling `^model` see separate containers.
+    /// Keying the state scope by the receiver type name reproduces that.
+    // Cost: O(n), n = length of the receiver type name.
+    fn scope_metamethod_state(
+        &self,
+        method_name: &str,
+        receiver_class_name: &str,
+    ) {
+        if method_name.starts_with('^') {
+            use std::hash::{Hash, Hasher};
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            receiver_class_name.hash(&mut h);
+            self.lexicals.state_scope_id.set(Some(h.finish()));
+        }
+    }
+
     /// Call a compiled method body (MethodDef with compiled_code).
     /// Mirrors `Interpreter::run_resolved_method_celled` but executes bytecode.
     #[allow(clippy::too_many_arguments)]
@@ -923,6 +942,7 @@ impl Interpreter {
         // init under `key#c<caller>` and sync under `key`, so `method m { state
         // $n; $n++ }` restarted on every call. Restored after the sync.
         let saved_state_scope = self.lexicals.state_scope_id.take();
+        self.scope_metamethod_state(method_name, receiver_class_name);
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
             // `state_scope_id` is `None` here (cleared just above), so this
@@ -2395,6 +2415,7 @@ impl Interpreter {
         // See the sibling path: a method body's `state` is keyed by the method,
         // not by the caller's closure scope. Restored after the sync.
         let saved_state_scope = self.lexicals.state_scope_id.take();
+        self.scope_metamethod_state(method_name, receiver_class_name);
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
             // `state_scope_id` is `None` here (cleared just above), so this

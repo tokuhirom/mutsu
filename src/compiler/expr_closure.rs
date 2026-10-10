@@ -1329,6 +1329,7 @@ impl Compiler {
             target: method_target,
             name: method_name,
             args: method_args,
+            modifier: None,
             ..
         } = target
             && ((method_args.is_empty() && matches!(method_target.as_ref(), Expr::Var(_)))
