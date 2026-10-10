@@ -9,8 +9,8 @@
   `Proxy` operand first.
 - A closure created inside a method body (registered with `^add_method`) read its captured loop
   variable through the caller chain, so a same-named lexical in the *calling* frame shadowed it
-  (`Env::get_sym_frame_first`: a frame's own capture now beats the caller chain for a by-name
-  free-variable read).
+  (`Env::get_sym_frame_first`: a method body now freezes the free variables it captured into
+  the upvalues of closures it creates).
 
 Tests: `t/vm/writeback/proxy-operand-user-infix-decline.t`,
 `t/routines/closure/closure-capture-vs-caller-lexical.t`.
