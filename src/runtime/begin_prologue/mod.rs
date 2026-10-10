@@ -42,6 +42,7 @@ mod use_if;
 use crate::ast::{Expr, PhaserKind, Stmt};
 use std::collections::HashSet;
 pub(crate) use use_if::if_condition_slot;
+pub(crate) use nested::var_traits::{VAR_TRAIT_REPLAY, VAR_TRAIT_SITE};
 use use_if::{if_condition_check, next_if_condition_slot};
 
 /// Split `stmts` (one compilation unit's top level) into its BEGIN prologue and

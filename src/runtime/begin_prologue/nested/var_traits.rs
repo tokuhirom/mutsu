@@ -15,6 +15,14 @@ use super::Walker;
 use crate::ast::{Expr, PhaserKind, Stmt};
 use crate::runtime::phasers::APPLY_VAR_TRAIT_CALL;
 
+/// The synthetic trait that sets (or, given Nil, clears) the declaration site
+/// the lifted traits that follow file their `Variable.block` phasers under.
+pub(crate) const VAR_TRAIT_SITE: &str = "__site";
+
+/// The marker trait of a lifted declaration: its argument is the site whose
+/// phasers the declaration replays on every entry.
+pub(crate) const VAR_TRAIT_REPLAY: &str = "__replay_phasers";
+
 /// Traits the VM applies itself, or that mark the declaration for something
 /// other than a `trait_mod:<is>` handler. They are never lifted.
 const BUILTIN_VARIABLE_TRAITS: &[&str] = &[
@@ -68,6 +76,24 @@ impl Walker<'_> {
         }
         let name = name.clone();
         let mut body = vec![Stmt::Expr(read_var(&name))];
+        // `Variable.block.add_phaser` files its phaser under this site; the
+        // declaration replays them on every entry.
+        let site = super::next_slot("__var_trait_site_");
+        let site_call = |site: Option<&str>| {
+            Stmt::Expr(Expr::Call {
+                name: crate::symbol::Symbol::intern(APPLY_VAR_TRAIT_CALL),
+                args: vec![
+                    Expr::Literal(crate::value::Value::str(name.clone())),
+                    Expr::Literal(crate::value::Value::str(VAR_TRAIT_SITE.to_string())),
+                    Expr::Literal(match site {
+                        Some(s) => crate::value::Value::str(s.to_string()),
+                        None => crate::value::Value::NIL,
+                    }),
+                ],
+                listop: false,
+            })
+        };
+        body.push(site_call(Some(&site)));
         for (trait_name, arg) in applied {
             let mut args = vec![
                 Expr::Literal(crate::value::Value::str(name.clone())),
@@ -80,9 +106,14 @@ impl Walker<'_> {
                 listop: false,
             }));
         }
+        body.push(site_call(None));
         let mut stripped = stmt.clone();
         if let Stmt::VarDecl { custom_traits, .. } = &mut stripped {
             custom_traits.retain(|(t, _)| t.starts_with("__"));
+            custom_traits.push((
+                VAR_TRAIT_REPLAY.to_string(),
+                Some(Expr::Literal(crate::value::Value::str(site))),
+            ));
         }
         self.bind_decl(&stripped, Some(index));
         if self.lift(&body, None, &PhaserKind::Begin) {

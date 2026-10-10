@@ -89,3 +89,25 @@ existing behavior where they do not dispatch to user handlers.
   available at that phase, remain implementation design questions. Resolve
   them before changing the ADR status to Accepted; do not use a run-time
   mutation workaround.
+
+## 5. Implementation status (2026-10-10)
+
+A first slice is implemented. It is narrower than section 2 and does not
+settle the questions above, so the status stays Proposed.
+
+- ADR-0134 already lifts the user variable traits of a nested scope into the
+  BEGIN prologue (#12278), where each handler runs once, before the scope is
+  entered. That is the compile-time execution path section 4 asks for.
+- `Variable.block` answers a `Block` handle. `Block.add_phaser("ENTER", code)`
+  files `code` under the declaration's site (`__var_trait_site_N`, set around
+  the lifted trait calls by the `__site` synthetic trait).
+- The lifted declaration carries a `__replay_phasers` marker. Where the
+  declaration executes, on every entry of its block, it runs the phasers filed
+  under its site, with `Variable.var` bound to the variable of that frame.
+- A trait that is not lifted (unit level, package bodies) runs at the
+  declaration, after the block's ENTER queue, so its phaser runs at once.
+- Divergences: the phaser runs at the declaration, after the statements that
+  precede it, not before the block's body; only `ENTER` is supported. Both go
+  away if the phaser is emitted into the block's own ENTER range (ADR-0076),
+  which needs the compile-time block identity section 4 describes.
+
