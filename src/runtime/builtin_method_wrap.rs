@@ -48,7 +48,10 @@ impl Interpreter {
         };
         let method = method_sym.resolve();
         self.builtin_method_wrap_chain(&class_name, &method)?;
-        if self.has_user_method_sym(&class_name, method_sym) {
+        // A class declared in the program (its generated accessors too) is
+        // wrapped at the user-method sites; running the chain here as well
+        // would wrap twice.
+        if self.has_user_method_sym(&class_name, method_sym) || self.has_class(&class_name) {
             return None;
         }
         self.try_builtin_method_wrap(&class_name, target, &method, args)
