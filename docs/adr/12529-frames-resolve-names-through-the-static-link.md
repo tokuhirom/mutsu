@@ -366,6 +366,14 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    analysis cannot vouch for it (ADR-0018). An enclosing closure that only
    hands such a binding on to a nested one carries it as a transit
    upvalue.
+
+   **Slice 3 done** (`perf/12529-phase2-multi-probe-index`): the `&self`
+   multi-candidate probe `resolve_function` runs for every by-name `&name`
+   read walked the whole functions map; it now reads a base-name index entry
+   the `&mut` paths filled, and an attribute-twigil name (`&!pGExpr`, which
+   reaches `resolve_function` when the attribute read misses) answers `None`
+   at once, since no routine can be named `!x`. FunctionalParsers probe,
+   release build, whole run: 4.03G → 3.87G Ir (−4%).
 3. **The static link.** Frames carry the outer link; the reflective name view
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay

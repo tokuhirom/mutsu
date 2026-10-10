@@ -80,6 +80,18 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_function(&self, name: &str) -> Option<Arc<FunctionDef>> {
+        // An attribute-twigil name (`!pGExpr`, `.x`) is never a routine's:
+        // a by-name `&!attr` read reaches here only after the attribute
+        // itself missed, and every probe below would come back empty -- the
+        // multi-candidate check by walking the whole functions map, since a
+        // name no routine has never earns a base-name index entry
+        // (ADR-12529 phase 2 profile: ~180k instructions per FunctionalParsers
+        // `&!pGExpr` read).
+        if Symbol::lookup(name)
+            .is_some_and(|s| s.flags() & crate::symbol::flags::ATTR_TWIGIL_ENV_KEY != 0)
+        {
+            return None;
+        }
         if crate::qualified::is_qualified_str(name) {
             // Try direct lookup first
             if let Some(def) = self
