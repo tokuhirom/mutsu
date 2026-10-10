@@ -2806,6 +2806,22 @@ impl Compiler {
     /// a *free* variable and compiler temporaries get a slot, and a free variable
     /// mentioned in a body is not a declaration of it (raku: `my $y = 7;
     /// sub f { say $y; { say $OUTER::y } }` prints 7 then Nil).
+    /// Record `pd` in `CompiledCode::readonly_code_params` when it is an
+    /// `&`-parameter whose binding nothing can change: no `is copy`, `is rw`
+    /// or `is raw`.
+    fn note_readonly_code_param(&mut self, pd: &crate::ast::ParamDef) {
+        if pd.name.starts_with('&')
+            && !pd
+                .traits
+                .iter()
+                .any(|t| matches!(t.as_str(), "copy" | "rw" | "raw"))
+        {
+            self.code
+                .readonly_code_params
+                .insert(Symbol::intern(&pd.name));
+        }
+    }
+
     fn declare_param(&mut self, name: &str) -> u32 {
         let slot = self.alloc_local(name);
         if let Some(frame) = self.local_scopes.last_mut() {

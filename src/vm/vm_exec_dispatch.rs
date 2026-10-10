@@ -5252,6 +5252,7 @@ impl Interpreter {
                 arity,
                 arg_sources_idx,
                 bare_args,
+                upvalue,
             } => {
                 self.sync_source_line(code, *ip);
                 // `use fatal`: see the comment on the `CallFunc` arm above.
@@ -5265,6 +5266,7 @@ impl Interpreter {
                     *arity,
                     *arg_sources_idx,
                     *bare_args,
+                    *upvalue,
                     compiled_fns,
                 ) {
                     Ok(()) => {}

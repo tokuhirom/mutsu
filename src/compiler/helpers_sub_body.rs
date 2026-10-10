@@ -343,6 +343,7 @@ impl Compiler {
         for pd in param_defs {
             if !pd.name.is_empty() {
                 sub_compiler.declare_param(&pd.name);
+                sub_compiler.note_readonly_code_param(pd);
                 // Track sigilless parameters so BareWord resolution uses
                 // GetLocal for them but not for `$`-sigiled params.
                 if pd.sigilless {
@@ -1386,6 +1387,7 @@ impl Compiler {
         for pd in param_defs {
             if !pd.name.is_empty() {
                 sub_compiler.declare_param(&pd.name);
+                sub_compiler.note_readonly_code_param(pd);
                 if pd.sigilless {
                     sub_compiler.sigilless_locals.insert(pd.name.clone());
                     sub_compiler.sigilless_declared.insert(pd.name.clone());

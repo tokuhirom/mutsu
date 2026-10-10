@@ -1694,6 +1694,7 @@ impl Interpreter {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_call_on_code_var_op(
         &mut self,
         code: &CompiledCode,
@@ -1701,6 +1702,7 @@ impl Interpreter {
         arity: u32,
         arg_sources_idx: Option<u32>,
         bare_args: bool,
+        upvalue: Option<u32>,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
@@ -1750,7 +1752,11 @@ impl Interpreter {
         } else {
             None
         };
-        let mut target = match own_private_attr {
+        // A closure's read-only free `&name` is its captured binding: read it
+        // by upvalue index rather than resolving the name through the running
+        // frame's env chain (see `OpCode::CallOnCodeVar::upvalue`).
+        let captured = upvalue.and_then(|index| self.code_var_upvalue(code, index, name_idx));
+        let mut target = match captured.or(own_private_attr) {
             Some(v) => v,
             None => match self.declared_scope_amp_var_for(code, &name) {
                 Some(v) => v,

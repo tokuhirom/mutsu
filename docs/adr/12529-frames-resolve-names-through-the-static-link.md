@@ -354,6 +354,18 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    multi families (`sequence`, `success`, `postcircumfix:<[ ]>`), a `constant
    &sp` called by name, and `reduce` -- the multi call-site cache and the
    routine-as-lexical-binding steps below.
+
+   **Slice 2 done** (`perf/12529-phase2-code-var-upvalues`): §2.1's first
+   row for `&` names. A closure's call through a captured `&`-parameter
+   (`sub apply(&f, &p) { -> @x { &p(@x) } }`) reads the binding by upvalue
+   index (`CallOnCodeVar::upvalue`) instead of resolving `&p` through the
+   running frame's env. Only a readonly `&`-parameter -- no `is copy`, `is
+   rw` or `is raw` (`CompiledCode::readonly_code_params`) -- is frozen into
+   the upvalue array by value, since nothing can rebind it during the
+   invocation; a `my &f` keeps the by-name read, because mutsu's mutation
+   analysis cannot vouch for it (ADR-0018). An enclosing closure that only
+   hands such a binding on to a nested one carries it as a transit
+   upvalue.
 3. **The static link.** Frames carry the outer link; the reflective name view
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay

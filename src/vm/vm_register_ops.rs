@@ -1421,6 +1421,14 @@ impl Interpreter {
                     && let Some(val) = self.locals.get(slot)
                 {
                     val.clone()
+                } else if sym.with_str(|s| s.starts_with('&'))
+                    && let Some(j) = code.upvalue_syms.iter().position(|s| s == sym)
+                    && let Some(Some(val)) = self.upvalues.get(j)
+                {
+                    // The creating closure captured this `&name` itself: hand
+                    // its binding on (see `compute_upvalues`'s transit
+                    // upvalues). It is frozen below on the same terms.
+                    return Some(val.clone());
                 } else {
                     self.env().get_sym(*sym).cloned().unwrap_or(Value::NIL)
                 };
@@ -1438,7 +1446,19 @@ impl Interpreter {
                 // (S12-construction/roles-6e.t). Promoting such constants to
                 // by-value snapshots requires a complete mutation analysis and is
                 // deferred to a later phase.
-                resolved.is_container_ref().then_some(resolved)
+                //
+                // The one non-cell value that IS frozen is a readonly
+                // `&`-parameter of the creating code (`sub apply(&f, &p) {
+                // -> @x { &p(@x) } }`): no assignment, bind or rw sink can
+                // reach that binding during the invocation, so the snapshot
+                // is the binding (ADR-12529 §2.1).
+                if resolved.is_container_ref()
+                    || (!resolved.is_nil() && code.readonly_code_params.contains(sym))
+                {
+                    Some(resolved)
+                } else {
+                    None
+                }
             })
             .collect()
     }
