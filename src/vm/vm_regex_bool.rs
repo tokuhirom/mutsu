@@ -126,4 +126,27 @@ impl Interpreter {
         }
         Some(Value::truth(self.regex_bool(target, false)))
     }
+
+    /// The `.Bool` / `.so` / `.not` method forms on a `gather` Seq, shared by
+    /// `CallMethod` and `CallMethodMut`: the answer is the same one-element
+    /// pull `eval_truthy` does for the boolean-context forms, since the pure
+    /// `Value::truthy` cannot pull and reports every LazyList true. `None`
+    /// when `method`/`target` is not that call.
+    // Cost: O(g), g = work of the gather body up to its first `take` (O(1) when declined).
+    pub(crate) fn try_gather_seq_bool_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Value> {
+        if !matches!(method, "Bool" | "so" | "not") || !args.is_empty() {
+            return None;
+        }
+        let ValueView::LazyList(list) = target.view() else {
+            return None;
+        };
+        list.coroutine.as_ref()?;
+        let t = self.eval_truthy(target);
+        Some(Value::truth(if method == "not" { !t } else { t }))
+    }
 }
