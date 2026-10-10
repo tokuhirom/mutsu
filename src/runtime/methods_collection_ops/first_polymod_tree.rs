@@ -601,3 +601,33 @@ fn polymod_exact(target: &Value, divisors: &[Value]) -> Option<Vec<Value>> {
     result.push(polymod_rat_value(nn, nd)?);
     Some(result)
 }
+
+/// Rakudo's element types for `Instant.polymod` / `Duration.polymod`: a zero
+/// stays an `Int`, any other element is a `Num`, except that a `Duration`
+/// invocant's first remainder stays a `Duration`.
+// Cost: O(k), k = number of elements in the result.
+pub(in crate::runtime) fn polymod_temporal_types(res: Value, is_duration: bool) -> Value {
+    let ValueView::Seq(items) = res.view() else {
+        return res;
+    };
+    let typed = items
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+            let f = match v.view() {
+                ValueView::Int(n) => n as f64,
+                ValueView::Num(n) => n,
+                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
+                _ => return v.clone(),
+            };
+            if f == 0.0 {
+                Value::int(0)
+            } else if i == 0 && is_duration {
+                crate::builtins::arith::make_duration_value(f)
+            } else {
+                Value::num(f)
+            }
+        })
+        .collect();
+    Value::seq(typed)
+}

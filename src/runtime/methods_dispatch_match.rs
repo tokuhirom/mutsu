@@ -183,7 +183,11 @@ impl Interpreter {
                 if let Some(seconds) =
                     crate::builtins::method_table::numify::temporal_seconds(&target) =>
             {
-                Some(self.method_polymod(&seconds, &args))
+                let is_duration = matches!(target.view(), ValueView::Instance { class_name, .. }
+                    if class_name.resolve() == "Duration");
+                Some(self.method_polymod(&seconds, &args).map(|res| {
+                    super::methods_collection_ops::polymod_temporal_types(res, is_duration)
+                }))
             }
             "polymod" => Some(self.method_polymod(&target, &args)),
             "VAR" if args.is_empty() => {
