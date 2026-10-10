@@ -1239,6 +1239,18 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] dual-store: clone_env={clone_env} (O(1) Arc bumps) env_deep_copies={deep_copy} (O(env) make_mut) env_deep_copy_entries={deep_copy_entries} env_flushes={env_flush} slots_flushed={slots}"
     );
+    // ADR-12529 phase 0: the by-name resolution its later phases remove.
+    let crate::env::stats::NameResolutionCounts {
+        scoped_overlays,
+        chain_walks,
+        chain_hops,
+        captures,
+        capture_own_entries,
+        capture_layers,
+    } = crate::env::stats::name_resolution_snapshot();
+    eprintln!(
+        "[mutsu vm-stats] name-resolution: scoped_overlays={scoped_overlays} chain_walks={chain_walks} chain_hops={chain_hops} captures={captures} capture_own_entries={capture_own_entries} capture_layers={capture_layers}"
+    );
     let default_evals = PARAM_DEFAULT_EVALS.load(Ordering::Relaxed);
     let default_consts = PARAM_DEFAULT_CONSTS.load(Ordering::Relaxed);
     eprintln!(

@@ -874,6 +874,7 @@ impl Env {
     /// to a single tier once it reaches [`MAX_OVERLAY_DEPTH`]. See
     /// docs/vm-dual-store.md.
     pub(crate) fn scoped_child(mut parent: Env) -> Self {
+        stats::record_scoped_overlay();
         // A fresh overlay is empty with no tombstones, so the child's visible
         // `?FILE` is exactly the parent's -- including on the empty-tier-reuse
         // and flatten paths below, which only skip/collapse tiers that were
@@ -2032,6 +2033,7 @@ impl Env {
         }
         let dyn_base = nodes.last().and_then(|root| root.dyn_base.clone());
         let layers = crate::env_capture_view::compact_layers(layers);
+        stats::record_capture(own.len(), layers.len());
         let fallback = (!layers.is_empty()).then(|| Arc::new(CaptureView::new(layers)));
         let mut env = Self {
             inner: Arc::new(Tier::new(own)),
@@ -2155,6 +2157,9 @@ impl Env {
             );
             return None;
         }
+        if stats::enabled() {
+            stats::record_chain_walk(self, key);
+        }
         self.get_sym_walk(key)
     }
 
@@ -2265,6 +2270,9 @@ impl Env {
                 key.as_str()
             );
             return false;
+        }
+        if stats::enabled() {
+            stats::record_chain_walk(self, key);
         }
         self.contains_key_sym_walk(key)
     }
