@@ -582,7 +582,7 @@ impl Interpreter {
             // cannot pull and answers true, so `so gather { }` was true. Pull
             // exactly one element; the rest stays lazy. A body that dies leaves
             // the answer at the pure approximation (true).
-            ValueView::LazyList(list) => match self.force_lazy_list_vm_n(&**list, 1) {
+            ValueView::LazyList(list) => match self.force_lazy_list_vm_n(&list, 1) {
                 Ok(items) => !items.is_empty(),
                 Err(_) => true,
             },
