@@ -580,7 +580,7 @@ pub struct Env {
     // every env lookup that misses the overlay and walks the parent chain, so a
     // `SipHash` here showed up as ~5% of self time on method-heavy benchmarks
     // (mzef ctor) — the same reason `SymMap` is `FxHashMap`.
-    tombstones: Option<rustc_hash::FxHashSet<Symbol>>,
+    tombstones: Option<Box<rustc_hash::FxHashSet<Symbol>>>,
     /// A closure's captured env, chained UNDER the whole parent chain rather
     /// than merged into this overlay key by key (ADR-0092).
     ///
@@ -723,12 +723,12 @@ pub struct Env {
 pub(crate) struct FrameIds {
     /// The invocation id of the running callable (routine, method, block or
     /// closure). `return`, `leave`, `once` and flip-flops key on it.
-    callable_id: Option<i64>,
+    callable_id: Option<std::num::NonZeroI64>,
     /// For a running block: `(block id, routine id)`, the routine its `return`
     /// targets. Tagged with the block's id so a routine called from inside the
     /// block, which rebinds `callable_id`, no longer matches it (see
     /// `runtime::return_target`).
-    block_return: Option<(u64, u64)>,
+    block_return: Option<(std::num::NonZeroU64, u64)>,
 }
 
 impl FrameIds {
@@ -791,7 +791,7 @@ fn residual_base_tombstones(
     let mut cur = env;
     loop {
         if let Some(tomb) = &cur.tombstones {
-            for k in tomb {
+            for k in tomb.iter() {
                 if base.contains_key(k) && !merged.contains_key(k) {
                     out.get_or_insert_with(rustc_hash::FxHashSet::default)
                         .insert(*k);
@@ -955,7 +955,7 @@ impl Env {
                     parent: Some(Arc::new(flat)),
                     tombstones: None,
                     file_sym,
-                    frame_ids: frame_ids,
+                    frame_ids,
                     fallback: None,
                     chain_has_fallback: flat_chf,
                     capture_merged: OnceLock::new(),
@@ -971,7 +971,7 @@ impl Env {
                 parent: Some(arc),
                 tombstones: None,
                 file_sym,
-                frame_ids: frame_ids,
+                frame_ids,
                 fallback: None,
                 chain_has_fallback: arc_chf,
                 capture_merged: OnceLock::new(),
@@ -992,7 +992,7 @@ impl Env {
             parent: Some(Arc::new(parent)),
             tombstones: None,
             file_sym,
-            frame_ids: frame_ids,
+            frame_ids,
             fallback: None,
             chain_has_fallback: parent_chf,
             capture_merged: OnceLock::new(),
@@ -1027,7 +1027,7 @@ impl Env {
             parent: Some(Arc::clone(&parent)),
             tombstones: None,
             file_sym,
-            frame_ids: frame_ids,
+            frame_ids,
             fallback: None,
             chain_has_fallback: parent_chf,
             capture_merged: OnceLock::new(),
@@ -1085,7 +1085,7 @@ impl Env {
         drop(parent);
         let parent = own_parent;
         let overlay = std::mem::replace(&mut self.inner, empty_overlay());
-        let tombstones = self.tombstones.take();
+        let tombstones = self.tombstones.take().map(|t| *t);
         drop(self);
         let parent = Arc::try_unwrap(parent).unwrap_or_else(|a| (*a).clone());
         Ok(BlockTier {
@@ -1099,14 +1099,16 @@ impl Env {
     // Cost: O(1).
     #[inline]
     pub(crate) fn callable_id(&self) -> Option<i64> {
-        self.frame_ids.callable_id
+        self.frame_ids.callable_id.map(std::num::NonZeroI64::get)
     }
 
     /// Bind the running callable's invocation id -- see [`FrameIds`].
     // Cost: O(1).
     #[inline]
     pub(crate) fn set_callable_id(&mut self, id: i64) {
-        self.frame_ids.callable_id = Some(id);
+        // Ids count up from 1 (`value::next_instance_id`), so 0 means
+        // "none", as it always did to the readers.
+        self.frame_ids.callable_id = std::num::NonZeroI64::new(id);
     }
 
     /// The `(block id, routine id)` return-target record of a running block
@@ -1114,13 +1116,16 @@ impl Env {
     // Cost: O(1).
     #[inline]
     pub(crate) fn block_return(&self) -> Option<(u64, u64)> {
-        self.frame_ids.block_return
+        self.frame_ids
+            .block_return
+            .map(|(owner, target)| (owner.get(), target))
     }
 
     // Cost: O(1).
     #[inline]
     pub(crate) fn set_block_return(&mut self, block_id: u64, target: u64) {
-        self.frame_ids.block_return = Some((block_id, target));
+        self.frame_ids.block_return =
+            std::num::NonZeroU64::new(block_id).map(|owner| (owner, target));
     }
 
     /// This env's visible `?FILE` as a `Symbol`, or `None` when `?FILE` is
@@ -1474,7 +1479,7 @@ impl Env {
                     // An overlay that never received a write (and holds no
                     // tombstone) is invisible to lookups.
                     if let Some(tomb) = &tier.tombstones {
-                        for k in tomb {
+                        for k in tomb.iter() {
                             merged.remove(k);
                         }
                     }
@@ -1500,7 +1505,8 @@ impl Env {
                 // always.
                 let tombstones = any_tombstone
                     .then(|| residual_base_tombstones(self, &merged, dyn_base.as_deref()))
-                    .flatten();
+                    .flatten()
+                    .map(Box::new);
                 Self {
                     inner: Arc::new(Tier::new(merged)),
                     parent: None,
@@ -1619,7 +1625,7 @@ impl Env {
         for tier in tiers.into_iter().rev() {
             if let Some(tomb) = &tier.tombstones {
                 any_tombstone = true;
-                for k in tomb {
+                for k in tomb.iter() {
                     merged.remove(k);
                 }
             }
@@ -1631,7 +1637,8 @@ impl Env {
         // collapse -- see `flattened`'s general arm, which this mirrors.
         let tombstones = any_tombstone
             .then(|| residual_base_tombstones(self, &merged, dyn_base.as_deref()))
-            .flatten();
+            .flatten()
+            .map(Box::new);
         Self {
             inner: Arc::new(Tier::new(merged)),
             parent: None,
@@ -1697,7 +1704,7 @@ impl Env {
             Some(fb) => Arc::new(CaptureView::over(
                 Arc::clone(&self.inner),
                 fb,
-                self.tombstones.as_ref(),
+                self.tombstones.as_deref(),
             )),
         }
     }
@@ -1740,7 +1747,7 @@ impl Env {
             if let Some(tomb) = &env.tombstones
                 && !outermost
             {
-                for k in tomb {
+                for k in tomb.iter() {
                     out.remove(k);
                 }
             }
@@ -1800,7 +1807,8 @@ impl Env {
         // dropped them would have to prove the caller's chain re-supplies them.
         let tombstones = any_tombstone
             .then(|| residual_base_tombstones(self, &out, dyn_base.as_deref()))
-            .flatten();
+            .flatten()
+            .map(Box::new);
         Self {
             inner: Arc::new(Tier::new(out)),
             parent: None,
@@ -1858,7 +1866,7 @@ impl Env {
             if let Some(tomb) = &env.tombstones
                 && !outermost
             {
-                for k in tomb {
+                for k in tomb.iter() {
                     out.remove(k);
                 }
             }
@@ -1960,7 +1968,8 @@ impl Env {
         // capture (ADR-0086).
         let tombstones = any_tombstone
             .then(|| residual_base_tombstones(self, &out, dyn_base.as_deref()))
-            .flatten();
+            .flatten()
+            .map(Box::new);
         Self {
             inner: Arc::new(Tier::new(out)),
             parent: None,
@@ -2438,7 +2447,7 @@ impl Env {
                     merged.insert(*k, v.clone());
                 }
                 if let Some(tomb) = &self.tombstones {
-                    for k in tomb {
+                    for k in tomb.iter() {
                         if !self.inner.contains_key(k) {
                             merged.remove(k);
                         }
@@ -2644,7 +2653,7 @@ impl Env {
             if parent_val.is_some() {
                 let visible = from_overlay.or(parent_val);
                 self.tombstones
-                    .get_or_insert_with(rustc_hash::FxHashSet::default)
+                    .get_or_insert_with(Default::default)
                     .insert(key);
                 return visible;
             }
@@ -2854,7 +2863,7 @@ impl Env {
             }
         }
         if let Some(tomb) = &self.tombstones {
-            for k in tomb {
+            for k in tomb.iter() {
                 out.remove(&k.resolve());
             }
         }
@@ -2922,7 +2931,7 @@ impl Env {
             }
         }
         if let Some(tomb) = &self.tombstones {
-            for k in tomb {
+            for k in tomb.iter() {
                 out.remove(&k.resolve());
             }
         }
