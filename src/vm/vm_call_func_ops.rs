@@ -1694,6 +1694,7 @@ impl Interpreter {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_call_on_code_var_op(
         &mut self,
         code: &CompiledCode,
