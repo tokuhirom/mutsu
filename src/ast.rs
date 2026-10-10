@@ -2790,6 +2790,7 @@ impl Stmt {
     /// what the body means.
     pub(crate) fn is_marker(&self) -> bool {
         matches!(self, Stmt::SetLine(_) | Stmt::Trace { .. })
+            || matches!(self, Stmt::SourceForm(form) if matches!(form.as_ref(), SourceForm::RoutineTraits(_)))
     }
 }
 
@@ -2815,6 +2816,7 @@ pub(crate) mod method_assign_decl;
 pub(crate) mod package_header;
 mod placeholder_kind;
 pub(crate) mod placeholders;
+pub(crate) mod routine_trait;
 pub(crate) mod shaped_decl;
 pub(crate) mod sigilless_decl;
 pub(crate) mod signature_decl;

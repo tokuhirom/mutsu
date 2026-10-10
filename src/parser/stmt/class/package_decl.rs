@@ -641,6 +641,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResu
     let (rest, _) = ws(rest)?;
     // Parse traits (is export, etc.)
     let (rest, traits) = parse_sub_traits(rest)?;
+    let return_type = return_type.or_else(|| traits.return_type.clone());
     // A `proto sub infix:<precedes>(...) {*}` declares the operator for the
     // rest of the scope, exactly as an `only`/`multi` sub would: `$a precedes
     // $b` must parse even before (or without) any candidate (#10516).
@@ -676,6 +677,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResu
                 },
             ));
         }
+        crate::ast::routine_trait::attach(&mut body, traits.source_traits);
         return Ok((
             rest,
             Stmt::ProtoDecl {
@@ -710,6 +712,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_my: bool, is_our: bool) -> PResu
             },
         ));
     }
+    crate::ast::routine_trait::attach(&mut body, traits.source_traits);
     Ok((
         rest,
         Stmt::ProtoDecl {

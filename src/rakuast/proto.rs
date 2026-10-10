@@ -39,7 +39,7 @@ pub(super) struct ProtoDecl<'a> {
 fn is_onlystar_body(body: &[Stmt]) -> bool {
     let mut statements = body
         .iter()
-        .filter(|stmt| !matches!(stmt, Stmt::SetLine(..)));
+        .filter(|stmt| !matches!(stmt, Stmt::SetLine(..) | Stmt::SourceForm(_)));
     matches!(
         (statements.next(), statements.next()),
         (Some(Stmt::Expr(Expr::Whatever)), None)
@@ -49,7 +49,7 @@ fn is_onlystar_body(body: &[Stmt]) -> bool {
 /// The `Sub` / `Method` node for a proto declaration.
 // Cost: O(n), n = size of the declaration.
 pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
-    if proto.has_traits {
+    if proto.has_traits && crate::ast::routine_trait::get(proto.body).is_none() {
         return Err(unsupported("proto with traits"));
     }
     let class = if proto.is_method {
@@ -86,7 +86,9 @@ pub(super) fn convert(proto: ProtoDecl<'_>) -> Result<RakuAstNode, RuntimeError>
         export_tags,
         ..IsTraits::default()
     };
-    add_flags(&mut node, false, false, &traits)?;
+    if !super::routine_source::apply(&mut node, proto.body)? {
+        add_flags(&mut node, false, false, &traits)?;
+    }
     node.fields
         .insert(0, leaf_field(Some("multiness"), Value::str_from("proto")));
     if proto.is_our {
@@ -120,21 +122,16 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let (params, param_defs) = signature_positional_params(node)?;
     let mut is_traits = IsTraits::default();
     let (return_type, custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
-    // Only the markers of how the return type was written are kept.
-    if custom_traits
-        .iter()
-        .any(|(t, _)| !matches!(t.as_str(), "__return_via_trait" | "__return_via_of"))
-        || is_traits.is_rw
-        || is_traits.is_raw
-    {
-        return Err(super::lower::unsupported(node));
-    }
+    // ProtoDecl has no rw/raw execution flags, matching the parser's proto
+    // construction. Retain those annotations in the source record below;
+    // candidate declarations determine the returned container contract.
     let body_node = named_child(node, "body")?;
-    let body = if body_node.class == RakuAstClass::OnlyStar {
+    let mut body = if body_node.class == RakuAstClass::OnlyStar {
         vec![Stmt::Expr(Expr::Whatever)]
     } else {
         lower_routine_stmts(named_child_or_positional(body_node)?)?
     };
+    super::routine_source::retain(node, &mut body)?;
     Ok(Stmt::ProtoDecl {
         name: Symbol::intern(&name),
         params,
@@ -146,8 +143,8 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             [only] if only == "DEFAULT" => Vec::new(),
             _ => is_traits.export_tags,
         },
-        custom_traits: custom_traits.into_iter().map(|(t, _)| t).collect(),
-        trait_args: Vec::new(),
+        custom_traits: custom_traits.iter().map(|(t, _)| t.clone()).collect(),
+        trait_args: custom_traits,
         is_method: node.class == RakuAstClass::Method,
         is_our,
     })

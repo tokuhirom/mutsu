@@ -16,6 +16,8 @@ use super::{Expr, Stmt};
 /// expansion. The compiler skips it.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum SourceForm {
+    /// Traits written on a routine, in source order; opens its body.
+    RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
     SignatureDecl(SignatureDecl),
     MethodAssignDecl(super::method_assign_decl::MethodAssignDecl),
     /// `supply { BODY }`: the body as written, before the expansion rewrites

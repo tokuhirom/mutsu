@@ -32,44 +32,6 @@ impl Interpreter {
         None
     }
 
-    fn callable_return_type_inner(callable: &Value) -> Option<String> {
-        match callable.view() {
-            ValueView::Sub(data) => match data.env.get("__mutsu_return_type").map(Value::view) {
-                Some(ValueView::Str(rt)) => Some(rt.to_string()),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
-    pub(crate) fn callable_return_type(&self, callable: &Value) -> Option<String> {
-        Self::callable_return_type_inner(callable)
-    }
-
-    pub(crate) fn routine_return_spec_by_name(&self, name: &str) -> Option<String> {
-        let code_key = format!("&{}", name);
-        for key in [code_key.as_str(), name] {
-            if let Some(ValueView::Sub(data)) = self.env.get(key).map(Value::view)
-                && let Some(ValueView::Str(spec)) =
-                    data.env.get("__mutsu_return_type").map(Value::view)
-            {
-                return Some(spec.to_string());
-            }
-        }
-        // Also check the FunctionDef registry
-        if let Some(def) = self.resolve_function(name)
-            && let Some(ref rt) = def.return_type
-        {
-            return Some(rt.clone());
-        }
-        if let Some(def) = self.resolve_proto_function(name)
-            && let Some(ref rt) = def.return_type
-        {
-            return Some(rt.clone());
-        }
-        None
-    }
-
     fn return_spec_scalar_name(spec: &str) -> Option<String> {
         let s = spec.trim();
         let rest = s.strip_prefix('$')?;

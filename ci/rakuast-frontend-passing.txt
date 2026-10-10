@@ -1823,6 +1823,7 @@ t/io/io-path-content-fs-rows.t
 t/io/io-path-cwd-spec-and-named-unpack.t
 t/io/io-path-cwd-stat-rows.t
 t/io/io-path-dir-test-filter.t
+t/io/io-path-extension-parts.t
 t/io/io-path-gist-spec.t
 t/io/io-path-lexical-rows.t
 t/io/io-path-lines-words-lazy.t
@@ -2033,6 +2034,7 @@ t/lang/operators/hyperop-nondwim.t
 t/lang/operators/increment-operator.t
 t/lang/operators/infix-assign-as-function.t
 t/lang/operators/infix-bracket-code-term.t
+t/lang/operators/infix-equiv-logical-precedence.t
 t/lang/operators/infix-junction-glued-to-operand.t
 t/lang/operators/infix-word-name-listop-call.t
 t/lang/operators/infix-z-function-call.t
@@ -2084,10 +2086,14 @@ t/lang/operators/stacked-prefix-operators.t
 t/lang/operators/user-infix-across-newline.t
 t/lang/operators/user-infix-core-rank-memo.t
 t/lang/operators/user-infix-escaped-symbol-name.t
+t/lang/operators/user-infix-hyper-marker-spelling.t
+t/lang/operators/user-infix-list-infix-precedence.t
 t/lang/operators/user-infix-minus-vs-pointy-arrow.t
 t/lang/operators/user-infix-non-int-operands.t
 t/lang/operators/user-infix-unicode-times-slash.t
 t/lang/operators/user-operator-compiled-body.t
+t/lang/operators/user-operator-list-associativity.t
+t/lang/operators/user-operator-power-ltm.t
 t/lang/operators/user-postcircumfix-adverb.t
 t/lang/operators/user-postcircumfix-core-delegation.t
 t/lang/operators/user-postcircumfix-index-instance.t
@@ -2278,6 +2284,7 @@ t/modules/compunit/compunit-can-install.t
 t/modules/compunit/compunit-filesystem-meta6-provides.t
 t/modules/compunit/compunit-loader-source-file.t
 t/modules/compunit/compunit-need-protocol.t
+t/modules/compunit/compunit-precompilation-store.t
 t/modules/compunit/compunit-repo-chain.t
 t/modules/compunit/compunit-repository-distribution.t
 t/modules/compunit/compunit-repository-filesystem.t
@@ -2376,6 +2383,7 @@ t/modules/import-export/export-sub-returns-stash.t
 t/modules/import-export/export-sub-selective-lexical-multi.t
 t/modules/import-export/export-sub-stash-pair-type-call.t
 t/modules/import-export/export-sub-term-symbol.t
+t/modules/import-export/export-sub-trait-mod-dispatcher.t
 t/modules/import-export/export-term-vs-caller-scalar.t
 t/modules/import-export/export-trait-mod-dispatcher.t
 t/modules/import-export/exported-alias-reimport.t
@@ -3585,6 +3593,7 @@ t/oo/method/version-bool-method-rows.t
 t/oo/method/whatevercode-hyper-method.t
 t/oo/method/whatevercode-pseudo-method-curry.t
 t/oo/method/which-method.t
+t/oo/method/wrap-builtin-method.t
 t/oo/method/wrap-proto-method-dispatcher.t
 t/oo/mixin-array-hash-mutator-override.t
 t/oo/mixin-assign-pos.t
@@ -3707,6 +3716,7 @@ t/oo/role/iterator-role-default-methods.t
 t/oo/role/lexical-role-two-modules.t
 t/oo/role/map-rejects-role-mixed-sub-as-callable.t
 t/oo/role/metamodel-role-how-taxonomy.t
+t/oo/role/method-trait-proto-and-role-dispatch.t
 t/oo/role/method-trait-role-def-identity.t
 t/oo/role/method-trait-role-introspection.t
 t/oo/role/mixin-but-role-angle-value.t
@@ -3860,6 +3870,7 @@ t/oo/role/role-pseudo-type-param.t
 t/oo/role/role-public-private-same-name-method.t
 t/oo/role/role-pun-bindings-do-not-shadow-composed-class.t
 t/oo/role/role-pun-build-tweak.t
+t/oo/role/role-pun-class-parent.t
 t/oo/role/role-pun-dispatches-on-type-object.t
 t/oo/role/role-pun-metamethod-identity.t
 t/oo/role/role-pun-method-call-runs-body-once.t
@@ -3932,6 +3943,7 @@ t/oo/test-isa-can-does-messages.t
 t/oo/topic-alias-does-not-cross-frames.t
 t/oo/trait/anon-class-qualified-trait.t
 t/oo/trait/anon-param-trait.t
+t/oo/trait/anon-sub-custom-trait-arguments.t
 t/oo/trait/anon-sub-return-trait.t
 t/oo/trait/augment-method-custom-trait-typed-method-param.t
 t/oo/trait/cached-trait.t
@@ -3963,6 +3975,7 @@ t/oo/trait/named-sub-hoist-custom-param-trait.t
 t/oo/trait/namespaced-trait-import.t
 t/oo/trait/param-trait-mixin-persists.t
 t/oo/trait/param-trait-word-quote-arg.t
+t/oo/trait/proto-method-trait-is-dispatcher.t
 t/oo/trait/runtime-trait-persistence.t
 t/oo/trait/shadow-slot-var-trait.t
 t/oo/trait/signature-literal-custom-param-trait.t
@@ -3980,6 +3993,7 @@ t/oo/trait/variable-trait-begin-time-containers.t
 t/oo/trait/variable-trait-begin-time.t
 t/oo/trait/variable-trait-var-assign.t
 t/oo/trait/variable-traits.t
+t/oo/trait/wrap-proto-method-trait.t
 t/oo/type-capture-mixin-type.t
 t/oo/type-decl-does-not-set-topic.t
 t/oo/user-group-dynamic-vars.t
@@ -4195,6 +4209,7 @@ t/rakuast/rakuast-require-statement.t
 t/rakuast/rakuast-return-type.t
 t/rakuast/rakuast-role-parameterization-traits.t
 t/rakuast/rakuast-role.t
+t/rakuast/rakuast-routine-trait-order.t
 t/rakuast/rakuast-semantic-hierarchy.t
 t/rakuast/rakuast-sigilled-constant.t
 t/rakuast/rakuast-signature-decl.t
@@ -5180,6 +5195,8 @@ t/routines/routine-body-let-resolution.t
 t/routines/routine-body-scans-reach-expressions.t
 t/routines/routine-nested-sub-shadowed-free-var.t
 t/routines/routine-own-bind-ignores-caller-binding.t
+t/routines/routine-prec.t
+t/routines/routine-precedence-associative.t
 t/routines/routine-set-name-qualified.t
 t/routines/routine-topic-is-fresh-any-not-caller.t
 t/routines/routine-value-self-recursion-after-import-scope-pop.t
@@ -5204,6 +5221,7 @@ t/routines/signature/bool-param-binds-itemized-hash-element.t
 t/routines/signature/bound-alias-outer-var-ignores-callers-readonly-param.t
 t/routines/signature/bracket-destructuring-params.t
 t/routines/signature/builtin-shadow-default-param.t
+t/routines/signature/callable-param-space-signature.t
 t/routines/signature/callable-param-sub-signature-returns.t
 t/routines/signature/callback-aliases-through-code-and-array-params.t
 t/routines/signature/capture-param-forwards-caller-containers.t
@@ -5495,6 +5513,7 @@ t/routines/undeclared-routine-found-in-every-position.t
 t/routines/undeclared-routine-suggests-unit-own-subs.t
 t/routines/user-declared-control-keyword-subroutines.t
 t/routines/whatever-curry-fatarrow.t
+t/routines/whatever-curry-list-infix-operator.t
 t/routines/with-statement-modifier-placeholder-scope.t
 t/tooling/bail-out-exit-status.t
 t/tooling/cli-lib-repo-chain.t
@@ -6275,6 +6294,7 @@ t/vm/nqp-list-hash-ops.t
 t/vm/nqp-list-index-parity.t
 t/vm/nqp-list-setelems-fill.t
 t/vm/nqp-loop-value-context.t
+t/vm/nqp-mergesort-str.t
 t/vm/nqp-object-ops-parity.t
 t/vm/nqp-object-ops.t
 t/vm/nqp-op-call-assign.t

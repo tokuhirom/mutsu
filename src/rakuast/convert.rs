@@ -10,6 +10,8 @@ use super::bareword::simple_type_node;
 use super::method_assign_decl::call_method;
 use super::origin;
 use super::placeholder::{is_placeholder_name, is_placeholder_param, placeholder_node};
+use super::routine_source::return_type_spelling;
+pub(super) use super::routine_source::routine_node;
 use super::{
     RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, bareword, decl_traits,
     hash_literal, name_parts, routine_traits, subscript_adverb,
@@ -209,6 +211,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         // The `use trace` hook is bookkeeping too: rakudo models the trace as a
         // flag on the traced statement, not as a statement of its own.
         Stmt::SetLine(_) | Stmt::Trace { .. } => Ok(None),
+        Stmt::SourceForm(form)
+            if matches!(form.as_ref(), crate::ast::SourceForm::RoutineTraits(_)) =>
+        {
+            Ok(None)
+        }
         // An expression statement modified by `with`/`without` is wrapped in a
         // `DoStmt` so it keeps expression semantics. The wrapper has no RakuAST
         // counterpart, so convert the `Given` it carries instead of rendering a
@@ -362,7 +369,8 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 | crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
                 | crate::ast::SourceForm::IfPointy { .. }
-                | crate::ast::SourceForm::HyperAssign { .. },
+                | crate::ast::SourceForm::HyperAssign { .. }
+                | crate::ast::SourceForm::RoutineTraits(_),
             )
             | None => Err(unsupported("source form")),
         },
@@ -1020,6 +1028,14 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
+            if super::routine_source::apply(&mut node, body)? {
+                routine_traits::add_flags(&mut node, *multi, false, &Default::default())?;
+                if custom_traits.iter().any(|(t, _)| t == OUR_SCOPED) {
+                    node.fields
+                        .insert(0, leaf_field(Some("scope"), Value::str_from("our")));
+                }
+                return Ok(Some(statement_expression(node)));
+            }
             let flags = routine_traits::IsTraits {
                 is_rw: *is_rw,
                 is_raw: *is_raw,
@@ -1110,19 +1126,24 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 body,
                 return_type.as_deref().map(|t| (t, spelling)),
             )?;
+            let source_traits = super::routine_source::apply(&mut node, body)?;
             let flags = routine_traits::IsTraits {
                 is_rw: *is_rw,
                 is_raw: *is_raw,
                 export_tags: export_tags.clone(),
                 ..Default::default()
             };
-            routine_traits::add_flags(&mut node, *multi, *is_private, &flags)?;
-            let custom = routine_traits::method_custom_traits(
-                custom_traits,
-                *is_default_candidate,
-                deprecated_message.as_deref(),
-            )?;
-            routine_traits::add_custom(&mut node, &custom, !flags.nodes().is_empty())?;
+            if source_traits {
+                routine_traits::add_flags(&mut node, *multi, *is_private, &Default::default())?;
+            } else {
+                routine_traits::add_flags(&mut node, *multi, *is_private, &flags)?;
+                let custom = routine_traits::method_custom_traits(
+                    custom_traits,
+                    *is_default_candidate,
+                    deprecated_message.as_deref(),
+                )?;
+                routine_traits::add_custom(&mut node, &custom, !flags.nodes().is_empty())?;
+            }
             // `scope => "my"` / `"our"` leads the node, ahead of `multiness`.
             let scope = if *is_our {
                 Some("our")
@@ -3326,7 +3347,8 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 | crate::ast::SourceForm::WithPointy { .. }
                 | crate::ast::SourceForm::GivenPointy { .. }
                 | crate::ast::SourceForm::IfPointy { .. }
-                | crate::ast::SourceForm::HyperAssign { .. },
+                | crate::ast::SourceForm::HyperAssign { .. }
+                | crate::ast::SourceForm::RoutineTraits(_),
             )
             | None => Err(unsupported("source form")),
         },
@@ -4003,6 +4025,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     class: RakuAstClass::Sub,
                     fields: vec![node_field(Some("body"), blockoid(body)?)],
                 };
+                if super::routine_source::apply(&mut node, body)? {
+                    return Ok(node);
+                }
                 routine_traits::add_flags(
                     &mut node,
                     false,
@@ -4073,6 +4098,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     }
                     None => anon_routine_node(param_defs, body, return_type.as_deref())?,
                 };
+                if super::routine_source::apply(&mut node, body)? {
+                    return Ok(node);
+                }
                 routine_traits::add_flags(
                     &mut node,
                     false,
@@ -5472,22 +5500,6 @@ fn is_return_spelling_marker(trait_name: &str) -> bool {
     matches!(trait_name, "__return_via_trait" | "__return_via_of")
 }
 
-/// Which spelling a routine's return type used, read off the parser markers.
-/// `returns X of Y` leaves both markers (mutsu folds them into one
-/// `X[Y]` return type); raku models that as a single trait, so defer.
-fn return_type_spelling(
-    custom_traits: &[(String, Option<Expr>)],
-) -> Result<ReturnSpelling, RuntimeError> {
-    let returns = custom_traits.iter().any(|(t, _)| t == "__return_via_trait");
-    let of = custom_traits.iter().any(|(t, _)| t == "__return_via_of");
-    match (returns, of) {
-        (false, false) => Ok(ReturnSpelling::Arrow),
-        (true, false) => Ok(ReturnSpelling::ReturnsTrait),
-        (false, true) => Ok(ReturnSpelling::OfTrait),
-        (true, true) => Err(unsupported("`returns X of Y` combined return trait")),
-    }
-}
-
 /// How a routine's return type was written in the source. raku models the two
 /// spellings with different nodes, and mutsu's internal AST keeps them apart
 /// (the `returns`/`of` forms leave a `__return_via_*` marker in `custom_traits`),
@@ -5500,49 +5512,6 @@ pub(super) enum ReturnSpelling {
     ReturnsTrait,
     /// `sub f() of Int` — a routine trait (`Trait::Of`).
     OfTrait,
-}
-
-/// A named routine — `Sub` or `Method` — with an optional signature, optional
-/// return type, and a body. A parameter-less routine with no `-->` return type
-/// omits the `signature` field; parameters carry the implicit
-/// `type => Type::Setting(Any)` (`type_setting = true`).
-pub(super) fn routine_node(
-    class: RakuAstClass,
-    name: &str,
-    param_defs: &[ParamDef],
-    body: &[Stmt],
-    return_type: Option<(&str, ReturnSpelling)>,
-) -> Result<RakuAstNode, RuntimeError> {
-    let name_node = name_parts::operator_name(name).unwrap_or_else(|| name_from_identifier(name));
-    let mut fields = vec![node_field(Some("name"), name_node)];
-    let arrow_returns = match return_type {
-        Some((t, ReturnSpelling::Arrow)) => Some(t),
-        _ => None,
-    };
-    if !param_defs.is_empty() || arrow_returns.is_some() {
-        fields.push(node_field(
-            Some("signature"),
-            signature(param_defs, true, arrow_returns)?,
-        ));
-    }
-    if let Some((t, spelling)) = return_type
-        && spelling != ReturnSpelling::Arrow
-    {
-        let trait_class = match spelling {
-            ReturnSpelling::OfTrait => RakuAstClass::TraitOf,
-            _ => RakuAstClass::TraitReturns,
-        };
-        let trait_node = RakuAstNode {
-            class: trait_class,
-            fields: vec![node_field(None, build_type_node(t)?)],
-        };
-        fields.push(RakuAstField {
-            name: Some("traits"),
-            value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
-        });
-    }
-    fields.push(node_field(Some("body"), blockoid(body)?));
-    Ok(RakuAstNode { class, fields })
 }
 
 /// `Signature(parameters => (Parameter, ...)[, returns => Type])`. `type_setting`

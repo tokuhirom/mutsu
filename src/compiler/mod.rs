@@ -1138,6 +1138,7 @@ mod nqp_p6_forms;
 mod numeric_operand_names;
 mod outer_ref;
 mod package_runtime_body;
+mod proto_decl;
 mod require_stubs;
 mod type_decl_value;
 pub(crate) use hoist_nested_types::{nested_decl_composes_role, nested_type_decls};

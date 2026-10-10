@@ -135,7 +135,7 @@ impl Compiler {
 
     /// Lower one custom trait's argument. A constant needs no chunk: it is
     /// already the value registration will use.
-    fn compile_decl_trait_arg(&self, expr: &Expr) -> crate::opcode::DeclTraitArg {
+    pub(super) fn compile_decl_trait_arg(&self, expr: &Expr) -> crate::opcode::DeclTraitArg {
         match expr {
             Expr::Literal(value) => crate::opcode::DeclTraitArg::Literal(value.clone()),
             _ => crate::opcode::DeclTraitArg::Compiled(self.compile_decl_expr_inner(expr, true)),

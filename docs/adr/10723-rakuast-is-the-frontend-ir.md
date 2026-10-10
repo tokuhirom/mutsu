@@ -303,3 +303,27 @@ constraint. The `;;` dispatch boundary is retained as hidden `multi-invocant`
 parameter metadata, another property Rakudo omits from `.raku`.
 The executable contract
 is `t/rakuast/rakuast-callable-and-slurpy-signatures.t`.
+
+### 6.2 S10: written routine traits (2026-10-10)
+
+`SourceForm::RoutineTraits` retains the traits in written order, before the
+parser folds them into routine execution fields. It uses typed arguments,
+including angle-word text, parenthesized expressions and export tags. Only a
+spelling-keeping parse builds the record; ordinary parses retain their existing
+execution tree. Named subs, methods, protos and anonymous routines share this
+carrier. Lowering retains constructed trait lists through the same carrier.
+The compiler skips this source form, and body-shape checks treat it as a marker
+so a proto's `{*}` remains a dispatcher.
+
+The source list replaces the converter's guessed flag order. Explicit DEFAULT
+export arguments remain explicit, and `returns Positional of Int` produces one
+parameterized return trait. Argument expressions are never evaluated while
+recording or converting them. Proto custom-trait arguments use the existing
+compiled declaration-expression chunks at registration; their trait target is
+the live dispatcher, and its return constraint is retained. The cache format
+is advanced for the typed source form and compiled proto arguments.
+
+The executable contract is `t/rakuast/rakuast-routine-trait-order.t`, measured
+against Rakudo for the read and EVAL directions. Existing execution fields
+continue to define builtin-trait application; this slice does not introduce a
+second trait evaluator.
