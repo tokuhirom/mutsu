@@ -1083,6 +1083,14 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
+    // `Signature`'s `arity`, `count`, `params` and `returns` are rows of the method
+    // table (`method_table::signature`, ADR-11276 §9.55).
+    if matches!(method, "arity" | "count" | "params" | "returns")
+        && let Some(answer) = crate::builtins::method_table::signature::answer(target, method)
+    {
+        return Some(answer);
+    }
+
     // Exception/X:: methods: `message`, `gist`, `Str`, `backtrace`, `resume`, `throw` and
     // `X::AdHoc.payload` are rows of the method table (`method_table::exception`,
     // ADR-11276 §9.39); `line`, `file` and `filename` are mutsu's own accessors.
