@@ -22,6 +22,8 @@ use crate::value::ValueMap;
 pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
 mod rebind;
+mod static_link;
+pub(crate) use static_link::with_static_links_suppressed;
 pub(crate) mod stats;
 
 /// Process-wide immutable "base" tier of the environment.
@@ -659,6 +661,10 @@ pub struct Env {
     /// captures) leaves it clear. A closure capture stops its walk at the
     /// running frame's root (ADR-12529 phase 3, see [`Self::layered_capture`]).
     frame_root: bool,
+    /// How a frame root's by-name lookups treat the caller frames chained
+    /// below it (ADR-12529 phase 3, [`static_link`]). `None` on every env but
+    /// the root of a frame that asked for a static view.
+    static_link: Option<Arc<static_link::StaticLink>>,
     /// The by-name writes this env's **frame tier** has taken since the frame
     /// opened, recorded only for an env whose tier was collapsed into the flat
     /// map by [`Self::flattened_for_frame`]. `None` everywhere else — a scoped
@@ -838,6 +844,7 @@ impl Env {
             file_sym: None,
             frame_ids: FrameIds::NONE,
             frame_root: false,
+            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -941,12 +948,14 @@ impl Env {
         if parent.inner.is_empty()
             && parent.tombstones.is_none()
             && parent.fallback.is_none()
+            && parent.static_link.is_none()
             && let Some(gp) = parent.parent.take()
         {
             let mut arc = gp;
             while arc.inner.is_empty()
                 && arc.tombstones.is_none()
                 && arc.fallback.is_none()
+                && arc.static_link.is_none()
                 && let Some(gp) = &arc.parent
             {
                 let gp = Arc::clone(gp);
@@ -963,6 +972,7 @@ impl Env {
                     file_sym,
                     frame_ids,
                     frame_root: true,
+                    static_link: None,
                     fallback: None,
                     chain_has_fallback: flat_chf,
                     capture_merged: OnceLock::new(),
@@ -980,6 +990,7 @@ impl Env {
                 file_sym,
                 frame_ids,
                 frame_root: true,
+                static_link: None,
                 fallback: None,
                 chain_has_fallback: arc_chf,
                 capture_merged: OnceLock::new(),
@@ -1002,6 +1013,7 @@ impl Env {
             file_sym,
             frame_ids,
             frame_root: true,
+            static_link: None,
             fallback: None,
             chain_has_fallback: parent_chf,
             capture_merged: OnceLock::new(),
@@ -1038,6 +1050,7 @@ impl Env {
             file_sym,
             frame_ids,
             frame_root: false,
+            static_link: None,
             fallback: None,
             chain_has_fallback: parent_chf,
             capture_merged: OnceLock::new(),
@@ -1059,6 +1072,7 @@ impl Env {
             file_sym: None,
             frame_ids: FrameIds::NONE,
             frame_root: false,
+            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -1462,7 +1476,11 @@ impl Env {
             // the copy deferred to the first write via `cow_mut`. This is the
             // same "empty tier is not a tier" rule `scoped_child` applies when
             // it chains over an empty parent instead of stacking on it.
-            Some(parent) if self.inner.is_empty() && self.tombstones.is_none() => {
+            Some(parent)
+                if self.inner.is_empty()
+                    && self.tombstones.is_none()
+                    && self.static_link.is_none() =>
+            {
                 let mut flat = parent.flattened();
                 // The collapsed tier is this frame's and the parent's is the
                 // caller's, so a frame-write log the parent happens to carry
@@ -1498,6 +1516,7 @@ impl Env {
                         merged.insert(*k, v.clone());
                     }
                 }
+                self.apply_static_links(&mut merged);
                 let dyn_base = cur.dyn_base.clone();
                 let any_tombstone = {
                     let mut cur = self;
@@ -1527,6 +1546,7 @@ impl Env {
                     file_sym: self.file_sym,
                     frame_ids: self.frame_ids,
                     frame_root: false,
+                    static_link: None,
                     // The merged map is no longer any one frame's tier;
                     // `flattened_for_frame` is what records the collapsed tier's
                     // writes when a light frame needs them (#7630).
@@ -1645,6 +1665,7 @@ impl Env {
                 merged.insert(*k, v.clone());
             }
         }
+        self.apply_static_links(&mut merged);
         // A tombstone that hides a base-tier dynamic has to survive the
         // collapse -- see `flattened`'s general arm, which this mirrors.
         let tombstones = any_tombstone
@@ -1659,6 +1680,7 @@ impl Env {
             file_sym: self.file_sym,
             frame_ids: self.frame_ids,
             frame_root: false,
+            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -1830,6 +1852,7 @@ impl Env {
             file_sym,
             frame_ids: self.frame_ids,
             frame_root: false,
+            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -1992,6 +2015,7 @@ impl Env {
             file_sym,
             frame_ids: self.frame_ids,
             frame_root: false,
+            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -2157,6 +2181,7 @@ impl Env {
             file_sym: None,
             frame_ids: self.frame_ids,
             frame_root: false,
+            static_link: None,
             chain_has_fallback: fallback.is_some(),
             capture_merged: OnceLock::new(),
             fallback,
@@ -2314,6 +2339,11 @@ impl Env {
             if cur.is_tombstoned(key) {
                 return None;
             }
+            // A frame root with a static link skips its callers for a lexical.
+            if let Some(outer) = cur.static_skip(key) {
+                cur = outer;
+                continue;
+            }
             match &cur.parent {
                 Some(parent) => cur = parent,
                 None => break,
@@ -2362,6 +2392,10 @@ impl Env {
                 if let Some(v) = fb.get_below_base(&key) {
                     found = Some(v);
                 }
+            }
+            if let Some(outer) = cur.static_skip(key) {
+                cur = outer;
+                continue;
             }
             match &cur.parent {
                 Some(parent) => cur = parent,
@@ -2414,6 +2448,10 @@ impl Env {
             }
             if cur.is_tombstoned(key) {
                 return false;
+            }
+            if let Some(outer) = cur.static_skip(key) {
+                cur = outer;
+                continue;
             }
             match &cur.parent {
                 Some(parent) => cur = parent,
@@ -3049,6 +3087,7 @@ impl From<ValueMap> for Env {
             file_sym,
             frame_ids: FrameIds::NONE,
             frame_root: false,
+            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),
@@ -3071,6 +3110,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             file_sym,
             frame_ids: FrameIds::NONE,
             frame_root: false,
+            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             capture_merged: OnceLock::new(),

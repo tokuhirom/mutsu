@@ -391,14 +391,19 @@ impl Interpreter {
         // by-name write un-shares it via `cow_mut`'s CoW (or sets a
         // tombstone), and the unwind arm below detects that and replays the
         // scoped-overlay return merge in place.
-        let caller_env = if self.env().overlay_is_shared_empty() {
+        // A body that links its frame to the program scope needs a root of
+        // its own to carry the link (ADR-12529 phase 3), so it never reuses
+        // the caller's.
+        let links_static_outer = cf.code.links_static_outer_to_unit();
+        let caller_env = if self.env().overlay_is_shared_empty() && !links_static_outer {
             None
         } else {
             let parent = self.env().clone();
-            Some(std::mem::replace(
-                self.env_mut(),
-                crate::env::Env::scoped_child(parent),
-            ))
+            let mut frame = crate::env::Env::scoped_child(parent);
+            if links_static_outer {
+                frame.link_static_outer_to_unit();
+            }
+            Some(std::mem::replace(self.env_mut(), frame))
         };
 
         // Read-through to the caller (parent tier) for the initial value of a

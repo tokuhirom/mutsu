@@ -7584,6 +7584,13 @@ pub(crate) struct CompiledCode {
     /// same question for the *program*; this answers it for one chunk, which
     /// is what `capture_closure_env` actually needs. Set during `finalize`.
     pub(crate) needs_reflective_capture: bool,
+    /// This chunk runs an `IndirectTypeLookup` (`::($name)`), which resolves
+    /// a sigiled name (`::('$x')`) as a lexical by name. Not part of
+    /// [`Self::needs_reflective_capture`]: a `::($type)` lookup is common in
+    /// ordinary code, and that flag widens every closure capture and env sync
+    /// of the chunk. Only the frame's static link asks it (ADR-12529 phase 3,
+    /// [`Self::links_static_outer_to_unit`]). Set during `finalize`.
+    pub(crate) indirect_name_lookup: bool,
     /// True if this code directly calls `callsame`/`nextsame`/`callwith`/
     /// `nextwith`. Set during `emit()`. The compiled method fast paths
     /// (`call_compiled_method`/`call_compiled_method_fast`) push a
@@ -8226,6 +8233,7 @@ impl CompiledCode {
             uses_capture: false,
             uses_samewith: false,
             needs_reflective_capture: false,
+            indirect_name_lookup: false,
             uses_dispatcher: false,
             may_observe_named_slurpy: false,
             source_line: None,
@@ -8506,6 +8514,17 @@ impl CompiledCode {
             // Same guard as `closure_body_arc`.
             None => extract(idx),
         }
+    }
+
+    /// Whether a frame running this chunk links its root to the program
+    /// scope (ADR-12529 phase 3, `env::static_link`): a named routine body
+    /// declared outside every routine, so its lexical outer is the program
+    /// scope, that looks names up reflectively (`EVAL`, `::('$x')`, ...).
+    // Cost: O(1).
+    pub(crate) fn links_static_outer_to_unit(&self) -> bool {
+        self.is_routine
+            && !self.declared_in_routine
+            && (self.needs_reflective_capture || self.indirect_name_lookup)
     }
 
     /// This chunk's free variables as a `Symbol` set, built once. The closure
@@ -9551,6 +9570,10 @@ impl CompiledCode {
     /// in the importing scope's size (#7565).
     pub(crate) fn scan_reflective_name_access(&mut self) {
         let mut own_reflective = false;
+        self.indirect_name_lookup = self
+            .ops
+            .iter()
+            .any(|op| matches!(op, OpCode::IndirectTypeLookup));
         for op in &self.ops {
             let reflective = match op {
                 OpCode::GetCallerVar { .. }

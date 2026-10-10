@@ -96,6 +96,9 @@ impl Interpreter {
         {
             let parent = self.env().clone();
             self.set_env(crate::env::Env::scoped_child(parent));
+            if cf.code.links_static_outer_to_unit() {
+                self.env_mut().link_static_outer_to_unit();
+            }
         }
 
         // Always push a routine frame so that &?ROUTINE works inside anonymous

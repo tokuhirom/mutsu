@@ -464,10 +464,23 @@ impl Interpreter {
             self.absolutify_unit_name(&unit_name)
         };
         let saved_source_file = crate::parser::set_parser_source_file(Some(file_spelling));
-        let mut result = if check_only {
-            self.eval_eval_string_check_only(&code)
+        // `context => $ctx` names a scope the running frame's static link
+        // cannot express (a `PseudoStash` does not carry a frame's lexicals
+        // yet), so such a snippet resolves through the whole caller chain, as
+        // every lookup did before ADR-12529 phase 3 gave frames a static link.
+        // TODO: resolve `$ctx`'s own lexical scope instead; the whole chain
+        // also shows the names of every frame between `$ctx` and this EVAL.
+        let run = |interp: &mut Self| {
+            if check_only {
+                interp.eval_eval_string_check_only(&code)
+            } else {
+                interp.eval_eval_string(&code)
+            }
+        };
+        let mut result = if context_arg.is_some() {
+            crate::env::with_static_links_suppressed(|| run(self))
         } else {
-            self.eval_eval_string(&code)
+            run(self)
         };
         // A compile-time diagnosis (`X::Comp`/`X::Syntax::*`) raised while
         // parsing the EVAL'd string reports `.filename` matching the EVAL
