@@ -26,6 +26,7 @@ pub(crate) mod backtrace;
 pub(crate) mod code;
 pub(crate) mod date;
 pub(crate) mod dateish;
+pub(crate) mod dateish_io;
 pub(crate) mod datetime;
 pub(crate) mod exception;
 pub(crate) mod failure;
@@ -44,6 +45,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     temporal::DATETIME_ROWS,
     dateish::DATE_ROWS,
     dateish::DATETIME_ROWS,
+    dateish_io::ROWS,
     date::ROWS,
     datetime::ROWS,
     instant::INSTANT_ROWS,
