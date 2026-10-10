@@ -1971,7 +1971,17 @@ pub(super) fn lower_signature_parameters(
         let ValueView::RakuAst(p) = v.view() else {
             return Err(unsupported(owner));
         };
-        defs.push(lower_parameter(p, owner)?);
+        let mut def = lower_parameter(p, owner)?;
+        if owner.class == RakuAstClass::PointyBlock {
+            def.mark_block_param();
+        }
+        if p.fields
+            .iter()
+            .any(|field| field.name == Some("multi-invocant"))
+        {
+            def.multi_invocant = bool_field(p, "multi-invocant")?;
+        }
+        defs.push(def);
     }
     Ok(defs)
 }
@@ -2079,7 +2089,12 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         // An anonymous destructuring parameter: `[$a, $b]` marks its
         // signature `is-array`, `($a, $b)` does not; each binds under the
         // parser's placeholder name for its form.
-        if bool_field(sub_signature, "is-array")? {
+        if bool_field(sub_signature, "is-array")?
+            || parameter.fields.iter().any(|f| f.name == Some("slurpy"))
+            || parameter.fields.iter().any(|f| f.name == Some("names"))
+                && !parameter.fields.iter().any(|f| f.name == Some("type"))
+                && !super::named_param::is_anonymous_named(parameter)
+        {
             super::convert::ANONYMOUS_ARRAY_SUBSIGNATURE.to_string()
         } else {
             super::convert::ANONYMOUS_SUBSIGNATURE.to_string()
@@ -2193,7 +2208,12 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
                 def.onearg = true;
             }
             // `+@a` / `+$a` / `+%a`: the parser marks only `onearg`.
-            Some(RakuAstClass::ParameterSlurpySingleArgument) => def.onearg = true,
+            Some(RakuAstClass::ParameterSlurpySingleArgument) => {
+                def.onearg = true;
+                // `+[...]` collects before destructuring; `+@a` only sets
+                // `onearg`, just as the parser's two forms do.
+                def.slurpy = !has_target;
+            }
             Some(RakuAstClass::ParameterSlurpyCapture) if def.sigilless => def.slurpy = true,
             _ => return Err(unsupported(owner)),
         }
@@ -2247,6 +2267,7 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         let sub_signature = child_node(&sub_signature.value)?;
         def.sub_signature = Some(lower_signature_parameters(sub_signature, owner)?);
     }
+    super::parameter_signature::lower_constraint(parameter, &mut def)?;
     // A literal-value parameter keeps its value, and is not required (the
     // parser's `make_param` default).
     if let Some(value) = parameter.fields.iter().find(|f| f.name == Some("value")) {
@@ -2266,7 +2287,7 @@ fn lower_parameter(parameter: &RakuAstNode, owner: &RakuAstNode) -> Result<Param
         }
     }
     match names {
-        Some(names) => super::named_param::wrap_aliases(def, &names, owner),
+        Some(names) => super::named_param::wrap_aliases(def, &names, parameter),
         None => Ok(def),
     }
 }
@@ -4311,46 +4332,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // has no field for its type constraint or type capture, so collapsing
         // it would make a constructed `-> Int $x { … }` accept values that
         // Rakudo rejects, and leave the `T` of `-> ::T { … }` unbound.
-        RakuAstClass::PointyBlock => {
-            let (params, param_defs) = signature_positional_params(node)?;
-            let body = lower_block(node)?;
-            match params.len() {
-                // Only a plain parameter fits `Lambda`; an optional (`$p?`),
-                // slurpy (`*@a`, `|c`), trait-carrying or destructuring
-                // (`-> [$a, $b]`) one keeps its `ParamDef`, as the parser does.
-                1 if param_defs.first().is_some_and(|param| {
-                    !param.named
-                        && param.type_constraint.is_none()
-                        && param.type_capture.is_none()
-                        && param.default.is_none()
-                        && param.literal_value.is_none()
-                        && !param.optional_marker
-                        && param.traits.is_empty()
-                        && param.sub_signature.is_none()
-                        && !param.slurpy
-                        && !param.double_slurpy
-                }) =>
-                {
-                    Ok(Expr::Lambda {
-                        param: params.into_iter().next().unwrap(),
-                        body,
-                        is_whatever_code: false,
-                        param_sigilless: param_defs.first().is_some_and(|pd| pd.sigilless),
-                    })
-                }
-                _ => Ok(Expr::AnonSubParams {
-                    params,
-                    param_defs,
-                    return_type: None,
-                    body,
-                    is_rw: false,
-                    is_raw: false,
-                    custom_traits: Default::default(),
-                    is_whatever_code: false,
-                    declarator: crate::ast::RoutineDeclarator::Block,
-                }),
-            }
-        }
+        RakuAstClass::PointyBlock => super::parameter_signature::lower_pointy(node),
         // `(EXPR)` -> its inner expression (parens are transparent for EVAL). The
         // node wraps a `SemiList` of `Statement::Expression`s; only the
         // single-statement form is handled.

@@ -281,3 +281,25 @@ before the flip, not after.
   builtin statement of the same name (`sub take`, `sub say`, …) as the parser's scope made it
   win at parse time. A zero-argument call without the marker took a call path the parser's trees
   never reach — `EVAL 'return 5'` in such a sub escaped it.
+
+### 6.1 S10: callable and destructuring signatures (2026-10-10)
+
+Callable parameters preserve their whitespace sub-signature, including its
+return type, and the colon signature constraint. Rakudo's `.raku` omits the
+colon constraint, so `Parameter` keeps it as hidden `code-signature` metadata;
+lowering restores `ParamDef::code_signature` without inventing a parser marker.
+Hand-built whitespace sub-signatures populate the same callback metadata used
+by NativeCall. A constrained pointy parameter retains its full `ParamDef`
+instead of being reduced to a name-only `Lambda`.
+
+Slurpy destructuring and named nested patterns use the existing `Signature`
+and `Parameter` fields. Conversion follows a named alias chain to its actual
+destructuring signature; lowering rebuilds the alias around that signature.
+Anonymous named `:(...)` remains a single parameter rather than gaining an
+alias level. Sigilless slurpies share the common parameter suffix handling,
+including `where`, defaults, type captures and traits. Pointy parameters keep
+their block defaults and container identity, and the block keeps its return
+constraint. The `;;` dispatch boundary is retained as hidden `multi-invocant`
+parameter metadata, another property Rakudo omits from `.raku`.
+The executable contract
+is `t/rakuast/rakuast-callable-and-slurpy-signatures.t`.
