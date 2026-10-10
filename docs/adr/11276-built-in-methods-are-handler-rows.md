@@ -2239,3 +2239,11 @@ advance arm of `dispatch_next_candidate` is a `match` on it; the `.or_else` chai
 their guards and are renamed `native_*_base` (no longer "candidates" of a probe). The `NO_FRAME` fallbacks at the end of
 `dispatch_next_candidate` still call `native_metamodel_base` / `native_builtin_new_base` directly: they run when no frame exists,
 so there is no entry to name a bridge.
+
+### 9.54 Slice 3D: `Exception.throw` and `Failure.throw` are rows (2026-10-10)
+
+`refactor/12390-exception-throw-rows`. The hand-written `.throw` fast path in `methods_0arg/mod.rs` is gone: `throw` is a pure
+`Narrow` row on `Exception` (Rakudo declares it only there; the subclasses reach it through the owner chain; it declines for `CX::*`, whose composed roles the
+interpreter must inspect) and on `Failure`, where it now raises the wrapped exception like `Failure.Str`. The `throw`/`rethrow`
+interpreter gate for classes with a computed `message` is unchanged. Not interpreter rows after all: the handler only builds the
+`RuntimeError`. Left on #12390: `line`/`file`/`filename`, `Code`, `Mu`, `Backtrace` ancestors, `Date.IO`/`Instant`/`Match`/`RakuAST::*`.

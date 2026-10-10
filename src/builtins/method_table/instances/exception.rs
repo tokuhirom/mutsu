@@ -32,6 +32,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Exception", "Str", str_row),
     row!("Exception", "backtrace", backtrace),
     row!("Exception", "resume", resume),
+    row!("Exception", "throw", throw),
     row!("X::AdHoc", "message", message),
     row!("X::AdHoc", "payload", payload),
     row!("CX::Warn", "message", message),
@@ -207,4 +208,31 @@ fn backtrace(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErr
 // Cost: O(1).
 fn resume(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     (class_of(target) == "CX::Warn").then(|| Err(RuntimeError::resume_signal()))
+}
+
+/// `Exception.throw`: raise the exception itself. Only the core `Exception` and
+/// `X::` classes answer; a `CX::` class declines, since the interpreter inspects
+/// its composed roles (`X::Control`) to decide whether it is a control exception.
+/// The text is the message a `.message` would give, never the type repr.
+// Cost: O(m), m = chars of the message built.
+fn throw(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let class = class_of(target);
+    if class != "Exception" && !class.starts_with("X::") {
+        return None;
+    }
+    let msg = message_attr(target)
+        .map(|v| v.to_string_value())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            (class == "X::AdHoc")
+                .then(|| attr(target, "payload"))
+                .flatten()
+                .map(|v| v.to_string_value())
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| formatted(target))
+        .unwrap_or_else(|| target.to_string_value());
+    let mut err = RuntimeError::new(msg);
+    err.exception = Some(Box::new(target.clone()));
+    Some(Err(err))
 }

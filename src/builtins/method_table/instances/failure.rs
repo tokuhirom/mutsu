@@ -3,7 +3,7 @@
 //! A `Failure` is an instance of the built-in class `Failure` whose state is the
 //! `exception` attribute and a *handled* flag shared by every clone of the value
 //! (`Value::is_failure_handled`). Rakudo declares `Bool`, `exception`, `gist`,
-//! `handled`, `raku` and `Str` on it. They are reached through their owner:
+//! `handled`, `raku`, `Str` and `throw` on it. They are reached through their owner:
 //! [`answer`] is the entry for the cascade, which must see a `Failure` before any
 //! shape-based probe, since every method outside this list explodes it.
 
@@ -30,6 +30,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("raku", raku),
     row!("Str", str_row),
     row!("Bool", bool_row),
+    row!("throw", throw),
 ];
 
 /// The answer of the row for `method` on a `Failure`, or `None` when `target` is
@@ -121,4 +122,10 @@ fn str_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
 fn bool_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     target.mark_failure_handled();
     Some(Ok(Value::truth(target.truthy())))
+}
+
+/// `Failure.throw`: raise the wrapped exception.
+// Cost: O(1).
+fn throw(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    str_row(target, args)
 }

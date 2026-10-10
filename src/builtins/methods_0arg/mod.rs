@@ -1083,7 +1083,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
-    // Exception/X:: methods: `message`, `gist`, `Str`, `backtrace`, `resume` and
+    // Exception/X:: methods: `message`, `gist`, `Str`, `backtrace`, `resume`, `throw` and
     // `X::AdHoc.payload` are rows of the method table (`method_table::exception`,
     // ADR-11276 §9.39); `line`, `file` and `filename` are mutsu's own accessors.
     if let Some(answer) = crate::builtins::method_table::exception::answer(target, method) {
@@ -1172,61 +1172,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         let cn = class_name.resolve();
         if cn == "Exception" || cn.starts_with("X::") || cn == "Failure" || cn == "CX::Warn" {
             return Some(Err(RuntimeError::resume_signal()));
-        }
-    }
-
-    // .throw on exception objects
-    if method == "throw"
-        && let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-    {
-        let cn = class_name.resolve();
-        // Only the core exception classes use the fast path. For CX::* we
-        // fall through to the slow path, which can inspect the class's
-        // composed roles (e.g. X::Control) to decide whether the throw
-        // should raise a control exception.
-        if cn == "Exception" || cn.starts_with("X::") || cn == "Failure" {
-            // Derive the human message the same way `.message`/`.gist`/`.Str`
-            // do — an X::AdHoc carries its text in `payload` (not `message`),
-            // and a typed exception's message is built from its attributes —
-            // rather than the type repr (`X::AdHoc()`) that
-            // `target.to_string_value()` would yield.
-            // A declared-but-undefined `has $.message` is NOT a message: it is
-            // the state a computing `method message` starts from, and rendering
-            // it would print the literal `(Any)`. (Such a class is routed to the
-            // interpreter by the `throw`/`rethrow` gate in
-            // `try_native_method`, which can see the user method; this filter
-            // keeps the pure-attribute classes honest too.)
-            let msg = attributes
-                .as_map()
-                .get("message")
-                .filter(|v| !v.is_nil() && !matches!(v.view(), ValueView::Package(_)))
-                .map(|v| v.to_string_value())
-                .filter(|s| !s.is_empty())
-                .or_else(|| {
-                    if cn == "X::AdHoc" {
-                        attributes
-                            .as_map()
-                            .get("payload")
-                            .map(|v| v.to_string_value())
-                            .filter(|s| !s.is_empty())
-                    } else {
-                        None
-                    }
-                })
-                .or_else(|| {
-                    crate::value::exception_message::format_exception_message(
-                        &cn,
-                        &attributes.as_map(),
-                    )
-                })
-                .unwrap_or_else(|| target.to_string_value());
-            let mut err = RuntimeError::new(msg);
-            err.exception = Some(Box::new(target.clone()));
-            return Some(Err(err));
         }
     }
 
