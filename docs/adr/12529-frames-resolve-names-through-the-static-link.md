@@ -1,6 +1,7 @@
 # ADR-12529: A frame resolves names through its lexical outer, not its caller — separating the static link from the dynamic link
 
-- **Status**: Proposed (2026-10-10)
+- **Status**: Accepted (2026-10-10, by tokuhirom; Proposed earlier the same
+  day). No phase implemented yet; record each phase's progress in §3.
 - **Date**: 2026-10-10
 - **Related**: [ADR-0018](0018-slot-addressed-lexical-capture-and-env-sync.md)
   (locals are slot-addressed; escaping mutable lexicals are cells — this ADR
