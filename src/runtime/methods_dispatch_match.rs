@@ -41,48 +41,9 @@ impl Interpreter {
                     "Cannot call '{method}' as a class method on Supply (requires a defined invocant)"
                 ))))
             }
-            "classify" | "categorize" if !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply") =>
-            {
-                let mut call_args = Vec::with_capacity(args.len() + 1);
-                call_args.extend(args.iter().cloned());
-                call_args.push(target);
-                Some(self.builtin_classify(method, &call_args))
-            }
+            "classify" | "categorize" => self.dispatch_classify_method(target, method, args),
             "classify-list" | "categorize-list" => {
-                // Immutable Bag and Mix cannot be classified into
-                let type_name = match target.view() {
-                    ValueView::Bag(_, false) => Some("Bag"),
-                    ValueView::Mix(_, false) => Some("Mix"),
-                    _ => None,
-                };
-                if let Some(tname) = type_name {
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("typename".to_string(), Value::str_from(tname));
-                    attrs.insert("method".to_string(), Value::str_from(method));
-                    let exception = Value::make_instance(Symbol::intern("X::Immutable"), attrs);
-                    let mut err = RuntimeError::new(format!(
-                        "Cannot call '{}' on an immutable '{}'",
-                        method, tname
-                    ));
-                    err.exception = Some(Box::new(exception));
-                    return Some(Err(err));
-                }
-                let classify_name = if method == "classify-list" {
-                    "classify"
-                } else {
-                    "categorize"
-                };
-                // A mutable QuantHash invocant (BagHash/MixHash/SetHash) yields a
-                // result of the same mutable type; builtin_classify builds an
-                // immutable Bag/Mix, so re-overlay the invocant's mutability.
-                let result_mutable = set_result_mutability(&target);
-                let mut call_args = Vec::with_capacity(args.len() + 1);
-                call_args.extend(args.iter().cloned());
-                call_args.push(Value::pair("into".to_string(), target));
-                Some(
-                    self.builtin_classify(classify_name, &call_args)
-                        .map(|r| with_set_mutability(r, result_mutable)),
-                )
+                Some(self.dispatch_classify_list_method(target, method, args))
             }
             "from-loop" | "from_loop" if matches!(target.view(), ValueView::Package(name) if name == "Seq") => {
                 Some(self.dispatch_seq_from_loop(args))
@@ -334,9 +295,7 @@ impl Interpreter {
             }
             // A regex argument may be a closure over its defining scope; install
             // it around the match the same way `~~` does.
-            "match" => Some(self.with_regex_closure_scope(args.first().cloned(), |me| {
-                me.dispatch_match_method(target, &args)
-            })),
+            "match" => Some(self.dispatch_match_row(target, args)),
             "subst" => {
                 // A string (non-regex) pattern leaves the caller's `$/` alone,
                 // as in Rakudo; `dispatch_subst` publishes the match for
@@ -460,6 +419,82 @@ impl Interpreter {
             "trans" => Some(self.dispatch_trans(target, &args)),
             _ => None,
         }
+    }
+
+    /// Dispatch "classify" / "categorize": the `Any` rows' handler and the
+    /// cascade's arm. A `Supply` receiver is not served here.
+    // Cost: O(e) plus one test call per element, e = elements of the invocant.
+    pub(crate) fn dispatch_classify_method(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+        {
+            return None;
+        }
+        let mut call_args = Vec::with_capacity(args.len() + 1);
+        call_args.extend(args.iter().cloned());
+        call_args.push(target);
+        Some(self.builtin_classify(method, &call_args))
+    }
+
+    /// Dispatch "classify-list" / "categorize-list": the `Hash` rows' handler
+    /// and the cascade's arm.
+    // Cost: O(e) plus one test call per element, e = elements of the list.
+    pub(crate) fn dispatch_classify_list_method(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        // Immutable Bag and Mix cannot be classified into
+        let type_name = match target.view() {
+            ValueView::Bag(_, false) => Some("Bag"),
+            ValueView::Mix(_, false) => Some("Mix"),
+            _ => None,
+        };
+        if let Some(tname) = type_name {
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("typename".to_string(), Value::str_from(tname));
+            attrs.insert("method".to_string(), Value::str_from(method));
+            let exception = Value::make_instance(Symbol::intern("X::Immutable"), attrs);
+            let mut err = RuntimeError::new(format!(
+                "Cannot call '{}' on an immutable '{}'",
+                method, tname
+            ));
+            err.exception = Some(Box::new(exception));
+            return Err(err);
+        }
+        let classify_name = if method == "classify-list" {
+            "classify"
+        } else {
+            "categorize"
+        };
+        // A mutable QuantHash invocant (BagHash/MixHash/SetHash) yields a
+        // result of the same mutable type; builtin_classify builds an
+        // immutable Bag/Mix, so re-overlay the invocant's mutability.
+        let result_mutable = set_result_mutability(&target);
+        let mut call_args = Vec::with_capacity(args.len() + 1);
+        call_args.extend(args.iter().cloned());
+        call_args.push(Value::pair("into".to_string(), target));
+        self.builtin_classify(classify_name, &call_args)
+            .map(|r| with_set_mutability(r, result_mutable))
+    }
+
+    /// Dispatch "match": the `Any.match` row's handler and the cascade's arm.
+    /// A regex argument may be a closure over its defining scope; install it
+    /// around the match the same way `~~` does.
+    // Cost: O(n) in the haystack text for a plain pattern.
+    pub(crate) fn dispatch_match_row(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        self.with_regex_closure_scope(args.first().cloned(), |me| {
+            me.dispatch_match_method(target, &args)
+        })
     }
 
     /// Helper for .comb with arguments.

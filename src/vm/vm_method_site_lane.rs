@@ -112,6 +112,14 @@ impl Interpreter {
         if !method_table::names_a_row(code.const_sym(name_idx), arity) {
             return None;
         }
+        // A callback that binds `$_` rw writes back into the named array
+        // (`@a.map({ $_++ })`): the rw-writeback dispatch must see the call,
+        // not the `Any` interpreter rows (ADR-11276 §9.60).
+        if matches!(Self::const_str(code, name_idx), "map" | "grep" | "first")
+            && Self::const_str(code, target_name_idx).starts_with('@')
+        {
+            return None;
+        }
         let base = self.stack.len().checked_sub(arity + 1)?;
         let receiver = Receiver::of(&self.stack[base])?;
         if !method_table::shape_has_row(receiver, code.const_sym(name_idx)) {
