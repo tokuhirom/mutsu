@@ -272,6 +272,15 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
     // the name parses as a single term.
     if let Some(after) = r.strip_prefix("::") {
         r = after;
+        // `::CALLERS::<$*x>` is the same pseudo-stash term as `CALLERS::<$*x>`,
+        // so a pseudo-package stash keeps its `PseudoStash` form (the compiler
+        // routes the keyed read on it to the caller-frame walk).
+        if full_name
+            .split("::")
+            .all(crate::parser::primary::var::is_pseudo_package)
+        {
+            return Ok((r, Expr::PseudoStash(format!("{full_name}::"))));
+        }
     }
     // Type smileys: ::Foo:U, ::Foo:D, ::Foo:_
     if (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))

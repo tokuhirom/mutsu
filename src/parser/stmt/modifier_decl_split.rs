@@ -162,6 +162,29 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
     {
         return None;
     }
+    let bare = SignatureDecl {
+        init: None,
+        ..decl.clone()
+    };
+    // A `:=` list declaration is gated whole: its binding statements must run
+    // as written (aliasing the elements, arity checks, read-only marks), after
+    // the unconditional bare declaration. A statement modifier opens no scope,
+    // so the names declared inside the gated body are the declared ones.
+    if init.is_binding {
+        let gated = Stmt::If {
+            cond: effective_cond.clone(),
+            then_branch: rebind_staged_decls(&decl)?,
+            else_branch: Vec::new(),
+            binding_var: None,
+            is_statement_modifier: true,
+            is_unless,
+            with_kind: None,
+        };
+        return Some(Stmt::SyntheticBlock(vec![
+            super::decl::destructure::desugar::signature_decl(bare),
+            gated,
+        ]));
+    }
     let targets = decl
         .vars
         .iter()
@@ -171,12 +194,6 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
             _ => Expr::Var(v.name.clone()),
         })
         .collect();
-    let bare = SignatureDecl {
-        init: None,
-        ..decl.clone()
-    };
-    // TODO: a `:=` list declaration is gated as a list assignment, so the
-    // elements are copied instead of aliased when the condition holds.
     let rhs = Expr::Call {
         name: Symbol::intern("__mutsu_list_assign_rhs"),
         args: vec![init.rhs.clone()],
@@ -204,4 +221,82 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
         super::decl::destructure::desugar::signature_decl(bare),
         gated,
     ]))
+}
+
+/// The statements of an initialized `:=` list declaration with every element
+/// declaration turned into a plain (re)bind of the already declared name, so
+/// that gating them behind a statement modifier leaves the unconditional bare
+/// declaration as the only one. Only the staging temp keeps its declaration.
+/// `None` for an element form this rewrite does not cover (sigilless or
+/// `is rw` binds), which keeps the generic modifier wrapping.
+fn rebind_staged_decls(decl: &SignatureDecl) -> Option<Vec<Stmt>> {
+    let Stmt::SyntheticBlock(stmts) =
+        super::decl::destructure::desugar::signature_decl(decl.clone())
+    else {
+        return None;
+    };
+    let mut out = Vec::new();
+    let last = stmts.len().saturating_sub(1);
+    for (i, stmt) in stmts.into_iter().enumerate() {
+        match stmt {
+            // The block's trailing result expression: the gated statement is
+            // sunk, and the staged list would only warn as a useless use.
+            Stmt::Expr(_) if i == last => {}
+            Stmt::SourceForm(_) => {}
+            Stmt::VarDecl {
+                name,
+                expr,
+                custom_traits,
+                ..
+            } if name == "@__destructure_tmp__" => {
+                out.push(Stmt::VarDecl {
+                    name,
+                    expr,
+                    type_constraint: None,
+                    is_state: false,
+                    is_our: false,
+                    is_dynamic: false,
+                    is_export: false,
+                    export_tags: Vec::new(),
+                    custom_traits,
+                    where_constraint: None,
+                });
+            }
+            Stmt::VarDecl {
+                name,
+                expr,
+                custom_traits,
+                ..
+            } if custom_traits.is_empty() => {
+                out.push(Stmt::Assign {
+                    name,
+                    expr,
+                    op: crate::ast::AssignOp::Assign,
+                    target_is_sigilless: false,
+                });
+            }
+            Stmt::SyntheticBlock(inner) => match inner.as_slice() {
+                [
+                    Stmt::MarkBind,
+                    Stmt::VarDecl {
+                        name,
+                        expr,
+                        custom_traits,
+                        ..
+                    },
+                ] if custom_traits.is_empty() => {
+                    out.push(Stmt::Assign {
+                        name: name.clone(),
+                        expr: expr.clone(),
+                        op: crate::ast::AssignOp::Bind,
+                        target_is_sigilless: false,
+                    });
+                }
+                _ => return None,
+            },
+            other @ (Stmt::MarkReadonly(..) | Stmt::If { .. }) => out.push(other),
+            _ => return None,
+        }
+    }
+    Some(out)
 }
