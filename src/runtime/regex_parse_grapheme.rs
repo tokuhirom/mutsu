@@ -22,7 +22,17 @@ pub(super) fn literal_grapheme_atoms(text: &str) -> Vec<RegexAtom> {
         .map(|g| {
             let mut chars = g.chars();
             match (chars.next(), chars.next()) {
-                (Some(c), None) => RegexAtom::Literal(c),
+                (Some(c), None) if c.is_ascii() => RegexAtom::Literal(c),
+                // A lone codepoint can still expand under NFC (U+2ADC), and the
+                // subject holds the expanded grapheme.
+                (Some(c), None) => {
+                    let composed: String = std::iter::once(c).nfc().collect();
+                    if composed.chars().nth(1).is_some() {
+                        RegexAtom::LiteralGrapheme(composed.into())
+                    } else {
+                        RegexAtom::Literal(c)
+                    }
+                }
                 // Raku strings are NFG, so the subject holds the composed
                 // spelling: `"o\x[328]\x[304]"` *is* `"\x[1ED]"`. Compose the
                 // pattern's cluster the same way, or the two spellings of one
@@ -46,6 +56,12 @@ pub(super) fn literal_grapheme_atoms(text: &str) -> Vec<RegexAtom> {
 /// of these needs no re-joining at all.
 pub(super) fn can_start_a_longer_grapheme(c: char) -> bool {
     c == '\r' || unicode_normalization::char::is_combining_mark(c)
+}
+
+/// True for a lone non-ASCII codepoint whose NFC spelling is several codepoints
+/// (U+2ADC), which the NFG subject holds as one multi-codepoint grapheme.
+fn expands_under_nfc(c: char) -> bool {
+    !c.is_ascii() && std::iter::once(c).nfc().nth(1).is_some()
 }
 
 /// A token this pass may fold into a neighbouring one: a bare literal with no
@@ -90,7 +106,7 @@ fn plain_newline_token(token: &RegexToken) -> bool {
 pub(super) fn merge_grapheme_literal_tokens(tokens: Vec<RegexToken>) -> Vec<RegexToken> {
     if !tokens
         .iter()
-        .any(|t| matches!(t.atom, RegexAtom::Literal(ch) if can_start_a_longer_grapheme(ch)))
+        .any(|t| matches!(t.atom, RegexAtom::Literal(ch) if can_start_a_longer_grapheme(ch) || expands_under_nfc(ch)))
     {
         return tokens;
     }
@@ -157,7 +173,9 @@ pub(super) fn merge_grapheme_literal_tokens(tokens: Vec<RegexToken>) -> Vec<Rege
         }
 
         let atoms = literal_grapheme_atoms(&text);
-        if atoms.len() == text.chars().count() {
+        if atoms.len() == text.chars().count()
+            && atoms.iter().all(|a| matches!(a, RegexAtom::Literal(_)))
+        {
             // Nothing merged: emit the run back as it came in. Every token in
             // it was unquantified except possibly the last, which keeps its
             // own quantifier.
