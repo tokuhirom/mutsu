@@ -801,13 +801,15 @@ impl Interpreter {
                 // As for prefix `~`: only a missing method falls back to the
                 // default rendering; a user `Stringy`/`Str` that dies makes
                 // the interpolation die.
-                match self.try_compiled_method_or_interpret(v.clone(), "Stringy", Vec::new()) {
-                    Ok(str_result) => {
-                        result.push_str(&str_result.to_string_value());
-                        continue;
+                if self.probes_stringy_before_str(&cn) {
+                    match self.try_compiled_method_or_interpret(v.clone(), "Stringy", Vec::new()) {
+                        Ok(str_result) => {
+                            result.push_str(&str_result.to_string_value());
+                            continue;
+                        }
+                        Err(e) if !e.is_method_not_found_for("Stringy") => return Err(e),
+                        Err(_) => {}
                     }
-                    Err(e) if !e.is_method_not_found_for("Stringy") => return Err(e),
-                    Err(_) => {}
                 }
                 match self.try_compiled_method_or_interpret(v.clone(), "Str", Vec::new()) {
                     Ok(str_result) => {
