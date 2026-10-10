@@ -120,6 +120,11 @@ pub(crate) fn join_core(target: &Value, sep: &str) -> Joined {
                 .join(sep);
             Joined::Done(Ok(Value::str(joined)))
         }
+        // A Set/Bag/Mix reads as its pairs (`self.list`): `key\tTrue`,
+        // `key\tweight`.
+        ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+            from_items(&crate::runtime::utils::value_to_list(target))
+        }
         // A Range has no materialized backing slice: expand it, so
         // `(1..5).join` is "12345", not the space-separated gist.
         _ if target.is_range() => from_items(&crate::runtime::utils::value_to_list(target)),
