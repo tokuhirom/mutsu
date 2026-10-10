@@ -90,3 +90,8 @@ folding), which no `Code` method wants: every one reads the registry or the clos
 for the interpreter rows** and stays open only for the pure rows (`Bool`, `Str`, `Capture`, `clone`). Slice 1 also fixed `Regex.of`,
 `Regex.returns`, `&say.of` and `&infix:<+>.of`, which threw where Rakudo answers `Mu`. Slices 2-4 continue with `name`, `signature`,
 `arity`, `count` (and `line`/`file`, whose regex, builtin and multi-dispatcher answers are still `Nil` where Rakudo knows a location).
+
+Slice 2 (2026-10-10) moved `arity` and `count`. The two arms (a `&name` handle and a `Sub`) became `Interpreter::code_arity_count`,
+which the `Code` rows call, so the regex introspection, the bound-signature, dispatcher and multi-candidate paths are one implementation.
+Behaviour is unchanged (the pre-existing differences from Rakudo remain: `&say.count`, `&infix:<+>.arity` and a multi method's
+`.arity`/`.count` from `.^lookup`).
