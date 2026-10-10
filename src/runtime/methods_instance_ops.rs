@@ -3229,6 +3229,13 @@ impl Interpreter {
                         // explicit `return` by the enclosing routine boundary.
                         self.raise_resumable_warning(&msg, Value::int(0))
                     }
+                } else if let (true, ValueView::Instance { class_name, .. }) =
+                    (matches!(method, "Numeric" | "Int"), target.view())
+                {
+                    Err(crate::runtime::mu_coercion_no_match_error(
+                        method,
+                        &class_name.resolve(),
+                    ))
                 } else {
                     Err(super::methods_signature_errors::method_not_found_for_value(
                         method, &target,

@@ -7,10 +7,18 @@ use super::*;
 /// `type_name` is the operand's own Raku type (`Whatever`, `Block`, `Sub`, a
 /// user class name, ...).
 pub(crate) fn numeric_no_match_error(type_name: &str) -> RuntimeError {
+    mu_coercion_no_match_error("Numeric", type_name)
+}
+
+/// The `X::Multi::NoMatch` a plain object raises for `.Int` / `.Numeric`:
+/// `Mu` declares only the `:U` candidate of each, so a defined instance of a
+/// class with no such method matches nothing.
+// Cost: O(1)
+pub(crate) fn mu_coercion_no_match_error(method: &str, type_name: &str) -> RuntimeError {
     RuntimeError::typed_msg(
         "X::Multi::NoMatch",
         format!(
-            "Cannot resolve caller Numeric({type_name}:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)"
+            "Cannot resolve caller {method}({type_name}:D: ); none of these signatures matches:\n    (Mu:U \\v: *%_)"
         ),
     )
 }
