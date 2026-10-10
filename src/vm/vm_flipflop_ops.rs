@@ -528,10 +528,16 @@ impl Interpreter {
             // of this function). Left wrapped, the native op's own type
             // matching (e.g. `arith_mod`) sees an unmatched `VarRef` view and
             // silently defaults instead of computing the real value.
-            let mut acc = Self::unwrap_var_ref_value(call_args[0].clone());
+            //
+            // A `Proxy` operand (an `is rw` method's answer) is FETCHed here:
+            // the native op reads plain values, and the operand only reaches
+            // this point raw because user `multi infix:<op>` candidates with
+            // `is rw` parameters were tried first and declined.
+            let mut acc =
+                self.fetch_proxy_for_store(Self::unwrap_var_ref_value(call_args[0].clone()))?;
             let mut reduced = true;
             for rhs in &call_args[1..] {
-                let rhs = Self::unwrap_var_ref_value(rhs.clone());
+                let rhs = self.fetch_proxy_for_store(Self::unwrap_var_ref_value(rhs.clone()))?;
                 match crate::runtime::Interpreter::apply_reduction_op(name, &acc, &rhs) {
                     Ok(value) => acc = value,
                     Err(_) => {
