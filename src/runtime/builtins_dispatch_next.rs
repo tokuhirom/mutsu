@@ -462,6 +462,14 @@ impl Interpreter {
                 method_name,
                 std::slice::from_ref(&invocant),
             ),
+            "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist" | "Str" | "raku" => {
+                crate::builtins::method_table::invoke_base(
+                    self,
+                    "Mu",
+                    method_name,
+                    std::slice::from_ref(&invocant),
+                )
+            }
             "clone" | "new" => {
                 let mut full = vec![invocant];
                 full.extend_from_slice(args);

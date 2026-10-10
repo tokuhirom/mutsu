@@ -1,4 +1,6 @@
-//! `Mu.BUILDALL`, `Mu.POPULATE`, `Mu.clone` and `Mu.new` (ADR-11276 slice 4, §9.47, §9.48).
+//! `Mu.BUILDALL`, `Mu.POPULATE`, `Mu.clone` and `Mu.new` (ADR-11276 slice 4, §9.47, §9.48), and
+//! the base answers `Mu` gives `defined`, `Bool`, `so`, `not`, `WHICH`, `WHERE`, `gist`, `Str` and
+//! `raku` (§9.56).
 //!
 //! Rakudo declares both on `Mu`, so a user `BUILDALL`/`POPULATE` (typically
 //! installed by a custom HOW's `add_method`, as OO::Monitors does) that defers
@@ -19,6 +21,35 @@
 //! constructors (`methods_object_dispatch_new.rs`), which are not rows yet.
 
 use crate::builtins::method_table::{Handler, MethodRow, RowFlags};
+use crate::symbol::Symbol;
+use crate::value::{Value, ValueView};
+
+macro_rules! base_row {
+    ($name:literal, $handler:expr) => {
+        MethodRow {
+            owner: "Mu",
+            name: $name,
+            arity: 1,
+            handler: Handler::Interp($handler),
+            flags: RowFlags::OWNER_ONLY.or(RowFlags::DEFERRAL_BASE),
+            named: &[],
+        }
+    };
+}
+
+/// Whether the receiver is a type object (`Mu:U`), which `Mu`'s definedness
+/// methods answer `False` for.
+fn is_type_object(target: &Value) -> bool {
+    matches!(target.view(), ValueView::Package(_))
+}
+
+/// The name a type object renders as.
+fn type_object_name(target: &Value) -> String {
+    match target.view() {
+        ValueView::Package(name) => name.resolve().to_string(),
+        _ => String::new(),
+    }
+}
 
 macro_rules! row {
     ($name:literal) => {
@@ -34,6 +65,56 @@ macro_rules! row {
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
+    // `Mu.defined` and `Mu.Bool`: a type object is neither, anything else is both.
+    // Cost: O(1).
+    base_row!("defined", |_interp, target, _args, _named| Some(Ok(
+        Value::truth(!is_type_object(target))
+    ))),
+    base_row!("Bool", |_interp, target, _args, _named| Some(Ok(
+        Value::truth(!is_type_object(target))
+    ))),
+    // `Mu.so` and `Mu.not` ask the receiver's own `Bool`, so a user override is seen.
+    // Cost: O(1) plus the receiver's `Bool`.
+    base_row!("so", |interp, target, _args, _named| Some(
+        interp
+            .call_method_with_values(target.clone(), "Bool", Vec::new())
+            .map(|v| Value::truth(v.truthy()))
+    )),
+    base_row!("not", |interp, target, _args, _named| Some(
+        interp
+            .call_method_with_values(target.clone(), "Bool", Vec::new())
+            .map(|v| Value::truth(!v.truthy()))
+    )),
+    // `Mu.WHICH` and `Mu.WHERE`: the identity the native cascade computes.
+    // Cost: O(1).
+    base_row!("WHICH", |_interp, target, _args, _named| {
+        crate::builtins::native_method_0arg(target, Symbol::intern("WHICH"))
+    }),
+    base_row!("WHERE", |_interp, target, _args, _named| {
+        crate::builtins::native_method_0arg(target, Symbol::intern("WHERE"))
+    }),
+    // `Mu.gist`: `(Name)` for a type object, else the receiver's own `raku`.
+    // Cost: O(1) plus the receiver's `raku`.
+    base_row!("gist", |interp, target, _args, _named| {
+        if is_type_object(target) {
+            return Some(Ok(Value::str(format!("({})", type_object_name(target)))));
+        }
+        Some(interp.call_method_with_values(target.clone(), "raku", Vec::new()))
+    }),
+    // `Mu.Str` and `Mu.raku` of a type object: no value, and the type's name.
+    // Cost: O(1).
+    base_row!("Str", |_interp, target, _args, _named| {
+        if is_type_object(target) {
+            return Some(Ok(Value::str(String::new())));
+        }
+        Some(Ok(Value::str(target.to_string_value())))
+    }),
+    base_row!("raku", |interp, target, args, _named| {
+        if is_type_object(target) {
+            return Some(Ok(Value::str(type_object_name(target))));
+        }
+        interp.default_instance_repr(target, "raku", &args[1..])
+    }),
     row!("BUILDALL"),
     row!("POPULATE"),
     MethodRow {
