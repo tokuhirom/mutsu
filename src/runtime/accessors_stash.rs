@@ -696,6 +696,11 @@ impl Interpreter {
             "e" | "\u{1D452}" => return Value::num(std::f64::consts::E),
             "pi" => return Value::num(std::f64::consts::PI),
             "tau" | "\u{03C4}" => return Value::num(std::f64::consts::TAU),
+            // Core terms that are not constants in the env: `::('True')`.
+            "True" => return Value::truth(true),
+            "False" => return Value::truth(false),
+            "Inf" => return Value::num(f64::INFINITY),
+            "NaN" => return Value::num(f64::NAN),
             _ => {}
         }
         if !self.types.method_class_stack.is_empty() && self.module.loaded_modules.contains(name) {
