@@ -2234,8 +2234,7 @@ impl Compiler {
                         && let Some(arg) = trait_arg
                     {
                         self.compile_expr(arg);
-                        let trait_name_idx =
-                            self.code.add_constant(Value::str(trait_name.clone()));
+                        let trait_name_idx = self.code.add_constant(Value::str(trait_name.clone()));
                         self.code.emit(OpCode::ApplyVarTrait {
                             name_idx,
                             trait_name_idx,

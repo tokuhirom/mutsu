@@ -380,7 +380,9 @@ pub(super) fn dispatch(
                     }
                     ValueView::Slip(items) if items.is_empty() => false,
                     ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
-                    ValueView::VarRef { value, .. } => crate::runtime::types::value_is_defined(value),
+                    ValueView::VarRef { value, .. } => {
+                        crate::runtime::types::value_is_defined(value)
+                    }
                     _ => true,
                 }))))
             }
