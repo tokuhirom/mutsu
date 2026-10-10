@@ -25,6 +25,7 @@ pub(crate) mod render_names;
 mod sampling;
 pub(crate) mod seq;
 pub(crate) mod subscript;
+mod terminals;
 mod truth;
 
 /// Every family of this group.
@@ -60,5 +61,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     sampling::ROLL_ROWS,
     sampling::PICKPAIRS_ROWS,
     seq::ROWS,
+    terminals::ROWS,
     truth::ROWS,
 ];

@@ -9,10 +9,18 @@ fn counted_head_tail_rows_resolve_for_every_plain_shape() {
             .into_iter()
             .filter(|shape| shape.inherits())
         {
+            // Rakudo declares `head` and `tail` on `List` (and `head` on `Map`), so the
+            // rows of those owners answer first; every other shape reaches `Any`'s.
+            let owner = match shape {
+                DispatchShape::Array if name == "tail" => "Array",
+                DispatchShape::List | DispatchShape::Array => "List",
+                DispatchShape::Hash if name == "head" => "Map",
+                _ => "Any",
+            };
             assert_eq!(
                 owner_of(shape, Symbol::intern(name), 1),
-                "Any",
-                "Any.{name} should resolve for {shape:?}"
+                owner,
+                "{owner}.{name} should resolve for {shape:?}"
             );
         }
     }
@@ -34,15 +42,17 @@ fn count_rows_reach_their_subtypes() {
 fn aggregate_rows_resolve_to_the_rakudo_owners() {
     for name in ["minmax", "sum"] {
         let sym = Symbol::intern(name);
+        // `List.sum` is a row of its own (Rakudo declares it there); `minmax` is `Any`'s.
+        let owner = if name == "sum" { "List" } else { "Any" };
         assert_eq!(
             owner_of(DispatchShape::List, sym, 0),
-            "Any",
-            "Any.{name} should resolve for List"
+            owner,
+            "{owner}.{name} should resolve for List"
         );
         assert_eq!(
             owner_of(DispatchShape::Array, sym, 0),
-            "Any",
-            "Any.{name} should resolve for Array"
+            owner,
+            "{owner}.{name} should resolve for Array"
         );
         assert!(
             lookup(DispatchShape::Hash, sym, 0).is_some_and(|row| row.owner == "Any"),

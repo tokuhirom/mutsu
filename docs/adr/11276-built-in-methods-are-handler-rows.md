@@ -2334,3 +2334,17 @@ has no shape for (a `Supply`, a user instance), as `collate` does.
   and the user-`iterator` case.
 - **Left on #12388.** `Any.splice` (a `Handler::Mut` question, it is `Array.splice`'s ancestor), and the `callsame`/`nextsame` out of a user
   override into these rows, which is slice 4's `resolve_sequence` work (#12387).
+
+### 9.61 The list terminals on their declaring owners (2026-10-10)
+
+`refactor/11276-collection-tail-rows` (issue #12389, item 4). Eight rows join `collections::terminals`: `List.head` and `Map.head` (counted),
+`List.tail` and `Array.tail` (counted), `List.sum`, and `flat` (with `:hammer`) on `Map` and `Range`. Each shares the handler `Any`, `List`
+or `Seq` already used, so a receiver the handler declines (a lazy list, a hash that reads as pairs) takes the cascade as before. A
+differential probe over nine receiver kinds and fourteen terminals answers the same before and after.
+
+- The tests that said `Any.head` / `Any.tail` / `Any.sum` answer for `List` and `Array` now say the declaring owner does
+  (`List`, and `Array` for `tail`, `Map` for `Hash`'s `head`).
+- **`Any.join` is not registered.** The shared `join` handler declines a `Hash` receiver, and `every_row_is_reached_and_answers` rightly
+  forbids a row that does not answer for a shape that reaches it. `Hash.join` joins the pairs through the cascade; it needs its own handler first.
+- **Left on #12389**: `Any.batch`/`hash`/`list`/`serial` (the handlers are shape-specific), `List.chrs`, `List.AT-POS`/`Array.AT-POS` (`positional.rs`
+  explains why they have no row), `Map.AT-KEY`/`Str`, `clone`, `Junction`/`Nil` and `Map.gist`.

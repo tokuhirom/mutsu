@@ -37,7 +37,7 @@ pub(super) static FLAT_ROWS: &[MethodRow] = &[
     flat_row("Seq"),
 ];
 
-const fn flat_row(owner: &'static str) -> MethodRow {
+pub(super) const fn flat_row(owner: &'static str) -> MethodRow {
     MethodRow {
         owner,
         name: "flat",
