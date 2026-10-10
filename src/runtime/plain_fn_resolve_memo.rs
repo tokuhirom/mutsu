@@ -22,15 +22,16 @@
 //!
 //! ## What is (and is not) recorded
 //!
-//! - A compunit-private routine is recorded only when it came from
-//!   `current_unit` itself. [`Interpreter::unit_private_routine`] falls back
-//!   to the unit of the executing *frame* when `current_unit` has no such
-//!   routine; that answer depends on the frame, which the key does not carry,
-//!   so it is never recorded.
-//! - A package-searched plain routine is recorded only when the name is not
-//!   compunit-private anywhere. Otherwise the same key could be asked again
-//!   from a frame whose unit *does* hold a private routine of that name, and
-//!   the frame-dependent fallback above would have to win.
+//! - A compunit-private routine from `current_unit` is always recorded.
+//!   [`Interpreter::unit_private_routine`] falls back to the unit of the
+//!   executing *frame* when `current_unit` has no such routine; that answer
+//!   is recorded under the executing units the key carries for exactly this
+//!   kind of name.
+//! - A compunit-scoped name carries the executing units in its key, so the
+//!   frame-dependent fallback and a package-searched routine are recorded for
+//!   it too. A package-searched one is recorded only when its visibility does
+//!   not rest on the frame env or a block-scoped import
+//!   ([`Interpreter::module_routine_visible_statically`]).
 //! - Negative answers are never recorded; the multi walk after the plain
 //!   lookup needs the arguments.
 //!
@@ -43,8 +44,24 @@
 use super::*;
 
 /// `(name, current unit, current package, innermost lexical package, proto
-/// generation)`, tagged per entry with `fn_resolve_gen`.
-pub(crate) type PlainFnResolveKey = (Symbol, Symbol, Symbol, Option<Symbol>, u64);
+/// generation, executing units)`, tagged per entry with `fn_resolve_gen`.
+///
+/// The executing units -- [`Interpreter::executing_unit_sym`] and its
+/// module-load variant -- are recorded only for a compunit-scoped name
+/// ([`Interpreter::is_unit_scoped_routine_sym`]), the one kind whose answer
+/// can also depend on the frame that runs the call: the unit-private
+/// fallback and the merge check of an exported routine both read them. With
+/// them in the key, such a name is memoized like any other (ADR-12529
+/// phase 2); without them it never was, and a module's own routines paid the
+/// whole resolution walk on every call.
+pub(crate) type PlainFnResolveKey = (
+    Symbol,
+    Symbol,
+    Symbol,
+    Option<Symbol>,
+    u64,
+    Option<(Symbol, Symbol)>,
+);
 
 impl Interpreter {
     /// The key this call would be memoized under, or `None` when the name can
@@ -70,6 +87,12 @@ impl Interpreter {
         {
             return None;
         }
+        let executing_units = self.is_unit_scoped_routine_sym(name_sym).then(|| {
+            (
+                self.executing_unit_sym(),
+                self.executing_unit_sym_for_module_load(),
+            )
+        });
         Some((
             name_sym,
             self.current_unit,
@@ -78,6 +101,7 @@ impl Interpreter {
                 .last()
                 .and_then(|frame| frame.lexical_package),
             self.registry().proto_generation(),
+            executing_units,
         ))
     }
 

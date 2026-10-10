@@ -551,8 +551,14 @@ impl Interpreter {
             }
             return Ok(Some(def));
         }
-        // The frame-dependent fallback of the same lookup; not memoized.
+        // The frame-dependent fallback of the same lookup, recorded under the
+        // executing units the key carries for a compunit-scoped name.
         if let Some(def) = self.unit_private_routine(name) {
+            if let Some(key) = plain_key
+                && key.5.is_some()
+            {
+                self.plain_fn_resolve_memo_insert(key, &def);
+            }
             return Ok(Some(def));
         }
         // Bare name: search the current package, then each enclosing package,
@@ -583,13 +589,17 @@ impl Interpreter {
         // apply" case is unaffected in the common (no collision) case.
         if !self.has_multi_candidates(name) {
             for pkg in &search_pkgs {
-                if let Some(def) = dispatch_key::qualified_lookup(pkg, name)
+                if let Some((qkey, def)) = dispatch_key::qualified_lookup(pkg, name)
                     .filter(|&key| self.module_routine_visible_here(key))
-                    .and_then(|key| self.registry().functions.get(&key).cloned())
-                    .and_then(|def| self.visible_operator_def(name, def))
+                    .and_then(|key| Some((key, self.registry().functions.get(&key).cloned()?)))
+                    .and_then(|(key, def)| Some((key, self.visible_operator_def(name, def)?)))
                 {
+                    // A compunit-scoped name's key carries the executing
+                    // units; its visibility may still rest on the frame env
+                    // or a block-scoped import, which no key component
+                    // names, so only a statically visible one is recorded.
                     if let Some(key) = plain_key
-                        && !self.is_unit_scoped_routine_name(name)
+                        && (key.5.is_none() || self.module_routine_visible_statically(qkey))
                     {
                         self.plain_fn_resolve_memo_insert(key, &def);
                     }

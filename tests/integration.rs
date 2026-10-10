@@ -55,6 +55,7 @@ mod regex_subject_materialized_once;
 mod registry_cow_not_paid_per_supply_registration;
 mod repl_routine;
 mod routine_package_switch_budget;
+mod routine_resolution_memo;
 mod stash_bind_key;
 mod statement_call_resolves_once;
 mod static_operator_intern_budget;

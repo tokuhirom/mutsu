@@ -23,8 +23,47 @@ impl Interpreter {
 
     /// Call a compiled method body (MethodDef with compiled_code).
     /// Mirrors `Interpreter::run_resolved_method_celled` but executes bytecode.
+    ///
+    /// The body runs in its own compilation unit, as a sub body does
+    /// (`enter_compilation_unit`): a routine name it calls is resolved in the
+    /// compunit the method was written in, not in whichever unit the caller
+    /// happened to be running (ADR-12529 phase 2). Without it a method's call
+    /// to a routine its module imported or declared resolved through the
+    /// frame-anchored fallback on every call, which no resolution memo can
+    /// hold.
+    // Cost: O(1) to enter and leave the unit, plus the body.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn call_compiled_method(
+        &mut self,
+        receiver_class_name: &str,
+        owner_sym: Symbol,
+        method_sym: Symbol,
+        method_def: &crate::runtime::MethodDef,
+        cc: &CompiledCode,
+        attributes: CallAttrs<'_>,
+        args: Vec<Value>,
+        invocant: Option<Value>,
+        compiled_fns: &CompiledFns,
+    ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        let unit = self.unit_of_source_sym(cc.source_file);
+        let saved_unit = std::mem::replace(&mut self.current_unit, unit);
+        let result = self.call_compiled_method_in_unit(
+            receiver_class_name,
+            owner_sym,
+            method_sym,
+            method_def,
+            cc,
+            attributes,
+            args,
+            invocant,
+            compiled_fns,
+        );
+        self.current_unit = saved_unit;
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn call_compiled_method_in_unit(
         &mut self,
         receiver_class_name: &str,
         owner_sym: Symbol,
@@ -1776,8 +1815,41 @@ impl Interpreter {
         }
     }
 
+    /// The fast twin of [`Self::call_compiled_method`]; it enters the
+    /// method's compilation unit the same way.
+    // Cost: O(1) to enter and leave the unit, plus the body.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn call_compiled_method_fast(
+        &mut self,
+        receiver_class_name: &str,
+        owner_sym: Symbol,
+        method_sym: Symbol,
+        method_def: &crate::runtime::MethodDef,
+        cc: &CompiledCode,
+        args: Vec<Value>,
+        base: Value,
+        compiled_fns: &CompiledFns,
+        can_skip_merge: bool,
+    ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        let unit = self.unit_of_source_sym(cc.source_file);
+        let saved_unit = std::mem::replace(&mut self.current_unit, unit);
+        let result = self.call_compiled_method_fast_in_unit(
+            receiver_class_name,
+            owner_sym,
+            method_sym,
+            method_def,
+            cc,
+            args,
+            base,
+            compiled_fns,
+            can_skip_merge,
+        );
+        self.current_unit = saved_unit;
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn call_compiled_method_fast_in_unit(
         &mut self,
         receiver_class_name: &str,
         owner_sym: Symbol,
