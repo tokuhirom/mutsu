@@ -552,8 +552,13 @@ impl Interpreter {
         // A wrapped method of a built-in class whose wrapper takes the invocant
         // `is rw` (#12506): hand the variable's container to the wrapper.
         if matches!(modifier, None | Some("?"))
-            && let Some(result) =
-                self.try_builtin_wrap_with_rw_invocant(code, target_name, &target, method_sym, &args)
+            && let Some(result) = self.try_builtin_wrap_with_rw_invocant(
+                code,
+                target_name,
+                &target,
+                method_sym,
+                &args,
+            )
         {
             self.stack.push(result?);
             return Ok(());
