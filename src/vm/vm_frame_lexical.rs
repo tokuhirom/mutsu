@@ -301,6 +301,10 @@ impl Interpreter {
         let cf = &target.cf;
         let name_sym = target.name;
         let name = name_sym.as_str();
+        // The caller may be a closure whose table lacks the nested subs this
+        // routine declares (`$lock.protect: { parse(...) }`): the routine's
+        // body resolves its own `RegisterDecl`s from its own table.
+        let compiled_fns = cf.compiled_fns.as_deref().unwrap_or(compiled_fns);
         if let Some(threaded) = self.autothread_frame_lexical_call(
             code,
             target,
