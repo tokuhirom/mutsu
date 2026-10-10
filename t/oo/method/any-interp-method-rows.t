@@ -7,7 +7,7 @@ use Test;
 # interpreter rows). The table sees them, the resolver can reach them as native
 # candidates, and each handler is the one implementation the cascade's arm calls.
 
-plan 36;
+plan 38;
 
 my @a = 1..6;
 
@@ -46,6 +46,11 @@ is-deeply (1..3).map(* * 3).list, (3, 6, 9), 'map over a Range';
 is-deeply (a => 1, b => 2).map({ .key }).sort.list, <a b>, 'map over Pairs';
 is-deeply %(a => 1).grep(*.value == 1).list, (a => 1,), 'grep over a Hash';
 is-deeply <a b c>.Seq.skip(1).list, <b c>, 'skip over a Seq';
+
+# --- a list held in a scalar is the list, not one item -------------------------------
+my $held = <a b c>;
+is-deeply $held.skip.list, <b c>, 'skip on a scalar-held list';
+is-deeply $held.rotor(2, :partial).list, (('a', 'b'), ('c',)), 'rotor on a scalar-held list';
 
 # --- laziness and consumption keep their behaviour ----------------------------------
 is (1..Inf).map(* * 2).head(3).list, (2, 4, 6), 'a lazy source stays lazy through map';
