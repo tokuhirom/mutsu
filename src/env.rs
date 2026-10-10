@@ -2157,18 +2157,14 @@ impl Env {
             );
             return None;
         }
+        // Debug builds only: in a release build a call here, however cold,
+        // cost +0.4% Ir on a closure-heavy parse by changing how this hottest
+        // lookup is inlined. The counter is a VM event, identical in both
+        // builds, so the debug build is where it is read.
+        #[cfg(debug_assertions)]
         if stats::enabled() {
-            // A tail call, so the common path carries no call frame for it.
-            return self.get_sym_walk_counted(key);
+            stats::record_chain_walk(self, key);
         }
-        self.get_sym_walk(key)
-    }
-
-    /// [`Self::get_sym_walk`] that also records the walk for `MUTSU_VM_STATS`.
-    #[cold]
-    #[inline(never)]
-    fn get_sym_walk_counted(&self, key: Symbol) -> Option<&Value> {
-        stats::record_chain_walk(self, key);
         self.get_sym_walk(key)
     }
 
@@ -2280,18 +2276,11 @@ impl Env {
             );
             return false;
         }
+        // Debug builds only — see `get_sym`.
+        #[cfg(debug_assertions)]
         if stats::enabled() {
-            // A tail call — see `get_sym`.
-            return self.contains_key_sym_walk_counted(key);
+            stats::record_chain_walk(self, key);
         }
-        self.contains_key_sym_walk(key)
-    }
-
-    /// [`Self::contains_key_sym_walk`] that also records the walk.
-    #[cold]
-    #[inline(never)]
-    fn contains_key_sym_walk_counted(&self, key: Symbol) -> bool {
-        stats::record_chain_walk(self, key);
         self.contains_key_sym_walk(key)
     }
 

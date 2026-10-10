@@ -17,8 +17,9 @@ use std::process::Command;
 
 struct Counts {
     scoped_overlays: u64,
-    chain_walks: u64,
-    chain_hops: u64,
+    /// `None` from a release binary, which does not count walks.
+    chain_walks: Option<u64>,
+    chain_hops: Option<u64>,
     captures: u64,
     capture_own_entries: u64,
 }
@@ -36,17 +37,25 @@ fn run(src: &str) -> (String, Counts) {
         .lines()
         .find(|l| l.contains("] name-resolution:"))
         .unwrap_or_else(|| panic!("no name-resolution line in: {stderr}"));
-    let field = |name: &str| -> u64 {
+    let raw = |name: &str| -> &str {
         let key = format!("{name}=");
         line.split_whitespace()
             .find_map(|w| w.strip_prefix(key.as_str()))
-            .and_then(|v| v.parse().ok())
             .unwrap_or_else(|| panic!("no `{name}` in: {line}"))
+    };
+    let field = |name: &str| -> u64 {
+        raw(name)
+            .parse()
+            .unwrap_or_else(|_| panic!("`{name}` is not a count in: {line}"))
+    };
+    let walk_field = |name: &str| -> Option<u64> {
+        let v = raw(name);
+        (v != "n/a").then(|| field(name))
     };
     let counts = Counts {
         scoped_overlays: field("scoped_overlays"),
-        chain_walks: field("chain_walks"),
-        chain_hops: field("chain_hops"),
+        chain_walks: walk_field("chain_walks"),
+        chain_hops: walk_field("chain_hops"),
         captures: field("captures"),
         capture_own_entries: field("capture_own_entries"),
     };
@@ -87,9 +96,25 @@ fn counters_track_calls_and_closure_creations() {
         c20.scoped_overlays - c10.scoped_overlays >= 20,
         "every call's overlay must be counted"
     );
-    // The loop resolves names by walking the caller chain.
-    assert!(c20.chain_walks > c10.chain_walks, "chain walks must be counted");
-    assert!(c20.chain_hops >= c10.chain_hops, "hops never decrease");
+    // The loop resolves names by walking the caller chain. Only a debug
+    // binary counts walks (`Env::get_sym` says why); a release one prints
+    // `n/a`, and the test binary is built in the same profile.
+    match (
+        c10.chain_walks,
+        c20.chain_walks,
+        c10.chain_hops,
+        c20.chain_hops,
+    ) {
+        (Some(w10), Some(w20), Some(h10), Some(h20)) => {
+            assert!(cfg!(debug_assertions), "a release binary counted walks");
+            assert!(w20 > w10, "chain walks must be counted");
+            assert!(h20 >= h10, "hops never decrease");
+        }
+        (None, None, None, None) => {
+            assert!(!cfg!(debug_assertions), "a debug binary must count walks");
+        }
+        other => panic!("walk counters half present: {other:?}"),
+    }
 }
 
 #[test]

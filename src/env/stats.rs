@@ -58,9 +58,11 @@ pub(crate) fn record_scoped_overlay() {
 
 /// Record one by-name lookup that missed the running frame's own overlay and
 /// walks the parent chain, with the number of parent tiers it visits before it
-/// answers. Only called when [`enabled`]; the hop count re-walks the chain
-/// here so the lookup itself carries no counter.
+/// answers. Only called when [`enabled`], and only in a debug build (see
+/// `Env::get_sym`); the hop count re-walks the chain here so the lookup itself
+/// carries no counter.
 // Cost: O(d), d = chain depth; only with MUTSU_VM_STATS set.
+#[cfg(debug_assertions)]
 #[cold]
 pub(crate) fn record_chain_walk(env: &super::Env, key: Symbol) {
     let mut hops = 0u64;
@@ -93,8 +95,9 @@ pub(crate) fn record_capture(own_entries: usize, layers: usize) {
 /// The by-name resolution counters, as `vm_stats::dump` prints them.
 pub(crate) struct NameResolutionCounts {
     pub(crate) scoped_overlays: u64,
-    pub(crate) chain_walks: u64,
-    pub(crate) chain_hops: u64,
+    /// `None` in a release build, which does not count walks.
+    pub(crate) chain_walks: Option<u64>,
+    pub(crate) chain_hops: Option<u64>,
     pub(crate) captures: u64,
     pub(crate) capture_own_entries: u64,
     pub(crate) capture_layers: u64,
@@ -104,8 +107,8 @@ pub(crate) struct NameResolutionCounts {
 pub(crate) fn name_resolution_snapshot() -> NameResolutionCounts {
     NameResolutionCounts {
         scoped_overlays: SCOPED_OVERLAYS.load(Ordering::Relaxed),
-        chain_walks: CHAIN_WALKS.load(Ordering::Relaxed),
-        chain_hops: CHAIN_HOPS.load(Ordering::Relaxed),
+        chain_walks: cfg!(debug_assertions).then(|| CHAIN_WALKS.load(Ordering::Relaxed)),
+        chain_hops: cfg!(debug_assertions).then(|| CHAIN_HOPS.load(Ordering::Relaxed)),
         captures: CAPTURES.load(Ordering::Relaxed),
         capture_own_entries: CAPTURE_OWN_ENTRIES.load(Ordering::Relaxed),
         capture_layers: CAPTURE_LAYERS.load(Ordering::Relaxed),
