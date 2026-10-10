@@ -33,8 +33,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Exception", "backtrace", backtrace),
     row!("Exception", "resume", resume),
     row!("Exception", "throw", throw),
-    row!("X::AdHoc", "throw", throw),
-    row!("X::TypeCheck::Assignment", "throw", throw),
     row!("X::AdHoc", "message", message),
     row!("X::AdHoc", "payload", payload),
     row!("CX::Warn", "message", message),
