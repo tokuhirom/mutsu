@@ -176,7 +176,22 @@ pub(super) fn lower_whenever(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         });
     }
     let (params, param_defs, body) = match lower_expr(block)? {
-        Expr::Lambda { param, body, .. } => (vec![param], Vec::new(), body),
+        Expr::Lambda {
+            param,
+            body,
+            param_sigilless,
+            ..
+        } => {
+            let defs = if param_sigilless {
+                let mut def = super::lower::positional_param(&param);
+                def.sigilless = true;
+                def.mark_block_param();
+                vec![def]
+            } else {
+                Vec::new()
+            };
+            (vec![param], defs, body)
+        }
         Expr::AnonSubParams {
             params,
             param_defs,

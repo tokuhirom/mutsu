@@ -41,6 +41,8 @@ mod name_parts;
 mod named_param;
 mod origin;
 mod package_header;
+mod parameter_destructure;
+mod parameter_signature;
 mod phaser_condition;
 mod placeholder;
 mod postfix_grouping;

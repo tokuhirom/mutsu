@@ -60,7 +60,11 @@ fn flatten(pd: &ParamDef) -> Result<Flat<'_>, RuntimeError> {
     let target = cur;
     let mut names = Vec::with_capacity(aliases.len() + 1);
     if target.named {
-        names.push(split_sigil(&target.name).1.to_string());
+        names.push(if target.name == super::convert::ANONYMOUS_SUBSIGNATURE {
+            String::new()
+        } else {
+            split_sigil(&target.name).1.to_string()
+        });
     }
     names.extend(aliases.into_iter().rev());
     let mut flat = Flat {
@@ -107,7 +111,12 @@ fn inner_level_is_plain(level: &ParamDef, is_target: bool) -> bool {
         && level.shape_constraints.is_none()
         && level.code_signature.is_none()
         && level.outer_sub_signature.is_none()
-        && (!is_target || level.sub_signature.is_none())
+        && (!is_target
+            || level.sub_signature.is_none()
+            || matches!(
+                level.name.as_str(),
+                "@" | super::convert::ANONYMOUS_SUBSIGNATURE
+            ))
 }
 
 fn set_once<'a, T: ?Sized>(slot: &mut Option<&'a T>, value: &'a T) -> Result<(), RuntimeError> {
@@ -129,11 +138,17 @@ pub(super) fn named_parameter(
         return Err(unsupported("named alias without a name"));
     }
     let (sigil, desigil) = split_sigil(&flat.target.name);
+    let anonymous = matches!(
+        flat.target.name.as_str(),
+        "@" | super::convert::ANONYMOUS_SUBSIGNATURE
+    ) && flat.target.sub_signature.is_some();
     let mut fields = Vec::with_capacity(7);
     match flat.type_constraint {
         Some(t) => fields.push(node_field(Some("type"), build_type_node(t)?)),
         None => {
-            if let Some(implicit) = implicit_parameter_type(sigil, type_setting) {
+            if !(anonymous && (flat.target.name == "@" || pd.named && !pd.named_alias))
+                && let Some(implicit) = implicit_parameter_type(sigil, type_setting)
+            {
                 fields.push(node_field(Some("type"), implicit));
             }
         }
@@ -145,16 +160,18 @@ pub(super) fn named_parameter(
     if let Some(name) = type_capture_name(pd) {
         fields.push(type_captures_field(type_capture_node(name)?));
     }
-    fields.push(node_field(
-        Some("target"),
-        RakuAstNode {
-            class: RakuAstClass::ParameterTargetVar,
-            fields: vec![super::convert::leaf_field(
-                Some("name"),
-                Value::str(format!("{sigil}{desigil}")),
-            )],
-        },
-    ));
+    if !anonymous {
+        fields.push(node_field(
+            Some("target"),
+            RakuAstNode {
+                class: RakuAstClass::ParameterTargetVar,
+                fields: vec![super::convert::leaf_field(
+                    Some("name"),
+                    Value::str(format!("{sigil}{desigil}")),
+                )],
+            },
+        ));
+    }
     // A named parameter is optional unless marked `!`; rakudo writes the
     // field only when the source spelled a marker.
     match flat.default {
@@ -177,11 +194,14 @@ pub(super) fn named_parameter(
 /// The sub-signature `pd` destructures into, if any: an alias chain's
 /// `sub_signature` is the chain itself, not a destructuring.
 pub(super) fn destructuring_sub_signature(pd: &ParamDef) -> Option<&[ParamDef]> {
-    if pd.named && pd.named_alias {
-        None
-    } else {
-        pd.sub_signature.as_deref()
+    let mut target = pd;
+    while target.named && target.named_alias {
+        let [inner] = target.sub_signature.as_deref()? else {
+            return None;
+        };
+        target = inner;
     }
+    target.sub_signature.as_deref()
 }
 
 /// Rebuild the parser's alias chain for a lowered named parameter. `def` is
@@ -192,6 +212,10 @@ pub(super) fn wrap_aliases(
     names: &[String],
     owner: &RakuAstNode,
 ) -> Result<ParamDef, RuntimeError> {
+    if is_anonymous_named(owner) {
+        def.named = true;
+        return Ok(def);
+    }
     let target_key = def.name.trim_start_matches(['@', '%', '&']).to_string();
     let target_is_named = names.first() == Some(&target_key);
     let aliases = if target_is_named { &names[1..] } else { names };
@@ -202,10 +226,11 @@ pub(super) fn wrap_aliases(
         }
         return Ok(def);
     };
-    if def.sigilless || def.sub_signature.is_some() {
+    if def.sigilless {
         return Err(super::lower::unsupported(owner));
     }
     let mut inner = bare_level(&def.name, target_is_named, &def);
+    inner.sub_signature = def.sub_signature.take();
     for alias in inner_aliases {
         let mut level = bare_level(alias, true, &def);
         level.named_alias = true;
@@ -216,6 +241,16 @@ pub(super) fn wrap_aliases(
     def.named_alias = true;
     def.sub_signature = Some(vec![inner]);
     Ok(def)
+}
+
+/// `:(...)` is a named parameter with an empty name, without an alias level.
+// Cost: O(f), f = fields in the parameter.
+pub(super) fn is_anonymous_named(node: &RakuAstNode) -> bool {
+    node.fields.iter().any(|field| {
+        field.name == Some("names")
+            && matches!(&field.value, RakuAstFieldValue::List(names)
+            if names.len() == 1 && names[0].as_str().is_some_and(str::is_empty))
+    }) && !node.fields.iter().any(|field| field.name == Some("target"))
 }
 
 /// An inner level of an alias chain: no marker of its own, optional (the
