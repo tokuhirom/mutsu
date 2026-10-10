@@ -381,3 +381,47 @@ maintainer decision) has the same character: names instead of bindings as
 identity. Phase 3 makes keying that store by binding identity natural, but
 this ADR does not reverse the icebox decision, and does not commit to
 re-keying the store.
+
+## 8. Size estimate
+
+**About 30 slices (range 23-37), where a slice is one merged PR that passes
+the gate.** Phase 3 carries most of the uncertainty. The estimate was made
+on 2026-10-10 against `main` @ `595ec6eb`, from the size of what each phase
+touches and from how comparable campaigns went. Re-estimate after phase 0
+and again after the first phase-3 slice, and record the new figure here.
+
+| phase | slices | what sets the number |
+| --- | ---: | --- |
+| 0. pins and counters | 1-2 | One test file per §2.1 row, plus the `MUTSU_VM_STATS` counters |
+| 1. program names leave the frame | 4-6 | #7817 took 7 slices to cover a loaded module's top level. The rest is that issue's three open items, plus the same move for the **main program's own** declarations (types, routine markers, `?CLASS`/`=pod`/`?FILE`/`Any`), which #7817 never covered. `__mutsu_callable_id` and the state-scope ids are read in 63 files |
+| 2. routine names bind lexically | 6-10 | 107 `has_multi_function`/`has_multi_candidates` call sites, 45 `resolve_function*`, 46 direct `functions` registry lookups and 98 `fn_resolve_gen` references. Operators are routines too, and they also have per-scope visibility (#9944). Order: the dispatcher value, then plain subs, then multis plus the call-site cache (#10109), then imports and `my sub` scopes (#9170's `ImportScope`/`RoutineScope` restore, #10419), then `EVAL`-added candidates and `.wrap` |
+| 3. the static link | 10-16 | `Env::scoped_child` is installed at 30 sites in 12 files, over about six call paths (named sub, closure, fast/light, typed light, method, `call_sub_value`). The return merge and writeback have 32 sites. The topic, match and error names have ~700 references in `src/vm` and `src/runtime`. The reflective consumers (`CALLER::`/`OUTER::`/`DYNAMIC::`/`LEXICAL::`, `EVAL`) span 74 files. Thread cloning has 99 references |
+| 4. retire the machinery | 2-3 | `CaptureView`, `layered_capture`, the capture fallback and the flatten family span 24 files, with 53 references to the flatten/overlay-depth helpers alone; `src/env_capture_view.rs` (399 lines) and most of `src/env_tier.rs` (654) go. Deletion only, once phase 3 leaves them unreachable |
+
+### Why phase 3 has the widest range
+
+Phase 3 flips where names resolve, and ADR-0039's slice 2, the closest
+precedent, needed **four attempts**. Three were withdrawn after the gate or
+the battery run named a consumer that depended on the old resolution
+(ADR-0039 §§9-13). Expect the same here. The range assumes:
+
+- **One call path per slice.** Closures first: that is #12519, the
+  narrowest, and it unblocks #12478. Then named subs, methods, and the
+  fast/light paths. The reflective name view (§2.3) lands with the first
+  path that needs it.
+- **The topic/match/error move as its own 3-4 slices** inside the phase,
+  one per family (`$_`, `$/` with regex captures, `$!` with
+  `CATCH`/`try`). This is the largest single unknown (§5).
+- **Two to three withdrawn or re-landed attempts.** That margin is the
+  difference between 10 and 16.
+
+### What the estimate does not cover
+
+- **#12520's ratio after the structure is in place.** §4 bounds the gain at
+  ~2.5x against a 2.45x target. Closing that issue may still need a slice
+  or two of ordinary tuning once phases 1-4 have landed.
+- **Breakages in the ecosystem ledger** that only phase 3's flip reveals.
+  They are fixed at their cause (§5) and counted against whichever phase
+  surfaced them, so a large batch moves the phase-3 figure, not this table.
+- **#12526's binder half.** It is independent of this ADR and can land
+  first.
