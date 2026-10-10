@@ -2300,3 +2300,15 @@ Left on #12390: `Code.gist`/`raku` (ADR-12523), `Backtrace`'s ancestors, `Date.I
 the invocant's numeric type in the remainders ([#12557](https://github.com/tokuhirom/mutsu/issues/12557)); a row would have to reproduce
 the wrong answer or fix it first. Left on #12390: `Backtrace`'s ancestor answers, `Match`'s seven pure rows, `RakuAST::*`, `Code.Str`
 (ADR-12523).
+
+### 9.59 Slice 3D: `Match`'s `Int`, `Num`, `Numeric`, `chars`, `not`, `WHICH` and `replace-with` are rows (2026-10-10)
+
+`refactor/12390-match-rows`. The last seven declared-and-unregistered `Match` names join the pure rows of §9.18. `Int`, `Num`, `Numeric`
+and `chars` are what `Cool` gives any value, applied to `Match.Str`, so each hands the matched text to the string's own method (the
+answers, including the `Failure` for non-numeric text, are the string's); `not` negates `Match.Bool`; `WHICH` is the match object's
+identity; `replace-with` moves from `dispatch_1arg.rs` into `regex_match::replace_with`, which the cascade arm still calls. Behaviour is
+unchanged; the inventory for `Match` now shows no declared row unregistered.
+
+With this slice every declared row of the objects group and of `Date`/`DateTime`/`Instant`/`Duration`/`Match` is registered or named in an
+ADR with its reason (`Code.Str`, `Instant.polymod`/`Duration.polymod`, `Mu.WHAT`/`HOW`/`WHY`/`DEFINITE`/`Int`/`Numeric`), which is the
+close condition of #12390 apart from `Backtrace`'s inherited answers and `RakuAST::*` (the oracle snapshot lists none of its owners).

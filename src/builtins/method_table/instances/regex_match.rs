@@ -49,6 +49,23 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("chunks", chunks_row),
     row!("gist", gist_row),
     row!("raku", raku_row),
+    // The numeric and text views of the matched text: what `Cool` gives any
+    // value, applied to `Match.Str`, so the answers are the string's own
+    // (`"42".Int`, a `Failure` for `"b".Int`).
+    row!("Int", int_row),
+    row!("Num", num_row),
+    row!("Numeric", numeric_row),
+    row!("chars", chars_row),
+    row!("not", not_row),
+    row!("WHICH", which_row),
+    MethodRow {
+        owner: "Match",
+        name: "replace-with",
+        arity: 1,
+        handler: Handler::Narrow(replace_with_row),
+        flags: RowFlags::ANY_ARGS,
+        named: &[],
+    },
 ];
 
 /// `Match.from`: the offset the match starts at, in graphemes.
@@ -233,4 +250,84 @@ attr_row_fns! {
     chunks_row => chunks,
     gist_row => gist,
     raku_row => raku,
+}
+
+/// A zero-argument method of the matched text, answered by the string's own.
+// Cost: O(k) plus the string's method, k = chars matched.
+fn of_matched_text(target: &Value, method: &str) -> Result<Value, RuntimeError> {
+    let text = str_value(target);
+    crate::builtins::native_method_0arg(&text, crate::symbol::Symbol::intern(method))
+        .unwrap_or_else(|| {
+            Err(RuntimeError::new(format!(
+                "No such method '{method}' for invocant of type 'Match'"
+            )))
+        })
+}
+
+/// `Match.Int`: the matched text as an `Int`.
+// Cost: O(k), k = chars matched.
+fn int_row(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    of_matched_text(target, "Int")
+}
+
+/// `Match.Num`: the matched text as a `Num`.
+// Cost: O(k), k = chars matched.
+fn num_row(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    of_matched_text(target, "Num")
+}
+
+/// `Match.Numeric`: the matched text as a number.
+// Cost: O(k), k = chars matched.
+fn numeric_row(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    of_matched_text(target, "Numeric")
+}
+
+/// `Match.chars`: the length of the matched text, in graphemes.
+// Cost: O(k), k = chars matched.
+fn chars_row(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    of_matched_text(target, "chars")
+}
+
+/// `Match.not`: whether the match failed.
+// Cost: O(1).
+fn not_row(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(Value::truth(!truthiness(target).truthy()))
+}
+
+/// `Match.WHICH`: the identity of the match object.
+// Cost: O(1).
+fn which_row(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(crate::builtins::methods_0arg::which::which_of(target))
+}
+
+/// `Match.replace-with($replacement)`: the subject with the matched part
+/// replaced, `Nil` for a failed match.
+// Cost: O(n + r), n = subject chars copied and r = replacement chars.
+pub(crate) fn replace_with(target: &Value, replacement: &Value) -> Option<Value> {
+    if target.match_is_failed() {
+        return Some(Value::NIL);
+    }
+    let before = target.match_side_text(true).or_else(|| {
+        let orig = target.match_orig()?.to_string_value();
+        let from = target.match_from()?.max(0) as usize;
+        Some(orig.chars().take(from).collect())
+    })?;
+    let after = target.match_side_text(false).or_else(|| {
+        let orig = target.match_orig()?.to_string_value();
+        let to = target.match_to()?.max(0) as usize;
+        Some(orig.chars().skip(to).collect())
+    })?;
+    Some(Value::str(format!(
+        "{}{}{}",
+        before,
+        replacement.to_string_value(),
+        after
+    )))
+}
+
+fn replace_with_row(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let [replacement] = args else {
+        return None;
+    };
+    replace_with(target, replacement).map(Ok)
 }
