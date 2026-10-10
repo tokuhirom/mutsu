@@ -1059,6 +1059,18 @@ impl Interpreter {
                     return Some(found);
                 }
             }
+        } else if let Some(role_pkg) = self.running_package_candidates()[1]
+            && self.registry().roles.contains_key(role_pkg)
+        {
+            // A bare name in a ROLE method composed into a GLOBAL class: the
+            // role's own enclosing packages (`module M { role R {...}; role
+            // Bef {} }`) are its lexical scope, not the composer's.
+            let role_sym = crate::symbol::Symbol::intern(role_pkg);
+            if role_sym != pkg_sym
+                && let Some(found) = self.resolve_type_in_scope_chain(role_sym, name_sym)
+            {
+                return Some(found);
+            }
         }
         None
     }
