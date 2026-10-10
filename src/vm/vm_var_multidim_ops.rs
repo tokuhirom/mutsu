@@ -835,6 +835,12 @@ impl Interpreter {
             let arr = Value::array(items.to_vec());
             return self.multi_dim_index_read(&arr, dims);
         }
+        // A Match is Positional over its capture list: `$/[*;*]` walks the
+        // captures of `$/` and then those of each capture (a quantified
+        // `(...)*` capture is an Array of Matches), not `$/` as one scalar.
+        if let Some(list) = target.match_list() {
+            return self.multi_dim_index_read(&list, dims);
+        }
         // A non-positional value behaves as a single-element list when
         // subscripted in a further dimension: in `(10,20,30)[1,2;0]` each
         // selected scalar is indexed by the trailing `0`, and `20[0]` is `20`
