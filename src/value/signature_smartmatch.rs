@@ -219,7 +219,23 @@ fn type_accepts(
     match (type1, type2) {
         (None, _) => true,                             // s1 untyped (Any) accepts anything
         (Some(t1), None) => is_supertype_of(t1, "Mu"), // s1 typed, s2 untyped (Any) → s1 must accept Any
-        (Some(t1), Some(t2)) => is_supertype_of(t1, t2) || user_type(t1, t2),
+        (Some(t1), Some(t2)) => {
+            // A definiteness smiley narrows a type: `Int:D` is accepted by `Int`
+            // and `Int:D`, never by `Int:U`; a bare `Int` is not accepted by `Int:D`.
+            let (n1, s1) = split_smiley(t1);
+            let (n2, s2) = split_smiley(t2);
+            if matches!(s1, Some("D" | "U")) && s1 != s2 {
+                return false;
+            }
+            is_supertype_of(n1, n2) || user_type(n1, n2)
+        }
+    }
+}
+
+fn split_smiley(t: &str) -> (&str, Option<&str>) {
+    match t.rsplit_once(':') {
+        Some((n, s @ ("D" | "U" | "_"))) if !n.ends_with(':') && !n.is_empty() => (n, Some(s)),
+        _ => (t, None),
     }
 }
 
