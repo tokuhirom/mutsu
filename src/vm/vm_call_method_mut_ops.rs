@@ -1097,6 +1097,14 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        if let Some(result) = self.try_gather_seq_bool_method(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "gather-seq-bool",
+            );
+            self.stack.push(result);
+            return Ok(());
+        }
         // `.so` / `.not` on a value whose type defines a user `Bool` method must
         // dispatch through that method (Mu.so / Mu.not are defined in terms of
         // .Bool) rather than the native truthiness fast path. A type that defines
