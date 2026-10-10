@@ -2850,9 +2850,16 @@ impl Interpreter {
                     ) =>
             {
                 match target.view() {
-                    ValueView::Routine { name, .. } => Ok(Value::str(format_operator_name(
-                        crate::qualified::unqualified_part(name).as_str(),
-                    ))),
+                    // A `Code` object's name is the `Code.name` row (`method_table::code`).
+                    ValueView::Routine { .. }
+                    | ValueView::Sub(_)
+                    | ValueView::WeakSub(_)
+                    | ValueView::Regex(..)
+                    | ValueView::RegexWithAdverbs(..)
+                        if let Some(name) = self.code_name_value(&target) =>
+                    {
+                        Ok(name)
+                    }
                     // `.name` on a *type object* whose class declares its own public
                     // attribute `$.name` resolves to that accessor, and reading an
                     // instance attribute off a type object is an error (raku). Only
@@ -2866,10 +2873,6 @@ impl Interpreter {
                             name.resolve()
                         )))
                     }
-                    // The name lives with the routine's `$!do` (#11462).
-                    ValueView::Sub(data) => Ok(Value::str(format_operator_name(
-                        self.code_name(&data).as_str(),
-                    ))),
                     // `Nil` swallows every method call. `Array`/`Hash` answer
                     // with their container descriptor's name in rakudo
                     // (`[1].name` is "element", `(my %h).name` is "%h"),
@@ -2878,14 +2881,6 @@ impl Interpreter {
                     ValueView::Array(..) if crate::runtime::value_type_name(&target) == "Array" => {
                         Ok(Value::NIL)
                     }
-                    // A regex is a `Code`, and an anonymous one's name is ""
-                    // until `set_name` gives it one.
-                    ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => Ok(Value::str(
-                        target
-                            .regex_name()
-                            .map(|name| name.resolve())
-                            .unwrap_or_default(),
-                    )),
                     // `Code`'s `name` reads an attribute, which a `Code` type
                     // object does not have.
                     ValueView::Package(name)
