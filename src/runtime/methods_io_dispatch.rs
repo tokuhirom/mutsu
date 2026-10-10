@@ -49,13 +49,13 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn dispatch_say(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_say(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         let gist = self.render_gist_value(target)?;
         self.write_to_named_handle("$*OUT", &gist, true)?;
         Ok(Value::TRUE)
     }
 
-    pub(super) fn dispatch_print(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_print(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         let content = self.render_str_value(target);
         self.write_to_named_handle("$*OUT", &content, false)?;
         Ok(Value::TRUE)
@@ -91,7 +91,7 @@ impl Interpreter {
         )))
     }
 
-    pub(super) fn dispatch_put(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_put(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         // `put` is `print` plus a newline, so it must go through the same
         // string-context rendering: `render_str_value` honors a user-defined or
         // native `.Str` method, while the raw `to_string_value()` this used to
@@ -103,7 +103,7 @@ impl Interpreter {
         Ok(Value::TRUE)
     }
 
-    pub(super) fn dispatch_note(&mut self, target: &Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_note(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         let content = format!("{}\n", self.render_gist_value(target)?);
         self.write_to_named_handle("$*ERR", &content, false)?;
         // `note` returns True (like the `note LIST` sub form), not Nil.

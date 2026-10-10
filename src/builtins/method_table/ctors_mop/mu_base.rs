@@ -1,6 +1,6 @@
 //! `Mu.BUILDALL`, `Mu.POPULATE`, `Mu.clone` and `Mu.new` (ADR-11276 slice 4, §9.47, §9.48), and
 //! the base answers `Mu` gives `defined`, `Bool`, `so`, `not`, `WHICH`, `WHERE`, `gist`, `Str` and
-//! `raku` (§9.56).
+//! `raku` (§9.56), and the output methods `say`, `print`, `put` and `note` (§9.57).
 //!
 //! Rakudo declares both on `Mu`, so a user `BUILDALL`/`POPULATE` (typically
 //! installed by a custom HOW's `add_method`, as OO::Monitors does) that defers
@@ -21,6 +21,7 @@
 //! constructors (`methods_object_dispatch_new.rs`), which are not rows yet.
 
 use crate::builtins::method_table::{Handler, MethodRow, RowFlags};
+use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
@@ -114,6 +115,23 @@ pub(super) static ROWS: &[MethodRow] = &[
             return Some(Ok(Value::str(type_object_name(target))));
         }
         interp.default_instance_repr(target, "raku", &args[1..])
+    }),
+    // `Mu.say`, `Mu.print`, `Mu.put` and `Mu.note`: write the receiver's `gist` or
+    // `Str` to `$*OUT` (`$*ERR` for `note`) -- what a user `method say { ...
+    // callsame }` reaches. An `IO::CatHandle` has write methods of its own and
+    // declines.
+    // Cost: O(n), n = chars rendered and written.
+    base_row!("say", |interp, target, _args, _named| {
+        (!Interpreter::is_io_cathandle(target)).then(|| interp.dispatch_say(target))
+    }),
+    base_row!("print", |interp, target, _args, _named| {
+        (!Interpreter::is_io_cathandle(target)).then(|| interp.dispatch_print(target))
+    }),
+    base_row!("put", |interp, target, _args, _named| {
+        (!Interpreter::is_io_cathandle(target)).then(|| interp.dispatch_put(target))
+    }),
+    base_row!("note", |interp, target, _args, _named| {
+        (!Interpreter::is_io_cathandle(target)).then(|| interp.dispatch_note(target))
     }),
     row!("BUILDALL"),
     row!("POPULATE"),

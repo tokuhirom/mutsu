@@ -2269,3 +2269,21 @@ user `gist` calling `callsame` skipped the receiver's own `raku` (`Mu:D.gist` is
 selects the base for these names (`Str`/`raku` only for a type object, where the instance default stays `any_base_native_entry`).
 Left on #12390: `Mu`'s `say`/`print`/`put`/`note`/`new`/`HOW`/`WHAT`/`WHY`/`DEFINITE` (plain calls, not deferral bases: they need the shape
 audit), `Code` (ADR-12523), `Backtrace` ancestors, `Date.IO`/`Instant`/`Match`/`RakuAST::*`.
+
+### 9.57 Slice 3D: `Mu`'s output methods are deferral-base rows; the rest of `Mu` stays in the cascade (2026-10-10)
+
+`refactor/12390-mu-plain-base-rows`. `Mu.say`, `Mu.print`, `Mu.put` and `Mu.note` join §9.56's `OWNER_ONLY | DEFERRAL_BASE` rows: a user
+`method say { ... callsame }` (a common wrapper around logging) reached no base and printed nothing; it now writes the receiver's `gist`
+(`Str` for `print`/`put`, to `$*ERR` for `note`) through the same `dispatch_say`/`dispatch_print`/`dispatch_put`/`dispatch_note` the
+plain call uses, declining for an `IO::CatHandle` whose write methods are its own.
+
+The last six declared `Mu` names stay in the cascade, each for a stated reason, which closes the `Mu` item of #12390:
+
+- `WHAT`, `HOW`, `WHY` and `DEFINITE` are pseudo-methods the compiler lowers before method dispatch (`WHAT`/`HOW` also as macros of the
+  MOP), and a `callsame` out of a user override already answers Rakudo's result (probed: `WHAT` the type, `HOW` the ClassHOW, `WHY` `Nil`,
+  `DEFINITE` `True`). A row would duplicate the lowering, not replace it.
+- `Int` and `Numeric` of a plain object throw `X::Multi::NoMatch` in Rakudo (`Cannot resolve caller Int(A:D: )`) where mutsu throws
+  `X::Method::NotFound` for the instance and stringifies the type object; that is a wrong answer of the cascade (filed as its own issue),
+  not a missing row, and a base row would have to reproduce the same error.
+
+Left on #12390: `Code.gist`/`raku` (ADR-12523), `Backtrace`'s ancestors, `Date.IO`, `Instant`, `Match`, `RakuAST::*`.
