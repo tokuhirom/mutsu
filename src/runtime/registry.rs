@@ -1437,6 +1437,12 @@ impl Registry {
         if !self.roles.contains_key(role_name) {
             return None;
         }
+        // `role_parents` merges the parents of every same-named variant, so a
+        // role group (`role R is A` plus `role R[::T] is B`) cannot say which
+        // variant's parents a bare `R` has. Only an unambiguous role answers.
+        if self.role_candidates.get(role_name).is_some_and(|c| c.len() > 1) {
+            return None;
+        }
         let parents: Vec<&String> = self
             .role_parents
             .get(role_name)?
