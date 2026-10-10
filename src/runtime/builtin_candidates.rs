@@ -88,11 +88,11 @@ fn normalize_core_signature(sig: &str) -> String {
         .replace(" is item", "")
 }
 
-/// The parameters and body of the first `sub`/`method` declaration in `stmts`,
-/// looking one level into a class body.
+/// The parameters and body of the first `sub`/`method` declaration in `stmts`
+/// or in the body of a class declared there.
 // Cost: O(n), n = statements scanned.
 fn find_routine_decl(stmts: Vec<Stmt>) -> Option<(Vec<String>, Vec<ParamDef>, Vec<Stmt>)> {
-    stmts.into_iter().find_map(|stmt| match stmt {
+    let decl = |stmt: Stmt| match stmt {
         Stmt::SubDecl {
             params,
             param_defs,
@@ -105,7 +105,15 @@ fn find_routine_decl(stmts: Vec<Stmt>) -> Option<(Vec<String>, Vec<ParamDef>, Ve
             body,
             ..
         } => Some((params, param_defs, body)),
-        Stmt::ClassDecl { body, .. } => find_routine_decl(body),
         _ => None,
+    };
+    let (classes, others): (Vec<Stmt>, Vec<Stmt>) = stmts
+        .into_iter()
+        .partition(|stmt| matches!(stmt, Stmt::ClassDecl { .. }));
+    others.into_iter().find_map(decl).or_else(|| {
+        classes.into_iter().find_map(|class| match class {
+            Stmt::ClassDecl { body, .. } => body.into_iter().find_map(decl),
+            _ => None,
+        })
     })
 }
