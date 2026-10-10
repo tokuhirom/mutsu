@@ -11,11 +11,7 @@ use crate::builtins::method_table::Named;
 use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value, ValueView};
 
-pub(super) static ROWS: &[MethodRow] = &[
-    clone_row("Array"),
-    clone_row("Hash"),
-    clone_row("Pair"),
-];
+pub(super) static ROWS: &[MethodRow] = &[clone_row("Array"), clone_row("Hash"), clone_row("Pair")];
 
 const fn clone_row(owner: &'static str) -> MethodRow {
     MethodRow {
