@@ -9,6 +9,7 @@ use super::{Handler, MethodRow, RowFlags};
 
 pub(crate) mod any_collection;
 mod any_interp;
+pub(crate) mod any_misc;
 pub(crate) mod capture;
 pub(crate) mod clone;
 mod fmt;
@@ -47,6 +48,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     join::ROWS,
     clone::ROWS,
     any_interp::ROWS,
+    any_misc::ROWS,
     lazy::ROWS,
     list::ROWS,
     list_aggregate::ANY_ROWS,

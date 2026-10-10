@@ -207,15 +207,10 @@ pub(super) fn dispatch(
             // is `{:a(1)}`, not `${:a(1)}`). See issue #8490.
             Some(Some(Ok(target.clone().deitemize_element())))
         }
-        "serial" => {
-            // Any ordinary value is already its own serial (non-parallel) form,
-            // so `.serial` returns the invocant's *value* (like `.self` --
-            // see the comment there, and issue #8490's own note that
-            // `.serial` shares `.self`'s model). Only a hyper/race pipeline
-            // has a distinct serial form, which mutsu's hyper method
-            // dispatch handles before reaching here.
-            Some(Some(Ok(target.clone().deitemize_element())))
-        }
+        // The `Any.serial` row's implementation (`method_table::collections::any_misc`).
+        "serial" => Some(Some(
+            crate::builtins::method_table::collection_any_misc::serial(target, &[]),
+        )),
         "clone" => {
             match target.view() {
                 ValueView::Package(_) | ValueView::Nil => Some(Some(Ok(target.clone()))),
