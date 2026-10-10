@@ -2283,7 +2283,7 @@ The last six declared `Mu` names stay in the cascade, each for a stated reason, 
   MOP), and a `callsame` out of a user override already answers Rakudo's result (probed: `WHAT` the type, `HOW` the ClassHOW, `WHY` `Nil`,
   `DEFINITE` `True`). A row would duplicate the lowering, not replace it.
 - `Int` and `Numeric` of a plain object throw `X::Multi::NoMatch` in Rakudo (`Cannot resolve caller Int(A:D: )`) where mutsu throws
-  `X::Method::NotFound` for the instance and stringifies the type object; that is a wrong answer of the cascade (filed as its own issue),
+  `X::Method::NotFound` for the instance and stringifies the type object; that is a wrong answer of the cascade (filed as [#12551](https://github.com/tokuhirom/mutsu/issues/12551)),
   not a missing row, and a base row would have to reproduce the same error.
 
 Left on #12390: `Code.gist`/`raku` (ADR-12523), `Backtrace`'s ancestors, `Date.IO`, `Instant`, `Match`, `RakuAST::*`.
