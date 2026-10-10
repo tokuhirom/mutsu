@@ -138,8 +138,8 @@ impl Interpreter {
                 crate::builtins::method_table::invoke_mut(
                     self,
                     &mut place,
-                    Symbol::intern(&method_name),
-                    &args,
+                    Symbol::intern(method_name),
+                    args,
                 )
             })?;
             if let Some(result) = outcome {
@@ -155,14 +155,14 @@ impl Interpreter {
                     self,
                     &mut place,
                     Symbol::intern("STORE"),
-                    &args,
+                    args,
                 )
             })?;
             return outcome.map(|r| r.map(|_| invocant.clone()));
         }
-        let method_sym = Symbol::intern(&method_name);
+        let method_sym = Symbol::intern(method_name);
         attributes.with_attr_mut("__baggy_data__", |storage| {
-            self.try_native_method(storage, method_sym, &args)
+            self.try_native_method(storage, method_sym, args)
         })?
     }
 }

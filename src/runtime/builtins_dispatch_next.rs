@@ -519,7 +519,7 @@ impl Interpreter {
             "push" | "append" | "prepend" | "unshift" | "pop" | "shift" | "ASSIGN-POS" | "DELETE-POS"
         ) {
             let outcome = attributes.with_attr_mut("__mutsu_array_storage", |storage| {
-                self.native_array_storage_mut(storage, &method_name, &args)
+                self.native_array_storage_mut(storage, method_name, args)
             })?;
             if let Some(outcome) = outcome {
                 return Some(outcome.map(|value| match method_name {
@@ -528,9 +528,9 @@ impl Interpreter {
                 }));
             }
         }
-        let method_sym = Symbol::intern(&method_name);
+        let method_sym = Symbol::intern(method_name);
         attributes.with_attr_mut("__mutsu_array_storage", |storage| {
-            self.try_native_method(storage, method_sym, &args)
+            self.try_native_method(storage, method_sym, args)
         })?
     }
 
@@ -580,8 +580,8 @@ impl Interpreter {
                 crate::builtins::method_table::invoke_mut(
                     self,
                     &mut place,
-                    Symbol::intern(&method_name),
-                    &args,
+                    Symbol::intern(method_name),
+                    args,
                 )
             })?;
             if let Some(result) = outcome {
@@ -591,9 +591,9 @@ impl Interpreter {
                 });
             }
         }
-        let method_sym = Symbol::intern(&method_name);
+        let method_sym = Symbol::intern(method_name);
         attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
-            self.try_native_method(storage, method_sym, &args)
+            self.try_native_method(storage, method_sym, args)
         })?
     }
     /// The builtin of a `Mixin`'s native inner value, the last candidate behind
