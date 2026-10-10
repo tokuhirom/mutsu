@@ -1045,6 +1045,13 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&dyn SubsetBases>) -> Valu
         Value::Package(Symbol::intern("Code"))
     };
     attrs.insert("default".to_string(), default_val);
+    // `Parameter.raku` spells a literal default back (`Str :$a = "x"`).
+    if let Some(Expr::Literal(lit)) = p.default_expr.as_deref() {
+        attrs.insert(
+            "default_raku".to_string(),
+            Value::str(crate::value::raku_repr::raku_value(lit)),
+        );
+    }
 
     // .usage-name: the variable name minus sigil and twigil (rakudo: the name
     // Cro's route-URL generator uses to build a placeholder).

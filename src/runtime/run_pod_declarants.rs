@@ -120,6 +120,9 @@ impl Interpreter {
                 ..
             } => {
                 let mut sub_env = crate::env::Env::new();
+                if *multi {
+                    sub_env.insert("__mutsu_is_multi_candidate".to_string(), Value::TRUE);
+                }
                 Self::record_declarant_return_type(&mut sub_env, return_type.as_deref());
                 let key = format!("&{}", name.resolve());
                 Self::collect_pod_param_declarants(&key, param_defs, out);
@@ -151,6 +154,9 @@ impl Interpreter {
                 ..
             } => {
                 let mut method_env = crate::env::Env::new();
+                if *multi {
+                    method_env.insert("__mutsu_is_multi_candidate".to_string(), Value::TRUE);
+                }
                 method_env.insert(
                     "__mutsu_callable_type".to_string(),
                     Value::str_from(if *is_submethod { "Submethod" } else { "Method" }),
@@ -243,6 +249,8 @@ impl Interpreter {
                 name,
                 sigil,
                 type_constraint,
+                is_public,
+                is_rw,
                 ..
             } => {
                 let bare = name.resolve();
@@ -250,6 +258,11 @@ impl Interpreter {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("name".to_string(), Value::str(full_name.clone()));
                 attrs.insert("__mutsu_attr_name".to_string(), Value::str(bare));
+                // Same accessor facts `.^attributes` reports (`$.a` documents
+                // as `has Str $.a`, not `$!a`).
+                attrs.insert("is_public".to_string(), Value::truth(*is_public));
+                attrs.insert("has_accessor".to_string(), Value::truth(*is_public));
+                attrs.insert("is_rw".to_string(), Value::truth(*is_rw));
                 attrs.insert(
                     "__mutsu_attr_owner".to_string(),
                     Value::str(package.to_string()),
