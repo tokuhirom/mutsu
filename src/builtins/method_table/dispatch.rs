@@ -28,7 +28,7 @@ fn call(
     named: Named<'_>,
 ) -> Option<Answer> {
     // A random answer cannot be checked by running the call a second time.
-    let rerunnable = !row.flags.contains(RowFlags::RANDOM);
+    let rerunnable = !row.flags.skips_cross_check();
     // ADR-0068: a leaf READ of a container (`%!h.keys`) walks the backing map,
     // which a concurrent structural write on another thread reallocates (#11701).
     // A no-op (one relaxed load) until a second VM mutator thread exists, and

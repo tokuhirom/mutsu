@@ -19,7 +19,7 @@ pub(super) static ROWS: &[MethodRow] = &[
         name: "batch",
         arity: 1,
         handler: Handler::Narrow(batch),
-        flags: RowFlags::NONE,
+        flags: RowFlags::LIVE_VIEW,
         named: &[],
     },
     MethodRow {

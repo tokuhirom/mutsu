@@ -125,11 +125,25 @@ impl RowFlags {
     /// `clone` answered by it. The handler gets the receiver first among its
     /// arguments.
     pub(crate) const DEFERRAL_BASE: RowFlags = RowFlags(1 << 6);
+    /// The answer is a lazy view of the live receiver (`Array.batch` steps a
+    /// cursor over the array, so a later `push` shows in the batches). The
+    /// debug cross-check renders both answers, which reifies the view and
+    /// would end the very liveness the row exists to keep, so it skips the
+    /// row. The handler is still pure.
+    pub(crate) const LIVE_VIEW: RowFlags = RowFlags(1 << 7);
 
     /// The flags of both.
     // Cost: O(1).
     pub(crate) const fn or(self, other: RowFlags) -> RowFlags {
         RowFlags(self.0 | other.0)
+    }
+
+    /// Whether the debug cross-checks cannot run this row's call a second
+    /// time and compare the rendered answers: a random one ([`Self::RANDOM`])
+    /// or a lazy view of the receiver ([`Self::LIVE_VIEW`]).
+    // Cost: O(1).
+    pub(crate) const fn skips_cross_check(self) -> bool {
+        self.0 & (Self::RANDOM.0 | Self::LIVE_VIEW.0) != 0
     }
 
     /// Whether every bit of `flag` is set.

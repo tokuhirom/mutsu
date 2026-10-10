@@ -2388,4 +2388,9 @@ one call each. No behaviour change, pinned in `t/oo/method/any-misc-method-rows.
 - **Not registered**: `Any.chrs`/`Cool.chrs` (Rakudo declares them, but a row on `Any` has to answer for every shape that reaches it, and the cascade's
   `chrs` reads only lists, ranges and one integer), `Any.list` and `Any.hash` (their arms are spread over `coercion.rs`, `collection.rs`, the
   `Capture`/`Uni`/`Supply` bridges and the stash cases: a slice of their own), `Map.AT-KEY`/`Map.Str`.
+- **`RowFlags::LIVE_VIEW`** (new). `Array.batch` answers a lazy `Seq` over a cursor on the live array (a later `push` shows in the batches,
+  `t/collections/lazy-seq/lazy-positional-views-and-combinatorics.t`). The debug cross-check (`dispatch::debug_assert_matches_full_path`) and the
+  call-site lane's check render both answers with `gist_value`, which reifies the view and froze it at the first run: the test failed on the debug
+  binary only. The flag joins `RANDOM` in `RowFlags::skips_cross_check`. **Lesson:** a row whose answer is a lazy view of its receiver needs the
+  flag, or the net that guards the row ends the laziness it keeps.
 

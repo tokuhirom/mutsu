@@ -296,11 +296,9 @@ impl Interpreter {
         answer: SiteLaneAnswer,
         full: Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        // A random answer (`rand`) differs between the two runs by design.
-        if method_table::row(answer.row)
-            .flags
-            .contains(method_table::RowFlags::RANDOM)
-        {
+        // A random answer (`rand`) differs between the two runs by design, and
+        // rendering a lazy view of the receiver would reify it.
+        if method_table::row(answer.row).flags.skips_cross_check() {
             return full;
         }
         let render = |r: Result<&Value, &RuntimeError>| match r {
