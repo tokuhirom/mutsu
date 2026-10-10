@@ -83,6 +83,7 @@ impl Interpreter {
                     || bare.starts_with('!')
                     || bare == "self"
                     || bare == "_"
+                    || is_match_state_name(&bare)
                 {
                     return None;
                 }
@@ -454,4 +455,12 @@ impl Interpreter {
         }
         Ok(())
     }
+}
+
+/// `$/`, the cursor `$¢` and the positional captures `$0`, `$1`, ...: per-match
+/// state the engine installs, never a lexical the class body declared.
+/// Persisting one as a static would shadow the live value for every later read
+/// under this package (a `where` regex's `<?{ $/ }>` in a class-scoped `subset`).
+fn is_match_state_name(name: &str) -> bool {
+    name == "/" || name == "\u{a2}" || (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit()))
 }
