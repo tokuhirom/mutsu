@@ -6,7 +6,7 @@ use Test;
 # module leaves a marker file when its mainline runs; dumping must not create
 # it, and a real run still must.
 
-plan 8;
+plan 12;
 
 my $dir = $*TMPDIR.add("mutsu-dump-ast-no-execute-$*PID");
 $dir.mkdir;
@@ -40,6 +40,22 @@ sub mutsu(*@args) {
     my $out = $proc.out.slurp(:close);
     $proc.err.slurp(:close);
     ($proc.exitcode, $out)
+}
+
+my $trait-marker = $dir.add('trait-marker');
+my $trait-main = $dir.add('trait-main.raku');
+$trait-main.spurt: qq:to/END/;
+    multi trait_mod:<is>(Routine \$r, :\$tagged!) \{
+        '{$trait-marker.absolute}'.IO.spurt('trait');
+    \}
+    proto sub tagged-proto(|) is tagged('{$trait-marker.absolute}'.IO.spurt('argument')) \{*\}
+    multi sub tagged-proto(Int) \{ 1 \}
+    END
+
+for '--dump-ast', '--dump-bytecode' -> $flag {
+    my ($code, $out) = mutsu($flag, $trait-main.absolute);
+    is $code, 0, "$flag succeeds on a proto with an executable trait argument";
+    nok $trait-marker.e, "$flag executes neither the proto trait nor its argument";
 }
 
 for '--dump-ast', '--dump-bytecode' -> $flag {

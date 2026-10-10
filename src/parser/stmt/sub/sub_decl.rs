@@ -214,6 +214,7 @@ pub(crate) fn op_prec_trait(
     precedence_trait: Option<&(String, String)>,
 ) -> Option<(String, Option<Expr>)> {
     let mut traits = SubTraits {
+        source_traits: Vec::new(),
         is_export: false,
         export_tags: Vec::new(),
         is_test_assertion: false,
@@ -496,7 +497,7 @@ pub(crate) fn sub_decl_body(
         return Err(PError::expected("sub body '{ ... }'"));
     }
     let slurpy_scope = super::outer_slurpy::enter_routine_body(&param_defs, false);
-    let (rest, body) = if super::any_sigilless(&param_defs)
+    let (rest, mut body) = if super::any_sigilless(&param_defs)
         || super::any_callable_param(&param_defs)
         || super::has_type_capture(&param_defs)
     {
@@ -546,6 +547,7 @@ pub(crate) fn sub_decl_body(
         return Err(PError::fatal_with_exception(msg, Box::new(ex)));
     }
     let merged_return_type = return_type.or(traits.return_type);
+    crate::ast::routine_trait::attach(&mut body, traits.source_traits);
     let sub_name_sym = Symbol::intern(&name);
     let sub_decl = Stmt::SubDecl {
         name: sub_name_sym,

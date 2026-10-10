@@ -312,7 +312,8 @@ pub(crate) fn parse_anon_sub_rest(
     let return_type = return_type.or(traits.return_type);
     // The literal's own parameters have to be in scope for its body parse — see
     // `parse_block_body_routine_with_params`.
-    let (r, body) = parse_block_body_routine_with_params(r, &param_defs)?;
+    let (r, mut body) = parse_block_body_routine_with_params(r, &param_defs)?;
+    crate::ast::routine_trait::attach(&mut body, traits.source_traits);
     Ok((
         r,
         Expr::AnonSubParams {

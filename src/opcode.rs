@@ -1,3 +1,5 @@
+mod proto_decl;
+
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -6447,6 +6449,7 @@ pub(crate) struct CompiledProtoDeclPlan {
     /// Tags on `is export(:TAG1, :TAG2)`; empty means untagged (DEFAULT).
     pub(crate) export_tags: Vec<String>,
     pub(crate) custom_traits: Vec<String>,
+    pub(crate) trait_args: Vec<Option<DeclTraitArg>>,
     /// True for `proto method`/`proto submethod`: such a proto never
     /// registers at the package level (its `{*}` dispatches over the type's
     /// method table, Phase D territory), so `compiled_routine_key` is always
@@ -12097,42 +12100,6 @@ impl CompiledCode {
     /// `{*}`-rewritten body separately (mirroring `add_sub_decl_plan` +
     /// `set_sub_decl_compiled_routine_keys`) and attaches it with
     /// [`Self::set_proto_decl_compiled_routine_key`].
-    pub(crate) fn add_proto_decl_plan(&mut self, stmt: &Stmt) -> u32 {
-        let Stmt::ProtoDecl {
-            name,
-            params,
-            param_defs,
-            return_type,
-            body,
-            is_export,
-            export_tags,
-            custom_traits,
-            trait_args: _,
-            is_method,
-            is_our,
-        } = stmt
-        else {
-            panic!("add_proto_decl_plan expects ProtoDecl");
-        };
-        let plan_idx = self.proto_decl_plans.len() as u32;
-        self.proto_decl_plans.push(CompiledProtoDeclPlan {
-            name: *name,
-            params: params.clone(),
-            param_defs: param_defs.clone(),
-            return_type: return_type.clone(),
-            is_export: *is_export,
-            export_tags: export_tags.clone(),
-            custom_traits: custom_traits.clone(),
-            is_method: *is_method,
-            is_our: *is_our,
-            legacy_body: body.clone(),
-            compiled_routine_key: None,
-        });
-        let idx = self.decl_plans.len() as u32;
-        self.decl_plans.push(CompiledDeclPlanRef::Proto(plan_idx));
-        idx
-    }
-
     /// Record a `proto token`/`proto rule` LTM marker (ADR-0019 C8). Unlike
     /// `add_proto_decl_plan`, there is no body or trait to lower — only the
     /// name and the signature (whose `$*` parameters bind for the candidates).

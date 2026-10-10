@@ -150,7 +150,7 @@ fn method_decl_body_with_my(
     let (rest, traits) = super::super::sub::parse_sub_traits(rest)?;
     let return_type = traits.return_type.or(param_return_type);
     let slurpy_scope = super::super::sub::enter_routine_body(&param_defs, true);
-    let (rest, body) = if param_defs.iter().any(|p| p.sigilless)
+    let (rest, mut body) = if param_defs.iter().any(|p| p.sigilless)
         || super::super::sub::has_type_capture(&param_defs)
     {
         // When there are sigilless params, register them as term symbols in the
@@ -186,6 +186,7 @@ fn method_decl_body_with_my(
     } else {
         (params, param_defs)
     };
+    crate::ast::routine_trait::attach(&mut body, traits.source_traits);
     Ok((
         rest,
         Stmt::MethodDecl {

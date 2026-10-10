@@ -4437,6 +4437,7 @@ impl Compiler {
                 body,
                 is_method,
                 custom_traits,
+                trait_args,
                 ..
             } => {
                 self.note_operator_decl(&name.resolve());
@@ -4452,14 +4453,15 @@ impl Compiler {
                 // trait.
                 let body_local =
                     self.in_lexical_scope && !self.lexical_dup_routines.contains(&name.resolve());
+                let arguments = self.compile_proto_trait_args(custom_traits, trait_args);
                 let idx = if body_local && !custom_traits.iter().any(|t| t == "__lexical_hoist") {
                     let mut marked = stmt.clone();
                     if let Stmt::ProtoDecl { custom_traits, .. } = &mut marked {
                         custom_traits.push("__lexical_hoist".to_string());
                     }
-                    self.code.add_proto_decl_plan(&marked)
+                    self.code.add_proto_decl_plan(&marked, arguments)
                 } else {
-                    self.code.add_proto_decl_plan(stmt)
+                    self.code.add_proto_decl_plan(stmt, arguments)
                 };
                 // A trivial proto body (empty, or a bare `{*}`) dispatches
                 // implicitly and has no candidate body of its own to compile

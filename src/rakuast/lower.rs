@@ -7,6 +7,7 @@
 //! produce an explicit `RuntimeError` (the documented coverage boundary).
 
 use super::name_parts::{self, NameShape};
+use super::routine_lower::lower_sub;
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{
     ContextKind, EnumVariantForm, Expr, GivenWithKind, ParamDef, Stmt, WithBlockKind,
@@ -907,63 +908,6 @@ fn name_for_unpack_params(names: &mut [String], defs: &mut [ParamDef]) {
     }
 }
 
-/// Lower `sub NAME (SIG) { … }` to `Stmt::SubDecl`. Only bare positional scalar
-/// parameters are handled; typed/named/slurpy/defaulted parameters and anonymous
-/// subs in expression position are the current coverage boundary.
-fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let name = call_name_str(node)?;
-    let (params, param_defs) = signature_positional_params(node)?;
-    let mut is_traits = super::routine_traits::IsTraits::default();
-    let (return_type, mut custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
-    let multi = multiness(node)?;
-    match node.fields.iter().find(|f| f.name == Some("scope")) {
-        None => {}
-        Some(_) => match leaf_str(node, "scope")?.as_str() {
-            "our" => custom_traits.push((super::convert::OUR_SCOPED.to_string(), None)),
-            "my" => {}
-            _ => return Err(unsupported(node)),
-        },
-    }
-    // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
-    let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
-    // A sub with no signature of its own takes its placeholder variables.
-    let (params, param_defs) =
-        crate::ast::implicit_placeholder_signature(params, param_defs, &body);
-    let associativity = is_traits
-        .assoc
-        .clone()
-        .or_else(|| is_traits.precedence.as_ref().map(|(kind, _)| kind.clone()));
-    // An operator sub that declares its precedence carries the record the
-    // parser derives from the traits.
-    custom_traits.extend(crate::parser::op_prec_trait(
-        &name,
-        multi,
-        associativity.as_ref(),
-        is_traits.precedence.as_ref(),
-    ));
-    Ok(Stmt::SubDecl {
-        name: crate::symbol::Symbol::intern(&name),
-        name_expr: None,
-        params,
-        param_defs,
-        return_type,
-        // `is tighter(&infix:<+>)` also names its kind as the associativity, as
-        // the parser records it.
-        associativity,
-        precedence_trait: is_traits.precedence.clone(),
-        signature_alternates: Vec::new(),
-        body,
-        multi,
-        is_rw: is_traits.is_rw,
-        is_raw: is_traits.is_raw,
-        is_export: !is_traits.export_tags.is_empty(),
-        export_tags: is_traits.export_tags,
-        is_test_assertion: custom_traits.iter().any(|(t, _)| t == "test-assertion"),
-        supersede: false,
-        custom_traits,
-    })
-}
-
 /// A class declaration's `traits` list, back into mutsu's three fields:
 /// `Trait::Is(type => …)` is inheritance, `Trait::Does(…)` is role composition
 /// (which mutsu records in BOTH `parents` and `does_parents`), and
@@ -1773,7 +1717,7 @@ fn lower_subset(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 
 /// `multiness => "multi"`. A `proto` carries a `{*}` body shape mutsu keeps in
 /// a separate `Stmt::ProtoDecl`, so it stays the boundary.
-fn multiness(node: &RakuAstNode) -> Result<bool, RuntimeError> {
+pub(super) fn multiness(node: &RakuAstNode) -> Result<bool, RuntimeError> {
     match node.fields.iter().find(|f| f.name == Some("multiness")) {
         None => Ok(false),
         Some(_) => match leaf_str(node, "multiness")?.as_str() {
@@ -1810,7 +1754,8 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             _ => return Err(unsupported(node)),
         },
     };
-    let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    let mut body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    super::routine_source::retain(node, &mut body)?;
     Ok(Stmt::MethodDecl {
         name: crate::symbol::Symbol::intern(&name),
         name_expr: None,
@@ -2414,14 +2359,11 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     }
     let mut flags = super::routine_traits::IsTraits::default();
     let (return_type, custom_traits) = routine_return_type(node, Some(&mut flags))?;
-    if !custom_traits.is_empty()
-        || !flags.export_tags.is_empty()
-        || flags.assoc.is_some()
-        || flags.precedence.is_some()
-    {
+    if !flags.export_tags.is_empty() || flags.assoc.is_some() || flags.precedence.is_some() {
         return Err(unsupported(node));
     }
-    let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    let mut body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+    super::routine_source::retain(node, &mut body)?;
     let declarator = if node.class == RakuAstClass::Submethod {
         crate::ast::RoutineDeclarator::Submethod
     } else {
@@ -2438,9 +2380,16 @@ fn lower_method_literal(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         ),
         None => crate::parser::anon_method_expr(param_defs, return_type, body, declarator),
     };
-    if let Expr::AnonSubParams { is_rw, is_raw, .. } = &mut literal {
+    if let Expr::AnonSubParams {
+        is_rw,
+        is_raw,
+        custom_traits: traits,
+        ..
+    } = &mut literal
+    {
         *is_rw = flags.is_rw;
         *is_raw = flags.is_raw;
+        *traits = custom_traits.into();
     }
     Ok(literal)
 }
@@ -4290,10 +4239,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             let (params, param_defs) = signature_positional_params(node)?;
             let mut flags = super::routine_traits::IsTraits::default();
             let (return_type, custom_traits) = routine_return_type(node, Some(&mut flags))?;
-            if !custom_traits.is_empty()
-                || !flags.export_tags.is_empty()
-                || flags.assoc.is_some()
-                || flags.precedence.is_some()
+            if !flags.export_tags.is_empty() || flags.assoc.is_some() || flags.precedence.is_some()
             {
                 // Only the `-->` spelling survives an anonymous sub's internal
                 // node (it keeps no `custom_traits`), so a `returns`/`of` trait
@@ -4301,8 +4247,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Err(unsupported(node));
             }
             // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
-            let body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
-            if params.is_empty() && return_type.is_none() {
+            let mut body =
+                lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
+            super::routine_source::retain(node, &mut body)?;
+            if params.is_empty() && return_type.is_none() && custom_traits.is_empty() {
                 return Ok(Expr::AnonSub {
                     body,
                     is_rw: flags.is_rw,
@@ -4318,7 +4266,7 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 body,
                 is_rw: flags.is_rw,
                 is_raw: flags.is_raw,
-                custom_traits: Default::default(),
+                custom_traits: custom_traits.into(),
                 is_whatever_code: false,
                 declarator: crate::ast::RoutineDeclarator::Sub,
             })
