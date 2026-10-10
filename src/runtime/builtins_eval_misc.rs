@@ -129,7 +129,7 @@ impl Interpreter {
 
         // If no caller found in routine_stack, fall back to callframe
         if caller_start_idx.is_none() && type_filter.is_none() && skip == 0 {
-            if let Some(frame) = self.callframe_value(1, callsite_line, 0) {
+            if let Some(frame) = self.callframe_value_in(1, callsite_line, 0, false) {
                 return Ok(frame);
             }
             return Ok(Value::package(Symbol::intern("Mu")));

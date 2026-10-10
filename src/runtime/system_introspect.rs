@@ -11,6 +11,19 @@ impl Interpreter {
         callsite_line: Option<i64>,
         nblocks: usize,
     ) -> Option<Value> {
+        self.callframe_value_in(depth, callsite_line, nblocks, true)
+    }
+
+    /// [`Self::callframe_value`]; `with_light_frames` also counts the frames of
+    /// subs reached through the frameless light call paths
+    /// ([`Self::effective_callframes`]). Only `callframe` wants them.
+    pub(super) fn callframe_value_in(
+        &self,
+        depth: usize,
+        callsite_line: Option<i64>,
+        nblocks: usize,
+        with_light_frames: bool,
+    ) -> Option<Value> {
         let file = self.executing_source_file().unwrap_or_default();
 
         // Each enclosing `for` block introduces a Raku call frame between the
@@ -40,7 +53,11 @@ impl Interpreter {
         }
 
         // depth >= 1: walk up the caller env stack
-        let frames = self.effective_callframes();
+        let frames = if with_light_frames {
+            self.effective_callframes()
+        } else {
+            std::borrow::Cow::Borrowed(self.callframe_stack.as_slice())
+        };
         let stack_len = frames.len();
         if depth > stack_len {
             // One level past the outermost real frame is the synthetic "setting"
