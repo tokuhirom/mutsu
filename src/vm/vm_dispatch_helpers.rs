@@ -582,10 +582,15 @@ impl Interpreter {
             // cannot pull and answers true, so `so gather { }` was true. Pull
             // exactly one element; the rest stays lazy. A body that dies leaves
             // the answer at the pure approximation (true).
-            ValueView::LazyList(list) => match self.force_lazy_list_vm_n(&list, 1) {
-                Ok(items) => !items.is_empty(),
-                Err(_) => true,
-            },
+            // Only a gather coroutine can be pulled this way; the other LazyList
+            // kinds (combinatorial `permutations`, sequences, pipes) keep the
+            // pure answer.
+            ValueView::LazyList(list) if list.coroutine.is_some() => {
+                match self.force_lazy_list_vm_n(&list, 1) {
+                    Ok(items) => !items.is_empty(),
+                    Err(_) => true,
+                }
+            }
             // The IMPLICIT topic of a bare regex coerces quietly -- see
             // `quiet_topic_for_regex_match`.
             ValueView::Regex(_)
