@@ -2257,3 +2257,15 @@ reached by owner from the zero-argument cascade. `Supply.list` moved out of the 
 `arity`/`count` branches for `Sub` values stay until the `Code` slice. Left on #12390: `Code`, `Mu`, and the items the inventory does
 not count (`line`/`file`/`filename` are mutsu's own accessors on `Exception`, not declared by Rakudo's `Exception`, so no row is owed
 until `X::Comp` is recognized; `Backtrace` ancestors; `Date.IO`, `Instant`, `Match`, `RakuAST::*`).
+
+### 9.56 Slice 3D: `Mu`'s base answers are deferral-base rows (2026-10-10)
+
+`refactor/12390-mu-rows`. The `Mu` item of #12390 is registered the way `BUILDALL`/`POPULATE`/`clone`/`new` already are (§9.47):
+`OWNER_ONLY | DEFERRAL_BASE` interpreter rows in `method_table::ctors_mop::mu_base` for `defined`, `Bool`, `so`, `not`, `WHICH`, `WHERE`,
+`gist`, `Str` and `raku`. They answer **only** as the last candidate of a user override's `callsame`/`nextsame` chain, so no receiver's
+ordinary answer changes (the shape audit of §9.17 is not needed: an `OWNER_ONLY` row is never reached through a shape's MRO). This fixes
+wrong answers: `callsame` out of a user `Bool`/`defined`/`so`/`not`/`WHICH` answered `Nil`, out of a type object's `gist` answered `Nil`, and a
+user `gist` calling `callsame` skipped the receiver's own `raku` (`Mu:D.gist` is `self.raku`). `mu_base_override` in `method_dispatch_lazy.rs`
+selects the base for these names (`Str`/`raku` only for a type object, where the instance default stays `any_base_native_entry`).
+Left on #12390: `Mu`'s `say`/`print`/`put`/`note`/`new`/`HOW`/`WHAT`/`WHY`/`DEFINITE` (plain calls, not deferral bases: they need the shape
+audit), `Code` (ADR-12523), `Backtrace` ancestors, `Date.IO`/`Instant`/`Match`/`RakuAST::*`.
