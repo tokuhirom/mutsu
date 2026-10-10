@@ -444,6 +444,7 @@ fn topicalize(expr: &Expr) -> Stmt {
     }
 }
 
+mod conditional_binding;
 mod conditionals;
 mod for_loops;
 mod for_params;
@@ -457,7 +458,9 @@ mod while_until;
 mod with_stmt;
 
 // Re-exports preserving each function's original visibility (all `pub(super)`).
-pub(crate) use conditionals::if_pointy_clause;
+pub(crate) use conditional_binding::else_pointy_clause;
+pub(crate) use conditional_binding::if_pointy_clause;
+pub(crate) use conditionals::unless_clause;
 pub(super) use conditionals::{if_stmt, unless_stmt};
 pub(crate) use for_loops::placeholder_loop_params;
 pub(super) use for_loops::{
@@ -472,6 +475,7 @@ pub(super) use loop_repeat::{loop_stmt, repeat_stmt};
 pub(super) use pointy_param::parse_pointy_param;
 pub(super) use react::react_stmt;
 pub(crate) use react::whenever_stmt;
+pub(crate) use while_until::loop_pointy_clause;
 pub(super) use while_until::{until_stmt, while_stmt};
 pub(super) use with_stmt::with_stmt;
 pub(crate) use with_stmt::with_then_branch;

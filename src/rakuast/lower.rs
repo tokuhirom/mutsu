@@ -6,6 +6,10 @@
 //! `Statement::Expression` wrappers around it). Constructs outside that set
 //! produce an explicit `RuntimeError` (the documented coverage boundary).
 
+#[path = "lower_conditional.rs"]
+mod conditional;
+use conditional::*;
+
 use super::name_parts::{self, NameShape};
 use super::routine_lower::lower_sub;
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
@@ -407,15 +411,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // `is_unless` flag, which is what the converter reads back, so the
         // lowerer has to re-plant both. raku's node names the block `body`
         // (not `then`) and cannot carry `elsif`/`else`.
-        RakuAstClass::StatementUnless => Ok(Stmt::If {
-            cond: negate_if(lower_expr(named_child(node, "condition")?)?, true),
-            then_branch: lower_block(named_child(node, "body")?)?,
-            else_branch: Vec::new(),
-            binding_var: None,
-            is_statement_modifier: false,
-            is_unless: true,
-            with_kind: None,
-        }),
+        RakuAstClass::StatementUnless => super::control_signature::lower_unless(node),
         RakuAstClass::StatementLoopWhile | RakuAstClass::StatementLoopUntil => lower_while(node),
         RakuAstClass::StatementLoop => lower_cstyle_loop(node),
         // `repeat { … } while/until C` runs the body once before testing the
@@ -694,166 +690,6 @@ fn loop_label(node: &RakuAstNode, args: Vec<Expr>) -> Result<Option<String>, Run
     }
 }
 
-/// Lower `if COND { … } elsif … { … } else { … }` to `Stmt::If`. Each `elsif`
-/// clause becomes a nested `Stmt::If` in the enclosing `else` branch, folded
-/// innermost-last so the source order is preserved.
-fn lower_if(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let cond = lower_expr(named_child(node, "condition")?)?;
-    let (then_branch, binding_var) = lower_clause_block(named_child(node, "then")?)?;
-    Ok(Stmt::If {
-        cond,
-        then_branch,
-        else_branch: lower_conditional_chain(node, None)?,
-        binding_var,
-        is_statement_modifier: false,
-        is_unless: false,
-        with_kind: None,
-    })
-}
-
-/// The block of an `if` / `elsif` clause: a plain block, or the pointy block
-/// `-> $v { }` of a clause that binds the tested value, whose parameter the
-/// parser keeps as the clause's `binding_var`.
-// Cost: O(n), n = size of the block.
-fn lower_clause_block(block: &RakuAstNode) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    if block.class != RakuAstClass::PointyBlock {
-        return Ok((lower_block(block)?, None));
-    }
-    let (mut names, mut defs) = signature_positional_params(block)?;
-    name_for_unpack_params(&mut names, &mut defs);
-    // The parser's own expansion binds the parameters to the tested value.
-    let (binding_var, body) = crate::parser::if_pointy_clause(defs, lower_block(block)?);
-    Ok((body, binding_var))
-}
-
-/// Lower `with COND { … }` / `without COND { … }` to the conditional mutsu's
-/// parser desugars them into (`with_desugar`), so execution reuses the existing
-/// path and the converter renders the same node back.
-fn lower_with_block(node: &RakuAstNode, kind: WithBlockKind) -> Result<Stmt, RuntimeError> {
-    let cond_expr = lower_expr(named_child(node, "condition")?)?;
-    let tmp_name = crate::with_desugar::next_tmp_name();
-    let (body_field, else_branch) = if matches!(kind, WithBlockKind::Without) {
-        // rakudo rejects `without … else` at compile time, so a node carrying
-        // one is not a shape it could have produced.
-        if node
-            .fields
-            .iter()
-            .any(|f| f.name == Some("else") || f.name == Some("elsifs"))
-        {
-            return Err(unsupported(node));
-        }
-        ("body", Vec::new())
-    } else {
-        // The `else` of a `with` continues a topicalizing clause, so it runs
-        // under the last tested value -- the hidden temp when no `orwith`
-        // intervened.
-        (
-            "then",
-            lower_conditional_chain(node, Some(Expr::Var(tmp_name.clone())))?,
-        )
-    };
-    let block = named_child(node, body_field)?;
-    if block.class == RakuAstClass::PointyBlock {
-        // `with X -> PARAM { … }`: the parser's own expansion binds the
-        // parameter to the tested value.
-        let (mut names, mut defs) = signature_positional_params(block)?;
-        name_for_unpack_params(&mut names, &mut defs);
-        if defs.len() != 1 {
-            return Err(unsupported(node));
-        }
-        let (Some(name), Some(def)) = (names.pop(), defs.pop()) else {
-            return Err(unsupported(node));
-        };
-        let body = lower_block(block)?;
-        let tmp_var = Expr::Var(tmp_name.clone());
-        let then_branch =
-            crate::parser::with_then_branch(&cond_expr, &tmp_var, &Some(name), &Some(def), body);
-        return Ok(crate::with_desugar::with_conditional_branch(
-            kind,
-            &tmp_name,
-            cond_expr,
-            then_branch,
-            else_branch,
-        ));
-    }
-    let body = lower_block(block)?;
-    Ok(crate::with_desugar::with_conditional(
-        kind,
-        &tmp_name,
-        cond_expr,
-        body,
-        else_branch,
-    ))
-}
-
-/// The `else` branch of a conditional: its `elsifs` clauses folded
-/// innermost-last into nested `if`s, with the `else` block at the bottom.
-///
-/// `topic` is the value the head clause tested when that clause topicalizes
-/// (`with`), because a trailing `else` runs under the *last* tested value --
-/// which an intervening `orwith` replaces and a plain `elsif` clears.
-fn lower_conditional_chain(
-    node: &RakuAstNode,
-    topic: Option<Expr>,
-) -> Result<Vec<Stmt>, RuntimeError> {
-    let clauses = match node.fields.iter().find(|f| f.name == Some("elsifs")) {
-        Some(field) => match &field.value {
-            RakuAstFieldValue::List(items) => items.as_slice(),
-            _ => return Err(unsupported(node)),
-        },
-        None => &[],
-    };
-    let mut lowered = Vec::with_capacity(clauses.len());
-    let mut else_topic = topic;
-    for item in clauses {
-        let ValueView::RakuAst(clause) = item.view() else {
-            return Err(unsupported(node));
-        };
-        let cond = lower_expr(named_child(clause, "condition")?)?;
-        let (body, binding_var) = lower_clause_block(named_child(clause, "then")?)?;
-        if binding_var.is_some() && clause.class != RakuAstClass::StatementElsif {
-            return Err(unsupported(clause));
-        }
-        match clause.class {
-            RakuAstClass::StatementElsif => else_topic = None,
-            RakuAstClass::StatementOrwith => else_topic = Some(cond.clone()),
-            _ => return Err(unsupported(clause)),
-        }
-        lowered.push((clause.class, cond, body, binding_var));
-    }
-
-    let mut else_branch = match node.fields.iter().find(|f| f.name == Some("else")) {
-        Some(_) => {
-            let body = lower_block(named_child(node, "else")?)?;
-            match else_topic {
-                Some(topic) => vec![crate::with_desugar::topic_given(topic, body)],
-                None => body,
-            }
-        }
-        None => Vec::new(),
-    };
-    for (class, cond, body, binding_var) in lowered.into_iter().rev() {
-        else_branch = if class == RakuAstClass::StatementOrwith {
-            vec![crate::with_desugar::orwith_conditional(
-                cond,
-                body,
-                else_branch,
-            )]
-        } else {
-            vec![Stmt::If {
-                cond,
-                then_branch: body,
-                else_branch,
-                binding_var,
-                is_statement_modifier: false,
-                is_unless: false,
-                with_kind: None,
-            }]
-        };
-    }
-    Ok(else_branch)
-}
-
 /// Lower `for SOURCE BLOCK` to `Stmt::For`. A plain block (`for @x { … $_ }`)
 /// has no explicit parameter and the body sees `$_`. A pointy block's
 /// parameters land where the parser puts them: one in `param` / `param_def`
@@ -933,7 +769,7 @@ fn has_default_rw(block: &RakuAstNode) -> bool {
 /// signature's `@` / `__subsig__`: `__for_unpack[_array]` when it is the only
 /// parameter, numbered by position among several, as the parser does.
 // Cost: O(p), p = parameters.
-fn name_for_unpack_params(names: &mut [String], defs: &mut [ParamDef]) {
+pub(super) fn name_for_unpack_params(names: &mut [String], defs: &mut [ParamDef]) {
     use super::convert::{ANONYMOUS_ARRAY_SUBSIGNATURE, ANONYMOUS_SUBSIGNATURE};
     use crate::parser::{FOR_UNPACK, FOR_UNPACK_ARRAY};
     let several = defs.len() > 1;
@@ -2328,7 +2164,21 @@ pub(super) fn positional_param(name: &str) -> ParamDef {
 fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let is_until = node.class == RakuAstClass::StatementLoopUntil;
     let cond = lower_expr(named_child(node, "condition")?)?;
-    let body = lower_block(named_child(node, "body")?)?;
+    let block = named_child(node, "body")?;
+    if block.class == RakuAstClass::PointyBlock {
+        let defs = super::control_signature::params(block)?;
+        if defs.len() > 1 {
+            return Err(unsupported(node));
+        }
+        return Ok(crate::parser::loop_pointy_clause(
+            cond,
+            Some(defs),
+            lower_block(block)?,
+            is_until,
+            node_label(node)?,
+        ));
+    }
+    let body = lower_block(block)?;
     Ok(Stmt::While {
         cond: negate_if(cond, is_until),
         body,
@@ -2969,7 +2819,18 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 call_assign = Some((call_name_str(call)?, arg_exprs(call)?));
                 (Expr::Literal(Value::NIL), false)
             } else {
-                (lower_expr(named_child_or_positional(init)?)?, !is_binding)
+                let source = named_child_or_positional(init)?;
+                let value = lower_expr(source)?;
+                // The parser keeps initializer parentheses. Assignment codegen
+                // uses that grouping for itemization and multi-match results.
+                let value = if source.class == RakuAstClass::CircumfixParentheses
+                    && !matches!(value, Expr::Grouped(_) | Expr::PositionalPair(_))
+                {
+                    Expr::Grouped(Box::new(value))
+                } else {
+                    value
+                };
+                (value, !is_binding)
             }
         }
         // The same sigil-aware default the parser gives an uninitialized

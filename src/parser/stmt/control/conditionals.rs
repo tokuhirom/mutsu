@@ -1,21 +1,24 @@
 use super::*;
 
-static IF_BIND_TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
+use super::conditional_binding::{
+    ensure_last_clause_binding_var, lower_else_binding, lower_if_clause_binding,
+    parse_if_binding_params,
+};
 
 #[derive(Clone)]
 pub(crate) struct IfChainClause {
-    cond: Expr,
-    then_branch: Vec<Stmt>,
-    binding_var: Option<String>,
+    pub(super) cond: Expr,
+    pub(super) then_branch: Vec<Stmt>,
+    pub(super) binding_var: Option<String>,
     /// `Some(WithBlockKind::Orwith)` for an `orwith` clause, which desugars
     /// into the same `.defined` conditional an `elsif` would but which raku
     /// models as its own `Statement::Orwith`. See `Stmt::If`'s `with_kind`.
-    with_kind: Option<WithBlockKind>,
+    pub(super) with_kind: Option<WithBlockKind>,
 }
 
 pub(crate) struct ElseClause {
-    binding_params: Option<Vec<ParamDef>>,
-    body: Vec<Stmt>,
+    pub(super) binding_params: Option<Vec<ParamDef>>,
+    pub(super) body: Vec<Stmt>,
 }
 
 pub(super) fn conditional_expr(input: &str) -> PResult<'_, Expr> {
@@ -57,240 +60,6 @@ pub(crate) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
 
     let stmt = lower_if_chain(clauses, else_clause);
     Ok((rest, stmt))
-}
-
-fn parse_if_binding_params(input: &str) -> PResult<'_, Option<Vec<ParamDef>>> {
-    let Some(rest) = input.strip_prefix("->") else {
-        return Ok((input, None));
-    };
-    let (rest, _) = ws(rest)?;
-    // Zero-parameter pointy block: `if EXPR -> { ... }`
-    if rest.starts_with('{') {
-        return Ok((rest, Some(Vec::new())));
-    }
-
-    let (rest, params) = if let Some(rest) = rest.strip_prefix('(') {
-        let (rest, _) = ws(rest)?;
-        let (rest, params) = super::super::parse_param_list_pub(rest)?;
-        let (rest, _) = ws(rest)?;
-        let (rest, _) = parse_char(rest, ')')?;
-        // A pointy block has no parenthesised parameter list: `-> (...)` is one
-        // parameter with a destructuring sub-signature, the same shape `for` and
-        // a bare `-> (...)` lambda record. Reading the parens away turned
-        // `-> (:key($k))` into a top-level NAMED parameter and `-> ($a, $b)`
-        // into two positionals.
-        (
-            rest,
-            crate::parser::stmt::sub_param::fold_parenthesised_pointy_params(params),
-        )
-    } else {
-        super::super::parse_param_list_pub(rest)?
-    };
-    let (rest, _) = ws(rest)?;
-    let (rest, _) = if let Some(after_arrow) = rest.strip_prefix("-->") {
-        let (rest, _) = super::super::parse_return_type_annotation_pub(after_arrow)?;
-        let (rest, _) = ws(rest)?;
-        (rest, ())
-    } else {
-        (rest, ())
-    };
-    Ok((rest, Some(params)))
-}
-
-fn is_simple_if_binding(param: &ParamDef) -> bool {
-    param.traits.is_empty()
-        && param.shape_constraints.is_none()
-        && !param.named
-        && !param.slurpy
-        && !param.double_slurpy
-        // `+@a` (the single-argument rule) is a slurpy too: it must reach the
-        // real signature binder rather than the simple `my @a := COND`
-        // desugar, which cannot apply the one-arg rule.
-        && !param.onearg
-        && param.default.is_none()
-        && !param.optional_marker
-        && param.type_constraint.is_none()
-        && param.sub_signature.is_none()
-        && param.outer_sub_signature.is_none()
-        && param.code_signature.is_none()
-}
-
-fn next_if_bind_tmp_name() -> String {
-    let tmp_idx = IF_BIND_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("$__mutsu_if_bind_{tmp_idx}")
-}
-
-fn lower_if_clause_binding(
-    binding_params: Option<Vec<ParamDef>>,
-    then_branch: Vec<Stmt>,
-) -> (Option<String>, Vec<Stmt>) {
-    let Some(param_defs) = binding_params else {
-        return (None, then_branch);
-    };
-    if_pointy_clause(param_defs, then_branch)
-}
-
-/// The expansion of `if COND -> PARAMS { BODY }`: the `binding_var` the
-/// compiler binds the condition to, and the then-branch, which opens with a
-/// [`crate::ast::SourceForm::IfPointy`] record of the parameters and body as
-/// written. `rakuast::lower` calls it too, so a hand-built `Statement::If`
-/// over a `PointyBlock` expands the same way.
-// Cost: O(n), n = size of the body.
-pub(crate) fn if_pointy_clause(
-    param_defs: Vec<ParamDef>,
-    then_branch: Vec<Stmt>,
-) -> (Option<String>, Vec<Stmt>) {
-    if param_defs.is_empty() {
-        return (None, then_branch);
-    }
-    let record = Stmt::SourceForm(Box::new(crate::ast::SourceForm::IfPointy {
-        param_defs: param_defs.clone(),
-        body: then_branch.clone(),
-    }));
-    let (binding, mut stmts) = expand_if_pointy(param_defs, then_branch);
-    stmts.insert(0, record);
-    (binding, stmts)
-}
-
-fn expand_if_pointy(
-    param_defs: Vec<ParamDef>,
-    then_branch: Vec<Stmt>,
-) -> (Option<String>, Vec<Stmt>) {
-    if param_defs.len() == 1 && is_simple_if_binding(&param_defs[0]) {
-        // A sigilless pointy (`if EXPR -> \r { }`) is marked with a leading
-        // `\` so the compiler binds the value itself (no scalar itemization)
-        // and resolves the name as a bare word — see
-        // `Compiler::compile_if_binding_decl`.
-        let p = &param_defs[0];
-        if !p.sigilless && p.name.trim_start_matches('$') == "_" {
-            // `if COND -> $_ { BODY }` binds a FRESH topic for the block, not an
-            // ordinary lexical: declaring it as one (`my $_ = COND`) writes the
-            // enclosing scope's topic slot and leaves the bound value behind
-            // after the branch. Evaluate the condition once into a hidden temp
-            // and topicalize the body through `given`, whose own topic opcodes
-            // establish and restore the scope — the same reason the `orwith`
-            // arm below lowers through `given`.
-            let source_binding = next_if_bind_tmp_name();
-            let source_expr = Expr::Var(source_binding.trim_start_matches('$').to_string());
-            return (
-                Some(source_binding),
-                vec![Stmt::Given {
-                    topic: source_expr,
-                    body: then_branch,
-                    is_statement_modifier: false,
-                    with_kind: None,
-                }],
-            );
-        }
-        let name = if p.sigilless {
-            format!("\\{}", p.name)
-        } else {
-            p.name.clone()
-        };
-        return (Some(name), then_branch);
-    }
-
-    let source_binding = next_if_bind_tmp_name();
-    let source_expr = Expr::Var(source_binding.trim_start_matches('$').to_string());
-    // The condition is ONE argument. `if (1, 2) -> $a, $b` is "expected 2
-    // arguments but got 1" in rakudo, not a two-way bind -- the clause receives
-    // the condition value itself, and it is the *signature* that decides what
-    // to do with it. Slipping it (`|$tmp`) made a list condition bind several
-    // parameters, which no source ever asked for.
-    //
-    // The slurpy spellings in `roast/S04-statements/if.t` all follow from this
-    // one rule rather than needing their own: `*@a` flattens the single list
-    // argument, `**@a` keeps it whole, `+@a` applies the one-argument rule to
-    // it. `**@a` used to be special-cased here for exactly that reason.
-    let args = vec![source_expr];
-    let call_expr = Expr::CallOn {
-        target: Box::new(Expr::AnonSubParams {
-            params: param_defs.iter().map(|p| p.name.clone()).collect(),
-            param_defs,
-            return_type: None,
-            body: then_branch,
-            is_rw: false,
-            is_raw: false,
-            custom_traits: Default::default(),
-            is_whatever_code: false,
-            declarator: crate::ast::RoutineDeclarator::Block,
-        }),
-        args,
-    };
-    (Some(source_binding), vec![Stmt::Expr(call_expr)])
-}
-
-fn ensure_last_clause_binding_var(clauses: &mut [IfChainClause]) -> Option<String> {
-    let last_clause = clauses.last_mut()?;
-    Some(if let Some(existing) = &last_clause.binding_var {
-        existing.clone()
-    } else {
-        let generated = next_if_bind_tmp_name();
-        last_clause.binding_var = Some(generated.clone());
-        generated
-    })
-}
-
-/// Read the value the last clause's binding variable holds.
-///
-/// `binding_var` keeps the declaration's own spelling, and a sigilless
-/// `if COND -> \\a { }` is recorded as `\\a` — so the `\\` has to come off before
-/// the name is read, and the read itself is the bare word a sigilless binding
-/// is spelled as. Stripping only `$` left `Expr::Var("\\a")`, a name nothing
-/// declares, so `if 0 -> \\a { } else -> $x { }` handed the else clause Nil
-/// instead of the condition value.
-fn binding_var_read(source_binding: &str) -> Expr {
-    match source_binding.strip_prefix('\\') {
-        Some(bare) => Expr::BareWord(bare.to_string()),
-        None => Expr::Var(source_binding.trim_start_matches('$').to_string()),
-    }
-}
-
-fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt> {
-    let Some(param_defs) = else_clause.binding_params else {
-        return else_clause.body;
-    };
-    if param_defs.is_empty() {
-        return else_clause.body;
-    }
-    if param_defs.len() == 1 && is_simple_if_binding(&param_defs[0]) {
-        if param_defs[0].name.trim_start_matches('$') == "_" && !param_defs[0].sigilless {
-            // `else -> $_ { }` topicalizes through `given` for the same reason
-            // as the then-branch form — see `lower_if_clause_binding`.
-            return vec![Stmt::Given {
-                topic: binding_var_read(source_binding),
-                body: else_clause.body,
-                is_statement_modifier: false,
-                with_kind: None,
-            }];
-        }
-        let mut body = Vec::with_capacity(else_clause.body.len() + 1);
-        body.push(simple_pointy_bind(
-            &param_defs[0].name,
-            &binding_var_read(source_binding),
-            param_defs[0].sigilless,
-        ));
-        body.extend(else_clause.body);
-        return body;
-    }
-
-    let call_expr = Expr::CallOn {
-        target: Box::new(Expr::AnonSubParams {
-            params: param_defs.iter().map(|p| p.name.clone()).collect(),
-            param_defs,
-            return_type: None,
-            body: else_clause.body,
-            is_rw: false,
-            is_raw: false,
-            custom_traits: Default::default(),
-            is_whatever_code: false,
-            declarator: crate::ast::RoutineDeclarator::Block,
-        }),
-        // One argument, as in `lower_if_clause_binding` -- `else -> ...` shares
-        // the rule.
-        args: vec![binding_var_read(source_binding)],
-    };
-    vec![Stmt::Expr(call_expr)]
 }
 
 /// `else if` is a C-ism; Raku spells it `elsif`. Raise the dedicated
@@ -342,105 +111,22 @@ pub(crate) fn parse_elsif_chain(
             let (r, _) = ws1(r)?;
             let (r, orwith_cond_expr) = condition_expr(r)?;
             let (r, _) = ws(r)?;
-            // Check for optional pointy block: orwith EXPR -> $param { ... }
-            // The bound variable may use any sigil (e.g. `-> &edit { ... }`),
-            // not just `$`. VarDecl names strip a leading `$` but keep `&`/`@`/`%`.
-            let (r, orwith_param_name) = if let Some(r2) = r.strip_prefix("->") {
-                let (r2, _) = ws(r2)?;
-                // A typed pointy param (`orwith EXPR -> int $c { ... }`, the
-                // shape `Identity::Utils`'s `short-name` uses) names a type
-                // constraint before the sigil. Consume and discard it the same
-                // way `parse_for_pointy_param` does (this bind, like `with`'s
-                // own single-param path via `simple_pointy_bind`, does not
-                // enforce the type at runtime either) -- without this the type
-                // name was left unconsumed, `block(r)` then failed on the
-                // dangling `-> int $c { ... }` text, and the whole `orwith`
-                // clause's parse error made the ENTIRE `with`/`orwith` chain
-                // fall back to being re-parsed as a bareword call to `orwith`
-                // (ecosystem `Identity::Utils`, #Code::Coverage).
-                let r2 = match super::super::sub_param::parse_type_constraint_expr(r2) {
-                    Some((after_tc, _type_constraint)) => {
-                        let (after_ws, _) = ws(after_tc)?;
-                        if after_ws.starts_with(['$', '&', '@', '%']) {
-                            after_ws
-                        } else {
-                            r2
-                        }
-                    }
-                    None => r2,
-                };
-                let sigil = r2.chars().next();
-                if let Some(sig) = sigil.filter(|&c| c == '$' || c == '&' || c == '@' || c == '%') {
-                    let r_after_sigil = &r2[sig.len_utf8()..];
-                    let end = r_after_sigil
-                        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-                        .unwrap_or(r_after_sigil.len());
-                    let name = &r_after_sigil[..end];
-                    let r2 = &r_after_sigil[end..];
-                    let (mut r2, _) = ws(r2)?;
-                    // `-> $start is copy` (REPL): the bind below is already a
-                    // fresh variable, which is what `is copy` asks for.
-                    while let Some(after_is) = keyword("is", r2)
-                        && let Ok((after_ws, _)) = ws1(after_is)
-                        && let Some(after_trait) = keyword("copy", after_ws)
-                    {
-                        r2 = ws(after_trait)?.0;
-                    }
-                    let decl_name = if sig == '$' {
-                        name.to_string()
-                    } else {
-                        format!("{sig}{name}")
-                    };
-                    (r2, Some(decl_name))
-                } else {
-                    (r, None)
+            let (r, param, param_def) = if r.starts_with("->") || r.starts_with("<->") {
+                let (r, (param, def, params, _, _, _)) = parse_for_params(r)?;
+                if !params.is_empty() {
+                    return Err(PError::expected_at("single orwith pointy parameter", r));
                 }
+                (r, param, def)
             } else {
-                (r, None)
+                (r, None, None)
             };
-            let (r, orwith_body) = block(r)?;
-            // Topicalize $_ and optional param in the orwith body, via `given` so
-            // the fresh topic scope is established by the `given` opcode rather than
-            // a plain `$_ = <cond>` assignment — the latter throws X::Assignment::RO
-            // when the `orwith` is nested in a `for ^N { }` whose `$_` is read-only.
-            let mut orwith_given_body = Vec::new();
-            if let Some(ref pname) = orwith_param_name {
-                orwith_given_body.push(Stmt::VarDecl {
-                    name: pname.clone(),
-                    expr: orwith_cond_expr.clone(),
-                    type_constraint: None,
-                    is_state: false,
-                    is_our: false,
-                    is_dynamic: false,
-                    is_export: false,
-                    export_tags: Vec::new(),
-                    custom_traits: Vec::new(),
-                    where_constraint: None,
-                });
-            }
-            orwith_given_body.extend(orwith_body);
-            let orwith_then = vec![Stmt::Given {
-                topic: orwith_cond_expr.clone(),
-                body: orwith_given_body,
-                is_statement_modifier: false,
-                // Tagged distinctly for the pointy spelling, as in
-                // `with_stmt`: a pointy body is a `PointyBlock` in raku.
-                with_kind: Some(if orwith_param_name.is_none() {
-                    GivenWithKind::BlockTopic
-                } else {
-                    GivenWithKind::BlockTopicPointy
-                }),
-            }];
-            // orwith uses .defined as the condition
-            last_orwith_cond = Some(orwith_cond_expr.clone());
-            let orwith_cond = Expr::MethodCall {
-                target: Box::new(orwith_cond_expr),
-                name: Symbol::intern("defined"),
-                args: Vec::new(),
-                modifier: None,
-                quoted: false,
-                sugar: false,
-            };
+            let (r, body) = block_with_pointy_params(r, param_def.as_slice())?;
+            let tmp = crate::with_desugar::next_tmp_name();
+            let tmp_var = Expr::Var(tmp.clone());
+            let orwith_then =
+                with_then_branch(&orwith_cond_expr, &tmp_var, &param, &param_def, body);
+            last_orwith_cond = Some(tmp_var);
+            let orwith_cond = crate::with_desugar::defined_condition(false, &tmp, orwith_cond_expr);
             let (r, _) = ws(r)?;
             clauses.push(IfChainClause {
                 cond: orwith_cond,
@@ -469,48 +155,13 @@ pub(crate) fn parse_elsif_chain(
         // `given` (a fresh topic scope) so it is not blocked by an enclosing `for`'s
         // read-only `$_` (see the orwith branch above).
         if let Some(ref orwith_expr) = last_orwith_cond {
-            // An `else -> $pos` after `orwith` binds `$pos` to the *orwith value*
-            // (the last tested value), NOT to the generic else-binding source (the
-            // orwith clause's `.defined()` condition, which is a Bool). Bind each
-            // pointy param explicitly to the orwith value and drop `binding_params`
-            // so `lower_else_clause` does not re-bind it to the Bool.
-            let mut given_body = Vec::new();
-            // Whether this `else` binds anything of its own decides the tag
-            // below, so record it before `binding_params` is consumed.
-            let had_binding = binding_params.is_some();
-            if let Some(ref params) = binding_params {
-                for pd in params {
-                    if pd.name.is_empty() {
-                        continue;
-                    }
-                    given_body.push(Stmt::VarDecl {
-                        name: pd.name.clone(),
-                        expr: orwith_expr.clone(),
-                        type_constraint: None,
-                        is_state: false,
-                        is_our: false,
-                        is_dynamic: false,
-                        is_export: false,
-                        export_tags: Vec::new(),
-                        custom_traits: Vec::new(),
-                        where_constraint: None,
-                    });
-                }
-                binding_params = None;
+            let defs = binding_params.take().unwrap_or_default();
+            if defs.len() > 1 {
+                return Err(PError::expected_at("single else pointy parameter", r));
             }
-            given_body.extend(body);
-            body = vec![Stmt::Given {
-                topic: orwith_expr.clone(),
-                body: given_body,
-                is_statement_modifier: false,
-                // As above: a pointy `else -> $p` prepends its own binding to
-                // this block, so raku spells it as a `PointyBlock`.
-                with_kind: Some(if had_binding {
-                    GivenWithKind::BlockTopicPointy
-                } else {
-                    GivenWithKind::BlockTopic
-                }),
-            }];
+            let def = defs.into_iter().next();
+            let param = def.as_ref().map(|def| def.name.clone());
+            body = with_then_branch(orwith_expr, orwith_expr, &param, &def, body);
         }
         return Ok((
             r,
@@ -593,12 +244,43 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
             )));
         }
     }
+    Ok((rest, unless_clause(cond, binding_params, body)))
+}
+
+/// Expand the written unless clause through the same conditional binder.
+// Cost: O(n), n = size of the signature and body.
+pub(crate) fn unless_clause(
+    cond: Expr,
+    binding_params: Option<Vec<ParamDef>>,
+    body: Vec<Stmt>,
+) -> Stmt {
+    let record = binding_params.as_ref().map(|params| {
+        Stmt::SourceForm(Box::new(crate::ast::SourceForm::ControlPointy {
+            kind: crate::ast::ControlPointyKind::Unless,
+            label: None,
+            condition: cond.clone(),
+            param_defs: params.clone(),
+            body: body.clone(),
+        }))
+    });
+    let expanded = expand_unless_clause(cond, binding_params, body);
+    match record {
+        Some(record) => Stmt::SyntheticBlock(vec![record, expanded]),
+        None => expanded,
+    }
+}
+
+fn expand_unless_clause(
+    cond: Expr,
+    binding_params: Option<Vec<ParamDef>>,
+    body: Vec<Stmt>,
+) -> Stmt {
     // `unless COND -> $x { BODY }` binds the condition's OWN value (rakudo:
     // `unless 0 -> $_ { $_.say }` prints `0`, not the negation). Lower it as
     // the *else* branch of an un-negated `if`, which is exactly the machinery
     // `if COND { } else -> $x { }` already uses to hand the else clause the
     // condition value — rather than negating the condition and binding that.
-    if let Some(params) = binding_params.filter(|p| !p.is_empty()) {
+    if let Some(params) = binding_params {
         let clauses = vec![IfChainClause {
             cond,
             then_branch: Vec::new(),
@@ -609,22 +291,19 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
             binding_params: Some(params),
             body,
         };
-        return Ok((rest, lower_if_chain(clauses, Some(else_clause))));
+        return lower_if_chain(clauses, Some(else_clause));
     }
-    Ok((
-        rest,
-        Stmt::If {
-            cond: Expr::Unary {
-                op: TokenKind::Bang,
-                expr: Box::new(cond),
-                word: false,
-            },
-            then_branch: body,
-            else_branch: Vec::new(),
-            binding_var: None,
-            is_statement_modifier: false,
-            is_unless: true,
-            with_kind: None,
+    Stmt::If {
+        cond: Expr::Unary {
+            op: TokenKind::Bang,
+            expr: Box::new(cond),
+            word: false,
         },
-    ))
+        then_branch: body,
+        else_branch: Vec::new(),
+        binding_var: None,
+        is_statement_modifier: false,
+        is_unless: true,
+        with_kind: None,
+    }
 }

@@ -398,3 +398,26 @@ known declared types and setting terms keep their ordinary node classes. Final
 bare statement calls share the expression parser's deferred import decision.
 EVAL routine preseeding includes caller-visible packages and lexical callable
 aliases, excluding private short names from unrelated, previously loaded modules.
+
+### 6.5 S10: control signatures (2026-10-10)
+
+`ControlPointy` retains the written condition, signature and body of a pointy
+`unless`, `while` or `until` before its shared executable expansion. The
+compiler continues to consume ordinary conditional and loop bytecode; the
+record is skipped like the other source forms. Loop destructuring happens on
+each iteration, retaining `next` and `last` in the loop's own scope. `until`
+parameters receive the original condition value before its truth is negated.
+
+`orwith` uses the same pointy parameter parser and body expansion as `with`,
+retaining type constraints, sigilless names and destructuring. Its condition
+is saved once; the body and any trailing `else` consume that saved value.
+Pointy `else` blocks retain the existing signature source record, and lowering
+installs the last conditional's binding even when its then block has no
+explicit signature. That temporary never becomes a visible then parameter.
+
+The conditional and while/until constructors accept their condition and block
+fields, inherited labels and applicable continuation fields. Initializer
+parentheses are restored at the assignment boundary so multi-match result
+itemization agrees with the parser's tree. The read, constructed-tree and
+semantic contracts are pinned in
+`t/rakuast/rakuast-control-signature-cohort.t`.

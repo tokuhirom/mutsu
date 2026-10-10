@@ -187,26 +187,3 @@ pub(crate) fn with_conditional_branch(
         with_kind: Some(kind),
     }
 }
-
-/// The conditional one `orwith` clause lowers to: like `with`, but the
-/// condition is tested directly (the preceding clause already evaluated it into
-/// its own temp, and an `orwith` expression is evaluated only when reached).
-pub(crate) fn orwith_conditional(cond_expr: Expr, body: Vec<Stmt>, else_branch: Vec<Stmt>) -> Stmt {
-    let cond = Expr::MethodCall {
-        target: Box::new(cond_expr.clone()),
-        name: Symbol::intern("defined"),
-        args: Vec::new(),
-        modifier: None,
-        quoted: false,
-        sugar: false,
-    };
-    Stmt::If {
-        cond,
-        then_branch: vec![topic_given(cond_expr, body)],
-        else_branch,
-        binding_var: None,
-        is_statement_modifier: false,
-        is_unless: false,
-        with_kind: Some(WithBlockKind::Orwith),
-    }
-}
