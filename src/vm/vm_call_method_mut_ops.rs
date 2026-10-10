@@ -368,6 +368,7 @@ impl Interpreter {
             && !quoted
             && arg_sources_idx.is_none()
             && !self.accessor_ref_pending
+            && !self.has_any_wrap_chains()
             && !Self::scalar_early_lane_skips(name.raw)
             && !crate::runtime::find_method_intercept::any_user_find_method()
             && let Some(target) = self.stack.last()
@@ -545,6 +546,15 @@ impl Interpreter {
             let armed = self.arm_raw_invocant_for_found_method(code, target_name, &target, &found);
             let result = self.invoke_user_found_method(found, &target, &args);
             self.disarm_raw_invocant_arrival(armed);
+            self.stack.push(result?);
+            return Ok(());
+        }
+        // A wrapped method of a built-in class whose wrapper takes the invocant
+        // `is rw` (#12506): hand the variable's container to the wrapper.
+        if matches!(modifier, None | Some("?"))
+            && let Some(result) =
+                self.try_builtin_wrap_with_rw_invocant(code, target_name, &target, method_sym, &args)
+        {
             self.stack.push(result?);
             return Ok(());
         }

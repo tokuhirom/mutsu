@@ -215,6 +215,9 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // An `is rw` wrapper invocant is the caller's container: re-dispatch
+        // on its current contents, which the wrapper may have assigned.
+        let invocant = invocant.deref_container();
         let saved = self.dispatch.dispatcher_wrap_bypass.replace((
             method.to_string(),
             self.call_frames.len(),

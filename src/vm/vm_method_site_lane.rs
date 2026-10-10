@@ -101,6 +101,8 @@ impl Interpreter {
             || !self.pending_caller_var_writeback.is_empty()
             || !self.pending_local_updates.is_empty()
             || crate::runtime::find_method_intercept::any_user_find_method()
+            // A wrapped built-in method runs its wrapper, not the row (#12506).
+            || self.has_any_wrap_chains()
         {
             return None;
         }

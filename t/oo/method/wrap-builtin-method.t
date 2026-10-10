@@ -1,5 +1,5 @@
 use Test;
-plan 5;
+plan 8;
 
 my $p = Str.^find_method("uc");
 my $h = $p.wrap: method (|c) { "W:" ~ callsame };
@@ -17,3 +17,14 @@ print "a"; $*OUT.print("b");
 $pp.unwrap($w);
 is $t, "ab", 'wrapped IO::Handle.print captures print and .print';
 is "x".uc, "X", 'unrelated call unaffected';
+
+# An `is rw` wrapper invocant is the caller's container (#12506).
+my $dt = DateTime.new(2020,1,2,3,4,5);
+sub timezone(DateTime:D $self is rw) { $self = $self.in-timezone(3600); callsame }
+CORE::DateTime.^find_method('timezone').wrap(&timezone);
+is $dt.timezone, 3600, 'callsame sees the invocant the wrapper assigned';
+is $dt.hour, 4, 'the wrapper wrote back to the caller variable';
+my $s = "abc";
+sub shout(Str:D $self is rw) { $self = "xyz"; callsame }
+Str.^find_method('uc').wrap(&shout);
+is $s.uc ~ $s, "XYZxyz", 'rw invocant write-back on a Str variable';

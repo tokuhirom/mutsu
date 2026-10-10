@@ -262,3 +262,44 @@ fn is_role_mixed_array(value: &Value) -> bool {
         _ => false,
     }
 }
+
+impl Interpreter {
+    /// `$var.method(args)` where `method` of a built-in class is wrapped by a
+    /// wrapper whose invocant is `is rw`: run the chain with the variable's
+    /// container as the invocant, so the wrapper's assignment to it reaches
+    /// the caller. `None` when the call is not such a wrapped call, leaving it
+    /// to the ordinary dispatch (which wraps with a value copy).
+    ///
+    // Cost: O(1) when nothing in the program is wrapped; otherwise O(1) to find
+    // the chain, plus the cell capture and the wrappers' own calls.
+    pub(super) fn try_builtin_wrap_with_rw_invocant(
+        &mut self,
+        code: &CompiledCode,
+        target_name: &str,
+        target: &Value,
+        method_sym: crate::symbol::Symbol,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if target_name.is_empty() || !self.has_any_wrap_chains() {
+            return None;
+        }
+        let (class_name, chain) = self.builtin_value_wrap_chain(target, method_sym)?;
+        if !Self::wrap_chain_binds_rw_invocant(&chain) {
+            return None;
+        }
+        let cell = if target.is_container_ref() {
+            target.clone()
+        } else {
+            self.capture_lvalue_invocant_cell(code, target_name, target.clone(), None)?
+        };
+        let method = method_sym.resolve();
+        Some(self.run_builtin_method_wrap_in(
+            &class_name,
+            target,
+            Some(&cell),
+            &method,
+            args,
+            &chain,
+        ))
+    }
+}
