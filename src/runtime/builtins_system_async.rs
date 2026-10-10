@@ -294,6 +294,14 @@ impl Interpreter {
         v: Value,
         out: &mut Vec<Value>,
     ) -> Result<(), RuntimeError> {
+        // An argument read from a variable may arrive wrapped in a transient
+        // `VarRef` or a `ContainerRef` (a captured module-scope lexical); the
+        // Promise/Channel underneath is the await target.
+        let v = if v.is_varref() {
+            v.unwrap_varref().deref_container()
+        } else {
+            v.deref_container()
+        };
         if !matches!(v.view(), ValueView::Promise(_) | ValueView::Channel(_))
             && let Some(items) = v.as_list_items()
         {
