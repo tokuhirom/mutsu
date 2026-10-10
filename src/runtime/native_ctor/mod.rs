@@ -65,6 +65,7 @@ static CTORS: &[(&str, CtorFn, bool, bool)] = &[
     ("Channel", Interpreter::ctor_channel, false, true),
     ("CompUnit", Interpreter::ctor_compunit, false, false),
     ("CompUnit::DependencySpecification", Interpreter::ctor_compunit_dependencyspecification, false, false),
+    ("CompUnit::Handle", Interpreter::ctor_compunit_handle, false, false),
     ("CompUnit::Repository::FileSystem", Interpreter::ctor_compunit_repository_filesystem, false, false),
     ("CompUnit::Repository::Installation", Interpreter::ctor_compunit_repository_installation, false, false),
     ("Complex", Interpreter::ctor_complex, false, true),

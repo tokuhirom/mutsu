@@ -47,6 +47,30 @@ impl Interpreter {
             Ok(Value::make_instance(*class_name, attrs))
     }
 
+    /// `CompUnit::Handle.new($unit)` / `.new(:unit($unit))`: a handle over a
+    /// unit's lexical pad, modelled as a Hash (what `load-source` also hands
+    /// back), so `.unit` / `.globalish-package` answer for it.
+    // Cost: O(1) -- the pad is stored by reference.
+    pub(super) fn ctor_compunit_handle(
+        &mut self,
+        c: &CtorCall<'_>,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let mut unit = None;
+        for arg in &args {
+            match arg.view() {
+                ValueView::Pair(key, value) if matches!(key.as_str(), "unit" | "UNIT") => {
+                    unit = Some(value.clone());
+                }
+                ValueView::Pair(..) => {}
+                _ => unit = Some(arg.clone()),
+            }
+        }
+        let mut attrs = HashMap::new();
+        attrs.insert("unit".to_string(), unit.unwrap_or_else(|| Value::hash(ValueMap::default())));
+        Ok(Value::make_instance(c.class_name, attrs))
+    }
+
     /// `CompUnit::DependencySpecification`.
     pub(super) fn ctor_compunit_dependencyspecification(
         &mut self,
