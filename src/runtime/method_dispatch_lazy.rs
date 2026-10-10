@@ -275,12 +275,14 @@ impl Interpreter {
         // `Mu`'s own answers (`defined`, `Bool`, `so`, `not`, `WHICH`, `WHERE`, and `gist`
         // everywhere, `Str`/`raku` of a type object) are the base candidate too.
         let mu_base_override = (matches!(method_name, "BUILDALL" | "POPULATE" | "clone")
-            || matches!(
-                method_name,
-                "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist"
-            )
-            || (matches!(method_name, "Str" | "raku")
-                && matches!(invocant.view(), ValueView::Package(_))))
+            // A container subclass (`is Array`, `is Hash`) defers to its storage's
+            // answer instead (`container_protocol_override`).
+            || (!Self::invocant_carries_native_storage(&invocant)
+                && (matches!(
+                    method_name,
+                    "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist"
+                ) || (matches!(method_name, "Str" | "raku")
+                    && matches!(invocant.view(), ValueView::Package(_))))))
             && self.has_user_method_including_role(receiver_class, method_name);
         // A user (or role-composed) override of a native container protocol
         // method on an `is Hash`/`is Array`/`is BagHash`-style subclass is the
