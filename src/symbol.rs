@@ -565,7 +565,9 @@ static SHADOW_META_SUBJECT_TABLE: [OnceLock<Box<[AtomicU32; FLAG_CHUNK_LEN]>>; F
 /// The already-allocated subject slot for `idx`, if any.
 #[inline]
 fn subject_slot(idx: usize) -> Option<&'static AtomicU32> {
-    let chunk = SHADOW_META_SUBJECT_TABLE.get(idx >> FLAG_CHUNK_BITS)?.get()?;
+    let chunk = SHADOW_META_SUBJECT_TABLE
+        .get(idx >> FLAG_CHUNK_BITS)?
+        .get()?;
     Some(&chunk[idx & (FLAG_CHUNK_LEN - 1)])
 }
 
