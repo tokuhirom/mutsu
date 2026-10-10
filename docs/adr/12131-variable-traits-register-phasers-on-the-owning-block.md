@@ -109,8 +109,19 @@ settle the questions above, so the status stays Proposed.
   declaration stashes the slot before it runs and puts a defined value back
   (`__seeded_decl`), so a value the `ENTER` phaser assigned survives it, as
   with Rakudo's pre-allocated lexical.
-- A trait that is not lifted (unit level, package bodies) runs at the
-  declaration, after the block's ENTER queue, so an `ENTER` phaser runs at
-  once; other kinds are refused there.
-- Still open: `FIRST`/`NEXT`/`LAST`/`PRE`/`POST` kinds, and the unlifted
-  traits, which need the compile-time block identity section 4 describes.
+- A unit-level declaration is split into its static half and a `BEGIN`
+  that applies the traits over it (`lift_unit_var_traits`, before the unit's
+  block phasers are split off), and the unit's own queues get the replays. A
+  class or package body hoists the declaration, the trait calls and the
+  `ENTER` replay to the head of the body and appends `LEAVE`/`KEEP`/`UNDO`
+  and the loop kinds after them (`lift_package_var_traits`). The run-time half
+  of a split body now wraps its block phasers in a block of its own, so a
+  class body's `ENTER`/`LEAVE` run around its statements when the prologue
+  declared the class ahead.
+- `FIRST`, `NEXT`, `LAST`, `PRE` and `POST` are accepted too. Rakudo does not
+  check the verdict of a `PRE`/`POST` added this way, so neither does mutsu.
+- A trait that none of these reach (an `EVAL` string, a role body) runs at the
+  declaration: an `ENTER` phaser runs at once and other kinds are refused.
+- Still open: the compile-time `Block` identity section 4 describes, which
+  would let `Block.add_phaser` target an enclosing block rather than the
+  declaring one.
