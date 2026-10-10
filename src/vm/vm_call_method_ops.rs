@@ -119,7 +119,7 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
 ///   X::Multi::NoMatch is a separate follow-up.);
 /// - string coercion (`Str`/`Stringy`) warns "Use of Nil in string context"
 ///   and resumes with the empty string (`.gist` and `.raku` do NOT warn — they
-///   render "Nil" and stay on normal dispatch);
+///   render "Nil" and stay on normal dispatch); `join` does the same;
 /// - `ords` warns and resumes to an empty Seq; `chrs` warns and resumes to a
 ///   single null byte.
 ///
@@ -180,6 +180,11 @@ pub(crate) fn nil_predispatch_verdict(
             })
         }
         "Str" | "Stringy" if no_args => Some(NilPredispatchVerdict::Warn {
+            message: "Use of Nil in string context",
+            resume: Value::str(String::new()),
+        }),
+        // `Nil.join` / `Nil.join($sep)` joins the one stringified `Nil`.
+        "join" => Some(NilPredispatchVerdict::Warn {
             message: "Use of Nil in string context",
             resume: Value::str(String::new()),
         }),

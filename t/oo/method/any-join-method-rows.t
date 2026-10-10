@@ -1,5 +1,5 @@
 use Test;
-plan 20;
+plan 27;
 
 # Any.join is self.list.join (ADR-11276 §9.63); expectations checked against raku.
 my %h = a => 1;
@@ -24,3 +24,16 @@ is 'ba'.NFC.join, "9897", 'Uni.join';
 is 'ba'.NFC.join(","), "98,97", 'Uni.join with a separator';
 is Date.new("2020-01-02").join, "2020-01-02", 'Date.join';
 is (1, 2, 3).join("-"), "1-2-3", 'List.join still answers';
+
+# Set/Bag/Mix join their pairs; Nil.join answers "" (with a warning). #12607
+is set(<a>).join("-"), "a\tTrue", 'Set.join';
+is (set <a b>).join("-").split("-").sort.join("|"), "a\tTrue|b\tTrue", 'Set.join with a separator';
+is bag(<a a>).join, "a\t2", 'Bag.join';
+is mix(<a>).join("|"), "a\t1", 'Mix.join';
+is SetHash.new(<a>).join, "a\tTrue", 'SetHash.join';
+{
+    my @w;
+    CONTROL { when CX::Warn { @w.push(.message); .resume } }
+    is Nil.join("-"), "", 'Nil.join';
+    is @w.elems, 1, 'Nil.join warns once';
+}
