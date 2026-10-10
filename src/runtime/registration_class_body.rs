@@ -265,11 +265,17 @@ impl Interpreter {
                     crate::opcode::ClassBodyOp::TokenRule { plan } => {
                         let captured_body =
                             self.token_body_with_qq_thunks(&plan.raw_body, &plan.qq_thunk_chunks)?;
+                        let with_lexicals = self.token_body_with_body_lexicals(
+                            captured_body.as_deref().unwrap_or(&plan.raw_body),
+                        );
                         self.register_token_decl(
                             &plan.name.resolve(),
                             &plan.params,
                             &plan.param_defs,
-                            captured_body.as_deref().unwrap_or(&plan.raw_body),
+                            with_lexicals
+                                .as_deref()
+                                .or(captured_body.as_deref())
+                                .unwrap_or(&plan.raw_body),
                             plan.multi,
                             plan.source_line,
                         );

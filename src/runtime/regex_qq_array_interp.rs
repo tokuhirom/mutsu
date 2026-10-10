@@ -190,6 +190,46 @@ impl Interpreter {
     }
 }
 
+impl Interpreter {
+    /// A class-body `token`/`rule`/`regex` closes over the body's own `my`
+    /// lexicals (`class C { my $e = 'P|D'; my regex fe { <$e> } }`, #11292):
+    /// the declaration outlives the body's env, and a caller in another
+    /// compunit has no `$e`, so the names its pattern interpolates are
+    /// snapshotted from the live body env now, exactly as
+    /// `OpCode::LoadRegexClosure` does for a `/regex/` literal.
+    // Cost: O(b * v), b = body statements, v = names the pattern interpolates.
+    pub(crate) fn token_body_with_body_lexicals(&self, body: &[Stmt]) -> Option<Vec<Stmt>> {
+        let mut out: Option<Vec<Stmt>> = None;
+        for (i, stmt) in body.iter().enumerate() {
+            let Stmt::Expr(Expr::Literal(v)) = stmt else {
+                continue;
+            };
+            let pattern = match v.view() {
+                ValueView::Regex(p) => p.as_str().to_string(),
+                ValueView::RegexWithAdverbs(a) => a.pattern.as_str().to_string(),
+                _ => continue,
+            };
+            let mut names = crate::opcode::CompiledCode::regex_closure_var_names(&pattern);
+            names.extend(crate::opcode::CompiledCode::regex_kebab_var_names(&pattern));
+            let mut scope = crate::value::ValueMap::default();
+            for name in names {
+                if name == "_" || name == "/" || name.chars().all(|c| c.is_ascii_digit()) {
+                    continue;
+                }
+                if let Some(val) = self.env.get(name.as_str()).filter(|v| !v.is_nil()) {
+                    scope.insert(name, val.clone());
+                }
+            }
+            if scope.is_empty() {
+                continue;
+            }
+            let body_mut = out.get_or_insert_with(|| body.to_vec());
+            body_mut[i] = Stmt::Expr(Expr::Literal(with_scope_entries(v, &scope)));
+        }
+        out
+    }
+}
+
 /// `regex` with `entries` added to the scope it closed over.
 // Cost: O(s + e), s = the existing scope's size, e = entries.
 fn with_scope_entries(regex: &Value, entries: &crate::value::ValueMap) -> Value {

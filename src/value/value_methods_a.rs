@@ -263,6 +263,13 @@ impl Value {
         }
         match self.view() {
             ValueView::RegexWithAdverbs(a) => a.captured.clone(),
+            // A `&NAME` reference to a `token`/`rule`/`regex` points at the
+            // declaration's own closure-captured regex (#8680): it closes
+            // over the same scope the declaration did (#11292).
+            ValueView::Routine {
+                captured_regex: Some(r),
+                ..
+            } => r.regex_closure_scope(),
             _ => None,
         }
     }
@@ -275,6 +282,10 @@ impl Value {
         }
         match self.view() {
             ValueView::RegexWithAdverbs(a) => a.topic.clone(),
+            ValueView::Routine {
+                captured_regex: Some(r),
+                ..
+            } => r.regex_captured_topic(),
             _ => None,
         }
     }
