@@ -36,11 +36,23 @@ impl Interpreter {
 
     /// [`Self::has_multi_candidates`] for a `&self` caller — see
     /// [`Self::has_multi_function_unindexed`].
+    ///
+    /// It cannot fill the base-name key index, but it reads an entry the
+    /// `&mut` paths already filled, exactly as they do: without it every
+    /// probe walked the whole functions map, and `resolve_function` -- which
+    /// runs for each by-name `&name` read -- paid that walk per call (ADR-12529
+    /// phase 2 profile: ~190k instructions a probe on FunctionalParsers).
+    // Cost: O(k) with the index filled, k = registered keys sharing `name`'s
+    // base; else O(n), n = registered routines.
     pub(crate) fn has_multi_candidates_unindexed(&self, name: &str) -> bool {
         let packages = self.bare_name_packages_syms();
-        self.registry().has_multi_candidates(None, &packages, name)
+        let base_keys = Symbol::lookup(crate::runtime::dispatch_resolve::function_key_base_name(name))
+            .and_then(|base| self.dispatch.fn_keys_by_base.get(&base).cloned());
+        let base_keys = base_keys.as_deref();
+        self.registry()
+            .has_multi_candidates(base_keys, &packages, name)
             && (!self.operator_has_import_scope(name)
-                || self.any_visible_candidate_of(None, &packages, name))
+                || self.any_visible_candidate_of(base_keys, &packages, name))
     }
 
     pub(super) fn resolve_proto_function_with_alias(
