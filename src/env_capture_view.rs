@@ -90,6 +90,52 @@ impl Layer {
     }
 }
 
+/// Layer count past which [`compact_layers`] folds a capture's layers.
+const COMPACT_LAYERS_OVER: usize = 8;
+
+/// Bound the layer count of a capture under construction.
+///
+/// A closure created while other closures' bodies are running inherits the
+/// layers of every capture on the creating chain, so the count follows the
+/// *dynamic* nesting of closure creation and every lookup through the view is
+/// O(layers) (#12476). Past [`COMPACT_LAYERS_OVER`] the layers are folded into
+/// at most one shared and one open layer per precedence group (above / below
+/// the base tiers): each name keeps the value the highest layer answering for
+/// it held, hidden names are resolved away, and the result looks the same
+/// through [`CaptureView::get`]. A shared layer holds only system names and an
+/// open one also holds free variables, so the two kinds stay apart -- a later
+/// capture reuses the former as it is and filters the latter.
+// Cost: O(1) when not over the bound; O(e) otherwise, e = entries over all layers.
+pub(crate) fn compact_layers(layers: Vec<Layer>) -> Vec<Layer> {
+    if layers.len() <= COMPACT_LAYERS_OVER {
+        return layers;
+    }
+    let mut out = Vec::with_capacity(4);
+    for above_base in [true, false] {
+        let mut shared = SymMap::default();
+        let mut open = SymMap::default();
+        let mut seen: rustc_hash::FxHashSet<Symbol> = rustc_hash::FxHashSet::default();
+        for layer in layers.iter().filter(|l| l.above_base == above_base) {
+            let target = if layer.shared { &mut shared } else { &mut open };
+            for (k, v) in layer.tier.iter() {
+                if layer.hidden.as_ref().is_some_and(|h| h.contains(k)) || !seen.insert(*k) {
+                    continue;
+                }
+                target.insert(*k, v.clone());
+            }
+        }
+        if !open.is_empty() {
+            let mut l = Layer::open(Arc::new(Tier::new(open)));
+            l.above_base = above_base;
+            out.push(l);
+        }
+        if !shared.is_empty() {
+            out.push(Layer::shared(Arc::new(Tier::new(shared)), None, above_base));
+        }
+    }
+    out
+}
+
 /// A closure capture as a stack of tiers, highest precedence first. Immutable
 /// once built. See the module docs.
 pub(crate) struct CaptureView {
@@ -324,5 +370,30 @@ mod tests {
         assert_eq!(view.get(&s("a")), Some(&Value::int(9)));
         assert_eq!(view.get(&s("b")), Some(&Value::int(2)));
         assert_eq!(view.layers().len(), 2);
+    }
+
+    #[test]
+    fn compaction_keeps_what_get_answers() {
+        let hidden: FxHashSet<Symbol> = [s("h")].into_iter().collect();
+        let mut layers = Vec::new();
+        for i in 0..40 {
+            let name = format!("n{}", i % 7);
+            layers.push(Layer::shared(
+                tier(&[(&name, i), ("h", 100 + i), ("dup", i)]),
+                Some(Arc::new(hidden.clone())),
+                i % 2 == 0,
+            ));
+            layers.sort_by_key(|l| !l.above_base);
+        }
+        layers.push(Layer::open(tier(&[("free", 1), ("dup", -1)])));
+        let before = CaptureView::new(layers.clone());
+        let compact = compact_layers(layers);
+        assert!(compact.len() <= 4);
+        let after = CaptureView::new(compact);
+        for n in ["n0", "n3", "n6", "dup", "free", "h", "nope"] {
+            assert_eq!(after.get(&s(n)), before.get(&s(n)), "{n}");
+            assert_eq!(after.get_above_base(&s(n)), before.get_above_base(&s(n)));
+            assert_eq!(after.get_below_base(&s(n)), before.get_below_base(&s(n)));
+        }
     }
 }

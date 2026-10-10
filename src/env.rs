@@ -2031,6 +2031,7 @@ impl Env {
             }
         }
         let dyn_base = nodes.last().and_then(|root| root.dyn_base.clone());
+        let layers = crate::env_capture_view::compact_layers(layers);
         let fallback = (!layers.is_empty()).then(|| Arc::new(CaptureView::new(layers)));
         let mut env = Self {
             inner: Arc::new(Tier::new(own)),
