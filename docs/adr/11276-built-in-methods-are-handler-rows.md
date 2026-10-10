@@ -2348,3 +2348,17 @@ differential probe over nine receiver kinds and fourteen terminals answers the s
   forbids a row that does not answer for a shape that reaches it. `Hash.join` joins the pairs through the cascade; it needs its own handler first.
 - **Left on #12389**: `Any.batch`/`hash`/`list`/`serial` (the handlers are shape-specific), `List.chrs`, `List.AT-POS`/`Array.AT-POS` (`positional.rs`
   explains why they have no row), `Map.AT-KEY`/`Str`, `clone`, `Junction`/`Nil` and `Map.gist`.
+
+### 9.62 `clone` of the aggregates (2026-10-10)
+
+`refactor/11276-clone-rows` (issue #12389, item 1). Three `Handler::Interp` rows in `method_table::collections::clone`: `clone` on `Array`, `Hash`
+and `Pair` (arity 0; a `Map` shares the `Hash` shape, so `Hash`'s row answers it). One routine, `container_clone`, copies the receiver (the cascade's `clone` arm in `dispatch_core_coerce.rs`
+calls it for `Array`/`Hash`/`Pair`/`ValuePair`); the row then carries the receiver's declared container type over with
+`container_type_metadata` / `tag_container_metadata`, which is why it is an interpreter row: an array's element type lives in an
+interpreter side table, while a hash embeds it in `HashData`. The by-name array arm of `methods_call_dispatch.rs` and `Value::array_shallow_clone`
+(whose copy lost the `shape`, the holes and the container de-aliasing the cascade keeps) are deleted: `@a.clone` has one implementation.
+No behaviour change; pinned in `t/oo/method/collection-clone-method-rows.t` against `raku`.
+
+- **Left on #12389**: `Junction`/`Nil` shapes, `Map.gist`, `Hash.join`, `Any.batch`/`hash`/`list`/`serial`, `List.chrs`, `Map.AT-KEY`/`Str`.
+  The remaining `clone` arms belong to other owners (`Set`/`Bag`/`Mix`, `Seq`/`Slip`, scalars, `Match`, the mixin path, `Mu`).
+
