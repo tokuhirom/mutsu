@@ -63,6 +63,7 @@ mod routine_source;
 mod routine_traits;
 mod shadowed_terms;
 mod signature_decl;
+mod signature_literal;
 mod subscript_adverb;
 mod substitution;
 mod symbolic_deref;
@@ -115,6 +116,7 @@ pub enum RakuAstClass {
     CompUnit,
     StatementList,
     StatementExpression,
+    StatementEmpty,
     StatementAlso,
     StatementPrefixReact,
     StatementPrefixSupply,
@@ -453,6 +455,7 @@ pub enum RakuAstClass {
     Submethod,
     // `self` — a term with no fields of its own.
     TermSelf,
+    TermDeclaration,
     /// `...` / `!!!` / `???` (the yada-yada stubs).
     StubFail,
     StubDie,
@@ -482,6 +485,7 @@ impl RakuAstClass {
             CompUnit => "RakuAST::CompUnit",
             StatementList => "RakuAST::StatementList",
             StatementExpression => "RakuAST::Statement::Expression",
+            StatementEmpty => "RakuAST::Statement::Empty",
             StatementAlso => "RakuAST::Statement::Also",
             StatementPrefixReact => "RakuAST::StatementPrefix::React",
             StatementPrefixSupply => "RakuAST::StatementPrefix::Supply",
@@ -745,6 +749,7 @@ impl RakuAstClass {
             Package => "RakuAST::Package",
             Submethod => "RakuAST::Submethod",
             TermSelf => "RakuAST::Term::Self",
+            TermDeclaration => "RakuAST::Term::Declaration",
             StubFail => "RakuAST::Stub::Fail",
             StubDie => "RakuAST::Stub::Die",
             StubWarn => "RakuAST::Stub::Warn",
@@ -770,6 +775,7 @@ impl RakuAstClass {
                 | RakuAstClass::WhateverCodeArgument
                 | RakuAstClass::TermHyperWhatever
                 | RakuAstClass::TermSelf
+                | RakuAstClass::TermDeclaration
                 | RakuAstClass::StubFail
                 | RakuAstClass::StubDie
                 | RakuAstClass::StubWarn
@@ -790,6 +796,7 @@ impl RakuAstClass {
                 | RakuAstClass::RegexAssertionRecurse
                 | RakuAstClass::RegexMatchTo
                 | RakuAstClass::OnlyStar
+                | RakuAstClass::StatementEmpty
                 | RakuAstClass::RegexQuantifierRange
                 | RakuAstClass::RegexQuantifierBlockRange
                 | RakuAstClass::RegexCharClass(_)
@@ -862,6 +869,7 @@ impl RakuAstClass {
         const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
         const EXPR: &[&str] = &["RakuAST::Expression"];
         match self {
+            StatementEmpty => &["RakuAST::Statement", "RakuAST::Blorst", "RakuAST::ProducesNil", "RakuAST::ImplicitLookups"],
             IntLiteral
             | NumLiteral
             | RatLiteral
@@ -899,7 +907,7 @@ impl RakuAstClass {
             // `RakuAST::Term::` name prefix already answers `~~ RakuAST::Term`
             // for an instance, but `RakuAST::Expression` is only reachable
             // through this list.
-            | TermSelf => TERM,
+            | TermSelf | TermDeclaration => TERM,
             // Measured MRO: `Fail, Stub, Term, Termish, Expression, ..., Node`.
             StubFail | StubDie | StubWarn => &["RakuAST::Stub", "RakuAST::Term", "RakuAST::Expression"],
             ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | ApplyDottyInfix | Ternary => {
@@ -1334,6 +1342,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CompUnit,
     RakuAstClass::StatementList,
     RakuAstClass::StatementExpression,
+    RakuAstClass::StatementEmpty,
     RakuAstClass::StatementAlso,
     RakuAstClass::StatementPrefixReact,
     RakuAstClass::StatementPrefixSupply,
@@ -1599,6 +1608,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Package,
     RakuAstClass::Submethod,
     RakuAstClass::TermSelf,
+    RakuAstClass::TermDeclaration,
     RakuAstClass::StubFail,
     RakuAstClass::StubDie,
     RakuAstClass::StubWarn,
@@ -2042,9 +2052,19 @@ pub fn construct(
     if class_name == "RakuAST::Signature" && method == "new" {
         let parameters = named_arg(args, "parameters")
             .map(|value| {
-                value.as_list_items().map(<[Value]>::to_vec).ok_or_else(|| {
-                    RuntimeError::new("RakuAST::Signature.new expects `parameters` to be a list")
-                })
+                value
+                    .as_list_items()
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|item| item.with_deref(|value| value.descalarize().clone()))
+                            .collect::<Vec<_>>()
+                    })
+                    .ok_or_else(|| {
+                        RuntimeError::new(
+                            "RakuAST::Signature.new expects `parameters` to be a list",
+                        )
+                    })
             })
             .transpose()?
             .unwrap_or_default();
@@ -2069,6 +2089,9 @@ pub fn construct(
             class: RakuAstClass::Signature,
             fields,
         }))));
+    }
+    if class_name == "RakuAST::VarDeclaration::Signature" && method == "new" {
+        return signature_decl::construct(args).map(Some);
     }
     if class_name == "RakuAST::Parameter" && method == "new" {
         let target = named_arg(args, "target");
@@ -2139,6 +2162,17 @@ pub fn construct(
                 });
             }
         }
+        if let Some(default_rw) = named_arg(args, "default-rw") {
+            if !matches!(default_rw.view(), ValueView::Bool(_)) {
+                return Err(RuntimeError::new(
+                    "RakuAST::Parameter.new expects `default-rw` to be Bool",
+                ));
+            }
+            fields.push(RakuAstField {
+                name: Some("default-rw"),
+                value: RakuAstFieldValue::Node(default_rw),
+            });
+        }
         if let Some(target) = target {
             fields.push(RakuAstField {
                 name: Some("target"),
@@ -2186,6 +2220,12 @@ pub fn construct(
             fields.push(RakuAstField {
                 name: Some("sub-signature"),
                 value: RakuAstFieldValue::Node(sub_signature),
+            });
+        }
+        if let Some(value) = named_arg(args, "value") {
+            fields.push(RakuAstField {
+                name: Some("value"),
+                value: RakuAstFieldValue::Node(value),
             });
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
@@ -3206,6 +3246,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
         ("RakuAST::Var::Lexical", "new") => RakuAstClass::VarLexical,
         ("RakuAST::Var::Dynamic", "new") => RakuAstClass::VarDynamic,
         ("RakuAST::Circumfix::Parentheses", "new") => RakuAstClass::CircumfixParentheses,
+        ("RakuAST::Circumfix::ArrayComposer", "new") => RakuAstClass::CircumfixArrayComposer,
         ("RakuAST::VarDeclaration::Placeholder::Positional", "new") => {
             RakuAstClass::VarDeclarationPlaceholderPositional
         }
@@ -3290,6 +3331,7 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
 
 fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass> {
     Some(match (class_name, method) {
+        ("RakuAST::Statement::Empty", "new") => RakuAstClass::StatementEmpty,
         ("RakuAST::VarDeclaration::Placeholder::SlurpyArray", "new") => {
             RakuAstClass::VarDeclarationPlaceholderSlurpyArray
         }
@@ -3585,6 +3627,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::VarPackage
             | RakuAstClass::VarDynamic
             | RakuAstClass::StatementExpression
+            | RakuAstClass::StatementEmpty
             | RakuAstClass::StatementUse
             | RakuAstClass::StatementRequire
             | RakuAstClass::ApplyInfix
@@ -3624,6 +3667,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::PointyBlock
             | RakuAstClass::Blockoid
             | RakuAstClass::CircumfixParentheses
+            | RakuAstClass::CircumfixArrayComposer
             | RakuAstClass::VarDeclarationPlaceholderPositional
             | RakuAstClass::VarDeclarationPlaceholderNamed
             | RakuAstClass::VarDeclarationPlaceholderSlurpyArray
@@ -3636,6 +3680,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::ParameterTargetVar
             | RakuAstClass::ParameterTargetTerm
             | RakuAstClass::VarDeclarationSimple
+            | RakuAstClass::VarDeclarationSignature
             | RakuAstClass::InitializerAssign
             | RakuAstClass::InitializerCallAssign
             | RakuAstClass::InitializerBind

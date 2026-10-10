@@ -2896,6 +2896,42 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `<a b  c>`: rakudo keeps the raw text of a word list, whitespace
         // included, as one word-quote (ADR-12199).
         Expr::Spelled(spelled) => match &spelled.spelling {
+            Spelling::ArraySections(sections) => {
+                let fields = sections
+                    .iter()
+                    .map(|items| {
+                        if items.is_empty() {
+                            return Ok(node_field(
+                                None,
+                                RakuAstNode {
+                                    class: RakuAstClass::StatementEmpty,
+                                    fields: Vec::new(),
+                                },
+                            ));
+                        }
+                        let expression = match items.as_slice() {
+                            [single] => convert_expr(single)?,
+                            _ => comma_list_node(items)?,
+                        };
+                        let statement = if expression.class == RakuAstClass::StatementExpression {
+                            expression
+                        } else {
+                            statement_expression(expression)
+                        };
+                        Ok(node_field(None, statement))
+                    })
+                    .collect::<Result<Vec<_>, RuntimeError>>()?;
+                Ok(RakuAstNode {
+                    class: RakuAstClass::CircumfixArrayComposer,
+                    fields: vec![node_field(
+                        None,
+                        RakuAstNode {
+                            class: RakuAstClass::SemiList,
+                            fields,
+                        },
+                    )],
+                })
+            }
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::Heredoc { stop } => heredoc_node(&spelled.expr, stop),
             Spelling::WordQuote {
@@ -3270,6 +3306,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // A declaration in expression position (`class { }`, `role { }`,
         // `push my @u, 1`): the parser wraps the declaration in a `DoStmt`,
         // rakudo has the node itself.
+        Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::Expr(_)) => {
+            let Stmt::Expr(expr) = stmt.as_ref() else {
+                unreachable!()
+            };
+            convert_expr(expr)
+        }
         Expr::DoStmt(stmt)
             if matches!(
                 stmt.as_ref(),
@@ -3277,6 +3319,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     | Stmt::RoleDecl { .. }
                     | Stmt::VarDecl { .. }
                     | Stmt::SubDecl { .. }
+                    | Stmt::ProtoDecl { .. }
                     | Stmt::MethodDecl { .. }
                     | Stmt::EnumDecl { .. }
             ) || crate::ast::sigilless_decl::declaration(stmt).is_some()
@@ -3331,6 +3374,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         // `(temp $x)` / `(let $x = 1)` in expression position.
         Expr::DoStmt(stmt) if super::temporize::convert(stmt).is_some() => {
             super::temporize::convert(stmt).expect("just checked")
+        }
+        Expr::DoStmt(stmt) if is_modifier_statement(stmt) => {
+            convert_stmt(stmt)?.ok_or_else(|| unsupported("empty modified expression"))
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
@@ -5607,6 +5653,11 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
             fields.push(node_field(Some("type"), type_setting_any()));
         }
         fields.push(type_captures_field(type_capture));
+        if pd.is_invocant {
+            // Rakudo omits the invocant flag of a bare capture from .raku.
+            // Retain it as metadata so lowering does not add an argument.
+            fields.push(leaf_field(Some("capture-invocant"), Value::truth(true)));
+        }
         match &pd.default {
             Some(default) => fields.push(node_field(Some("default"), convert_expr(default)?)),
             None => fields.push(RakuAstField {
@@ -5745,7 +5796,11 @@ fn parameter(pd: &ParamDef, type_setting: bool) -> Result<RakuAstNode, RuntimeEr
         node.fields.insert(
             target_index,
             RakuAstField {
-                name: Some("invocant"),
+                name: Some(if implicit_invocant && type_capture_name(pd).is_some() {
+                    "capture-invocant"
+                } else {
+                    "invocant"
+                }),
                 value: RakuAstFieldValue::Node(Value::truth(true)),
             },
         );
@@ -6982,7 +7037,14 @@ fn colonpair_value_node(expr: &Expr, parenthesize: bool) -> Result<RakuAstNode, 
     }
     let semilist = RakuAstNode {
         class: RakuAstClass::SemiList,
-        fields: vec![node_field(None, statement_expression(value))],
+        fields: vec![node_field(
+            None,
+            if value.class == RakuAstClass::StatementExpression {
+                value
+            } else {
+                statement_expression(value)
+            },
+        )],
     };
     let parenthesized = RakuAstNode {
         class: RakuAstClass::CircumfixParentheses,

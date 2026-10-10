@@ -120,7 +120,7 @@ pub(crate) fn interpreter_version() -> String {
     // lost `perl5` (the `:P5` regex adverb is gone, ADR-0138).
     // 16: `SerValue` gained `RegexDeclared` (a grammar token's verbatim
     // declaration text), shifting the discriminants after `Regex`.
-    const CACHE_FORMAT_VERSION: u32 = 20;
+    const CACHE_FORMAT_VERSION: u32 = 21;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

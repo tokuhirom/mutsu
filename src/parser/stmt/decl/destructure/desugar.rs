@@ -226,7 +226,10 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
             stmts.push(Stmt::VarDecl {
                 name: format!("__destructure_lit_{i}"),
                 expr: read,
-                type_constraint: None,
+                type_constraint: dvar
+                    .per_var_type_constraint
+                    .clone()
+                    .or_else(|| type_constraint.clone()),
                 is_state,
                 is_our: false,
                 is_dynamic: false,

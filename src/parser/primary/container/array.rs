@@ -141,7 +141,7 @@ fn array_literal_inner(input: &str) -> PResult<'_, Expr> {
 
 /// The value of an empty slice in an array composer (`[;]` is `[Any]`).
 fn empty_array_section() -> Vec<Expr> {
-    vec![Expr::Literal(Value::package(crate::symbol::wk::any()))]
+    Vec::new()
 }
 
 /// Parse one array-composer element: an expression optionally followed by inline
@@ -178,7 +178,7 @@ fn parse_array_element(input: &str) -> PResult<'_, Expr> {
 /// the array is flat. Otherwise each non-empty section becomes one element: a
 /// multi-item section is a sub-list, a single-item section is the bare item. A
 /// single overall section (e.g. a trailing `;`: `[1,2,3;]`) stays flat.
-fn finalize_array_sections(
+pub(crate) fn finalize_array_sections(
     mut sections: Vec<Vec<Expr>>,
     current: Vec<Expr>,
     saw_semicolon: bool,
@@ -190,6 +190,27 @@ fn finalize_array_sections(
     if !current.is_empty() {
         sections.push(current);
     }
+    let source = crate::ast::spelled::keeping().then(|| sections.clone());
+    let result = build_array_sections(sections);
+    match source {
+        Some(sections) => Expr::spelled(result, || {
+            crate::ast::spelled::Spelling::ArraySections(sections)
+        }),
+        None => result,
+    }
+}
+
+fn build_array_sections(sections: Vec<Vec<Expr>>) -> Expr {
+    let sections: Vec<_> = sections
+        .into_iter()
+        .map(|section| {
+            if section.is_empty() {
+                vec![Expr::Literal(Value::package(crate::symbol::wk::any()))]
+            } else {
+                section
+            }
+        })
+        .collect();
     if sections.len() <= 1 {
         let flat = sections.into_iter().next().unwrap_or_default();
         return Expr::BracketArray(normalize_array_items(flat), false);

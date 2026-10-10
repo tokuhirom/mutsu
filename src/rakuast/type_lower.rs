@@ -23,7 +23,8 @@ pub(super) fn type_constraint(
 ) -> Result<String, RuntimeError> {
     match type_node.class {
         RakuAstClass::TypeSimple => {
-            match name_parts::name_shape(named_child_or_positional(type_node)?) {
+            let name_node = named_child_or_positional(type_node)?;
+            match name_parts::name_shape(name_node) {
                 Some(NameShape::Identifier(name)) => Ok(name),
                 _ => Err(unsupported(owner)),
             }
@@ -84,7 +85,7 @@ pub(super) fn type_constraint(
                     | RakuAstClass::TypeDefinedness
                     | RakuAstClass::TypeAnyDefinedness
                     | RakuAstClass::TypeCoercion
-                    | RakuAstClass::TypeParameterized => type_constraint(owner, arg)?,
+                    | RakuAstClass::TypeParameterized => argument_type_constraint(owner, arg)?,
                     _ => regex_subrule_argument_source(arg)?,
                 });
             }
@@ -119,10 +120,30 @@ pub(super) fn type_application_args(
             let ValueView::RakuAst(node) = value.view() else {
                 return Err(unsupported(owner));
             };
-            lower_expr(node)
+            if node.class == RakuAstClass::TypeSimple {
+                Ok(Expr::BareWord(argument_type_constraint(owner, node)?))
+            } else {
+                lower_expr(node)
+            }
         })
         .collect::<Result<Vec<_>, _>>()
         .map(Some)
+}
+
+/// A leading empty edge denotes a capture only in a type argument. Ordinary
+/// type references such as `::Int` still resolve the plain identifier.
+fn argument_type_constraint(
+    owner: &RakuAstNode,
+    node: &RakuAstNode,
+) -> Result<String, RuntimeError> {
+    let name = type_constraint(owner, node)?;
+    if node.class == RakuAstClass::TypeSimple
+        && name_parts::has_leading_empty(named_child_or_positional(node)?)
+    {
+        Ok(format!("::{name}"))
+    } else {
+        Ok(name)
+    }
 }
 
 /// The `base-type` of a definedness / coercion / parameterized type, which the

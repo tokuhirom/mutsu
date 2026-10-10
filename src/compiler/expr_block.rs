@@ -1292,6 +1292,11 @@ impl Compiler {
                 name,
                 name_expr: None,
                 ..
+            }
+            | Stmt::ProtoDecl {
+                name,
+                is_method: false,
+                ..
             } if !name.resolve().is_empty() => {
                 // A named sub/method declaration in expression position
                 // (`my sub foo {...}`, `my method foo {...}`) registers the routine

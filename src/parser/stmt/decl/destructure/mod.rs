@@ -436,31 +436,24 @@ fn parse_destructuring_with_rhs(
             rhs: raw_rhs,
         }),
     };
-    let (mut stmts, result) = desugar::expand_with_rhs(&decl);
-    // Re-attach a trailing loose word-logical with the assigned list as its
-    // left operand, so the block's value is `(<assignment>) and ...`.
-    let (rest, result, has_following_block, has_tail) = {
-        let (r, _) = ws(rest)?;
-        if crate::parser::expr::starts_with_loose_word_logical(r) {
-            let (r, tail) = crate::parser::expr::word_logical_tail_pub(r, result)?;
-            let (r_ws, _) = ws(r)?;
-            let block_follows = r_ws.starts_with('{');
-            (
-                if block_follows { r } else { r_ws },
-                tail,
-                block_follows,
-                true,
-            )
+    let (r, _) = ws(rest)?;
+    if crate::parser::expr::starts_with_loose_word_logical(r) {
+        // Keep the declaration as the left operand. Flattening its expansion
+        // before parsing the tail destroys the source form and prevents the
+        // frontend from retaining the signature contracts.
+        let seed = Expr::DoStmt(Box::new(desugar::signature_decl(decl)));
+        let (r, tail) = crate::parser::expr::word_logical_tail_pub(r, seed)?;
+        let (r_ws, _) = ws(r)?;
+        let stmt = Stmt::Expr(tail);
+        return if r_ws.starts_with('{') {
+            Ok((r, stmt))
         } else {
-            (rest, result, has_following_block, false)
-        }
-    };
-    stmts.push(Stmt::Expr(result));
-    // The source-form record describes the declaration alone, so a block whose
-    // value a trailing word-logical has rewritten carries none.
-    if !has_tail {
-        stmts.insert(0, desugar::source_form(decl));
+            parse_statement_modifier(r_ws, stmt)
+        };
     }
+    let (mut stmts, result) = desugar::expand_with_rhs(&decl);
+    stmts.push(Stmt::Expr(result));
+    stmts.insert(0, desugar::source_form(decl));
     let block = Stmt::SyntheticBlock(stmts);
     if has_following_block {
         // In `if my ($a, $b) = f() { ... }`, the braced block belongs to the

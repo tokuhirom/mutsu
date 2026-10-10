@@ -42,6 +42,7 @@ pub(crate) mod no_execute;
 mod outer_redecl;
 mod parse_result;
 mod primary;
+pub(crate) use primary::container::finalize_array_sections;
 mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;

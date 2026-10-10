@@ -327,3 +327,36 @@ The executable contract is `t/rakuast/rakuast-routine-trait-order.t`, measured
 against Rakudo for the read and EVAL directions. Existing execution fields
 continue to define builtin-trait application; this slice does not introduce a
 second trait evaluator.
+
+### 6.3 S10: declaring signatures and role argument cohort (2026-10-10)
+
+Declaring-signature parameters retain optional flags and default expressions;
+literal postconstraints expose their value and the generated matcher over
+`Term::Declaration`. Lowering uses the shared declaration expansion, including
+its arity checks, lazy defaults and assigned-container result. A bare group's
+default is retained as hidden `group-default` metadata because Rakudo omits it
+from the constructor rendering. Nested declarator groups remain refused: their
+parser representation currently flattens the leaves and must first retain the
+actual structure.
+
+A loose logical tail keeps the declaring expression as its left operand,
+instead of discarding the declaration record while flattening the expansion.
+The bare capture form of an invocant keeps hidden `capture-invocant` metadata;
+Rakudo's renderer omits this flag, but lowering needs it to avoid consuming an
+extra positional argument. Folded sigilless method invocants participate in
+the existing typed name visitor.
+
+Role application arguments use their parsed expressions and `BinaryForm` for
+colonpairs, rather than splitting their source strings a second time. The
+executable contract is `t/rakuast/rakuast-signature-type-cohort.t`.
+
+The same cohort retains declarations and modified statements in expression
+context, including nameless methods in a statement list. Semicolon-separated
+array composer sections use the existing `Spelling` metadata: the compiler
+still consumes the normalized execution tree, while conversion sees every
+written section and lowering shares the parser's section builder. Empty sections
+are `Statement::Empty` nodes and keep their ordinary `Any` array element.
+Constructed composers lower every statement rather than only the first.
+Expression-position proto subs return the registered code value, using the same
+bytecode path as named sub declarations. The executable contract is
+`t/rakuast/rakuast-expression-context-cohort.t`.

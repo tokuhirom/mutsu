@@ -323,6 +323,11 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                         insert_term(self.0, decl.name.to_string());
                     }
                 }
+                // A method literal's folded sigilless invocant is a bind
+                // followed by this marker, just like any other term binding.
+                Stmt::MarkSigilless(name) | Stmt::MarkSigillessReadonly(name) => {
+                    insert_term(self.0, name.clone());
+                }
                 Stmt::VarDecl {
                     name,
                     custom_traits,
