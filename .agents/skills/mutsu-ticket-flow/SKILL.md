@@ -29,7 +29,7 @@ nothing. The settled defaults:
 
 | Question you might be tempted to ask | The standing answer |
 | --- | --- |
-| One PR per issue, or one for the batch? | **One issue, one PR.** Never bundle, never stack. |
+| One PR per issue, or one for the batch? | **One issue, one PR.** Never bundle. |
 | Which issues are in scope? | The filter the user named, oldest-first, skipping `working` / live claims. No `tier:*` is a workable state, not a blocker. |
 | Should I claim it? | Yes — the comment protocol below, every time. The `working` label is derived from it; never set it by hand. |
 | Add a test? Write `news/`? `Closes #NNNN`? | Yes to all three, on every code fix. |
@@ -202,7 +202,7 @@ single branch name and forbid pushing anywhere else. That is a **session** setti
 rule — nothing here can lift it, and you must not push to a different branch to work around it.
 
 It does not change one-ticket-one-PR. You satisfy both by **reusing** the one branch across tickets,
-never by stacking two tickets into one PR. Substitute this loop for the fresh-branch step above:
+never by bundling two tickets into one PR. Substitute this loop for the fresh-branch step above:
 
 ```sh
 # 1. Land the current ticket's PR, then PROVE it is in main before touching the branch.
