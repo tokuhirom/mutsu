@@ -124,27 +124,9 @@ pub(crate) fn native_method_1arg(
     {
         return Some(result);
     }
-    // Cost: O(n + r), n = subject chars copied and r = replacement chars.
+    // The `Match.replace-with` row's implementation (`method_table::regex_match`).
     if method == "replace-with" && target.is_match_instance() {
-        if target.match_is_failed() {
-            return Some(Ok(Value::NIL));
-        }
-        let before = target.match_side_text(true).or_else(|| {
-            let orig = target.match_orig()?.to_string_value();
-            let from = target.match_from()?.max(0) as usize;
-            Some(orig.chars().take(from).collect())
-        })?;
-        let after = target.match_side_text(false).or_else(|| {
-            let orig = target.match_orig()?.to_string_value();
-            let to = target.match_to()?.max(0) as usize;
-            Some(orig.chars().skip(to).collect())
-        })?;
-        return Some(Ok(Value::str(format!(
-            "{}{}{}",
-            before,
-            arg.to_string_value(),
-            after
-        ))));
+        return crate::builtins::method_table::regex_match::replace_with(target, arg).map(Ok);
     }
     // `Backtrace` and `Backtrace::Frame`: the rows' handlers (ADR-11276 §9.35).
     if let Some(answer) =
