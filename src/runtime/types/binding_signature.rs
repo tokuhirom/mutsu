@@ -1911,6 +1911,22 @@ impl Interpreter {
                     // every call, recursively re-parsing its own bundled
                     // resource file).
                     self.check_where_constraint_against_value(pd, &slurpy_value)?;
+                    // `*%h (:$a)` unpacks the collected hash against its
+                    // sub-signature, so an empty `*%_ ()` rejects any named arg.
+                    if let Some(sub_params) = &pd.sub_signature {
+                        if sub_params.is_empty()
+                            && let ValueView::Hash(h) = slurpy_value.view()
+                            && !h.is_empty()
+                        {
+                            return Err(RuntimeError::typecheck_binding_parameter(
+                                &param_display_name(pd),
+                                "an empty signature",
+                                "named arguments",
+                                None,
+                            ));
+                        }
+                        bind_sub_signature_from_value(self, sub_params, &slurpy_value)?;
+                    }
                 } else if pd.double_slurpy {
                     // **@ (non-flattening slurpy): keep each argument as-is, skip Pairs
                     let mut items = Vec::new();

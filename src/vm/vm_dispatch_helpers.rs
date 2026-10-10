@@ -501,7 +501,7 @@ impl Interpreter {
     /// Evaluate truthiness of a value, including dispatch to user-defined Bool methods.
     /// For Package (type objects) and Instance values, checks if the class defines
     /// a custom Bool method and calls it. Falls back to Value::truthy() otherwise.
-    /// Cost: O(1) for most values; a not-yet-run `.map`/`.grep` Seq pulls one element
+    /// Cost: O(1) for most values; a `gather` LazyList likewise pulls one element; a not-yet-run `.map`/`.grep` Seq pulls one element
     /// (`reify_map_grep_prefix`), one callback per source element up to its first result.
     pub(crate) fn eval_truthy(&mut self, val: &Value) -> bool {
         // A successful lazy Match already knows its truth value, and reading
@@ -575,6 +575,20 @@ impl Interpreter {
                 match result {
                     Ok(result) => result.truthy(),
                     Err(_) => val.truthy(),
+                }
+            }
+            // A `gather` Seq is true iff its body yields a first element, as
+            // rakudo's `Seq.Bool` asks the iterator for one. `Value::truthy`
+            // cannot pull and answers true, so `so gather { }` was true. Pull
+            // exactly one element; the rest stays lazy. A body that dies leaves
+            // the answer at the pure approximation (true).
+            // Only a gather coroutine can be pulled this way; the other LazyList
+            // kinds (combinatorial `permutations`, sequences, pipes) keep the
+            // pure answer.
+            ValueView::LazyList(list) if list.coroutine.is_some() => {
+                match self.force_lazy_list_vm_n(&list, 1) {
+                    Ok(items) => !items.is_empty(),
+                    Err(_) => true,
                 }
             }
             // The IMPLICIT topic of a bare regex coerces quietly -- see

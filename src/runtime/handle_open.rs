@@ -587,6 +587,23 @@ impl Interpreter {
                 &display_path.unwrap_or(path).to_string_lossy(),
             ));
         }
+        // `open(:create)` / `open(:exclusive)` with no write mode creates the file
+        // and yields a read handle (O_CREAT|O_RDONLY). Rust's `OpenOptions` rejects
+        // create without write access, so create the file first and open it plain.
+        let (create, exclusive) = if (create || exclusive) && !write && !append {
+            let mut pre = fs::OpenOptions::new();
+            pre.write(true);
+            if exclusive {
+                pre.create_new(true);
+            } else {
+                pre.create(true);
+            }
+            pre.open(path)
+                .map_err(|err| native_io::fs_errors::open_failed(path, &err))?;
+            (false, false)
+        } else {
+            (create, exclusive)
+        };
         let mut options = fs::OpenOptions::new();
         options.read(read);
         options.write(write || append);
