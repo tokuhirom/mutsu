@@ -1,5 +1,7 @@
 use super::*;
 
+mod sub_names;
+
 fn rewrite_prefixed_angle_list(code: &str) -> Option<String> {
     let (prefix, rest) = if let Some(rest) = code.strip_prefix('~') {
         ('~', rest)
@@ -161,44 +163,6 @@ impl Interpreter {
             }
         }
         assoc
-    }
-
-    /// Collect user-declared subroutine names from the current runtime so
-    /// EVAL'd code can see them as declared at parse time. This allows
-    /// constructs like `first.uc` (where `first` is a user sub shadowing
-    /// the `first` listop builtin) to parse correctly as `first().uc`.
-    pub(crate) fn collect_eval_user_sub_names(&self) -> Vec<String> {
-        let mut names: Vec<String> = Vec::new();
-        for key in self.registry().functions.keys() {
-            let short = crate::qualified::last_segment(*key).as_str();
-            // A multi candidate is keyed `Pkg::name/arity…`, so the bare
-            // routine name stops at the first `/`. Without this, an imported
-            // multi (every `Test` assertion is one) reached the preseed as
-            // `is/2` — a name no parse can match — and EVAL'd code calling it
-            // in listop form (`is [$sub()], [42], 'desc'`) parsed its first
-            // argument as a subscript instead.
-            let short = short.split('/').next().unwrap_or(short);
-            // Skip empty/meta-named entries. Operator subs are handled by
-            // collect_operator_sub_names.
-            if short.is_empty() || short.contains(':') {
-                continue;
-            }
-            names.push(short.to_string());
-        }
-        // Also collect lexical `&name` code-variables (e.g. `my &b2 := ...`).
-        // These are subs held in the environment rather than the registry, so
-        // EVAL'd code that calls them in listop form (`b2 Num`) needs their bare
-        // names known at parse time to parse as a call rather than two terms.
-        for key in self.env.keys() {
-            let key_s = key.resolve();
-            if let Some(bare) = key_s.strip_prefix('&') {
-                if bare.is_empty() || bare.contains(':') {
-                    continue;
-                }
-                names.push(bare.to_string());
-            }
-        }
-        names
     }
 
     /// Collect the type names (classes, roles, enums, subsets) the calling unit

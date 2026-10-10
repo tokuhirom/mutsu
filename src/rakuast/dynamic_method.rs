@@ -44,7 +44,8 @@ fn postfix(
         // `.&?BLOCK` / `.&*f` name a compile-time or dynamic routine, not an
         // identifier `Name.from-identifier` spells.
         Expr::CodeVar(name) if !name.starts_with(|c: char| c.is_alphabetic() || c == '_') => {
-            return Err(unsupported_expr("dynamic call by a special `&` variable"));
+            fields.push(node_field(Some("block"), convert_expr(name_expr)?));
+            RakuAstClass::CallBlockMethod
         }
         Expr::CodeVar(name) if dispatch.is_none() => {
             fields.push(node_field(Some("name"), name_from_identifier(name)));
@@ -105,7 +106,9 @@ pub(super) fn convert_hyper(
 pub(super) fn is_dynamic(postfix: &RakuAstNode) -> bool {
     matches!(
         postfix.class,
-        RakuAstClass::CallTermAsMethod | RakuAstClass::CallNameAsMethod
+        RakuAstClass::CallTermAsMethod
+            | RakuAstClass::CallNameAsMethod
+            | RakuAstClass::CallBlockMethod
     )
 }
 
@@ -113,6 +116,7 @@ pub(super) fn is_dynamic(postfix: &RakuAstNode) -> bool {
 fn name_expr(postfix: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match postfix.class {
         RakuAstClass::CallNameAsMethod => Ok(Expr::CodeVar(call_name_str(postfix)?)),
+        RakuAstClass::CallBlockMethod => lower_expr(named_child(postfix, "block")?),
         _ => lower_expr(named_child(postfix, "callee")?),
     }
 }

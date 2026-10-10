@@ -955,6 +955,19 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
             return Err(PError::expected("known function call"));
         }
     }
+    if listop && args.is_empty() {
+        let expr = crate::parser::primary::ident::export_term_or_call(
+            &name,
+            Expr::Call {
+                name: Symbol::intern(&name),
+                args: Vec::new(),
+                listop: true,
+            },
+        );
+        if matches!(expr, Expr::ExportTermOrCall { .. }) {
+            return parse_statement_modifier(rest, Stmt::Expr(expr));
+        }
+    }
     let shadows_listop = matches!(
         name.as_str(),
         "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"

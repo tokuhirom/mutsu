@@ -1691,7 +1691,12 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         && !rest.trim_start().starts_with("=>")
         && let Some(label) = crate::parser::stmt::simple::declared_loop_label_value(&name)
     {
-        return Ok((rest, Expr::Literal(label)));
+        return Ok((
+            rest,
+            Expr::spelled(Expr::Literal(label), || {
+                crate::ast::spelled::Spelling::LabelTerm(name.into_boxed_str())
+            }),
+        ));
     }
 
     // Check for :: qualified name (e.g. Foo::Bar, CORE::<&run>)
@@ -2684,7 +2689,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     }
 
     // Method-like: .new, .elems etc. is handled at expression level
-    Ok((rest, Expr::BareWord(name)))
+    let expr = Expr::BareWord(name);
+    let expr = if crate::parser::term_keywords_shadowable() {
+        Expr::spelled(expr, || Spelling::ImportedTerm)
+    } else {
+        expr
+    };
+    Ok((rest, expr))
 }
 
 /// The optional `<signature>` of an anonymous `token`/`regex`/`rule` term

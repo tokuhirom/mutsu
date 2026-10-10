@@ -168,6 +168,10 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("callee", Absent::Required),
             ("args", Absent::EmptyNode(ArgList)),
         ],
+        CallBlockMethod => &[
+            ("block", Absent::Required),
+            ("args", Absent::EmptyNode(ArgList)),
+        ],
         CallTerm => &[("args", Absent::EmptyNode(ArgList))],
         VarAttributePublic => &[
             ("name", Absent::Required),

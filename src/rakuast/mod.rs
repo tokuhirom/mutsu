@@ -15,6 +15,7 @@ mod atomic_op;
 mod attribute;
 mod bare_prefix;
 mod bareword;
+mod callable_context;
 mod capture_term;
 mod chain;
 mod compound_stmt;
@@ -25,6 +26,7 @@ mod core_type_names;
 mod decl_tail;
 mod decl_traits;
 mod declared_routines;
+mod deferred_name;
 mod dynamic_method;
 mod feed_op;
 mod fields;
@@ -32,7 +34,9 @@ mod formatter;
 pub(crate) mod frontend;
 mod hash_literal;
 mod infix_func;
+mod inherited_fields;
 mod keyed_hash;
+mod label_context;
 mod lower;
 mod match_vars;
 mod meta_infix;
@@ -210,6 +214,8 @@ pub enum RakuAstClass {
     ArgList,
     // Phase 2: variables, declarations, operators.
     VarLexical,
+    VarCompilerBlock,
+    VarCompilerRoutine,
     // A package-qualified variable `$Foo::v`: a `Name` plus its sigil.
     VarPackage,
     // A dynamic variable `$*x`: its whole spelling, twigil included.
@@ -243,6 +249,7 @@ pub enum RakuAstClass {
     Substitution,
     VarNamedCapture,
     CallNameAsMethod,
+    CallBlockMethod,
     CallTermAsMethod,
     FlipFlop,
     Feed,
@@ -571,6 +578,8 @@ impl RakuAstClass {
             NamePartEmptyEdge => "RakuAST::Name::Part::EmptyEdge",
             ArgList => "RakuAST::ArgList",
             VarLexical => "RakuAST::Var::Lexical",
+            VarCompilerBlock => "RakuAST::Var::Compiler::Block",
+            VarCompilerRoutine => "RakuAST::Var::Compiler::Routine",
             VarPackage => "RakuAST::Var::Package",
             VarDynamic => "RakuAST::Var::Dynamic",
             VarDeclarationSimple => "RakuAST::VarDeclaration::Simple",
@@ -602,6 +611,7 @@ impl RakuAstClass {
             Substitution => "RakuAST::Substitution",
             VarNamedCapture => "RakuAST::Var::NamedCapture",
             CallNameAsMethod => "RakuAST::Call::NameAsMethod",
+            CallBlockMethod => "RakuAST::Call::BlockMethod",
             CallTermAsMethod => "RakuAST::Call::TermAsMethod",
             FlipFlop => "RakuAST::FlipFlop",
             Feed => "RakuAST::Feed",
@@ -797,6 +807,8 @@ impl RakuAstClass {
                 | RakuAstClass::RegexMatchTo
                 | RakuAstClass::OnlyStar
                 | RakuAstClass::StatementEmpty
+                | RakuAstClass::VarCompilerBlock
+                | RakuAstClass::VarCompilerRoutine
                 | RakuAstClass::RegexQuantifierRange
                 | RakuAstClass::RegexQuantifierBlockRange
                 | RakuAstClass::RegexCharClass(_)
@@ -869,6 +881,7 @@ impl RakuAstClass {
         const TERM: &[&str] = &["RakuAST::Term", "RakuAST::Expression"];
         const EXPR: &[&str] = &["RakuAST::Expression"];
         match self {
+            CallBlockMethod => &["RakuAST::Call::Methodish", "RakuAST::Postfixish"],
             StatementEmpty => &["RakuAST::Statement", "RakuAST::Blorst", "RakuAST::ProducesNil", "RakuAST::ImplicitLookups"],
             IntLiteral
             | NumLiteral
@@ -882,6 +895,8 @@ impl RakuAstClass {
             | QuotedRegex
             | TypeEnum
             | VarLexical
+            | VarCompilerBlock
+            | VarCompilerRoutine
             | VarPackage
             | VarDynamic
             | TermReduce
@@ -1182,6 +1197,8 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Heredoc"
         | "RakuAST::Type::Enum"
         | "RakuAST::Var::Lexical"
+        | "RakuAST::Var::Compiler::Block"
+        | "RakuAST::Var::Compiler::Routine"
         | "RakuAST::Var::Package"
         | "RakuAST::Var::Dynamic"
         | "RakuAST::Term::Reduce"
@@ -1299,6 +1316,9 @@ pub(crate) fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::Statement"
             | "RakuAST::Call"
             | "RakuAST::Var"
+            | "RakuAST::Var::Compiler"
+            | "RakuAST::Call::Methodish"
+            | "RakuAST::Postfixish"
             | "RakuAST::VarDeclaration"
             | "RakuAST::Initializer"
             | "RakuAST::Type"
@@ -1436,6 +1456,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::NamePartEmptyEdge,
     RakuAstClass::ArgList,
     RakuAstClass::VarLexical,
+    RakuAstClass::VarCompilerBlock,
+    RakuAstClass::VarCompilerRoutine,
     RakuAstClass::VarPackage,
     RakuAstClass::VarDynamic,
     RakuAstClass::VarDeclarationSimple,
@@ -1467,6 +1489,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Substitution,
     RakuAstClass::VarNamedCapture,
     RakuAstClass::CallNameAsMethod,
+    RakuAstClass::CallBlockMethod,
     RakuAstClass::CallTermAsMethod,
     RakuAstClass::FlipFlop,
     RakuAstClass::Feed,
@@ -1710,6 +1733,7 @@ pub fn node_gist(node: &RakuAstNode) -> String {
 /// not a supported constructor yet (so normal dispatch handles it). Covers the
 /// single-positional-argument constructors such as literals, names, and
 /// return-type traits, plus the supported named-field constructors.
+// Cost: O(n), n = arguments and contained list elements or identifier bytes.
 pub fn construct(
     class_name: &str,
     method: &str,
@@ -2971,6 +2995,26 @@ pub fn construct(
     // the class's schema order (`ApplyInfix.new(left => …, infix => …, right => …)`).
     if let Some((class, schema)) = multi_field_schema(class_name, method) {
         let mut fields = Vec::with_capacity(schema.len());
+        if class == RakuAstClass::StatementExpression
+            && let Some(labels) = named_arg(args, "labels")
+        {
+            let items = labels.as_list_items().ok_or_else(|| {
+                RuntimeError::new("RakuAST::Statement::Expression.new expects a list of labels")
+            })?;
+            let mut labels = Vec::new();
+            labels.try_reserve(items.len()).map_err(|_| {
+                RuntimeError::new("RakuAST::Statement::Expression.new label list is too large")
+            })?;
+            for item in items {
+                let item = item.with_deref(|value| value.descalarize().clone());
+                require_rakuast_class(&item, RakuAstClass::Label, class_name)?;
+                labels.push(item);
+            }
+            fields.push(RakuAstField {
+                name: Some("labels"),
+                value: RakuAstFieldValue::List(labels),
+            });
+        }
         for &fname in schema {
             let value = match named_arg(args, fname) {
                 Some(value) => value,
@@ -2987,6 +3031,20 @@ pub fn construct(
                 name: Some(fname),
                 value: RakuAstFieldValue::Node(value),
             });
+        }
+        let optional: &[&'static str] = match class {
+            RakuAstClass::StatementExpression => &["condition-modifier", "loop-modifier"],
+            RakuAstClass::CallBlockMethod => &["args"],
+            _ => &[],
+        };
+        for &name in optional {
+            if let Some(value) = named_arg(args, name) {
+                require_any_rakuast(&value, class_name, name)?;
+                fields.push(RakuAstField {
+                    name: Some(name),
+                    value: RakuAstFieldValue::Node(value),
+                });
+            }
         }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             class,
@@ -3331,6 +3389,8 @@ fn single_positional_class(class_name: &str, method: &str) -> Option<RakuAstClas
 
 fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass> {
     Some(match (class_name, method) {
+        ("RakuAST::Var::Compiler::Block", "new") => RakuAstClass::VarCompilerBlock,
+        ("RakuAST::Var::Compiler::Routine", "new") => RakuAstClass::VarCompilerRoutine,
         ("RakuAST::Statement::Empty", "new") => RakuAstClass::StatementEmpty,
         ("RakuAST::VarDeclaration::Placeholder::SlurpyArray", "new") => {
             RakuAstClass::VarDeclarationPlaceholderSlurpyArray
@@ -3386,6 +3446,8 @@ fn multi_field_schema(
         ("RakuAST::Statement::Expression", "new") => {
             (RakuAstClass::StatementExpression, &["expression"][..])
         }
+        ("RakuAST::Label", "new") => (RakuAstClass::Label, &["name"][..]),
+        ("RakuAST::Call::BlockMethod", "new") => (RakuAstClass::CallBlockMethod, &["block"][..]),
         ("RakuAST::Statement::Whenever", "new") => {
             (RakuAstClass::StatementWhenever, &["trigger", "body"][..])
         }
@@ -3520,6 +3582,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     // `fields::Absent`.
     fields::model_fields(node.class)
         .iter()
+        .chain(inherited_fields::for_class(node.class))
         .find(|(name, _)| *name == method)
         .and_then(|(_, absent)| absent.value())
 }
@@ -3531,6 +3594,9 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
 /// `.^methods(:local)`, so callers can discover constructors and accessors
 /// without the RakuAST classes having ordinary registry entries.
 pub fn local_method_names(class_name: &str) -> Option<Vec<&'static str>> {
+    if let Some(names) = inherited_fields::local_names(class_name) {
+        return Some(names);
+    }
     let class = class_from_name(class_name)?;
     let mut names = Vec::new();
 
@@ -3594,6 +3660,9 @@ pub fn inherited_method_names(class_name: &str) -> Option<Vec<&'static str>> {
 /// As with [`local_method_names`], these are mutsu's public model fields rather
 /// than Rakudo's backend storage slots.
 pub fn local_attribute_names(class_name: &str) -> Option<Vec<&'static str>> {
+    if let Some(names) = inherited_fields::local_names(class_name) {
+        return Some(names);
+    }
     class_from_name(class_name).map(accessor_names)
 }
 
@@ -3624,9 +3693,12 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Infix
             | RakuAstClass::Prefix
             | RakuAstClass::VarLexical
+            | RakuAstClass::VarCompilerBlock
+            | RakuAstClass::VarCompilerRoutine
             | RakuAstClass::VarPackage
             | RakuAstClass::VarDynamic
             | RakuAstClass::StatementExpression
+            | RakuAstClass::Label
             | RakuAstClass::StatementEmpty
             | RakuAstClass::StatementUse
             | RakuAstClass::StatementRequire
@@ -3654,6 +3726,7 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Substitution
             | RakuAstClass::VarNamedCapture
             | RakuAstClass::CallNameAsMethod
+            | RakuAstClass::CallBlockMethod
             | RakuAstClass::CallTermAsMethod
             | RakuAstClass::FlipFlop
             | RakuAstClass::Feed

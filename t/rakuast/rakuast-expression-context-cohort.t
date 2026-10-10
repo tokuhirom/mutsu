@@ -2,7 +2,7 @@ use Test;
 use experimental :rakuast;
 
 # ADR-10723 S10: declarations and modified statements retain their meaning
-# when used as values. These cases also run under Rakudo 2026.09.
+# when used as values. These cases also run under Rakudo 2026.07.
 
 sub run-tree(Str $source) { EVAL($source.AST) }
 

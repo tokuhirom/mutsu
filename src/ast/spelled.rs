@@ -20,6 +20,12 @@ use std::cell::Cell;
 /// How a term was written, when that is not recoverable from its value.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Spelling {
+    /// A labelled bare block, whose execution uses a labelled do-block.
+    LabelledBlock,
+    /// A source label reference whose executable term is a Label value.
+    LabelTerm(Box<str>),
+    /// A value lookup parsed in a unit with a runtime export hook.
+    ImportedTerm,
     /// Semicolon-separated array composer sections before execution lowering.
     ArraySections(Vec<Vec<Expr>>),
     /// `<a b  c>`: the raw text between the brackets, whitespace included.

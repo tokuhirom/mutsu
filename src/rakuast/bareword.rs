@@ -18,6 +18,14 @@ use crate::ast::{Expr, ParamDef, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_param, walk_stmt, walk_stmts};
 use crate::qualified::qualified;
 use crate::runtime::utils::is_known_type_constraint;
+
+/// Setting types and the finite RakuAST model registry share one classifier.
+// Cost: O(k + c), k = name length, c = number of registered model classes.
+fn setting_type(name: &str) -> bool {
+    is_known_type_constraint(name)
+        || core_type_names::contains(name)
+        || super::is_registered_type_object(name)
+}
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -58,6 +66,11 @@ impl DeclaredNames {
     // Cost: O(n), n = size of the unit's AST (one `collect_declared_names` scan).
     pub(super) fn collect(stmts: &[Stmt]) -> Self {
         let mut names = HashMap::new();
+        names.extend(
+            crate::parser::imported_value_term_names()
+                .into_iter()
+                .map(|name| (name, DeclaredKind::Term)),
+        );
         collect_declared_names(stmts, &mut names);
         Self(DECLARED_NAMES.with(|d| std::mem::replace(&mut *d.borrow_mut(), names)))
     }
@@ -105,7 +118,7 @@ impl Drop for CallerNames {
 /// type object are recognised: a type name, or the MOP `new_type` constructor.
 fn constant_kind(init: &Expr) -> DeclaredKind {
     let type_valued = match init {
-        Expr::BareWord(n) => is_known_type_constraint(n) || core_type_names::contains(n),
+        Expr::BareWord(n) => setting_type(n),
         Expr::MethodCall { name, target, .. } => {
             name.resolve() == "new_type"
                 && matches!(target.as_ref(), Expr::BareWord(n)
@@ -191,9 +204,7 @@ fn declared_kind(name: &str) -> Option<DeclaredKind> {
 /// container type (`Trait::Is(type => …)`) and a named trait.
 // Cost: O(k), k = length of `name`.
 pub(super) fn names_type(name: &str) -> bool {
-    is_known_type_constraint(name)
-        || core_type_names::contains(name)
-        || declared_kind(name) == Some(DeclaredKind::Type)
+    setting_type(name) || declared_kind(name) == Some(DeclaredKind::Type)
 }
 
 /// Whether a `::`-qualified package name resolves at parse time: a run of
@@ -201,7 +212,7 @@ pub(super) fn names_type(name: &str) -> bool {
 /// declares (including the stub `A` a `class A::B { }` creates).
 pub(super) fn package_resolves(stem: &str) -> bool {
     name_parts::identifier_segments(stem).all(name_parts::is_pseudo_package)
-        || is_known_type_constraint(stem)
+        || setting_type(stem)
         || declared_kind(stem) == Some(DeclaredKind::Type)
 }
 
@@ -271,6 +282,16 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
     impl<'ast> Visit<'ast> for Scan<'_> {
         fn visit_stmt(&mut self, stmt: &'ast Stmt) {
             match stmt {
+                Stmt::Label { name, .. }
+                | Stmt::While {
+                    label: Some(name), ..
+                }
+                | Stmt::For {
+                    label: Some(name), ..
+                }
+                | Stmt::Loop {
+                    label: Some(name), ..
+                } => insert_term(self.0, name.clone()),
                 // An enum's values are terms of their own, bare and qualified
                 // by the enum's name (`Red`, `Color::Red`).
                 Stmt::EnumDecl { name, variants, .. } => {
@@ -382,6 +403,12 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
         }
 
         fn visit_expr(&mut self, expr: &'ast Expr) {
+            if let Expr::DoBlock {
+                label: Some(label), ..
+            } = expr
+            {
+                insert_term(self.0, label.clone());
+            }
             // `-> \v { v }` keeps its one parameter outside a `ParamDef`.
             if let Expr::Lambda {
                 param,
@@ -446,7 +473,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         Some(DeclaredKind::Routine) | None => {}
     }
     // A bare type name used as a term (`Int`, `X::AdHoc`) -> `Type::Simple`.
-    if is_known_type_constraint(name) || core_type_names::contains(name) {
+    if setting_type(name) {
         return Some(simple_type_node(name));
     }
     // A name the same compilation unit declared shadows a setting one.

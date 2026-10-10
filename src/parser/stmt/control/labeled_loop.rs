@@ -202,11 +202,14 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, body) = block(rest)?;
         return Ok((
             r,
-            Stmt::Expr(Expr::DoBlock {
-                body,
-                label: Some(label),
-                origin: crate::ast::DoBlockOrigin::SourceBlock,
-            }),
+            Stmt::Expr(Expr::spelled(
+                Expr::DoBlock {
+                    body,
+                    label: Some(label),
+                    origin: crate::ast::DoBlockOrigin::SourceBlock,
+                },
+                || crate::ast::spelled::Spelling::LabelledBlock,
+            )),
         ));
     }
 

@@ -24,6 +24,7 @@ mod eval_name_scans;
 mod eval_routine_magicals;
 mod eval_type_scans;
 mod eval_var_scan;
+mod rakuast_attributes;
 mod exception_message;
 pub(crate) mod fn_keys_index;
 pub(crate) mod function_table;
