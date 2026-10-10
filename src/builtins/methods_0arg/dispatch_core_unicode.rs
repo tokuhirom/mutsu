@@ -78,29 +78,10 @@ pub(super) fn dispatch(
         // Cost: O(n), n = chars of the invocant; a name no table knows also walks
         // the CLDR emoji list (O(E) per such name, E = emoji count).
         "uniparse" | "parse-names" => unicode::uniparse(target, &[]).map(Some),
-        // Cost: O(e), e = elements of the invocant list.
-        "chrs" => {
-            // .chrs on a list/array of ints or a range
-            let val_to_i64 = |v: &Value| -> i64 {
-                match v.view() {
-                    ValueView::Int(i) => i,
-                    ValueView::Num(f) => f as i64,
-                    _ => v.to_string_value().parse::<i64>().unwrap_or(0),
-                }
-            };
-            let items: Vec<i64> = match target.view() {
-                ValueView::Array(items, ..) => items.iter().map(&val_to_i64).collect(),
-                ValueView::Seq(items) => items.iter().map(&val_to_i64).collect(),
-                ValueView::Range(a, b) => (a..=b).collect(),
-                ValueView::RangeExcl(a, b) => (a..b).collect(),
-                _ => vec![val_to_i64(target)],
-            };
-            let s: String = items
-                .iter()
-                .filter_map(|&code| char::from_u32(code as u32))
-                .collect();
-            Some(Some(Ok(Value::str(s))))
-        }
+        // The `List.chrs` row's implementation (`method_table::collections::any_misc`).
+        "chrs" => Some(Some(
+            crate::builtins::method_table::collection_any_misc::chrs(target, &[]),
+        )),
         _ => None,
     }
 }

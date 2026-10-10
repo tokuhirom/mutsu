@@ -2377,3 +2377,20 @@ for an instance, a `Nil`, a `Thread` and a lazy list.
 - **Left**: `Set`/`Bag`/`Mix` (closed shapes, and no recognition row: `join` dies with `X::Method::NotFound`), `Nil.join` (answers `Nil`, Rakudo `""`),
   both filed as issues.
 
+### 9.64 `Any.serial`, `Any.batch` and `List.chrs` (2026-10-10)
+
+`refactor/11276-any-coerce-rows` (issue #12389, item 4). Three rows in `method_table::collections::any_misc`, each the one body the cascade's arm
+calls: `Any.serial` (`Pure`; a value is its own serial form, de-itemized), `Any.batch` at arity 1 (`Handler::Narrow`: it declines an argument that is
+neither an `Int` nor the `:elems`/`:batch` pair, which the cascade then reports; an `Array` batches lazily through `ListGen::batch`, a `Blob`/`Buf` by
+its bytes) and `List.chrs` (`Pure`). The three cascade arms (`dispatch_core_coerce.rs`, `dispatch_1arg.rs`, `dispatch_core_unicode.rs`) are
+one call each. No behaviour change, pinned in `t/oo/method/any-misc-method-rows.t` against `raku`.
+
+- **Not registered**: `Any.chrs`/`Cool.chrs` (Rakudo declares them, but a row on `Any` has to answer for every shape that reaches it, and the cascade's
+  `chrs` reads only lists, ranges and one integer), `Any.list` and `Any.hash` (their arms are spread over `coercion.rs`, `collection.rs`, the
+  `Capture`/`Uni`/`Supply` bridges and the stash cases: a slice of their own), `Map.AT-KEY`/`Map.Str`.
+- **`RowFlags::LIVE_VIEW`** (new). `Array.batch` answers a lazy `Seq` over a cursor on the live array (a later `push` shows in the batches,
+  `t/collections/lazy-seq/lazy-positional-views-and-combinatorics.t`). The debug cross-check (`dispatch::debug_assert_matches_full_path`) and the
+  call-site lane's check render both answers with `gist_value`, which reifies the view and froze it at the first run: the test failed on the debug
+  binary only. The flag joins `RANDOM` in `RowFlags::skips_cross_check`. **Lesson:** a row whose answer is a lazy view of its receiver needs the
+  flag, or the net that guards the row ends the laziness it keeps.
+
