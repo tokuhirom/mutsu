@@ -360,3 +360,41 @@ Constructed composers lower every statement rather than only the first.
 Expression-position proto subs return the registered code value, using the same
 bytecode path as named sub declarations. The executable contract is
 `t/rakuast/rakuast-expression-context-cohort.t`.
+
+### 6.4 S10: labelled blocks and deferred callable names (2026-10-10)
+
+Labelled bare blocks retain a spelling wrapper over the same labelled do-block
+the compiler already executes. Conversion puts the label on the enclosing
+`Statement::Expression`; lowering restores the labelled source block, rather
+than synthesizing a loop. A label reference retains its parser-created Label
+value as hidden `label-value` metadata on `Term::Name`, so source location and
+identity survive the round trip. `Label.new` uses a named `name` field.
+The abstract Statement model owns `labels`; inherited accessor defaults and
+attribute/method introspection share that ownership rather than adding a local
+field to Statement::Expression.
+Constructed Term::Name label references resolve in an RAII-managed lexical
+lowering scope; parsed label terms keep their original values. Constructed
+labels have no source cursor (empty file and line zero).
+
+Special callable method references use `Call::BlockMethod`, while `&?BLOCK`
+and `&?ROUTINE` use the corresponding compiler-variable nodes. Ordinary and
+hyper lowering share the existing dynamic method representation and bytecode.
+Statement-expression constructors accept labels and modifier nodes too.
+
+The shared `ast::bind_decl::expand` records callable binding intent independently
+of scalar/aggregate runtime bookkeeping. Conversion recognizes this exact
+expansion and emits `Initializer::Bind`; lowering uses the same expansion for
+bound blocks, pointy blocks and existing callable values.
+
+The parser's `ExportTermOrCall` remains deferred through hidden
+`export-term-name` metadata on the fallback call. Lowering restores exactly
+that compiler expression; conversion never runs an export hook to guess
+whether the name will be a term. The executable contract is
+`t/rakuast/rakuast-labelled-callable-cohort.t`.
+
+Shadowable term keywords similarly retain their name and fallback value as
+hidden metadata. Unknown names after a dynamic export hook remain value lookups;
+known declared types and setting terms keep their ordinary node classes. Final
+bare statement calls share the expression parser's deferred import decision.
+EVAL routine preseeding includes caller-visible packages and lexical callable
+aliases, excluding private short names from unrelated, previously loaded modules.

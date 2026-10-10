@@ -23,6 +23,10 @@ use crate::value::Value;
 /// assigned; the compiler reads it to bind instead of storing into a Scalar.
 pub(crate) const SCALAR_BIND: &str = "__scalar_bind";
 
+/// Source binding intent for a callable declaration, whose execution needs
+/// no scalar-container or aggregate binding bookkeeping.
+pub(crate) const CODE_BIND: &str = "__code_bind";
+
 /// Whether a binding declaration of `name` (a `$` name carries no sigil) is a
 /// scalar bind, the kind that carries [`SCALAR_BIND`].
 pub(crate) fn is_scalar_bind_name(name: &str) -> bool {
@@ -32,8 +36,18 @@ pub(crate) fn is_scalar_bind_name(name: &str) -> bool {
 /// The statement the compiler runs for the binding declaration `decl`, a
 /// `Stmt::VarDecl` whose `expr` is the bound right-hand side (and which carries
 /// [`SCALAR_BIND`] when [`is_scalar_bind_name`] says so).
-// Cost: O(1).
-pub(crate) fn expand(decl: Stmt) -> Stmt {
+// Cost: O(n + t), n = name length, t = custom traits on a callable declaration.
+pub(crate) fn expand(mut decl: Stmt) -> Stmt {
+    if let Stmt::VarDecl {
+        name,
+        custom_traits,
+        ..
+    } = &mut decl
+        && name.starts_with('&')
+        && !custom_traits.iter().any(|(name, _)| name == CODE_BIND)
+    {
+        custom_traits.push((CODE_BIND.to_string(), None));
+    }
     let Stmt::VarDecl { name, expr, .. } = &decl else {
         return decl;
     };
@@ -156,7 +170,9 @@ pub(crate) fn declaration(stmt: &Stmt) -> Option<&Stmt> {
     let is_bind = if is_scalar_bind_name(name) {
         custom_traits.iter().any(|(t, _)| t == SCALAR_BIND)
     } else {
-        name.starts_with('@') || name.starts_with('%')
+        name.starts_with('@')
+            || name.starts_with('%')
+            || (name.starts_with('&') && custom_traits.iter().any(|(t, _)| t == CODE_BIND))
     };
     (is_bind && structural_hash(&expand(decl.clone())) == structural_hash(stmt)).then_some(decl)
 }
@@ -196,6 +212,7 @@ mod tests {
             decl("x", Expr::BareWord("f".to_string()), &[SCALAR_BIND]),
             decl("@a", Expr::ArrayVar("b".to_string()), &[]),
             decl("%h", Expr::HashVar("s".to_string()), &[]),
+            decl("&f", Expr::CodeVar("source".to_string()), &[]),
         ] {
             let expanded = expand(d.clone());
             assert!(declaration(&expanded).is_some(), "{expanded:?}");
@@ -207,6 +224,12 @@ mod tests {
         // `my $x = $y`: no bind trait.
         let assign = decl("x", Expr::Var("y".to_string()), &["__has_initializer"]);
         assert!(declaration(&assign).is_none());
+        let code_assign = decl(
+            "&f",
+            Expr::CodeVar("source".to_string()),
+            &["__has_initializer"],
+        );
+        assert!(declaration(&code_assign).is_none());
         // `my @a = …` is never wrapped the way a bind is.
         assert!(declaration(&decl("@a", Expr::ArrayVar("b".to_string()), &[])).is_none());
         // A block of the right shape around the wrong statement order.

@@ -233,7 +233,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         }
         Stmt::Expr(e) => {
             let node = convert_expr(e)?;
-            if node.class == RakuAstClass::StatementRequire {
+            if matches!(
+                node.class,
+                RakuAstClass::StatementRequire | RakuAstClass::StatementExpression
+            ) {
                 Ok(Some(node))
             } else {
                 Ok(Some(statement_expression(node)))
@@ -2219,6 +2222,7 @@ fn var_decl_statement(
             || n == crate::ast::shaped_decl::SHAPED_DECL
             || n == crate::ast::keyed_hash::IMPLICIT_VALUE_TYPE
             || (is_binding && n == crate::ast::bind_decl::SCALAR_BIND)
+            || (is_binding && n == crate::ast::bind_decl::CODE_BIND)
     };
     let unrendered: Vec<&str> = custom_traits
         .iter()
@@ -2880,6 +2884,9 @@ fn source_form(stmt: &Stmt) -> Option<&crate::ast::SourceForm> {
 }
 
 pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    if let Some(node) = super::deferred_name::convert(expr) {
+        return node;
+    }
     if let Some(node) = subscript_adverb::convert(expr) {
         return node;
     }
@@ -2932,6 +2939,41 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                     )],
                 })
             }
+            Spelling::LabelledBlock => {
+                let Expr::DoBlock { body, label, .. } = &spelled.expr else {
+                    return Err(unsupported("labelled block spelling without a block"));
+                };
+                let mut fields = label_fields(label);
+                fields.push(node_field(Some("expression"), block_node(body)?));
+                Ok(RakuAstNode {
+                    class: RakuAstClass::StatementExpression,
+                    fields,
+                })
+            }
+            Spelling::LabelTerm(name) => {
+                let Expr::Literal(value) = &spelled.expr else {
+                    return Err(unsupported("label spelling without a label value"));
+                };
+                Ok(RakuAstNode {
+                    class: RakuAstClass::TermName,
+                    fields: vec![
+                        node_field(None, name_from_identifier(name)),
+                        leaf_field(Some("label-value"), value.clone()),
+                    ],
+                })
+            }
+            Spelling::ImportedTerm => {
+                let Expr::BareWord(name) = &spelled.expr else {
+                    return Err(unsupported("imported term spelling without a value lookup"));
+                };
+                if let Some(node) = bareword::convert(name) {
+                    return Ok(node);
+                }
+                Ok(RakuAstNode {
+                    class: RakuAstClass::TermName,
+                    fields: vec![node_field(None, name_from_identifier(name))],
+                })
+            }
             Spelling::Words(text) => Ok(word_quote(text)),
             Spelling::Heredoc { stop } => heredoc_node(&spelled.expr, stop),
             Spelling::WordQuote {
@@ -2957,7 +2999,6 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::Literal(v) | Expr::LiteralSrc(v, _) => convert_literal(v),
         // A CORE term keyword the parser left shadowable (#9047) is the same
         // node as the plain keyword; lowering decides again whether it is.
-        Expr::ShadowableTermKeyword { value, .. } => convert_literal(value),
         // `last` / `next` / `redo` in expression position (`COND or next`):
         // the same bare call as the statement form, over the label or value.
         Expr::ControlFlow {
@@ -3184,9 +3225,6 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             label,
             origin,
         } => {
-            if label.is_some() {
-                return Err(unsupported("labelled do block"));
-            }
             // `StatementPrefixDo` round-trips back through `lower.rs` as a
             // genuine source block. A desugar's node is not one, so converting
             // it would hand back a node with block semantics (`let`/`temp`
@@ -3209,10 +3247,20 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 }
                 return Err(unsupported("desugared do-block"));
             }
-            Ok(RakuAstNode {
+            let expression = RakuAstNode {
                 class: RakuAstClass::StatementPrefixDo,
                 fields: vec![node_field(None, block_node(body)?)],
-            })
+            };
+            if label.is_some() {
+                let mut fields = label_fields(label);
+                fields.push(node_field(Some("expression"), expression));
+                Ok(RakuAstNode {
+                    class: RakuAstClass::StatementExpression,
+                    fields,
+                })
+            } else {
+                Ok(expression)
+            }
         }
         // `try { … }` -> `StatementPrefix::Try(Block)`. A `CATCH` block stays the
         // boundary.
@@ -3521,6 +3569,16 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             Ok(var_lexical("%", name))
         }
         Expr::CodeVar(name) => {
+            if matches!(name.as_str(), "?BLOCK" | "?ROUTINE") {
+                return Ok(RakuAstNode {
+                    class: if name == "?BLOCK" {
+                        RakuAstClass::VarCompilerBlock
+                    } else {
+                        RakuAstClass::VarCompilerRoutine
+                    },
+                    fields: Vec::new(),
+                });
+            }
             if let Some(name) = name.strip_prefix('^')
                 && is_placeholder_name(name)
             {
@@ -4981,7 +5039,7 @@ fn label_fields(label: &Option<String>) -> Vec<RakuAstField> {
         Some(name) => {
             let label_node = RakuAstNode {
                 class: RakuAstClass::Label,
-                fields: vec![leaf_field(None, Value::str(name.clone()))],
+                fields: vec![leaf_field(Some("name"), Value::str(name.clone()))],
             };
             vec![RakuAstField {
                 name: Some("labels"),
@@ -6444,7 +6502,7 @@ fn imaginary_literal(im: f64) -> Result<RakuAstNode, RuntimeError> {
     })
 }
 
-fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn convert_literal(v: &Value) -> Result<RakuAstNode, RuntimeError> {
     // `Nil` is a type object written as a bareword, not a literal value: raku
     // renders it `Type::Simple.new(Name.from-identifier("Nil"))`, exactly like
     // `Int`. mutsu's parser resolves the bareword to the value eagerly, so the

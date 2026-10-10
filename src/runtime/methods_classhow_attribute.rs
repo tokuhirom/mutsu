@@ -13,11 +13,8 @@ impl Interpreter {
         // RakuAST classes live in the native model registry, not the ordinary
         // class registry. Their fields still participate in Attribute
         // introspection so callers can walk the model uniformly.
-        if let Some(names) = crate::rakuast::local_attribute_names(class_name) {
-            return names
-                .iter()
-                .map(|name| Self::make_builtin_attribute_object(name, "Mu", class_name))
-                .collect();
+        if let Some(attributes) = Self::collect_rakuast_attribute_objects(class_name, local_only) {
+            return attributes;
         }
         // For Attribute itself, return BOOTSTRAPATTR instances for its well-known attributes
         if class_name == "Attribute" && !self.registry().classes.contains_key("Attribute") {

@@ -98,7 +98,16 @@ pub(super) fn lower_pointy(node: &RakuAstNode) -> Result<crate::ast::Expr, Runti
 pub(super) fn is_metadata(field: &RakuAstField) -> bool {
     matches!(
         field.name,
-        Some(CONSTRAINT | "multi-invocant" | "capture-invocant" | "group-default")
+        Some(
+            CONSTRAINT
+                | "multi-invocant"
+                | "capture-invocant"
+                | "group-default"
+                | "label-value"
+                | "export-term-name"
+                | "shadowable-term-name"
+                | "shadowable-term-fallback"
+        )
     )
 }
 

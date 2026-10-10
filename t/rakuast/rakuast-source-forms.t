@@ -412,7 +412,9 @@ is Q[L: for 1, 2 { }].AST.gist, q:to/END/.chomp, 'label';
     RakuAST::StatementList.new(
       RakuAST::Statement::For.new(
         labels => (
-          RakuAST::Label.new("L"),
+          RakuAST::Label.new(
+            name => "L"
+          ),
         ),
         mode   => "serial",
         source => RakuAST::ApplyListInfix.new(

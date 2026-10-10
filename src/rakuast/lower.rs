@@ -108,6 +108,34 @@ fn lower_stmt_list(node: &RakuAstNode) -> Result<Vec<Stmt>, RuntimeError> {
 }
 
 pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    let label = node_label(node)?;
+    let _label_scope = super::label_context::enter(label.as_deref())?;
+    if node.class == RakuAstClass::StatementExpression
+        && let Some(label) = label
+    {
+        let mut inner = node.clone();
+        inner.fields.retain(|field| field.name != Some("labels"));
+        let statement = lower_stmt(&inner)?;
+        let expression = named_child(&inner, "expression")?;
+        return match statement {
+            Stmt::Expr(Expr::DoBlock { body, origin, .. }) => Ok(Stmt::Expr(Expr::DoBlock {
+                body,
+                origin,
+                label: Some(label),
+            })),
+            Stmt::Block(body) if expression.class == RakuAstClass::Block => {
+                Ok(Stmt::Expr(Expr::DoBlock {
+                    body,
+                    label: Some(label),
+                    origin: crate::ast::DoBlockOrigin::SourceBlock,
+                }))
+            }
+            stmt => Ok(Stmt::Label {
+                name: label,
+                stmt: Box::new(stmt),
+            }),
+        };
+    }
     match node.class {
         RakuAstClass::StatementEmpty => Ok(Stmt::Expr(Expr::Literal(Value::NIL))),
         // A declaration wrapped in Statement::Expression lowers to its own
@@ -189,6 +217,8 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 // `STMT for LIST`: the parser's `Stmt::For` holding the statement.
                 if modifier.class == RakuAstClass::StatementModifierFor {
                     let (param, params) = crate::parser::for_modifier_loop_params(&statement);
+                    let uses_block_magic =
+                        super::callable_context::uses_block(std::slice::from_ref(&statement));
                     return Ok(Stmt::For {
                         iterable: lower_expr(named_child_or_positional(modifier)?)?,
                         param,
@@ -201,7 +231,7 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                         rw_block: false,
                         explicit_zero_params: false,
                         is_statement_modifier: true,
-                        uses_block_magic: false,
+                        uses_block_magic,
                     });
                 }
                 if matches!(
@@ -332,6 +362,13 @@ const SHADOWABLE_STATEMENTS: [&str; 14] = [
 ];
 
 fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if node
+        .fields
+        .iter()
+        .any(|field| field.name == Some("export-term-name"))
+    {
+        return Ok(Stmt::Expr(lower_expr(node)?));
+    }
     // `my $x = 1 and 2`: a declaration is the leftmost operand of the statement.
     if let Some(stmt) = super::decl_tail::lower(node) {
         return stmt;
@@ -632,9 +669,13 @@ fn node_label(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
         return Err(unsupported(node));
     };
     match items.first().and_then(rakuast_node_of) {
-        Some(label) if label.class == RakuAstClass::Label => {
-            Ok(Some(positional_leaf(label)?.to_string_value()))
-        }
+        Some(label) if label.class == RakuAstClass::Label => Ok(Some(
+            if label.fields.iter().any(|field| field.name == Some("name")) {
+                leaf_str(label, "name")?
+            } else {
+                positional_leaf(label)?.to_string_value()
+            },
+        )),
         Some(_) => Err(unsupported(node)),
         None => Ok(None),
     }
@@ -646,7 +687,9 @@ fn node_label(node: &RakuAstNode) -> Result<Option<String>, RuntimeError> {
 fn loop_label(node: &RakuAstNode, args: Vec<Expr>) -> Result<Option<String>, RuntimeError> {
     match args.as_slice() {
         [] => Ok(None),
-        [Expr::BareWord(label)] => Ok(Some(label.clone())),
+        [expr] => super::label_context::expression_name(expr)
+            .map(Some)
+            .ok_or_else(|| unsupported(node)),
         _ => Err(unsupported(node)),
     }
 }
@@ -851,6 +894,7 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     // `<->`: every parameter is a writable container.
     let rw_block = block.class == RakuAstClass::PointyBlock && has_default_rw(block);
+    let uses_block_magic = super::callable_context::uses_block(&body);
     Ok(Stmt::For {
         iterable,
         param,
@@ -865,7 +909,7 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // The modifier form is `StatementModifierFor`, lowered with its
         // statement; a `RakuAst::Statement::For` is the block form.
         is_statement_modifier: false,
-        uses_block_magic: false,
+        uses_block_magic,
     })
 }
 
@@ -2791,9 +2835,13 @@ fn lower_named_call(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         };
         match args.as_slice() {
             [] => return Ok(flow(None, None)),
-            [Expr::BareWord(label)] => return Ok(flow(Some(label.clone()), None)),
-            [_] if name != "redo" => {
-                if let Some(expr) = crate::parser::loop_control_expr(&name, args.clone()) {
+            [expr] => {
+                if let Some(label) = super::label_context::expression_name(expr) {
+                    return Ok(flow(Some(label), None));
+                }
+                if name != "redo"
+                    && let Some(expr) = crate::parser::loop_control_expr(&name, args.clone())
+                {
                     return Ok(expr);
                 }
             }
@@ -2990,8 +3038,6 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 return Err(unsupported(node));
             }
             custom_traits.push((crate::ast::bind_decl::SCALAR_BIND.to_string(), None));
-        } else if name.starts_with('&') {
-            return Err(unsupported(node));
         }
         return Ok(crate::ast::bind_decl::expand(Stmt::VarDecl {
             name,
@@ -3217,7 +3263,10 @@ fn term_identifier_expr(name: &str) -> Expr {
 
 fn lower_term_name(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     match name_parts::name_shape(node).ok_or_else(|| unsupported(node))? {
-        NameShape::Identifier(name) => Ok(term_identifier_expr(&name)),
+        NameShape::Identifier(name) => Ok(match super::label_context::lookup(&name) {
+            Some(value) if !name_parts::has_leading_empty(node) => Expr::Literal(value),
+            _ => term_identifier_expr(&name),
+        }),
         NameShape::Stash(stash) => Ok(Expr::PseudoStash(stash)),
         NameShape::Indirect {
             expr,
@@ -4016,6 +4065,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         let body = lower_expr(&super::thunk::unmark(node))?;
         return Ok(Expr::WhateverCurry(Box::new(body)));
     }
+    if let Some(expr) = super::deferred_name::lower(node) {
+        return expr;
+    }
     // `⚛$x`, `$x ⚛= 5`, `$x⚛++`, ...: plain operator nodes, the parser's calls.
     if let Some(call) = super::atomic_op::lower(node) {
         return call;
@@ -4170,14 +4222,18 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // A statement with a modifier in expression position (`[EXPR for LIST]`)
         // is the statement itself, as the parser carries it (`DoStmt`).
         RakuAstClass::StatementExpression
-            if node
-                .fields
-                .iter()
-                .any(|f| matches!(f.name, Some("loop-modifier" | "condition-modifier"))) =>
+            if node.fields.iter().any(|f| {
+                matches!(
+                    f.name,
+                    Some("loop-modifier" | "condition-modifier" | "labels")
+                )
+            }) =>
         {
             Ok(Expr::DoStmt(Box::new(lower_stmt(node)?)))
         }
         RakuAstClass::StatementExpression => lower_expr(named_child(node, "expression")?),
+        RakuAstClass::VarCompilerBlock => Ok(Expr::CodeVar("?BLOCK".to_string())),
+        RakuAstClass::VarCompilerRoutine => Ok(Expr::CodeVar("?ROUTINE".to_string())),
         // `class { }` / `role { }` / `grammar { }` as a term: the parser carries
         // a declaration in expression position as a `DoStmt`.
         RakuAstClass::Class | RakuAstClass::Grammar | RakuAstClass::Role => {
@@ -4392,6 +4448,30 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         // A bareword naming something the unit declared, or a dynamic
         // `::(...)` name. Both are represented by RakuAST::Term::Name; the
         // nested Name part tells the lowerer which internal expression to keep.
+        RakuAstClass::TermName
+            if node
+                .fields
+                .iter()
+                .any(|field| field.name == Some("label-value")) =>
+        {
+            let value = node
+                .fields
+                .iter()
+                .find_map(|field| {
+                    if field.name == Some("label-value")
+                        && let RakuAstFieldValue::Node(value) = &field.value
+                    {
+                        Some(value.clone())
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| unsupported(node))?;
+            if crate::value::label::label_name(&value).is_none() {
+                return Err(unsupported(node));
+            }
+            Ok(Expr::Literal(value))
+        }
         RakuAstClass::TermName => lower_term_name(named_child_or_positional(node)?),
         // `.method(...)` on the topic: the same method call `$_.method(...)`
         // compiles to.
@@ -4962,7 +5042,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 | RakuAstClass::CallQuotedMethod
                 | RakuAstClass::CallMetaMethod
                 | RakuAstClass::CallTermAsMethod
-                | RakuAstClass::CallNameAsMethod => lower_method_postfix(operand, postfix),
+                | RakuAstClass::CallNameAsMethod
+                | RakuAstClass::CallBlockMethod => lower_method_postfix(operand, postfix),
                 // `@a>>.abs` -> MetaPostfix::Hyper wrapping the ordinary
                 // method-call postfix.
                 RakuAstClass::MetaPostfixHyper => {
@@ -5177,9 +5258,9 @@ fn lower_method_postfix(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, Ru
             sugar: false,
         }),
         // `$o.$name(1)` / `$o.&f(1)`.
-        RakuAstClass::CallTermAsMethod | RakuAstClass::CallNameAsMethod => {
-            super::dynamic_method::lower(operand, postfix)
-        }
+        RakuAstClass::CallTermAsMethod
+        | RakuAstClass::CallNameAsMethod
+        | RakuAstClass::CallBlockMethod => super::dynamic_method::lower(operand, postfix),
         _ => Err(unsupported(postfix)),
     }
 }
