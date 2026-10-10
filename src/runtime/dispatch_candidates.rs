@@ -774,7 +774,12 @@ impl Interpreter {
                 // candidate). A smiley (`Any:D`) still counts.
                 let meaningful_type = tc.is_some_and(|tc| !matches!(tc, "Mu" | "Any"));
                 meaningful_type
+                    // An optional param (`&c = &say`, `@a?`) takes no part in
+                    // rakudo's narrowness comparison, so its implied
+                    // Positional/Associative/Callable type must not either.
                     || (!p.slurpy
+                        && !p.optional_marker
+                        && p.default.is_none()
                         && (p.name.starts_with('@')
                             || p.name.starts_with('%')
                             || p.name.starts_with('&')))
