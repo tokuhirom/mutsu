@@ -12,6 +12,7 @@ mod any_interp;
 pub(crate) mod capture;
 pub(crate) mod clone;
 mod fmt;
+pub(crate) mod join;
 pub(crate) mod lazy;
 pub(crate) mod list;
 pub(crate) mod list_aggregate;
@@ -43,6 +44,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     render_names::STRINGY_ROWS,
     fmt::ROWS,
     capture::ROWS,
+    join::ROWS,
     clone::ROWS,
     any_interp::ROWS,
     lazy::ROWS,

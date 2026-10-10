@@ -216,64 +216,18 @@ pub(super) fn dispatch(
         ))),
         // The `fmt` rows' implementation (`method_table::collections::fmt`).
         "fmt" => Some(crate::builtins::fmt_native(target, &[])),
-        // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
-        // (each element stringified once, one `join` into a single buffer).
+        // The `Any.join` row's implementation (`method_table::collections::join`).
         "join" => {
-            if crate::builtins::is_join_lazy(target) {
-                return Some(Some(Ok(Value::str("...".to_string()))));
-            }
-            if matches!(target.view(), ValueView::LazyList(_)) {
-                return Some(None); // fall through to runtime to force
-            }
-            if let ValueView::Seq(items) = target.view()
-                && items.is_consumed()
-                && !items.is_cached()
-            {
-                return Some(Some(Err(crate::value::seq_consumed_error())));
-            }
-            // `.join` stringifies every element, so a zero-denominator Rational
-            // among them dies like its own `.Str` (GH #9621).
-            if let Err(err) = crate::runtime::utils::check_str_coercion_zero_denominator(target) {
-                return Some(Some(Err(err)));
-            }
-            // Uni is a Positional[uint32], so its default `.join` separator
-            // joins the numeric codepoints rather than stringifying the Uni
-            // as a whole. The one-argument path has the same rule in
-            // `methods_narg/dispatch_1arg.rs`; keep the zero-argument fast
-            // path consistent (`'abc'.NFD.join` is `"979899"`).
-            if let ValueView::Uni(u) = target.view() {
-                let joined = u
-                    .codepoints()
-                    .iter()
-                    .map(|cp| cp.to_string())
-                    .collect::<Vec<_>>()
-                    .join("");
-                return Some(Some(Ok(Value::str(joined))));
-            }
-            if crate::runtime::utils::is_shaped_array(target) {
-                let leaves = crate::runtime::utils::shaped_array_leaves(target);
-                return Some(crate::builtins::method_table::list::join_items(&leaves, "").map(Ok));
-            }
-            // A list's elements: the `List.join` row's implementation
-            // (ADR-11276, `method_table::list`).
-            if let Some(items) = crate::builtins::method_table::list::join_source_items(target) {
-                Some(crate::builtins::method_table::list::join_items(&items, "").map(Ok))
-            } else if target.is_range() {
-                // A Range has no materialized backing slice, so `as_list_items`
-                // returns None. Expand it to its elements and join with the
-                // empty default separator — NOT `target.to_string_value()`,
-                // which renders the Range with space-separated gist semantics
-                // (`(1..5).join` must be "12345", not "1 2 3 4 5").
-                let items = crate::runtime::utils::value_to_list(target);
-                Some(crate::builtins::method_table::list::join_items(&items, "").map(Ok))
-            } else if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Thread")
-            {
-                // `.join` on a Thread is the thread-join primitive (block until the
-                // thread finishes), NOT list-join stringification. Fall through to
-                // the runtime so native_thread routes it to dispatch_thread_finish.
-                Some(None)
-            } else {
-                Some(Some(Ok(Value::str(target.to_string_value()))))
+            use crate::builtins::method_table::collection_join::{Joined, join_core};
+            match join_core(target, "") {
+                Joined::Done(result) => Some(Some(result)),
+                Joined::NeedsInterpreter => Some(None),
+                // `.join` on a Thread is the thread-join primitive (block until
+                // the thread finishes): the runtime's native_thread routes it.
+                Joined::NotCovered if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Thread") => {
+                    Some(None)
+                }
+                Joined::NotCovered => Some(Some(Ok(Value::str(target.to_string_value())))),
             }
         }
         _ => None,
