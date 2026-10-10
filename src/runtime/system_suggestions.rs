@@ -6,7 +6,7 @@ impl Interpreter {
     /// normalized to sigiled form (scalars are stored without `$`; arrays/hashes
     /// keep their sigil). Matching is sigil-insensitive on the name part so that
     /// e.g. `$barf` suggests `@barf`. Returns suggestions sorted by edit distance.
-    pub(super) fn suggest_declared_vars(symbol: &str, declared: &HashSet<String>) -> Vec<String> {
+    pub(in crate::runtime) fn suggest_declared_vars(symbol: &str, declared: &HashSet<String>) -> Vec<String> {
         use crate::runtime::did_you_mean::levenshtein_distance;
         let sigiled = |name: &str| -> String {
             if name.starts_with(['$', '@', '%', '&']) {
