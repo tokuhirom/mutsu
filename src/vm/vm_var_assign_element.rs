@@ -586,6 +586,19 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // A package-block `my %h` reached from one of the package's routines
         // lives in the package store, which every path below is blind to.
+        //
+        // ADR-0068: the element read (`existing_element_container`) and the
+        // store below walk and restructure a container that other threads
+        // sharing the variable reach (`%!h{$k} = 1` in a method), so a second
+        // thread's insert/rehash is a use after free (#12491). Same keying as
+        // the `++` and `:delete` routes; a no-op until a second VM mutator
+        // thread exists. The rvalue is already evaluated; only a `Proxy` STORE
+        // reached from here can run user code under the guard.
+        let _struct_guard = self.named_root_struct_guard(
+            code,
+            target_slot,
+            Self::const_str(code, name_idx),
+        );
         self.with_package_lexical_seeded(code, name_idx, |vm| {
             vm.exec_index_assign_expr_named_op_unseeded(
                 code,
