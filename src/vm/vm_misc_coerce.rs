@@ -348,19 +348,24 @@ impl Interpreter {
                 return Ok(());
             }
             // A user `Stringy`/`Str` method can mutate a captured outer.
+            // Rakudo's prefix `~` calls `.Str` and never `.Stringy`, so a class
+            // whose only catch-all is `FALLBACK` must not see `Stringy` reach it
+            // (CSS::Writer's `FALLBACK($name, $val, |c)` died on `~$writer`).
             let caller_code = self.current_code;
-            let stringy = self.try_compiled_method_or_interpret(val.clone(), "Stringy", vec![]);
+            let stringy = self
+                .probes_stringy_before_str(&cn)
+                .then(|| self.try_compiled_method_or_interpret(val.clone(), "Stringy", vec![]));
             self.reconcile_caller_after_internal_dispatch(caller_code);
             // Only a missing method falls back to the default rendering; an
             // exception the user's `Stringy`/`Str` raised is the result of
             // `~$obj` (Syndicate's `~$feed` dies on a timestamp-less feed).
             match stringy {
-                Ok(result) => {
+                Some(Ok(result)) => {
                     self.stack.push(result);
                     return Ok(());
                 }
-                Err(e) if !e.is_method_not_found_for("Stringy") => return Err(e),
-                Err(_) => {}
+                Some(Err(e)) if !e.is_method_not_found_for("Stringy") => return Err(e),
+                Some(Err(_)) | None => {}
             }
             let caller_code = self.current_code;
             let str_r = self.try_compiled_method_or_interpret(val.clone(), "Str", vec![]);

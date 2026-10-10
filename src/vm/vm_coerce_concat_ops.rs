@@ -354,6 +354,15 @@ impl Interpreter {
         Self::concat_values(left, right)
     }
 
+    /// Whether a string context (`~`, interpolation, `eq`) may probe `.Stringy`
+    /// on an instance of `class_name` before `.Str`. Rakudo stringifies via
+    /// `.Str`, so a class whose only catch-all is `FALLBACK` must not have a
+    /// `Stringy` call reach it (CSS::Writer's `FALLBACK($name, $val, |c)`).
+    // Cost: O(1) amortized, two memoized `has_user_method` probes.
+    pub(crate) fn probes_stringy_before_str(&mut self, class_name: &str) -> bool {
+        self.has_user_method(class_name, "Stringy") || !self.has_user_method(class_name, "FALLBACK")
+    }
+
     /// Coerce an operand whose class defines a `Stringy`/`Str` to its
     /// string value (Raku infix `~` uses `.Stringy`, falling back to `.Str`;
     /// the string comparators `eq`/`lt`/… use `.Str`). Plain values and
@@ -479,7 +488,7 @@ impl Interpreter {
         // A Date/DateTime `:formatter` is user code the pure stringifier
         // cannot run.
         if self.has_user_method(&cn, "Stringy")
-            || self.is_native_method(&cn, "Stringy")
+            || (self.is_native_method(&cn, "Stringy") && self.probes_stringy_before_str(&cn))
             || crate::builtins::methods_0arg::temporal::carries_formatter(&v)
         {
             let r = self.try_compiled_method_or_interpret(v, "Stringy", Vec::new())?;
