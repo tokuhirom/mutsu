@@ -88,9 +88,16 @@ impl Compiler {
                 // A tail block with ENTER/LEAVE/... phasers must run them through a
                 // real `BlockScope` rather than being inlined (which drops them).
                 if Self::has_block_enter_leave_phasers(inner) {
+                    // Only a genuine `{ ... }` is a lexical scope for the
+                    // `X::Dynamic::Postdeclaration` bookkeeping.
+                    let saved = matches!(stmt, Stmt::Block(_))
+                        .then(|| self.push_dynamic_scope_lexical());
                     self.with_import_scope_region(inner, |c| {
                         c.compile_phaser_block_scope(inner, PhaserBlockResult::Push)
                     });
+                    if let Some(saved) = saved {
+                        self.pop_dynamic_scope_lexical(saved);
+                    }
                 } else if matches!(stmt, Stmt::SyntheticBlock(_)) {
                     // A parser wrapper (e.g. a tail `my $*x := ...` bind used
                     // as a `given`/`when` body's last statement), not a real
@@ -223,8 +230,18 @@ impl Compiler {
     /// Bracketing unconditionally would break those callers.
     pub(super) fn compile_phaser_block_literal_inline(&mut self, stmts: &[Stmt]) {
         let state_reset = self.emit_nested_block_state_reset(stmts);
-        self.compile_phaser_block_scope(stmts, PhaserBlockResult::Push);
+        self.compile_real_phaser_block_scope(stmts);
         self.patch_nested_block_state_reset(state_reset);
+    }
+
+    /// [`Compiler::compile_phaser_block_scope`] for a genuine source `{ ... }`
+    /// in tail position: a lexical scope, so a `my $*x` inside it must not
+    /// see an earlier read of `$*x` in the enclosing block as a
+    /// postdeclaration (`X::Dynamic::Postdeclaration`).
+    pub(super) fn compile_real_phaser_block_scope(&mut self, stmts: &[Stmt]) {
+        let saved = self.push_dynamic_scope_lexical();
+        self.compile_phaser_block_scope(stmts, PhaserBlockResult::Push);
+        self.pop_dynamic_scope_lexical(saved);
     }
 
     /// Compile a block inline (for blocks without placeholders).
