@@ -1409,6 +1409,12 @@ impl Registry {
             if let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_syms(class_name) {
                 return Some(mro);
             }
+            // A role whose pun was withdrawn still has the lineage its `is P`
+            // header gave it (`role R is P`): an instance of the pun is `R`,
+            // then `P`'s chain.
+            if let Some(mro) = self.role_pun_mro(class_name) {
+                return Some(mro);
+            }
             // Not a registered class at all: the write side computes but has no
             // `ClassDef` to cache into, so the result is identical read-only.
             let mut stack = Vec::new();
@@ -1422,6 +1428,39 @@ impl Registry {
             return Some(class_def.mro.clone());
         }
         None
+    }
+
+    /// The MRO of an unregistered role name that has class parents (`role R is
+    /// P`): the role itself followed by each parent's MRO, duplicates dropped.
+    // Cost: O(p * m), p = class parents of the role, m = their MRO length.
+    pub(crate) fn role_pun_mro(&self, role_name: &str) -> Option<std::sync::Arc<[Symbol]>> {
+        if !self.roles.contains_key(role_name) {
+            return None;
+        }
+        // `role_parents` merges the parents of every same-named variant, so a
+        // role group (`role R is A` plus `role R[::T] is B`) cannot say which
+        // variant's parents a bare `R` has. Only an unambiguous role answers.
+        if self.role_candidates.get(role_name).is_some_and(|c| c.len() > 1) {
+            return None;
+        }
+        let parents: Vec<&String> = self
+            .role_parents
+            .get(role_name)?
+            .iter()
+            .filter(|p| self.classes.contains_key(p.as_str()) && !self.roles.contains_key(p.as_str()))
+            .collect();
+        if parents.is_empty() {
+            return None;
+        }
+        let mut mro = vec![Symbol::intern(role_name)];
+        for parent in parents {
+            for entry in self.class_mro_readonly(parent)?.iter() {
+                if !mro.contains(entry) {
+                    mro.push(*entry);
+                }
+            }
+        }
+        Some(mro.into())
     }
 
     /// Read-only MRO lookup: the cached `ClassDef::mro` when present, otherwise a

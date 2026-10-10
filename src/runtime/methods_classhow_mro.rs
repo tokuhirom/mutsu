@@ -22,6 +22,9 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.resolve())
                 .collect()
+        } else if let Some(mro) = self.registry().role_pun_mro(&class_name) {
+            // A role with an `is P` class parent: its pun inherits P's chain.
+            mro.iter().map(|s| s.resolve()).collect()
         } else {
             // Built-in type hierarchies for types that are not user-defined
             // classes. `builtin_type_catalog` (ADR-0051 P1) is the single source

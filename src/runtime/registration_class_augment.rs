@@ -1152,9 +1152,20 @@ impl Interpreter {
             .collect();
         let mut all_wildcard_handles = role_def.wildcard_handles.clone();
         let mut composed_roles_list = vec![role_name.to_string()];
+        // A role's `is P` (P a class) is recorded in `role_parents` next to its
+        // `does` parents. The pun is the class that inherits it.
+        let mut class_parents: Vec<String> = Vec::new();
         if let Some(parent_names) = self.registry().role_parents.get(role_name).cloned() {
             let mut role_stack: Vec<String> = parent_names;
             while let Some(parent_role_name) = role_stack.pop() {
+                if self.registry().classes.contains_key(&parent_role_name)
+                    && !self.registry().roles.contains_key(&parent_role_name)
+                {
+                    if !class_parents.contains(&parent_role_name) {
+                        class_parents.push(parent_role_name);
+                    }
+                    continue;
+                }
                 if !composed_roles_list.contains(&parent_role_name) {
                     composed_roles_list.push(parent_role_name.clone());
                     if let Some(parent_role) = self.registry().roles.get(&parent_role_name).cloned()
@@ -1259,20 +1270,38 @@ impl Interpreter {
                 }
             }
         }
+        let mro = if class_parents.is_empty() {
+            None
+        } else {
+            let mut names = vec![role_name.to_string()];
+            for parent in &class_parents {
+                for entry in self.class_mro(parent).iter() {
+                    let entry = entry.resolve();
+                    if !names.contains(&entry) {
+                        names.push(entry);
+                    }
+                }
+            }
+            let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            Some(super::sym_mro(&refs))
+        };
         let punned_class = ClassDef {
-            parents: Vec::new(),
+            parents: class_parents.clone(),
             attributes: all_attributes,
             attribute_types,
             attribute_smileys,
             attribute_built,
             embedded_attributes: HashSet::new(),
             native_methods: HashSet::new(),
-            mro: match self.registry().role_associative_base(role_name) {
+            mro: match (mro, self.registry().role_associative_base(role_name)) {
+                (Some(m), _) => m,
                 // `role R is Hash`: the pun reaches Hash/Map so its instances get
                 // the associative backing store and delegation.
-                Some("Hash") => super::sym_mro(&[role_name, "Hash", "Map", "Cool", "Any", "Mu"]),
-                Some(_) => super::sym_mro(&[role_name, "Map", "Cool", "Any", "Mu"]),
-                None => super::sym_mro(&[role_name, "Any", "Mu"]),
+                (None, Some("Hash")) => {
+                    super::sym_mro(&[role_name, "Hash", "Map", "Cool", "Any", "Mu"])
+                }
+                (None, Some(_)) => super::sym_mro(&[role_name, "Map", "Cool", "Any", "Mu"]),
+                (None, None) => super::sym_mro(&[role_name, "Any", "Mu"]),
             },
             wildcard_handles: all_wildcard_handles,
             alias_attributes: HashSet::new(),
