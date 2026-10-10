@@ -1036,7 +1036,7 @@ impl Compiler {
                         // in `compiler/mod.rs` -- `{ ...; LEAVE $service.stop() }` as
                         // a routine's last statement never cleaned up.
                         if Self::has_block_enter_leave_phasers(stmts) {
-                            sub_compiler.compile_phaser_block_scope(stmts, PhaserBlockResult::Push);
+                            sub_compiler.compile_real_phaser_block_scope(stmts);
                         } else {
                             sub_compiler.compile_block_inline(stmts);
                         }
@@ -1605,7 +1605,7 @@ impl Compiler {
                     // See the tail-block site below: phasers must go through a
                     // real `BlockScope` or they are silently dropped.
                     if Self::has_block_enter_leave_phasers(stmts) {
-                        sub_compiler.compile_phaser_block_scope(stmts, PhaserBlockResult::Push);
+                        sub_compiler.compile_real_phaser_block_scope(stmts);
                     } else {
                         sub_compiler.compile_block_inline(stmts);
                     }
@@ -1762,8 +1762,12 @@ impl Compiler {
                                 // ending in `{ ...; LEAVE cleanup() }` never cleaned up.
                                 // Mirrors the mainline tail-block site in
                                 // `compiler/mod.rs`.
-                                sub_compiler
-                                    .compile_phaser_block_scope(stmts, PhaserBlockResult::Push);
+                                if matches!(stmt, Stmt::Block(_)) {
+                                    sub_compiler.compile_real_phaser_block_scope(stmts);
+                                } else {
+                                    sub_compiler
+                                        .compile_phaser_block_scope(stmts, PhaserBlockResult::Push);
+                                }
                             } else if matches!(stmt, Stmt::SyntheticBlock(_)) {
                                 // A parser wrapper, not a real scope -- see
                                 // `compile_synthetic_block_inline`.
