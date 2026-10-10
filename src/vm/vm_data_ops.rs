@@ -514,6 +514,15 @@ impl Interpreter {
         if inner.is_container_ref() {
             return (inner, true);
         }
+        // The implicit topic bound to a bare (unitemized) List/Array/Hash
+        // aliases the value itself -- it has no Scalar of its own -- so
+        // `{ Pair.new('k', $_) }.((1, 2))` holds the plain list, not a
+        // `$(1, 2)` item. Boxing it into a cell would itemize it (#12518).
+        if name == "_"
+            && (!Self::topic_holds_scalar(&inner) || matches!(inner.view(), ValueView::Seq(..)))
+        {
+            return (inner, false);
+        }
         // `($!name, $x)`: an attribute's container is the invocant's own
         // attribute cell. Boxing the method frame's slot instead made a
         // private copy and published it under `!name` in the env, where a
