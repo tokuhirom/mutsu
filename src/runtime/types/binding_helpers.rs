@@ -57,7 +57,9 @@ impl Interpreter {
         // Shadow the parameter with its undefined type object (or Nil) so a
         // self-reference in the default resolves to the parameter rather than
         // an outer symbol of the same name.
-        let saved_self = if !pd.name.is_empty() {
+        // A named alias (`:d(:$dir)`) names a caller key only, not a body variable,
+        // so there is nothing to shadow -- and `d` may be a sibling positional `$d`.
+        let saved_self = if !pd.name.is_empty() && !pd.named_alias {
             let prev = self.env.get(&pd.name).cloned();
             let shadow = pd
                 .type_constraint
