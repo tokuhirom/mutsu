@@ -306,6 +306,14 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
                     then_expr: Box::new(read),
                     else_expr: Box::new(fallback),
                 }
+            } else if let Some(def_expr) = &decl.group_default {
+                // An element the RHS did not reach is `Nil` to the assignment,
+                // which resets the container to its `is default` value.
+                Expr::Ternary {
+                    cond: Box::new(staged_exists(&array_bare, i)),
+                    then_expr: Box::new(read),
+                    else_expr: Box::new(def_expr.clone()),
+                }
             } else {
                 read
             }
@@ -348,12 +356,17 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
         // same scalar bind `my $a := EXPR` lowers to, and carries the same
         // `__scalar_bind` marker, so an immutable element (`my ($a is rw) :=
         // (5,)`) stays immutable instead of getting a fresh container.
-        let custom_traits =
+        let mut custom_traits =
             if binds_element && !dvar.sigilless && !dvar.name.starts_with(['@', '%']) {
                 vec![("__scalar_bind".to_string(), None)]
             } else {
                 Vec::new()
             };
+        // `my ($a, $b) is default(D) = ...`: the group trait applies to every
+        // element, through the same variable trait the bare form uses.
+        if let Some(def_expr) = &decl.group_default {
+            custom_traits.push(("default".to_string(), Some(def_expr.clone())));
+        }
         let decl = Stmt::VarDecl {
             name: dvar.name.clone(),
             expr,
