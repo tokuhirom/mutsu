@@ -358,7 +358,25 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
                     )))),
                 )
             } else {
-                term_expr(rest)?
+                let (r_term, term) = term_expr(rest)?;
+                // A user `sub term:<Foo::Bar>` shadows the bareword as a term,
+                // but `require`'s operand is a module name (IP::Addr's
+                // `sub term:<IP::Addr> () { once require IP::Addr }`).
+                let shadowed = matches!(
+                    &term,
+                    Expr::Call { name, args, .. }
+                        if args.is_empty() && name.resolve() == format!("term:<{mod_name}>")
+                );
+                if shadowed {
+                    (
+                        r_mod,
+                        Expr::Literal(Value::package(Symbol::intern(&normalize_raku_identifier(
+                            bare_name,
+                        )))),
+                    )
+                } else {
+                    (r_term, term)
+                }
             }
         } else {
             term_expr(rest)?

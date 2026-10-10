@@ -1170,6 +1170,47 @@ impl Interpreter {
                 self.resolve_user_method_or_accessor(&class_name.resolve(), method),
                 Some(UserMethodOrAccessor::Accessor)
             );
+        // `$obj.name = v` on a class with `has $.d handles *` where only the
+        // delegate has `name`: forward the assignment to the delegate.
+        if method_args.is_empty()
+            && !accessor_wins
+            && self
+                .resolve_method(&class_name.resolve(), method, &method_args)
+                .is_none()
+            && !self
+                .collect_class_attributes(&class_name.resolve())
+                .iter()
+                .any(|attr| attr.name == method && attr.is_public)
+            && let Some((attr_key, delegate)) =
+                self.wildcard_delegate_for_assign(&class_name.resolve(), &target, method)
+        {
+            let sigil = match delegate.view() {
+                ValueView::Array(..) => "@",
+                ValueView::Hash(_) => "%",
+                _ => "$",
+            };
+            let temp_var = format!("{sigil}__mutsu_delegation_tmp__");
+            self.env.insert_through(temp_var.clone(), delegate.clone());
+            let result = self.assign_method_lvalue_with_values(
+                Some(&temp_var),
+                delegate,
+                method,
+                method_args,
+                value,
+                preserve_hash_entries,
+            )?;
+            let updated_delegate = self.env.get(&temp_var).cloned().unwrap_or(Value::NIL);
+            self.env.remove(&temp_var);
+            let mut updated = attributes.to_map();
+            updated.insert(attr_key, updated_delegate);
+            if let Some(var_name) = target_var {
+                self.env.insert_through(
+                    var_name.to_string(),
+                    Value::write_back_sharing(&attributes, class_name, updated, target_id),
+                );
+            }
+            return Ok(result);
+        }
         // `$obj.name = v` with no method or accessor `name`, on a class whose
         // `is rw` FALLBACK answers for it, writes through the container the
         // FALLBACK hands back (CSS::Properties: `$css.height = '5px'`).
