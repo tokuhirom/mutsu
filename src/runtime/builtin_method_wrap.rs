@@ -42,19 +42,50 @@ impl Interpreter {
         method_sym: Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        let (class_name, chain) = self.builtin_value_wrap_chain(target, method_sym)?;
+        let method = method_sym.resolve();
+        Some(self.run_builtin_method_wrap(&class_name, target, &method, args, &chain))
+    }
+
+    /// The class and `.wrap` chain [`Self::try_builtin_value_method_wrap`]
+    /// would run for `target.method`, without running it.
+    ///
+    // Cost: O(1) once `has_any_wrap_chains()` holds; the caller checks it.
+    pub(crate) fn builtin_value_wrap_chain(
+        &mut self,
+        target: &Value,
+        method_sym: Symbol,
+    ) -> Option<(String, Vec<(u64, Value)>)> {
         let class_name: String = match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => crate::runtime::utils::value_type_name(target).to_string(),
         };
-        let method = method_sym.resolve();
-        self.builtin_method_wrap_chain(&class_name, &method)?;
+        let chain = self.builtin_method_wrap_chain(&class_name, &method_sym.resolve())?;
         // A class declared in the program (its generated accessors too) is
         // wrapped at the user-method sites; running the chain here as well
         // would wrap twice.
         if self.has_user_method_sym(&class_name, method_sym) || self.has_class(&class_name) {
             return None;
         }
-        self.try_builtin_method_wrap(&class_name, target, &method, args)
+        Some((class_name, chain))
+    }
+
+    /// Whether the outermost wrapper of `chain` binds its first parameter
+    /// `is rw` / `is raw`, so the caller's container is worth handing over.
+    ///
+    // Cost: O(1).
+    pub(crate) fn wrap_chain_binds_rw_invocant(chain: &[(u64, Value)]) -> bool {
+        let Some((_, wrapper)) = chain.last() else {
+            return false;
+        };
+        let ValueView::Sub(data) = wrapper.view() else {
+            return false;
+        };
+        data.param_defs.first().is_some_and(|pd| {
+            pd.traits
+                .iter()
+                .any(|t| matches!(t.as_str(), "rw" | "raw" | "is rw" | "is raw"))
+        })
     }
 
     /// The `.wrap` chain of `method` on the built-in class `class_name`, if any.
@@ -93,6 +124,26 @@ impl Interpreter {
         args: &[Value],
         chain: &[(u64, Value)],
     ) -> Result<Value, RuntimeError> {
+        self.run_builtin_method_wrap_in(class_name, invocant, None, method, args, chain)
+    }
+
+    /// [`Self::run_builtin_method_wrap`] with the caller's container for the
+    /// invocant (`invocant_cell`, a `ContainerRef`): the wrapper's first
+    /// argument and the `callsame` context hold the container, so a wrapper
+    /// whose invocant is `is rw` writes through to the caller's variable and
+    /// `callsame` re-dispatches on the updated value.
+    ///
+    // Cost: O(w), w = wrappers in the chain, plus their own calls.
+    pub(crate) fn run_builtin_method_wrap_in(
+        &mut self,
+        class_name: &str,
+        invocant: &Value,
+        invocant_cell: Option<&Value>,
+        method: &str,
+        args: &[Value],
+        chain: &[(u64, Value)],
+    ) -> Result<Value, RuntimeError> {
+        let invocant = invocant_cell.unwrap_or(invocant);
         let outermost = chain
             .last()
             .map(|(_, wrapper)| wrapper.clone())
