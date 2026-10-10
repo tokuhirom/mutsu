@@ -3071,8 +3071,12 @@ impl Interpreter {
                             self.lexicals.sigilless_alias_seen = true;
                         } else if matches!(
                             args[positional_idx].view(),
-                            ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. }
+                            ValueView::ContainerRef(_)
+                                | ValueView::HashEntryRef { .. }
+                                | ValueView::Proxy { .. }
                         ) {
+                            // A `Proxy` (an `is rw` method's result) is likewise a
+                            // writable lvalue: FETCH/STORE are the container.
                             // A bare `ContainerRef` cell (e.g. the leaf container
                             // `deepmap`/hyper passes by reference) IS a writable
                             // lvalue even without a source variable name: the raw

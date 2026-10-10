@@ -114,7 +114,11 @@ impl Interpreter {
                     .and_then(|sources| sources.get(arg_idx))
                     .and_then(|name| name.as_ref())
                     .is_some();
-                if !is_varref && !has_arg_source {
+                // A `Proxy` (an `is rw` method's result) is itself a writable lvalue.
+                let is_proxy = raw_arg
+                    .map(|a| unwrap_varref_value(a.clone()).is_proxy_value())
+                    .unwrap_or(false);
+                if !is_varref && !has_arg_source && !is_proxy {
                     return false;
                 }
             }
@@ -515,7 +519,11 @@ impl Interpreter {
                     let is_container = raw_arg
                         .map(|a| unwrap_varref_value(a.clone()).is_container_ref())
                         .unwrap_or(false);
-                    if !is_varref && !has_arg_source && !is_container {
+                    // A `Proxy` (an `is rw` method's result) is itself a writable lvalue.
+                    let is_proxy = raw_arg
+                        .map(|a| unwrap_varref_value(a.clone()).is_proxy_value())
+                        .unwrap_or(false);
+                    if !is_varref && !has_arg_source && !is_container && !is_proxy {
                         return false;
                     }
                 }
