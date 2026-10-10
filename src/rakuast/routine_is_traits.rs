@@ -46,6 +46,9 @@ impl IsTraits {
             }
             ("rw", None) if t.fields.len() == 1 => self.is_rw = true,
             ("raw", None) if t.fields.len() == 1 => self.is_raw = true,
+            // These parser-recognized annotations have no execution field.
+            // Their spelling remains in the routine source record.
+            ("nodal" | "pure" | "readonly", None) if t.fields.len() == 1 => {}
             ("export", None) if t.fields.len() == 1 => {
                 if !self.export_tags.iter().any(|tag| tag == DEFAULT_TAG) {
                     self.export_tags.push(DEFAULT_TAG.to_string());

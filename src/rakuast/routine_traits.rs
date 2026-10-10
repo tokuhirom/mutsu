@@ -382,6 +382,9 @@ pub(super) fn lower_custom(
     let ValueView::Str(name) = name.view() else {
         return Ok(None);
     };
+    if name.as_str() == "hidden-from-backtrace" && t.fields.len() == 1 {
+        return Ok(Some(("__hidden_from_backtrace".to_string(), None)));
+    }
     if name.as_str() == "DEPRECATED" {
         // `DEPRECATED` / `DEPRECATED:message`, as the parser keeps it.
         return match named_child(t, "argument") {

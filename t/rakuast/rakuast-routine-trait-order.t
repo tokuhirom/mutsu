@@ -62,4 +62,11 @@ is EVAL(Q[sub infix:<plus>($a,$b) is equiv(&[+]) is assoc<left> { $a + $b }; 2 p
 is EVAL(Q[sub infix:<plus>($a,$b) is tighter<+> { $a + $b }; 2 plus 3].AST),
     5, 'angle-word precedence reference survives lowering';
 
+is names(routine(Q[sub annotated() is nodal { 7 }])), 'nodal',
+    'recognized annotation retains its source trait';
+is EVAL(Q[sub annotated() is nodal { 7 }; annotated()].AST), 7,
+    'recognized annotation lowers without becoming a custom trait call';
+is EVAL(Q[proto sub raw-dispatch(|) is raw {*}; multi sub raw-dispatch(Int $x) { $x + 1 }; raw-dispatch(4)].AST), 5,
+    'raw proto annotation does not prevent candidate dispatch';
+
 done-testing;

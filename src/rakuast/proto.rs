@@ -122,10 +122,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let (params, param_defs) = signature_positional_params(node)?;
     let mut is_traits = IsTraits::default();
     let (return_type, custom_traits) = routine_return_type(node, Some(&mut is_traits))?;
-    // Only the markers of how the return type was written are kept.
-    if is_traits.is_rw || is_traits.is_raw {
-        return Err(super::lower::unsupported(node));
-    }
+    // ProtoDecl has no rw/raw execution flags, matching the parser's proto
+    // construction. Retain those annotations in the source record below;
+    // candidate declarations determine the returned container contract.
     let body_node = named_child(node, "body")?;
     let mut body = if body_node.class == RakuAstClass::OnlyStar {
         vec![Stmt::Expr(Expr::Whatever)]
