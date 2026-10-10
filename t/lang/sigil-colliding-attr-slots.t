@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 10;
 
 # `has %!d` and `has $.d` are distinct attributes that share a bare name
 # (#12528): the public accessor and `new`'s named arg address the `$.d`
@@ -29,3 +29,10 @@ is C.^attributes.first(*.name eq '%!d').get_value(C.new).raku, '{}',
     'get_value of the parent %!d reads its own slot';
 is C.^attributes.first(*.name eq '$!d').get_value($c), 5,
     'get_value of the child $!d reads the public slot';
+
+# A parent's public `$.v` with a child's private `@!v`: the child's private
+# declaration must not hide the parent's public one from `new`.
+class PV { has $.v = 1 }
+class QV is PV { has @!v; method pv { @!v.push(2); @!v.raku } }
+is QV.new(:v(9)).v, 9, 'named arg binds the parent public $.v';
+is QV.new.pv, '[2]', 'child private @!v keeps its own slot';

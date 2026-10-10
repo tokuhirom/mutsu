@@ -545,43 +545,39 @@ impl Interpreter {
 
     /// Check if an attribute is buildable (can be set via .new).
     pub(crate) fn is_attribute_buildable(&self, class_name: &str, attr_name: &str) -> bool {
-        if let Some(class_def) = self.registry().classes.get(class_name) {
-            if let Some(&built) = class_def.attribute_built.get(attr_name) {
+        let registry = self.registry();
+        let mro = registry
+            .classes
+            .get(class_name)
+            .map(|cd| cd.mro.clone())
+            .unwrap_or_else(|| [].into());
+        // The class itself first, then its MRO. The first layer that declares
+        // the name decides, except that a private declaration does not
+        // shadow a public one of the same bare name in a later layer (a
+        // sigil-colliding `has @!v` in a child over a parent's `has $.v`).
+        let layers = std::iter::once(class_name).chain(
+            mro.iter()
+                .map(|p| p.as_str())
+                .filter(|p| *p != class_name),
+        );
+        let mut declared_private = false;
+        for layer in layers {
+            let Some(def) = registry.classes.get(layer) else {
+                continue;
+            };
+            if let Some(&built) = def.attribute_built.get(attr_name) {
                 return built;
             }
-            for attr in &class_def.attributes {
-                if attr.name == attr_name {
-                    return class_def
-                        .attributes
-                        .iter()
-                        .any(|a| a.name == attr_name && a.is_public);
+            let mut declared = false;
+            for attr in def.attributes.iter().filter(|a| a.name == attr_name) {
+                declared = true;
+                if attr.is_public {
+                    return true;
                 }
             }
+            declared_private |= declared;
         }
-        let mro = if let Some(cd) = self.registry().classes.get(class_name) {
-            cd.mro.clone()
-        } else {
-            [].into()
-        };
-        for parent in mro.iter().map(|p| p.as_str()) {
-            if parent == class_name {
-                continue;
-            }
-            if let Some(parent_def) = self.registry().classes.get(parent) {
-                if let Some(&built) = parent_def.attribute_built.get(attr_name) {
-                    return built;
-                }
-                for attr in &parent_def.attributes {
-                    if attr.name == attr_name {
-                        return parent_def
-                            .attributes
-                            .iter()
-                            .any(|a| a.name == attr_name && a.is_public);
-                    }
-                }
-            }
-        }
-        true
+        !declared_private
     }
 
     /// Look up a class-level attribute (declared with `our $.x` or `my $.x`).
