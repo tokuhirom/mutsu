@@ -1539,7 +1539,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     {
         let min_i64 = min_big.to_i64();
         let max_i64 = max_big.to_i64();
-        if let (Some(min_v), Some(max_v)) = (min_i64, max_i64) {
+        // `Value::range` reads `i64::MIN` / `i64::MAX` as the -Inf / Inf
+        // sentinels, so the full 64-bit range needs the generic form.
+        if let (Some(min_v), Some(max_v)) = (min_i64, max_i64)
+            && min_v != i64::MIN
+            && max_v != i64::MAX
+        {
             return Some(Ok(Value::range(min_v, max_v)));
         } else {
             let min_val = min_i64
