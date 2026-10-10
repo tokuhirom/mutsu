@@ -79,3 +79,14 @@ The split also gives wrong answers. `Regex.of`, `Regex.returns` and `&say.of` th
 2. `name`, `line`, `file`, `signature` (single-value reads).
 3. `arity`, `count`, `of`, `returns` (the multi-candidate logic), deleting the `can` list.
 4. `gist`/`raku`, then flip the Status to Accepted with the Outcome section.
+
+## 6. Amendment 2026-10-10: slice 1 needed no shape
+
+The first slice (`of`, `returns`) shipped without `DispatchShape::Code`. `Signature`, `Exception` and `Failure` already show that a
+family with no shape can register ordinary rows and be reached through its owner: `method_table::code::answer` calls
+`invoke_owner(interp, &["Code"], ..)` from `dispatch_callable_method` (a `Sub`, `WeakSub` or `Routine` handle) and from the regex arm of
+`methods_instance_ops.rs`. A shape is only needed if a `Code` row must be reached by the pure entries (the call-site lane, constant
+folding), which no `Code` method wants: every one reads the registry or the closure's scope. Decision 1 above is therefore **withdrawn
+for the interpreter rows** and stays open only for the pure rows (`Bool`, `Str`, `Capture`, `clone`). Slice 1 also fixed `Regex.of`,
+`Regex.returns`, `&say.of` and `&infix:<+>.of`, which threw where Rakudo answers `Mu`. Slices 2-4 continue with `name`, `signature`,
+`arity`, `count` (and `line`/`file`, whose regex, builtin and multi-dispatcher answers are still `Nil` where Rakudo knows a location).

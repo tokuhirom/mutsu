@@ -69,7 +69,7 @@ pub(crate) use collections::{
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::rakuast_node::{origin_value, owners_of as rakuast_owners_of};
 pub(crate) use instances::{
-    backtrace, date, dateish, datetime, exception, failure, regex_match, signature, supply,
+    backtrace, code, date, dateish, datetime, exception, failure, regex_match, signature, supply,
     temporal, temporal_edit, temporal_shift,
 };
 pub(crate) use scalars::{
