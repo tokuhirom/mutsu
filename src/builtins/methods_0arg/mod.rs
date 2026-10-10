@@ -716,6 +716,28 @@ pub(crate) fn native_method_0arg_cascade(
             );
             return Some(Ok(Value::seq(result)));
         }
+        // A role mixin over a SCALAR value is itself the single element of its
+        // `.list`/`.List`/`.Array` (`(5 but R).list[0].r`): only an aggregate's
+        // mixin folds into its elements. The inner's scalar fallback answers
+        // `[inner]`, so put the whole mixin back as that one element.
+        // Cost: O(1) for the single-element check.
+        if matches!(method, "list" | "List" | "Array") {
+            let result = native_method_0arg(inner, method_sym);
+            if let Some(Ok(res)) = &result
+                && let ValueView::Array(items, kind) = res.view()
+                && items.len() == 1
+                && items
+                    .iter()
+                    .next()
+                    .is_some_and(|e| e.deref_container() == *inner.as_ref())
+            {
+                return Some(Ok(Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![target.clone()])),
+                    kind,
+                )));
+            }
+            return result;
+        }
         return native_method_0arg(inner, method_sym);
     }
     // Any.nl-out returns the default newline separator "\n"
