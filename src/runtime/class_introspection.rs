@@ -551,7 +551,10 @@ impl Interpreter {
             }
             for attr in &class_def.attributes {
                 if attr.name == attr_name {
-                    return attr.is_public;
+                    return class_def
+                        .attributes
+                        .iter()
+                        .any(|a| a.name == attr_name && a.is_public);
                 }
             }
         }
@@ -570,7 +573,10 @@ impl Interpreter {
                 }
                 for attr in &parent_def.attributes {
                     if attr.name == attr_name {
-                        return attr.is_public;
+                        return parent_def
+                            .attributes
+                            .iter()
+                            .any(|a| a.name == attr_name && a.is_public);
                     }
                 }
             }

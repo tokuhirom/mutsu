@@ -204,11 +204,14 @@ impl Interpreter {
                 return Some(keys.plain);
             }
         }
-        if map.contains_key(bare) {
-            Some(bare)
+        // A sigil-colliding declaration (`has %!d; has $.d`) stores every
+        // declaration but the public one under `<sigil>bare`, so that key
+        // must be tried before the bare key (the public declaration's).
+        let sigil_key = Self::sigil_attr_key(bare, sigil);
+        if map.contains_key(sigil_key) {
+            Some(sigil_key)
         } else {
-            let sigil_key = Self::sigil_attr_key(bare, sigil);
-            map.contains_key(sigil_key).then_some(sigil_key)
+            map.contains_key(bare).then_some(bare)
         }
     }
 

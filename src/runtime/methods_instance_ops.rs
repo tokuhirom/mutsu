@@ -1126,7 +1126,11 @@ impl Interpreter {
                             ..
                         } = obj.view()
                         {
-                            return Ok(obj_attrs.get_attribute_value(Symbol::intern(&attr_name)));
+                            return Ok(obj_attrs.get_attribute_value(attribute_meta_storage_key(
+                                &attributes,
+                                &obj_attrs,
+                                &attr_name,
+                            )));
                         }
                         return Ok(Value::NIL);
                     }
@@ -1152,9 +1156,8 @@ impl Interpreter {
                             ..
                         } = obj.view()
                         {
-                            return Ok(
-                                obj_attrs.set_attribute_value(Symbol::intern(&attr_name), new_val)
-                            );
+                            let key = attribute_meta_storage_key(&attributes, &obj_attrs, &attr_name);
+                            return Ok(obj_attrs.set_attribute_value(key, new_val));
                         }
                         return Ok(Value::NIL);
                     }
@@ -4146,4 +4149,29 @@ pub(super) fn format_operator_name(name: &str) -> String {
     } else {
         name.to_string()
     }
+}
+
+/// The instance-map key an `Attribute` meta object reads or writes. A private
+/// declaration whose bare name collides with another sigil's declaration is
+/// stored under `<sigil>name` (see `attribute_storage_key`); the public one
+/// and every non-colliding attribute keep the bare name.
+// Cost: O(1), two hash probes of the instance's attribute map.
+fn attribute_meta_storage_key(
+    meta: &crate::value::InstanceAttrs,
+    obj_attrs: &crate::value::InstanceAttrs,
+    attr_name: &str,
+) -> Symbol {
+    let is_public = meta.as_map().get("is_public").is_some_and(|v| v.truthy());
+    let sigil = meta
+        .as_map()
+        .get("sigil")
+        .map(|v| v.to_string_value())
+        .unwrap_or_default();
+    if !is_public && matches!(sigil.as_str(), "@" | "%" | "&" | "$") {
+        let sigil_key = Symbol::intern(&format!("{sigil}{attr_name}"));
+        if obj_attrs.as_map().contains_key(sigil_key) {
+            return sigil_key;
+        }
+    }
+    Symbol::intern(attr_name)
 }
