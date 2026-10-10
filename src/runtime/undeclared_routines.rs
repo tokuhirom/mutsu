@@ -281,7 +281,11 @@ fn imported_here<S: std::borrow::Borrow<str> + Eq + std::hash::Hash>(
     name: &str,
     if_imports: &HashSet<S>,
 ) -> bool {
-    crate::parser::is_imported_function(name) && !if_imports.contains(name)
+    // An exported sigilless `constant` (`my constant answer is export = 5`)
+    // is a term, not a routine, but a bare use of it parses to the same
+    // no-args call shape and is just as much explained by the import.
+    (crate::parser::is_imported_function(name) || crate::parser::is_imported_value_term(name))
+        && !if_imports.contains(name)
 }
 
 /// What the walker found: every call the static tables cannot explain, in
