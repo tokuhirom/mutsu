@@ -74,9 +74,10 @@ pub(crate) struct ControlState {
     /// (`Variable.block.add_phaser` files its phaser under it), or `None`
     /// when the trait runs at the declaration itself.
     pub(crate) var_trait_site: Option<String>,
-    /// ENTER phasers variable traits added through `Variable.block`, by
-    /// declaration site; the declaration replays them on every entry.
-    pub(crate) var_trait_phasers: HashMap<String, Vec<Value>>,
+    /// Phasers variable traits added through `Variable.block`, as
+    /// `(kind, code)` by declaration site; the block's own ENTER/LEAVE/KEEP/UNDO
+    /// queues replay them on every entry.
+    pub(crate) var_trait_phasers: HashMap<String, Vec<(String, Value)>>,
     /// Fired `once { ... }` results, keyed by `(routine-clone-id, op-position)`.
     /// Shared by `Arc` handle into every spawned thread's clone so a `once` in a
     /// sub run from multiple `start` blocks fires exactly once across threads

@@ -101,13 +101,16 @@ settle the questions above, so the status stays Proposed.
 - `Variable.block` answers a `Block` handle. `Block.add_phaser("ENTER", code)`
   files `code` under the declaration's site (`__var_trait_site_N`, set around
   the lifted trait calls by the `__site` synthetic trait).
-- The lifted declaration carries a `__replay_phasers` marker. Where the
-  declaration executes, on every entry of its block, it runs the phasers filed
-  under its site, with `Variable.var` bound to the variable of that frame.
+- The Walker prepends an `ENTER`, `LEAVE`, `KEEP` and `UNDO` phaser to the
+  declaring scope (`Frame::entry`). Each replays the phasers of its kind filed
+  under the declaration's site, so they run in the block's own queues: `ENTER`
+  before the body, the exit kinds on exit (reverse of the order added, as
+  Rakudo orders them). `Variable.var` is bound to that frame's variable. The
+  declaration stashes the slot before it runs and puts a defined value back
+  (`__seeded_decl`), so a value the `ENTER` phaser assigned survives it, as
+  with Rakudo's pre-allocated lexical.
 - A trait that is not lifted (unit level, package bodies) runs at the
-  declaration, after the block's ENTER queue, so its phaser runs at once.
-- Divergences: the phaser runs at the declaration, after the statements that
-  precede it, not before the block's body; only `ENTER` is supported. Both go
-  away if the phaser is emitted into the block's own ENTER range (ADR-0076),
-  which needs the compile-time block identity section 4 describes.
-
+  declaration, after the block's ENTER queue, so an `ENTER` phaser runs at
+  once; other kinds are refused there.
+- Still open: `FIRST`/`NEXT`/`LAST`/`PRE`/`POST` kinds, and the unlifted
+  traits, which need the compile-time block identity section 4 describes.

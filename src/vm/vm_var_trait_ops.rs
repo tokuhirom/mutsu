@@ -107,10 +107,29 @@ impl Interpreter {
             self.control.var_trait_site = (!site.is_nil()).then(|| site.to_string_value());
             return Ok(());
         }
-        if trait_name == crate::runtime::begin_prologue::VAR_TRAIT_REPLAY {
+        if trait_name == crate::runtime::begin_prologue::VAR_TRAIT_SEED_STASH {
+            let seeded = self
+                .read_var_trait_target(code, slot, name)
+                .unwrap_or(Value::NIL);
+            self.stack.push(seeded);
+            return Ok(());
+        }
+        if trait_name == crate::runtime::begin_prologue::VAR_TRAIT_SEED_RESTORE {
+            let seeded = self.stack.pop().unwrap_or(Value::NIL);
+            if !matches!(seeded.view(), ValueView::Nil | ValueView::Package(_)) {
+                let name = name.to_string();
+                if !self.write_var_trait_target(code, slot, &name, seeded.clone()) {
+                    self.set_env_with_main_alias(&name, seeded);
+                }
+            }
+            return Ok(());
+        }
+        if let Some(kind) =
+            trait_name.strip_prefix(crate::runtime::begin_prologue::VAR_TRAIT_REPLAY)
+        {
             let site = self.stack.pop().unwrap_or(Value::NIL).to_string_value();
             let name = name.to_string();
-            if let Some(written) = self.replay_var_trait_phasers(&site, &name)?
+            if let Some(written) = self.replay_var_trait_phasers(&site, kind, &name)?
                 && !self.write_var_trait_target(code, slot, &name, written.clone())
             {
                 self.set_env_with_main_alias(&name, written);

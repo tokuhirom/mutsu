@@ -43,6 +43,10 @@ pub(crate) const ATTACH_TARGET_CLASS: &str = "Mutsu::AttachTarget";
 
 /// The attribute that marks a `Block` handle as the owner of a variable
 /// declaration (`Variable.block`).
+/// The phaser kinds `Variable.block.add_phaser` accepts: the ones a block's
+/// own queue runs around its body.
+pub(crate) const VAR_TRAIT_PHASER_KINDS: &[&str] = &["ENTER", "LEAVE", "KEEP", "UNDO"];
+
 pub(crate) const VARIABLE_BLOCK_MARK: &str = "__mutsu_var_block";
 
 /// The LEAVE phasers attached to one module body's own compunit while it
@@ -298,7 +302,7 @@ impl Interpreter {
                     .flat_map(|frame| frame.phasers.iter()),
             )
             .chain(self.control.mainline_leave_phasers.iter())
-            .chain(self.control.var_trait_phasers.values().flatten())
+            .chain(self.control.var_trait_phasers.values().flatten().map(|(_, code)| code))
     }
 
     /// The `Block` handle `Variable.block` answers (`.^name` is `Block`).
@@ -311,15 +315,13 @@ impl Interpreter {
     /// `Variable.block.add_phaser(NAME, code)` from a variable trait handler.
     ///
     /// Rakudo applies a variable's traits at compile time, so a phaser added
-    /// here belongs to the block's phaser queue and runs on every entry. A
-    /// trait of a nested scope is lifted into the BEGIN prologue (ADR-0134),
-    /// which is that compile time: its phaser is filed under the declaration's
-    /// site, and the declaration replays it on every entry of the block
-    /// (`replay_var_trait_phasers`). A trait that runs at the declaration
-    /// itself has already missed the block's own ENTER queue, so its phaser
-    /// runs at once. Either way it runs after the block's statements that
-    /// precede the declaration, where rakudo runs it before the body; see
-    /// ADR-12131. Only `ENTER` is supported.
+    /// here belongs to the block's phaser queue. A trait of a nested scope is
+    /// lifted into the BEGIN prologue (ADR-0134), which is that compile time:
+    /// its phaser is filed under the declaration's site, and the scope's own
+    /// `ENTER`/`LEAVE`/`KEEP`/`UNDO` phasers, emitted ahead of its body,
+    /// replay it (`replay_var_trait_phasers`). A trait that runs at the
+    /// declaration itself (unit level, package bodies) has already missed the
+    /// block's queue, so an `ENTER` phaser runs at once. See ADR-12131.
     // Cost: O(1) plus the phaser's own run.
     pub(crate) fn dispatch_variable_block_method(
         &mut self,
@@ -335,9 +337,10 @@ impl Interpreter {
                 "add_phaser needs the phaser name and the code to run",
             )));
         };
-        if kind != "ENTER" {
+        if !VAR_TRAIT_PHASER_KINDS.contains(&kind.as_str()) {
             return Some(Err(RuntimeError::new(format!(
-                "add_phaser: only ENTER phasers can be added from a variable trait, not {kind}"
+                "add_phaser: only {} phasers can be added from a variable trait, not {kind}",
+                VAR_TRAIT_PHASER_KINDS.join("/")
             ))));
         }
         if let Some(site) = self.control.var_trait_site.clone() {
@@ -345,25 +348,43 @@ impl Interpreter {
                 .var_trait_phasers
                 .entry(site)
                 .or_default()
-                .push(code);
+                .push((kind, code));
             return Some(Ok(Value::NIL));
+        }
+        if kind != "ENTER" {
+            return Some(Err(RuntimeError::new(format!(
+                "add_phaser: a {kind} phaser can only be added from a variable trait of a nested block"
+            ))));
         }
         Some(self.call_sub_value(code, Vec::new(), false).map(|_| Value::NIL))
     }
 
-    /// Run the ENTER phasers the lifted variable traits of declaration `site`
-    /// added, in the order they were added. The `Variable` they hold reads and
-    /// writes `name` in the entered block's frame; the value a phaser assigns
-    /// through `Variable.var` is returned for the declaration to store.
+    /// Run the `kind` phasers the lifted variable traits of declaration `site`
+    /// added, in the order they were added (reverse for the exit kinds). The
+    /// `Variable` they hold reads and writes `name` in the block's frame; the
+    /// value a phaser assigns through `Variable.var` is returned for the
+    /// caller to store.
     // Cost: O(p) phaser calls, p = phasers added at `site`.
     pub(crate) fn replay_var_trait_phasers(
         &mut self,
         site: &str,
+        kind: &str,
         name: &str,
     ) -> Result<Option<Value>, RuntimeError> {
-        let Some(phasers) = self.control.var_trait_phasers.get(site).cloned() else {
+        let Some(all) = self.control.var_trait_phasers.get(site) else {
             return Ok(None);
         };
+        let mut phasers: Vec<Value> = all
+            .iter()
+            .filter(|(k, _)| k == kind)
+            .map(|(_, code)| code.clone())
+            .collect();
+        if kind != "ENTER" {
+            phasers.reverse();
+        }
+        if phasers.is_empty() {
+            return Ok(None);
+        }
         let saved_key = self.trait_mod_writeback_key.replace(name.to_string());
         let saved_value = self.trait_mod_writeback_value.take();
         let mut result = Ok(());
