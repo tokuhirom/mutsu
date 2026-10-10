@@ -13,6 +13,7 @@ t/collections/array/array-clone-decouples-element-cells.t
 t/collections/array/array-coercer-result-element-store.t
 t/collections/array/array-coercion-type.t
 t/collections/array/array-composer-iterable-instance.t
+t/collections/array/array-composer-statement-modifier.t
 t/collections/array/array-counted-head-tail-rw.t
 t/collections/array/array-default-holes.t
 t/collections/array/array-delete-hole-reads-is-default.t
@@ -124,6 +125,7 @@ t/collections/hash/hash-cell-writethrough-object-hash.t
 t/collections/hash/hash-coerce-dangling-key.t
 t/collections/hash/hash-coercion-type-odd-elements.t
 t/collections/hash/hash-colonpair-fat-arrow.t
+t/collections/hash/hash-colonpair-paren-statement-modifier.t
 t/collections/hash/hash-composer-angle-words.t
 t/collections/hash/hash-composer-dot-twigil-value.t
 t/collections/hash/hash-composer-first-element.t
@@ -601,6 +603,7 @@ t/collections/subscript/hash-slip-slice.t
 t/collections/subscript/hash-string-range-slice.t
 t/collections/subscript/hash-subscript-adverbs.t
 t/collections/subscript/hash-subscript-brace-newline-continues.t
+t/collections/subscript/hash-subscript-inline-modifier.t
 t/collections/subscript/hash-subscript-trailing-comma.t
 t/collections/subscript/hyper-assoc-subscript.t
 t/collections/subscript/hyper-postfix-slice.t
@@ -2368,6 +2371,7 @@ t/modules/import-export/export-constant-shadows-nested-type.t
 t/modules/import-export/export-convention.t
 t/modules/import-export/export-default-stash.t
 t/modules/import-export/export-from-unit-role.t
+t/modules/import-export/export-hash-literal-key-routines.t
 t/modules/import-export/export-hook-attaches-leave-phaser.t
 t/modules/import-export/export-hook-body-scope.t
 t/modules/import-export/export-hook-exportable-trait.t
@@ -3299,6 +3303,7 @@ t/oo/method/add-method-qualified-and-invocant.t
 t/oo/method/add-method-sub-can-signature.t
 t/oo/method/addmethod-multi-alias.t
 t/oo/method/anon-method-sigilless-invocant.t
+t/oo/method/anon-method-undeclared-attr.t
 t/oo/method/any-collection-method-rows.t
 t/oo/method/any-cool-method-not-found.t
 t/oo/method/assign-missing-method-not-found.t
@@ -3418,6 +3423,7 @@ t/oo/method/method-captured-var-writeback-coherence.t
 t/oo/method/method-captures-sigilless-param.t
 t/oo/method/method-closure-env-write-merge.t
 t/oo/method/method-declared-in-closure-body.t
+t/oo/method/method-declared-in-routine-body.t
 t/oo/method/method-definite-return-sinks-map.t
 t/oo/method/method-direct-underscore-rejected.t
 t/oo/method/method-dispatch-colon-question-syntax.t
@@ -3527,6 +3533,7 @@ t/oo/method/plain-method-lane-with-arguments.t
 t/oo/method/plain-method-lane.t
 t/oo/method/positional-method-rows.t
 t/oo/method/postfix-i-vs-method-i.t
+t/oo/method/private-call-from-anon-method-value.t
 t/oo/method/private-method-apostrophe-name.t
 t/oo/method/private-method-call-in-closure.t
 t/oo/method/private-method-checks-in-every-position.t
@@ -3601,6 +3608,8 @@ t/oo/method/type-object-method-aggregate-assign.t
 t/oo/method/type-object-str-method-warning.t
 t/oo/method/uni-method-rows.t
 t/oo/method/unicode-method-rows.t
+t/oo/method/user-find-method-intercepts-calls.t
+t/oo/method/user-find-method-stringification.t
 t/oo/method/user-method-shadows-builtin-name.t
 t/oo/method/variable-var-method-chain.t
 t/oo/method/version-bool-method-rows.t
@@ -3959,6 +3968,7 @@ t/oo/subset-where-imported-type-junction.t
 t/oo/subset-where-imported-type-name.t
 t/oo/subset-where-inline.t
 t/oo/subset-where-placeholder-chain.t
+t/oo/subset-where-sub-return.t
 t/oo/sunk-list-reassign-does-not-leak-containerref.t
 t/oo/tagged-enum-value-does-not-shadow-quote.t
 t/oo/test-isa-can-does-messages.t
@@ -4132,6 +4142,7 @@ t/rakuast/rakuast-eval-whatever-code.t
 t/rakuast/rakuast-eval-whatever.t
 t/rakuast/rakuast-eval.t
 t/rakuast/rakuast-expr.t
+t/rakuast/rakuast-expression-context-cohort.t
 t/rakuast/rakuast-fake-signature-whatevercode-where.t
 t/rakuast/rakuast-fat-arrow-key.t
 t/rakuast/rakuast-fat-arrow-whatever.t
@@ -5243,6 +5254,7 @@ t/routines/signature/amp-param-positional-light.t
 t/routines/signature/anon-onearg-param-marker.t
 t/routines/signature/anon-optional-param-tail.t
 t/routines/signature/anon-param-default-type-check.t
+t/routines/signature/anon-routine-param-terms.t
 t/routines/signature/array-dynamic-parameterization.t
 t/routines/signature/array-param-binds-itemized-range.t
 t/routines/signature/array-param-positional-bind-failover.t
@@ -6420,6 +6432,7 @@ t/vm/scope/lexical-class-shadows-exited-constant.t
 t/vm/scope/lexical-class-sibling-identity.t
 t/vm/scope/lexical-decl-and-autoviv.t
 t/vm/scope/lexical-name-resolution-static-link.t
+t/vm/scope/lexical-self-vs-invocant.t
 t/vm/scope/lexical-shadow-slots.t
 t/vm/scope/lexical-shadows-builtin-call.t
 t/vm/scope/lexical-type-scalar-same-name.t

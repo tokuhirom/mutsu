@@ -89,7 +89,9 @@ pub(super) fn parameterized_type_node(
         rest: &inner[open + 1..],
     })
     .enumerate()
-    .filter(|(_, source)| source.starts_with("::"))
+    .filter_map(|(index, source)| {
+        crate::qualified::type_capture_name(source).map(|name| (index, name))
+    })
     .collect();
     let mut fields = Vec::new();
     if let Some(parsed) = parsed {
@@ -99,8 +101,7 @@ pub(super) fn parameterized_type_node(
             // conversion as a pair outside a type application.
             let capture = captures.iter().find(|(position, _)| *position == index);
             let node = if let Some((_, source)) = capture {
-                if !matches!(expr, Expr::BareWord(name) if source.strip_prefix("::") == Some(name.as_str()))
-                {
+                if !matches!(expr, Expr::BareWord(name) if *source == name.as_str()) {
                     return Err(unsupported("ambiguous type capture argument spelling"));
                 }
                 RakuAstNode {
@@ -109,7 +110,7 @@ pub(super) fn parameterized_type_node(
                         None,
                         super::name_parts::name_from_parts(vec![
                             super::name_parts::leading_empty(),
-                            super::name_parts::simple_part(source.strip_prefix("::").unwrap()),
+                            super::name_parts::simple_part(source),
                         ]),
                     )],
                 }
