@@ -617,8 +617,16 @@ impl Interpreter {
         // (`sub f(Str $s is raw)` accepts a Proxy over a Str). An `is rw` /
         // `is raw` parameter that must keep the caller's Proxy re-binds it from
         // the caller's cell below, so only the checked value is the fetched one.
-        if pd.type_constraint.is_some() && value.is_proxy_value() {
-            value = self.auto_fetch_proxy(&value)?;
+        if pd.type_constraint.is_some() {
+            if value.is_proxy_value() {
+                value = self.auto_fetch_proxy(&value)?;
+            } else {
+                // An accessor route can hand the Proxy inside a container.
+                let inner = value.deref_container();
+                if inner.is_proxy_value() {
+                    value = self.auto_fetch_proxy(&inner)?;
+                }
+            }
         }
         if let Some(constraint) = &pd.type_constraint
             && (pd.name != "__type_only__"
@@ -3718,6 +3726,11 @@ impl Interpreter {
                         // STORE (RedX::HashedPassword's `deflate(Str $p is raw)`).
                         let value = if (is_rw || is_raw) && !had_cell_key {
                             let proxy = unwrap_varref_value(args[positional_idx].clone());
+                            let proxy = if proxy.is_proxy_value() {
+                                proxy
+                            } else {
+                                proxy.deref_container()
+                            };
                             if proxy.is_proxy_value() { proxy } else { value }
                         } else {
                             value
