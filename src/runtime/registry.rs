@@ -1433,7 +1433,7 @@ impl Registry {
     /// The MRO of an unregistered role name that has class parents (`role R is
     /// P`): the role itself followed by each parent's MRO, duplicates dropped.
     // Cost: O(p * m), p = class parents of the role, m = their MRO length.
-    fn role_pun_mro(&self, role_name: &str) -> Option<std::sync::Arc<[Symbol]>> {
+    pub(crate) fn role_pun_mro(&self, role_name: &str) -> Option<std::sync::Arc<[Symbol]>> {
         if !self.roles.contains_key(role_name) {
             return None;
         }
