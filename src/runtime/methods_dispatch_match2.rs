@@ -325,15 +325,7 @@ impl Interpreter {
                     None
                 }
             }
-            "squish" => {
-                if let ValueView::Instance { class_name, .. } = target.view()
-                    && class_name == "Supply"
-                {
-                    Some(self.dispatch_supply_transform(target, "squish", &args))
-                } else {
-                    Some(self.dispatch_squish(target, &args))
-                }
-            }
+            "squish" => Some(self.dispatch_squish_method(target, args)),
             "minmax" => self.dispatch_minmax_method(target, method, args),
             "snip" => self.dispatch_snip_method(target, method, args),
             "head" | "flat" | "batch" | "throttle" | "comb" | "words" | "wait" | "zip"
@@ -361,15 +353,7 @@ impl Interpreter {
                 }
                 Some(Ok(target))
             }
-            "rotor" => {
-                if let ValueView::Instance { class_name, .. } = target.view()
-                    && class_name == "Supply"
-                {
-                    Some(self.dispatch_supply_transform(target, "rotor", &args))
-                } else {
-                    Some(self.dispatch_rotor(target, &args))
-                }
-            }
+            "rotor" => Some(self.dispatch_rotor_method(target, args)),
             _ => None,
         }
     }
@@ -439,8 +423,42 @@ impl Interpreter {
         Ok(crate::builtins::iterator_construct::build_iterator_instance(&target))
     }
 
+    /// Dispatch the "rotor" method: the `Any.rotor` row's handler and the
+    /// cascade's arm.
+    // Cost: O(e), e = elements of the invocant.
+    pub(crate) fn dispatch_rotor_method(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && class_name == "Supply"
+        {
+            self.dispatch_supply_transform(target, "rotor", &args)
+        } else {
+            self.dispatch_rotor(target, &args)
+        }
+    }
+
+    /// Dispatch the "squish" method: the `Any.squish` row's handler and the
+    /// cascade's arm.
+    // Cost: O(e), e = elements of the invocant (one comparison each).
+    pub(crate) fn dispatch_squish_method(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && class_name == "Supply"
+        {
+            self.dispatch_supply_transform(target, "squish", &args)
+        } else {
+            self.dispatch_squish(target, &args)
+        }
+    }
+
     /// Dispatch the "produce" method.
-    fn dispatch_produce_method(
+    pub(crate) fn dispatch_produce_method(
         &mut self,
         target: Value,
         args: Vec<Value>,
@@ -473,7 +491,7 @@ impl Interpreter {
     }
 
     /// Dispatch the "reduce" method.
-    fn dispatch_reduce_method(
+    pub(crate) fn dispatch_reduce_method(
         &mut self,
         target: Value,
         args: Vec<Value>,
@@ -593,7 +611,7 @@ impl Interpreter {
     /// over every element for a full read. An infinite/lazy-pipe source
     /// (`make_lazy_pipe`) is O(1) per call and one callback per element
     /// pulled.
-    fn dispatch_map_method(
+    pub(crate) fn dispatch_map_method(
         &mut self,
         target: Value,
         args: Vec<Value>,

@@ -2312,3 +2312,25 @@ unchanged; the inventory for `Match` now shows no declared row unregistered.
 With this slice every declared row of the objects group and of `Date`/`DateTime`/`Instant`/`Duration`/`Match` is registered or named in an
 ADR with its reason (`Code.Str`, `Instant.polymod`/`Duration.polymod`, `Mu.WHAT`/`HOW`/`WHY`/`DEFINITE`/`Int`/`Numeric`), which is the
 close condition of #12390 apart from `Backtrace`'s inherited answers and `RakuAST::*` (the oracle snapshot lists none of its owners).
+
+### 9.60 The `Any` interpreter rows: `map`, `grep`, `first`, `reduce`, `produce`, `rotor`, `skip`, `squish`, `eager`, `iterator`, `match`, `classify`, `categorize` and `Hash`'s `classify-list`/`categorize-list` (2026-10-10)
+
+`refactor/11276-any-interp-rows` (issue #12388). Fifteen `Handler::Interp` rows in `method_table::collections::any_interp`, thirteen on `Any`
+and two on `Hash`. Each handler is the one `Interpreter::dispatch_*_method` the cascade's arm now calls too: `dispatch_map_method`,
+`dispatch_grep_method`, `dispatch_first_method`, `dispatch_reduce_method`, `dispatch_produce_method`, `dispatch_rotor_method`,
+`dispatch_skip_method`, `dispatch_squish_method`, `dispatch_eager_row`, `dispatch_iterator_method`, `dispatch_match_row`,
+`dispatch_classify_method` and `dispatch_classify_list_method`. Eight were extracted from arms of `methods_dispatch_match{,2,3}.rs`
+(`grep`, `first`, `rotor`, `squish`, `classify`, `classify-list`, `match`, `eager`); the arms stay in the slow path for the receivers the table
+has no shape for (a `Supply`, a user instance), as `collate` does.
+
+- **Arguments.** The rows are `ANY_ARGS | ANY_NAMED`: the guard admits a `Sub`, a `Regex` or a `Whatever` as the positional argument, and every
+  named argument (`grep`'s `:k`/`:v`/`:kv`/`:p`, `first`'s `:end`, `rotor`'s `:partial`, `classify`'s `:as`/`:into`) reaches the handler, which
+  hands them on as the trailing pairs the cascade has always taken. `skip` and `rotor` are `SLURPY` from arity 0.
+- **Pre-gates (the ADR §9.38 lesson).** A row runs in front of the probes of `try_native_method_raw`, so the handlers decline what those probes
+  deferred to the interpreter by name (`deferred_to_interpreter`): an `IterationBuffer`, an instance whose class supplies `iterator` but not the
+  method, a mixin composing `iterator`, and for `map`/`grep` a lazy pipe source (`is_lazy_pipe_source`). A not-yet-run `Seq` is already declined
+  by the table (`Receiver::of_settled`), so consumption is unchanged.
+- **Behaviour.** No change; `t/oo/method/any-interp-method-rows.t` pins the calls against Rakudo's answers, the laziness and `Seq`-consumption cases
+  and the user-`iterator` case.
+- **Left on #12388.** `Any.splice` (a `Handler::Mut` question, it is `Array.splice`'s ancestor), and the `callsame`/`nextsame` out of a user
+  override into these rows, which is slice 4's `resolve_sequence` work (#12387).

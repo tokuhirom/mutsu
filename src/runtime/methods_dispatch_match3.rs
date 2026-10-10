@@ -358,64 +358,11 @@ impl Interpreter {
                 }
                 self.dispatch_join_method(target, args)
             }
-            "grep" => {
-                // `Supply.grep` on a *live* (Supplier-backed) supply must stay
-                // live: register a filter transform tap that forwards matching
-                // values to a derived supply. A materialized supply
-                // (`Supply.from-list`, on-demand) falls through to `dispatch_grep`
-                // below, which already filters its buffered values with correct
-                // smart-match semantics (grep(Int)/grep(/rx/) etc.).
-                if let ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = target.view()
-                    && class_name == "Supply"
-                    && crate::runtime::native_methods::supplier_id_from_attrs(&attributes.as_map())
-                        .is_some()
-                {
-                    let matcher = args.first().cloned().unwrap_or(Value::NIL);
-                    if let Some(live) = self.make_live_transform_supply(
-                        &attributes.as_map(),
-                        matcher,
-                        crate::runtime::native_methods::TransformMode::Grep,
-                    ) {
-                        return Some(Ok(live));
-                    }
-                }
-                // In Raku, `.grep` always returns a `Seq` — including over an
-                // Array. `dispatch_grep` builds a `List`-kind array whose elements
-                // are the matched source slots as shared `ContainerRef` cells (so a
-                // writeback loop `for @a.grep(...) { $_++ }` still mutates `@a`
-                // through them); wrapping those same cells in a `Seq` preserves the
-                // writeback while giving the correct `Seq` type.
-                Some(self.dispatch_grep(target, &args).map(|v| {
-                    if let ValueView::Array(items, crate::value::ArrayKind::List) = v.view() {
-                        return Value::seq(items.to_vec());
-                    }
-                    v
-                }))
-            }
+            "grep" => self.dispatch_grep_method(target, args),
             "toggle" => Some(self.dispatch_toggle(target, &args)),
-            "eager" if args.is_empty() => {
-                crate::builtins::method_table::list::eager(&target, &args)
-                    .or_else(|| Some(self.dispatch_eager_method(target)))
-            }
+            "eager" if args.is_empty() => self.dispatch_eager_row(target),
             "is-lazy" if args.is_empty() => Some(Ok(self.dispatch_is_lazy_method(&target))),
-            "first" if !args.is_empty() => Some(self.dispatch_first(target, &args)),
-            "first" if args.is_empty() => {
-                if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
-                {
-                    return Some(self.dispatch_first(target, &args));
-                }
-                // For non-Array types (e.g., Int, Str), .first returns self
-                // (treating the scalar as a single-element list)
-                if matches!(target.view(), ValueView::Array(..)) {
-                    None // fall through to 0-arg builtin
-                } else {
-                    Some(Ok(target))
-                }
-            }
+            "first" => self.dispatch_first_method(target, args),
             "tree" if !args.is_empty() => Some(self.dispatch_tree(target, &args)),
             "keys" if args.is_empty() => self.dispatch_keys_method(target),
             "values" if args.is_empty() => Some(self.dispatch_values_method(target)),
@@ -432,6 +379,88 @@ impl Interpreter {
             }
             _ => None,
         }
+    }
+
+    /// Dispatch the "grep" method: the `Any.grep` row's handler and the
+    /// cascade's arm (ADR-11276 slice 3C remainder).
+    // Cost: O(1) at the call on a lazy or live source; O(e) on any other
+    // invocant, e = elements, one matcher call each.
+    pub(crate) fn dispatch_grep_method(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        // `Supply.grep` on a *live* (Supplier-backed) supply must stay
+        // live: register a filter transform tap that forwards matching
+        // values to a derived supply. A materialized supply
+        // (`Supply.from-list`, on-demand) falls through to `dispatch_grep`
+        // below, which already filters its buffered values with correct
+        // smart-match semantics (grep(Int)/grep(/rx/) etc.).
+        if let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = target.view()
+            && class_name == "Supply"
+            && crate::runtime::native_methods::supplier_id_from_attrs(&attributes.as_map())
+                .is_some()
+        {
+            let matcher = args.first().cloned().unwrap_or(Value::NIL);
+            if let Some(live) = self.make_live_transform_supply(
+                &attributes.as_map(),
+                matcher,
+                crate::runtime::native_methods::TransformMode::Grep,
+            ) {
+                return Some(Ok(live));
+            }
+        }
+        // In Raku, `.grep` always returns a `Seq` — including over an
+        // Array. `dispatch_grep` builds a `List`-kind array whose elements
+        // are the matched source slots as shared `ContainerRef` cells (so a
+        // writeback loop `for @a.grep(...) { $_++ }` still mutates `@a`
+        // through them); wrapping those same cells in a `Seq` preserves the
+        // writeback while giving the correct `Seq` type.
+        Some(self.dispatch_grep(target, &args).map(|v| {
+            if let ValueView::Array(items, crate::value::ArrayKind::List) = v.view() {
+                return Value::seq(items.to_vec());
+            }
+            v
+        }))
+    }
+
+    /// Dispatch the "first" method: the `Any.first` rows' handler and the
+    /// cascade's arms.
+    // Cost: O(e) matcher calls, e = elements scanned until the first hit.
+    pub(crate) fn dispatch_first_method(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !args.is_empty() {
+            return Some(self.dispatch_first(target, &args));
+        }
+        if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+        {
+            return Some(self.dispatch_first(target, &args));
+        }
+        // For non-Array types (e.g., Int, Str), .first returns self
+        // (treating the scalar as a single-element list)
+        if matches!(target.view(), ValueView::Array(..)) {
+            None // fall through to 0-arg builtin
+        } else {
+            Some(Ok(target))
+        }
+    }
+
+    /// Dispatch the zero-argument "eager": the `Any.eager` row's handler and
+    /// the cascade's arm.
+    // Cost: O(e), e = elements of the invocant.
+    pub(crate) fn dispatch_eager_row(
+        &mut self,
+        target: Value,
+    ) -> Option<Result<Value, RuntimeError>> {
+        crate::builtins::method_table::list::eager(&target, &[])
+            .or_else(|| Some(self.dispatch_eager_method(target)))
     }
 
     /// Dispatch the "grab" method (`Supply.grab`; the QuantHash `grab` is a
@@ -465,7 +494,7 @@ impl Interpreter {
     /// Cost: O(r + s), r = elements produced, s = skip/produce specs, on an
     /// Array, a List or a reified Seq (the invocant is borrowed and only the
     /// produced spans are cloned); O(e), e = elements, on any other list-like.
-    fn dispatch_skip_method(
+    pub(crate) fn dispatch_skip_method(
         &mut self,
         target: Value,
         args: Vec<Value>,
