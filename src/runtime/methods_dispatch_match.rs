@@ -221,9 +221,16 @@ impl Interpreter {
                 if matches!(target.view(), ValueView::Instance { class_name, .. }
                     if matches!(class_name.resolve().as_str(), "Instant" | "Duration")) =>
             {
+                let is_duration = matches!(target.view(), ValueView::Instance { class_name, .. }
+                    if class_name.resolve() == "Duration");
                 Some(
-                    self.call_method_with_values(target, "Real", vec![])
-                        .and_then(|real| self.method_polymod(&real, &args)),
+                    self.call_method_with_values(
+                        target,
+                        if is_duration { "Real" } else { "Numeric" },
+                        vec![],
+                    )
+                    .and_then(|real| self.method_polymod(&real, &args))
+                        .map(|res| super::methods_collection_ops::polymod_temporal_types(res, is_duration)),
                 )
             }
             "polymod" => Some(self.method_polymod(&target, &args)),
