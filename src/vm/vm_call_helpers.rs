@@ -207,6 +207,44 @@ impl Interpreter {
         )
     }
 
+    /// [`Self::auto_fetch_proxy_args`] for a direct call of the named routine:
+    /// a Proxy argument bound to a positional `is raw` / `is rw` parameter of
+    /// the (single, non-multi) user sub of that name is left unfetched, so the
+    /// binder installs the Proxy itself (ADR-0040 §9: the FETCH is decided at
+    /// the parameter). Every other argument is FETCHed as before.
+    // Cost: O(n) for the n arguments; the routine lookup runs only when some
+    // argument is a Proxy.
+    pub(super) fn auto_fetch_proxy_args_for_callee(
+        &mut self,
+        name: &str,
+        mut args: Vec<Value>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if !args.iter().any(|a| a.is_proxy_value()) {
+            return Ok(args);
+        }
+        let keeps: Vec<bool> = match self.resolve_function(name) {
+            Some(def) if !self.has_multi_candidates(name) => {
+                let positional = def.param_defs.iter().filter(|p| !p.named);
+                let mut flags: Vec<bool> = positional
+                    .clone()
+                    .map(|p| p.binds_caller_container() && !p.is_variadic())
+                    .collect();
+                // A positional arg past the declared ones never binds a
+                // container parameter.
+                flags.resize(args.len(), false);
+                flags
+            }
+            _ => Vec::new(),
+        };
+        for (i, arg) in args.iter_mut().enumerate() {
+            if keeps.get(i).copied().unwrap_or(false) && arg.is_proxy_value() {
+                continue;
+            }
+            *arg = loan_env!(self, auto_fetch_proxy(arg))?;
+        }
+        Ok(args)
+    }
+
     /// Auto-FETCH any Proxy values in function call arguments.
     pub(super) fn auto_fetch_proxy_args(
         &mut self,
