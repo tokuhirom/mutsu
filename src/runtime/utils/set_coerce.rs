@@ -41,8 +41,26 @@ pub(crate) fn quanthash_operand_list(v: &Value) -> Vec<Value> {
 /// Without the strip a mixin fell through to the "unknown scalar" arm and
 /// contributed the WHOLE hash as one element, which is why `self (-) %allowed`
 /// inside a role's `STORE` never cancelled anything (Hash::Restricted).
+///
+/// Only a mixin over something the coercion would spill is stripped. A
+/// role-mixed SCALAR (`$attr does R` on an `Attribute`) is one element with its
+/// own identity, so it is kept whole: stripping it made `set() (|) $attr` hand
+/// back the bare `Attribute`, without the role's methods (#12532).
 pub(crate) fn quanthash_operand(val: &Value) -> &Value {
-    strip_quanthash_mixin(val.descalarize())
+    let val = val.descalarize();
+    let stripped = strip_quanthash_mixin(val);
+    if std::ptr::eq(stripped, val) {
+        return val;
+    }
+    let baggy_subclass = matches!(
+        stripped.view(),
+        ValueView::Instance { attributes, .. } if attributes.as_map().contains_key("__baggy_data__")
+    );
+    if baggy_subclass || !std::ptr::eq(strip_quanthash_mixin_elem(val), val) {
+        stripped
+    } else {
+        val
+    }
 }
 
 /// The mixin-only half of [`quanthash_operand`], for positions where stripping
