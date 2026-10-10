@@ -1,4 +1,4 @@
-//! `Code`'s `of` and `returns` (ADR-12523, slice 1).
+//! `Code`'s `of`, `returns`, `arity` and `count` (ADR-12523, slices 1 and 2).
 //!
 //! A code object is a `Sub` (a routine, closure or block, with or without a
 //! body of its own), a `&name` handle on a routine reached through the
@@ -26,7 +26,12 @@ macro_rules! row {
     };
 }
 
-pub(super) static ROWS: &[MethodRow] = &[row!("of", of), row!("returns", of)];
+pub(super) static ROWS: &[MethodRow] = &[
+    row!("of", of),
+    row!("returns", of),
+    row!("arity", arity),
+    row!("count", count),
+];
 
 /// The answer of the `Code` row for `method`, or `None` when `target` is not a
 /// code object or `Code` declares no such row.
@@ -36,7 +41,7 @@ pub(crate) fn answer(
     target: &Value,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
-    if !matches!(method, "of" | "returns") || !is_code(target) {
+    if !matches!(method, "of" | "returns" | "arity" | "count") || !is_code(target) {
         return None;
     }
     crate::builtins::method_table::invoke_owner(interp, &["Code"], method, &[], || target.clone())
@@ -97,4 +102,30 @@ fn of(
         }
     };
     Some(Ok(Value::package(Symbol::intern(&type_name))))
+}
+
+/// `Code.arity`: the number of required positional parameters (the smallest over
+/// a multi dispatcher's candidates).
+// Cost: O(p) for a routine with p parameters; O(c * p) for a multi dispatcher
+// with c candidates.
+fn arity(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    interp.code_arity_count(target, "arity")
+}
+
+/// `Code.count`: the number of positional parameters (the largest over a multi
+/// dispatcher's candidates), `Inf` with a slurpy.
+// Cost: O(p) for a routine with p parameters; O(c * p) for a multi dispatcher
+// with c candidates.
+fn count(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    interp.code_arity_count(target, "count")
 }

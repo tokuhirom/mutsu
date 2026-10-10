@@ -57,7 +57,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        // `of` and `returns` are `Code` rows (`method_table::code`, ADR-12523).
+        // `of`, `returns`, `arity` and `count` are `Code` rows (`method_table::code`, ADR-12523).
         if args.is_empty()
             && let Some(answer) = crate::builtins::method_table::code::answer(self, target, method)
         {
@@ -531,53 +531,143 @@ impl Interpreter {
             };
             return Some(Ok(Value::array(methods)));
         }
-        if matches!(method, "arity" | "count") && args.is_empty() {
-            if let Some(sig) = self.dispatcher_signature(package, name) {
-                return Some(Ok(Self::signature_arity_or_count(&sig, method)));
-            }
+        None
+    }
 
-            let (params, param_defs) = self.callable_signature(target);
-            let defs = if !param_defs.is_empty() {
-                param_defs
-            } else {
-                params
-                    .into_iter()
-                    .map(|name| ParamDef {
-                        type_capture: None,
-                        name,
-                        default: None,
-                        multi_invocant: true,
-                        required: true,
-                        named: false,
-                        named_alias: false,
-                        slurpy: false,
-                        double_slurpy: false,
-                        onearg: false,
-                        sigilless: false,
-                        type_constraint: None,
-                        literal_value: None,
-                        sub_signature: None,
-                        where_constraint: None,
-                        traits: Vec::new(),
-                        optional_marker: false,
-                        outer_sub_signature: None,
-                        code_signature: None,
-                        is_invocant: false,
-                        shape_constraints: None,
-                        block_param: false,
-                        code: Default::default(),
-                        trait_args: Vec::new(),
-                    })
-                    .collect()
-            };
-            let info = param_defs_to_sig_info(&defs, None);
+    /// `Code.arity` and `Code.count` (`method` is one of them): the answer for a
+    /// `Sub`, a `&name` handle, a regex or a `WeakSub`'s referent. `None` for any
+    /// other value.
+    // Cost: O(p) for a routine with p parameters; O(c * p) for a multi
+    // dispatcher with c candidates.
+    pub(crate) fn code_arity_count(
+        &mut self,
+        target: &Value,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        match target.view() {
+            ValueView::Routine { name, package, .. } => {
+                let target = target.clone();
+                self.routine_arity_count(&target, name, package, method)
+            }
+            ValueView::Sub(data) => {
+                let data = data.clone();
+                self.sub_arity_count(&data, method)
+            }
+            ValueView::WeakSub(weak) => {
+                let strong = weak.upgrade()?;
+                self.code_arity_count(&Value::sub_value(strong), method)
+            }
+            ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => Some(Ok(
+                self.regex_value_routine_introspection(target, method),
+            )),
+            _ => None,
+        }
+    }
+
+    fn routine_arity_count(
+        &mut self,
+        target: &Value,
+        name: Symbol,
+        package: Symbol,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if let Some(sig) = self.dispatcher_signature(&package.resolve(), &name.resolve()) {
+            return Some(Ok(Self::signature_arity_or_count(&sig, method)));
+        }
+
+        let (params, param_defs) = self.callable_signature(target);
+        let defs = if !param_defs.is_empty() {
+            param_defs
+        } else {
+            params
+                .into_iter()
+                .map(|name| ParamDef {
+                    type_capture: None,
+                    name,
+                    default: None,
+                    multi_invocant: true,
+                    required: true,
+                    named: false,
+                    named_alias: false,
+                    slurpy: false,
+                    double_slurpy: false,
+                    onearg: false,
+                    sigilless: false,
+                    type_constraint: None,
+                    literal_value: None,
+                    sub_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    is_invocant: false,
+                    shape_constraints: None,
+                    block_param: false,
+                    code: Default::default(),
+                    trait_args: Vec::new(),
+                })
+                .collect()
+        };
+        let info = param_defs_to_sig_info(&defs, None);
+        Some(Ok(if method == "arity" {
+            Value::int(Self::signature_required_positional_count(&info))
+        } else {
+            Self::signature_count_value(&info)
+        }))
+    }
+
+    fn sub_arity_count(
+        &mut self,
+        data: &crate::value::SubData,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        // A signature bound to `$!signature` answers for the routine.
+        if let Some(sig) = data.routine_cell.bound_signature() {
+            return Some(Ok(Self::signature_arity_or_count(&sig, method)));
+        }
+        // A multi sub's dispatcher answers its proto's arity/count.
+        if let Some(sig) = self.sub_dispatcher_signature(data) {
+            return Some(Ok(Self::signature_arity_or_count(&sig, method)));
+        }
+        // Multi-dispatch dispatcher (a multi method's): this Sub's OWN param_defs are
+        // empty (it is a synthesized dispatcher, not a declared body), so
+        // reading `arity`/`count` off `data` directly always answered 0.
+        // Mirrors the "signature"/"candidates"/"cando" handling just
+        // above: try the live name-based candidates first (keeps working
+        // if the name is still declared and picks up any candidate added
+        // since capture), falling back to the candidates captured BY
+        // VALUE at `&name` capture time — the only source left once the
+        // name's own import scope has popped (see `resolve_code_var`,
+        // accessors_resolve.rs).
+        if let Some(ValueView::Str(disp_name)) =
+            data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+        {
+            let name_based =
+                self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
+            if !name_based.is_empty()
+                && let Some(result) = self.multi_candidate_arity_count(&name_based, method)
+            {
+                return Some(Ok(result));
+            }
+        }
+        if let Some(ValueView::Array(cands, _)) = data
+            .env
+            .get("__mutsu_multi_dispatch_candidates")
+            .map(Value::view)
+            && let Some(result) = self.multi_candidate_arity_count(&cands, method)
+        {
+            return Some(Ok(result));
+        }
+        let sig = self.sub_signature_value(data);
+        if let Some(info) = extract_sig_info(&sig) {
             return Some(Ok(if method == "arity" {
                 Value::int(Self::signature_required_positional_count(&info))
             } else {
                 Self::signature_count_value(&info)
             }));
         }
-        None
+        return Some(Ok(Value::int(0)));
     }
 
     /// Dispatch methods on Sub.
@@ -1156,54 +1246,6 @@ impl Interpreter {
         }
         if method == "readonly" && args.is_empty() {
             return Some(Ok(Value::truth(!data.is_rw)));
-        }
-        if matches!(method, "arity" | "count") && args.is_empty() {
-            // A signature bound to `$!signature` answers for the routine.
-            if let Some(sig) = data.routine_cell.bound_signature() {
-                return Some(Ok(Self::signature_arity_or_count(&sig, method)));
-            }
-            // A multi sub's dispatcher answers its proto's arity/count.
-            if let Some(sig) = self.sub_dispatcher_signature(data) {
-                return Some(Ok(Self::signature_arity_or_count(&sig, method)));
-            }
-            // Multi-dispatch dispatcher (a multi method's): this Sub's OWN param_defs are
-            // empty (it is a synthesized dispatcher, not a declared body), so
-            // reading `arity`/`count` off `data` directly always answered 0.
-            // Mirrors the "signature"/"candidates"/"cando" handling just
-            // above: try the live name-based candidates first (keeps working
-            // if the name is still declared and picks up any candidate added
-            // since capture), falling back to the candidates captured BY
-            // VALUE at `&name` capture time — the only source left once the
-            // name's own import scope has popped (see `resolve_code_var`,
-            // accessors_resolve.rs).
-            if let Some(ValueView::Str(disp_name)) =
-                data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
-            {
-                let name_based =
-                    self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
-                if !name_based.is_empty()
-                    && let Some(result) = self.multi_candidate_arity_count(&name_based, method)
-                {
-                    return Some(Ok(result));
-                }
-            }
-            if let Some(ValueView::Array(cands, _)) = data
-                .env
-                .get("__mutsu_multi_dispatch_candidates")
-                .map(Value::view)
-                && let Some(result) = self.multi_candidate_arity_count(&cands, method)
-            {
-                return Some(Ok(result));
-            }
-            let sig = self.sub_signature_value(data);
-            if let Some(info) = extract_sig_info(&sig) {
-                return Some(Ok(if method == "arity" {
-                    Value::int(Self::signature_required_positional_count(&info))
-                } else {
-                    Self::signature_count_value(&info)
-                }));
-            }
-            return Some(Ok(Value::int(0)));
         }
         if method == "wrap" {
             // .wrap(&wrapper) — add a wrapper to this sub's wrap chain
