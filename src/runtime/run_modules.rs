@@ -2182,11 +2182,25 @@ impl Interpreter {
                 )
             })
             .map_or(0, |i| i + 1);
-        for s in &stmts[after_unit..] {
+        // `unit class Foo;` (unlike `unit module`/`unit package`) wraps the rest
+        // of the file in its own `ClassDecl` body rather than leaving it as
+        // sibling statements, so the unit's declarations live there.
+        let unit_class_body = stmts.iter().find_map(|s| match s {
+            crate::ast::Stmt::ClassDecl {
+                is_unit: true,
+                body,
+                ..
+            } => Some(body.as_slice()),
+            _ => None,
+        });
+        for s in stmts[after_unit..]
+            .iter()
+            .chain(unit_class_body.unwrap_or_default())
+        {
             match s {
                 crate::ast::Stmt::VarDecl {
                     name,
-                    is_export,
+                    is_export: _,
                     is_dynamic,
                     custom_traits,
                     ..
@@ -2195,9 +2209,7 @@ impl Interpreter {
                     // a `__constant` trait; `is_our` alone cannot tell it from an
                     // ordinary `our $x`, which is a package variable the loading
                     // scope may legitimately share.
-                    if *is_export
-                        || *is_dynamic
-                        || !custom_traits.iter().any(|(t, _)| t == "__constant")
+                    if *is_dynamic || !custom_traits.iter().any(|(t, _)| t == "__constant")
                     {
                         continue;
                     }
