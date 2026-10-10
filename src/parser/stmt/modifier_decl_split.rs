@@ -173,7 +173,7 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
     if init.is_binding {
         let gated = Stmt::If {
             cond: effective_cond.clone(),
-            then_branch: rebind_staged_decls(&decl)?,
+            then_branch: rebind_staged_decls(decl)?,
             else_branch: Vec::new(),
             binding_var: None,
             is_statement_modifier: true,
