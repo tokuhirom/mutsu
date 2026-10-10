@@ -99,12 +99,18 @@ impl Interpreter {
                 // (`package_chain_var_fallback`), mirroring GetGlobal.
                 _ => {
                     let name = Self::const_str(code, name_idx);
-                    // NB: a module sub's free read of its own compunit's
-                    // file-scope `my` resolves inside `get_env_with_main_alias`,
-                    // which does not consult `env` for such a name (`unit_lexicals`).
-                    self.get_env_with_main_alias(name)
-                        .or_else(|| self.package_chain_var_fallback(code.const_sym(name_idx)))
-                        .unwrap_or(Value::NIL)
+                    // The frame's own capture beats a same-named lexical of
+                    // the CALLER (see `Env::get_sym_frame_first`).
+                    if let Some(v) = self.env().get_sym_frame_first(code.const_sym(name_idx)) {
+                        v.clone()
+                    } else {
+                        // NB: a module sub's free read of its own compunit's
+                        // file-scope `my` resolves inside `get_env_with_main_alias`,
+                        // which does not consult `env` for such a name (`unit_lexicals`).
+                        self.get_env_with_main_alias(name)
+                            .or_else(|| self.package_chain_var_fallback(code.const_sym(name_idx)))
+                            .unwrap_or(Value::NIL)
+                    }
                 }
             }
         };
