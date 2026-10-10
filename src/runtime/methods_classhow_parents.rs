@@ -239,11 +239,11 @@ impl Interpreter {
             }
             if non_transitive {
                 if !is_instance {
-                    result.extend(self.registry().role_parents_of(class_name));
+                    result.extend(self.role_only_parents_of(class_name));
                 }
                 return result;
             }
-            let parents = self.registry().role_parents_of(class_name);
+            let parents = self.role_only_parents_of(class_name);
             let mut seen: std::collections::HashSet<String> = result.iter().cloned().collect();
             for p in &parents {
                 if seen.insert(p.clone()) {
@@ -411,6 +411,22 @@ impl Interpreter {
         }
     }
 
+    /// The parents of a role that are themselves roles. A role's `is P` (P a
+    /// class) shares `role_parents` with its `does` parents, but a class is
+    /// not a role and must not be listed by `.^roles`.
+    // Cost: O(p), p = the role's parents, two hash lookups each.
+    fn role_only_parents_of(&self, role_name: &str) -> Vec<String> {
+        let reg = self.registry();
+        let mut parents = reg.role_parents_of(role_name);
+        parents.retain(|p| {
+            let base = p.split_once('[').map(|(b, _)| b).unwrap_or(p.as_str());
+            reg.roles.contains_key(base)
+                || crate::runtime::types::is_builtin_role_name(base)
+                || !reg.classes.contains_key(base)
+        });
+        parents
+    }
+
     fn collect_transitive_roles(
         &self,
         role_name: &str,
@@ -421,7 +437,7 @@ impl Interpreter {
             .split_once('[')
             .map(|(b, _)| b)
             .unwrap_or(role_name);
-        for p in self.registry().role_parents_of(base) {
+        for p in self.role_only_parents_of(base) {
             if seen.insert(p.clone()) {
                 result.push(p.clone());
                 self.collect_transitive_roles(&p, result, seen);
