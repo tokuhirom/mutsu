@@ -57,7 +57,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        // `of`, `returns`, `arity` and `count` are `Code` rows (`method_table::code`, ADR-12523).
+        // `of`, `returns`, `arity`, `count` and `signature` are `Code` rows (`method_table::code`, ADR-12523).
         if args.is_empty()
             && let Some(answer) = crate::builtins::method_table::code::answer(self, target, method)
         {
@@ -311,56 +311,6 @@ impl Interpreter {
                 })
                 .collect();
             return Some(Ok(Value::array(matching)));
-        }
-        if method == "signature" && args.is_empty() {
-            // A name with `multi` candidates is its dispatcher, whose
-            // signature is the proto's (declared or generated).
-            if let Some(sig) = self.dispatcher_signature(package, name) {
-                return Some(Ok(sig));
-            }
-            let cache_key = SubSignatureKey::from_routine_handle(package, name);
-            if let Some(cached) = cached_sub_signature(&cache_key) {
-                return Some(Ok(cached));
-            }
-            let (params, param_defs) = self.callable_signature(target);
-            let defs = if !param_defs.is_empty() {
-                param_defs
-            } else {
-                params
-                    .into_iter()
-                    .map(|name| ParamDef {
-                        type_capture: None,
-                        name,
-                        default: None,
-                        multi_invocant: true,
-                        required: false,
-                        named: false,
-                        named_alias: false,
-                        slurpy: false,
-                        double_slurpy: false,
-                        onearg: false,
-                        sigilless: false,
-                        type_constraint: None,
-                        literal_value: None,
-                        sub_signature: None,
-                        where_constraint: None,
-                        traits: Vec::new(),
-                        optional_marker: false,
-                        outer_sub_signature: None,
-                        code_signature: None,
-                        is_invocant: false,
-                        shape_constraints: None,
-                        block_param: false,
-                        code: Default::default(),
-                        trait_args: Vec::new(),
-                    })
-                    .collect()
-            };
-            let return_type = self.routine_return_spec_by_name(name);
-            let info = param_defs_to_sig_info(&defs, return_type);
-            let signature = make_signature_value(info, Some(&*self));
-            cache_sub_signature(cache_key, signature.clone());
-            return Some(Ok(signature));
         }
         if matches!(method, "gist" | "Str") && args.is_empty() {
             // Rakudo: a Sub handle gists as `&name` and a builtin-method
@@ -668,6 +618,144 @@ impl Interpreter {
             }));
         }
         Some(Ok(Value::int(0)))
+    }
+
+    /// `Code.signature`: the `Signature` of a `Sub`, a `&name` handle, a regex or
+    /// a `WeakSub`'s referent. `None` for any other value.
+    // Cost: O(p) for a routine with p parameters (cached after the first read of
+    // a name-based handle); O(c * p) for a multi method's dispatcher with c
+    // candidates.
+    pub(crate) fn code_signature(&mut self, target: &Value) -> Option<Result<Value, RuntimeError>> {
+        match target.view() {
+            ValueView::Routine { name, package, .. } => {
+                let target = target.clone();
+                self.routine_signature(&target, &name.resolve(), &package.resolve())
+            }
+            ValueView::Sub(data) => {
+                let data = data.clone();
+                self.sub_signature_of(&data)
+            }
+            ValueView::WeakSub(weak) => {
+                let strong = weak.upgrade()?;
+                self.code_signature(&Value::sub_value(strong))
+            }
+            ValueView::Regex(..) | ValueView::RegexWithAdverbs(..) => Some(Ok(
+                self.regex_value_routine_introspection(target, "signature"),
+            )),
+            _ => None,
+        }
+    }
+
+    fn routine_signature(
+        &mut self,
+        target: &Value,
+        name: &str,
+        package: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        // A name with `multi` candidates is its dispatcher, whose
+        // signature is the proto's (declared or generated).
+        if let Some(sig) = self.dispatcher_signature(package, name) {
+            return Some(Ok(sig));
+        }
+        let cache_key = SubSignatureKey::from_routine_handle(package, name);
+        if let Some(cached) = cached_sub_signature(&cache_key) {
+            return Some(Ok(cached));
+        }
+        let (params, param_defs) = self.callable_signature(target);
+        let defs = if !param_defs.is_empty() {
+            param_defs
+        } else {
+            params
+                .into_iter()
+                .map(|name| ParamDef {
+                    type_capture: None,
+                    name,
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    named_alias: false,
+                    slurpy: false,
+                    double_slurpy: false,
+                    onearg: false,
+                    sigilless: false,
+                    type_constraint: None,
+                    literal_value: None,
+                    sub_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    is_invocant: false,
+                    shape_constraints: None,
+                    block_param: false,
+                    code: Default::default(),
+                    trait_args: Vec::new(),
+                })
+                .collect()
+        };
+        let return_type = self.routine_return_spec_by_name(name);
+        let info = param_defs_to_sig_info(&defs, return_type);
+        let signature = make_signature_value(info, Some(&*self));
+        cache_sub_signature(cache_key, signature.clone());
+        return Some(Ok(signature));
+    }
+
+    fn sub_signature_of(
+        &mut self,
+        data: &crate::value::SubData,
+    ) -> Option<Result<Value, RuntimeError>> {
+        // A multi sub's dispatcher answers its proto's signature (declared
+        // or generated), never its candidates'.
+        if let Some(sig) = self.sub_dispatcher_signature(data) {
+            return Some(Ok(sig));
+        }
+        // A multi method's dispatcher: try name-based lookup first
+        if let Some(ValueView::Str(disp_name)) =
+            data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+        {
+            let name_based =
+                self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
+            if !name_based.is_empty() {
+                let sigs: Vec<Value> = name_based
+                    .iter()
+                    .filter_map(|c| {
+                        if let ValueView::Sub(cd) = c.view() {
+                            Some(self.sub_signature_value(&cd))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                if sigs.len() == 1 {
+                    return Some(Ok(sigs.into_iter().next().unwrap()));
+                }
+                return Some(Ok(Value::junction(crate::value::JunctionKind::Any, sigs)));
+            }
+        }
+        // Fall back to captured candidates
+        if let Some(ValueView::Array(cands, _)) = data
+            .env
+            .get("__mutsu_multi_dispatch_candidates")
+            .map(Value::view)
+        {
+            let sigs: Vec<Value> = cands
+                .iter()
+                .filter_map(|c| {
+                    if let ValueView::Sub(cd) = c.view() {
+                        Some(self.sub_signature_value(&cd))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if sigs.len() == 1 {
+                return Some(Ok(sigs.into_iter().next().unwrap()));
+            }
+            return Some(Ok(Value::junction(crate::value::JunctionKind::Any, sigs)));
+        }
+        return Some(Ok(self.sub_signature_value(data)));
     }
 
     /// Dispatch methods on Sub.
@@ -1049,58 +1137,6 @@ impl Interpreter {
                 Vec::new()
             };
             return Some(Ok(Value::array(matches)));
-        }
-        if method == "signature" && args.is_empty() {
-            // A multi sub's dispatcher answers its proto's signature (declared
-            // or generated), never its candidates'.
-            if let Some(sig) = self.sub_dispatcher_signature(data) {
-                return Some(Ok(sig));
-            }
-            // A multi method's dispatcher: try name-based lookup first
-            if let Some(ValueView::Str(disp_name)) =
-                data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
-            {
-                let name_based =
-                    self.routine_candidate_subs(&data.package.resolve(), disp_name.as_str());
-                if !name_based.is_empty() {
-                    let sigs: Vec<Value> = name_based
-                        .iter()
-                        .filter_map(|c| {
-                            if let ValueView::Sub(cd) = c.view() {
-                                Some(self.sub_signature_value(&cd))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    if sigs.len() == 1 {
-                        return Some(Ok(sigs.into_iter().next().unwrap()));
-                    }
-                    return Some(Ok(Value::junction(crate::value::JunctionKind::Any, sigs)));
-                }
-            }
-            // Fall back to captured candidates
-            if let Some(ValueView::Array(cands, _)) = data
-                .env
-                .get("__mutsu_multi_dispatch_candidates")
-                .map(Value::view)
-            {
-                let sigs: Vec<Value> = cands
-                    .iter()
-                    .filter_map(|c| {
-                        if let ValueView::Sub(cd) = c.view() {
-                            Some(self.sub_signature_value(&cd))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                if sigs.len() == 1 {
-                    return Some(Ok(sigs.into_iter().next().unwrap()));
-                }
-                return Some(Ok(Value::junction(crate::value::JunctionKind::Any, sigs)));
-            }
-            return Some(Ok(self.sub_signature_value(data)));
         }
         // The dispatcher `&name` of a `multi sub` (a Sub carrying its captured
         // candidates) is spelled as its proto, like the by-name handle above.
