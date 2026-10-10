@@ -594,11 +594,8 @@ impl Interpreter {
         // the `++` and `:delete` routes; a no-op until a second VM mutator
         // thread exists. The rvalue is already evaluated; only a `Proxy` STORE
         // reached from here can run user code under the guard.
-        let _struct_guard = self.named_root_struct_guard(
-            code,
-            target_slot,
-            Self::const_str(code, name_idx),
-        );
+        let _struct_guard =
+            self.named_root_struct_guard(code, target_slot, Self::const_str(code, name_idx));
         self.with_package_lexical_seeded(code, name_idx, |vm| {
             vm.exec_index_assign_expr_named_op_unseeded(
                 code,
