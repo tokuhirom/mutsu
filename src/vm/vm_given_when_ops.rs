@@ -191,7 +191,13 @@ impl Interpreter {
                 saved_topic_source.clone(),
             ));
         }
+        // A named `is copy` pointy param (`with $h<k> -> $v is copy`) is a
+        // detached copy: it records no param name above, and `$_` is back at the
+        // enclosing topic by now, so a writeback would store that unrelated
+        // value into the source element.
+        let detached_pointy_copy = restore_outer_topic && pointy_param.is_none();
         let restore = move |this: &mut Self, write_back: bool| {
+            let write_back = write_back && !detached_pointy_copy;
             // Body execution (including any nested `BlockLocalScope`) has
             // finished, so both stacks are safe to pop — pushed above in
             // strict LIFO order with body execution, so this always matches
