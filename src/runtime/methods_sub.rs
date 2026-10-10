@@ -667,7 +667,7 @@ impl Interpreter {
                 Self::signature_count_value(&info)
             }));
         }
-        return Some(Ok(Value::int(0)));
+        Some(Ok(Value::int(0)))
     }
 
     /// Dispatch methods on Sub.
