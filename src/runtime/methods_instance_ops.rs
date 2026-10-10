@@ -1278,6 +1278,13 @@ impl Interpreter {
             {
                 return result;
             }
+            // The `Block` a variable trait handler reaches through `Variable.block`.
+            if class_name == "Block"
+                && attributes.as_map().contains_key(crate::runtime::attach_target::VARIABLE_BLOCK_MARK)
+                && let Some(result) = self.dispatch_variable_block_method(method, &args)
+            {
+                return result;
+            }
             // The compile-time $*LANG object graph (ADR-0026 slang activation):
             // slang_grammar/slang_actions/define_slang on Mutsu::Slang::CompLang.
             if class_name.as_str().starts_with("Mutsu::Slang::")

@@ -70,6 +70,13 @@ pub(crate) struct ControlState {
     /// LEAVE phasers a `use` attached to the main program's compunit, run when
     /// the mainline finishes (`Interpreter::finish`).
     pub(crate) mainline_leave_phasers: Vec<Value>,
+    /// The declaration site whose lifted variable trait is running now
+    /// (`Variable.block.add_phaser` files its phaser under it), or `None`
+    /// when the trait runs at the declaration itself.
+    pub(crate) var_trait_site: Option<String>,
+    /// ENTER phasers variable traits added through `Variable.block`, by
+    /// declaration site; the declaration replays them on every entry.
+    pub(crate) var_trait_phasers: HashMap<String, Vec<Value>>,
     /// Fired `once { ... }` results, keyed by `(routine-clone-id, op-position)`.
     /// Shared by `Arc` handle into every spawned thread's clone so a `once` in a
     /// sub run from multiple `start` blocks fires exactly once across threads

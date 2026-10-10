@@ -1060,6 +1060,7 @@ pub(crate) fn var_meta_owns_method(method: &str) -> bool {
             method,
             "VAR"
                 | "var"
+                | "block"
                 | "name"
                 | "dynamic"
                 | "default"

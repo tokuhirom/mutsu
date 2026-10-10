@@ -3831,13 +3831,32 @@ impl Interpreter {
             return self.call_method_mut_with_values(&source_name, inner, "VAR", vec![]);
         }
 
+        // `$v.block` on the `Variable` a `trait_mod:<is>(Variable:D ...)`
+        // handler receives: the block that owns the declaration
+        // (`runtime::attach_target`).
+        if method == "block"
+            && args.is_empty()
+            && matches!(
+                target.view(),
+                ValueView::Instance { class_name, .. } if class_name == "Variable"
+            )
+        {
+            return Ok(Self::variable_block_handle());
+        }
+
         // .var on meta value
         if method == "var"
             && args.is_empty()
             && let Some(source_name) = Self::var_target_from_meta_value(&target)
         {
+            // A value a trait handler already assigned through `.var` is what
+            // the variable holds from then on, though the declaring frame only
+            // sees it once the handler returns.
             let source_value = self
-                .get_env_with_main_alias(&source_name)
+                .trait_mod_writeback_value
+                .clone()
+                .filter(|_| self.trait_mod_writeback_key.as_deref() == Some(source_name.as_str()))
+                .or_else(|| self.get_env_with_main_alias(&source_name))
                 .or_else(|| match target.view() {
                     ValueView::Instance { attributes, .. } => {
                         attributes.as_map().get("__mutsu_var_value").cloned()

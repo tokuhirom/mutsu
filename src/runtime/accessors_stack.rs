@@ -747,7 +747,7 @@ impl Interpreter {
         // handler receives answers `var` / `name` inline too.
         if let ValueView::Instance { class_name, .. } = value.view()
             && class_name == "Variable"
-            && matches!(method, "var" | "name")
+            && matches!(method, "var" | "name" | "block")
         {
             return true;
         }

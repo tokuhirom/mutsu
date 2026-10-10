@@ -41,6 +41,10 @@ pub(crate) const RESOLVER_CLASS: &str = "RakuAST::Resolver::Compile";
 /// would hand back, and only has to accept `add-leave-phaser`.
 pub(crate) const ATTACH_TARGET_CLASS: &str = "Mutsu::AttachTarget";
 
+/// The attribute that marks a `Block` handle as the owner of a variable
+/// declaration (`Variable.block`).
+pub(crate) const VARIABLE_BLOCK_MARK: &str = "__mutsu_var_block";
+
 /// The LEAVE phasers attached to one module body's own compunit while it
 /// loads, plus the import-scope depth its body started at: a `use` whose
 /// depth is no deeper than that is at the module's top level, with no
@@ -294,5 +298,83 @@ impl Interpreter {
                     .flat_map(|frame| frame.phasers.iter()),
             )
             .chain(self.control.mainline_leave_phasers.iter())
+            .chain(self.control.var_trait_phasers.values().flatten())
+    }
+
+    /// The `Block` handle `Variable.block` answers (`.^name` is `Block`).
+    pub(crate) fn variable_block_handle() -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert(VARIABLE_BLOCK_MARK.to_string(), Value::TRUE);
+        Value::make_instance(crate::symbol::Symbol::intern("Block"), attrs)
+    }
+
+    /// `Variable.block.add_phaser(NAME, code)` from a variable trait handler.
+    ///
+    /// Rakudo applies a variable's traits at compile time, so a phaser added
+    /// here belongs to the block's phaser queue and runs on every entry. A
+    /// trait of a nested scope is lifted into the BEGIN prologue (ADR-0134),
+    /// which is that compile time: its phaser is filed under the declaration's
+    /// site, and the declaration replays it on every entry of the block
+    /// (`replay_var_trait_phasers`). A trait that runs at the declaration
+    /// itself has already missed the block's own ENTER queue, so its phaser
+    /// runs at once. Either way it runs after the block's statements that
+    /// precede the declaration, where rakudo runs it before the body; see
+    /// ADR-12131. Only `ENTER` is supported.
+    // Cost: O(1) plus the phaser's own run.
+    pub(crate) fn dispatch_variable_block_method(
+        &mut self,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if method != "add_phaser" {
+            return None;
+        }
+        let kind = args.first().map(Value::to_string_value).unwrap_or_default();
+        let Some(code) = args.get(1).cloned() else {
+            return Some(Err(RuntimeError::new(
+                "add_phaser needs the phaser name and the code to run",
+            )));
+        };
+        if kind != "ENTER" {
+            return Some(Err(RuntimeError::new(format!(
+                "add_phaser: only ENTER phasers can be added from a variable trait, not {kind}"
+            ))));
+        }
+        if let Some(site) = self.control.var_trait_site.clone() {
+            self.control
+                .var_trait_phasers
+                .entry(site)
+                .or_default()
+                .push(code);
+            return Some(Ok(Value::NIL));
+        }
+        Some(self.call_sub_value(code, Vec::new(), false).map(|_| Value::NIL))
+    }
+
+    /// Run the ENTER phasers the lifted variable traits of declaration `site`
+    /// added, in the order they were added. The `Variable` they hold reads and
+    /// writes `name` in the entered block's frame; the value a phaser assigns
+    /// through `Variable.var` is returned for the declaration to store.
+    // Cost: O(p) phaser calls, p = phasers added at `site`.
+    pub(crate) fn replay_var_trait_phasers(
+        &mut self,
+        site: &str,
+        name: &str,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some(phasers) = self.control.var_trait_phasers.get(site).cloned() else {
+            return Ok(None);
+        };
+        let saved_key = self.trait_mod_writeback_key.replace(name.to_string());
+        let saved_value = self.trait_mod_writeback_value.take();
+        let mut result = Ok(());
+        for code in phasers {
+            if let Err(e) = self.call_sub_value(code, Vec::new(), false) {
+                result = Err(e);
+                break;
+            }
+        }
+        self.trait_mod_writeback_key = saved_key;
+        let written = std::mem::replace(&mut self.trait_mod_writeback_value, saved_value);
+        result.map(|()| written)
     }
 }

@@ -166,6 +166,9 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
         // written THROUGH (a later external write to the path does not retro-bind
         // it — see `t/phantom-entry-bind.t`), so do not read through here.
         ValueView::HashEntryRef { .. } => false,
+        // A `VarRef` (`Variable.var`) is a transient view of the variable: it
+        // is as defined as the value it reads.
+        ValueView::VarRef { value, .. } => value_is_defined(value),
         // A `ContainerRef` cell (`:=`-alias, take-rw, promoted element) is
         // transparent to definedness: `$x // …` / `take-rw …[i] // next` must
         // test the *inner* value, not the wrapper, so an undefined element still
