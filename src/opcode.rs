@@ -3010,6 +3010,14 @@ pub(crate) enum OpCode {
         arg_sources_idx: Option<u32>,
         /// See [`OpCode::CallOnValue`]'s `bare_args`.
         bare_args: bool,
+        /// For a closure's read-only free `&name` -- an enclosing routine's
+        /// `&`-parameter or `my &name` -- the index of its upvalue
+        /// (`CompiledCode::compute_upvalues`). The callee is then the captured
+        /// binding itself, read by index instead of by name through the
+        /// running frame's env (ADR-12529 §2.1). `None` for every other name,
+        /// and the by-name resolution above stays the fallback when the
+        /// upvalue array holds no entry for it.
+        upvalue: Option<u32>,
     },
     /// Third field: true when this is a bare block `{ }`, false for `sub { }`.
     MakeAnonSub(u32, Option<u32>, bool),
@@ -6768,6 +6776,15 @@ pub(crate) struct CompiledCode {
     /// cell into the NAME-KEYED cross-thread `shared_vars` lane — see the
     /// `needs_cell_unvouched_locals` doc comment.
     pub(crate) param_locals: rustc_hash::FxHashSet<Symbol>,
+    /// The `&`-sigiled signature parameters (`&p`) bound without `is copy`,
+    /// `is rw` or `is raw`. Such a binding is readonly for the life of the
+    /// invocation -- nothing can rebind or assign it -- so a closure created
+    /// here may capture its value by snapshot: `capture_upvalues` freezes it
+    /// into the upvalue array, and the closure's `&p(...)` calls it by index
+    /// (`OpCode::CallOnCodeVar::upvalue`) instead of resolving the name
+    /// (ADR-12529 §2.1). Populated with `param_locals`; empty for hand-built
+    /// chunks.
+    pub(crate) readonly_code_params: rustc_hash::FxHashSet<Symbol>,
     /// Out-of-band lexical scope chains for `SymbolicDeref` sites (indexed by the
     /// op's `scopes_idx`). `$::($name)::x` can only be recognised as an `OUTER::`
     /// lookup once the name string exists, by which time the compile-time scope
@@ -8188,6 +8205,7 @@ impl CompiledCode {
             scalar_bind_locals: Vec::new(),
             param_local_slots: Vec::new(),
             param_locals: rustc_hash::FxHashSet::default(),
+            readonly_code_params: rustc_hash::FxHashSet::default(),
             lex_scopes: Vec::new(),
             closure_compiled_codes: Vec::new(),
             compiled_fns: None,
@@ -11213,6 +11231,22 @@ impl CompiledCode {
         // and shared-container semantics handled separately). `runtime_bound`
         // excludes names this body binds at call time but that read via GetGlobal
         // (sub-signature capture params like `|c(Str $x)`), which only LOOK free.
+        // A free `&name` is eligible on the same terms, but only its CALLS
+        // are rewritten (`CallOnCodeVar::upvalue`): a value read (`&p` as an
+        // argument) keeps resolving by name.
+        let eligible_code: std::collections::HashSet<Symbol> = self
+            .free_var_syms
+            .iter()
+            .copied()
+            .filter(|sym| !written.contains(sym))
+            .filter(|sym| !runtime_bound.contains(sym))
+            .filter(|sym| !self.container_ref_capture_syms.contains(sym))
+            .filter(|sym| {
+                sym.with_str(|s| {
+                    s.starts_with('&') && crate::env::is_plain_user_lexical(s) && !own.contains(s)
+                })
+            })
+            .collect();
         let eligible: std::collections::HashSet<Symbol> = self
             .free_var_syms
             .iter()
@@ -11236,7 +11270,7 @@ impl CompiledCode {
                 })
             })
             .collect();
-        if eligible.is_empty() {
+        if eligible.is_empty() && eligible_code.is_empty() {
             return;
         }
         // Assign indices in first-read order so the rewrite and the captured
@@ -11245,6 +11279,7 @@ impl CompiledCode {
         let mut index_of: std::collections::HashMap<Symbol, u32> = std::collections::HashMap::new();
         let mut syms: Vec<Symbol> = Vec::new();
         let mut rewrites: Vec<(usize, u32, u32)> = Vec::new();
+        let mut code_rewrites: Vec<(usize, u32)> = Vec::new();
         for (op_pos, op) in self.ops.iter().enumerate() {
             if let Some(idx) = Self::op_upvalue_read_const_idx(op)
                 && let Some(ValueView::Str(name)) =
@@ -11260,6 +11295,36 @@ impl CompiledCode {
                     rewrites.push((op_pos, uv, idx));
                 }
             }
+            if !eligible_code.is_empty()
+                && let OpCode::CallOnCodeVar { name_idx, .. } = op
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(*name_idx as usize).map(Value::view)
+            {
+                let sym = Symbol::intern(&format!("&{}", name.as_str()));
+                if eligible_code.contains(&sym) {
+                    let uv = *index_of.entry(sym).or_insert_with(|| {
+                        let n = syms.len() as u32;
+                        syms.push(sym);
+                        n
+                    });
+                    code_rewrites.push((op_pos, uv));
+                }
+            }
+        }
+        // A free `&name` this chunk only hands on -- a nested closure calls
+        // it through its own upvalue -- still gets an index here, so the
+        // nested closure's capture can take the binding from this frame's
+        // upvalue array instead of resolving the name (`capture_upvalues`).
+        for sym in &eligible_code {
+            if !index_of.contains_key(sym)
+                && self
+                    .closure_compiled_codes
+                    .iter()
+                    .any(|child| child.upvalue_syms.contains(sym))
+            {
+                index_of.insert(*sym, syms.len() as u32);
+                syms.push(*sym);
+            }
         }
         if syms.is_empty() {
             return;
@@ -11269,6 +11334,11 @@ impl CompiledCode {
                 index: uv,
                 name_idx,
             };
+        }
+        for (op_pos, uv) in code_rewrites {
+            if let OpCode::CallOnCodeVar { upvalue, .. } = &mut self.ops[op_pos] {
+                *upvalue = Some(uv);
+            }
         }
         self.upvalue_syms = syms;
     }

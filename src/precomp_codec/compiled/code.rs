@@ -43,6 +43,7 @@ impl Encode for CompiledCode {
             scalar_bind_locals,
             param_local_slots,
             param_locals,
+            readonly_code_params,
             lex_scopes,
             closure_compiled_codes,
             compiled_fns,
@@ -186,6 +187,7 @@ impl Encode for CompiledCode {
         scalar_bind_locals.encode(encoder)?;
         param_local_slots.encode(encoder)?;
         encode_sym_set(param_locals, encoder)?;
+        encode_sym_set(readonly_code_params, encoder)?;
         lex_scopes.encode(encoder)?;
         closure_compiled_codes.encode(encoder)?;
         compiled_fns.encode(encoder)?;
@@ -317,6 +319,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             scalar_bind_locals: Decode::decode(decoder)?,
             param_local_slots: Decode::decode(decoder)?,
             param_locals: decode_set(decoder)?,
+            readonly_code_params: decode_set(decoder)?,
             lex_scopes: Decode::decode(decoder)?,
             closure_compiled_codes: Decode::decode(decoder)?,
             compiled_fns: Decode::decode(decoder)?,

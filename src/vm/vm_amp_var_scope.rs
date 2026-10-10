@@ -131,4 +131,33 @@ impl Interpreter {
         .map(Value::into_deref)
         .filter(|v| !v.is_nil())
     }
+
+    /// The callee a `CallOnCodeVar` with an upvalue index reads: the closure's
+    /// captured `&name` binding (see `OpCode::CallOnCodeVar::upvalue`), read
+    /// through a shared cell and with a weak `&?BLOCK`-style handle upgraded.
+    /// `None` sends the call down the by-name path: no upvalue array entry
+    /// (a body run without one installed), an unset binding, or a name an
+    /// escaped `our sub` must read through its persisted cell instead -- the
+    /// same guard `GetUpvalue` applies.
+    // Cost: O(1).
+    pub(super) fn code_var_upvalue(
+        &self,
+        code: &CompiledCode,
+        index: u32,
+        name_idx: u32,
+    ) -> Option<Value> {
+        if !self.lexicals.escaping_our_lexical_names.is_empty()
+            && crate::runtime::dispatch_key::with_amp_name(Self::const_str(code, name_idx), |amp| {
+                self.lexicals.escaping_our_lexical_names.contains(amp)
+            })
+        {
+            return None;
+        }
+        let value = self.upvalues.get(index as usize)?.as_ref()?.clone().into_deref();
+        let value = match value.view() {
+            ValueView::WeakSub(weak) => Value::sub_value(weak.upgrade()?),
+            _ => value,
+        };
+        (!value.is_nil()).then_some(value)
+    }
 }

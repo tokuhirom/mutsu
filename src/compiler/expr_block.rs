@@ -1438,6 +1438,7 @@ impl Compiler {
                 arity: args.len() as u32,
                 arg_sources_idx,
                 bare_args,
+                upvalue: None,
             });
         } else {
             self.compile_expr(target);
