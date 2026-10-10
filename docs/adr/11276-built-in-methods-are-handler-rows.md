@@ -2247,3 +2247,13 @@ so there is no entry to name a bridge.
 interpreter must inspect) and on `Failure`, where it now raises the wrapped exception like `Failure.Str`. The `throw`/`rethrow`
 interpreter gate for classes with a computed `message` is unchanged. Not interpreter rows after all: the handler only builds the
 `RuntimeError`. Left on #12390: `line`/`file`/`filename`, `Code`, `Mu`, `Backtrace` ancestors, `Date.IO`/`Instant`/`Match`/`RakuAST::*`.
+
+### 9.55 Slice 3D: `Signature.arity`/`count`/`params`/`returns` and `Supply.list` are rows (2026-10-10)
+
+`refactor/12390-signature-supply-rows`. The inventory had counted `Signature`'s four methods as interpreter rows, but each only reads
+the structured parameter list (`extract_sig_info`) or an attribute, so they are `Narrow` rows in `method_table::signature`
+reached by owner from the zero-argument cascade. `Supply.list` moved out of the `list`/`Array` arm of `methods_0arg/coercion.rs` into
+`method_table::supply::listify`, shared by the row and the arm (`.Array` stays an arm, Rakudo declares it elsewhere). The slow-path
+`arity`/`count` branches for `Sub` values stay until the `Code` slice. Left on #12390: `Code`, `Mu`, and the items the inventory does
+not count (`line`/`file`/`filename` are mutsu's own accessors on `Exception`, not declared by Rakudo's `Exception`, so no row is owed
+until `X::Comp` is recognized; `Backtrace` ancestors; `Date.IO`, `Instant`, `Match`, `RakuAST::*`).

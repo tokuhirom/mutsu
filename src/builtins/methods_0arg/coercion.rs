@@ -472,49 +472,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 _ if target.is_range() => {
                     crate::builtins::method_table::range::listify(target, want_array)
                 }
-                ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } if class_name == "Supply" => {
-                    // An on-demand supply (`supply { ... }` block) has no
-                    // materialized values; its body must be run by the
-                    // stateful slow path (`supply_list_values`). Decline so
-                    // dispatch falls through.
-                    if attributes.as_map().contains_key("on_demand_callback") {
-                        return None;
-                    }
-                    // Likewise `.list` on a live, channel-backed supply (an
-                    // `IO::Socket::Async` read stream): its values arrive on a
-                    // channel that only the stateful path can drain, and
-                    // answering the empty `values` attribute here would report
-                    // an open stream as an empty one.
-                    if method == "list" {
-                        let attrs = attributes.as_map();
-                        if attrs.get("live").is_some_and(Value::truthy)
-                            && let Some(supplier_id) =
-                                attrs.get("supplier_id").and_then(Value::as_int)
-                            && supplier_id > 0
-                        {
-                            return Some(
-                                crate::runtime::native_methods::collect_supplier_values(
-                                    supplier_id as u64,
-                                    Vec::new(),
-                                    false,
-                                    true,
-                                )
-                                .map(wrap),
-                            );
-                        }
-                        if attrs.contains_key("supply_id") && !attrs.contains_key("proc_output") {
-                            return None;
-                        }
-                    }
-                    let items = match attributes.as_map().get("values").map(Value::view) {
-                        Some(ValueView::Array(items, ..)) => items.to_vec(),
-                        _ => Vec::new(),
-                    };
-                    Some(Ok(wrap(items)))
+                // The `Supply.list` row's implementation (`method_table::supply`).
+                ValueView::Instance { class_name, .. } if class_name == "Supply" => {
+                    crate::builtins::method_table::supply::listify(target, want_array)
                 }
                 ValueView::Instance {
                     class_name,

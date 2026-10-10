@@ -32,6 +32,7 @@ pub(crate) mod instant;
 pub(crate) mod rakuast_node;
 pub(crate) mod regex_match;
 pub(crate) mod signature;
+pub(crate) mod supply;
 pub(crate) mod temporal;
 pub(crate) mod temporal_edit;
 pub(crate) mod temporal_shift;
@@ -53,6 +54,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     exception::ROWS,
     failure::ROWS,
     signature::ROWS,
+    supply::ROWS,
     rakuast_node::ROWS,
     temporal_shift::ROWS,
     temporal_edit::ROWS,

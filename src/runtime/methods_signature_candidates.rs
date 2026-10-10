@@ -544,7 +544,7 @@ impl Interpreter {
 
     /// `.arity` (`method == "arity"`) or `.count` of a `Signature` value.
     // Cost: O(p), p = signature parameters.
-    pub(super) fn signature_arity_or_count(sig: &Value, method: &str) -> Value {
+    pub(crate) fn signature_arity_or_count(sig: &Value, method: &str) -> Value {
         match crate::value::signature::extract_sig_info(sig) {
             Some(info) if method == "arity" => {
                 Value::int(Self::signature_required_positional_count(&info))
