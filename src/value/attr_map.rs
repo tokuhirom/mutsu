@@ -160,6 +160,10 @@ pub(crate) struct ClassLayout {
     /// name picks depends on the running method's owner, so a per-site cache
     /// keyed by layout alone must not remember it.
     qualified_bares: rustc_hash::FxHashSet<Symbol>,
+    /// Bare names some key of this layout holds under `<sigil>bare` (a
+    /// sigil-colliding declaration). The sigil key outranks the bare key, so
+    /// a site cache must not remember either for these names.
+    sigil_keyed_bares: rustc_hash::FxHashSet<Symbol>,
 }
 
 impl ClassLayout {
@@ -170,6 +174,7 @@ impl ClassLayout {
         let mut ordered = Vec::new();
         let mut index = FxHashMap::default();
         let mut qualified_bares = rustc_hash::FxHashSet::default();
+        let mut sigil_keyed_bares = rustc_hash::FxHashSet::default();
         for key in keys {
             if let std::collections::hash_map::Entry::Vacant(e) = index.entry(key) {
                 e.insert(ordered.len() as u32);
@@ -177,6 +182,8 @@ impl ClassLayout {
                 if let Some((_, rest)) = key.as_str().split_once('\0') {
                     let bare = rest.strip_prefix(['$', '@', '%', '&']).unwrap_or(rest);
                     qualified_bares.insert(Symbol::intern(bare));
+                } else if let Some(bare) = key.as_str().strip_prefix(['$', '@', '%', '&']) {
+                    sigil_keyed_bares.insert(Symbol::intern(bare));
                 }
             }
         }
@@ -185,6 +192,7 @@ impl ClassLayout {
             keys: ordered.into_boxed_slice(),
             index,
             qualified_bares,
+            sigil_keyed_bares,
         }
     }
 
@@ -209,6 +217,9 @@ impl ClassLayout {
     ) -> Option<usize> {
         let slot = self.slot_of(key)?;
         if is_private && self.qualified_bares.contains(&bare) {
+            return None;
+        }
+        if self.sigil_keyed_bares.contains(&bare) {
             return None;
         }
         if key != bare && self.slot_of(bare).is_some() {

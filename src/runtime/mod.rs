@@ -692,7 +692,14 @@ pub(crate) fn attribute_storage_key(
     let collides = class_attrs
         .iter()
         .any(|attr| attr.name == name && attr.sigil != sigil);
-    if collides {
+    // The public declaration of a colliding name keeps the bare key: the
+    // generated accessor, `new`'s named-arg binding, `.raku` and `eqv` all
+    // address an attribute by its bare name. Only the other declarations get
+    // the sigil-qualified key.
+    let owns_bare = class_attrs
+        .iter()
+        .any(|attr| attr.name == name && attr.sigil == sigil && attr.is_public);
+    if collides && !owns_bare {
         crate::symbol::Symbol::intern(&format!("{sigil}{name}"))
     } else {
         crate::symbol::Symbol::intern(name)

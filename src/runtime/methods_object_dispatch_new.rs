@@ -1368,10 +1368,15 @@ impl Interpreter {
                     }
                 }
                 // Build a sigil map for later coercion
-                let sigil_map: HashMap<String, char> = class_attrs_info
+                // A sigil-colliding name (`has %!d; has $.d`) maps to the
+                // public declaration: only it can be bound from a named arg.
+                let mut sigil_map: HashMap<String, char> = class_attrs_info
                     .iter()
                     .map(|attr| (attr.name.clone(), attr.sigil))
                     .collect();
+                for attr in class_attrs_info.iter().filter(|attr| attr.is_public) {
+                    sigil_map.insert(attr.name.clone(), attr.sigil);
+                }
                 // Attribute type constraints (MRO-wide), used to coerce a provided
                 // value for a coercion-typed attribute (`has Int() $.x`).
                 let attr_type_constraints = self.collect_attribute_type_constraints(class_key);
