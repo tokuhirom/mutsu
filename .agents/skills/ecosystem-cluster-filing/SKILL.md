@@ -36,7 +36,8 @@ each one, `search_issues` (or `gh issue list --search`) for `"eco-cluster: <id>"
 `tokuhirom/mutsu`. When there is no issue, file one:
 
 - The body is the output of `scripts/ecosystem-tickets.py --issue <id>`.
-- Label it `todo:ticket`, or `todo:deep` if the cluster plainly needs design.
+- Label it `todo:ticket`, or `todo:deep` if the cluster plainly needs design, **and always
+  `ecosystem`**.
 - Check the body first: any third-party text it quotes must sit inside code blocks.
 
 File **at most three issues per run**, so that one bad night cannot flood the tracker. Report the

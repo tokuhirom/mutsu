@@ -57,6 +57,18 @@ turns out to be a quick fix becomes `todo:ticket`, and a `todo:perf` finding
 that profiling reveals to be a wrong answer rather than a slow one moves out of
 `todo:perf`.
 
+### `ecosystem` — the issue advances the zef ecosystem
+
+A third, **independent** label (not a kind, not a tier): put `ecosystem` *in addition to* the
+kind/tier labels on every issue whose fix moves a zef distribution toward green — a missing
+builtin or parse feature a dist's own tests hit, a cluster from the ecosystem ledger, a finding
+filed while working a dist with `ecosystem-dist-fix` or `ecosystem-dist-roulette`. The test is
+"would closing this make a dist in `ecosystem/` pass more files?", not "did it come up while in an
+ecosystem session". It is how the ecosystem work is listed (`label:ecosystem`) and prioritised
+across the kind queues; it never replaces `todo:*`, and it is unrelated to the `ecosystem:lock`
+label, which marks the lock board and nothing else. The filer sets it (no triage needed); anyone
+may add it later to an older issue that turns out to qualify.
+
 ### A `todo:perf` issue states its goal, and closes when the goal is met
 
 "Faster" has no end, so a perf issue without a stated goal can never be closed
