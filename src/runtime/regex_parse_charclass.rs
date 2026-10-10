@@ -384,6 +384,22 @@ impl Interpreter {
         })
     }
 
+    /// A lone codepoint whose NFC spelling is several codepoints (U+2ADC
+    /// normalises to U+2ADD U+0338: a composition exclusion) names the NFG
+    /// grapheme it expands to, which is what the subject string holds.
+    // Cost: O(1), the NFC of one codepoint is bounded.
+    fn single_char_item(ch: char) -> ClassItem {
+        if ch.is_ascii() {
+            return ClassItem::Char(ch);
+        }
+        let normalized: String = std::iter::once(ch).nfc().collect();
+        if normalized.chars().nth(1).is_some() {
+            ClassItem::Grapheme(normalized.into_boxed_str())
+        } else {
+            ClassItem::Char(ch)
+        }
+    }
+
     /// Raku character classes enumerate graphemes, rather than independent
     /// codepoints. In particular, `[ a \x[308] ]` denotes the single NFG entry
     /// `ä`, so it must not also admit the bare `a`. The parser already keeps
@@ -446,7 +462,7 @@ impl Interpreter {
                     at + 1
                 };
                 if end == at + 1 {
-                    composed.push(ClassItem::Char(run[at]));
+                    composed.push(Self::single_char_item(run[at]));
                 } else {
                     let normalized: String = run[at..end].iter().copied().nfc().collect();
                     let mut it = normalized.chars();
