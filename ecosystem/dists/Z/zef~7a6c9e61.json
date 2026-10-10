@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.62,
+        "secs": 0.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 21.08,
+        "secs": 19.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -34,11 +34,11 @@
       "cmp": "no_baseline",
       "path": "t/build.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/32873.815189369314' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/49977.49399561089' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.63,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -50,7 +50,7 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 3.22,
+        "secs": 3.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 35,
         "plan": 35,
-        "secs": 1.63,
+        "secs": 1.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -70,7 +70,21 @@
       "cmp": "no_baseline",
       "path": "t/extract.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/75295.55144295582' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/86675.72986291938' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/fetch.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/17450.573001880653' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 1,
@@ -81,26 +95,12 @@
       }
     },
     {
-      "cmp": "no_baseline",
-      "path": "t/fetch.rakutest",
-      "raku": {
-        "first_failure": "Failed to create directory '/tmp/80755.92491254685' with mode '0o777': Failed to mkdir: read-only file system",
-        "nok": 0,
-        "ok": 0,
-        "plan": 1,
-        "secs": 0.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.09,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -110,7 +110,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 0.48,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -132,7 +132,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.73,
+        "secs": 1.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -142,11 +142,11 @@
       "cmp": "no_baseline",
       "path": "t/repository-ecosystems.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/4519.124819960718' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/84430.64476018933' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 0.61,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -158,7 +158,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.2,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -168,7 +168,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.69,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -178,11 +178,11 @@
       "cmp": "no_baseline",
       "path": "t/test.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/22554.834784287246' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/69137.27509433335' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 0.68,
+        "secs": 0.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -192,11 +192,11 @@
       "cmp": "no_baseline",
       "path": "t/utils-filesystem.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/1791589542/1/base-delete.me: No such file or directory",
+        "first_failure": "Failed to open file /tmp/1791672907/1/base-delete.me: No such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 0.66,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -239,10 +239,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-09",
+    "date": "2026-10-10",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bbb03b41",
+    "mutsu_commit": "95dd5f6b",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",

@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 11.99,
+        "secs": 6.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -37,7 +37,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 26.36,
+        "secs": 15.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,30 +51,29 @@
         "nok": 0,
         "ok": 3,
         "plan": null,
-        "secs": 5.6,
+        "secs": 3.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'type' for invocant of type 'Pod::Block::Para'",
-        "nok": 1,
-        "ok": 2,
-        "plan": null,
-        "secs": 0.26,
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-metadata.t",
       "raku": {
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.1,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -88,7 +87,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 0.93,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -104,7 +103,7 @@
     "date": "2026-10-10",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bbb03b41",
+    "mutsu_commit": "95dd5f6b",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -115,13 +114,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/OD/POD_LOAD/4dea260b01ab73c22dba63fc79e0fba39695e46f.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 8,
     "baseline_files": 2,
-    "mutsu_assertions": 3,
-    "parity_files": 1,
-    "regressed_files": 1
+    "mutsu_assertions": 8,
+    "parity_files": 2,
+    "regressed_files": 0
   },
   "version": "0.7.2"
 }

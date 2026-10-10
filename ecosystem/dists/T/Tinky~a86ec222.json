@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.09,
+        "secs": 0.2,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.6,
+        "secs": 0.59,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.14,
+        "secs": 0.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.47,
+        "secs": 3.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.16,
+        "secs": 0.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.62,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -80,7 +80,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.19,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -90,30 +90,29 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.68,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "apply-workflow callbacks",
-        "nok": 1,
-        "ok": 45,
+        "nok": 0,
+        "ok": 46,
         "plan": 46,
-        "secs": 0.32,
+        "secs": 0.35,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/040-workflow-object.t",
       "raku": {
         "nok": 0,
         "ok": 46,
         "plan": 46,
-        "secs": 1.36,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -125,7 +124,7 @@
         "nok": 0,
         "ok": 44,
         "plan": 44,
-        "secs": 0.26,
+        "secs": 0.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -135,7 +134,7 @@
         "nok": 0,
         "ok": 44,
         "plan": 44,
-        "secs": 0.71,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -147,7 +146,7 @@
         "nok": 0,
         "ok": 53,
         "plan": 53,
-        "secs": 0.56,
+        "secs": 0.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -157,7 +156,7 @@
         "nok": 0,
         "ok": 53,
         "plan": 53,
-        "secs": 1.69,
+        "secs": 2.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -169,7 +168,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 0.2,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -179,7 +178,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 0.86,
+        "secs": 1.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -191,10 +190,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-09",
+    "date": "2026-10-10",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bbb03b41",
+    "mutsu_commit": "95dd5f6b",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -205,13 +204,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/IN/TINKY/2469bf80e34adb15dd833e55d4129d0859945f96.tar.gz"
   },
-  "status": "partial",
+  "status": "green",
   "totals": {
     "baseline_assertions": 193,
     "baseline_files": 8,
-    "mutsu_assertions": 192,
-    "parity_files": 7,
-    "regressed_files": 1
+    "mutsu_assertions": 193,
+    "parity_files": 8,
+    "regressed_files": 0
   },
   "version": "0.1.5"
 }
