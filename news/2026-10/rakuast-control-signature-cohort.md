@@ -11,3 +11,9 @@ Conditional and while/until node constructors now accept the corresponding
 condition and block fields, continuation clauses and labels. Initializer
 parentheses retain the assignment semantics of multiple regex matches,
 including their use as aggregate pointy arguments.
+
+EVAL now performs its existing static source checks before RakuAST conversion.
+Undeclared names and invalid parameter types therefore retain their typed
+compile-time diagnostics even when the invalid source cannot be converted.
+Rejected units do not execute their ordinary statements; valid units still
+pass through conversion and lowering before execution.

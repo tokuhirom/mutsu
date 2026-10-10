@@ -102,6 +102,7 @@ t/collections/fast-array-element-assign.t
 t/collections/for-element-source-writeback.t
 t/collections/for-loop-cell-elements.t
 t/collections/for-loop-element-alias.t
+t/collections/for-object-source-element-alias.t
 t/collections/for-single-element-topic-writeback.t
 t/collections/for-topic-element-writeback.t
 t/collections/gist-element-cap.t
@@ -210,6 +211,7 @@ t/collections/immutable-element-store-and-bind.t
 t/collections/is-array-subclass-compound-assign.t
 t/collections/is-list-subclass.t
 t/collections/is-map-subclass-qualified-raku.t
+t/collections/itemization-and-readonly.t
 t/collections/itemized-array-keys-values.t
 t/collections/itemized-container-raku-gist.t
 t/collections/itemized-context-paren.t
@@ -1785,6 +1787,7 @@ t/io/core-io-path-candidate-outranks-user-multi.t
 t/io/custom-io-handle-read-pushback.t
 t/io/custom-io-handle-write-read.t
 t/io/custom-out-print-accumulation.t
+t/io/date-io-instant-base-rows.t
 t/io/dir-and-file-test-one-body.t
 t/io/dir-gist-truncation.t
 t/io/dir-seq-map-gist.t
@@ -2083,6 +2086,7 @@ t/lang/operators/operator-lvalue-defined-or.t
 t/lang/operators/operator-precedence-so-ternary.t
 t/lang/operators/operator-reference-double-angle.t
 t/lang/operators/operators-extra.t
+t/lang/operators/orwith-pointy-sigil.t
 t/lang/operators/overloading-operators.t
 t/lang/operators/postfix-if-after-block-assignment.t
 t/lang/operators/postfix-index.t
@@ -3961,6 +3965,7 @@ t/oo/role/runtime-parametric-role-value-args.t
 t/oo/role/same-name-parametric-and-plain-role.t
 t/oo/role/seq-does-sequence-role.t
 t/oo/role/sequence-role-user-iterator.t
+t/oo/role/set-op-role-mixin-scalar-operand.t
 t/oo/role/tied-container-attribute-and-role.t
 t/oo/role/trait-named-like-role-param-stays-a-named-trait.t
 t/oo/role/typed-array-element-container-ref-role-check.t
@@ -4111,6 +4116,7 @@ t/rakuast/rakuast-construct-where.t
 t/rakuast/rakuast-construct.t
 t/rakuast/rakuast-contextualizer.t
 t/rakuast/rakuast-control-flow.t
+t/rakuast/rakuast-control-signature-cohort.t
 t/rakuast/rakuast-control-words.t
 t/rakuast/rakuast-control.t
 t/rakuast/rakuast-core-type-names.t
@@ -5147,6 +5153,7 @@ t/routines/dispatch/plain-sub-dispatch-resolution-memo.t
 t/routines/dispatch/proto-add-dispatchee-closure.t
 t/routines/dispatch/proto-add-dispatchee.t
 t/routines/dispatch/proto-body-my-lexical-isolation.t
+t/routines/dispatch/proto-body-writeback-through-parent-tier.t
 t/routines/dispatch/proto-candidate-otf-dispatch.t
 t/routines/dispatch/proto-defined-candidate.t
 t/routines/dispatch/proto-dispatch-interpreter-path.t
@@ -5198,6 +5205,7 @@ t/routines/dispatch/user-infix-op-core-candidate-set.t
 t/routines/dispatch/user-infix-unicode-multiply.t
 t/routines/dispatch/user-postcircumfix-multidim-subscript.t
 t/routines/dispatch/whatevercode-multiarg-subscript.t
+t/routines/dispatch/with-multiple-orwith-chain.t
 t/routines/dispatch/wrap-candidate-unwrap-restore.t
 t/routines/dispatch/wrap-multi-candidate-scope.t
 t/routines/dispatch/wrap-recursive-redispatch.t
@@ -5368,6 +5376,7 @@ t/routines/signature/for-topic-shadows-topic-param.t
 t/routines/signature/for-topic-sigilless-param-writeback.t
 t/routines/signature/gather-aggregate-param-infinite.t
 t/routines/signature/given-pointy-typed-param-junction.t
+t/routines/signature/given-with-destructuring-pointy-param.t
 t/routines/signature/hash-composer-nested-signature-topic.t
 t/routines/signature/hash-parametric-keyof.t
 t/routines/signature/if-pointy-array-param-seq.t
@@ -5486,6 +5495,7 @@ t/routines/signature/pointy-code-param.t
 t/routines/signature/pointy-hash-subsignature-hyper-unspace.t
 t/routines/signature/pointy-param-constraint-no-leak-to-caller.t
 t/routines/signature/pointy-param-typed-sigilless.t
+t/routines/signature/pointy-sigilless-param-is-a-term.t
 t/routines/signature/pointy-sigilless-param-traits.t
 t/routines/signature/pointy-signature-trailing-comma.t
 t/routines/signature/pointy-single-literal-param.t
@@ -5541,6 +5551,7 @@ t/routines/signature/signature-accepts-sibling-named-where.t
 t/routines/signature/signature-accepts-user-capture-coercion.t
 t/routines/signature/signature-arity-count.t
 t/routines/signature/signature-bare-type-capture-arrow.t
+t/routines/signature/signature-binding-gaps.t
 t/routines/signature/signature-builtin-code-var.t
 t/routines/signature/signature-cando-positional-pair.t
 t/routines/signature/signature-declaration-initializer-self-scope.t
@@ -5585,6 +5596,9 @@ t/routines/signature/where-constraint-default.t
 t/routines/signature/where-constraint-var.t
 t/routines/signature/where-constraint-whatever-arg.t
 t/routines/signature/where-named-default-constraint.t
+t/routines/signature/while-destructuring-pointy-param.t
+t/routines/signature/with-orwith-typed-pointy-param.t
+t/routines/signature/with-pointy-container-param.t
 t/routines/splice-callable-index-by-value-invocant.t
 t/routines/standalone-str-funcs.t
 t/routines/stash-term-assigned-in-routine.t
@@ -5873,9 +5887,11 @@ t/types/junction-threads-through-user-infix-eq.t
 t/types/junction.t
 t/types/map.t
 t/types/mu-base-callsame-rows.t
+t/types/mu-base-output-rows.t
 t/types/mu-buildall-populate-rows.t
 t/types/mu-class-not-any.t
 t/types/mu-clone-new-rows.t
+t/types/mu-int-numeric-nomatch.t
 t/types/mu-say-put-with-args-use-own-print.t
 t/types/mu-set-why-on-instance.t
 t/types/my-typed-decl-in-loop.t

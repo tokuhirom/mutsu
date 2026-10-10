@@ -421,3 +421,10 @@ parentheses are restored at the assignment boundary so multi-match result
 itemization agrees with the parser's tree. The read, constructed-tree and
 semantic contracts are pinned in
 `t/rakuast/rakuast-control-signature-cohort.t`.
+
+EVAL's existing static source validation precedes conversion, so invalid
+source retains its typed CHECK-time exception instead of a conversion refusal.
+This ordering introduces no execution during validation: rejected units never
+run ordinary statements, and valid units still convert and lower before
+execution. `t/rakuast/rakuast-eval-source-diagnostics.t` pins both boundaries.
+Mainline diagnostic conversion remains a separate residual path.
