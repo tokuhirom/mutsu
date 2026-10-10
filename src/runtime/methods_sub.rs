@@ -699,7 +699,7 @@ impl Interpreter {
         let info = param_defs_to_sig_info(&defs, return_type);
         let signature = make_signature_value(info, Some(&*self));
         cache_sub_signature(cache_key, signature.clone());
-        return Some(Ok(signature));
+        Some(Ok(signature))
     }
 
     fn sub_signature_of(
@@ -755,7 +755,7 @@ impl Interpreter {
             }
             return Some(Ok(Value::junction(crate::value::JunctionKind::Any, sigs)));
         }
-        return Some(Ok(self.sub_signature_value(data)));
+        Some(Ok(self.sub_signature_value(data)))
     }
 
     /// Dispatch methods on Sub.
