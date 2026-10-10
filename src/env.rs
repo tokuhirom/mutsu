@@ -22,7 +22,7 @@ use crate::value::ValueMap;
 pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
 mod rebind;
-mod static_link;
+pub(crate) mod static_link;
 pub(crate) use static_link::with_static_links_suppressed;
 pub(crate) mod stats;
 
@@ -661,12 +661,9 @@ pub struct Env {
     /// captures) leaves it clear. A closure capture stops its walk at the
     /// running frame's root (ADR-12529 phase 3, see [`Self::layered_capture`]).
     frame_root: bool,
-    /// How a frame root's by-name lookups treat the caller frames chained
-    /// below it (ADR-12529 phase 3, [`static_link`]). `None` on every env but
-    /// the root of a frame that asked for a static view.
-    static_link: Option<Arc<static_link::StaticLink>>,
-    /// True when this env, or any tier below it, carries a
-    /// [`static_link`](Self::static_link): the lookup loops then take the
+    /// True when this env, or any tier below it, is a frame root whose
+    /// overlay carries a static link (`Tier::static_link`, ADR-12529 phase
+    /// 3): the lookup loops then take the
     /// walk that follows links ([`Self::get_sym_with_fallback`]), and every
     /// other chain keeps the plain loop with no per-tier test. Inherited like
     /// [`chain_has_fallback`](Self::chain_has_fallback).
@@ -850,7 +847,6 @@ impl Env {
             file_sym: None,
             frame_ids: FrameIds::NONE,
             frame_root: false,
-            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
@@ -955,14 +951,14 @@ impl Env {
         if parent.inner.is_empty()
             && parent.tombstones.is_none()
             && parent.fallback.is_none()
-            && parent.static_link.is_none()
+            && parent.inner.static_link().is_none()
             && let Some(gp) = parent.parent.take()
         {
             let mut arc = gp;
             while arc.inner.is_empty()
                 && arc.tombstones.is_none()
                 && arc.fallback.is_none()
-                && arc.static_link.is_none()
+                && arc.inner.static_link().is_none()
                 && let Some(gp) = &arc.parent
             {
                 let gp = Arc::clone(gp);
@@ -979,7 +975,6 @@ impl Env {
                     file_sym,
                     frame_ids,
                     frame_root: true,
-                    static_link: None,
                     fallback: None,
                     chain_has_fallback: flat_chf,
                     chain_has_static_link: false,
@@ -999,7 +994,6 @@ impl Env {
                 file_sym,
                 frame_ids,
                 frame_root: true,
-                static_link: None,
                 fallback: None,
                 chain_has_fallback: arc_chf,
                 chain_has_static_link: arc_csl,
@@ -1027,7 +1021,6 @@ impl Env {
             file_sym,
             frame_ids,
             frame_root: true,
-            static_link: None,
             fallback: None,
             chain_has_fallback: parent_chf,
             chain_has_static_link: parent_csl,
@@ -1069,7 +1062,6 @@ impl Env {
             file_sym,
             frame_ids,
             frame_root: false,
-            static_link: None,
             fallback: None,
             chain_has_fallback: parent_chf,
             chain_has_static_link: parent_csl,
@@ -1092,7 +1084,6 @@ impl Env {
             file_sym: None,
             frame_ids: FrameIds::NONE,
             frame_root: false,
-            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
@@ -1562,7 +1553,6 @@ impl Env {
                     file_sym: self.file_sym,
                     frame_ids: self.frame_ids,
                     frame_root: false,
-                    static_link: None,
                     // The merged map is no longer any one frame's tier;
                     // `flattened_for_frame` is what records the collapsed tier's
                     // writes when a light frame needs them (#7630).
@@ -1696,7 +1686,6 @@ impl Env {
             file_sym: self.file_sym,
             frame_ids: self.frame_ids,
             frame_root: false,
-            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
@@ -1869,7 +1858,6 @@ impl Env {
             file_sym,
             frame_ids: self.frame_ids,
             frame_root: false,
-            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
@@ -2033,7 +2021,6 @@ impl Env {
             file_sym,
             frame_ids: self.frame_ids,
             frame_root: false,
-            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
@@ -2200,7 +2187,6 @@ impl Env {
             file_sym: None,
             frame_ids: self.frame_ids,
             frame_root: false,
-            static_link: None,
             chain_has_fallback: fallback.is_some(),
             chain_has_static_link: false,
             capture_merged: OnceLock::new(),
@@ -2374,7 +2360,7 @@ impl Env {
 
     /// [`Self::get_sym`] for a chain that carries a capture
     /// [`fallback`](Self::fallback), which is only ever a frame executing a
-    /// closure, or a [`static_link`](Self::static_link), which only a frame
+    /// closure, or a static link (`Tier::static_link`), which only a frame
     /// that looks names up reflectively has (ADR-12529 phase 3).
     ///
     /// The fallback tiers are below the base, so this cannot answer from one
@@ -3099,7 +3085,6 @@ impl From<ValueMap> for Env {
             file_sym,
             frame_ids: FrameIds::NONE,
             frame_root: false,
-            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
@@ -3123,7 +3108,6 @@ impl From<HashMap<Symbol, Value>> for Env {
             file_sym,
             frame_ids: FrameIds::NONE,
             frame_root: false,
-            static_link: None,
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,

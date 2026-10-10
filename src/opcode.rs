@@ -8522,9 +8522,11 @@ impl CompiledCode {
     /// scope, that looks names up reflectively (`EVAL`, `::('$x')`, ...).
     // Cost: O(1).
     pub(crate) fn links_static_outer_to_unit(&self) -> bool {
-        self.is_routine
+        // The reflective tests first: they are false for nearly every chunk,
+        // and this runs on every call.
+        (self.needs_reflective_capture || self.indirect_name_lookup)
+            && self.is_routine
             && !self.declared_in_routine
-            && (self.needs_reflective_capture || self.indirect_name_lookup)
     }
 
     /// This chunk's free variables as a `Symbol` set, built once. The closure

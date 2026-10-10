@@ -86,8 +86,8 @@ impl Env {
         let mut cur: &Arc<Env> = parent;
         loop {
             if cur.frame_root {
-                if let Some(link) = &cur.static_link {
-                    let StaticLink::UnitOuter(target) = &**link;
+                if let Some(link) = cur.inner.static_link() {
+                    let StaticLink::UnitOuter(target) = link;
                     seg = target;
                     break;
                 }
@@ -101,7 +101,8 @@ impl Env {
             }
         }
         let seg = Arc::clone(seg);
-        self.static_link = Some(Arc::new(StaticLink::UnitOuter(seg)));
+        self.cow_mut()
+            .set_static_link(Arc::new(StaticLink::UnitOuter(seg)));
         self.chain_has_static_link = true;
     }
 
@@ -120,7 +121,7 @@ impl Env {
     // Cost: O(1).
     #[inline]
     pub(super) fn static_skip(&self, key: Symbol) -> Option<&Env> {
-        let link = self.static_link.as_deref()?;
+        let link = self.inner.static_link()?;
         if !key.is_plain_user_lexical() || suppressed() {
             return None;
         }
