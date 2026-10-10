@@ -153,7 +153,12 @@ impl Interpreter {
         {
             return None;
         }
-        let value = self.upvalues.get(index as usize)?.as_ref()?.clone().into_deref();
+        let value = self
+            .upvalues
+            .get(index as usize)?
+            .as_ref()?
+            .clone()
+            .into_deref();
         let value = match value.view() {
             ValueView::WeakSub(weak) => Value::sub_value(weak.upgrade()?),
             _ => value,
