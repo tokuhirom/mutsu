@@ -197,10 +197,11 @@ work; see `docs/mzef-install-pipeline.md`. The **REPL** (`--repl`,
       issues (`scripts/ecosystem-tickets.py`, see docs/ecosystem-parity.md §9; the ten largest
       clusters are filed as `todo:*` issues), or by **distribution** with
       [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) (named) /
-      [`ecosystem-dist-roulette`](.agents/skills/ecosystem-dist-roulette/SKILL.md) (a uniform random
-      draw, locked on [#12725](https://github.com/tokuhirom/mutsu/issues/12725) so parallel agents do
-      not collide). Prefer a root cause when one covers several distributions; a uniform draw is what
-      keeps the published figure honest.
+      [`ecosystem-dist-queue`](.agents/skills/ecosystem-dist-queue/SKILL.md) (the next entry of
+      `scripts/ecosystem-tickets.py --queue`, a fixed order over every failing distribution, locked
+      on [#12725](https://github.com/tokuhirom/mutsu/issues/12725) so parallel agents do not
+      collide). Prefer a root cause when one covers several distributions; working the whole queue
+      in order, never skipping an entry for looking hard, is what keeps the published figure honest.
       Method: [docs/ecosystem-parity.md](docs/ecosystem-parity.md);
       decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md). The campaign
       that built all of this was [#7785](https://github.com/tokuhirom/mutsu/issues/7785), closed

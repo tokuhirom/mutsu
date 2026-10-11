@@ -62,7 +62,7 @@ that profiling reveals to be a wrong answer rather than a slow one moves out of
 A third, **independent** label (not a kind, not a tier): put `ecosystem` *in addition to* the
 kind/tier labels on every issue whose fix moves a zef distribution toward green — a missing
 builtin or parse feature a dist's own tests hit, a cluster from the ecosystem ledger, a finding
-filed while working a dist with `ecosystem-dist-fix` or `ecosystem-dist-roulette`. The test is
+filed while working a dist with `ecosystem-dist-fix` or `ecosystem-dist-queue`. The test is
 "would closing this make a dist in `ecosystem/` pass more files?", not "did it come up while in an
 ecosystem session". It is how the ecosystem work is listed (`label:ecosystem`) and prioritised
 across the kind queues; it never replaces `todo:*`, and it is unrelated to the `ecosystem:lock`
@@ -302,7 +302,7 @@ The board for `ecosystem/` distributions is
 [#12725](https://github.com/tokuhirom/mutsu/issues/12725) — the single open issue
 labelled `ecosystem:lock`, which is the authority if the number ever drifts — and
 the procedure around it is
-[`.agents/skills/ecosystem-dist-roulette/SKILL.md`](../.agents/skills/ecosystem-dist-roulette/SKILL.md).
+[`.agents/skills/ecosystem-dist-queue/SKILL.md`](../.agents/skills/ecosystem-dist-queue/SKILL.md).
 A board issue is infrastructure: it is never worked and never closed.
 
 ### Losing a claim late

@@ -7,8 +7,8 @@
 #
 # `scripts/ecosystem-sweep.py` grades a file that matches an entry `accepted`
 # instead of `partial` / `regression`: it leaves the KPI's denominator (like
-# `no_baseline`), and every "what to fix next" tool -- ecosystem-dist-roulette's
-# pick-dist.py, ecosystem-tickets.py, the site manifest -- stops offering it.
+# `no_baseline`), and every "what to fix next" tool -- ecosystem-tickets.py
+# (its clusters and its `--queue`), the site manifest -- stops offering it.
 # `--regrade` re-applies this file to the stored records without measuring.
 #
 # An entry matches only when mutsu fails the file in EXACTLY the recorded

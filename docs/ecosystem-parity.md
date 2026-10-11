@@ -17,10 +17,11 @@ sides, and publish the difference.
   [`.agents/skills/ecosystem-dist-fix/SKILL.md`](../.agents/skills/ecosystem-dist-fix/SKILL.md),
   which consumes §1-§3 below and adds the per-distribution debugging loop and the
   fix-versus-file-an-issue rule;
-  [`.agents/skills/ecosystem-dist-roulette/SKILL.md`](../.agents/skills/ecosystem-dist-roulette/SKILL.md)
-  wraps that in a uniform random draw over the actionable records plus a lock on
+  [`.agents/skills/ecosystem-dist-queue/SKILL.md`](../.agents/skills/ecosystem-dist-queue/SKILL.md)
+  wraps that in a fixed-order queue over every actionable record
+  (`scripts/ecosystem-tickets.py --queue`: most dependents first) plus a lock on
   [#12725](https://github.com/tokuhirom/mutsu/issues/12725), so parallel agents
-  neither collide nor bias the sample by cherry-picking cheap records.
+  neither collide nor bias the work by cherry-picking cheap records.
 - **Sibling tools**: [docs/dist-compat-sweep.md](dist-compat-sweep.md) is the
   load-level (`use <module>`) diagnostic sampler that feeds root-cause tickets;
   [BATTERIES.md](../BATTERIES.md) / `scripts/battery-testsuite.sh` is the
@@ -39,9 +40,9 @@ sides, and publish the difference.
 > **What to do with this now: pick work, not phases.** Either take a root cause
 > from the clustered issues (§9), or take a distribution with the
 > [`ecosystem-dist-fix`](../.agents/skills/ecosystem-dist-fix/SKILL.md) /
-> [`ecosystem-dist-roulette`](../.agents/skills/ecosystem-dist-roulette/SKILL.md)
-> skills. Prefer a root cause when one covers several distributions; prefer the
-> uniform random draw over cherry-picking a cheap record, which games the figure.
+> [`ecosystem-dist-queue`](../.agents/skills/ecosystem-dist-queue/SKILL.md)
+> skills. Prefer a root cause when one covers several distributions; take the
+> queue's next entry rather than cherry-picking a cheap record, which games the figure.
 
 ## 1. What gets measured
 
@@ -94,7 +95,7 @@ Dist-level `status`: `green` · `partial` · `red` · `no_baseline` · `blocked_
 (a provided module does not even `use`) · `blocked_dep` (§3) · `skipped`.
 
 `ecosystem/exclude.txt` is orthogonal to `status` — it does not change what gets measured or
-published, only what `ecosystem-dist-roulette`/`ecosystem-sweep.py --all` offer automatically. A
+published, only what `ecosystem-tickets.py --queue`/`ecosystem-sweep.py --all` offer automatically. A
 distribution lands there once, and only once, a run has shown its record can never move (rakudo
 passes, mutsu deliberately and permanently cannot) without reversing a decision already made
 elsewhere (an ADR, or a call `AGENTS.md` reserves for the user) — never for "looks hard" or for

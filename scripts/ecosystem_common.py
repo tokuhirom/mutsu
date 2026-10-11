@@ -688,8 +688,8 @@ def load_exclude(path: str) -> dict[str, str]:
 
     Shared by `ecosystem-sweep.py` (a bulk `--all` / `--prefix` / `--status` /
     `--stale` selection skips these; an explicit `--only <name>` still
-    measures them) and `ecosystem-dist-roulette/pick-dist.py` (the random draw
-    never offers one).
+    measures them) and `ecosystem-tickets.py --queue` (the work order never
+    offers one).
     """
     if not os.path.isfile(path):
         return {}

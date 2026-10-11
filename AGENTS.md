@@ -30,7 +30,7 @@ Re-check ADR status lines rather than relying on an old issue's description of t
 | [`perf-tuning`](.agents/skills/perf-tuning/SKILL.md) | Profiling, A/B-measuring and landing a perf change — a `todo:perf` issue, or before quoting any performance number |
 | [`rakuast-implementation`](.agents/skills/rakuast-implementation/SKILL.md) | A RakuAST compatibility slice (`src/rakuast/`, `t/rakuast/`) |
 | [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) | Making one zef distribution's own test suite pass, or working a red/`blocked_load` `ecosystem/` record |
-| [`ecosystem-dist-roulette`](.agents/skills/ecosystem-dist-roulette/SKILL.md) | Picking a *random* distribution and locking it on the board so parallel agents do not collide |
+| [`ecosystem-dist-queue`](.agents/skills/ecosystem-dist-queue/SKILL.md) | Taking the next distribution off the ordered failing-dist queue, locking it on the board so parallel agents do not collide, and fixing or filing it |
 | [`ecosystem-cluster-filing`](.agents/skills/ecosystem-cluster-filing/SKILL.md) | Filing issues for the ecosystem ledger's new root-cause failure clusters, by hand or when the post-sweep routine fires |
 | [`ecosystem-lock-board-rotation`](.agents/skills/ecosystem-lock-board-rotation/SKILL.md) | The lock board passed ~250 comments or a `get_comments` read of it overflows: moving it to a fresh issue |
 | [`clippy-clone-sweep`](.agents/skills/clippy-clone-sweep/SKILL.md) | A "clone sweep" / `clippy::nursery` pass for wasted `.clone()` calls |

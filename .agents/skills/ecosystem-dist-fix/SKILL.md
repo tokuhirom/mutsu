@@ -109,9 +109,9 @@ merged, filed, blocked or abandoned — with
 
 The full protocol, including the evidence rule for breaking a lock whose session
 died, is
-[`ecosystem-dist-roulette`](../ecosystem-dist-roulette/SKILL.md), which is also
-the skill to use when the distribution is to be picked at random rather than
-named.
+[`ecosystem-dist-queue`](../ecosystem-dist-queue/SKILL.md), which is also
+the skill to use when the distribution is to be taken from the ordered queue
+rather than named.
 
 ## 2. Check the distribution out
 
@@ -223,8 +223,8 @@ explicitly and permanently decided not to do (not merely "not yet designed" — 
 a distribution gating on `$*RAKU.compiler.name eq 'rakudo'` against
 [ADR-0104](../../../docs/adr/0104-compiler-version-is-a-rakudo-release-coordinate.md)'s outright
 rejection of spoofing `.name`). File the issue as above, and — if you arrived here from
-`ecosystem-dist-roulette` — also add one line to `ecosystem/exclude.txt` per that skill's "the
-dead-end case", so a future random draw does not re-spend an investigation on the same distribution.
+`ecosystem-dist-queue` — also add one line to `ecosystem/exclude.txt` per that skill's "the
+dead-end case", so the queue does not re-offer the distribution and re-spend an investigation on the same distribution.
 
 **The per-file version of that case**: one test file passes on rakudo only because of an
 implementation artefact (not a language rule roast or raku-doc specify), and the user or an ADR
@@ -254,7 +254,7 @@ failed file's reason from the job's stage log in `tmp/jobs/<id>/` rather than re
 
 ## 7. Re-measure with `--only` and report the verdict
 
-> **Not when you came from [`ecosystem-dist-roulette`](../ecosystem-dist-roulette/SKILL.md):**
+> **Not when you came from [`ecosystem-dist-queue`](../ecosystem-dist-queue/SKILL.md):**
 > that wrapper skips this whole step (user decision, 2026-10-01). A *named*-distribution run still
 > does it.
 

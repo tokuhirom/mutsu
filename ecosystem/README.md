@@ -146,12 +146,13 @@ file, fix the interpreter where the gap is bounded and file an issue where it
 needs a complex feature — is the
 [`ecosystem-dist-fix`](../.agents/skills/ecosystem-dist-fix/SKILL.md) skill.
 
-To pick one **at random** rather than by name — and to do so with several agents
-running at once — use
-[`ecosystem-dist-roulette`](../.agents/skills/ecosystem-dist-roulette/SKILL.md)
-instead. It draws uniformly from the actionable records here (a uniform sample is
-what keeps the published figure honest; picking the cheapest-looking record games
-it), takes a lock on
+To take the **next one in order** rather than by name — and to do so with several
+agents running at once — use
+[`ecosystem-dist-queue`](../.agents/skills/ecosystem-dist-queue/SKILL.md)
+instead. It works `scripts/ecosystem-tickets.py --queue`, a fixed order over every
+actionable record here (most dependents first; working the whole remainder in
+order is what keeps the published figure honest, where picking the
+cheapest-looking record games it), takes a lock on
 [#12725](https://github.com/tokuhirom/mutsu/issues/12725) so no two agents work the
 same distribution, and then hands over to `ecosystem-dist-fix`. A distribution
 has no issue of its own to carry a claim, which is why the lock lives on that one
@@ -163,8 +164,8 @@ on behavior mutsu has already, deliberately, decided never to provide (see
 `$*RAKU.compiler.name eq 'rakudo'`, and [ADR-0104](../docs/adr/0104-compiler-version-is-a-rakudo-release-coordinate.md)
 already rejected outright ever spoofing `.name`) — add it to `exclude.txt` with
 a one-line reason citing the issue/ADR, alongside filing the finding as a
-`tokuhirom/mutsu` issue per `ecosystem-dist-fix`. Without that entry, the next
-random draw re-investigates the same dead end from scratch.
+`tokuhirom/mutsu` issue per `ecosystem-dist-fix`. Without that entry, the queue
+re-offers it and the next agent re-investigates the same dead end from scratch.
 
 **When it is one test file, not the distribution** — rakudo passes it only
 because of an implementation artefact the project decided not to copy (the
