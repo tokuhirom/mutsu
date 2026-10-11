@@ -327,9 +327,41 @@ struct SupplierRuntimeState {
     /// drive loop has not registered its sink yet (`react_setup.rs`). Their
     /// producers wait for the registration — Rakudo taps at the `whenever`.
     setup_holds: Vec<crate::value::waker::ReactWaker>,
+    /// A `done`/`quit` asked for [`supplier_reset`] while `setup_holds` was
+    /// non-empty: a react body that tapped this supplier and then ended it
+    /// itself (`$s.done` in the body) has not registered its sink yet, and the
+    /// sink's registration replays `done`/`emitted`. Resetting then would
+    /// un-publish the terminal event and the react would never finish. The
+    /// reset runs when the last hold is released (#12209).
+    reset_deferred: bool,
 }
 
 impl SupplierRuntimeState {
+    /// Forget the terminal state and the buffered emits so the supplier can be
+    /// reused, unless a react still has to replay them at sink registration.
+    // Cost: O(e), e = buffered emits.
+    fn reset_terminal(&mut self) {
+        if !self.setup_holds.is_empty() {
+            self.reset_deferred = true;
+            return;
+        }
+        self.reset_deferred = false;
+        self.done = false;
+        self.quit_reason = None;
+        self.terminal_seq = None;
+        self.emitted.clear();
+        self.emitted_seq.clear();
+    }
+
+    /// Drop `waker_id`'s setup hold; the last one out runs a deferred reset.
+    // Cost: O(h + e), h = setup holds, e = buffered emits.
+    fn release_setup_hold(&mut self, waker_id: usize) {
+        self.setup_holds.retain(|w| w.id() != waker_id);
+        if self.reset_deferred && self.setup_holds.is_empty() {
+            self.reset_terminal();
+        }
+    }
+
     /// Push one event to every registered sink at `seq` (under the registry
     /// lock, which the caller holds), returning the sinks whose react consumes
     /// synchronously on another thread: the producer waits for those with
@@ -371,7 +403,7 @@ pub(crate) fn supplier_remove_setup_hold(supplier_id: u64, waker_id: usize) {
     if let Ok(mut map) = supplier_state_map().lock()
         && let Some(state) = map.get_mut(&supplier_id)
     {
-        state.setup_holds.retain(|w| w.id() != waker_id);
+        state.release_setup_hold(waker_id);
     }
 }
 
@@ -441,7 +473,7 @@ pub(crate) fn supplier_sink_register(
         } else if state.done {
             waker.push_at(key, crate::value::waker::SinkEvent::Done, terminal_seq);
         }
-        state.setup_holds.retain(|w| w.id() != waker.id());
+        state.release_setup_hold(waker.id());
         state.sinks.push(SupplierSink {
             sink_id,
             key,
@@ -496,7 +528,7 @@ pub(crate) fn supplier_sinks_register_batch(
                 };
                 replay.push((seq, key, event));
             }
-            state.setup_holds.retain(|w| w.id() != waker.id());
+            state.release_setup_hold(waker.id());
             state.sinks.push(SupplierSink {
                 sink_id,
                 key,
@@ -824,11 +856,7 @@ pub(in crate::runtime) fn supplier_reset(supplier_id: u64) {
     if let Ok(mut map) = supplier_state_map().lock()
         && let Some(state) = map.get_mut(&supplier_id)
     {
-        state.done = false;
-        state.quit_reason = None;
-        state.terminal_seq = None;
-        state.emitted.clear();
-        state.emitted_seq.clear();
+        state.reset_terminal();
     }
 }
 
