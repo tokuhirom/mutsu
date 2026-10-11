@@ -43,6 +43,7 @@ pub(crate) fn has_value_identity(v: &Value) -> bool {
                 | ValueView::Bag(_, _)
                 | ValueView::Mix(_, _)
                 | ValueView::Junction { .. }
+                | ValueView::Capture { .. }
                 | ValueView::Nil
                 | ValueView::Enum { .. }
                 | ValueView::Range(..)
@@ -170,6 +171,34 @@ pub(crate) fn which_of(target: &Value) -> Value {
                 v.to_bits().hash(&mut hasher);
             }
             format!("Mix|{:016X}", hasher.finish())
+        }
+        // A Capture is a value type whose identity is its parts': the positionals
+        // as `(WHICH)` concatenated, then the named arguments sorted by key as
+        // `key(WHICH)` concatenated, the two blocks joined by `|`
+        // (`\(1, 2, :a(3)).WHICH` is `Capture|(Int|1)(Int|2)|a(Int|3)`; an
+        // empty Capture is `Capture`).
+        // Cost: O(p + n log n), p = positionals, n = named arguments.
+        ValueView::Capture { positional, named } => {
+            let which_text = |v: &Value| which_of(v).to_string_value();
+            let positional: String = positional
+                .iter()
+                .map(|v| format!("({})", which_text(v)))
+                .collect();
+            let mut keys: Vec<&String> = named.keys().collect();
+            keys.sort();
+            let named: String = keys
+                .into_iter()
+                .map(|k| format!("{k}({})", which_text(&named[k])))
+                .collect();
+            let blocks: Vec<&str> = [positional.as_str(), named.as_str()]
+                .into_iter()
+                .filter(|b| !b.is_empty())
+                .collect();
+            if blocks.is_empty() {
+                "Capture".to_string()
+            } else {
+                format!("Capture|{}", blocks.join("|"))
+            }
         }
         ValueView::Sub(sub_data) => {
             format!(

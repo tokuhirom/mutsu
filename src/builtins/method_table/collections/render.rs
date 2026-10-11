@@ -28,7 +28,7 @@ macro_rules! rows {
 }
 
 pub(super) static WHICH_ROWS: &[MethodRow] = rows!("WHICH" => which:
-    "Array", "Hash", "Pair", "Range", "Set", "Bag", "Mix");
+    "Array", "Hash", "Pair", "Range", "Set", "Bag", "Mix", "Capture");
 pub(super) static LIST_GIST_ROWS: &[MethodRow] =
     rows!("gist" => collection_gist: "List", "Seq", "Hash", "Pair");
 pub(super) static QUANT_GIST_ROWS: &[MethodRow] =
@@ -63,7 +63,8 @@ fn which(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
         | ValueView::Hash(..)
         | ValueView::Set(..)
         | ValueView::Bag(..)
-        | ValueView::Mix(..) => Some(Ok(which_of(target))),
+        | ValueView::Mix(..)
+        | ValueView::Capture { .. } => Some(Ok(which_of(target))),
         // A Pair holding a container or a reference type has no stable
         // identity string (`which_of` mints a fresh id per call), so only a
         // value-identified Pair is a pure answer; the cascade keeps the rest.

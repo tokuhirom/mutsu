@@ -587,33 +587,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             {
                 return None;
             }
-            if matches!(
-                target.view(),
-                ValueView::LazyList(_) | ValueView::Channel(_)
-            ) {
-                return None;
-            }
-            let values = match target.view() {
-                ValueView::Array(items, ..) => items.to_vec(),
-                ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-                    items.to_vec()
-                }
-                // Route Range-family sources through `value_to_list`, which caps at
-                // `MAX_RANGE_EXPAND` instead of expanding `(a..=i64::MAX)` directly.
-                // The raw `.collect()` here used to `capacity overflow`-panic on an
-                // infinite range, e.g. `(1..Inf).Supply` (ANALYSIS §8.7 / §8.2).
-                ValueView::Range(..)
-                | ValueView::RangeExcl(..)
-                | ValueView::RangeExclStart(..)
-                | ValueView::RangeExclBoth(..)
-                | ValueView::GenericRange { .. } => crate::runtime::utils::value_to_list(target),
-                _ => vec![target.clone()],
-            };
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("values".to_string(), Value::array(values));
-            attrs.insert("taps".to_string(), Value::array(Vec::new()));
-            attrs.insert("live".to_string(), Value::FALSE);
-            Some(Ok(Value::make_instance(Symbol::intern("Supply"), attrs)))
+            // The `List.Supply` row's implementation
+            // (`method_table::collections::any_misc`).
+            crate::builtins::method_table::collection_any_misc::supply_of(target).map(Ok)
         }
         _ => None,
     }
