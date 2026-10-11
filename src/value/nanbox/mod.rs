@@ -382,8 +382,24 @@ unsafe fn gc_op<T: Trace + 'static>(bits: u64, op: PayloadOp) {
             debug_assert_eq!(addr, addr_of_payload(bits));
         }
         // Full `Gc::drop` semantics: candidate buffering, finalize, sweep.
-        PayloadOp::Release => drop(unsafe { take_gc::<T>(bits) }),
+        PayloadOp::Release => unsafe { release_gc::<T>(bits) },
     }
+}
+
+/// [`gc_op`]'s release, kept out of line. `Gc::drop` (candidate buffering,
+/// the GC-enabled latch, finalize, sweep) is large, and whether the optimizer
+/// pulled it into `payload_op` -- the dispatch every heap-kind clone and drop
+/// goes through -- depended on how unrelated code was split across codegen
+/// units. Two builds that did not touch this module differed by 2x in
+/// `payload_op`'s size and ~1% on bench-ctor and poly-call (ADR-12529 slice
+/// 7), all of it the larger frame every clone and drop then paid for.
+///
+/// # Safety
+/// `bits` must be a live word whose payload matches `T` under `pack_gc`, and
+/// its ownership is consumed.
+#[inline(never)]
+unsafe fn release_gc<T: Trace + 'static>(bits: u64) {
+    drop(unsafe { take_gc::<T>(bits) });
 }
 
 /// # Safety
