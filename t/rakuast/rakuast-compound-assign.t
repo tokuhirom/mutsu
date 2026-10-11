@@ -5,7 +5,7 @@ use Test;
 
 # Compound assignment keeps its RakuAST metaoperator instead of exposing the
 # parser's execution-only assignment expansion.
-plan 19;
+plan 21;
 
 my $ast = Q[my $x = 1; $x += 3].AST;
 ok $ast.gist.contains('RakuAST::MetaInfix::Assign.new'),
@@ -32,6 +32,13 @@ is $at-pos.statements[1].expression.infix.^name,
     'AT-POS compound assignment exposes MetaInfix::Assign';
 is EVAL(Q[my @a = 1; @a.AT-POS(0) += 2; @a[0]].AST), 3,
     'EVAL of an AT-POS compound assignment executes';
+
+my $accessor = Q[class A { has $.x is rw }; my $o = A.new(x => 1); $o.x += 2].AST;
+is $accessor.statements[*-1].expression.left.postfix.^name,
+    'RakuAST::Call::Method',
+    'an rw accessor compound assignment retains its method lvalue';
+is EVAL(Q[class A2 { has $.x is rw }; my $o = A2.new(x => 1); $o.x += 2; $o.x].AST), 3,
+    'an rw accessor compound assignment survives the round trip';
 
 my $meta = RakuAST::MetaInfix::Assign.new(RakuAST::Infix.new('+'));
 isa-ok $meta, RakuAST::MetaInfix::Assign,
