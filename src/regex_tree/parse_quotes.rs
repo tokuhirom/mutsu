@@ -18,12 +18,8 @@ impl Parser {
                 // A body that interpolates keeps what the `qq` parser makes of it.
                 None => {
                     let expr = crate::parser::interpolate_qq_content(&body);
-                    if let crate::ast::Expr::Literal(value) = &expr {
-                        let crate::value::ValueView::Str(text) = value.view() else {
-                            return None;
-                        };
-                        self.pos = end + 1;
-                        return Some(RegexNode::Quote(text.to_string()));
+                    if matches!(expr, crate::ast::Expr::Literal(_)) {
+                        return None;
                     }
                     self.pos = end + 1;
                     return Some(RegexNode::Extension(RegexExtension::InterpolatedQuote {

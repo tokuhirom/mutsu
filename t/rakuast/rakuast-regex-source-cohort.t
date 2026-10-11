@@ -74,4 +74,5 @@ same Q[my $m = '12' ~~ /$<x>=<.digit>+/; $m<x>.map(~*).join(',')], '1,2',
     'dot-suppressed subrule alias retains per-iteration captures';
 same Q[~('a"b' ~~ /“a"b”/)], 'a"b', 'ASCII double quote is data inside smart double quotes';
 same Q[~('a"b' ~~ /„a"b”/)], 'a"b', 'ASCII double quote is data inside low smart quotes';
+dies-ok { Q[rx/"%b\x[QQ]"/].AST }, 'malformed escapes cannot become a partial quoted literal';
 done-testing;
