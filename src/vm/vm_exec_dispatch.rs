@@ -91,9 +91,10 @@ impl Interpreter {
             self.has_user_method(&cn, "message")
                 && !value.is_match_instance()
                 && (value.instance_is_exception_by_name()
-                    || self.mro_readonly(&cn).iter().any(|p| {
-                        p == "Exception" || p.starts_with("X::") || p.starts_with("CX::")
-                    }))
+                    || self
+                        .mro_readonly(&cn)
+                        .iter()
+                        .any(|p| p == "Exception" || p.starts_with("X::") || p.starts_with("CX::")))
         }) && matches!(value.view(), ValueView::Instance { .. });
         let message = if defer_user_message {
             format!(
