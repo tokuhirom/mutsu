@@ -138,7 +138,9 @@ impl Compiler {
             self.decl_scope_depth -= 1;
         }
         self.dynamic_scope_all = saved.dynamic_scope_all;
-        self.code.lexical_use_modules.truncate(saved.lexical_use_modules_len);
+        self.code
+            .lexical_use_modules
+            .truncate(saved.lexical_use_modules_len);
         self.variables_pragma = saved.variables_pragma;
         self.dynamic_scope_names = saved.dynamic_scope_names;
         self.user_listop_shadows = saved.user_listop_shadows;
