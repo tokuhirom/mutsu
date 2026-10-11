@@ -39,7 +39,19 @@ fn report_uncaught(
         // with no exception object, which the pure renderer handles.
         eprintln!("{}", gist);
     } else {
-        print_error("Runtime error", err, Some(input), Some(program_name));
+        let message = interpreter
+            .resolved_message(err)
+            .unwrap_or_else(|| err.message.to_string());
+        eprintln!(
+            "{}",
+            mutsu::error_render::render_error_with_message(
+                "Runtime error",
+                err,
+                &message,
+                Some(input),
+                Some(program_name)
+            )
+        );
     }
 }
 

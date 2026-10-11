@@ -151,10 +151,22 @@ pub fn render_error(
     source: Option<&str>,
     program_name: Option<&str>,
 ) -> String {
+    render_error_with_message(prefix, err, &err.message, source, program_name)
+}
+
+/// [`render_error`] with the message text supplied by the caller, for an error
+/// whose exception computes its text lazily (a user `method message`).
+pub fn render_error_with_message(
+    prefix: &str,
+    err: &RuntimeError,
+    message: &str,
+    source: Option<&str>,
+    program_name: Option<&str>,
+) -> String {
     // For runtime errors with a backtrace, use the Raku-style format:
     // message\n  in sub foo at file line N\n  in block <unit> at file line N
     if err.backtrace().is_some() && err.code().is_none() {
-        let mut out = err.message.to_string();
+        let mut out = message.to_string();
         if let Some(bt) = err.backtrace() {
             out.push('\n');
             out.push_str(bt);
@@ -182,7 +194,7 @@ pub fn render_error(
         return format_parse_error(err, src, name);
     }
 
-    let mut out = format!("{}: {}", prefix, err.message);
+    let mut out = format!("{}: {}", prefix, message);
     if let Some(line) = err.line() {
         if let Some(col) = err.column() {
             out.push_str(&format!("\n  at line {}, column {}", line, col));

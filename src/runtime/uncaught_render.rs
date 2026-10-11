@@ -49,4 +49,19 @@ impl Interpreter {
         }
         Some(text)
     }
+
+    /// The text of an error whose exception has a user `method message`,
+    /// computed now. A throw leaves that method unevaluated (Rakudo runs it
+    /// lazily), so the plain-text rendering used when `.gist` itself fails
+    /// needs it at report time. `None` when `err.message` is already right.
+    pub fn resolved_message(&mut self, err: &RuntimeError) -> Option<String> {
+        let exc = err.exception.as_ref()?;
+        let crate::value::ValueView::Instance { class_name, .. } = exc.view() else {
+            return None;
+        };
+        if !self.has_user_method(&class_name.resolve(), "message") {
+            return None;
+        }
+        Some(self.exception_message_or_died_with(exc))
+    }
 }
