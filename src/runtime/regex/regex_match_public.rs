@@ -394,14 +394,9 @@ impl Interpreter {
         // (always restored at the end of the match). Track their names
         // separately so they are never restored and always written back.
         let mut persist_always: HashSet<String> = HashSet::new();
-        // Snapshotted only once a declarator actually declares a token
-        // (`:my token t { … }`). Restoring takes a registry write guard and
-        // bumps `TOKEN_DEFS_GEN`, so doing it unconditionally invalidated the
-        // regex-code parse cache and every generation-keyed regex memo on
-        // every match of a pattern with a plain `:my $x = …` (#10121).
-        let mut saved_token_defs: Option<std::sync::Arc<crate::runtime::registry::TokenDefsMap>> =
-            None;
-
+        // A `:my token t { … }` declares into the enclosing lexical scope, like a
+        // statement-level `my token`: it stays registered after the match and is
+        // dropped by the block-scope restore when that scope exits (#10267).
         for (decl_name, stmt_src) in declarators {
             // A grammar rule frame has already initialized its own dynamic
             // declaration before this leading prefix is resolved. Do not run
@@ -457,25 +452,12 @@ impl Interpreter {
             if !handled_state_postfix && !handled_direct_assign {
                 let eval_src = stmt_src.clone();
                 let Some((stmts, id)) = self.parse_regex_code_cached_with_id(&eval_src) else {
-                    if let Some(saved) = saved_token_defs.take() {
-                        self.restore_token_defs(saved);
-                    }
                     self.writeback_persist_always(&persist_always);
                     self.restore_env_entries(restore_always);
                     self.restore_env_entries(restore_on_fail);
                     return None;
                 };
-                if saved_token_defs.is_none()
-                    && stmts
-                        .iter()
-                        .any(|s| matches!(s, Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. }))
-                {
-                    saved_token_defs = Some(self.registry().token_defs.clone());
-                }
                 if self.eval_block_value_cached(&stmts, id).is_err() {
-                    if let Some(saved) = saved_token_defs.take() {
-                        self.restore_token_defs(saved);
-                    }
                     self.writeback_persist_always(&persist_always);
                     self.restore_env_entries(restore_always);
                     self.restore_env_entries(restore_on_fail);
@@ -515,9 +497,6 @@ impl Interpreter {
 
         let mut result = self.regex_match_with_captures_core(&remaining_pattern, text);
         let matched = result.is_some();
-        if let Some(saved) = saved_token_defs {
-            self.restore_token_defs(saved);
-        }
         // A declarative `:my`/`:let` lexical is hoisted out of the pattern and
         // evaluated into `env` above, so an inline `{ … }` block reads it straight
         // from there. A `make`-bearing block does not run inline — it is replayed
