@@ -103,7 +103,10 @@ fn plain_newline_token(token: &RegexToken) -> bool {
 /// — every ASCII pattern — is passed through untouched, so this costs one
 /// segmentation pass and changes nothing for the overwhelming majority of
 /// patterns.
-pub(super) fn merge_grapheme_literal_tokens(tokens: Vec<RegexToken>) -> Vec<RegexToken> {
+pub(super) fn merge_grapheme_literal_tokens(
+    tokens: Vec<RegexToken>,
+    ws_barriers: &[usize],
+) -> Vec<RegexToken> {
     if !tokens
         .iter()
         .any(|t| matches!(t.atom, RegexAtom::Literal(ch) if can_start_a_longer_grapheme(ch) || expands_under_nfc(ch)))
@@ -113,7 +116,10 @@ pub(super) fn merge_grapheme_literal_tokens(tokens: Vec<RegexToken>) -> Vec<Rege
 
     let mut out: Vec<RegexToken> = Vec::with_capacity(tokens.len());
     let mut rest = tokens.into_iter().peekable();
+    // Number of input tokens taken from `rest` so far.
+    let mut consumed = 0usize;
     while let Some(first) = rest.next() {
+        consumed += 1;
         let Some(ch) = plain_literal_char(&first) else {
             out.push(first);
             continue;
@@ -134,6 +140,7 @@ pub(super) fn merge_grapheme_literal_tokens(tokens: Vec<RegexToken>) -> Vec<Rege
             .and_then(plain_literal_char)
         {
             let Some(next) = rest.next() else { break };
+            consumed += 1;
             let quantified = !matches!(next.quant, RegexQuant::One);
             text.push(next_ch);
             last = next;
@@ -161,13 +168,21 @@ pub(super) fn merge_grapheme_literal_tokens(tokens: Vec<RegexToken>) -> Vec<Rege
         // ("only the last token of a run may"), and folding it into the
         // following `\n` would silently discard that quantifier, turning an
         // optional `\r` into a mandatory one.
+        // Rakudo only pairs them when no (insignificant) whitespace sits
+        // between the two escapes or right after the `\n`: `/b \r\n c/` and
+        // `/\r \n/` do not match `"b\r\nc"`, `/b\r\nc/` does. `ws_barriers`
+        // holds the token indices at which the pattern skipped whitespace.
+        let pair_index = consumed - 1;
         if text.ends_with('\r')
             && matches!(last.quant, RegexQuant::One)
+            && !ws_barriers.contains(&(pair_index + 1))
+            && !ws_barriers.contains(&(pair_index + 2))
             && rest
                 .peek()
                 .is_some_and(|next| plain_newline_token(next) && same_flags(&last, next))
             && let Some(next) = rest.next()
         {
+            consumed += 1;
             text.push('\n');
             last = next;
         }

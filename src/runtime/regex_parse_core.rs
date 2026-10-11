@@ -1715,6 +1715,8 @@ impl Interpreter {
         };
         let mut chars = expanded.chars().peekable();
         let mut tokens = Vec::new();
+        // Token counts at which insignificant whitespace was skipped.
+        let mut ws_barriers: Vec<usize> = Vec::new();
         let mut anchor_start = false;
         let mut anchor_end = false;
         let mut pending_named_capture: Option<String> = None;
@@ -1822,6 +1824,9 @@ impl Interpreter {
             }
             // In Raku, unescaped whitespace in regex is insignificant
             if c.is_whitespace() {
+                if !sigspace {
+                    ws_barriers.push(tokens.len());
+                }
                 if sigspace {
                     while chars.peek().is_some_and(|next| next.is_whitespace()) {
                         chars.next();
@@ -5388,7 +5393,7 @@ impl Interpreter {
                 }
             }
         }
-        let tokens = merge_grapheme_literal_tokens(tokens);
+        let tokens = merge_grapheme_literal_tokens(tokens, &ws_barriers);
         let tokens = match rewrite_tilde_tokens(tokens, ignore_case, ignore_mark) {
             Ok(tokens) => tokens,
             Err(err) => {
