@@ -55,7 +55,7 @@ impl Interpreter {
         if op == "typeparameters" {
             return Ok(params);
         }
-        let idx = args.get(1).map_or(0, |v| crate::value::numeric_coerce::to_int(v));
+        let idx = args.get(1).map_or(0, crate::value::numeric_coerce::to_int);
         let item = match params.view() {
             ValueView::Array(items, _) => usize::try_from(idx).ok().and_then(|i| items.get(i).cloned()),
             _ => None,
