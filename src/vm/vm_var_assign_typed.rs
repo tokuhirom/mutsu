@@ -667,6 +667,20 @@ impl Interpreter {
         {
             return Ok(());
         }
+        // A lone raw `VMArray` / `VMHash` piece asks for `.Stringy`, which a
+        // BOOT collection lacks (#12689). With neighbouring text Rakudo joins
+        // through `~`, which accepts it, so only this shape is refused.
+        // TODO: `"a$raw"` also dies in Rakudo, but a block part (`"a{$raw}"`)
+        // does not and both reach this op as one piece.
+        if n == 1
+            && let Some(top) = self.stack.last()
+            && top.is_vm_collection()
+            && let Some(name) = top.vm_boot_type_name()
+        {
+            return Err(crate::runtime::did_you_mean::method_not_found(
+                "Stringy", name,
+            ));
+        }
         let start = self.stack.len() - n;
         let values: Vec<Value> = self.stack.drain(start..).collect();
         // Slice F: a user `.Str`/`.Stringy` method run during interpolation can

@@ -1407,6 +1407,8 @@ impl Interpreter {
             ValueView::Package(_) | ValueView::Instance { .. } | ValueView::Mixin(..) => {
                 self.type_matches_value("Any", val)
             }
+            // A raw native-element `VMArray` is not an `Any` (#12689).
+            _ if val.is_vm_array() => self.type_matches_value("Any", val),
             _ => true,
         }
     }
