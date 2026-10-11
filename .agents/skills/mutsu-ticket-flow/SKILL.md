@@ -201,6 +201,34 @@ produced a `todo:ticket`, a `todo:deep` and a `todo:perf` this way
 [#7613](https://github.com/tokuhirom/mutsu/issues/7613)) — and get named in the ADR section and the
 issue comment so they are not lost.
 
+### Stopping mid-campaign: end with a next-session prompt
+
+A campaign issue, or a single deep problem that needs more than one slice, is often still open when
+the session stops — the run cap is reached, the context is used up, or the user ends the session.
+That is expected. What is not acceptable is stopping in a way that makes the next session
+rediscover everything. So whenever you stop with work remaining on such an issue (user decision,
+2026-10-11), **finish by writing a prompt that a fresh session can be started with**:
+
+1. Write it as one self-contained block a cold session can act on without this transcript:
+   - the issue number and, if any, the owning ADR and its section;
+   - what this session landed (PR numbers, merged or still open — an open PR is named with its
+     branch and what it still waits on);
+   - **the next remainder to take**, concretely: the file/function, the failing test or repro
+     command, and the approach you would try first;
+   - what you ruled out and why (dead ends are information), plus any recipe you found stale;
+   - the decisions the user still owes, if any.
+   It is a prompt, not a report: write it in the imperative ("Work #NNNN. Take remainder …"), and
+   in English like every repository artifact.
+2. **Post it as a comment on the issue**, headed `Next-session prompt`, so it survives the
+   ephemeral container. A later prompt supersedes an earlier one; say so in its first line when
+   one already exists.
+3. **Repeat it verbatim at the end of your final report to the user** in a fenced block they can
+   copy straight into a new session.
+
+This replaces, not adds to, the "say what comes next" line of the issue comment in step 5 of the
+slice loop above: the prompt *is* that record. It does not excuse stopping early — "It is too hard"
+is still not an outcome; the prompt records where a real attempt stopped.
+
 ### Closing a campaign issue
 
 Close it when **the remainders it names** are resolved, having first filed anything genuinely still

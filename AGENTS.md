@@ -346,7 +346,10 @@ still catches something. One coherent architectural PR beats ten micro-PRs danci
 problem. Do not fear complex features: when a test needs several unrelated features, implement
 them all in the same PR. **A `todo:deep` issue is not a license to give up**: "too hard / too
 large / too risky" is never a reason to stop or release it — write the design, then implement it, or
-land the largest green slice and record the remainder (see `mutsu-ticket-flow`).
+land the largest green slice and record the remainder (see `mutsu-ticket-flow`). A session that
+stops with a campaign or multi-slice issue still open ends by writing a **next-session prompt** —
+posted on the issue and repeated in the final report (`mutsu-ticket-flow`, "Stopping
+mid-campaign").
 
 ### ADRs
 
