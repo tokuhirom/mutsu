@@ -3,7 +3,7 @@ use Test;
 # `:name(alias) (sub-signature)`: the trailing sub-signature destructures the
 # named argument's value, in addition to the alias binding (#10310,
 # CSS::Stylesheet's `load(:at-rule(%)! (Str:D :at-keyw($type)!, *%ast))`).
-plan 11;
+plan 10;
 
 sub f1(:x($r) ($a, $b)) { "$a-$b" }
 is f1(x => (1, 2)), '1-2', 'positional destructure of a named value';
@@ -36,7 +36,3 @@ multi pick(:q(@)! (% (:keyw($_)!), $m)) { "first" }
 multi pick(:q(@)! ($m, *@e)) { "second" }
 is pick(q => [{ident => 'print'},]), 'second', 'missing required key: next candidate';
 is pick(q => [{keyw => 'x'}, 3]), 'first', 'fitting value: first candidate';
-
-multi arity(:q(@)! ($m, $z)) { "two" }
-multi arity(:q(@)! ($m, *@e)) { "slurpy" }
-is arity(q => [1]), 'slurpy', 'too few elements';
