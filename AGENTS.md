@@ -25,6 +25,7 @@ Re-check ADR status lines rather than relying on an old issue's description of t
 | --- | --- |
 | [`mutsu-ticket-flow`](.agents/skills/mutsu-ticket-flow/SKILL.md) | Working `todo:ticket` issues end-to-end through merge |
 | [`issue-backlog-pipeline`](.agents/skills/issue-backlog-pipeline/SKILL.md) | Orchestrating several issues at once with parallel worktree sub-agents |
+| [`lane-session-fanout`](.agents/skills/lane-session-fanout/SKILL.md) | Starting one remote session per free issue lane (`create_session`), keeping each on several tickets, relaunching finished lanes |
 | [`roast-triage`](.agents/skills/roast-triage/SKILL.md) | Choosing the next roast target, or investigating one failing `roast/*.t` |
 | [`debugging`](.agents/skills/debugging/SKILL.md) | Before adding any `eprintln!`: AST dumps, `MUTSU_TRACE`, scripted `rust-gdb` |
 | [`perf-tuning`](.agents/skills/perf-tuning/SKILL.md) | Profiling, A/B-measuring and landing a perf change — a `todo:perf` issue, or before quoting any performance number |
