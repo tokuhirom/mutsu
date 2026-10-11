@@ -1855,7 +1855,7 @@ impl Interpreter {
                     && (!data.authoritative_captures.contains(k)
                         || cc.free_var_writes.contains(k)
                         || cc.free_var_container_writes.contains(k))
-                    && (restored_env.contains_key_sym(*k)
+                    && (restored_env.contains_key_sym_through_callers(*k)
                         || captured_names.contains_key(k)
                         || (meta_possible
                             && (k.starts_with("__mutsu_predictive_seq_iter::")
@@ -1882,7 +1882,9 @@ impl Interpreter {
                     // them. This prevents independent closures from sharing state
                     // via the calling env (e.g. two closures from the same factory
                     // should have their own captured variable copies).
-                    if captured_names.contains_key(k) && !restored_env.contains_key_sym(*k) {
+                    if captured_names.contains_key(k)
+                        && !restored_env.contains_key_sym_through_callers(*k)
+                    {
                         continue;
                     }
                     // A captured name the body never references (not a free var)
@@ -1932,10 +1934,12 @@ impl Interpreter {
                     // not structurally: a deep `==` over an object graph with
                     // back references (an XML tree's parent links) never ends,
                     // and a refresh of an equal-but-distinct value is harmless.
-                    if restored_env.contains_key_sym(*k)
-                        && !restored_env.get_sym(*k).is_some_and(|before| {
-                            crate::runtime::utils::container_identity_identical(before, v)
-                        })
+                    if restored_env.contains_key_sym_through_callers(*k)
+                        && !restored_env
+                            .get_sym_through_callers(*k)
+                            .is_some_and(|before| {
+                                crate::runtime::utils::container_identity_identical(before, v)
+                            })
                         && !k.starts_with("__mutsu")
                     {
                         caller_writeback.push(*k);
@@ -1961,7 +1965,7 @@ impl Interpreter {
                     if *k != underscore_sym
                         && *k != at_underscore_sym
                         && !param_names.contains(k)
-                        && restored_env.contains_key_sym(*k)
+                        && restored_env.contains_key_sym_through_callers(*k)
                         && Self::free_var_changed(old.as_ref(), self.env().get_sym(*k))
                     {
                         self.pending_rw_writeback_sources
@@ -2059,13 +2063,14 @@ impl Interpreter {
                     // (issue #8540).
                     if !data.env.contains_key_sym(sym)
                         && !param_names.contains(&sym)
-                        && !restored_env.contains_key_sym(sym)
+                        && !restored_env.contains_key_sym_through_callers(sym)
                     {
                         restored_env.remove_sym(sym);
                     }
                 }
                 None => {
-                    if !data.env.contains_key(local_name) && !restored_env.contains_key(local_name)
+                    if !data.env.contains_key(local_name)
+                        && !restored_env.get_through_callers(local_name).is_some()
                     {
                         restored_env.remove(local_name);
                     }
@@ -2084,7 +2089,7 @@ impl Interpreter {
             let current = self.clone_env();
             let dying: crate::runtime::NameSet = current
                 .keys()
-                .filter(|k| !restored_env.contains_key_sym(**k))
+                .filter(|k| !restored_env.contains_key_sym_through_callers(**k))
                 .copied()
                 .collect();
             self.update_end_phaser_envs(end_phaser_mark_before, &current, &dying);

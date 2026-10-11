@@ -160,10 +160,32 @@ impl Env {
         }
     }
 
+    /// [`Self::flattened`] for a flatten that replaces the chain a live frame
+    /// runs in (`flatten_scoped_env`, `MAX_OVERLAY_DEPTH`): the collapsed tier
+    /// records the program scope below the chain's call frames
+    /// ([`Self::flattened_program_scope`]). A capture's flatten does not: a
+    /// closure's frame reaches its capture through a fallback, never as the
+    /// bottom of its chain.
+    // Cost: O(n) for the flatten, n = visible entries; plus O(d), d = chain
+    // tiers.
+    pub(crate) fn flattened_recording_program_scope(&self) -> Env {
+        let mut flat = self.flattened();
+        if let Some(record) = self.flattened_program_scope() {
+            let StaticLink::UnitOuter { target, .. } = &*record;
+            // A chain whose frames hold nothing collapses to the program
+            // scope itself, which needs no record of itself.
+            if !Arc::ptr_eq(&flat.inner, &target.inner) {
+                flat.cow_mut().set_static_link(record);
+            }
+        }
+        flat
+    }
+
     /// What a flattening of this chain keeps of its frame structure: the
-    /// program scope below its call frames, which [`Self::flattened`] records
-    /// on the collapsed tier as a [`StaticLink`] of a non-root env. `None` when
-    /// the chain is the program scope itself.
+    /// program scope below its call frames, which
+    /// [`Self::flattened_recording_program_scope`] records on the collapsed
+    /// tier as a [`StaticLink`] of a non-root env. `None` when the chain is
+    /// the program scope itself.
     ///
     /// A flattened env merges a frame's names with every caller's and the
     /// program scope's, so "below the deepest frame root" no longer finds the
@@ -174,7 +196,7 @@ impl Env {
     /// program scope is looked for (`program_scope_from`,
     /// `link_static_outer_to_unit`, the next flattening).
     // Cost: O(d), d = chain tiers.
-    pub(super) fn flattened_program_scope(&self) -> Option<Arc<StaticLink>> {
+    fn flattened_program_scope(&self) -> Option<Arc<StaticLink>> {
         let unit = |target: &Arc<Env>| {
             Arc::new(StaticLink::UnitOuter {
                 target: Arc::clone(target),
@@ -285,6 +307,21 @@ impl Env {
     // Cost: O(d), d = chain tiers.
     pub(crate) fn get_through_callers(&self, key: &str) -> Option<&Value> {
         with_static_links_suppressed(|| self.get(key))
+    }
+
+    /// [`Self::contains_key_sym`] through the whole chain, callers included,
+    /// whatever static links it holds -- the membership twin of
+    /// [`Self::get_through_callers`], for the same writeback machinery.
+    // Cost: O(d), d = chain tiers.
+    pub(crate) fn contains_key_sym_through_callers(&self, key: Symbol) -> bool {
+        with_static_links_suppressed(|| self.contains_key_sym(key))
+    }
+
+    /// [`Self::get_sym`] through the whole chain; see
+    /// [`Self::get_through_callers`].
+    // Cost: O(d), d = chain tiers.
+    pub(crate) fn get_sym_through_callers(&self, key: Symbol) -> Option<&Value> {
+        with_static_links_suppressed(|| self.get_sym(key))
     }
 
     /// Where a lookup of `key` that missed this env continues, when this env

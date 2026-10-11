@@ -973,7 +973,7 @@ impl Env {
                 arc = gp;
             }
             if arc.depth >= MAX_OVERLAY_DEPTH {
-                let flat = arc.flattened();
+                let flat = arc.flattened_recording_program_scope();
                 let (flat_depth, flat_chf) = (flat.depth, flat.chain_has_fallback);
                 return Self {
                     inner: empty_overlay(),
@@ -1014,7 +1014,7 @@ impl Env {
             };
         }
         let parent = if parent.depth >= MAX_OVERLAY_DEPTH {
-            parent.flattened()
+            parent.flattened_recording_program_scope()
         } else {
             parent
         };
@@ -1287,7 +1287,7 @@ impl Env {
             self.is_scoped(),
             "flattened_for_frame is the scoped-env collapse; a flat env has no tier to record"
         );
-        let mut flat = self.flattened();
+        let mut flat = self.flattened_recording_program_scope();
         // A `remove` in this tier is a write the frame made too: the unwind
         // has to consider the name even though the flatten already applied the
         // tombstone and the key is gone from the merged map.
@@ -1558,7 +1558,7 @@ impl Env {
                     .flatten()
                     .map(Box::new);
                 Self {
-                    inner: Arc::new(self.flattened_tier(merged)),
+                    inner: Arc::new(Tier::new(merged)),
                     parent: None,
                     tombstones,
                     depth: 0,
@@ -1580,18 +1580,6 @@ impl Env {
                 }
             }
         }
-    }
-
-    /// The collapsed tier of a flattening of this chain: `merged`, recording
-    /// the program scope below the chain's call frames when it has any
-    /// ([`Self::flattened_program_scope`]).
-    // Cost: O(d), d = chain tiers.
-    fn flattened_tier(&self, merged: SymMap) -> Tier {
-        let mut tier = Tier::new(merged);
-        if let Some(record) = self.flattened_program_scope() {
-            tier.set_static_link(record);
-        }
-        tier
     }
 
     /// Push every capture [`fallback`](Self::fallback) in this chain into
@@ -1705,7 +1693,7 @@ impl Env {
             .flatten()
             .map(Box::new);
         Self {
-            inner: Arc::new(self.flattened_tier(merged)),
+            inner: Arc::new(Tier::new(merged)),
             parent: None,
             tombstones,
             depth: 0,
