@@ -70,6 +70,23 @@ impl Interpreter {
         coerced
     }
 
+    /// An `Array[Str]` stored into an `@` attribute is copied into the
+    /// attribute's own container: the source's element-type tag does not
+    /// travel with it (`has @.c` holds a plain `Array`). A typed attribute
+    /// re-tags the container afterwards (`finalize_typed_container_attr`).
+    fn strip_array_type_meta(val: Value) -> Value {
+        if let ValueView::Array(arc, kind) = val.view()
+            && (arc.value_type.is_some() || arc.key_type.is_some() || arc.declared_type.is_some())
+        {
+            let mut data = (**arc).clone();
+            data.value_type = None;
+            data.key_type = None;
+            data.declared_type = None;
+            return Value::array_with_kind(crate::gc::Gc::new(data), kind);
+        }
+        val
+    }
+
     /// Coerce a value based on attribute sigil: @ → Array, % → Hash
     pub(crate) fn coerce_attr_value_by_sigil(val: Value, sigil: char) -> Value {
         match sigil {
@@ -91,7 +108,7 @@ impl Interpreter {
                 // here. The first read still consumes it correctly; only a
                 // repeat read stays wrong, exactly as before.
                 ValueView::Seq(items) if items.has_deferred_source() => val.clone(),
-                _ => crate::runtime::utils::coerce_to_array(val),
+                _ => Self::strip_array_type_meta(crate::runtime::utils::coerce_to_array(val)),
             },
             '%' => match val.view() {
                 // A `$`-held hash (`${...}`, or `$h` from `my $h = {...}`)
