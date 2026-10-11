@@ -849,6 +849,7 @@ impl Interpreter {
             // its lazy source instead of turning it into an empty Seq.
             && !matches!(target.view(), ValueView::LazyList(ll) if ll.needs_vm_lazy_dispatch())
         {
+            Self::validate_map_callable(args.first(), &target)?;
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmutwithvalues",
                 "map-rw-writeback",

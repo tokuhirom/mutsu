@@ -603,6 +603,49 @@ impl Interpreter {
         target
     }
 
+    /// Validate the callback shared by both `.map` dispatch routes.
+    // Cost: O(1).
+    pub(crate) fn validate_map_callable(
+        func: Option<&Value>,
+        target: &Value,
+    ) -> Result<(), RuntimeError> {
+        let Some(func) = func else {
+            return Ok(());
+        };
+        // Look through a role-mixed callable (`&foo but R1`) the same way
+        // `call_sub_value` does when actually invoking it.
+        let unwrapped = Self::unwrap_callable_mixin(func.clone());
+        let is_callable = matches!(
+            unwrapped.view(),
+            ValueView::Sub(_)
+                | ValueView::Routine { .. }
+                | ValueView::WeakSub(_)
+                | ValueView::Regex(_)
+                | ValueView::RegexWithAdverbs(_)
+        ) || (matches!(unwrapped.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "WhateverCode" || class_name.resolve() == "HyperWhateverCode"))
+            || matches!(unwrapped.view(), ValueView::Whatever);
+        if is_callable {
+            return Ok(());
+        }
+        let mut attrs = HashMap::new();
+        attrs.insert(
+            "message".to_string(),
+            Value::str(format!(
+                "Cannot map a {} to a {}, it's not callable.",
+                super::value_type_name(func),
+                super::value_type_name(target),
+            )),
+        );
+        let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Cannot::Map"), attrs);
+        let mut err = RuntimeError::new(format!(
+            "X::Cannot::Map: Cannot map a {} to a {}",
+            super::value_type_name(func),
+            super::value_type_name(target),
+        ));
+        err.exception = Some(Box::new(ex));
+        Err(err)
+    }
+
     /// Cost: O(1) at the call on a non-shaped Array (read at pull time,
     /// `MapGrepItems::Live`); O(e) on any other invocant, e = elements
     /// (copied into the deferred `MapGrep` source). The callback runs at
@@ -626,44 +669,7 @@ impl Interpreter {
         {
             return self.dispatch_supply_map(&target, &(attributes).as_map(), &args);
         }
-        // Validate that the map argument is callable (X::Cannot::Map)
-        if let Some(func) = args.first() {
-            // Look through a role-mixed callable (`&foo but R1`) the same way
-            // `call_sub_value` does when actually invoking it, so this
-            // pre-check and the real invocation agree on what counts as
-            // callable (see
-            // `todo/tickets/map-rejects-role-mixed-sub-as-callable.md`).
-            let unwrapped = Self::unwrap_callable_mixin(func.clone());
-            let is_callable = matches!(
-                unwrapped.view(),
-                ValueView::Sub(_)
-                    | ValueView::Routine { .. }
-                    | ValueView::WeakSub(_)
-                    | ValueView::Regex(_)
-                    | ValueView::RegexWithAdverbs(_)
-            ) || (matches!(unwrapped.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "WhateverCode" || class_name.resolve() == "HyperWhateverCode"))
-                || matches!(unwrapped.view(), ValueView::Whatever);
-            if !is_callable {
-                let mut attrs = HashMap::new();
-                attrs.insert(
-                    "message".to_string(),
-                    Value::str(format!(
-                        "Cannot map a {} to a {}, it's not callable.",
-                        super::value_type_name(func),
-                        super::value_type_name(&target),
-                    )),
-                );
-                let ex =
-                    Value::make_instance(crate::symbol::Symbol::intern("X::Cannot::Map"), attrs);
-                let mut err = RuntimeError::new(format!(
-                    "X::Cannot::Map: Cannot map a {} to a {}",
-                    super::value_type_name(func),
-                    super::value_type_name(&target),
-                ));
-                err.exception = Some(Box::new(ex));
-                return Err(err);
-            }
-        }
+        Self::validate_map_callable(args.first(), &target)?;
         // A not-yet-run `.map`/`.grep` receiver: chain onto its source so the
         // two callbacks interleave per element (#11176). A map run inside a
         // gather body stays eager (see below), so it takes the receiver whole.
