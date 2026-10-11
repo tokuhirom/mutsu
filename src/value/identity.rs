@@ -60,6 +60,9 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
             let b_name = b.resolve();
             canonical_meta_name(&a_name) == canonical_meta_name(&b_name)
         }
+        // A type made by `Metamodel::Primitives.create_type` is one object per
+        // `id`, however many times the value was copied around.
+        (ValueView::CustomType(a), ValueView::CustomType(b)) => a.id == b.id,
         (ValueView::Package(name), ValueView::Int(0))
         | (ValueView::Int(0), ValueView::Package(name))
             if name.resolve() == "int" =>

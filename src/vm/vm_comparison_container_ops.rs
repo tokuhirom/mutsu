@@ -111,6 +111,9 @@ impl Interpreter {
                 (ValueView::Package(a), ValueView::Package(b)) => a == b && a.as_str() != "Any",
                 (ValueView::Sub(a), ValueView::Sub(b)) => crate::gc::Gc::ptr_eq(&a, &b),
                 (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(&a, &b),
+                // A `Metamodel::Primitives.create_type` type object is a
+                // singleton like a Package.
+                (ValueView::CustomType(a), ValueView::CustomType(b)) => a.id == b.id,
                 _ => false,
             }
         };
