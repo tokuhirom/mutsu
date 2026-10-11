@@ -1519,8 +1519,8 @@ default; a by-value `QuantHash` is mutated in place.
 ### 9.70 The numeric conversions, `base` and `polymod` of the numbers (2026-10-11)
 
 `refactor/12675-numeric-coercion-rows` (issue #12675). Measured with `method-rows-report.py --inventory` on every group not yet measured:
-`numbers` still owed 33 declared rows, `text` 38 (spread over fifteen names), `time` 2, `match` 0, `quant hashes` 11. The numbers' conversion matrix was the
-largest block with one obvious shape, so it went first: 58 rows in five new modules of `method_table/scalars/`.
+`numbers` still owed 33 declared rows, `text` 40 (spread over fifteen names), `time` 2, `match` 0, `quant hashes` 9. The numbers' conversion matrix was the
+largest block with one obvious shape, so it went first: 43 rows in four new modules of `method_table/scalars/`.
 
 - **`numeric_coerce`** (`Numeric`, `Real`, `Rat`, `FatRat`, `Complex` on `Int`, `Num`, `Rat`; `Numeric` and `Complex` on `Complex`; `Rat` and `FatRat`
   also with an `epsilon`). Each conversion is one `*_of` function that the row and the cascade arm both call; the arms keep `Str`, the aggregates and the
