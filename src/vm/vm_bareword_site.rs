@@ -125,6 +125,24 @@ impl Interpreter {
             .with_str(|short| short.split('\u{0}').next() == Some(name))
     }
 
+    /// The storage key of a `my role R` declared inside an enclosing package
+    /// (`unit class M; my role R {...}` registers `M::R\u{0}<decl-id>`), found
+    /// by walking the bare-name package chain innermost first. A sub of `M`
+    /// called from another unit has no `env` binding for `R`, and the plain
+    /// `M::R` probe misses the mangled key.
+    // Cost: O(p*t), p = packages on the bare-name search path, t = registered types.
+    fn package_lexical_role_key(&self, name: &str) -> Option<String> {
+        self.bare_name_packages().into_iter().find_map(|pkg| {
+            if crate::qualified::is_global_name(&pkg) {
+                return None;
+            }
+            let qualified =
+                crate::qualified::qualified_text(pkg.split("::&").next().unwrap_or(&pkg), name);
+            self.resolve_lexical_type_key(qualified.as_str())
+                .filter(|key| self.has_role(key))
+        })
+    }
+
     /// The role a `does`/`but` initializer `R(v)` names
     /// ([`OpCode::JumpIfNotRole`]), if `name` names one, resolved as a bare
     /// type name in call position is (a lexical `my role R`, or `M::R` from
@@ -141,6 +159,7 @@ impl Interpreter {
             None => self
                 .unique_lexical_type_key(&spelled)
                 .filter(|key| self.has_role(key))
+                .or_else(|| self.package_lexical_role_key(&spelled))
                 .map(|key| Symbol::intern(&key)),
         }
     }
