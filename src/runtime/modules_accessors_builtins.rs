@@ -23,6 +23,7 @@ mod builtins_atomic_index;
 mod builtins_atomic_elem_cell;
 mod builtins_atomic_lexical_cells;
 mod builtins_atomic_shared;
+mod builtins_celled_array_extend;
 mod builtins_coerce;
 pub(crate) mod builtins_collection;
 mod builtins_collection_classify;
