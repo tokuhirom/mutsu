@@ -28,6 +28,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row("Int"),
     row("Num"),
     row("Rat"),
+    row("FatRat"),
     row("Instant"),
     row("Duration"),
 ];
