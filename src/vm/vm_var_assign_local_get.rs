@@ -696,15 +696,14 @@ impl Interpreter {
         // list, and the type-constraint refusal below it went entirely -- an
         // unboxed captured-and-mutated lexical is precisely the residue the
         // vouch/cell dichotomy has to cover.
-        // A `&` code variable holds a `Sub` by nature; its binding is what
-        // the cell shares, so a code value is boxed like any scalar value.
-        let is_code_var = name.starts_with('&');
+        // A code value is boxed like any scalar value: a `&` code variable
+        // holds a `Sub` by nature, and a `$` scalar holding one (`my $err =
+        // sub {...}` that a module sub reassigns) must alias one cell with the
+        // closures built over it, or a worker thread reads a stale snapshot.
         if !cur.is_any_type_object()
-            && !(is_code_var && matches!(cur.view(), ValueView::Sub(..)))
             && matches!(
                 cur.view(),
-                ValueView::Sub(..)
-                    | ValueView::Proxy { .. }
+                ValueView::Proxy { .. }
                     | ValueView::Seq(..)
                     | ValueView::HyperSeq(..)
                     | ValueView::RaceSeq(..)
