@@ -519,6 +519,10 @@ impl Interpreter {
                     self.box_decl_local_cell(code, *slot as usize);
                 }
             }
+            // Whether the class's HOW carried a `compose` hook before its body
+            // ran: a method trait in the body (`is also<x>`) can mix one in,
+            // and that hook runs when the class composes, below.
+            let how_hook_before = self.class_how_compose_hook(&storage_name);
             let deferred_traits = loan_env!(
                 self,
                 register_class_decl(
@@ -778,9 +782,6 @@ impl Interpreter {
             self.apply_native_type_traits(&storage_name, repr.as_deref(), custom_traits)?;
             // `is array_type(T)` is core too (`runtime::array_type_trait`).
             self.apply_class_array_type_trait(&storage_name, custom_traits)?;
-            // Remember whether the class's HOW already carried a `compose`
-            // hook, so one mixed in by the traits below can be told apart.
-            let how_hook_before = self.class_how_compose_hook(&storage_name);
             // Dispatch custom `is` traits via trait_mod:<is> if defined.
             // Merge explicitly parsed custom_traits with deferred_traits
             // (unknown lowercase parents deferred from register_class_decl).
