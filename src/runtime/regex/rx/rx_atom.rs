@@ -113,6 +113,66 @@ impl Interpreter {
         self.match_consuming_atom(&program.atoms[i], chars, pos, pkg, program.atom_ic[i])
     }
 
+    /// Match `program.atoms[i]` repeatedly from `pos`, at most `max` times,
+    /// pushing the position after each iteration onto `ends`; the number of
+    /// iterations. Each step answers exactly what [`Self::rx_atom_at`] would,
+    /// with the atom's ASCII set looked up once for the run.
+    // Cost: O(k) on ASCII text, O(k * g) otherwise, k = the iterations
+    // matched, g = a grapheme's length.
+    pub(super) fn rx_atom_run(
+        &mut self,
+        program: &RxProgram,
+        i: usize,
+        chars: &[char],
+        pos: usize,
+        max: u32,
+        pkg: Symbol,
+        ends: &mut Vec<usize>,
+    ) -> u32 {
+        let set = program.ascii_sets(self, pkg)[i];
+        let mut at = pos;
+        let mut n = 0u32;
+        while n < max {
+            let next = match (set, single_ascii(chars, at)) {
+                (Some(set), Some(c)) => (set & (1u128 << c) != 0).then_some(at + 1),
+                _ => self.match_consuming_atom(&program.atoms[i], chars, at, pkg, program.atom_ic[i]),
+            };
+            let Some(next) = next else { break };
+            at = next;
+            ends.push(at);
+            n += 1;
+        }
+        n
+    }
+
+    /// The largest give-back count `j` in `min..n` of a run whose positions
+    /// are `run_ends` (`run_ends[c]` is where the cursor stands after `c`
+    /// iterations) at which the single-grapheme atom `next_atom` that follows
+    /// the run might match, or `None` when it provably matches at none of
+    /// them. A position is ruled out only when the grapheme there is provably
+    /// one printable ASCII character that `next_atom`'s ASCII set rejects, so
+    /// pruning the give-backs above `j` removes only retries that fail at
+    /// once, with nothing to undo.
+    // Cost: O(n - j), the give-backs ruled out.
+    pub(super) fn rx_run_giveback_top(
+        &mut self,
+        program: &RxProgram,
+        next_atom: usize,
+        chars: &[char],
+        run_ends: &[usize],
+        min: usize,
+        n: usize,
+        pkg: Symbol,
+    ) -> Option<usize> {
+        let Some(set) = program.ascii_sets(self, pkg)[next_atom] else {
+            return n.checked_sub(1).filter(|&j| j >= min);
+        };
+        (min..n).rev().find(|&j| match single_ascii(chars, run_ends[j]) {
+            Some(c) => set & (1u128 << c) != 0,
+            None => true,
+        })
+    }
+
     /// Where `:sigspace`'s `<.ws>` (`RegexAtom::WsRule`) ends at `pos`: a
     /// `ws` method wrapped with `.wrap` runs through its wrapper chain, as in
     /// the walk; otherwise the built-in `<!ww> \s*` (`ws_rule_end`).
