@@ -234,9 +234,11 @@ impl Interpreter {
             "fromI_I" => operand(args, 0),
 
             // -- boxing / native reads --
-            // A class with an `is box_target` attribute boxes into it
-            // (`runtime::box_native`); any other type operand is the plain value.
-            // Cost: O(1).
+            // A class with an `is box_target` attribute, or a user subclass of
+            // the value's scalar type, boxes into it (`runtime::box_native`);
+            // any other type operand is the plain value.
+            // Cost: O(1) for a built-in type operand; O(d + a) for a user class,
+            // d = MRO length (cached), a = its attributes (one `nqp::create`).
             "box_n" => {
                 let boxed = Value::num(narg(args, 0));
                 match self.box_native_into_class(args.get(1), boxed.clone()) {
@@ -244,7 +246,9 @@ impl Interpreter {
                     None => boxed,
                 }
             }
-            // Cost: O(1) for a machine-word Int; O(d), d = digits of a BigInt.
+            // Cost: O(1) for a machine-word Int; O(d), d = digits of a BigInt;
+            // plus O(m + a) into a user class, m = its MRO length (cached),
+            // a = its attributes (one `nqp::create`).
             "box_u" => {
                 let boxed = uint64_value(&operand(args, 0));
                 match self.box_native_into_class(args.get(1), boxed.clone()) {

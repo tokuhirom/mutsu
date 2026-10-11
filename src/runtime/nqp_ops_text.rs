@@ -147,9 +147,12 @@ impl Interpreter {
             // nqp::box_s($str, $type) -> a boxed string. mutsu's Str is not a
             // separate representation, so the type operand only has to be
             // honoured for a class that boxes into storage of its own: an
-            // `is box_target` attribute, or a `CStr` REPR's C string
-            // (`runtime::box_native`). Any other type is the plain Str.
-            // Cost: O(n), n = chars of $str (copied). MoarVM: O(1) -- see #9134.
+            // `is box_target` attribute, a `CStr` REPR's C string, or an
+            // `is Str` subclass's payload (`runtime::box_native`). Any other
+            // type is the plain Str.
+            // Cost: O(n), n = chars of $str (copied), plus O(d + a) into a user
+            // class, d = its MRO length (cached), a = its attributes (one
+            // `nqp::create`). MoarVM: O(1) -- see #9134.
             "box_s" => {
                 let boxed = Value::str(sarg(args, 0));
                 match self.box_native_into_class(args.get(1), boxed.clone()) {
