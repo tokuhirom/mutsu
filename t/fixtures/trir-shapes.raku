@@ -297,7 +297,7 @@ class AttrSite { has $!a; has int $!n; has str $!s; has @!items; }
 my sub as-get($o) { nqp::getattr($o, AttrSite, '$!a') }
 my sub as-get-i($o, $d) { nqp::getattr_i($o, AttrSite, '$!n') }
 my sub as-get-s($o, $d) { nqp::getattr_s($o, AttrSite, '$!a') }
-my sub as-get-list($o, $d) { nqp::elems(nqp::getattr($o, AttrSite, '@!items')) }
+my sub as-get-list($o, $d) { nqp::getattr($o, AttrSite, '@!items').elems }
 my sub as-get-missing($o, $d) { nqp::getattr($o, AttrSite, '$!nope').raku }
 my sub as-bind($o, $v) { nqp::bindattr($o, AttrSite, '$!a', $v) }
 my sub as-bind-i($o, $v) { nqp::bindattr_i($o, AttrSite, '$!n', $v) }
@@ -305,7 +305,7 @@ my sub as-bind-s($o, $v) { nqp::bindattr_s($o, AttrSite, '$!s', $v) }
 my sub as-bind-empty($o, $v) { nqp::bindattr($o, AttrSite, '$!', $v) }
 my sub as-reified($r, $d) { nqp::elems(nqp::getattr($r, List, '$!reified')) }
 my sub as-storage($h, $d) { nqp::elems(nqp::getattr($h, Map, '$!storage')) }
-my sub as-rebind($r, $b) { nqp::bindattr($r, List, '$!reified', $b); nqp::elems($r) }
+my sub as-rebind($r, $b) { nqp::bindattr($r, List, '$!reified', $b); $r.elems }
 my sub as-match-pos($m, $d) { nqp::getattr_i($m, Match, '$!pos') }
 {
     my $o = AttrSite.new;
