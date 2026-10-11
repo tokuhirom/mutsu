@@ -508,7 +508,7 @@ impl Interpreter {
         // (ADR-12529 phase 3, `env::static_link`). Created at program scope,
         // the live program scope is its outer; created in a call frame, its
         // capture (that frame's scope) answers first.
-        if cc.needs_reflective_capture || cc.indirect_name_lookup {
+        if cc.static_name_lookup {
             let capture_first = !data.env.is_program_scope_capture();
             self.env_mut().link_static_outer_to_unit(capture_first);
         }

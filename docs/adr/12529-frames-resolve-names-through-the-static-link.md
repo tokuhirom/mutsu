@@ -438,8 +438,17 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    frame that creates an escaping reflective closure into
    `needs_cell_locals`, and the capture boxes the visible ones into shared
    cells first (`box_locals_for_reflective_capture`), as an escaping
-   closure's mutated free variables already are (ADR-0018). A closure that
-   only runs `::($name)` (`indirect_name_lookup`) is linked the same way.
+   closure's mutated free variables already are (ADR-0018).
+
+   Which code is linked is now `CompiledCode::static_name_lookup`: code
+   (or a closure nested in it) that names a lexical by string -- `EVAL`, a
+   symbolic or `::($name)` lookup, a pseudo-package. Slice 3 keyed on
+   `needs_reflective_capture`, which also covers bodies that only *run*
+   against the live env by name (`gather`, `whenever`, a package body) or
+   observe callers (`callframe`); linking a `react` body made a `whenever`
+   callback resolve `$t` in the program scope instead of the react frame.
+   `CALLER::`/`CALLERS::` read the caller frame through the whole chain
+   (`Env::get_through_callers`), whatever links it holds.
 
    What is still dynamic: a reflective *write* (`EVAL q[$x = 1]`) lands in
    the frame's overlay and the return merge carries it to the caller, as

@@ -1152,13 +1152,20 @@ impl Interpreter {
             // The creating frame's scalars the closure reads through its
             // capture are shared cells, so a write after this point reaches it
             // (ADR-12529 phase 3; the compiler put them in `needs_cell_locals`).
-            let at_program_scope = !self.env().chain_has_frame_root();
-            if !at_program_scope {
+            // Only a closure that names lexicals by string reads them through
+            // its capture ahead of its callers; a `gather`/`whenever` body
+            // runs against the live env and keeps the plain copy.
+            let at_program_scope = cc.static_name_lookup && !self.env().chain_has_frame_root();
+            if cc.static_name_lookup && !at_program_scope {
                 self.box_locals_for_reflective_capture(code);
             }
             // The creating frame's lexical scope, not its callers': a static
             // link in the chain hides what it skips (ADR-12529 phase 3).
-            let mut flat = self.env().flattened_static_view();
+            let mut flat = if cc.static_name_lookup {
+                self.env().flattened_static_view()
+            } else {
+                self.clone_env()
+            };
 
             // Even when capturing the whole env by name, a slot-only local (a
             // pointy-block/sub parameter that this frame never mirrors into `env`,
@@ -1252,7 +1259,7 @@ impl Interpreter {
                 None => self.env().filtered_flat_capture(&keep, probe),
             };
         self.finish_closure_capture(code, cc, &mut env);
-        if cc.indirect_name_lookup && !self.env().chain_has_frame_root() {
+        if cc.static_name_lookup && !self.env().chain_has_frame_root() {
             env.mark_program_scope_capture();
         }
         env

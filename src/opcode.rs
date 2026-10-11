@@ -7584,13 +7584,17 @@ pub(crate) struct CompiledCode {
     /// same question for the *program*; this answers it for one chunk, which
     /// is what `capture_closure_env` actually needs. Set during `finalize`.
     pub(crate) needs_reflective_capture: bool,
-    /// This chunk runs an `IndirectTypeLookup` (`::($name)`), which resolves
-    /// a sigiled name (`::('$x')`) as a lexical by name. Not part of
-    /// [`Self::needs_reflective_capture`]: a `::($type)` lookup is common in
-    /// ordinary code, and that flag widens every closure capture and env sync
-    /// of the chunk. Only the frame's static link asks it (ADR-12529 phase 3,
-    /// [`Self::links_static_outer_to_unit`]). Set during `finalize`.
-    pub(crate) indirect_name_lookup: bool,
+    /// This chunk -- or a closure literal nested in it -- looks a lexical up
+    /// by a name known only at run time: `EVAL`, a symbolic `::('$x')` or
+    /// `$::($n)`, a pseudo-package (`MY::`, `OUTER::`, `CALLER::`, ...). The
+    /// frame of such code gets a static link (ADR-12529 phase 3,
+    /// `env::static_link`), and its escaping closures' captured scalars become
+    /// cells. Narrower than [`Self::needs_reflective_capture`], which also
+    /// covers bodies that merely *run* against the live env by name
+    /// (`gather`, `whenever`, a package body) or observe callers
+    /// (`callframe`), and must keep seeing the dynamic chain. Set during
+    /// `finalize`.
+    pub(crate) static_name_lookup: bool,
     /// True if this code directly calls `callsame`/`nextsame`/`callwith`/
     /// `nextwith`. Set during `emit()`. The compiled method fast paths
     /// (`call_compiled_method`/`call_compiled_method_fast`) push a
@@ -8233,7 +8237,7 @@ impl CompiledCode {
             uses_capture: false,
             uses_samewith: false,
             needs_reflective_capture: false,
-            indirect_name_lookup: false,
+            static_name_lookup: false,
             uses_dispatcher: false,
             may_observe_named_slurpy: false,
             source_line: None,
@@ -8522,11 +8526,9 @@ impl CompiledCode {
     /// scope, that looks names up reflectively (`EVAL`, `::('$x')`, ...).
     // Cost: O(1).
     pub(crate) fn links_static_outer_to_unit(&self) -> bool {
-        // The reflective tests first: they are false for nearly every chunk,
-        // and this runs on every call.
-        (self.needs_reflective_capture || self.indirect_name_lookup)
-            && self.is_routine
-            && !self.declared_in_routine
+        // The lookup test first: it is false for nearly every chunk, and this
+        // runs on every call.
+        self.static_name_lookup && self.is_routine && !self.declared_in_routine
     }
 
     /// This chunk's free variables as a `Symbol` set, built once. The closure
@@ -9572,10 +9574,6 @@ impl CompiledCode {
     /// in the importing scope's size (#7565).
     pub(crate) fn scan_reflective_name_access(&mut self) {
         let mut own_reflective = false;
-        self.indirect_name_lookup = self
-            .ops
-            .iter()
-            .any(|op| matches!(op, OpCode::IndirectTypeLookup));
         for op in &self.ops {
             let reflective = match op {
                 OpCode::GetCallerVar { .. }
@@ -9636,6 +9634,22 @@ impl CompiledCode {
         if own_reflective {
             REFLECTIVE_NAME_ACCESS_SEEN.store(true, Ordering::Relaxed);
         }
+        // The spellings that name a lexical by string, as opposed to running
+        // a stashed body against the live env (see `static_name_lookup`).
+        const NAME_LOOKUP_CONSTANTS: [&str; 6] =
+            ["EVAL", "EVALFILE", "MY", "OUTER", "LEXICAL", "UNIT"];
+        self.static_name_lookup = own_reflective
+            || self
+                .ops
+                .iter()
+                .any(|op| matches!(op, OpCode::IndirectTypeLookup))
+            || self.constants.iter().any(|c| {
+                matches!(c.view(), ValueView::Str(s) if NAME_LOOKUP_CONSTANTS.contains(&s.as_str()))
+            })
+            || self
+                .closure_compiled_codes
+                .iter()
+                .any(|c| c.static_name_lookup);
         self.needs_reflective_capture |= own_reflective || self.chunk_reflective_capture_traits();
     }
 
@@ -10883,7 +10897,7 @@ impl CompiledCode {
             // name must be a cell it shares with this frame: a snapshot would
             // miss every later write. Which names it reads is known only at
             // run time, so that is every one this frame declares.
-            if escapes && nested.needs_reflective_capture {
+            if escapes && nested.static_name_lookup {
                 for name in &self.locals {
                     if crate::env::is_plain_user_lexical(name)
                         && !name.starts_with(['@', '%', '&', '$'])
