@@ -6980,6 +6980,11 @@ pub(crate) struct CompiledCode {
     /// `Interpreter::capture_readonly_state`). A top-level routine's free
     /// variables belong to no running frame. Set by the sub-body compile.
     pub(crate) declared_in_routine: bool,
+    /// A named routine body declared outside every routine and closure body:
+    /// its lexical outer is the program scope, so its frame's by-name lookups
+    /// of lexicals skip the caller frames (ADR-12529 phase 3,
+    /// `env::static_link`). Set by the sub-body compile.
+    pub(crate) outer_is_unit: bool,
     /// Whether this code READS the legacy argument array `@_`.
     ///
     /// This is the one thing that lets a routine accept more positional
@@ -8247,6 +8252,7 @@ impl CompiledCode {
             declarator_doc: None,
             writes_topic: false,
             declared_in_routine: false,
+            outer_is_unit: false,
             reads_args_array: false,
             reads_args_hash: false,
             has_env_writes: false,
@@ -8520,15 +8526,16 @@ impl CompiledCode {
         }
     }
 
-    /// Whether a frame running this chunk links its root to the program
-    /// scope (ADR-12529 phase 3, `env::static_link`): a named routine body
-    /// declared outside every routine, so its lexical outer is the program
-    /// scope, that looks names up reflectively (`EVAL`, `::('$x')`, ...).
+    /// Whether a frame running this chunk is marked to skip its callers for
+    /// a lexical (ADR-12529 phase 3, `env::static_link`): a routine declared
+    /// at program scope that names lexicals by string. Every other frame
+    /// keeps the dynamic chain, because the call machinery (`is rw`
+    /// writeback, a raw parameter's source name) still reads caller-scope
+    /// names through it -- see #12529's phase 3 notes.
     // Cost: O(1).
-    pub(crate) fn links_static_outer_to_unit(&self) -> bool {
-        // The lookup test first: it is false for nearly every chunk, and this
-        // runs on every call.
-        self.static_name_lookup && self.is_routine && !self.declared_in_routine
+    #[inline]
+    pub(crate) fn links_frame_to_unit(&self) -> bool {
+        self.static_name_lookup && self.outer_is_unit
     }
 
     /// This chunk's free variables as a `Symbol` set, built once. The closure
