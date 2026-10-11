@@ -614,6 +614,9 @@ impl Interpreter {
         // `.^add_method` closure literal or from a class declared in a routine.
         // Install these true lexical captures before parameter binding.
         if let Some(captured) = &method_def.captured_env {
+            let dynamic_add_method = captured
+                .get("__mutsu_declared_method_capture")
+                .is_some_and(|value| value.as_int() == Some(2));
             let env = self.env_mut();
             let authoritative = captured.contains_key_sym(crate::symbol::Symbol::intern(
                 "__mutsu_declared_method_capture",
@@ -628,6 +631,9 @@ impl Interpreter {
                 {
                     env.insert_sym(*sym, val.clone());
                 }
+            }
+            if dynamic_add_method {
+                env.insert("__mutsu_declared_method_capture".to_string(), Value::int(2));
             }
         }
         // A composed role's type parameters are more specific than a lexical
@@ -2359,6 +2365,9 @@ impl Interpreter {
         // `.^add_method` closure literal or from a class declared in a routine.
         // The fast path populates free-variable locals from this overlay.
         if let Some(captured) = &method_def.captured_env {
+            let dynamic_add_method = captured
+                .get("__mutsu_declared_method_capture")
+                .is_some_and(|value| value.as_int() == Some(2));
             let env = self.env_mut();
             let authoritative = captured.contains_key_sym(crate::symbol::Symbol::intern(
                 "__mutsu_declared_method_capture",
@@ -2373,6 +2382,9 @@ impl Interpreter {
                 {
                     env.insert_sym(*sym, val.clone());
                 }
+            }
+            if dynamic_add_method {
+                env.insert("__mutsu_declared_method_capture".to_string(), Value::int(2));
             }
         }
 

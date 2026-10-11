@@ -1469,9 +1469,24 @@ impl Interpreter {
             .iter()
             .enumerate()
             .map(|(i, sym)| {
-                // Resolve the creating frame's current binding: own local slot
-                // first (authoritative in the single-store model), then env.
-                let resolved = if let Some(slot) =
+                // A dynamically registered method may seed a captured lexical
+                // into a local slot as a plain value. If that name is itself a
+                // free variable of this frame, keep the defining cell from the
+                // method's captured env ahead of that slot copy. Otherwise an
+                // inner closure would snapshot the slot as non-cell and later
+                // resolve the same name through its caller chain.
+                let capture_view = self.env().capture_view();
+                let inherited_cell = code
+                    .free_var_syms
+                    .contains(sym)
+                    .then(|| capture_view.get(sym))
+                    .flatten()
+                    .filter(|value| value.is_container_ref());
+                // Resolve the creating frame's current binding: an inherited
+                // captured cell, then own local slot, then the enclosing env.
+                let resolved = if let Some(val) = inherited_cell {
+                    val.clone()
+                } else if let Some(slot) =
                     Self::resolve_capture_slot(code, &cc.upvalue_parent_slots, i, *sym)
                     && let Some(val) = self.locals.get(slot)
                 {
@@ -1641,6 +1656,46 @@ impl Interpreter {
         cc: &Option<std::sync::Arc<CompiledCode>>,
     ) {
         let Some(cc) = cc else { return };
+        // A dynamically registered method's body is compiled separately from
+        // its Method literal, so the ordinary analysis cannot see that a
+        // nested closure captures one of the method's own free variables. Give
+        // that lexical a cell in the method frame before constructing the
+        // nested closure, preserving its binding across the caller chain.
+        let inherited_scalars: Vec<_> = if self
+            .routine_stack()
+            .last()
+            .is_some_and(|frame| frame.is_method)
+            && self
+                .env()
+                .capture_view()
+                .get(&crate::symbol::Symbol::intern(
+                    "__mutsu_declared_method_capture",
+                ))
+                .is_some_and(|value| value.as_int() == Some(2))
+        {
+            let capture_view = self.env().capture_view();
+            cc.free_var_syms
+                .iter()
+                .filter(|sym| {
+                    code.free_var_syms.contains(sym)
+                        && sym.with_str(crate::env::is_plain_user_lexical)
+                })
+                .filter_map(|sym| {
+                    capture_view
+                        .get(sym)
+                        .filter(|value| !value.is_container_ref())
+                        .map(|value| (*sym, value.clone()))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        for (sym, value) in inherited_scalars {
+            self.env_mut().insert_sym(
+                sym,
+                Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(value))),
+            );
+        }
         // Box captured-and-mutated `$` scalar locals into a shared `ContainerRef`
         // cell so the closure observes mutations and siblings share one cell. Two
         // narrow triggers (deliberately NOT "every captured-mutated local" — that
