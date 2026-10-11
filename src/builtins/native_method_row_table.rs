@@ -2005,6 +2005,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Code", "raku", 8, 5),
     ("Code", "Capture", 1, 56),
     ("Code", "clone", 1, 48),
+    ("CompUnit::Handle", "export-package", 1, 24),
     ("RakuAST::Node", "visit-children", 2, 24),
     ("RakuAST::Origin", "from", 1, 24),
     ("RakuAST::Origin", "to", 1, 24),
