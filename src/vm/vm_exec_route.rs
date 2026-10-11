@@ -204,6 +204,7 @@ impl Interpreter {
             | OpCode::PopBlockFrame
             | OpCode::PushBlockFrame
             | OpCode::SeqToList
+            | OpCode::ListToSeq
             | OpCode::SinkPop(..)
             | OpCode::SinkPopAssign
             | OpCode::ThrowIfFailure

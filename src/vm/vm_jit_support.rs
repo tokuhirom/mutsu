@@ -141,6 +141,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::MakeNamedArg
             | OpCode::CoerceToList
             | OpCode::SeqToList
+            | OpCode::ListToSeq
             | OpCode::Itemize
             | OpCode::DeitemizeZen
             | OpCode::Decont
