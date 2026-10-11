@@ -435,6 +435,64 @@ impl Compiler {
     /// a Raku container (see the decontainerizing preamble of `call_nqp_op`).
     /// Building those wrappers to discard them was pure per-operand waste.
     pub(super) fn try_compile_nqp_value_op(&mut self, name: &str, args: &[Expr]) -> bool {
+        if let Some(raw_var) = Self::bindattr_storage_rebind_target(name, args) {
+            // nqp::bindattr(OBJ, T, '$!storage', $raw): the contents move into
+            // OBJ's node, so `$raw` is rebound to a raw view of that node and a
+            // later write through it is seen by OBJ (#12672, ADR-12666 §3.6.1).
+            // Cost: O(1) more than the plain bind (one getattr and a rebind).
+            if !self.try_compile_nqp_value_op_plain(name, args) {
+                return false;
+            }
+            self.code.emit(OpCode::Pop);
+            let getattr = Expr::Call {
+                name: crate::symbol::Symbol::intern("nqp::getattr"),
+                args: args[..3].to_vec(),
+                listop: false,
+            };
+            self.compile_expr(&Expr::AssignExpr {
+                name: raw_var,
+                expr: Box::new(getattr),
+                is_bind: true,
+            });
+            return true;
+        }
+        self.try_compile_nqp_value_op_plain(name, args)
+    }
+
+    /// The scalar variable a `nqp::bindattr` of a collection's storage
+    /// attribute installs, when the object is a plain variable (so evaluating
+    /// it twice has no effect) and the attribute a literal `$!storage` /
+    /// `$!reified`.
+    fn bindattr_storage_rebind_target(name: &str, args: &[Expr]) -> Option<String> {
+        if name != "nqp::bindattr" || args.len() != 4 {
+            return None;
+        }
+        let Expr::Literal(lit) = &args[2] else {
+            return None;
+        };
+        let crate::value::ValueView::Str(attr) = lit.view() else {
+            return None;
+        };
+        if !matches!(attr.as_str(), "$!storage" | "$!reified") {
+            return None;
+        }
+        if !matches!(
+            &args[0],
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
+        ) {
+            return None;
+        }
+        match &args[3] {
+            Expr::Var(raw)
+                if !raw.is_empty() && !raw.starts_with(['*', '!', '.', '?', '^', ':']) =>
+            {
+                Some(raw.clone())
+            }
+            _ => None,
+        }
+    }
+
+    fn try_compile_nqp_value_op_plain(&mut self, name: &str, args: &[Expr]) -> bool {
         let Some(op) = name.strip_prefix(crate::symbol::NQP_OP_PREFIX) else {
             return false;
         };
