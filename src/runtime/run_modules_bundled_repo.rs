@@ -146,6 +146,54 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs)
     }
 
+    /// Whether `prefix` is the prefix of the `core` Installation repository.
+    pub(crate) fn is_core_repo_prefix(&self, prefix: &str) -> bool {
+        self.default_repo_dir("core")
+            .is_some_and(|dir| dir.as_path() == Path::new(prefix))
+    }
+
+    /// The bundled Rakudo-Core distribution, as the one distribution the
+    /// `core` Installation repository holds.
+    ///
+    /// Rakudo's core repository carries the `rakudo` distribution, so
+    /// `$*REPO.repo-chain.grep(Installation)>>.installed` is never empty there.
+    /// mutsu has nothing installed under its `core` prefix: the core modules are
+    /// the bundled Rakudo-Core battery, which stays a FileSystem link elsewhere
+    /// in the chain (upgradable through `mzef`, see the module docs). Only
+    /// `core` reports it as installed; every other bundled battery stays out.
+    // Cost: O(f), f = files named by the distribution's META6.json.
+    pub(crate) fn bundled_core_distribution(&self) -> Option<Value> {
+        let lib = self.module.bundled_lib_paths.iter().find(|lib| {
+            Path::new(lib.as_str())
+                .parent()
+                .and_then(|p| p.file_name())
+                .is_some_and(|n| n == CORE_DIST_DIR)
+        })?;
+        let root = Path::new(lib).parent()?;
+        let json = std::fs::read_to_string(root.join("META6.json")).ok()?;
+        let meta = self.parse_json_to_value(&json).ok()?;
+        let prefix = std::fs::canonicalize(root)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| root.to_string_lossy().to_string());
+        let files = self.build_dist_files_hash(&prefix, &meta);
+        let meta = match meta.view() {
+            ValueView::Hash(map) => {
+                let mut m = (**map).clone();
+                m.insert("files".to_string(), files.clone());
+                Value::hash_with_data(Value::hash_arc(m))
+            }
+            _ => meta,
+        };
+        let mut attrs = HashMap::new();
+        attrs.insert("prefix".to_string(), self.make_io_path_instance(&prefix));
+        attrs.insert("meta".to_string(), meta);
+        attrs.insert("files".to_string(), files);
+        Some(Value::make_instance(
+            Symbol::intern("Distribution::Path"),
+            attrs,
+        ))
+    }
+
     /// A repository for the bundled distribution holding Rakudo's own core
     /// modules (`Test`, `Pod::To::Text`), with no `next-repo`.
     ///
