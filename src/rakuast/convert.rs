@@ -427,6 +427,18 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 if let Some(stub) = stub_node(name.as_str(), &args) {
                     return Ok(Some(statement_expression(stub?)));
                 }
+                if name.as_str() == "__mutsu_assign_callable_lvalue"
+                    && let [Expr::DoStmt(stmt), Expr::ArrayLiteral(call_args), value] =
+                        args.as_slice()
+                    && call_args.is_empty()
+                    && let Stmt::VarDecl { .. } = stmt.as_ref()
+                {
+                    let left = convert_expr(&Expr::Grouped(Box::new(Expr::DoStmt(stmt.clone()))))?;
+                    return Ok(Some(statement_expression(method_lvalue_assignment(
+                        left,
+                        convert_expr(value)?,
+                    ))));
+                }
                 if let Some((call, value)) = method_lvalue_parts(name.as_str(), &args)
                     .or_else(|| call_lvalue_parts(name.as_str(), &args))
                 {
@@ -1895,11 +1907,9 @@ fn index_bind_rhs(value: &Expr) -> Option<&Expr> {
 /// `__mutsu_assign_callable_lvalue($c, [ARGS], value)` writeback calls. Rakudo
 /// models both as a plain assignment whose left side is the call: this
 /// returns that call and the assigned value. Lowering hands the call back to
-/// `parser::assign_to_target_expr`, so only the record that function builds
-/// renders: a plain routine name (`postcircumfix:<[ ]>` and its kin become
-/// subscript assignments there), and an invocant variable for the callable
-/// form (the compound forms' `do`-statement and internal-call targets stay
-/// the boundary).
+/// `parser::assign_to_target_expr`. Callable targets retain their full source
+/// expression, including method objects, indexed values and adverb-bearing
+/// subscripts; compound writeback records stay the boundary.
 // Cost: O(1).
 fn call_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr)> {
     let [target, Expr::ArrayLiteral(call_args), value] = args else {
@@ -1952,15 +1962,10 @@ fn call_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Expr
         {
             Expr::Grouped(Box::new(target.clone()))
         }
-        "__mutsu_assign_callable_lvalue" => {
-            if !matches!(target, Expr::Var(_) | Expr::CodeVar(_)) {
-                return None;
-            }
-            Expr::CallOn {
-                target: Box::new(target.clone()),
-                args: call_args.clone(),
-            }
-        }
+        "__mutsu_assign_callable_lvalue" => Expr::CallOn {
+            target: Box::new(target.clone()),
+            args: call_args.clone(),
+        },
         _ => return None,
     };
     Some((call, value))
@@ -2902,6 +2907,15 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 return atomic;
             }
             if is_desugar_marker(name.as_str()) {
+                if name.as_str() == "__mutsu_assign_callable_lvalue"
+                    && let [Expr::DoStmt(stmt), Expr::ArrayLiteral(call_args), value] =
+                        args.as_slice()
+                    && call_args.is_empty()
+                    && let Stmt::VarDecl { .. } = stmt.as_ref()
+                {
+                    let left = convert_expr(&Expr::Grouped(Box::new(Expr::DoStmt(stmt.clone()))))?;
+                    return Ok(method_lvalue_assignment(left, convert_expr(value)?));
+                }
                 if let Some((call, value)) = method_lvalue_parts(name.as_str(), args)
                     .or_else(|| call_lvalue_parts(name.as_str(), args))
                 {
@@ -3348,6 +3362,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         } => {
             if *is_bind {
                 return bind_infix(name, expr);
+            }
+            if let Some((target, rhs)) = super::star_lvalue::parts(name, expr) {
+                return Ok(method_lvalue_assignment(
+                    convert_expr(&target)?,
+                    convert_expr(&rhs)?,
+                ));
             }
             assignment_infix(name, expr)
         }

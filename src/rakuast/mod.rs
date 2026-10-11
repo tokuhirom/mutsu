@@ -73,6 +73,7 @@ mod routine_traits;
 mod shadowed_terms;
 mod signature_decl;
 mod signature_literal;
+mod star_lvalue;
 mod subscript_adverb;
 mod substitution;
 mod symbolic_deref;
