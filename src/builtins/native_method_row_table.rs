@@ -193,7 +193,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Rat", "chr", 1, 1),
     ("Rat", "base", 6, 25),
     ("Rat", "polymod", 8, 61),
-    ("FatRat", "polymod", 8, 61),
+    ("FatRat", "polymod", 8, 29),
     ("Rat", "pred", 1, 57),
     ("Rat", "succ", 1, 57),
     ("Rat", "Numeric", 1, 25),
