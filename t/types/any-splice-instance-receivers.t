@@ -3,7 +3,7 @@ use Test;
 # `Any.splice` is a proto with no candidates, so an instance of a class that
 # does not declare its own `splice` and is not an `Array` gets
 # X::Multi::NoMatch, not "No such method" (ADR-11276 §9.68, #12647).
-plan 14;
+plan 18;
 
 class Foo {}
 class WithSplice { method splice(|) { 'mine' } }
@@ -24,6 +24,10 @@ no-match { Blob.new(1, 2).splice(0, 1) }, 'a Blob';
 no-match { MyHash.new.splice(1) }, 'an is Hash instance';
 no-match { MyBag.new.splice(1) }, 'an is BagHash instance';
 no-match { Date.new(2020, 1, 1).splice(1) }, 'a Date';
+no-match { X::AdHoc.new.splice(1) }, 'an X::AdHoc exception instance';
+no-match { Exception.new.splice(1) }, 'an Exception instance';
+no-match { "abc".encode.splice(1) }, 'a utf8 buffer';
+no-match { "abc".encode('utf16').splice(1) }, 'a utf16 buffer';
 no-match { WithFallback.new.splice(1) }, 'FALLBACK is not consulted: Any.splice exists';
 
 is WithSplice.new.splice(1), 'mine', 'a user splice wins';
