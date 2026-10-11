@@ -13,6 +13,7 @@ pub(crate) mod any_list_hash;
 pub(crate) mod any_misc;
 pub(crate) mod capture;
 pub(crate) mod clone;
+mod descriptor;
 mod fmt;
 pub(crate) mod join;
 pub(crate) mod lazy;
@@ -49,6 +50,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     capture::ROWS,
     join::ROWS,
     clone::ROWS,
+    descriptor::ROWS,
     any_interp::ROWS,
     any_list_hash::ROWS,
     any_misc::ROWS,

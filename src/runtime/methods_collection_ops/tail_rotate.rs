@@ -230,12 +230,12 @@ impl Interpreter {
         (s.to_string(), None)
     }
 
-    /// Cost: see [`rotate_value`](crate::builtins::method_table::collections::rotate::rotate_value).
+    /// Cost: see [`rotate_value`](crate::builtins::method_table::collection_rotate::rotate_value).
     pub(in crate::runtime) fn dispatch_rotate(
         &self,
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        crate::builtins::method_table::collections::rotate::rotate_value(&target, args)
+        crate::builtins::method_table::collection_rotate::rotate_value(&target, args)
     }
 }

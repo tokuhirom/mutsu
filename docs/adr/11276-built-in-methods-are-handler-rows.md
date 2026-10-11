@@ -2432,3 +2432,30 @@ hash and a lazy list. No behaviour change, pinned in `t/oo/method/any-list-hash-
 - **Left (filed as #12622)**: `Array`/`Hash` `name` and `dynamic` (read the variable's metadata, not the value), `List.rotate`/`Array.rotate` (a `Mut` row), `Any.splice`
   (the `Handler::Mut` question of §9.60) and `List.AT-POS`/`Array.AT-POS` (`positional.rs` explains why they have no row).
 
+
+### 9.67 `rotate`, `Any.splice`, `name`/`dynamic` and `AT-POS` (2026-10-11)
+
+`refactor/12622-collection-rows` (issue #12622). The four items #12622 left, and none needed a new place kind.
+
+- **`List.rotate` / `Array.rotate` are `Handler::Narrow` rows, not `Mut` ones.** `rotate` answers a new `Seq` and leaves the receiver alone (the
+  recognition table's `Mut` kind came from the arm's position, not from a write). `rotate_value` (`collections::rotate`) is the one implementation;
+  `dispatch_rotate` calls it. A second count now raises Rakudo's `Too many positionals passed; expected 1 or 2 arguments but got N`, which the
+  cascade used to ignore.
+- **`Any.splice` is a `Handler::Mut` row that is the end of every owner chain.** Rakudo declares `splice` on `Any` as a proto with no candidates,
+  so every receiver that is neither an `Array` nor a `Buf` (an `Int`, a `Hash`, a `Seq`, a type object, a `Blob`) gets `X::Multi::NoMatch`
+  ("Cannot resolve caller splice(Int:D, Int:D, Int:D); ..."). `invoke_mut` appends `Any` to the owner chain of every receiver (and gives a
+  receiver `owners_of` has no kind for the chain `[Any]`); the by-value entry probes `splice` regardless of kind. The handler declines a
+  receiver whose user class declares `splice` (`native_lever_a_user_override_sym` sees an instance as `Any`, so the row asks `has_user_method`
+  itself). Behaviour change toward Rakudo: `Hash`/`Seq`/`Set`/`Pair`/instances raised `X::Method::NotFound`, a `Blob` an `X::AdHoc`, `Nil.splice`
+  answered `Nil`; the `Int`-family message and the type-object names were also off. `make_no_candidates_error` names a type object or an instance
+  by its user-facing name. The cascade's two `splice` branches (a `Range`, a definite scalar) are gone.
+- **`name` / `dynamic` need no binding name.** Rakudo keeps the descriptor on the `Array`/`Hash` object, so `my $r = @a; $r.name` is `@a` and a
+  container no declaration named is `element`; mutsu stamps the same name on `ArrayData`/`HashData::descriptor_name`. The rows (`collections::descriptor`)
+  read the value, `dynamic` is `False` on a value (only a dynamic *variable* is dynamic). `@a.name` / `@a.dynamic` written on an `@`/`%` variable are
+  rewritten by the compiler to `.VAR.name` / `.VAR.dynamic` (`compile_expr_method_on_var`), which consults variable metadata (`is_var_dynamic`, `our`/`state`
+  names): a compile-time decision about the call site, not a dispatch fallback, so it stays. The decision the issue asked for is therefore
+  "neither a `Mut` row nor a new place kind: a `Narrow` row over the value".
+- **`List.AT-POS` / `Array.AT-POS` are `Handler::Interp` rows** over `Interpreter::builtin_at_pos` (the subscript opcode), the interpreter row
+  `positional.rs` said they would be, now that slice 4 (#12387) is done.
+- **Found, not fixed**: `my @e; my @a = 1; @e = @a; @e.name` is `@a` in mutsu and `@e` in Rakudo (an assignment into an empty container replaces the node
+  and its descriptor).

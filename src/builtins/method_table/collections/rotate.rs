@@ -5,8 +5,8 @@
 use super::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
 
-/// Slurpy from zero so a call with too many arguments reaches the cascade's
-/// arity error instead of "No such method".
+/// Slurpy from zero: a call with too many arguments gets Rakudo's arity error
+/// from the handler instead of "No such method".
 pub(super) static ROWS: &[MethodRow] = &[row("List"), row("Array")];
 
 const fn row(owner: &'static str) -> MethodRow {
@@ -22,9 +22,6 @@ const fn row(owner: &'static str) -> MethodRow {
 
 // Cost: see [`rotate_value`].
 fn rotate(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    if args.len() > 1 {
-        return None;
-    }
     Some(rotate_value(target, args))
 }
 
@@ -32,6 +29,12 @@ fn rotate(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>>
 // Cost: O(e), e = elements of the invocant (copied, then placed at their
 // rotated index).
 pub(crate) fn rotate_value(target: &Value, args: &[Value]) -> Result<Value, RuntimeError> {
+    if args.len() > 1 {
+        return Err(RuntimeError::new(format!(
+            "Too many positionals passed; expected 1 or 2 arguments but got {}",
+            args.len() + 1
+        )));
+    }
     // Multi-dim shaped arrays cannot be rotated
     if let ValueView::Array(_, kind) = target.view()
         && kind == crate::value::ArrayKind::Shaped
@@ -82,4 +85,3 @@ pub(crate) fn rotate_value(target: &Value, args: &[Value]) -> Result<Value, Runt
     }
     Ok(Value::seq(out))
 }
-

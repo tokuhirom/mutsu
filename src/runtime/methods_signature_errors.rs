@@ -148,7 +148,14 @@ pub(crate) fn make_no_candidates_error(
         } else {
             ":U"
         };
-        format!("{}{}", crate::runtime::utils::value_type_name(v), smiley)
+        let name = match v.view() {
+            // Only the user-facing spelling names a type object or an instance.
+            crate::value::ValueView::Package(_) | crate::value::ValueView::Instance { .. } => {
+                crate::value::types::what_type_name(v)
+            }
+            _ => crate::runtime::utils::value_type_name(v).to_string(),
+        };
+        format!("{name}{smiley}")
     }
     let mut sig = String::from(typed(invocant).as_str());
     for arg in args {
