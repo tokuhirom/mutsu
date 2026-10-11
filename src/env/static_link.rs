@@ -36,10 +36,16 @@ use std::sync::Arc;
 
 /// How a frame root's lookups treat the frames chained below it.
 pub(crate) enum StaticLink {
-    /// The routine's lexical outer is the program scope, whose tiers start at
-    /// this env (the chain below the deepest caller frame). A plain user
-    /// lexical that misses the frame continues here.
-    UnitOuter(Arc<Env>),
+    /// The code's lexical outer is the program scope, whose tiers start at
+    /// `target` (the chain below the deepest caller frame). A plain user
+    /// lexical that misses the frame continues there. With `capture_first`
+    /// -- a closure created inside a call frame -- the frame's own capture
+    /// (`Env::fallback`) answers first: it holds the creating frame's scope,
+    /// which lies between the closure and the program scope.
+    UnitOuter {
+        target: Arc<Env>,
+        capture_first: bool,
+    },
 }
 
 thread_local! {
@@ -77,7 +83,7 @@ impl Env {
     // Cost: O(d), d = tiers of the caller chain walked to its deepest frame
     // root (bounded by MAX_OVERLAY_DEPTH); O(1) when the nearest caller frame
     // is linked already.
-    pub(crate) fn link_static_outer_to_unit(&mut self) {
+    pub(crate) fn link_static_outer_to_unit(&mut self, capture_first: bool) {
         debug_assert!(self.frame_root, "only a frame root has a static link");
         let Some(parent) = &self.parent else {
             return;
@@ -87,7 +93,7 @@ impl Env {
         loop {
             if cur.frame_root {
                 if let Some(link) = cur.inner.static_link() {
-                    let StaticLink::UnitOuter(target) = link;
+                    let StaticLink::UnitOuter { target, .. } = link;
                     seg = target;
                     break;
                 }
@@ -102,8 +108,99 @@ impl Env {
         }
         let seg = Arc::clone(seg);
         self.cow_mut()
-            .set_static_link(Arc::new(StaticLink::UnitOuter(seg)));
+            .set_static_link(Arc::new(StaticLink::UnitOuter {
+                target: seg,
+                capture_first,
+            }));
         self.chain_has_static_link = true;
+    }
+
+    /// Whether any tier of this chain is a call frame's root -- false for an
+    /// env running the program scope itself (the mainline and its blocks).
+    // Cost: O(d), d = chain tiers.
+    pub(crate) fn chain_has_frame_root(&self) -> bool {
+        let mut cur = self;
+        loop {
+            if cur.frame_root {
+                return true;
+            }
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => return false,
+            }
+        }
+    }
+
+    /// [`Self::flattened`] as the scope this env's static links describe: a
+    /// plain user lexical that only a skipped caller frame binds is dropped,
+    /// and one a skipped frame shadows takes the value the link's target
+    /// gives it. A *view*, for a reflective closure's capture -- never a
+    /// replacement for the chain (see the module docs).
+    // Cost: O(n) for the flatten, n = visible entries; plus O(h * d) when the
+    // chain holds a static link, h = plain user lexicals the skipped frames
+    // bind, d = chain tiers.
+    pub(crate) fn flattened_static_view(&self) -> Env {
+        let mut flat = self.flattened();
+        if !self.chain_has_static_link || suppressed() {
+            return flat;
+        }
+        let mut hidden: Vec<Symbol> = Vec::new();
+        let mut target: Option<*const Env> = None;
+        let mut cur = self;
+        loop {
+            if target.is_some_and(|t| std::ptr::eq(t, cur)) {
+                target = None;
+            }
+            if target.is_some() {
+                hidden.extend(
+                    cur.inner
+                        .keys()
+                        .copied()
+                        .filter(|k| k.is_plain_user_lexical()),
+                );
+                if let Some(fb) = &cur.fallback {
+                    hidden.extend(
+                        fb.iter()
+                            .map(|(k, _)| *k)
+                            .filter(|k| k.is_plain_user_lexical()),
+                    );
+                }
+            } else if let Some(link) = cur.inner.static_link() {
+                let StaticLink::UnitOuter { target: seg, .. } = link;
+                target = Some(Arc::as_ptr(seg));
+            }
+            match &cur.parent {
+                Some(parent) => cur = parent,
+                None => break,
+            }
+        }
+        for key in hidden {
+            match self.get_sym(key) {
+                Some(v) => {
+                    let v = v.clone();
+                    flat.insert_sym(key, v);
+                }
+                None => {
+                    flat.remove_sym(key);
+                }
+            }
+        }
+        flat
+    }
+
+    /// Mark this env, a reflective closure's capture, as taken at program
+    /// scope: the closure's frame then links to the program scope
+    /// ([`Self::link_static_outer_to_unit`]).
+    // Cost: O(1), plus the overlay's copy-on-write when it is shared.
+    pub(crate) fn mark_program_scope_capture(&mut self) {
+        self.cow_mut().mark_program_scope_capture();
+    }
+
+    /// Whether this env is a capture marked by
+    /// [`Self::mark_program_scope_capture`].
+    // Cost: O(1).
+    pub(crate) fn is_program_scope_capture(&self) -> bool {
+        self.inner.is_program_scope_capture()
     }
 
     /// [`Self::get`] through the whole chain, callers included, whatever
@@ -125,7 +222,25 @@ impl Env {
         if !key.is_plain_user_lexical() || suppressed() {
             return None;
         }
-        let StaticLink::UnitOuter(target) = link;
+        let StaticLink::UnitOuter { target, .. } = link;
         Some(target)
+    }
+
+    /// The value this frame root's own capture gives `key`, when its static
+    /// link puts the capture ahead of the program scope.
+    // Cost: O(l), l = the capture's layers.
+    #[inline]
+    pub(super) fn static_capture_hit(&self, key: Symbol) -> Option<&Value> {
+        let StaticLink::UnitOuter {
+            capture_first: true,
+            ..
+        } = self.inner.static_link()?
+        else {
+            return None;
+        };
+        if !key.is_plain_user_lexical() || suppressed() {
+            return None;
+        }
+        self.fallback.as_deref()?.get(&key)
     }
 }

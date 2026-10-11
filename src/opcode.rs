@@ -10877,6 +10877,23 @@ impl CompiledCode {
                     needs_cell_free.insert(*sym);
                 }
             }
+            // An escaping closure that looks names up reflectively reads this
+            // frame's lexicals through its capture, ahead of its callers
+            // (ADR-12529 phase 3, `env::static_link`), so a plain scalar it may
+            // name must be a cell it shares with this frame: a snapshot would
+            // miss every later write. Which names it reads is known only at
+            // run time, so that is every one this frame declares.
+            if escapes && nested.needs_reflective_capture {
+                for name in &self.locals {
+                    if crate::env::is_plain_user_lexical(name)
+                        && !name.starts_with(['@', '%', '&', '$'])
+                    {
+                        let sym = Symbol::intern(name);
+                        captured_mutated.insert(sym);
+                        needs_cell.insert(sym);
+                    }
+                }
+            }
             // Bubble cell requirements that originated deeper in the subtree.
             for sym in &nested.needs_cell_free_vars {
                 if sym.with_str(|s| own.contains(s)) {
