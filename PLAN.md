@@ -198,7 +198,7 @@ work; see `docs/mzef-install-pipeline.md`. The **REPL** (`--repl`,
       clusters are filed as `todo:*` issues), or by **distribution** with
       [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) (named) /
       [`ecosystem-dist-roulette`](.agents/skills/ecosystem-dist-roulette/SKILL.md) (a uniform random
-      draw, locked on [#11640](https://github.com/tokuhirom/mutsu/issues/11640) so parallel agents do
+      draw, locked on [#12725](https://github.com/tokuhirom/mutsu/issues/12725) so parallel agents do
       not collide). Prefer a root cause when one covers several distributions; a uniform draw is what
       keeps the published figure honest.
       Method: [docs/ecosystem-parity.md](docs/ecosystem-parity.md);
