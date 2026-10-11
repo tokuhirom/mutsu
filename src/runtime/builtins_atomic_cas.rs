@@ -443,10 +443,7 @@ impl Interpreter {
             ));
         }
         let arr_name = args[0].to_string_value();
-        let index = match args[1].view() {
-            ValueView::Int(i) => i,
-            _ => args[1].to_string_value().parse::<i64>().unwrap_or(0),
-        };
+        let index = self.atomic_elem_index(&arr_name, &args[1])?;
         let expected = &args[2];
         let new_val = args[3].clone();
 

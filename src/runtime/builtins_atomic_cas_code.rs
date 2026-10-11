@@ -127,10 +127,7 @@ impl Interpreter {
             ));
         }
         let arr_name = args[0].to_string_value();
-        let index = match args[1].view() {
-            ValueView::Int(i) => i,
-            _ => args[1].to_string_value().parse::<i64>().unwrap_or(0),
-        };
+        let index = self.atomic_elem_index(&arr_name, &args[1])?;
         let code = args[2].clone();
         let atomic_key = atomic_lane_str_key(&arr_name, false);
         self.init_celled_atomic_store(atomic_key, &arr_name);
