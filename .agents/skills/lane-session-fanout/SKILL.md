@@ -29,7 +29,8 @@ one-issue-one-PR rule and every other `AGENTS.md` rule apply unchanged to the ch
 ## 2. Launch one session per lane
 
 `create_session` with `source_url: https://github.com/tokuhirom/mutsu`, the model the user named
-(`claude-sonnet-5-5` / `claude-opus-5-5`; ask only if they named none), a title like
+(`claude-sonnet-5-5` / `claude-opus-5-5`; **`claude-sonnet-5-5` when they named none** - user
+decision, 2026-10-11 - never ask, and never pick opus on your own for a `todo:deep` lane), a title like
 `lane:<name> の次の issue を作業`, and a self-contained prompt. The child inherits the
 environment, `AGENTS.md` and the skills, so the prompt only needs the lane-specific part:
 
