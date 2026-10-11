@@ -37,6 +37,7 @@ use super::*;
 
 mod boxes;
 mod decode;
+mod deep_drop;
 mod encode;
 pub(crate) use encode::CONTAINER_CELLS;
 mod peek;
@@ -665,9 +666,16 @@ impl Drop for NanBox {
         if let Classified::Kind(kind) = classify(bits)
             && kind_owns_payload(kind)
         {
-            // SAFETY: dropping consumes this word's payload ownership exactly
-            // once.
-            unsafe { payload_op(kind, bits, PayloadOp::Release) };
+            if deep_drop::kind_may_nest(kind) {
+                // A container's release drops its elements: bound the native
+                // depth that recursion can reach (#11217).
+                // SAFETY: dropping consumes this word's payload ownership
+                // exactly once.
+                unsafe { deep_drop::release_nested(kind, bits) };
+            } else {
+                // SAFETY: as above.
+                unsafe { payload_op(kind, bits, PayloadOp::Release) };
+            }
         }
     }
 }

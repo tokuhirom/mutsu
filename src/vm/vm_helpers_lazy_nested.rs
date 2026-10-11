@@ -17,6 +17,9 @@ impl Interpreter {
         nested: bool,
         seen: &mut std::collections::HashSet<(u8, usize)>,
     ) -> Result<(), RuntimeError> {
+        // One native frame per nesting level: raise rather than overflow on a
+        // structure nested deeper than the stack holds (#11217).
+        crate::vm::vm_stack_guard::check_now()?;
         self.reify_map_grep_seq(value)?;
         match value.view() {
             ValueView::Seq(body) => {

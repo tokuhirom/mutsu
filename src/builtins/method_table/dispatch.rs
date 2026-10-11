@@ -49,7 +49,7 @@ fn call(
         None
     };
     let target = snapshot.as_ref().unwrap_or(target);
-    match row.handler {
+    let answer = match row.handler {
         Handler::Pure(f) => Some((f(target, positional), rerunnable)),
         Handler::Narrow(f) => f(target, positional).map(|r| (r, rerunnable)),
         Handler::Named(f) => f(target, positional, named).map(|r| (r, rerunnable)),
@@ -57,7 +57,11 @@ fn call(
         // A row that writes through its receiver needs a place, which only
         // `invoke_mut` has: no shape lookup, lane or pure entry runs it.
         Handler::Mut(_) => None,
-    }
+    };
+    // #11217: a renderer (`.Str` / `.gist` / `.raku`) that ran out of native
+    // stack truncated its text; raise instead of answering with it.
+    answer
+        .map(|(result, rerunnable)| (crate::value::render_guard::check_render(result), rerunnable))
 }
 
 /// Run row `id`'s handler, or `None` when a narrowing row does not bind

@@ -3725,7 +3725,8 @@ impl Interpreter {
             // result under `STRAND_MIN_BYTES` (see exec_concat_op).
             OpCode::Concat => {
                 self.sync_source_line(code, *ip);
-                self.exec_concat_op()?;
+                // #11217: a render truncated by a stack overflow raises.
+                crate::value::render_guard::check_render(self.exec_concat_op())?;
                 *ip += 1;
             }
 
@@ -5475,7 +5476,8 @@ impl Interpreter {
             // O(n), n = total chars, for a result under `STRAND_MIN_BYTES`.
             OpCode::StringConcat(n) => {
                 self.sync_source_line(code, *ip);
-                self.exec_string_concat_op(*n)?;
+                // #11217: a render truncated by a stack overflow raises.
+                crate::value::render_guard::check_render(self.exec_string_concat_op(*n))?;
                 *ip += 1;
             }
 
@@ -5890,7 +5892,8 @@ impl Interpreter {
             // result (a list is stringified element by element).
             OpCode::StrCoerce => {
                 self.sync_source_line(code, *ip);
-                self.exec_str_coerce_op()?;
+                // #11217: a render truncated by a stack overflow raises.
+                crate::value::render_guard::check_render(self.exec_str_coerce_op())?;
                 *ip += 1;
             }
             // Cost: O(1) (lazy Range).

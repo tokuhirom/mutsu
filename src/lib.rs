@@ -23,6 +23,7 @@ pub(crate) mod gc;
 mod interpreter;
 pub(crate) mod meta_ns;
 pub(crate) mod method_signature_shared;
+pub(crate) mod native_stack;
 pub(crate) mod native_types;
 mod op_prec;
 mod op_scan_index;

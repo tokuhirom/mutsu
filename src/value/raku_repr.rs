@@ -789,6 +789,10 @@ pub fn raku_value(v: &Value) -> String {
     if let Some(rendered) = raku_raw_repr(v) {
         return rendered;
     }
+    // #11217: stop descending when the native stack runs low.
+    if crate::value::render_guard::render_too_deep() {
+        return crate::value::render_guard::TRUNCATED.to_string();
+    }
     match v.view() {
         // A `:=`-bound element holds a `ContainerRef` cell; render the held
         // value so a bound element inside a hash/array renders like a plain one

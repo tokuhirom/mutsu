@@ -2569,6 +2569,9 @@ impl Interpreter {
             }
             fn gist_item(interp: &mut Interpreter, value: &Value) -> String {
                 use crate::value::ArrayKind;
+                if crate::value::render_guard::render_too_deep() {
+                    return crate::value::render_guard::TRUNCATED.to_string();
+                }
                 // Subtrees with no dispatch-needing element render via the pure,
                 // bracket-correct fast path.
                 if !collection_contains_instance(value) {
