@@ -96,9 +96,6 @@ impl Interpreter {
         {
             let parent = self.env().clone();
             self.set_env(crate::env::Env::scoped_child(parent));
-            if cf.code.links_static_outer_to_unit() {
-                self.env_mut().link_static_outer_to_unit(false);
-            }
         }
 
         // Always push a routine frame so that &?ROUTINE works inside anonymous
@@ -242,6 +239,12 @@ impl Interpreter {
                 }
             }
         };
+        // A frame that skips its callers for a lexical (ADR-12529 phase 3) is
+        // marked once its parameters are bound: the binder resolves each
+        // argument's source variable, which is the caller's.
+        if cf.code.links_frame_to_unit() {
+            self.env_mut().mark_outer_is_unit();
+        }
         self.arm_rw_param_rebinds(&cf.code, &rw_bindings);
         self.record_call_capture(cf.code.uses_capture, None, &args);
         // The binding is done: the call site's `static_arg_types` must not
@@ -579,6 +582,13 @@ impl Interpreter {
         // line is never reached.
         drop(thread_param_mask_guard);
 
+        // The body is done: what follows carries values back to the caller
+        // (state, rw parameters, the return merge), reading them where they
+        // are rather than what a name means in this routine's scope, so the
+        // frame stops skipping its callers (ADR-12529 phase 3).
+        if cf.code.links_frame_to_unit() {
+            self.env_mut().unmark_outer_is_unit();
+        }
         // Sync state variables back to persistent storage.
         // Read from env first (methods like push update env directly),
         // falling back to locals.

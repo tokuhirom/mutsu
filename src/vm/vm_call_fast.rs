@@ -89,21 +89,22 @@ impl Interpreter {
         // lexical view flattens a scoped env first, which is why the
         // positional-light path has always installed this overlay without
         // consulting the flag.
-        // A body that links its frame to the program scope needs a root of
-        // its own to carry the link (ADR-12529 phase 3).
-        let links_static_outer = cf.code.links_static_outer_to_unit();
-        let links_static_outer = links_static_outer && !cf.has_inner_subs;
+        // A routine whose frame skips its callers for a lexical (ADR-12529
+        // phase 3) needs a root of its own to mark, even when it would run in
+        // its caller's env otherwise.
+        let outer_is_unit = cf.code.links_frame_to_unit() && !cf.has_inner_subs;
+        let forced_root = outer_is_unit;
         let use_scoped =
-            (links_static_outer || has_locals || (cf.code.is_routine && cf.code.has_env_writes))
+            (forced_root || has_locals || (cf.code.is_routine && cf.code.has_env_writes))
                 && !cf.has_inner_subs;
+        // The argument binding below resolves source variables in the
+        // caller's scope, through this frame: no static link applies to it.
+        let binding_suppression = outer_is_unit.then(crate::env::suppress_static_links);
         let caller_env: Option<Env> = if use_scoped {
             // Chain a child over the whole caller env (itself possibly scoped):
             // no flatten, so nested fast calls don't pay the O(env) merge.
             let parent = self.env().clone();
-            let mut scoped = crate::env::Env::scoped_child(parent);
-            if links_static_outer {
-                scoped.link_static_outer_to_unit(false);
-            }
+            let scoped = crate::env::Env::scoped_child(parent);
             Some(std::mem::replace(self.env_mut(), scoped))
         } else {
             None
@@ -229,6 +230,12 @@ impl Interpreter {
             cf.source_file_sym(),
         );
         let let_mark = self.let_saves_len();
+        // Marked once the parameters are bound: the binder resolves each
+        // argument's source variable, which is the caller's (ADR-12529).
+        drop(binding_suppression);
+        if outer_is_unit && caller_env.is_some() {
+            self.env_mut().mark_outer_is_unit();
+        }
         // Frame-less path: roll back the line the body's ops advanced to manually.
         let saved_line = self.cur_source_line;
         let mut ip = 0;

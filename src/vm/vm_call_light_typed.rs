@@ -105,18 +105,21 @@ impl Interpreter {
         // singleton doubles as a write detector: the body's first by-name write
         // un-shares it, and the unwind arm below replays the return merge in
         // place.
-        // A body that links its frame to the program scope needs a root of
-        // its own to carry the link (ADR-12529 phase 3), so it never reuses
-        // the caller's.
-        let links_static_outer = cf.code.links_static_outer_to_unit();
-        let caller_env = if self.env().overlay_is_shared_empty() && !links_static_outer {
+        // A routine whose frame skips its callers for a lexical (ADR-12529
+        // phase 3) marks its own root. It reuses the caller's env only when
+        // that is itself such an empty frame, which sees exactly the same
+        // program scope past it.
+        let outer_is_unit = cf.code.links_frame_to_unit();
+        // The argument binding below resolves source variables in the
+        // caller's scope, through this frame: no static link applies to it.
+        let binding_suppression = outer_is_unit.then(crate::env::suppress_static_links);
+        let caller_env = if self.env().overlay_is_shared_empty()
+            && (!outer_is_unit || self.env().is_empty_unit_frame())
+        {
             None
         } else {
             let parent = self.env().clone();
-            let mut frame = crate::env::Env::scoped_child(parent);
-            if links_static_outer {
-                frame.link_static_outer_to_unit(false);
-            }
+            let frame = crate::env::Env::scoped_child(parent);
             Some(std::mem::replace(self.env_mut(), frame))
         };
 
@@ -662,6 +665,12 @@ impl Interpreter {
         // path below does, then resume the unwind. Zero cost on the
         // non-panicking path. See
         // `news/2026-08/light-call-state-leak-on-panic-unwind.md`.
+        // Marked once the parameters are bound: the binder resolves each
+        // argument's source variable, which is the caller's (ADR-12529).
+        drop(binding_suppression);
+        if outer_is_unit && caller_env.is_some() {
+            self.env_mut().mark_outer_is_unit();
+        }
         let body_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut ip = 0;
             let mut result = Ok(());

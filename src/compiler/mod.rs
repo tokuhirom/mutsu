@@ -1478,6 +1478,11 @@ pub(crate) struct Compiler {
     /// already scoped through `is_routine`/`lexically_in_routine`; the flag is
     /// what extends it to the same shapes at mainline.
     pub(crate) lexically_in_block: bool,
+    /// Whether this compiler compiles a closure body (a block or pointy block
+    /// that runs as its own frame), or code nested in one. A named sub
+    /// declared here has that frame, not the program scope, as its lexical
+    /// outer (`CompiledCode::outer_is_unit`, ADR-12529 phase 3).
+    pub(crate) in_closure_body: bool,
     /// Whether the enclosing routine is a `method` (or submethod). A method
     /// always carries an implicit `*%_` / `*@_` slurpy, so the legacy argument
     /// variables `%_` / `@_` are valid lexicals throughout its body — including
@@ -1991,6 +1996,7 @@ impl Compiler {
             is_routine: false,
             unit_tail_discards: false,
             unit_tail_sinks: false,
+            in_closure_body: false,
             lexically_in_routine: false,
             return_routineness: None,
             eval_context_dead_routine: false,
@@ -2586,6 +2592,8 @@ impl Compiler {
 
     fn inherit_enclosing_scopes(&self, sub: &mut Compiler) {
         sub.enclosing_scopes = self.full_scope_chain();
+        // Code nested in a closure body is still inside it (ADR-12529).
+        sub.in_closure_body |= self.in_closure_body;
         sub.outer_write_names = std::sync::Arc::clone(&self.outer_write_names);
         // Hand down every sigilless binding visible here (this frame's own plus
         // the ones it inherited) so a nested closure recognizes a bare reference

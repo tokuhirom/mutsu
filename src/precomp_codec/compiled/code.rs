@@ -65,6 +65,7 @@ impl Encode for CompiledCode {
             declarator_doc,
             writes_topic,
             declared_in_routine,
+            outer_is_unit,
             reads_args_array,
             reads_args_hash,
             has_env_writes,
@@ -210,6 +211,7 @@ impl Encode for CompiledCode {
         Compat(declarator_doc.as_deref()).encode(encoder)?;
         writes_topic.encode(encoder)?;
         declared_in_routine.encode(encoder)?;
+        outer_is_unit.encode(encoder)?;
         reads_args_array.encode(encoder)?;
         reads_args_hash.encode(encoder)?;
         has_env_writes.encode(encoder)?;
@@ -344,6 +346,7 @@ impl Decode<DecodeCtx> for CompiledCode {
                 .map(std::sync::Arc::new),
             writes_topic: Decode::decode(decoder)?,
             declared_in_routine: Decode::decode(decoder)?,
+            outer_is_unit: Decode::decode(decoder)?,
             reads_args_array: Decode::decode(decoder)?,
             reads_args_hash: Decode::decode(decoder)?,
             has_env_writes: Decode::decode(decoder)?,

@@ -104,14 +104,22 @@ impl Interpreter {
             // with no outer handler registered reaches the default handler at
             // the end of this function.
             let inner = self.control.control_handlers.split_off(idx);
-            let outcome = self.run_control_handler_inline(
-                &code,
-                control_begin,
-                end,
-                &fns,
-                message,
-                resume_safe,
-            );
+            // The handler's body belongs to the frame that registered it, but
+            // runs on the raise site's env, where that frame is a caller: its
+            // lexicals are reachable only through the caller chain, so the
+            // run ignores the static links in between (ADR-12529 phase 3).
+            // TODO: run the handler on its own frame's env instead; the
+            // caller chain also shows it the names of the frames in between.
+            let outcome = crate::env::with_static_links_suppressed(|| {
+                self.run_control_handler_inline(
+                    &code,
+                    control_begin,
+                    end,
+                    &fns,
+                    message,
+                    resume_safe,
+                )
+            });
             self.control.control_handlers.extend(inner);
             match outcome {
                 ControlInlineOutcome::Resumed => return Ok(Value::NIL),

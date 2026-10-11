@@ -6,7 +6,7 @@ use Test;
 # Dynamic variables still resolve through the callers. Every expectation was
 # checked against rakudo.
 
-plan 20;
+plan 22;
 
 my $p = 'program';
 
@@ -92,5 +92,13 @@ is sym-type('ProgramType'), 'ProgramType', '::($n) finds a program-scope `my cla
 
 sub own-my-class() { my class OwnType { }; my $t = ::('OwnType'); $t.^name }
 is own-my-class(), 'OwnType', '::($n) finds the routine\'s own `my class`';
+
+# --- a sub declared in a block that runs as its own frame (slice 6) --------
+
+sub call-block(&b) { b() }
+is call-block({ my $bx = 'block'; sub read-bx { EVAL q[$bx] }; read-bx() }), 'block',
+    'EVAL in a sub declared inside a block sees the block\'s lexical';
+is call-block({ my $by = 'block'; sub read-by { ::('$by') }; read-by() }), 'block',
+    '::(\'$x\') in a sub declared inside a block sees the block\'s lexical';
 
 done-testing;

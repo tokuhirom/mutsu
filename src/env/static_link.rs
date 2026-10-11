@@ -61,6 +61,26 @@ pub(crate) fn suppressed() -> bool {
     SUPPRESSED.with(Cell::get) != 0
 }
 
+/// A scope in which static links are ignored, ended by dropping the guard:
+/// a call's argument binding, which resolves each argument's source variable
+/// in the caller's scope while the callee's frame is already the running env.
+#[must_use]
+pub(crate) struct StaticLinksSuppressed(());
+
+impl Drop for StaticLinksSuppressed {
+    fn drop(&mut self) {
+        SUPPRESSED.with(|c| c.set(c.get() - 1));
+    }
+}
+
+/// Start a [`StaticLinksSuppressed`] scope.
+// Cost: O(1).
+#[inline]
+pub(crate) fn suppress_static_links() -> StaticLinksSuppressed {
+    SUPPRESSED.with(|c| c.set(c.get() + 1));
+    StaticLinksSuppressed(())
+}
+
 /// Run `f` with static links ignored: an EVAL whose `context` names a scope
 /// the running frame cannot express. Restores the previous depth on unwind.
 pub(crate) fn with_static_links_suppressed<R>(f: impl FnOnce() -> R) -> R {
@@ -172,6 +192,10 @@ impl Env {
                 if let Some(fb) = &cur.fallback {
                     hidden.extend(fb.iter().map(|(k, _)| *k).filter(|k| lexically_scoped(*k)));
                 }
+            } else if cur.outer_is_unit
+                && let Some(parent) = cur.parent.as_deref()
+            {
+                target = Some(std::ptr::from_ref(parent.program_scope_from()));
             } else if let Some(link) = cur.inner.static_link() {
                 let StaticLink::UnitOuter { target: seg, .. } = link;
                 target = Some(Arc::as_ptr(seg));
@@ -222,15 +246,73 @@ impl Env {
 
     /// Where a lookup of `key` that missed this env continues, when this env
     /// is a frame root whose static link skips the callers for it.
-    // Cost: O(1).
+    // Cost: O(1) for a stored link; O(d) for a flagged frame
+    // ([`Self::mark_outer_is_unit`]), d = caller-chain tiers.
     #[inline]
     pub(super) fn static_skip(&self, key: Symbol) -> Option<&Env> {
+        if self.outer_is_unit {
+            if !lexically_scoped(key) || suppressed() {
+                return None;
+            }
+            return self.parent.as_deref().map(Env::program_scope_from);
+        }
         let link = self.inner.static_link()?;
         if !lexically_scoped(key) || suppressed() {
             return None;
         }
         let StaticLink::UnitOuter { target, .. } = link;
         Some(target)
+    }
+
+    /// Mark this frame root as running code declared at program scope: a
+    /// lexical that misses the frame continues at the program scope, past the
+    /// caller frames. The cheap form of [`Self::link_static_outer_to_unit`]
+    /// (no allocation, the program scope found when a lookup needs it), for
+    /// the routine calls that make up nearly every frame.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn mark_outer_is_unit(&mut self) {
+        debug_assert!(self.frame_root, "only a frame root has a static link");
+        self.outer_is_unit = true;
+        self.chain_has_static_link = true;
+    }
+
+    /// Undo [`Self::mark_outer_is_unit`] on this frame root, once the code
+    /// it ran is done and the call's return path reads values across frames.
+    /// The chain-level latch stays set; it only selects the walk that checks.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn unmark_outer_is_unit(&mut self) {
+        self.outer_is_unit = false;
+    }
+
+    /// Whether this env is a frame root marked by [`Self::mark_outer_is_unit`]
+    /// with nothing bound in its own overlay -- a frame a callee that is also
+    /// declared at program scope can run in without a root of its own, since
+    /// both see exactly the program scope past it.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_empty_unit_frame(&self) -> bool {
+        self.outer_is_unit && self.overlay_is_shared_empty()
+    }
+
+    /// The program scope's part of the chain starting at `self`: the env
+    /// below the deepest frame root, or `self` when no frame root is below.
+    // Cost: O(d), d = chain tiers.
+    fn program_scope_from(&self) -> &Env {
+        let mut seg = self;
+        let mut cur = self;
+        loop {
+            if cur.frame_root
+                && let Some(below) = cur.parent.as_deref()
+            {
+                seg = below;
+            }
+            match cur.parent.as_deref() {
+                Some(below) => cur = below,
+                None => return seg,
+            }
+        }
     }
 
     /// The value this frame root's own capture gives `key`, when its static

@@ -458,6 +458,27 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    so `::('T')` in a callee still finds an `our class T` the caller
    declared, and no longer finds its `my class T`.
 
+   **Slice 6 done** (`perf/12529-phase3-unit-routines-link`): a routine's
+   static link is a frame flag (`Env::outer_is_unit`, packed into the env's
+   padding) instead of a link stored on the frame's overlay tier, so marking
+   a frame allocates nothing; the program scope's position is found when a
+   lookup first crosses the frame. Which routines count as declared at
+   program scope is now `CompiledCode::outer_is_unit`, which also excludes a
+   sub declared inside a closure body (`Compiler::in_closure_body`): slice 3
+   linked `call { my $x; sub g { EVAL q[$x] }; g() }` past the block that
+   declares `$x`. A frame is marked only once its arguments are bound, and
+   the light and fast binders run with links suppressed, since binding
+   resolves each argument's source variable in the caller's scope. A CONTROL
+   handler, whose body runs on the raise site's env, runs with links
+   suppressed as well.
+
+   Linking *every* program-scope routine frame was tried on the same
+   branch: 6 of 7128 `t/` files failed, each a piece of call machinery
+   reading a caller-scope name through the callee's env. Five are fixed by
+   the changes above; the last, the light-call `is rw` writeback, needs that
+   convention to share a cell end to end instead of writing back by name.
+   It is tracked as #12641, the next prerequisite of this phase.
+
    What is still dynamic: a reflective *write* (`EVAL q[$x = 1]`) lands in
    the frame's overlay and the return merge carries it to the caller, as
    before; only reads follow the link. The pins for §1.3's sub

@@ -23,7 +23,7 @@ pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
 mod rebind;
 pub(crate) mod static_link;
-pub(crate) use static_link::with_static_links_suppressed;
+pub(crate) use static_link::{suppress_static_links, with_static_links_suppressed};
 pub(crate) mod stats;
 
 /// Process-wide immutable "base" tier of the environment.
@@ -668,6 +668,13 @@ pub struct Env {
     /// other chain keeps the plain loop with no per-tier test. Inherited like
     /// [`chain_has_fallback`](Self::chain_has_fallback).
     chain_has_static_link: bool,
+    /// On a frame root: the code running the frame was declared at program
+    /// scope (`CompiledCode::outer_is_unit`), so a lexical that misses the
+    /// frame continues at the program scope, past the caller frames
+    /// (ADR-12529 phase 3, `env::static_link`). A flag rather than a stored
+    /// link, so marking a frame costs no allocation; the program scope's
+    /// position is found when a lookup first needs it.
+    outer_is_unit: bool,
     /// The by-name writes this env's **frame tier** has taken since the frame
     /// opened, recorded only for an env whose tier was collapsed into the flat
     /// map by [`Self::flattened_for_frame`]. `None` everywhere else — a scoped
@@ -850,6 +857,7 @@ impl Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
+            outer_is_unit: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -952,6 +960,7 @@ impl Env {
             && parent.tombstones.is_none()
             && parent.fallback.is_none()
             && parent.inner.static_link().is_none()
+            && !parent.outer_is_unit
             && let Some(gp) = parent.parent.take()
         {
             let mut arc = gp;
@@ -959,6 +968,7 @@ impl Env {
                 && arc.tombstones.is_none()
                 && arc.fallback.is_none()
                 && arc.inner.static_link().is_none()
+                && !arc.outer_is_unit
                 && let Some(gp) = &arc.parent
             {
                 let gp = Arc::clone(gp);
@@ -978,6 +988,7 @@ impl Env {
                     fallback: None,
                     chain_has_fallback: flat_chf,
                     chain_has_static_link: false,
+                    outer_is_unit: false,
                     capture_merged: OnceLock::new(),
                     frame_writes: None,
                     code_entries: None,
@@ -997,6 +1008,7 @@ impl Env {
                 fallback: None,
                 chain_has_fallback: arc_chf,
                 chain_has_static_link: arc_csl,
+                outer_is_unit: false,
                 capture_merged: OnceLock::new(),
                 frame_writes: None,
                 code_entries: None,
@@ -1024,6 +1036,7 @@ impl Env {
             fallback: None,
             chain_has_fallback: parent_chf,
             chain_has_static_link: parent_csl,
+            outer_is_unit: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1065,6 +1078,7 @@ impl Env {
             fallback: None,
             chain_has_fallback: parent_chf,
             chain_has_static_link: parent_csl,
+            outer_is_unit: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1087,6 +1101,7 @@ impl Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
+            outer_is_unit: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1559,6 +1574,7 @@ impl Env {
                     fallback: None,
                     chain_has_fallback: false,
                     chain_has_static_link: false,
+                    outer_is_unit: false,
                     capture_merged: OnceLock::new(),
                     frame_writes: None,
                     code_entries: None,
@@ -1689,6 +1705,7 @@ impl Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
+            outer_is_unit: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1861,6 +1878,7 @@ impl Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
+            outer_is_unit: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -2024,6 +2042,7 @@ impl Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
+            outer_is_unit: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -2189,6 +2208,7 @@ impl Env {
             frame_root: false,
             chain_has_fallback: fallback.is_some(),
             chain_has_static_link: false,
+            outer_is_unit: false,
             capture_merged: OnceLock::new(),
             fallback,
             frame_writes: None,
@@ -3091,6 +3111,7 @@ impl From<ValueMap> for Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
+            outer_is_unit: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -3114,6 +3135,7 @@ impl From<HashMap<Symbol, Value>> for Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
+            outer_is_unit: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,

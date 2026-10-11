@@ -617,6 +617,10 @@ impl Compiler {
         // channel (the closure paths already read `CompiledCode::source_line`).
         sub_compiler.code.source_line = self.last_source_line;
         sub_compiler.code.declared_in_routine = self.is_routine || self.lexically_in_routine;
+        // ADR-12529 phase 3: declared outside every routine and closure body,
+        // so the program scope is this routine's lexical outer.
+        sub_compiler.code.outer_is_unit =
+            !(self.is_routine || self.lexically_in_routine || self.in_closure_body);
         sub_compiler.code.succeed_passes_through = !Self::body_has_toplevel_when(body);
         // ADR-0113: bind the body's call-only `my sub`s as frame lexicals.
         // Before `compute_needs_env_sync`, which finalizes the chunk.
@@ -1322,6 +1326,7 @@ impl Compiler {
         // already is, or the parent itself is a routine.
         sub_compiler.lexically_in_routine =
             is_routine || self.is_routine || self.lexically_in_routine;
+        sub_compiler.in_closure_body = true;
         // ADR-0050: a closure nested in a carrier-recompiled body classifies
         // its `return` by the enclosing body's definition site, not by the
         // activation flags above.
