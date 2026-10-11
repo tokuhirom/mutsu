@@ -738,8 +738,11 @@ impl Interpreter {
 
                 // A seed nobody wrote is the spawning binding's snapshot, not a
                 // published value: pulling it replaced another binding of the
-                // same bare name this thread holds (#12204).
-                if !sv.is_unwritten_seed(key)
+                // same bare name this thread holds (#12204). A value this
+                // thread wrote itself is in its env already, and pulling it
+                // back would land a callee's local in a caller's same-named
+                // variable (#11545).
+                if !sv.is_seed_or_own_write(key)
                     && let Some(val) = sv.get(key)
                 {
                     updates.push((key.clone(), val));
