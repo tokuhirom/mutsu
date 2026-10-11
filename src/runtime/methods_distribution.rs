@@ -150,7 +150,21 @@ impl Interpreter {
                 let dist = args.first().cloned().unwrap_or(Value::NIL);
                 Some(self.cur_inst_uninstall(&prefix, &dist))
             }
-            "installed" => Some(self.cur_inst_installed(&prefix)),
+            "installed" => {
+                let mut installed = match self.cur_inst_installed(&prefix) {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
+                };
+                if self.is_core_repo_prefix(&prefix)
+                    && let Some(core) = self.bundled_core_distribution()
+                    && let Some((items, _)) = installed.clone().into_array()
+                {
+                    let mut items = items.to_vec();
+                    items.push(core);
+                    installed = Value::array(items);
+                }
+                Some(Ok(installed))
+            }
             "can-install" => {
                 // Mirror rakudo's CompUnit::Repository::Installation.can-install:
                 // writable if the prefix is writable, or it does not yet exist and

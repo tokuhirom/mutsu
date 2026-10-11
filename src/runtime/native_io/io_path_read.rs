@@ -253,4 +253,24 @@ impl Interpreter {
         self.dispatch_comb_with_args(Value::str(content), &comb_args)
             .unwrap_or_else(|| Ok(Value::seq(Vec::new())))
     }
+
+    /// `IO::Path.split`: the file's contents split as `Str.split` splits them
+    /// (Rakudo opens the file and splits the handle's text, `:close`). The open
+    /// adverbs `:enc`, `:chomp` and `:nl-in` are the file's; every other argument
+    /// is the split's.
+    // Cost: O(b), b = the file's size in bytes, plus the splitter's own cost.
+    pub(crate) fn io_path_split(
+        &mut self,
+        attributes: &AttrMap,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let is_open_adverb = |a: &Value| {
+            matches!(a.view(), ValueView::Pair(k, _)
+                if matches!(k.as_str(), "enc" | "chomp" | "nl-in" | "close"))
+        };
+        let open_args: Vec<Value> = args.iter().filter(|a| is_open_adverb(a)).cloned().collect();
+        let split_args: Vec<Value> = args.iter().filter(|a| !is_open_adverb(a)).cloned().collect();
+        let content = self.io_path_slurp(attributes, &open_args)?;
+        self.dispatch_split_row(content, split_args)
+    }
 }

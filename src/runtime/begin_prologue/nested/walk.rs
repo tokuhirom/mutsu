@@ -24,12 +24,6 @@ impl VisitMut for Walker<'_> {
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         self.walk_expr(expr);
     }
-
-    // TODO: lift from a regex code block too. The regex a match runs is not
-    // always this tree (a code block closing over a lexical runs from the
-    // copy the literal's value carries), so a BEGIN lifted from the tree
-    // could run twice; it keeps its pre-ADR handling. See #10550.
-    fn visit_regex_node_mut(&mut self, _node: &mut crate::regex_tree::RegexNode) {}
 }
 
 impl Walker<'_> {

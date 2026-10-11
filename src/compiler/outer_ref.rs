@@ -231,6 +231,16 @@ impl Compiler {
         key
     }
 
+    /// How many scopes out the nearest scope enclosing the current one that
+    /// declares `bare` sits, or `None` when no enclosing scope known to this
+    /// compilation declares it.
+    // Cost: O(s), s = scopes in the chain.
+    pub(super) fn outers_declaring_depth(&self, bare: &str) -> Option<usize> {
+        let chain = self.full_scope_chain();
+        let n = chain.len();
+        (1..n).find(|&depth| chain[n - 1 - depth].contains_key(bare))
+    }
+
     /// Emit a read of `bare` (`$OUTER::x`, `OUTER::<$x>`) through a capture
     /// when it names a binding of an enclosing compilation frame that a scope
     /// in between shadows. Returns `false` (nothing emitted) for every other

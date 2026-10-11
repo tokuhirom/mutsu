@@ -41,6 +41,11 @@ macro_rules! shared_rows {
 }
 
 pub(super) static COOL_ROWS: &[MethodRow] = shared_rows!("Cool");
+/// `Cool.fmt($format = '%s')` (§9.76): the collections' `fmt` routine.
+pub(super) static COOL_FMT_ROWS: &[MethodRow] = &[
+    row!("Cool", "fmt", 0, Handler::Narrow(fmt)),
+    row!("Cool", "fmt", 1, Handler::Narrow(fmt)),
+];
 pub(super) static STR_SHARED_ROWS: &[MethodRow] = shared_rows!("Str");
 pub(super) static STR_ROWS: &[MethodRow] = &[
     row!("Str", "Stringy", 0, Handler::Pure(stringy)),
@@ -59,6 +64,13 @@ pub(super) static STR_ROWS: &[MethodRow] = &[
     },
 ];
 pub(super) static UNI_ROWS: &[MethodRow] = &[row!("Uni", "encode", 0, Handler::Pure(uni_encode))];
+
+/// `Cool.fmt` and `Cool.fmt($format)`: [`fmt_native`](crate::builtins::fmt_native),
+/// which every arity cascade and the collections' `fmt` rows also call.
+// Cost: O(f + n), f = chars of the format, n = chars of the rendering.
+fn fmt(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    crate::builtins::fmt_native(target, args)
+}
 
 /// `Str.Stringy`: the string itself.
 // Cost: O(1) (the value is shared, not copied).

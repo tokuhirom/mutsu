@@ -151,6 +151,15 @@ impl Interpreter {
         // drops, so only the dispatch work itself can still be holding one
         // (`crate::profile::region`).
         let _region = crate::profile::enter(crate::profile::Region::MethodDispatch);
+        // A `create_type` type object with an installed method cache answers
+        // from it (`Metamodel::Primitives.install_method_cache`).
+        if let Some(cached) = self.custom_type_cached_method(&target, method) {
+            let code = cached?;
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            call_args.push(target.clone());
+            call_args.extend(args);
+            return self.call_sub_value(code, call_args, false);
+        }
         // A user `method ^find_method` answers every call on its type, the
         // internal ones too (`say` asking for `.gist`, `~` for `.Str`):
         // `find_method_intercept`.
@@ -2095,6 +2104,7 @@ impl Interpreter {
         // `RakuAST::Node.visit-children` and the `RakuAST::Origin` rows are rows
         // of the method table, found by their owner: none has a dispatch shape.
         if let Some(owners) = crate::builtins::method_table::rakuast_owners_of(&target)
+            .or_else(|| crate::builtins::method_table::compunit_handle_owners_of(&target))
             && let Some(result) = crate::builtins::method_table::invoke_owner(
                 self,
                 owners,
@@ -3473,12 +3483,17 @@ impl Interpreter {
             && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply" || class_name == "IO::Handle" || class_name == "IO::Pipe" || class_name == "IO::CatHandle")
             && !matches!(target.view(), ValueView::Package(name) if name.as_str().starts_with("IO::Spec"))
         {
-            // The splitter argument may be a stored regex closed over its
-            // defining scope; install it around the split the same way `~~`
-            // and `.match`/`.subst` do.
-            let splitter = args.first().cloned();
-            return self
-                .with_regex_closure_scope(splitter, |me| me.handle_split_method(target, args));
+            // `IO::Path.split` splits the file's contents, not the path (the
+            // row's routine, `method_table::io_path_content`).
+            if let ValueView::Instance { class_name, attributes, .. } = target.view()
+                && crate::value::DispatchShape::from_instance_class(class_name)
+                    == Some(crate::value::DispatchShape::IoPath)
+            {
+                let attributes = crate::value::AttrMap::clone(&attributes.as_map());
+                return self.io_path_split(&attributes, &args);
+            }
+            // The `Str`/`Cool` rows' routine (`method_table::str_interp`).
+            return self.dispatch_split_row(target, args);
         }
 
         // .of on Array/Hash

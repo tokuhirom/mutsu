@@ -701,6 +701,7 @@ impl Interpreter {
                         self.pop_samewith_context();
                         return Err(self.enhance_binding_error_at_site(
                             e,
+                            def.package,
                             &def.name.resolve(),
                             &def.param_defs,
                             args,

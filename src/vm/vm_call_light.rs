@@ -70,7 +70,7 @@ impl Interpreter {
             if expected == 1 { "" } else { "s" },
         ));
         let args = self.stack[args_base..].to_vec();
-        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &args)
+        self.enhance_binding_error_at_site(err, cf.package_sym(), func_name, &cf.param_defs, &args)
     }
 
     /// The error for a positional-light parameter whose argument failed its
@@ -99,7 +99,7 @@ impl Interpreter {
             )
             .with_parameter_object(pd, Some(&*self));
         let args = self.stack[args_base..].to_vec();
-        self.enhance_binding_error_at_site(err, func_name, &cf.param_defs, &args)
+        self.enhance_binding_error_at_site(err, cf.package_sym(), func_name, &cf.param_defs, &args)
     }
 
     pub(super) fn call_compiled_function_positional_light(

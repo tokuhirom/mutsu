@@ -1,5 +1,4 @@
 use super::*;
-use crate::symbol::Symbol;
 
 impl Compiler {
     pub(super) fn compile_expr_unary(&mut self, op: &TokenKind, expr: &Expr) {
@@ -79,11 +78,7 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::PreIncrement(name_idx, None));
                     } else {
-                        self.compile_expr(&Expr::Call {
-                            name: Symbol::intern("__mutsu_incdec_nomatch"),
-                            args: vec![Expr::Literal(Value::str_from("prefix:<++>"))],
-                            listop: false,
-                        });
+                        self.compile_incdec_nomatch("prefix:<++>", expr);
                     }
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
                     self.compile_expr(expr);
@@ -132,11 +127,7 @@ impl Compiler {
                 } else if !self.compile_prefix_incdec_method_lvalue(expr, true)
                     && !self.compile_incdec_named_sub_lvalue(expr, true, true)
                 {
-                    self.compile_expr(&Expr::Call {
-                        name: Symbol::intern("__mutsu_incdec_nomatch"),
-                        args: vec![Expr::Literal(Value::str_from("prefix:<++>"))],
-                        listop: false,
-                    });
+                    self.compile_incdec_nomatch("prefix:<++>", expr);
                 }
             }
             TokenKind::MinusMinus => {
@@ -164,11 +155,7 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         self.code.emit(OpCode::PreDecrement(name_idx, None));
                     } else {
-                        self.compile_expr(&Expr::Call {
-                            name: Symbol::intern("__mutsu_incdec_nomatch"),
-                            args: vec![Expr::Literal(Value::str_from("prefix:<-->"))],
-                            listop: false,
-                        });
+                        self.compile_incdec_nomatch("prefix:<-->", expr);
                     }
                 } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
                     self.compile_expr(expr);
@@ -211,11 +198,7 @@ impl Compiler {
                 } else if !self.compile_prefix_incdec_method_lvalue(expr, false)
                     && !self.compile_incdec_named_sub_lvalue(expr, false, true)
                 {
-                    self.compile_expr(&Expr::Call {
-                        name: Symbol::intern("__mutsu_incdec_nomatch"),
-                        args: vec![Expr::Literal(Value::str_from("prefix:<-->"))],
-                        listop: false,
-                    });
+                    self.compile_incdec_nomatch("prefix:<-->", expr);
                 }
             }
             TokenKind::IntBitNeg => {

@@ -529,3 +529,16 @@ same source marker as ordinary declarations. Numeric return constraints use
 literal nodes, separately from strict type identifiers, and lower back to pinned
 return values. The frontend ratchet exposed both distinctions and the cohort
 pins their structure and execution.
+
+### 6.9 S10: indexed binding source forms (2026-10-11)
+
+Indexed binding retains whether its index came from semicolon-separated
+dimensions, and conversion and lowering preserve Rakudo's `SemiList` shape:
+comma-separated slice operands stay inside one list-infix statement, while
+semicolon dimensions remain separate expressions. The compiler routes a
+semicolon bind through the existing deep lvalue operation so the terminal
+element is rebound in place and aliases the RHS scalar. This also fixes the
+ordinary execution path, which previously flattened dimensions into a comma
+slice and wrote to the wrong row. `t/rakuast/rakuast-index-bind.t` pins both
+source shapes and round-trip execution; `t/routines/dispatch/indexed-multidim-bind.t`
+pins ordinary leaf selection and aliasing.

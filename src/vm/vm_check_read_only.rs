@@ -123,6 +123,14 @@ impl Interpreter {
         Ok(())
     }
 
+    /// The `X::Multi::NoMatch` for `op` stepping the readonly variable `name`,
+    /// naming its current value's type.
+    // Cost: O(1) env lookup plus the message build.
+    fn incdec_readonly_error(&self, op: &str, name: &str) -> RuntimeError {
+        let current = self.env().get(name).map(|v| v.clone().deref_container());
+        crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, current.as_ref())
+    }
+
     /// Refuse an in-place `++`/`--`/`OP=` on the named variable `name`
     /// (`code`'s constant-pool name, interned as `name_sym`) when its binding
     /// is readonly. A free variable whose binding was decided by its declaring
@@ -144,9 +152,7 @@ impl Interpreter {
             None
         };
         match decision {
-            Some(FreeVarBinding::Readonly(..)) => {
-                Err(crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, name))
-            }
+            Some(FreeVarBinding::Readonly(..)) => Err(self.incdec_readonly_error(op, name)),
             // Still ask the sigilless marker: it is a separate mechanism the
             // decision does not cover.
             Some(FreeVarBinding::Writable) => {
@@ -158,9 +164,7 @@ impl Interpreter {
                         Some(ValueView::Bool(true))
                     )
                 {
-                    return Err(
-                        crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, name),
-                    );
+                    return Err(self.incdec_readonly_error(op, name));
                 }
                 Ok(())
             }

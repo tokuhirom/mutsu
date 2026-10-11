@@ -1435,9 +1435,9 @@ impl Compiler {
                 index,
                 value,
                 is_positional,
-                ..
+                spelling,
             } => {
-                self.compile_expr_index_assign(target, index, value, *is_positional);
+                self.compile_expr_index_assign(target, index, value, *is_positional, *spelling);
             }
             // Multi-dimensional index assignment: @a[$x;$y;$z] = value
             Expr::MultiDimIndexAssign {

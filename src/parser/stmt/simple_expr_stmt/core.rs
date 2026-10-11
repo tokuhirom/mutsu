@@ -638,15 +638,17 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                 return parse_statement_modifier(rest, stmt);
             }
             Expr::MultiDimIndex {
-                target, dimensions, ..
+                target,
+                dimensions,
+                is_positional,
             } => {
                 // For bind (:=), use IndexAssign with flattened dimensions
                 // because bind semantics are handled by the IndexAssign VM path
                 let stmt = Stmt::Expr(super::lvalue::index_bind_expr(
                     target,
                     Box::new(Expr::ArrayLiteral(dimensions)),
-                    true,
-                    Default::default(),
+                    is_positional,
+                    crate::ast::IndexSpelling::SemicolonDimensions,
                     value,
                 ));
                 return parse_statement_modifier(rest, stmt);

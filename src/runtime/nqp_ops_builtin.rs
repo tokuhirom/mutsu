@@ -34,6 +34,9 @@ impl Interpreter {
         if let Some(result) = self.call_nqp_interpreter_op(op, args) {
             return result;
         }
+        if let Some(result) = self.call_nqp_op_lexical(op, args) {
+            return result;
+        }
         if let Some(result) = self.call_nqp_op(op, args) {
             return result;
         }
@@ -76,6 +79,7 @@ impl Interpreter {
             NqpOpTable::Decoder => self.call_nqp_op_decoder(op, args),
             NqpOpTable::Capture => self.call_nqp_op_capture(op, args),
             NqpOpTable::Sc => self.call_nqp_op_sc(op, args),
+            NqpOpTable::Lexical => self.call_nqp_op_lexical(op, args),
         };
         match claimed {
             Some(result) => result,

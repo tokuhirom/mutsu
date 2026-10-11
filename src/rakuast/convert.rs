@@ -3896,10 +3896,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             spelling,
         } if index_bind_rhs(value).is_some() => {
             let rhs = index_bind_rhs(value).ok_or_else(|| unsupported("indexed bind"))?;
-            if matches!(index.as_ref(), Expr::ArrayLiteral(_)) {
-                return Err(unsupported("slice or multi-dimensional bind"));
-            }
-            let left = if *spelling == crate::ast::IndexSpelling::Angle
+            let left = if *spelling == crate::ast::IndexSpelling::SemicolonDimensions {
+                let Expr::ArrayLiteral(dimensions) = index.as_ref() else {
+                    return Err(unsupported("multi-dimensional bind source form"));
+                };
+                subscript_dims_node(target, dimensions, *is_positional, None, Vec::new())?
+            } else if *spelling == crate::ast::IndexSpelling::Angle
                 && angle_key_text(index).is_some()
             {
                 angle_subscript_node(target, index, None, Vec::new())?

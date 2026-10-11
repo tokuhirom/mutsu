@@ -93,6 +93,8 @@ pub(crate) enum NqpOpTable {
     Capture,
     /// `call_nqp_op_sc` (runtime/nqp_ops_sc.rs)
     Sc,
+    /// `call_nqp_op_lexical` (runtime/nqp_ops_lexical.rs)
+    Lexical,
 }
 
 /// Every registered op, as `(name without the `nqp::` prefix, owning table)`.
@@ -100,7 +102,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 490] = [
+static NQP_OPS: [(&str, NqpOpTable); 509] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -147,6 +149,11 @@ static NQP_OPS: [(&str, NqpOpTable); 490] = [
     ("bindcurhllsym", NqpOpTable::Builtin),
     ("bindhllsym", NqpOpTable::Builtin),
     ("bindkey", NqpOpTable::Str),
+    ("bindlex", NqpOpTable::Lexical),
+    ("bindlex_i", NqpOpTable::Lexical),
+    ("bindlex_n", NqpOpTable::Lexical),
+    ("bindlex_s", NqpOpTable::Lexical),
+    ("bindlexdyn", NqpOpTable::Lexical),
     ("bindpos", NqpOpTable::List),
     ("bindpos2d", NqpOpTable::List),
     ("bindpos2d_i", NqpOpTable::List),
@@ -238,6 +245,7 @@ static NQP_OPS: [(&str, NqpOpTable); 490] = [
     ("ctx", NqpOpTable::Builtin),
     ("ctxcaller", NqpOpTable::Builtin),
     ("ctxlexpad", NqpOpTable::Builtin),
+    ("curlexpad", NqpOpTable::Lexical),
     ("currentthread", NqpOpTable::Process),
     ("cwd", NqpOpTable::Fs),
     ("decode", NqpOpTable::Value),
@@ -314,7 +322,19 @@ static NQP_OPS: [(&str, NqpOpTable); 490] = [
     ("getextype", NqpOpTable::Builtin),
     ("gethllsym", NqpOpTable::Builtin),
     ("gethostname", NqpOpTable::Builtin),
+    ("getlex", NqpOpTable::Lexical),
+    ("getlex_i", NqpOpTable::Lexical),
+    ("getlex_n", NqpOpTable::Lexical),
+    ("getlex_s", NqpOpTable::Lexical),
+    ("getlexcaller", NqpOpTable::Lexical),
     ("getlexdyn", NqpOpTable::Builtin),
+    ("getlexouter", NqpOpTable::Lexical),
+    ("getlexref_i", NqpOpTable::Lexical),
+    ("getlexref_n", NqpOpTable::Lexical),
+    ("getlexref_s", NqpOpTable::Lexical),
+    ("getlexrel", NqpOpTable::Lexical),
+    ("getlexrelcaller", NqpOpTable::Lexical),
+    ("getlexreldyn", NqpOpTable::Lexical),
     ("getmessage", NqpOpTable::Builtin),
     ("getobjsc", NqpOpTable::Sc),
     ("getpayload", NqpOpTable::Builtin),
@@ -410,6 +430,7 @@ static NQP_OPS: [(&str, NqpOpTable); 490] = [
     ("lc", NqpOpTable::Str),
     ("lcm_I", NqpOpTable::Value),
     ("lcm_i", NqpOpTable::Value),
+    ("lexprimspec", NqpOpTable::Lexical),
     ("link", NqpOpTable::Fs),
     ("list", NqpOpTable::Process),
     ("list_i", NqpOpTable::Text),

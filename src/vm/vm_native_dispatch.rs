@@ -869,6 +869,10 @@ impl Interpreter {
             if crate::runtime::native_pos_ref::is_native_pos_ref_routine(name) {
                 return self.try_native_pos_ref_routine(name, args);
             }
+            // The same for a native lexical reference (`IntLexRef`, #11498).
+            if let Some(result) = self.try_native_lex_ref_routine(name, args) {
+                return Some(result);
+            }
         }
         // #9012: `floor`/`ceiling` as FREE FUNCTIONS return `Int` for a boxed
         // `Num` argument (a literal, a computed value, or a `Num`-typed

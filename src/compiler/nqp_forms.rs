@@ -206,6 +206,8 @@ impl Compiler {
             | "nqp::objectid" | "nqp::callmethod" | "nqp::call" => {
                 self.try_compile_nqp_object_form(name, args)
             }
+            // `nqp::getlexouter` with a literal name: see nqp_lexical_forms.rs.
+            "nqp::getlexouter" => self.try_compile_nqp_getlexouter(args),
             "nqp::with" | "nqp::without" | "nqp::defor" => {
                 self.try_compile_nqp_cond_form(name, args, sunk)
             }

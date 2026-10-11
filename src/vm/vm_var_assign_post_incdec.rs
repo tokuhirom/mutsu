@@ -477,22 +477,15 @@ impl Interpreter {
                 .and_then(|c| Self::existing_element_container(c, &idx_val, is_positional))
                 .unwrap_or(Value::NIL)
                 .deref_container();
-            let arg = format!(
-                "{}:{}",
-                crate::runtime::value_type_name(&current),
-                if crate::runtime::types::value_is_defined(&current) {
-                    "D"
-                } else {
-                    "U"
-                }
-            );
             let op = match (return_new, increment) {
                 (true, true) => "prefix:<++>",
                 (true, false) => "prefix:<-->",
                 (false, true) => "postfix:<++>",
                 (false, false) => "postfix:<-->",
             };
-            return Err(crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, &arg));
+            return Err(
+                crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, Some(&current)),
+            );
         }
         // QuantHash element stores are `.WHICH`-keyed (a plain hash/array keeps
         // the display-string key); the element object goes into `original_keys`

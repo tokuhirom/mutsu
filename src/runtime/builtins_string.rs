@@ -349,7 +349,9 @@ impl Interpreter {
             }
             _ => {
                 let sep = splitter.to_string_value();
-                Ok(split_by_string_static(text, &sep, limit))
+                // The one string splitter the pure cascade uses too: it
+                // matches only at grapheme boundaries.
+                Ok(crate::builtins::split::split_by_string(text, &sep, limit))
             }
         }
     }
@@ -669,105 +671,3 @@ impl Interpreter {
 /// SplitMatch from the builtins split module (re-export for local use).
 use crate::builtins::split::SplitMatch;
 
-/// Static string split (no interpreter needed).
-// Cost: O(n*m) worst, O(n + k) typical, n = chars of the invocant, m = chars
-// of the separator, k = pieces produced (naive char-window search).
-fn split_by_string_static(
-    text: &str,
-    sep: &str,
-    limit: Option<usize>,
-) -> Vec<(String, Option<SplitMatch>)> {
-    if limit == Some(0) {
-        return Vec::new();
-    }
-    let mut result = Vec::new();
-    let chars: Vec<char> = text.chars().collect();
-
-    if text.is_empty() {
-        if sep.is_empty() {
-            return result;
-        }
-        result.push((String::new(), None));
-        return result;
-    }
-
-    if sep.is_empty() {
-        let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
-        let mut seg_start = 0;
-
-        for (splits_done, match_pos) in (0..=chars.len()).enumerate() {
-            if let Some(max) = max_splits
-                && splits_done >= max
-            {
-                let remaining: String = chars[seg_start..].iter().collect();
-                result.push((remaining, None));
-                return result;
-            }
-            let segment: String = chars[seg_start..match_pos].iter().collect();
-            result.push((
-                segment,
-                Some(SplitMatch {
-                    from: match_pos,
-                    to: match_pos,
-                    matched: String::new(),
-                    splitter_index: 0,
-                    is_regex: false,
-                    match_obj: None,
-                }),
-            ));
-            seg_start = match_pos;
-        }
-        result.push((String::new(), None));
-        return result;
-    }
-
-    let sep_chars: Vec<char> = sep.chars().collect();
-    let sep_len = sep_chars.len();
-    let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
-    let mut splits_done = 0;
-    let mut pos = 0;
-
-    loop {
-        if let Some(max) = max_splits
-            && splits_done >= max
-        {
-            let remaining: String = chars[pos..].iter().collect();
-            result.push((remaining, None));
-            return result;
-        }
-
-        let mut found = None;
-        if pos + sep_len <= chars.len() {
-            for start in pos..=(chars.len() - sep_len) {
-                if chars[start..start + sep_len] == sep_chars[..] {
-                    found = Some(start);
-                    break;
-                }
-            }
-        }
-
-        match found {
-            Some(match_pos) => {
-                let segment: String = chars[pos..match_pos].iter().collect();
-                result.push((
-                    segment,
-                    Some(SplitMatch {
-                        from: match_pos,
-                        to: match_pos + sep_len,
-                        matched: sep.to_string(),
-                        splitter_index: 0,
-                        is_regex: false,
-                        match_obj: None,
-                    }),
-                ));
-                pos = match_pos + sep_len;
-                splits_done += 1;
-            }
-            None => {
-                let remaining: String = chars[pos..].iter().collect();
-                result.push((remaining, None));
-                return result;
-            }
-        }
-    }
-}

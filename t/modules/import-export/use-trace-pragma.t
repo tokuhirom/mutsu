@@ -8,7 +8,7 @@ use Test;
 # Every expectation below was taken from `raku` (2026.09) and the file passes
 # under it unchanged.
 
-plan 29;
+plan 31;
 
 sub trace-of(Str $code --> Str) {
     my $proc = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -383,6 +383,13 @@ is trace-of(q:to/CODE/), q:to/END/,
         'the statements of a regex code block are numbered';
     is header-of-say('use trace; my token t { x { 3 } }; say 5'), '5 (-e line 1)',
         '... in a token declaration too';
+    my $multi = "use trace;\nmy \$a = 'a' ~~ / a \{\n  1;\n  2 } /;\nsay 5;\n";
+    is-deeply trace-of($multi).lines.grep(/line/).List,
+        ('2 (-e line 2)', '3 (-e line 3)', '4 (-e line 4)', '6 (-e line 5)'),
+        'the statements of a regex code block report the lines they are written on';
+    is-deeply trace-of($multi.subst('/ a', 'rx:i/ a')).lines.grep(/line/).List,
+        ('2 (-e line 2)', '3 (-e line 3)', '4 (-e line 4)', '6 (-e line 5)'),
+        '... also with rx:i';
 }
 
 # vim: expandtab shiftwidth=4

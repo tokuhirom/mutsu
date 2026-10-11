@@ -17,12 +17,42 @@ impl Interpreter {
     pub(crate) fn enhance_binding_error_at_site(
         &mut self,
         err: RuntimeError,
+        package: Symbol,
         func_name: &str,
         param_defs: &[crate::ast::ParamDef],
         args: &[Value],
     ) -> RuntimeError {
         let static_site = self.static_call_args && !self.static_args_may_bind(param_defs, args);
-        Self::enhance_binding_error(err, func_name, param_defs, args, static_site)
+        let mut err = Self::enhance_binding_error(err, func_name, param_defs, args, static_site);
+        // A run-time binding failure happens inside the callee: Rakudo's
+        // backtrace starts `in sub f at <file> line <declaration line>`. The
+        // callee's routine frame is not pushed until its parameters bound, so
+        // capture the backtrace with that frame on the stack now.
+        if !static_site && !func_name.is_empty() {
+            self.attach_callee_frame_backtrace(&mut err, package, func_name);
+        }
+        err
+    }
+
+    /// Attach to `err` the backtrace it would carry had it been raised inside
+    /// the routine `package::name`, at its declaration line.
+    // Cost: O(r), r = the routine's registry candidates (the location lookup).
+    fn attach_callee_frame_backtrace(&mut self, err: &mut RuntimeError, package: Symbol, name: &str) {
+        let (line, file) = self.routine_decl_location(package.as_str(), name);
+        self.push_routine_with_location(
+            package,
+            Symbol::intern(name),
+            self.current_source_line(),
+            self.executing_source_file_sym(),
+            file.as_deref().map(Symbol::intern),
+        );
+        let saved_line = self.cur_source_line;
+        if let Some(line) = line {
+            self.cur_source_line = line as _;
+        }
+        self.attach_lazy_backtrace_to_error(err, &[]);
+        self.cur_source_line = saved_line;
+        self.pop_routine();
     }
 
     /// Whether some positional type-object argument is a strict supertype of

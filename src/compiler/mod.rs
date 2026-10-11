@@ -1134,6 +1134,7 @@ mod nqp_atomic_forms;
 mod nqp_cond_forms;
 mod nqp_container_test;
 pub(crate) mod nqp_forms;
+mod nqp_lexical_forms;
 mod nqp_object_forms;
 mod nqp_p6_forms;
 mod numeric_operand_names;
@@ -2907,7 +2908,15 @@ impl Compiler {
     }
 
     /// Emit a read of `bare` via `OUTERS::` ("Symbols in any outer lexical scope").
-    fn emit_outers_var_access(&mut self, bare: String) {
+    pub(super) fn emit_outers_var_access(&mut self, bare: String) {
+        // The nearest enclosing scope that declares the name is an `OUTER::`
+        // at that depth, so a binding of an enclosing frame that this frame
+        // shadows is read through the same capture `OUTER::` uses.
+        if let Some(depth) = self.outers_declaring_depth(&bare)
+            && self.try_emit_outer_capture_read(&bare, depth)
+        {
+            return;
+        }
         let res = lex_scope::resolve_outers(&self.full_scope_chain(), &self.local_map, &bare);
         self.emit_outer_resolution(bare, res);
     }
