@@ -107,6 +107,7 @@ impl Interpreter {
             optional: multi_rank::optional_positional_count(&params),
             decl_order,
             profile,
+            tier: 0,
         }
     }
 
