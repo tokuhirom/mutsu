@@ -179,11 +179,7 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::PostIncrement(name_idx, None));
             } else {
-                self.compile_expr(&Expr::Call {
-                    name: Symbol::intern("__mutsu_incdec_nomatch"),
-                    args: vec![Expr::Literal(Value::str_from("postfix:<++>"))],
-                    listop: false,
-                });
+                self.compile_incdec_nomatch("postfix:<++>", expr);
             }
         } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
             // state/my declarator in expression position: `state $x++`, `my $x.++`
@@ -262,19 +258,22 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
                 self.compile_expr(&Expr::Var(tmp_result_name));
             } else {
-                self.compile_expr(&Expr::Call {
-                    name: Symbol::intern("__mutsu_incdec_nomatch"),
-                    args: vec![Expr::Literal(Value::str_from("postfix:<++>"))],
-                    listop: false,
-                });
+                self.compile_incdec_nomatch("postfix:<++>", expr);
             }
         } else if !self.compile_incdec_named_sub_lvalue(expr, true, false) {
-            self.compile_expr(&Expr::Call {
-                name: Symbol::intern("__mutsu_incdec_nomatch"),
-                args: vec![Expr::Literal(Value::str_from("postfix:<++>"))],
-                listop: false,
-            });
+            self.compile_incdec_nomatch("postfix:<++>", expr);
         }
+    }
+
+    /// `op` applied to an operand with no container to step: evaluate the
+    /// operand (`++(++$x)` steps `$x` first, as in Raku) and raise the
+    /// `X::Multi::NoMatch` that names its type.
+    pub(super) fn compile_incdec_nomatch(&mut self, op: &str, operand: &Expr) {
+        self.compile_expr(&Expr::Call {
+            name: Symbol::intern("__mutsu_incdec_nomatch"),
+            args: vec![Expr::Literal(Value::str(op.to_string())), operand.clone()],
+            listop: false,
+        });
     }
 
     /// Compile postfix -- on variable/index/method target.
@@ -306,11 +305,7 @@ impl Compiler {
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::PostDecrement(name_idx, None));
             } else {
-                self.compile_expr(&Expr::Call {
-                    name: Symbol::intern("__mutsu_incdec_nomatch"),
-                    args: vec![Expr::Literal(Value::str_from("postfix:<-->"))],
-                    listop: false,
-                });
+                self.compile_incdec_nomatch("postfix:<-->", expr);
             }
         } else if let Some(var_name) = Self::extract_vardecl_name(expr) {
             self.compile_expr(expr);
@@ -383,18 +378,10 @@ impl Compiler {
                 self.code.emit(OpCode::Pop);
                 self.compile_expr(&Expr::Var(tmp_result_name));
             } else {
-                self.compile_expr(&Expr::Call {
-                    name: Symbol::intern("__mutsu_incdec_nomatch"),
-                    args: vec![Expr::Literal(Value::str_from("postfix:<-->"))],
-                    listop: false,
-                });
+                self.compile_incdec_nomatch("postfix:<-->", expr);
             }
         } else if !self.compile_incdec_named_sub_lvalue(expr, false, false) {
-            self.compile_expr(&Expr::Call {
-                name: Symbol::intern("__mutsu_incdec_nomatch"),
-                args: vec![Expr::Literal(Value::str_from("postfix:<-->"))],
-                listop: false,
-            });
+            self.compile_incdec_nomatch("postfix:<-->", expr);
         }
     }
 

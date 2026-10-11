@@ -870,6 +870,7 @@ impl Interpreter {
                     }
                     return Err(self.enhance_binding_error_at_site(
                         e,
+                        data.package,
                         &data.name.resolve(),
                         &data.param_defs,
                         &args,

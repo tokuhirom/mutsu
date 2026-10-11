@@ -252,6 +252,7 @@ impl Interpreter {
                     *self.env_mut() = frame.saved_env;
                     return Err(self.enhance_binding_error_at_site(
                         e,
+                        cf.package_sym(),
                         fn_name,
                         &cf.param_defs,
                         &args,

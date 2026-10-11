@@ -308,7 +308,7 @@ impl Interpreter {
 
     /// `Int:D` / `Any:U`: a value's type with its definiteness smiley, as a
     /// dispatch failure names its arguments.
-    fn typed_arg_label(value: &Value) -> String {
+    pub(crate) fn typed_arg_label(value: &Value) -> String {
         // A type object names itself: `Int:U`, not the `Package` it is stored as.
         if let ValueView::Package(name) = value.view() {
             return format!("{name}:U");

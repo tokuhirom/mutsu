@@ -470,7 +470,12 @@ impl Interpreter {
                 "postfix:<-->"
             };
             return Err(
-                crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(opname, "Int:D"),
+                // Rakudo names the weights it steps `Int:D` for every
+                // QuantHash kind.
+                crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(
+                    opname,
+                    Some(&Value::int(1)),
+                ),
             );
         }
         let delta: i64 = if increment { 1 } else { -1 };
