@@ -1725,6 +1725,15 @@ impl Interpreter {
         // Strip GLOBAL::, OUR::, MY:: pseudo-package qualifiers to find
         // the variable under its bare name in the environment.
         if let Some(bare) = Self::pseudo_package_unqualified_name(name) {
+            // `$PROCESS::OUT` shares the env key `*OUT` with a `my $*OUT`, which
+            // shadows only `$*OUT`: under such a declaration the process value
+            // is the base-tier seed (nothing was published, or the stash read
+            // above answered).
+            if Self::is_process_qualified(name)
+                && let Some(seed) = self.process_seed_if_shadowed(&bare)
+            {
+                return Some(seed);
+            }
             if let Some(val) = self.env().get(&bare) {
                 return Some(val.clone());
             }

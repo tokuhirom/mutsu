@@ -303,6 +303,7 @@ mod vm_numeric_uninit_warn;
 mod vm_our_package_vars;
 mod vm_outer_capture;
 pub(crate) mod vm_package_body_lexicals;
+pub(crate) mod vm_class_body_static_types;
 mod vm_package_containers;
 pub(crate) mod vm_poll;
 mod vm_positional_index_key;

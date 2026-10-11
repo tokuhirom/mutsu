@@ -269,6 +269,17 @@ impl Interpreter {
             .contains_key_sym(MetaNs::LexicalDynamic.key_for_str(key))
     }
 
+    /// The never-written process value of `key` when a `my $*X` visible from
+    /// the current frame shadows its env key: the base-tier seed. `None` when
+    /// no such declaration is in scope, so the env binding is the process one.
+    // Cost: O(|key|), a marker probe and a base-tier probe.
+    pub(crate) fn process_seed_if_shadowed(&self, key: &str) -> Option<Value> {
+        if !self.dynamic_declared_lexically(key) {
+            return None;
+        }
+        self.process_dynamic_seed(key)
+    }
+
     /// The base-tier seed for `key`: the process value before any write.
     fn process_dynamic_seed(&self, key: &str) -> Option<Value> {
         self.env()

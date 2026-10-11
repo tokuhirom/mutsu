@@ -24,7 +24,7 @@
 //! bumped (#10524).
 
 use super::Compiler;
-use crate::ast::{NestedTypeShell, Stmt};
+use crate::ast::{Expr, NestedTypeShell, Stmt};
 use crate::ast_visit::{Visit, walk_stmt};
 
 /// Collects class/role declarations nested in code, each with the packages
@@ -102,6 +102,10 @@ impl<'ast> Visit<'ast> for NestedTypeDecls {
             Stmt::Package { is_unit: true, .. } => {}
             Stmt::Package { is_my: true, .. } => {}
             Stmt::Package { name, .. } => self.walk_package(&name.resolve(), stmt),
+            // An `anon class C { }` (the declaration followed by the call that
+            // takes `C` back out of scope, see `anon_class_decl`) is installed
+            // nowhere, so it gets no compile-time shell.
+            Stmt::Block(body) if is_anon_class_decl(body) => {}
             // Transparent groupings: they open no scope that runs later.
             Stmt::SetLine(_) | Stmt::SyntheticBlock(_) => walk_stmt(self, stmt),
             _ => {
@@ -111,6 +115,16 @@ impl<'ast> Visit<'ast> for NestedTypeDecls {
             }
         }
     }
+}
+
+/// Whether `body` is the block an `anon class` declaration parses to.
+// Cost: O(1).
+fn is_anon_class_decl(body: &[Stmt]) -> bool {
+    matches!(
+        body,
+        [Stmt::ClassDecl { .. }, Stmt::Expr(Expr::Call { name, .. })]
+            if name.resolve() == "__MUTSU_UNREGISTER_CLASS__"
+    )
 }
 
 /// The non-lexical classes and roles declared inside code anywhere in one

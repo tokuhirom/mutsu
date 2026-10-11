@@ -207,6 +207,7 @@ impl Interpreter {
             // to whatever the enclosing scope had — the authoritative copy now
             // lives in `package_lexicals`, which method dispatch injects.
             for bare in static_names {
+                self.leave_class_body_static_type(name, &bare, saved_env);
                 match saved_env.get(&bare) {
                     Some(previous) => {
                         let previous = previous.clone();
