@@ -89,7 +89,7 @@ impl Interpreter {
     /// Str.indices(needle, pos?, :overlap, :i, :ignorecase, :m, :ignoremark)
     // Cost: O(n + r) amortized, n = chars of the invocant, r = matches: each
     // search resumes at a byte offset from the cached grapheme index.
-    pub(super) fn dispatch_indices(
+    pub(crate) fn dispatch_indices(
         &self,
         target: Value,
         args: &[Value],

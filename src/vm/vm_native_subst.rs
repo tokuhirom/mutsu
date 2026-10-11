@@ -25,7 +25,7 @@ impl Interpreter {
     /// Try to run `target.subst(pattern, replacement, :g?)` natively. Returns
     /// `Some(result)` when handled in the Interpreter, `None` to fall back to the
     /// interpreter unchanged.
-    pub(super) fn try_native_subst(
+    pub(crate) fn try_native_subst(
         &mut self,
         target: &Value,
         method: &str,
