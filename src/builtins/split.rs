@@ -130,7 +130,7 @@ pub(crate) struct SplitMatch {
 /// Split a string by a string splitter. Returns list of `(segment, Option<match>)`.
 // Cost: O(n*m) worst, O(n + k) typical, n = bytes of the invocant, m = bytes
 // of the separator, k = pieces produced (grapheme-boundary-aware search).
-fn split_by_string(
+pub(crate) fn split_by_string(
     text: &str,
     sep: &str,
     limit: Option<usize>,
@@ -425,7 +425,10 @@ pub(crate) fn native_split_method(
 
     let splitter = positional[0];
     if positional.len() > 1 {
-        opts.limit = Some(positional[1].to_f64().max(0.0) as usize);
+        opts.limit = match parse_split_limit(positional[1]) {
+            Ok(limit) => limit,
+            Err(err) => return Some(Err(err)),
+        };
     }
 
     let splitters = get_string_splitters(splitter)?;

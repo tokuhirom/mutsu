@@ -93,13 +93,9 @@ pub(crate) fn native_method_2arg(
         {
             return None;
         }
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-            && class_name == "IO::Path"
-            && attributes.contains_key("resource")
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && crate::value::DispatchShape::from_instance_class(class_name)
+                == Some(crate::value::DispatchShape::IoPath)
         {
             return None;
         }

@@ -595,14 +595,10 @@ pub(crate) fn native_method_1arg(
             {
                 return None;
             }
-            // A `%?RESOURCES` entry splits its content (`resource_split_target`).
-            if let ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } = target.view()
-                && class_name == "IO::Path"
-                && attributes.contains_key("resource")
+            // An `IO::Path` splits its file's contents (the `IO::Path.split` row).
+            if let ValueView::Instance { class_name, .. } = target.view()
+                && crate::value::DispatchShape::from_instance_class(class_name)
+                    == Some(crate::value::DispatchShape::IoPath)
             {
                 return None;
             }

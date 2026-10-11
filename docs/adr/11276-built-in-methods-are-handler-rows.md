@@ -1629,6 +1629,23 @@ arguments and several arities each) and the unreachable `Cool.Int` (§9.71).
   answers that were already wrong and are filed: a match inside a block called by another routine does not set the outer `$/` (#12720), and
   `sprintf("%d", "x")` answers `0` (#12721).
 
+### 9.76 `split` on `Str`, `Cool` and `IO::Path`; `Cool.fmt` (2026-10-11)
+
+`refactor/11276-split-fmt-rows`. The last declared rows of the `text` group (`--inventory text` now owes only the unreachable `Cool.Int`, §9.71) and
+`IO::Path.split`.
+
+- **`split` on `Str` and `Cool`** (arities 1 and 2) is a `Handler::Interp` row (`str_interp::split`) over `Interpreter::dispatch_split_row`: a regex
+  splitter installed with its closure scope, then `handle_split_method`. The generic `split` handler of `call_method_with_values` calls the same routine.
+  The pure cascade's `native_split_method` now reads its limit with `parse_split_limit` too (it truncated `to_f64`, so `*`, `Inf` and a `NaN` limit
+  differed from the interpreter's), and the interpreter's string splitter is the pure one (`split::split_by_string`, which matches only at grapheme
+  boundaries); its own copy, `split_by_string_static`, searched by codepoint and is gone.
+- **`IO::Path.split` splits the file's contents** (Rakudo: `self.open(:$chomp, :$enc, :$nl-in).split(|c, :close)`); mutsu split the path string
+  (`"x.txt".IO.split(",")` was `("x.txt",)`). The row (`io_path_content::split_row`) and the interpreter's handler call `Interpreter::io_path_split`
+  (slurp with `:enc`, then `dispatch_split_row`); the pure cascades decline every `IO::Path` instead of only a `%?RESOURCES` entry.
+- **`Cool.fmt`** (arities 0 and 1) is a `Handler::Narrow` row over `fmt_native`, the routine the collections' `fmt` rows and the arity cascades call.
+- **Left**: `IO::Path::Parts`' `AT-KEY`/`AT-POS` (no dispatch shape), Rakudo's `IO::Path.split($s, 1)` answering a `List` (a quirk; mutsu answers a
+  `Seq` as for every other limit).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
