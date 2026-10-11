@@ -2,8 +2,8 @@
 #
 # Distributions the ecosystem tools must never pick automatically.
 #
-# `ecosystem-dist-roulette/pick-dist.py` never offers a listed distribution in
-# its random draw. `ecosystem-sweep.py` skips them in a bulk `--all` /
+# `ecosystem-tickets.py --queue` never offers a listed distribution in the
+# ecosystem-dist-queue skill's work order. `ecosystem-sweep.py` skips them in a bulk `--all` /
 # `--prefix` / `--status` / `--stale` selection; `--only <name>` still measures
 # one explicitly, so a deliberate re-check after a policy changes is not
 # blocked by this file.

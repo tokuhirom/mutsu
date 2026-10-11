@@ -20,6 +20,8 @@ after the finding is fixed where a path in a generated file does not.
     scripts/ecosystem-tickets.py --family no-such-method
     scripts/ecosystem-tickets.py --issue 3f0a1c2d     # a ready-to-file issue body
     scripts/ecosystem-tickets.py --json tmp/eco-tickets.json
+    scripts/ecosystem-tickets.py --queue              # the dist queue, in work order
+    scripts/ecosystem-tickets.py --queue --all --json tmp/eco-queue.json
     scripts/ecosystem-tickets.py --self-test
 
 A cluster's `id` is a digest of its signature, so it is stable across sweeps: the
@@ -43,6 +45,8 @@ import ecosystem_common as eco  # noqa: E402
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DISTS_DIR = os.path.join(REPO, "ecosystem", "dists")
+EXCLUDE_LIST = os.path.join(REPO, "ecosystem", "exclude.txt")
+ACCEPTED_LIST = os.path.join(REPO, "ecosystem", "accepted-divergences.toml")
 
 # Sites the ledger records but which are not mutsu's to fix. Both are measured
 # facts about the machine that ran the sweep, not about the interpreter, and both
@@ -352,7 +356,159 @@ def issue_body(c, *, summary=None):
     return "\n".join(head)
 
 
+# --- the dist queue ----------------------------------------------------------
+
+QUEUE_STATUSES = ("red", "partial", "blocked_load")
+# A cluster this wide is one interpreter fix filed once (the
+# ecosystem-cluster-filing skill), not something to fix inside one dist's PR.
+QUEUE_CLUSTER_MIN = 3
+
+
+def dependents(records) -> collections.Counter:
+    """How many OTHER measured distributions have each dist in their dependency
+    closure (`deps.resolved` is already the flat closure)."""
+    out = collections.Counter()
+    for r in records:
+        for d in set((r.get("deps") or {}).get("resolved") or []):
+            if d != r["dist"]:
+                out[d] += 1
+    return out
+
+
+def queue(records, *, exclude=(), accepted=None, clusters=None):
+    """The actionable failing distributions in the order to work them.
+
+    Ordered by how many other measured distributions depend on the dist
+    (descending: a fix there unblocks the most of the corpus), then by the
+    number of failing baseline files (ascending: the nearest to green first),
+    then by name, so the order is a pure function of the ledger. A fixed order
+    over the WHOLE remainder cannot be gamed the way a free pick can: nothing
+    is skipped for looking hard, the queue is simply worked top-down.
+
+    Left out, with the reason counted in the second return value:
+    - `exclude`  -- ecosystem/exclude.txt, confirmed dead ends;
+    - `raku-also-fails` -- a `blocked_load` whose every load error rakudo shares;
+    - `accepted` -- a red/partial dist whose every failing file is an accepted
+      divergence (ecosystem/accepted-divergences.toml, matched by shape).
+    """
+    accepted = accepted or {}
+    exclude = set(exclude)
+    n_dependents = dependents(records)
+    by_sig = {c["signature"]: c for c in (clusters if clusters is not None else cluster(records))}
+    rows, dropped = [], collections.Counter()
+    for r in records:
+        status = r.get("status")
+        if status not in QUEUE_STATUSES:
+            continue
+        dist = r["dist"]
+        if dist in exclude:
+            dropped["exclude"] += 1
+            continue
+        load_errors = [(m, v) for m, v in sorted((r.get("load") or {}).items())
+                       if v not in ("ok", "raku_also_fails")]
+        failing = [f for f in r.get("files") or []
+                   if f.get("cmp") in ("regression", "partial")
+                   and not eco.accepted_entry(accepted, dist, f.get("path"), f.get("mutsu"))]
+        if status == "blocked_load" and not load_errors:
+            dropped["raku-also-fails"] += 1
+            continue
+        if status != "blocked_load" and not failing and not load_errors:
+            dropped["accepted"] += 1
+            continue
+        if load_errors:
+            message = load_errors[0][1]
+        else:
+            message = next(((f.get("mutsu") or {}).get("first_failure") for f in failing
+                            if (f.get("mutsu") or {}).get("first_failure")), "")
+        cluster_id, signature = None, ""
+        if message:
+            noise = noise_class(message)
+            if noise:
+                signature = "noise-" + noise
+            else:
+                family, signature, _variant = classify(message)
+                if signature is None:
+                    signature = f"{family} [{dist}]"
+                c = by_sig.get(signature)
+                if c and c["n_dists"] >= QUEUE_CLUSTER_MIN:
+                    cluster_id = c["id"]
+        rows.append({
+            "dist": dist,
+            "version": r.get("version"),
+            "status": status,
+            "axis": r.get("axis"),
+            "dependents": n_dependents.get(dist, 0),
+            "failing_files": len(failing),
+            "load_errors": len(load_errors),
+            "signature": signature,
+            "message": (message or "")[:300],
+            "cluster": cluster_id,
+        })
+    rows.sort(key=lambda q: (-q["dependents"], q["failing_files"], q["dist"]))
+    for i, q in enumerate(rows, 1):
+        q["rank"] = i
+    return rows, dropped
+
+
+def print_queue(rows, dropped, *, total, limit):
+    print(f"{'rank':>4} {'deps':>4} {'fail':>4}  {'status':12} {'dist':32} "
+          f"{'cluster':8}  first failure")
+    for q in rows[:limit]:
+        print(f"{q['rank']:4} {q['dependents']:4} {q['failing_files']:4}  {q['status']:12} "
+              f"{q['dist'][:32]:32} {q['cluster'] or '-':8}  {q['signature'][:70]}")
+    gone = ", ".join(f"{n} {why}" for why, n in sorted(dropped.items())) or "none"
+    print(f"\n{min(limit, len(rows))} of {len(rows)} queued; {total} actionable records "
+          f"before exclusions ({gone} left out)")
+
+
 # --- self-test ---------------------------------------------------------------
+
+def _queue_self_test() -> int:
+    """Ordering and exclusions of `queue()` over a synthetic ledger."""
+    def rec(dist, status, *, deps=(), load=None, files=()):
+        return {"dist": dist, "status": status, "axis": "pure",
+                "deps": {"resolved": list(deps)}, "load": load or {dist: "ok"},
+                "files": [{"path": p, "cmp": cmp,
+                           "mutsu": {"verdict": "fail", "first_failure": msg}}
+                          for p, cmp, msg in files]}
+    bad = ("No such method 'foo' for invocant of type 'Str'")
+    records = [
+        rec("Leaf", "red", files=[("t/a.t", "regression", bad), ("t/b.t", "partial", bad)]),
+        rec("Near", "partial", files=[("t/a.t", "partial", bad)]),
+        rec("Base", "red", files=[("t/a.t", "regression", "boom"), ("t/b.t", "regression", "x"),
+                                  ("t/c.t", "regression", "y")]),
+        rec("Lib", "blocked_load", load={"Lib": "Unknown function: frob"}),
+        rec("UserA", "green", deps=["Base", "Lib"]),
+        rec("UserB", "green", deps=["Base"]),
+        rec("Third", "red", deps=["Base"], files=[("t/a.t", "regression", bad)]),
+        rec("RakuToo", "blocked_load", load={"RakuToo": "raku_also_fails"}),
+        rec("Dead", "red", deps=["Lib"], files=[("t/a.t", "regression", "z")]),
+        rec("Accepted", "partial", files=[("t/a.t", "partial", "not ok 6 -")]),
+    ]
+    accepted = {("Accepted", "t/a.t"): {"shape": {"verdict": "fail",
+                                                  "first_failure": "not ok 6 -"}}}
+    rows, dropped = queue(records, exclude={"Dead"}, accepted=accepted)
+    fails = 0
+    order = [q["dist"] for q in rows]
+    # Base (3 dependents) > Lib (UserA + Dead: excluded dists still count as
+    # dependents, they are measured) > the rest by failing files, then name.
+    want = ["Base", "Lib", "Near", "Third", "Leaf"]
+    if order != want:
+        fails += 1
+        print(f"FAIL queue order {order}, want {want}")
+    if dict(dropped) != {"exclude": 1, "raku-also-fails": 1, "accepted": 1}:
+        fails += 1
+        print(f"FAIL queue exclusions {dict(dropped)}")
+    # 'No such method foo on Str' fails three dists: a cluster id is shown.
+    clustered = {q["dist"] for q in rows if q["cluster"]}
+    if clustered != {"Near", "Third", "Leaf"}:
+        fails += 1
+        print(f"FAIL queue cluster ids on {sorted(clustered)}")
+    if [q["rank"] for q in rows] != list(range(1, len(rows) + 1)):
+        fails += 1
+        print("FAIL queue ranks")
+    return fails
+
 
 def self_test() -> int:
     cases = [
@@ -417,7 +573,8 @@ def self_test() -> int:
     ids = {c: hashlib.sha256(c.encode()).hexdigest()[:8] for c in ("a", "b")}
     if len(set(ids.values())) != 2:
         fails += 1
-    print(f"ecosystem-tickets self-test: {len(cases) + 4} checks, {fails} failed")
+    fails += _queue_self_test()
+    print(f"ecosystem-tickets self-test: {len(cases) + 8} checks, {fails} failed")
     return 1 if fails else 0
 
 
@@ -432,7 +589,11 @@ def main():
                     help="`all` also shows sites the sweep's own host caused")
     ap.add_argument("--issue", metavar="ID", help="print a ready-to-file issue body for a cluster")
     ap.add_argument("--note", help="with --issue: a Notes paragraph (what you already know)")
-    ap.add_argument("--json", metavar="OUT", help="write every cluster as JSON")
+    ap.add_argument("--json", metavar="OUT",
+                    help="write every cluster (with --queue: every queue row) as JSON")
+    ap.add_argument("--queue", action="store_true",
+                    help="the failing distributions in the order to work them "
+                         "(the ecosystem-dist-queue skill)")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
 
@@ -449,6 +610,18 @@ def main():
     eco.require_ledger(DISTS_DIR)
     records = eco.load_records(DISTS_DIR)
     clusters = cluster(records, want_class=args.cls)
+    if args.queue:
+        rows, dropped = queue(records, exclude=eco.load_exclude(EXCLUDE_LIST),
+                              accepted=eco.load_accepted(ACCEPTED_LIST), clusters=clusters)
+        total = sum(1 for r in records if r.get("status") in QUEUE_STATUSES)
+        if args.json:
+            with open(args.json, "w", encoding="utf-8") as fh:
+                json.dump({"queue": rows, "excluded": dict(dropped), "actionable": total},
+                          fh, indent=2)
+            print(f"wrote {len(rows)} queue rows -> {args.json}")
+        print_queue(rows, dropped, total=total, limit=len(rows) if args.all else args.limit)
+        return
+
     if args.family:
         clusters = [c for c in clusters if c["family"] == args.family]
 

@@ -7,7 +7,7 @@ metadata:
 
 # Rotating the ecosystem lock board
 
-The lock board ([`ecosystem-dist-roulette`](../ecosystem-dist-roulette/SKILL.md)) is an issue whose
+The lock board ([`ecosystem-dist-queue`](../ecosystem-dist-queue/SKILL.md)) is an issue whose
 comments are an append-only log. Every agent reads the whole log before it locks a distribution.
 Once the log is too large for one `get_comments` call, agents start locking from a partial read,
 and the board stops doing its job. Rotation moves the board to a fresh issue that holds only the
@@ -55,7 +55,7 @@ took seven extra board comments and a correction on the old board. So:
 3. **Decide each line of output. Do not re-derive it.**
    - **`live` and `held`:** carry it to the new board.
    - **`live` and `STALE`** (over 24h old, branch absent from `origin`): do not carry it. Post the
-     stale `Unlocking:` on the **old** board first (the format is in `ecosystem-dist-roulette`).
+     stale `Unlocking:` on the **old** board first (the format is in `ecosystem-dist-queue`).
      The new board then starts clean, and the break is recorded where the lock was.
    - **`held` with the branch present:** check whether that branch's PR is merged or closed. A
      merged or closed PR also meets the stale rule, and the script cannot see PRs.
@@ -113,7 +113,7 @@ Do them in this order. Each step leaves the board usable, even if you are interr
    git grep -n -e '#<old>\b' -e 'issues/<old>\b' -e '\b<old>\b' -- ':!news' ':!docs/adr'
    ```
 
-   The expected hits are the `ecosystem-dist-roulette` and `ecosystem-dist-fix` skills (including
+   The expected hits are the `ecosystem-dist-queue` and `ecosystem-dist-fix` skills (including
    the `gh issue … <old>` and `issue_number: <old>` examples), `ecosystem/README.md`,
    `docs/ecosystem-parity.md`, `docs/issue-workflow.md`, `PLAN.md`,
    `.github/scripts/sync-working-label.sh`, and this skill's history line above. Check each hit

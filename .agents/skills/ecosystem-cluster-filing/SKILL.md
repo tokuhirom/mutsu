@@ -42,7 +42,7 @@ each one, `search_issues` (or `gh issue list --search`) for `"eco-cluster: <id>"
 
 File **at most three issues per run**, so that one bad night cannot flood the tracker. Report the
 remaining unfiled clusters by count. Never file a cluster whose only distributions are on the lock
-board (`ecosystem-dist-roulette`), because an agent is already on them.
+board (`ecosystem-dist-queue`), because an agent is already on them.
 
 ## 3. Report
 
