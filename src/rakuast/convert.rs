@@ -1786,12 +1786,21 @@ fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Ex
     // the parser's assignment path. A non-true sixth argument is not a source
     // form this conversion recognizes.
     let (target, method, method_args, value, write_back) = match args {
-        [target, method, Expr::ArrayLiteral(method_args), value, write_back] => {
-            (target, method, method_args, value, write_back)
-        }
-        [target, method, Expr::ArrayLiteral(method_args), value, write_back, Expr::Literal(flag)]
-            if matches!(flag.view(), ValueView::Bool(true)) =>
-        {
+        [
+            target,
+            method,
+            Expr::ArrayLiteral(method_args),
+            value,
+            write_back,
+        ] => (target, method, method_args, value, write_back),
+        [
+            target,
+            method,
+            Expr::ArrayLiteral(method_args),
+            value,
+            write_back,
+            Expr::Literal(flag),
+        ] if matches!(flag.view(), ValueView::Bool(true)) => {
             (target, method, method_args, value, write_back)
         }
         _ => {
