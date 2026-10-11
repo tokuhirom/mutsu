@@ -671,11 +671,24 @@ impl Compiler {
         {
             self.compile_expr(cond);
             let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
-            self.compile_native_rw_assign_arg(then_var, &args[2], escaping);
-            let jump_end = self.code.emit(OpCode::Jump(0));
-            self.code.patch_jump(jump_else);
-            self.compile_native_rw_assign_arg(else_var, &args[2], escaping);
-            self.code.patch_jump(jump_end);
+            let mut jump_end = None;
+            for (i, var) in [then_var, else_var].into_iter().enumerate() {
+                // Assign inside the chosen arm, then pass that parameter on.
+                self.compile_expr(&Expr::AssignExpr {
+                    name: var.clone(),
+                    expr: Box::new(args[2].clone()),
+                    is_bind: false,
+                });
+                self.code.emit(OpCode::Pop);
+                self.compile_call_arg_with_escape(&Expr::Var(var.clone()), escaping);
+                if i == 0 {
+                    jump_end = Some(self.code.emit(OpCode::Jump(0)));
+                    self.code.patch_jump(jump_else);
+                }
+            }
+            if let Some(j) = jump_end {
+                self.code.patch_jump(j);
+            }
             return;
         }
         // Read-and-clear immediately: this call is the *direct* bind-target
@@ -1539,20 +1552,6 @@ impl Compiler {
             return None;
         };
         self.native_rw_params.contains(name).then(|| name.clone())
-    }
-
-    /// Assign `rhs` to the native `is rw` parameter `var`, then pass the
-    /// parameter itself as the call argument (an assignment yields its
-    /// container). One arm of the conditional in
-    /// [`Compiler::compile_call_arg_with_escape`].
-    fn compile_native_rw_assign_arg(&mut self, var: &str, rhs: &Expr, escaping: bool) {
-        self.compile_expr(&Expr::AssignExpr {
-            name: var.to_string(),
-            expr: Box::new(rhs.clone()),
-            is_bind: false,
-        });
-        self.code.emit(OpCode::Pop);
-        self.compile_call_arg_with_escape(&Expr::Var(var.to_string()), escaping);
     }
 
     /// Does this argument sub-expression still denote a native `is rw`
