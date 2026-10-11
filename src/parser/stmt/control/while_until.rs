@@ -2,15 +2,15 @@ use super::*;
 
 /// Parse a while clause, retaining its written signature.
 pub(crate) fn while_stmt(input: &str) -> PResult<'_, Stmt> {
-    parse_loop(input, false)
+    parse_loop(input, false, None)
 }
 
 /// Parse an until clause, retaining its written signature.
 pub(crate) fn until_stmt(input: &str) -> PResult<'_, Stmt> {
-    parse_loop(input, true)
+    parse_loop(input, true, None)
 }
 
-fn parse_loop(input: &str, is_until: bool) -> PResult<'_, Stmt> {
+pub(super) fn parse_loop(input: &str, is_until: bool, label: Option<String>) -> PResult<'_, Stmt> {
     let rest = keyword(if is_until { "until" } else { "while" }, input)
         .ok_or_else(|| PError::expected("while/until statement"))?;
     let (rest, _) = ws1(rest)?;
@@ -36,7 +36,9 @@ fn parse_loop(input: &str, is_until: bool) -> PResult<'_, Stmt> {
     {
         return Err(err);
     }
-    Ok((rest, loop_pointy_clause(cond, defs, body, is_until, None)))
+    let clause = loop_pointy_clause(cond, defs, body, is_until, label)
+        .map_err(|error| PError::fatal(error.message.into_owned()))?;
+    Ok((rest, clause))
 }
 
 /// The one expansion of a written while/until clause, shared with RakuAST.
@@ -48,7 +50,10 @@ pub(crate) fn loop_pointy_clause(
     body: Vec<Stmt>,
     is_until: bool,
     label: Option<String>,
-) -> Stmt {
+) -> Result<Stmt, crate::value::RuntimeError> {
+    if let Some(params) = &defs {
+        super::source_body::check(&cond, params, &body)?;
+    }
     let record = defs.as_ref().map(|params| {
         Stmt::SourceForm(Box::new(crate::ast::SourceForm::ControlPointy {
             kind: if is_until {
@@ -69,10 +74,10 @@ pub(crate) fn loop_pointy_clause(
         is_until,
         label,
     );
-    match record {
+    Ok(match record {
         Some(record) => Stmt::SyntheticBlock(vec![record, expanded]),
         None => expanded,
-    }
+    })
 }
 
 fn expand_loop(

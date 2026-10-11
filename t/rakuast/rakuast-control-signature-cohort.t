@@ -138,4 +138,27 @@ is EVAL(Q[
     @out.join(',')
 ].AST), '10,30', 'destructuring retains loop next and last control';
 
+is Q[OUTER: while 0 -> $value { 1 }].AST.statements[0].labels[0].name,
+    'OUTER', 'a labelled while retains its pointy source record';
+is Q[OUTER: until 1 -> $value { 1 }].AST.statements[0].labels[0].name,
+    'OUTER', 'a labelled until retains its pointy source record';
+is EVAL(Q[
+    my $i = 0;
+    my @out;
+    OUTER: while (++$i < 4 ?? ($i, $i * 10) !! Empty) -> ($a, $b) {
+        next if $a == 2;
+        @out.push($b);
+    }
+    @out.join(',')
+].AST), '10,30', 'labelled loops share the destructuring expansion';
+is EVAL(Q[
+    my $i = 0;
+    my @out;
+    OUTER: until ++$i > 3 -> $condition {
+        @out.push("$i:$condition");
+        last if $i == 2;
+    }
+    @out.join(',')
+].AST), '1:False,2:False', 'labelled until binds the original false condition';
+
 done-testing;

@@ -29,7 +29,8 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     let tmp_name = crate::with_desugar::next_tmp_name();
     let tmp_var = Expr::Var(tmp_name.clone());
 
-    let with_body = with_then_branch(&cond_expr, &tmp_var, &param_name, &param_def, body);
+    let with_body = with_then_branch(&cond_expr, &tmp_var, &param_name, &param_def, body)
+        .map_err(PError::from_typed)?;
 
     // Build the condition as (my $tmp = cond_expr).defined() (or
     // !(my $tmp = cond_expr).defined() for without). The DoStmt(VarDecl)
@@ -52,38 +53,40 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         }
     }
 
-    let (rest, else_branch) =
-        if keyword("orwith", rest).is_some() || keyword("elsif", rest).is_some() {
-            // Delegate the whole `orwith`/`elsif` continuation — including *multiple*
-            // `orwith` clauses and a trailing `else` — to the shared if-chain parser.
-            // It loops over every `orwith`/`elsif` (the old hand-rolled branch here
-            // consumed only a single `orwith`, so `with … orwith … orwith … else …`
-            // left the second `orwith` as an "Undeclared routine") and already
-            // topicalizes each `orwith` body / the `else` via `given`.
-            let (r, (chain_clauses, else_clause)) = parse_elsif_chain(rest)?;
-            let chain_stmt = lower_if_chain(chain_clauses, else_clause);
-            (r, vec![chain_stmt])
-        } else if keyword("else", rest).is_some() {
-            let r = keyword("else", rest).unwrap();
-            let (r, _) = ws(r)?;
-            let (r, param, def) = if r.starts_with("->") || r.starts_with("<->") {
-                let (r, (param, def, params, _, _, _)) = parse_for_params(r)?;
-                if !params.is_empty() {
-                    return Err(PError::expected_at("single else pointy parameter", r));
-                }
-                (r, param, def)
-            } else {
-                (r, None, None)
-            };
-            let (r, body) = block_with_pointy_params(r, def.as_slice())?;
-            let else_body = with_then_branch(&tmp_var, &tmp_var, &param, &def, body);
-            (r, else_body)
+    let (rest, else_branch) = if keyword("orwith", rest).is_some()
+        || keyword("elsif", rest).is_some()
+    {
+        // Delegate the whole `orwith`/`elsif` continuation — including *multiple*
+        // `orwith` clauses and a trailing `else` — to the shared if-chain parser.
+        // It loops over every `orwith`/`elsif` (the old hand-rolled branch here
+        // consumed only a single `orwith`, so `with … orwith … orwith … else …`
+        // left the second `orwith` as an "Undeclared routine") and already
+        // topicalizes each `orwith` body / the `else` via `given`.
+        let (r, (chain_clauses, else_clause)) = parse_elsif_chain(rest)?;
+        let chain_stmt = lower_if_chain(chain_clauses, else_clause).map_err(PError::from_typed)?;
+        (r, vec![chain_stmt])
+    } else if keyword("else", rest).is_some() {
+        let r = keyword("else", rest).unwrap();
+        let (r, _) = ws(r)?;
+        let (r, param, def) = if r.starts_with("->") || r.starts_with("<->") {
+            let (r, (param, def, params, _, _, _)) = parse_for_params(r)?;
+            if !params.is_empty() {
+                return Err(PError::expected_at("single else pointy parameter", r));
+            }
+            (r, param, def)
         } else {
-            // No orwith/else found — don't consume whitespace/newlines past the
-            // closing brace, so the caller sees the statement boundary correctly
-            // (e.g. `do with X { ... }\nsay ...` should not absorb `say`).
-            (rest_before_ws, Vec::new())
+            (r, None, None)
         };
+        let (r, body) = block_with_pointy_params(r, def.as_slice())?;
+        let else_body =
+            with_then_branch(&tmp_var, &tmp_var, &param, &def, body).map_err(PError::from_typed)?;
+        (r, else_body)
+    } else {
+        // No orwith/else found — don't consume whitespace/newlines past the
+        // closing brace, so the caller sees the statement boundary correctly
+        // (e.g. `do with X { ... }\nsay ...` should not absorb `say`).
+        (rest_before_ws, Vec::new())
+    };
 
     Ok((
         rest,
@@ -113,8 +116,13 @@ pub(crate) fn with_then_branch(
     param_name: &Option<String>,
     param_def: &Option<ParamDef>,
     body: Vec<Stmt>,
-) -> Vec<Stmt> {
-    let record_body = body.clone();
+) -> Result<Vec<Stmt>, crate::value::RuntimeError> {
+    let record_body = if param_name.is_some() {
+        super::source_body::check(cond_expr, param_def.as_slice(), &body)?;
+        body.clone()
+    } else {
+        Vec::new()
+    };
     let cond_expr = cond_expr.clone();
     let tmp_var = tmp_var.clone();
     let param_name = param_name.clone();
@@ -316,7 +324,12 @@ pub(crate) fn with_then_branch(
         with_body.extend(body);
     }
 
-    with_pointy_record(&param_name, &param_def, &record_body, with_body)
+    Ok(with_pointy_record(
+        &param_name,
+        &param_def,
+        record_body,
+        with_body,
+    ))
 }
 
 /// A pointy `with` block keeps its written parameter and body ahead of the
@@ -326,7 +339,7 @@ pub(crate) fn with_then_branch(
 fn with_pointy_record(
     param_name: &Option<String>,
     param_def: &Option<ParamDef>,
-    body: &[Stmt],
+    body: Vec<Stmt>,
     mut with_body: Vec<Stmt>,
 ) -> Vec<Stmt> {
     if let Some(name) = param_name {
@@ -335,7 +348,7 @@ fn with_pointy_record(
             Stmt::SourceForm(Box::new(crate::ast::SourceForm::WithPointy {
                 param_name: name.clone(),
                 param_def: param_def.clone(),
-                body: body.to_vec(),
+                body,
             })),
         );
     }

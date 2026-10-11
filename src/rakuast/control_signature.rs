@@ -155,11 +155,11 @@ pub(super) fn lower_unless(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     } else {
         None
     };
-    Ok(crate::parser::unless_clause(
+    crate::parser::unless_clause(
         lower_expr(named_child(node, "condition")?)?,
         defs,
         lower_block(block)?,
-    ))
+    )
 }
 
 /// Expand the same with-family pointy signature on both entry paths.
@@ -180,11 +180,11 @@ pub(super) fn with_body(
             "RakuAST: missing with-family pointy parameter",
         ));
     };
-    Ok(crate::parser::with_then_branch(
+    crate::parser::with_then_branch(
         cond,
         tmp,
         &Some(def.name.clone()),
         &Some(def),
         lower_block(block)?,
-    ))
+    )
 }

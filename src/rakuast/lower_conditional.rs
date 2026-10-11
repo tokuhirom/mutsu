@@ -32,7 +32,7 @@ pub(super) fn lower_clause_block(
     let (mut names, mut defs) = signature_positional_params(block)?;
     name_for_unpack_params(&mut names, &mut defs);
     // The parser's own expansion binds the parameters to the tested value.
-    let (binding_var, body) = crate::parser::if_pointy_clause(defs, lower_block(block)?);
+    let (binding_var, body) = crate::parser::if_pointy_clause(defs, lower_block(block)?)?;
     Ok((body, binding_var))
 }
 
@@ -80,7 +80,7 @@ pub(super) fn lower_with_block(
         let body = lower_block(block)?;
         let tmp_var = Expr::Var(tmp_name.clone());
         let then_branch =
-            crate::parser::with_then_branch(&cond_expr, &tmp_var, &Some(name), &Some(def), body);
+            crate::parser::with_then_branch(&cond_expr, &tmp_var, &Some(name), &Some(def), body)?;
         return Ok(crate::with_desugar::with_conditional_branch(
             kind,
             &tmp_name,
@@ -165,7 +165,7 @@ pub(super) fn lower_conditional_chain(
                             binding,
                             control_signature::params(block)?,
                             lower_block(block)?,
-                        )
+                        )?
                     }
                 }
             } else {

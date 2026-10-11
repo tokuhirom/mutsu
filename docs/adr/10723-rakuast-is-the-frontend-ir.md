@@ -407,6 +407,8 @@ compiler continues to consume ordinary conditional and loop bytecode; the
 record is skipped like the other source forms. Loop destructuring happens on
 each iteration, retaining `next` and `last` in the loop's own scope. `until`
 parameters receive the original condition value before its truth is negated.
+Labelled while/until clauses use this same parser and retain the label on
+their source record and executable loop.
 
 `orwith` uses the same pointy parameter parser and body expansion as `with`,
 retaining type constraints, sigilless names and destructuring. Its condition
@@ -421,6 +423,15 @@ parentheses are restored at the assignment boundary so multi-match result
 itemization agrees with the parser's tree. The read, constructed-tree and
 semantic contracts are pinned in
 `t/rakuast/rakuast-control-signature-cohort.t`.
+
+Before copying a control source record, a typed visitor counts its executable
+and recorded subtrees, with a 16,384-node and 128-level limit. Nested records
+cannot grow exponentially until allocation fails: parsing and constructed-tree
+lowering return a catchable resource error before the next oversized copy.
+The visitor also bounds parameter and regex traversal. Parser unit tests pin
+both the copy budget and its propagation through the conditional and loop
+families. With-family expansion copies a body only for an explicit signature,
+and moves that copy into the record rather than cloning it again.
 
 When EVAL conversion refuses a unit, its existing static source validation
 supplies any typed CHECK-time diagnostic before the refusal is returned.

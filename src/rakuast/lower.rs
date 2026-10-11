@@ -2170,13 +2170,13 @@ fn lower_while(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         if defs.len() > 1 {
             return Err(unsupported(node));
         }
-        return Ok(crate::parser::loop_pointy_clause(
+        return crate::parser::loop_pointy_clause(
             cond,
             Some(defs),
             lower_block(block)?,
             is_until,
             node_label(node)?,
-        ));
+        );
     }
     let body = lower_block(block)?;
     Ok(Stmt::While {

@@ -71,43 +71,11 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
             },
         ));
     }
-    if let Some(r) = keyword("while", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, cond) = condition_expr(r)?;
-        let (r, _) = ws(r)?;
-        let (r, body) = block(r)?;
-        return Ok((
-            r,
-            Stmt::While {
-                cond,
-                body,
-                label: Some(label),
-                is_statement_modifier: false,
-                is_until: false,
-                is_bare_term: false,
-            },
-        ));
+    if keyword("while", rest).is_some() {
+        return super::while_until::parse_loop(rest, false, Some(label));
     }
-    if let Some(r) = keyword("until", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, cond) = condition_expr(r)?;
-        let (r, _) = ws(r)?;
-        let (r, body) = block(r)?;
-        return Ok((
-            r,
-            Stmt::While {
-                cond: Expr::Unary {
-                    op: TokenKind::Bang,
-                    expr: Box::new(cond),
-                    word: false,
-                },
-                body,
-                label: Some(label),
-                is_statement_modifier: false,
-                is_until: true,
-                is_bare_term: false,
-            },
-        ));
+    if keyword("until", rest).is_some() {
+        return super::while_until::parse_loop(rest, true, Some(label));
     }
     if keyword("loop", rest).is_some() {
         // Delegate to `loop_stmt` so both the C-style `loop (init; cond; step)

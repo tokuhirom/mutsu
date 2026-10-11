@@ -67,9 +67,9 @@ fn next_if_bind_tmp_name() -> String {
 pub(super) fn lower_if_clause_binding(
     binding_params: Option<Vec<ParamDef>>,
     then_branch: Vec<Stmt>,
-) -> (Option<String>, Vec<Stmt>) {
+) -> Result<(Option<String>, Vec<Stmt>), crate::value::RuntimeError> {
     let Some(param_defs) = binding_params else {
-        return (None, then_branch);
+        return Ok((None, then_branch));
     };
     if_pointy_clause(param_defs, then_branch)
 }
@@ -83,17 +83,18 @@ pub(super) fn lower_if_clause_binding(
 pub(crate) fn if_pointy_clause(
     param_defs: Vec<ParamDef>,
     then_branch: Vec<Stmt>,
-) -> (Option<String>, Vec<Stmt>) {
+) -> Result<(Option<String>, Vec<Stmt>), crate::value::RuntimeError> {
     if param_defs.is_empty() {
-        return (None, then_branch);
+        return Ok((None, then_branch));
     }
+    super::source_body::check(&Expr::Literal(Value::NIL), &param_defs, &then_branch)?;
     let record = Stmt::SourceForm(Box::new(crate::ast::SourceForm::IfPointy {
         param_defs: param_defs.clone(),
         body: then_branch.clone(),
     }));
     let (binding, mut stmts) = expand_if_pointy(param_defs, then_branch);
     stmts.insert(0, record);
-    (binding, stmts)
+    Ok((binding, stmts))
 }
 
 fn expand_if_pointy(
@@ -190,7 +191,13 @@ fn binding_var_read(source_binding: &str) -> Expr {
     }
 }
 
-pub(super) fn lower_else_binding(source_binding: &str, else_clause: ElseClause) -> Vec<Stmt> {
+pub(super) fn lower_else_binding(
+    source_binding: &str,
+    else_clause: ElseClause,
+) -> Result<Vec<Stmt>, crate::value::RuntimeError> {
+    if let Some(params) = &else_clause.binding_params {
+        super::source_body::check(&Expr::Literal(Value::NIL), params, &else_clause.body)?;
+    }
     let record = else_clause.binding_params.as_ref().map(|params| {
         Stmt::SourceForm(Box::new(crate::ast::SourceForm::IfPointy {
             param_defs: params.clone(),
@@ -201,7 +208,7 @@ pub(super) fn lower_else_binding(source_binding: &str, else_clause: ElseClause) 
     if let Some(record) = record {
         body.insert(0, record);
     }
-    body
+    Ok(body)
 }
 
 /// Bind an else signature to the last condition's saved value.
@@ -210,7 +217,7 @@ pub(crate) fn else_pointy_clause(
     binding: &mut Option<String>,
     params: Vec<ParamDef>,
     body: Vec<Stmt>,
-) -> Vec<Stmt> {
+) -> Result<Vec<Stmt>, crate::value::RuntimeError> {
     let source = binding.get_or_insert_with(next_if_bind_tmp_name);
     lower_else_binding(
         source,

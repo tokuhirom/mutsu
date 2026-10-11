@@ -47,7 +47,8 @@ pub(crate) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, raw_then_branch) =
         block_with_pointy_params(rest, binding_params.as_deref().unwrap_or(&[]))?;
     let (rest, _) = ws(rest)?;
-    let (binding_var, then_branch) = lower_if_clause_binding(binding_params, raw_then_branch);
+    let (binding_var, then_branch) =
+        lower_if_clause_binding(binding_params, raw_then_branch).map_err(PError::from_typed)?;
 
     let mut clauses = vec![IfChainClause {
         cond,
@@ -58,7 +59,7 @@ pub(crate) fn if_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, (mut elsif_clauses, else_clause)) = parse_elsif_chain(rest)?;
     clauses.append(&mut elsif_clauses);
 
-    let stmt = lower_if_chain(clauses, else_clause);
+    let stmt = lower_if_chain(clauses, else_clause).map_err(PError::from_typed)?;
     Ok((rest, stmt))
 }
 
@@ -96,7 +97,8 @@ pub(crate) fn parse_elsif_chain(
                 block_with_pointy_params(r, binding_params.as_deref().unwrap_or(&[]))?;
             let (r, _) = ws(r)?;
             let (binding_var, then_branch) =
-                lower_if_clause_binding(binding_params, raw_then_branch);
+                lower_if_clause_binding(binding_params, raw_then_branch)
+                    .map_err(PError::from_typed)?;
             clauses.push(IfChainClause {
                 cond,
                 then_branch,
@@ -124,7 +126,8 @@ pub(crate) fn parse_elsif_chain(
             let tmp = crate::with_desugar::next_tmp_name();
             let tmp_var = Expr::Var(tmp.clone());
             let orwith_then =
-                with_then_branch(&orwith_cond_expr, &tmp_var, &param, &param_def, body);
+                with_then_branch(&orwith_cond_expr, &tmp_var, &param, &param_def, body)
+                    .map_err(PError::from_typed)?;
             last_orwith_cond = Some(tmp_var);
             let orwith_cond = crate::with_desugar::defined_condition(false, &tmp, orwith_cond_expr);
             let (r, _) = ws(r)?;
@@ -161,7 +164,8 @@ pub(crate) fn parse_elsif_chain(
             }
             let def = defs.into_iter().next();
             let param = def.as_ref().map(|def| def.name.clone());
-            body = with_then_branch(orwith_expr, orwith_expr, &param, &def, body);
+            body = with_then_branch(orwith_expr, orwith_expr, &param, &def, body)
+                .map_err(PError::from_typed)?;
         }
         return Ok((
             r,
@@ -181,9 +185,9 @@ pub(crate) fn parse_elsif_chain(
 pub(crate) fn lower_if_chain(
     mut clauses: Vec<IfChainClause>,
     else_clause: Option<ElseClause>,
-) -> Stmt {
+) -> Result<Stmt, crate::value::RuntimeError> {
     let mut else_branch = if let Some(else_clause) = else_clause {
-        let mut body = lower_else_clause(&mut clauses, else_clause);
+        let mut body = lower_else_clause(&mut clauses, else_clause)?;
         // An explicit `else {}` with an empty body should evaluate to Nil,
         // not be indistinguishable from a missing else clause.
         if body.is_empty() {
@@ -208,15 +212,18 @@ pub(crate) fn lower_if_chain(
 
     else_branch
         .pop()
-        .expect("if chain must have at least one clause")
+        .ok_or_else(|| crate::value::RuntimeError::new("if chain must have at least one clause"))
 }
 
-fn lower_else_clause(clauses: &mut [IfChainClause], else_clause: ElseClause) -> Vec<Stmt> {
+fn lower_else_clause(
+    clauses: &mut [IfChainClause],
+    else_clause: ElseClause,
+) -> Result<Vec<Stmt>, crate::value::RuntimeError> {
     if else_clause.binding_params.is_none() {
-        return else_clause.body;
+        return Ok(else_clause.body);
     }
     let Some(source_binding) = ensure_last_clause_binding_var(clauses) else {
-        return else_clause.body;
+        return Ok(else_clause.body);
     };
     lower_else_binding(&source_binding, else_clause)
 }
@@ -244,7 +251,9 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
             )));
         }
     }
-    Ok((rest, unless_clause(cond, binding_params, body)))
+    let clause = unless_clause(cond, binding_params, body)
+        .map_err(|error| PError::fatal(error.message.into_owned()))?;
+    Ok((rest, clause))
 }
 
 /// Expand the written unless clause through the same conditional binder.
@@ -253,7 +262,10 @@ pub(crate) fn unless_clause(
     cond: Expr,
     binding_params: Option<Vec<ParamDef>>,
     body: Vec<Stmt>,
-) -> Stmt {
+) -> Result<Stmt, crate::value::RuntimeError> {
+    if let Some(params) = &binding_params {
+        super::source_body::check(&cond, params, &body)?;
+    }
     let record = binding_params.as_ref().map(|params| {
         Stmt::SourceForm(Box::new(crate::ast::SourceForm::ControlPointy {
             kind: crate::ast::ControlPointyKind::Unless,
@@ -263,18 +275,18 @@ pub(crate) fn unless_clause(
             body: body.clone(),
         }))
     });
-    let expanded = expand_unless_clause(cond, binding_params, body);
-    match record {
+    let expanded = expand_unless_clause(cond, binding_params, body)?;
+    Ok(match record {
         Some(record) => Stmt::SyntheticBlock(vec![record, expanded]),
         None => expanded,
-    }
+    })
 }
 
 fn expand_unless_clause(
     cond: Expr,
     binding_params: Option<Vec<ParamDef>>,
     body: Vec<Stmt>,
-) -> Stmt {
+) -> Result<Stmt, crate::value::RuntimeError> {
     // `unless COND -> $x { BODY }` binds the condition's OWN value (rakudo:
     // `unless 0 -> $_ { $_.say }` prints `0`, not the negation). Lower it as
     // the *else* branch of an un-negated `if`, which is exactly the machinery
@@ -293,7 +305,7 @@ fn expand_unless_clause(
         };
         return lower_if_chain(clauses, Some(else_clause));
     }
-    Stmt::If {
+    Ok(Stmt::If {
         cond: Expr::Unary {
             op: TokenKind::Bang,
             expr: Box::new(cond),
@@ -305,5 +317,5 @@ fn expand_unless_clause(
         is_statement_modifier: false,
         is_unless: true,
         with_kind: None,
-    }
+    })
 }
