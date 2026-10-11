@@ -49,6 +49,7 @@ Re-check ADR status lines rather than relying on an old issue's description of t
 | [docs/agent-environments.md](docs/agent-environments.md) | Local box vs. remote container: `gh` → MCP tool map, provisioning, cores, container-only roast failures |
 | [docs/ci-pipeline.md](docs/ci-pipeline.md) | CI job layout, the docs-only skip and its allowlist, cancelled-run aggregators |
 | [docs/issue-workflow.md](docs/issue-workflow.md) | The GitHub-issue work queue: labels, tiers, the full claim protocol |
+| [docs/lanes.md](docs/lanes.md) | Issue lanes: which issues can run in parallel, the lane priority order, what `scripts/next-issue` picks |
 | [docs/flaky-test-policy.md](docs/flaky-test-policy.md) | Quarantine policy, flake history, the suspected-flake triage protocol |
 | [docs/benchmarks.md](docs/benchmarks.md) | Writing a benchmark, the `@section`/warm series, bench CI noise classes |
 | [docs/t-directory-layout.md](docs/t-directory-layout.md) | Which `t/` category a new test goes in |
@@ -486,7 +487,9 @@ release targets (Linux/macOS × x64/arm64) are required; do not weaken one to pa
   `todo:deep` (needs design/an ADR) or `todo:perf` (correct but slow; **must state its close
   condition** — a ratio against rakudo, a return to a prior speed, or the right complexity order —
   announced to the user when work starts, and closed exactly when met). A perf finding that also
-  fixes a wrong answer is `ticket`/`deep`. `tier:*` labels come from triage, not the filer. The body
+  fixes a wrong answer is `ticket`/`deep`. Also give it one `lane:*` label ([docs/lanes.md](docs/lanes.md)),
+  and make it a sub-issue of an open root-cause issue it is a symptom of. `tier:*` labels come from
+  triage, not the filer. The body
   — root cause, affected files, why it is large, a minimal repro with mutsu's and `raku`'s output —
   must let a cold session pick it up. Details: [docs/issue-workflow.md](docs/issue-workflow.md).
 - **Working a `todo:deep` or `todo:perf` issue, file every out-of-scope problem you hit** (user
@@ -515,12 +518,16 @@ release targets (Linux/macOS × x64/arm64) are required; do not weaken one to pa
   ~4-core remote container, where inline work usually beats a worktree. Details and rationale: the
   `issue-backlog-pipeline` skill. Clean up agent worktrees at least hourly (`reclaim-disk`).
 - **Task selection order:** PLAN.md priorities → BLOCKERS.md highest-impact features → roast tests
-  near in-progress work → `todo:deep` and `todo:ticket` issues oldest-first, both queues worked in
-  parallel (`tier:S` > `tier:B` > `tier:N`; `tier:icebox` is out). `todo:perf` is batched into its
-  own profiling session with a single implementation agent (`perf-tuning` skill).
+  near in-progress work → the issue queue **by lane** ([docs/lanes.md](docs/lanes.md)):
+  `scripts/next-issue` names each free lane's next issue, highest-ranked lane first. One agent per
+  lane (its `Slots`), so parallel agents take different lanes and do not conflict. Campaign lanes
+  (currently the env, method-table and RakuAST campaigns, ranked first) follow their carrier
+  issue's plan; queue lanes follow the rule in that doc (`tier:S` > `tier:B` > `tier:N`, wrong
+  answers before slow ones, `ecosystem` first, then oldest; `tier:icebox` is out). `todo:perf` is
+  `lane:perf`: one solo profiling agent (`perf-tuning` skill).
 - **A queue request is a standing instruction.** "Work the `tier:N` tickets and open the PRs",
   "drain the queue" and the like are complete; the mechanics are settled and **never asked back**:
-  one issue per PR; selection is the named filter, oldest-first, skipping claimed issues (a missing
+  one issue per PR; selection is the named filter in `scripts/next-issue` order, skipping claimed issues (a missing
   `tier:*` is workable); claim and release every issue; every fix has a regression test, a `news/`
   entry and `Closes #NNNN`; open the PR, enable auto-merge, watch CI, fix forward ("PR を出して" *is*
   the permission); go straight on to the next issue after each verified merge, up to the run cap in

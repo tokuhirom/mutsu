@@ -118,6 +118,7 @@ jobs:
           sparse-checkout: |
             /scripts/
             /docs/adr/
+            /docs/lanes.md
             /Makefile
             /.github/workflows/
             /.github/scripts/
@@ -145,6 +146,14 @@ jobs:
         # Here for the same reason as the ADR check: a PR that edits only a
         # workflow other than this one is docs-only and skips `test-check`.
         run: make check-runner-pins
+
+      - name: Lane table parses
+        # scripts/next-issue reads its lane order from the table in
+        # docs/lanes.md, so a malformed row would silently drop a lane. Here
+        # with the other always-on guards so it fails in seconds; the
+        # classifier denies docs/lanes.md, so a lane-table edit also runs
+        # `test-check` rather than counting as docs-only.
+        run: make check-next-issue
 
       - name: Last commit main was tested at
         # A scheduled or dispatched run on `main` has no "before" of its own.

@@ -154,6 +154,19 @@ triage regen tier it.
 A `tier:icebox` issue with no `icebox:*` label has not been classified since
 2026-09-09. Treat that as unknown, not as `icebox:record`.
 
+### Lane — which code it touches
+
+Every open `todo:*` issue also carries exactly one `lane:*` label, naming the area of
+code its fix touches: `lane:env`, `lane:threads`, `lane:perf`, and so on. Lanes are cut so
+that two lanes rarely edit the same files. That makes one agent per lane the rule for
+running agents in parallel, and lets `scripts/next-issue` name each lane's next issue. The
+lane list, the priority order between lanes (the current focus: the env, method-table and
+RakuAST campaigns first) and the ordering rule inside a lane are in [lanes.md](lanes.md).
+
+The filer sets the lane; a weekly triage pass fills in any that are missing. An issue that
+is a symptom of an open root-cause issue becomes that issue's **sub-issue**: it then waits
+while the root is open, because the root's fix is expected to fix or reshape it.
+
 ### `working` — someone is on it right now
 
 Agents run in parallel, and two of them picking the same issue wastes a build
@@ -336,6 +349,9 @@ Body, in prose (the templates carry these headings):
 - **Why it is large** — why it cannot be fixed in one sitting.
 - **Repro** — a minimal script or roast path that exhibits it, with mutsu's
   output and `raku`'s side by side.
+
+Label it with its kind (`todo:*`), `ecosystem` where that applies, and one `lane:*`
+(see [lanes.md](lanes.md)). Leave `tier:*` to triage.
 
 A `todo:deep` issue naturally carries more analysis than a `todo:ticket` one.
 Write it so a session that has never seen the problem can pick it up cold; the
