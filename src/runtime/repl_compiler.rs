@@ -239,6 +239,13 @@ impl Interpreter {
         }
     }
 
+    /// The env snapshot of the context `ctx` names, if it names one.
+    // Cost: O(1).
+    pub(crate) fn nqp_ctx_env(&self, ctx: &Value) -> Option<&Env> {
+        let id = Self::eval_context_id(ctx)?;
+        self.repl_compiler.contexts.get(id).map(|c| &c.env)
+    }
+
     /// The lexical `name` (`$x` / `@a` / ...) as `ctx` holds it, or as one of
     /// its callers does when `through_callers`.
     // Cost: O(m + c), m = chars of the name, c = caller contexts walked.

@@ -43,7 +43,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Captures | 5 / 5 | 0 | #11496 |
 | Coercion | 10 / 10 | 0 | #11553 |
 | Conditional | 5 / 5 | 0 | #11500 |
-| Context Introspection | 16 / 24 | 8 | #11498 |
+| Context Introspection | 23 / 24 | 1 | #11498 |
 | Loop/Control | 6 / 6 | 0 | #11500 |
 | Exception Handling | 15 / 15 | 0 | #11497 |
 | Processes | 4 / 4 | 0 | #11501 |
@@ -68,12 +68,12 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 4 / 4 | 0 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **536 / 575** | **39** | |
+| **Total** | **543 / 575** | **32** | |
 
 ## Missing ops by category
 
 - **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `cancel`, `killprocasync`, `permit`, `signal`, `spawnprocasync`, `timer`, `watchfile`
-- **Context Introspection** (#11498): `bindlexdyn`, `ctxouter`, `getlexcaller`, `getlexouter`, `getlexref_i`, `getlexref_n`, `getlexref_s`, `lexprimspec`
+- **Context Introspection** (#11498): `ctxouter`
 - **NativeCall** (#11504): `nativecallinvoke`
 - **Objects** (#11499): `rebless`, `setwho`
 - **Parametric Extensions** (#11499): `setparameterizer`, `parameterizetype`, `typeparameterat`, `typeparameterized`, `typeparameters`

@@ -10435,8 +10435,9 @@ impl CompiledCode {
                 free_writes.insert(*sym);
             }
         }
-        // `nqp::bindlex*` writes a lexical of this frame by a runtime name, so
-        // no name-write op shows which one: every plain scalar this frame
+        // `nqp::bindlex*` (or a write through a `getlexref_*` reference)
+        // writes a lexical of this frame by a runtime name, so no name-write
+        // op shows which one: every plain scalar this frame
         // declares may change, and a closure capturing one must share its cell.
         let binds_lexical_by_name = self
             .ops
@@ -13740,15 +13741,31 @@ mod compiled_fns_identity {
 }
 
 /// Whether `nqp::` op `id` names a lexical of the running frame by a runtime
-/// string: any `getlex*`/`bindlex*`/`curlexpad`/`ctx` (or, with `binds_only`,
-/// just the `bindlex*` writers).
+/// string: any `getlex*`/`bindlex*`/`bindlexdyn`/`curlexpad`/`ctx` (or, with `binds_only`,
+/// just the ops that can write one: the `bindlex*` writers and the
+/// `getlexref_*` references, which are written through later).
 // Cost: O(1).
 fn nqp_op_names_lexical(id: u16, binds_only: bool) -> bool {
     let name = crate::nqp_op_ids::nqp_op_name(id);
-    matches!(name, "bindlex" | "bindlex_i" | "bindlex_n" | "bindlex_s")
-        || (!binds_only
-            && matches!(
-                name,
-                "getlex" | "getlex_i" | "getlex_n" | "getlex_s" | "curlexpad" | "ctx"
-            ))
+    matches!(
+        name,
+        "bindlex"
+            | "bindlex_i"
+            | "bindlex_n"
+            | "bindlex_s"
+            | "getlexref_i"
+            | "getlexref_n"
+            | "getlexref_s"
+    ) || (!binds_only
+        && matches!(
+            name,
+            "getlex"
+                | "getlex_i"
+                | "getlex_n"
+                | "getlex_s"
+                | "getlexouter"
+                | "bindlexdyn"
+                | "curlexpad"
+                | "ctx"
+        ))
 }

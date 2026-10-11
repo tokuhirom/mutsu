@@ -48,6 +48,7 @@ pub(crate) mod nqp_ops_sc;
 mod routine_identity;
 pub(crate) use nqp_ops_exception::control_const_value as nqp_control_const_value;
 mod nqp_ops_fs;
+mod nqp_ops_lexical;
 pub(crate) mod nqp_ops_list;
 mod nqp_ops_multidim;
 pub(crate) mod nqp_ops_native;
