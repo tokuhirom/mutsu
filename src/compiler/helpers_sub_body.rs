@@ -1379,6 +1379,7 @@ impl Compiler {
             sub_compiler.seed_native_rw_params(param_defs);
         } else {
             sub_compiler.native_rw_params = self.native_rw_params.clone();
+            sub_compiler.native_ro_params = self.native_ro_params.clone();
         }
         sub_compiler.seed_native_int_param_types(param_defs);
         sub_compiler.seed_param_decl_types(param_defs);

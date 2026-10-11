@@ -228,13 +228,17 @@ impl TrirCompiler<'_> {
         if let Some(kind) = self.try_attr_op(op, args) {
             return kind;
         }
-        // `nqp::iscont` asks about its operand's CONTAINER, which the main
-        // compiler supplies by compiling the operand as `.VAR`
-        // (`try_compile_nqp_form`); a TRIR operand is always the bare value,
+        // The container tests (`nqp::iscont`, `iscont_i/n/s`, `isrwcont`)
+        // ask about their operand's CONTAINER, which the main compiler
+        // supplies (`compile_nqp_container_test`); a TRIR operand is always the bare value,
         // so it would answer 0 for every variable (#9346). Leave the routine
         // to the bytecode path.
-        if op == "iscont" {
-            self.note_decline(|| "nqp::iscont needs its operand's container".to_string());
+        if matches!(
+            op,
+            "iscont" | "iscont_i" | "iscont_n" | "iscont_s" | "isrwcont"
+        ) {
+            let o = op.to_string();
+            self.note_decline(|| format!("nqp::{o} needs its operand's container"));
             return None;
         }
         // Everything else in the namespace goes through the ordinary

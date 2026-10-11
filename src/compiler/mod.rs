@@ -1132,6 +1132,7 @@ mod mixin_rhs;
 mod native_str_coercion;
 mod nqp_atomic_forms;
 mod nqp_cond_forms;
+mod nqp_container_test;
 pub(crate) mod nqp_forms;
 mod nqp_object_forms;
 mod nqp_p6_forms;
@@ -1321,6 +1322,12 @@ pub(crate) struct Compiler {
     /// rakudo is. Seeded per routine body; a nested non-routine block
     /// inherits it, since the parameter stays lexically visible there.
     native_rw_params: HashSet<String>,
+    /// The native-typed parameters in scope that bind a *value*, not a
+    /// container (no `is rw` / `is copy` / `is raw`): rakudo answers
+    /// `nqp::iscont_i($i)` / `nqp::isrwcont($i)` with 0 for `sub f(int $i)`
+    /// while a `my int $i` is a native container (ADR-11553 §3.2). Seeded with
+    /// `native_rw_params` and inherited the same way.
+    native_ro_params: HashSet<String>,
     compiled_functions: CompiledFns,
     current_package: String,
     /// True when compiling inside a `unit module`/`unit class`/`unit role`
@@ -1976,6 +1983,7 @@ impl Compiler {
             atomic_spelling: None,
             provably_bare_receiver_vars: HashSet::new(),
             native_rw_params: HashSet::new(),
+            native_ro_params: HashSet::new(),
             compiled_functions: CompiledFns::default(),
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,

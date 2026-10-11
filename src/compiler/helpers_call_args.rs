@@ -1450,6 +1450,18 @@ impl Compiler {
             if let Some(tc) = pd.type_constraint.as_deref()
                 && self.is_native_type_constraint(tc)
             {
+                // A parameter shadows any outer name it reuses: it is a
+                // read-only native value exactly when no trait binds it to a
+                // container (see `native_ro_params`).
+                if pd
+                    .traits
+                    .iter()
+                    .any(|t| matches!(t.as_str(), "rw" | "copy" | "raw"))
+                {
+                    self.native_ro_params.remove(&pd.name);
+                } else {
+                    self.native_ro_params.insert(pd.name.clone());
+                }
                 self.local_types
                     .insert(pd.name.clone(), self.resolve_type_alias_constraint(tc));
             }

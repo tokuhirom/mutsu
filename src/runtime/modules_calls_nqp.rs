@@ -18,6 +18,7 @@ mod carray_repr;
 mod box_native;
 mod boot_scalar;
 pub(crate) mod boot_collection;
+mod nqp_container_test;
 mod box_target;
 mod cstr_repr;
 mod compunit_scope;

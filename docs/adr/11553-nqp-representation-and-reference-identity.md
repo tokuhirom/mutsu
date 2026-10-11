@@ -218,3 +218,20 @@ implemented or "Not applicable" before its behavior is delivered.
   `hllize` yields the plain `Int`/`Num`/`Str`.
   `t/vm/nqp-boot-scalar-repr.t` pins the Rakudo answers. The remaining 10 ops
   (VM collections and native references) are still open.
+- **VM collections**: delivered under [ADR-12666](12666-raw-vm-collections-are-a-view-of-shared-storage.md)
+  (#12668, #12669), which amends §3.1's mechanism.
+- **Native and rw references (`iscont_i/n/s`, `isrwcont`, #12673)**: the
+  compiler keeps the operand's binding (`src/compiler/nqp_container_test.rs`).
+  A native-typed variable answers statically from its declaration — a `my`
+  native or a native `is rw`/`is copy`/`is raw` parameter is a container of
+  its kind, a plain native parameter binds a value (`native_ro_params`). Any
+  other operand is compiled as `.VAR` (an expression as itself) and classified
+  at run time (`src/runtime/nqp_container_test.rs`). That classifier gets the
+  variable's name, for the existing readonly registry (`isrwcont`) and for a
+  native attribute's declared type. A first-class native reference is the
+  existing `IntPosRef`/`NumPosRef` proxy, which `nqp::atposref_*` now returns
+  for every native-element array. The container tests skip the nqp boundary's
+  Proxy FETCH, and TRIR declines them. `t/vm/nqp-container-kind-tests.t` pins
+  §2's matrix and more against Rakudo. Type / Conversion is now 53/53. One
+  shape stays open: the container an `is raw`/`is rw` routine returns (#12712).
+

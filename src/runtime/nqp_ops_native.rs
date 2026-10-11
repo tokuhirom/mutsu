@@ -137,7 +137,24 @@ impl Interpreter {
                 };
                 let len = arr.len();
                 let idx = args.get(1).map(crate::runtime::to_int).unwrap_or(0);
+                // A native-element array (`nqp::list_i`, `my int @a`) answers
+                // the same native reference a Buf does: an `IntPosRef` that
+                // `nqp::iscont_i` recognizes and that reads and writes the
+                // element through the storage (ADR-11553 §3.2).
+                let native = arr.nqp_elem != crate::value::NqpElemKind::Object
+                    || arr.has_native_backing()
+                    || arr
+                        .declared_type
+                        .as_deref()
+                        .is_some_and(|t| t.starts_with("array"));
                 match crate::runtime::nqp_backing::resolve_index(idx, len) {
+                    Ok(i) if native && op != "atposref_s" => {
+                        Ok(crate::runtime::native_pos_ref::native_pos_ref(
+                            target,
+                            i as i64,
+                            crate::runtime::native_pos_ref::NativeRefKind::of_op(op),
+                        ))
+                    }
                     Ok(i) => Ok(target.array_slot_ref(i, true).unwrap_or(Value::NIL)),
                     Err(e) => Err(e),
                 }
