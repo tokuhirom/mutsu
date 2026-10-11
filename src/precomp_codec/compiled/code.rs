@@ -82,6 +82,7 @@ impl Encode for CompiledCode {
             for_loop_param_syms,
             expr_declared_syms,
             free_var_syms,
+            lexical_use_modules,
             free_var_parent_slots,
             upvalue_parent_slots,
             outer_ref_names,
@@ -228,6 +229,7 @@ impl Encode for CompiledCode {
         encode_sym_set(for_loop_param_syms, encoder)?;
         encode_sym_set(expr_declared_syms, encoder)?;
         free_var_syms.encode(encoder)?;
+        lexical_use_modules.encode(encoder)?;
         free_var_parent_slots.encode(encoder)?;
         upvalue_parent_slots.encode(encoder)?;
         outer_ref_names.encode(encoder)?;
@@ -363,6 +365,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             for_loop_param_syms: decode_set(decoder)?,
             expr_declared_syms: decode_set(decoder)?,
             free_var_syms: Decode::decode(decoder)?,
+            lexical_use_modules: Decode::decode(decoder)?,
             free_var_parent_slots: Decode::decode(decoder)?,
             upvalue_parent_slots: Decode::decode(decoder)?,
             outer_ref_names: Decode::decode(decoder)?,

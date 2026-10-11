@@ -6902,6 +6902,11 @@ pub(crate) struct CompiledCode {
     /// the entire (~100-entry) captured env. Empty until `compute_free_vars`
     /// runs (during `compute_needs_env_sync`).
     pub(crate) free_var_syms: Vec<Symbol>,
+    /// Modules `use`d by a block lexically enclosing this code (or by its own
+    /// body), outside the unit's top level. A bareword call here resolves their
+    /// exported routines first, so a closure keeps the import after the block's
+    /// dynamic import scope has popped (#8751).
+    pub(crate) lexical_use_modules: Vec<Symbol>,
     /// §1.3 closure-capture slot bake: parallel to `free_var_syms`, the CREATING
     /// frame's compile-time local slot for each free variable (`local_map` at the
     /// closure's emit point, baked by `Compiler::add_closure_code_baked`), or
@@ -8045,6 +8050,7 @@ impl CompiledCode {
             for_loop_param_syms: rustc_hash::FxHashSet::default(),
             expr_declared_syms: rustc_hash::FxHashSet::default(),
             free_var_syms: Vec::new(),
+            lexical_use_modules: Vec::new(),
             free_var_parent_slots: Vec::new(),
             upvalue_parent_slots: Vec::new(),
             outer_ref_names: Vec::new(),
