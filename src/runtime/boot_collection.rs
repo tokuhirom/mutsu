@@ -154,6 +154,13 @@ impl Interpreter {
                 "WHAT" => Some(Ok(Value::package(Symbol::intern("IterationBuffer")))),
                 "^name" => Some(Ok(Value::str_from("IterationBuffer"))),
                 "REPR" => Some(Ok(Value::str_from("VMArray"))),
+                // `IterationBuffer` derives from `Any` alone, not from the
+                // `List` whose storage it views (#12700).
+                "^mro" => Some(Ok(Value::array(
+                    ["IterationBuffer", "Any", "Mu"]
+                        .map(|n| Value::package(Symbol::intern(n)))
+                        .to_vec(),
+                ))),
                 _ => None,
             };
         }
