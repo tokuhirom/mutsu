@@ -74,14 +74,14 @@ impl Interpreter {
     /// its nominal tier, the type distance and profile of
     /// `method_candidate_type_distance_profile`, the refinement tier of
     /// [`Self::method_candidate_narrowness`] at `shared_positions`, and
-    /// `decl_order` (its index in the MRO-ordered match list).
+    /// `decl_order` (see [`Self::method_decl_order`]).
     // Cost: O(p) plus one hierarchy walk per positional parameter, p = parameters.
     pub(super) fn method_rank_key(
         &self,
         args: &[Value],
         def: &MethodDef,
         shared_positions: usize,
-        decl_order: usize,
+        decl_order: u64,
     ) -> MultiRank {
         let params = Self::method_rank_params(def);
         // The literal-parameter count leads the nominal tier, ahead of type
@@ -103,7 +103,7 @@ impl Interpreter {
             non_slurpy: !multi_rank::has_slurpy_positional(&params),
             bind_check: multi_rank::needs_named_bind_check(&params),
             optional: multi_rank::optional_positional_count(&params, OptionalRule::Method),
-            decl_order: decl_order as u64,
+            decl_order,
             profile,
         }
     }
@@ -136,7 +136,10 @@ impl Interpreter {
         let mut ranks: Vec<MultiRank> = all_matches
             .iter()
             .enumerate()
-            .map(|(i, (_, def))| self.method_rank_key(arg_values, def, usize::MAX, i))
+            .map(|(i, (owner, def))| {
+                let order = Self::method_decl_order(mro, *owner, i);
+                self.method_rank_key(arg_values, def, usize::MAX, order)
+            })
             .collect();
         // The candidates tied on the leading tiers (literal count, type
         // distance), in match-list order.
@@ -167,11 +170,15 @@ impl Interpreter {
         {
             return Some(all_matches.swap_remove(i));
         }
-        let mut ranked: Vec<(MultiRank, usize)> = ranks.into_iter().zip(0..).collect();
-        // TODO: drop this gate (#12468 step 4).
-        if all_matches.iter().all(|(o, _)| *o == all_matches[0].0) {
-            ranked = prune_to_maximal(ranked, &|x, y| self.nominal_types_related(x, y));
-        }
+        // Across owners too: an ancestor's candidate and a subclass's that
+        // are incomparable resolve by declaration order (`method_decl_order`).
+        let mut ranked = prune_to_maximal(
+            ranks
+                .into_iter()
+                .zip(0..)
+                .collect::<Vec<(MultiRank, usize)>>(),
+            &|x, y| self.nominal_types_related(x, y),
+        );
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         let best = ranked[0].0;
         let tied: Vec<usize> = ranked
@@ -217,6 +224,22 @@ impl Interpreter {
             self.dispatch.dispatch_ambiguous = true;
         }
         Some(all_matches.swap_remove(winner))
+    }
+
+    /// The declaration order of match `index` (the MRO-ordered match list),
+    /// owned by `owner`: rakudo derives a subclass's multi dispatcher from its
+    /// parent's and appends the subclass's own candidates, so an ancestor's
+    /// candidates are declared first and, within one owner, the list order
+    /// is the declaration order. This is what decides between incomparable
+    /// candidates of different owners: rakudo answers `P` for
+    /// `class P { multi method m(Int $x, Any $y) }` and
+    /// `class C is P { multi method m(Any $x where True, Int $y) }` called as
+    /// `C.new.m(1, 2)`. An owner missing from `mro` ranks as the receiver's
+    /// own class.
+    // Cost: O(r), r = MRO length.
+    fn method_decl_order(mro: &[Symbol], owner: Symbol, index: usize) -> u64 {
+        let depth = mro.iter().position(|cn| *cn == owner).unwrap_or(0);
+        (((mro.len() - depth) as u64) << 32) | index as u64
     }
 
     /// Break a tie between equally narrow method candidates (`tied`, indices
