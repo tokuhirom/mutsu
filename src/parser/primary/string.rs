@@ -5,6 +5,7 @@
 //! original visibility through explicit named re-exports so external callers
 //! (`string::<name>`) keep working unchanged.
 
+mod escape_codepoint;
 mod escapes;
 mod helpers;
 mod heredoc;

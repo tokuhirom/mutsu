@@ -7,10 +7,9 @@
 
 use super::escapes::process_escape_sequence;
 
-/// The decoded text of the body of a `"..."` regex term, or `None` when the
-/// body interpolates (`$x`, `@a[0]`, `%h<k>`, `{ ... }`, `&f()`) or holds an escape
-/// a plain string would not accept. The source-level regex tree has no node
-/// for interpolated segments yet, so such a term keeps the runtime parser.
+/// The decoded text of a qq regex term. Interpolating bodies and unsupported
+/// escapes return `None`; callers must use the actual qq expression parser for
+/// interpolation rather than guessing a decoded literal.
 // Cost: O(n), n = length of the body.
 pub(crate) fn decode_qq_regex_quote(body: &str) -> Option<String> {
     let mut text = String::new();
@@ -22,13 +21,19 @@ pub(crate) fn decode_qq_regex_quote(body: &str) -> Option<String> {
                     .ok()??
                     .0;
             }
-            '$' | '@' | '{' => return None,
-            // `%h<x>` interpolates a hash element.
-            '%' if rest[1..].starts_with(|c: char| c.is_alphabetic() || c == '_') => {
+            '$' | '{' => return None,
+            // Bare aggregate names are literal qq text. Use the shared qq
+            // parser to recognize their postcircumfixes and double sigils.
+            '@' | '%' | '&'
+                if super::interp_var::try_interpolate_var(
+                    rest,
+                    &mut Vec::new(),
+                    &mut String::new(),
+                )
+                .is_some() =>
+            {
                 return None;
             }
-            // `&name` interpolates only as a call (`&f()`).
-            '&' if calls_a_routine(&rest[1..]) => return None,
             _ => {
                 text.push(ch);
                 rest = &rest[ch.len_utf8()..];
@@ -36,15 +41,6 @@ pub(crate) fn decode_qq_regex_quote(body: &str) -> Option<String> {
         }
     }
     Some(text)
-}
-
-/// Whether `rest`, right after a `&`, is a routine name followed by `(`.
-// Cost: O(k), k = length of the name.
-fn calls_a_routine(rest: &str) -> bool {
-    let name_len = rest
-        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-' || c == '\''))
-        .unwrap_or(rest.len());
-    name_len > 0 && rest[name_len..].starts_with('(')
 }
 
 /// The decoded text of the body of a `'...'` (or `‘...’`) regex term whose
@@ -65,4 +61,28 @@ pub(crate) fn decode_q_regex_quote(body: &str, close: char) -> String {
         }
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bare_percent_text_does_not_hide_malformed_escapes() {
+        assert_eq!(decode_qq_regex_quote("a%b"), Some("a%b".to_string()));
+        assert_eq!(
+            decode_qq_regex_quote("%h.keys"),
+            Some("%h.keys".to_string())
+        );
+        assert!(decode_qq_regex_quote("%b\\x[QQ]").is_none());
+        assert!(decode_qq_regex_quote("%h<a>").is_none());
+        assert!(decode_qq_regex_quote("%h.keys()").is_none());
+        assert_eq!(decode_qq_regex_quote("@bar"), Some("@bar".to_string()));
+        assert_eq!(
+            decode_qq_regex_quote("a@b.com"),
+            Some("a@b.com".to_string())
+        );
+        assert!(decode_qq_regex_quote("@bar[]").is_none());
+        assert!(decode_qq_regex_quote("@bar\\x[QQ]").is_none());
+    }
 }

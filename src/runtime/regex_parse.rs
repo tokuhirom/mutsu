@@ -334,14 +334,7 @@ pub(crate) fn regex_pattern_is_static(pattern: &str) -> bool {
 /// Nesting is not modelled -- rakudo lets `‘a ‘b’ c’` nest, but the first closer
 /// ends the span here, matching how the `'`/`"` spans have always been scanned.
 pub(super) fn regex_quote_closer(ch: char) -> Option<char> {
-    match ch {
-        '\'' => Some('\''),
-        '"' => Some('"'),
-        '\u{2018}' | '\u{201A}' => Some('\u{2019}'),
-        '\u{201C}' | '\u{201E}' => Some('\u{201D}'),
-        '\u{FF62}' => Some('\u{FF63}'),
-        _ => None,
-    }
+    crate::regex_qq_atoms::quote_closer(ch)
 }
 
 /// Return the character index immediately after a regex comment beginning at
@@ -1366,13 +1359,8 @@ pub(super) fn try_collapse_alternation_to_charclass(
 }
 
 pub(super) fn regex_single_quote_closes(open: char, ch: char) -> bool {
-    match open {
-        '\'' => ch == '\'',
-        '\u{2018}' => ch == '\u{2019}',                     // ‘...’
-        '\u{201A}' => ch == '\u{2019}' || ch == '\u{2018}', // ‚...’ and ‚...‘
-        '\u{FF62}' => ch == '\u{FF63}',                     // ｢...｣
-        _ => false,
-    }
+    !crate::regex_qq_atoms::is_dq_opener(open)
+        && crate::regex_qq_atoms::quote_closes(open, ch)
 }
 
 /// The opening quote of the regex string literal (`'...'`, `"..."` and their

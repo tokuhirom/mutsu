@@ -932,6 +932,7 @@ t/concurrency/promise/start-current-thread-scheduler.t
 t/concurrency/recursive-start-await.t
 t/concurrency/supply/await-channel-supply.t
 t/concurrency/supply/capture-channel-supply-amp-invocant.t
+t/concurrency/supply/capture-which-supply-method-rows.t
 t/concurrency/supply/channel-supply-backlog.t
 t/concurrency/supply/channel-supply-competing-consumers.t
 t/concurrency/supply/channel-supply-is-pumped.t
@@ -1158,6 +1159,7 @@ t/concurrency/thread-lock/lock.t
 t/concurrency/thread-lock/loop-scoped-lock-condition.t
 t/concurrency/thread-lock/merge-live-cold-and-current-thread-interval.t
 t/concurrency/thread-lock/method-alias-decl-no-deadlock.t
+t/concurrency/thread-lock/module-scalar-callable-thread-visible.t
 t/concurrency/thread-lock/module-scope-atomicint-from-imported-routine.t
 t/concurrency/thread-lock/new-bless-junction-no-autothread.t
 t/concurrency/thread-lock/nqp-atomic-ops.t
@@ -1624,6 +1626,7 @@ t/grammar/code-line-file-regex-token.t
 t/grammar/custom-symbol-infix-longest-token.t
 t/grammar/dispatch-token-cross-stack-nesting.t
 t/grammar/eval-grammar-parse.t
+t/grammar/exporthow-grammar-how.t
 t/grammar/grammar-action-capture-env-isolation.t
 t/grammar/grammar-action-capture-order.t
 t/grammar/grammar-action-failed-alternative.t
@@ -1726,6 +1729,7 @@ t/grammar/grammar-scratch-interp-lean.t
 t/grammar/grammar-separated-quantifier-named-captures.t
 t/grammar/grammar-sibling-implicit-core-parent.t
 t/grammar/grammar-sigilless-alias-silent-action.t
+t/grammar/grammar-sigspace-term-ratchet.t
 t/grammar/grammar-silent-action-order.t
 t/grammar/grammar-silent-alias-actions.t
 t/grammar/grammar-silent-rule-action.t
@@ -1761,6 +1765,9 @@ t/grammar/regex-grammar-method-leaf.t
 t/grammar/regex-negated-token-class-multichar.t
 t/grammar/regex-rule-separated-quantifier-backtrack.t
 t/grammar/role-proto-regex-reinstantiate.t
+t/grammar/rule-alias-whitespace.t
+t/grammar/rule-separated-quantifier-sigspace.t
+t/grammar/rule-sigspace-before-alternation.t
 t/grammar/rule-sigspace-charclass-brace.t
 t/grammar/rule-sigspace-escaped-brace.t
 t/grammar/rule-sigspace-inline-modifier.t
@@ -2255,6 +2262,7 @@ t/lang/scalar-item-assign-precedence.t
 t/lang/sigil-colliding-attr-slots.t
 t/lang/sigil-contextualizer-circumfix.t
 t/lang/sigil-contextualizer-stacked-slip.t
+t/lang/string-codepoint-escape-validation.t
 t/lang/string-comparison.t
 t/lang/string-interp-hash-sigil-hyphen.t
 t/lang/string-methods.t
@@ -2883,6 +2891,7 @@ t/nativecall/native-io-path-fs-stat.t
 t/nativecall/native-io-path-lexical.t
 t/nativecall/native-io-path-open.t
 t/nativecall/native-io-path-two-path.t
+t/nativecall/native-is-rw-scalar-in-sub-caller.t
 t/nativecall/native-isbuilt-construct.t
 t/nativecall/native-isrw-construct.t
 t/nativecall/native-iterationbuffer-construct.t
@@ -4307,6 +4316,7 @@ t/rakuast/rakuast-regex-proto-multi.t
 t/rakuast/rakuast-regex-qualified-subrules.t
 t/rakuast/rakuast-regex-quantifiers.t
 t/rakuast/rakuast-regex-quote-escapes.t
+t/rakuast/rakuast-regex-source-cohort.t
 t/rakuast/rakuast-regex-stored-interpolation.t
 t/rakuast/rakuast-regex-sym-adverb.t
 t/rakuast/rakuast-regex-tree-gaps.t
@@ -4594,6 +4604,7 @@ t/regex/regex-ignoremark-group-compiled.t
 t/regex/regex-ignoremark-scaling.t
 t/regex/regex-inline-code-block.t
 t/regex/regex-inline-code-compile-cache.t
+t/regex/regex-interp-after-dq-apostrophe.t
 t/regex/regex-interp-escaped-our-sub-lexical.t
 t/regex/regex-interp-method-call.t
 t/regex/regex-interp-quote-var.t
@@ -4638,10 +4649,14 @@ t/regex/regex-my-var-interpolation.t
 t/regex/regex-named-atom-spec-forms.t
 t/regex/regex-negated-class-crlf.t
 t/regex/regex-negated-class-grapheme-cluster.t
+t/regex/regex-negated-lookaround-double-prefix.t
 t/regex/regex-negated-property-minus-enum.t
 t/regex/regex-nested-subcaps-sharing.t
 t/regex/regex-nested-subrule-absolute-offsets.t
 t/regex/regex-nfc-expanding-codepoint.t
+t/regex/regex-numbered-alias-quantified.t
+t/regex/regex-numbered-alias-static.t
+t/regex/regex-numbered-alias.t
 t/regex/regex-our-declarator-writeback.t
 t/regex/regex-overlap.t
 t/regex/regex-param-bake-string-context.t
@@ -4652,6 +4667,7 @@ t/regex/regex-positive-named-class-assert.t
 t/regex/regex-precedence-climb-perf.t
 t/regex/regex-property-abbrev-value-arg.t
 t/regex/regex-qualified-subrule-relative-package.t
+t/regex/regex-quantified-backref.t
 t/regex/regex-quantified-named-subrule.t
 t/regex/regex-quantified-scalar-interpolation.t
 t/regex/regex-quote-interpolation-forms.t
@@ -4670,7 +4686,9 @@ t/regex/regex-separator-after-prefix.t
 t/regex/regex-separator-leading-empty.t
 t/regex/regex-separator-zero-iterations-slots.t
 t/regex/regex-sibling-subrule-same-position.t
+t/regex/regex-sigil-alias-quantified-subrule.t
 t/regex/regex-sigil-alias-regex-var-call.t
+t/regex/regex-sigil-alias-var-call-other-forms.t
 t/regex/regex-sigspace-ws-compiled.t
 t/regex/regex-sigspace.t
 t/regex/regex-spaces-in-bare-range.t
@@ -4696,6 +4714,8 @@ t/regex/regex-tree-named-array-lookaround.t
 t/regex/regex-tree-static-execution.t
 t/regex/regex-tree-value-provenance.t
 t/regex/regex-unicode-property-value.t
+t/regex/regex-unicode-quoted-literal-is-opaque.t
+t/regex/regex-unicode-single-quotes.t
 t/regex/regex-unspace.t
 t/regex/regex-value-identity.t
 t/regex/regex-value-interp-parse-memo.t
@@ -4822,6 +4842,7 @@ t/regex/syntax/regex-ltm-alternation.t
 t/regex/syntax/regex-ltm-ignoremark-alternation.t
 t/regex/syntax/regex-negated-charclass-lookahead.t
 t/regex/syntax/regex-octal-charclass-range.t
+t/regex/syntax/regex-quantified-anchor-spaced.t
 t/regex/syntax/regex-quantifier-range-atom-boundary.t
 t/regex/syntax/regex-ratchet-frugal-group-backref.t
 t/regex/syntax/regex-sep-quantifier-prefixed.t
@@ -4829,6 +4850,7 @@ t/regex/syntax/regex-sep-quantifier-ratchet.t
 t/regex/syntax/regex-separated-and-conjunction-code-view.t
 t/regex/syntax/regex-separated-quantifier-zero-matches.t
 t/regex/syntax/regex-separator-quantifier-strict.t
+t/regex/syntax/regex-sigspace-separated-quantifier.t
 t/regex/syntax/regex-standalone-backtrack-control.t
 t/regex/syntax/regex-subrule-lookahead-assertion.t
 t/regex/syntax/regex-tree-anchors.t
@@ -4889,6 +4911,7 @@ t/routines/call/lazy-reify-captured-outer-coherence.t
 t/routines/call/light-call-captured-var-writeback-coherence.t
 t/routines/call/metaop-thunk-captured-outer-coherence.t
 t/routines/call/mg-folded-capture.t
+t/routines/call/named-array-capture-arity.t
 t/routines/call/nested-capture-literal.t
 t/routines/call/nested-captures.t
 t/routines/call/nqp-capture-ops.t
@@ -5042,6 +5065,7 @@ t/routines/closure/wrap-invocant-arg-source.t
 t/routines/closure/wrap-original-runs-compiled-body.t
 t/routines/closure/wrap-our-sub-qualified-call.t
 t/routines/closure/wrap.t
+t/routines/collection-map-named-array-noncallable.t
 t/routines/conversion-functions.t
 t/routines/core-postcircumfix-routine.t
 t/routines/core-sleep-timer-routine.t
@@ -5647,6 +5671,7 @@ t/routines/signature/where-constraint-default.t
 t/routines/signature/where-constraint-var.t
 t/routines/signature/where-constraint-whatever-arg.t
 t/routines/signature/where-named-default-constraint.t
+t/routines/signature/where-plus-sigilless-param.t
 t/routines/signature/while-destructuring-pointy-param.t
 t/routines/signature/with-orwith-typed-pointy-param.t
 t/routines/signature/with-pointy-container-param.t

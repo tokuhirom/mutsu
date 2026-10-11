@@ -4,23 +4,11 @@
 //! classes, declarations, and replacement text.
 
 fn is_regex_quote_open(ch: char) -> bool {
-    matches!(
-        ch,
-        '\'' | '"' | '\u{2018}' | '\u{201A}' | '\u{201C}' | '\u{201E}' | '\u{FF62}'
-    )
+    crate::regex_qq_atoms::quote_closer(ch).is_some()
 }
 
 fn is_regex_quote_terminator(open: char, ch: char) -> bool {
-    match open {
-        '\'' => ch == '\'',
-        '"' => ch == '"',
-        '\u{2018}' => ch == '\u{2019}',                     // '...'
-        '\u{201A}' => ch == '\u{2019}' || ch == '\u{2018}', // ‚...' and ‚...'
-        '\u{201C}' => ch == '\u{201D}',                     // "..."
-        '\u{201E}' => ch == '\u{201D}',                     // „..."
-        '\u{FF62}' => ch == '\u{FF63}',                     // ｢...｣
-        _ => false,
-    }
+    crate::regex_qq_atoms::quote_closes(open, ch)
 }
 
 /// Does `$` immediately followed by `c` spell a Raku special variable? Only

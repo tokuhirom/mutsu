@@ -84,7 +84,7 @@ pub(crate) struct RegexQuantifier {
 impl RegexQuantifier {
     /// Regex source for the quantifier written after an atom.
     // Cost: O(s), s = size of the separator.
-    pub(crate) fn to_source(&self) -> String {
+    pub(crate) fn to_source(&self, whitespace_before_separator: bool) -> String {
         let mut source = match &self.kind {
             QuantifierKind::ZeroOrMore => "*".to_string(),
             QuantifierKind::OneOrMore => "+".to_string(),
@@ -118,8 +118,12 @@ impl RegexQuantifier {
             source.insert(at, backtrack.symbol());
         }
         if let Some(separator) = &self.separator {
-            source.push_str(if separator.trailing { " %% " } else { " % " });
+            if whitespace_before_separator {
+                source.push(' ');
+            }
+            source.push_str(if separator.trailing { "%% " } else { "% " });
             source.push_str(&separator.node.to_source());
+            source.push_str(super::trailing_space(&separator.node));
         }
         source
     }
