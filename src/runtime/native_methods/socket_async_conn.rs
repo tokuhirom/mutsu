@@ -202,8 +202,45 @@ impl Interpreter {
                         // back until the next read resolves them or the stream ends.
                         let mut pending_bytes: Vec<u8> = Vec::new();
                         let mut pending_text = String::new();
+                        // rakudo reads a connection only while a tap listens, so a
+                        // consumer that finished (a `react` that said `done`) leaves
+                        // the next chunk for the next `.Supply` tap. This reader must
+                        // therefore stop before it takes a chunk nobody can receive:
+                        // wake up periodically, and retire once every tap has gone.
+                        // (The timeout is a socket option shared by the stream's
+                        // clones; writers are unaffected by a receive timeout.)
+                        let _ = reader.set_read_timeout(Some(std::time::Duration::from_millis(50)));
                         loop {
+                            if tx.is_retired() {
+                                break;
+                            }
+                            // Peek first: a chunk that arrives while no tap listens
+                            // must stay in the kernel buffer for the next tap, so
+                            // the retirement check has to come after the data shows
+                            // up and before it is read.
+                            match crate::gc::block_quiescent(|| reader.peek(&mut buf)) {
+                                Err(e)
+                                    if matches!(
+                                        e.kind(),
+                                        std::io::ErrorKind::WouldBlock
+                                            | std::io::ErrorKind::TimedOut
+                                    ) =>
+                                {
+                                    continue;
+                                }
+                                Ok(n) if n > 0 && tx.is_retired() => break,
+                                _ => {}
+                            }
                             match crate::gc::block_quiescent(|| reader.read(&mut buf)) {
+                                Err(e)
+                                    if matches!(
+                                        e.kind(),
+                                        std::io::ErrorKind::WouldBlock
+                                            | std::io::ErrorKind::TimedOut
+                                    ) =>
+                                {
+                                    continue;
+                                }
                                 Ok(0) => {
                                     if !is_bin && !pending_text.is_empty() {
                                         let _ = tx.send(SupplyEvent::Emit(Value::str(

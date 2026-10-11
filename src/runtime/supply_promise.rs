@@ -706,6 +706,24 @@ impl Interpreter {
                         });
                         continue;
                     }
+                    // A `Channel.Supply` carries the channel itself: drain it
+                    // from the drive loop as one more consumer of the queue,
+                    // exactly as the react loop does. Without this the source
+                    // fell into the nested on-demand wiring below, whose
+                    // producer emits nothing yet, so the body looked complete
+                    // and the promise was kept before any later `send`.
+                    if let Some(ValueView::Channel(ch)) =
+                        inner_map.get("channel").map(Value::view)
+                    {
+                        react_subs.push(crate::runtime::react_whenever::ReactSubscription {
+                            channel: Some(ch.clone()),
+                            close_callbacks: Self::extract_supply_on_close_callbacks(&inner_map),
+                            last_callbacks: last_cbs,
+                            quit_callbacks: quit_cbs,
+                            ..crate::runtime::react_whenever::ReactSubscription::new(callback)
+                        });
+                        continue;
+                    }
                     // A live `Supplier`-backed source has no channel of its own:
                     // it pushes through the supplier registry's sinks, exactly as
                     // `react { whenever $supplier.Supply { … } }` does. Replaying
