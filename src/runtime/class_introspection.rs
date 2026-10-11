@@ -276,10 +276,17 @@ impl Interpreter {
     /// it. A builtin class (not registered with an MRO) is not one.
     // Cost: O(d), d = MRO depth.
     pub(crate) fn is_user_class_without_any(&self, class_name: &str) -> bool {
-        self.registry()
-            .classes
-            .get(class_name)
-            .is_some_and(|def| !def.mro.is_empty() && !def.mro.iter().any(|n| n.resolve() == "Any"))
+        // The registered MRO of a class inheriting a builtin ends at that
+        // builtin (`X::AdHoc` -> `Exception`) without spelling out the
+        // builtin's own `Any`, so a catalog type among the ancestors counts as
+        // an `Any` root; only a chain of declared classes ending at `Mu` has none.
+        self.registry().classes.get(class_name).is_some_and(|def| {
+            !def.mro.is_empty()
+                && def.mro.iter().all(|n| {
+                    let n = n.resolve();
+                    n != "Any" && (n == "Mu" || crate::builtin_types::catalog::builtin_type_mro_syms(&n).is_none())
+                })
+        })
     }
 
     /// [`Self::has_user_method`] widened to a bare role name. A punned role
