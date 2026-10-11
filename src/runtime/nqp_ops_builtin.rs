@@ -329,11 +329,10 @@ impl Interpreter {
                 );
                 // An object that boxes its value in an `is box_target`
                 // attribute unboxes that attribute.
+                // So does a boxed `is Int` subclass instance, its payload.
                 let v = self.unbox_native_through(&v).unwrap_or(v);
-                if let ValueView::Instance { attributes, .. } = v.view()
-                    && let Some(payload) = attributes.as_map().get("__mutsu_int_value")
-                {
-                    return Some(Ok(Value::int(crate::runtime::to_int(payload))));
+                if matches!(v.view(), ValueView::Int(_) | ValueView::BigInt(_)) {
+                    return Some(Ok(Value::int(crate::runtime::to_int(&v))));
                 }
                 Ok(Value::int(
                     crate::runtime::nativecall::value_c_address(&v) as i64
@@ -342,9 +341,10 @@ impl Interpreter {
             // nqp::box_i($i, Type): the inverse. A `Pointer`/`Pointer[T]` target
             // yields a pointer at that address (`Pointer.new(0)` is a legitimate
             // defined value, so a zero address stays defined). A user subclass
-            // of Int needs an instance carrying the native payload so that
-            // `nqp::istype` and value coercion still see the requested type;
-            // plain Int targets remain the immediate scalar below.
+            // of Int is boxed by `box_native_into_class` into an instance
+            // carrying the native payload, so that `nqp::istype` and value
+            // coercion still see the requested type; plain Int targets remain
+            // the immediate scalar below.
             // Cost: O(d), d = MRO length of the target type (class_mro, cached Arc); O(1) for a Pointer/Int target.
             "box_i" => {
                 let n = args.first().map(crate::runtime::to_int).unwrap_or(0);
@@ -360,22 +360,6 @@ impl Interpreter {
                     && let Some(boxed) = self.native_object_of_type(ty, n as usize)
                 {
                     return Some(boxed);
-                }
-                let target = args
-                    .get(1)
-                    .map(|v| match v.view() {
-                        ValueView::Package(name) => name.resolve(),
-                        ValueView::Instance { class_name, .. } => class_name.resolve(),
-                        _ => String::new(),
-                    })
-                    .unwrap_or_default();
-                if !target.is_empty()
-                    && target != "Int"
-                    && self.class_mro(&target).iter().any(|name| name == "Int")
-                {
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("__mutsu_int_value".to_string(), Value::int(n));
-                    return Some(Ok(Value::make_instance(Symbol::intern(&target), attrs)));
                 }
                 Ok(Value::int(n))
             }
