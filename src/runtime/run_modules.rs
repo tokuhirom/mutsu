@@ -414,6 +414,24 @@ impl Interpreter {
                 site_attrs,
             );
             self.append_repo_to_chain_tail(site_repo);
+
+            // Rakudo's chain also holds the `core` Installation, whose
+            // distribution is the one carrying the core modules; mutsu's is the
+            // bundled Rakudo-Core battery (`bundled_core_distribution`).
+            if self.bundled_core_distribution().is_some()
+                && let Some(core_dir) = self.default_repo_dir("core")
+            {
+                let mut core_attrs = HashMap::new();
+                core_attrs.insert(
+                    "prefix".to_string(),
+                    Value::str(core_dir.display().to_string()),
+                );
+                let core_repo = Value::make_instance(
+                    Symbol::intern("CompUnit::Repository::Installation"),
+                    core_attrs,
+                );
+                self.append_repo_to_chain_tail(core_repo);
+            }
         }
         // The bundled batteries are the lowest-priority link, after the site
         // repository, exactly where `resolve_module_path` searches them.
