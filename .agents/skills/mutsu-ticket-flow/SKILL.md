@@ -224,6 +224,17 @@ rediscover everything. So whenever you stop with work remaining on such an issue
    one already exists.
 3. **Repeat it verbatim at the end of your final report to the user** in a fenced block they can
    copy straight into a new session.
+4. **In a remote container, offer to start that session for them** (user decision, 2026-10-11).
+   Where the `claude-code-remote` MCP tool `create_session` is available (`command -v gh || echo
+   remote` says remote), do not leave the copy-paste to the user: ask whether to start the next
+   session now (`AskUserQuestion`; the question is the one decision genuinely theirs, so asking
+   is not a violation of "never ask back" for queue requests). On yes, call `create_session` with
+   the prompt from step 1 as `prompt`, the repository as `source_url`
+   (`https://github.com/tokuhirom/mutsu`), a short `title` naming the issue, and the other
+   arguments omitted so the new session inherits this session's environment and model; then report
+   the new session's ID. On no, or when `create_session` is unavailable (local dev box), the fenced
+   block from step 3 is the handoff. Steps 2 and 3 still happen first: the comment is the durable
+   record, and the new session may fail to start.
 
 This replaces, not adds to, the "say what comes next" line of the issue comment in step 5 of the
 slice loop above: the prompt *is* that record. It does not excuse stopping early — "It is too hard"
