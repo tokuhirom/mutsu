@@ -387,195 +387,23 @@ impl Interpreter {
         self.pick_method_winner(mro, arg_values, invocant, all_matches)
     }
 
-    /// Compute the type distance of a method's param constraints from the
-    /// actual arguments.  Lower distance = more specific match.
-    ///
-    /// `args` is the call's full argument list, positional and named
-    /// interleaved in call-site order (`f(1, :debug, :mode)` is `[1,
-    /// Pair(debug), Pair(mode)]`), while `arg_idx` below walks only a
-    /// candidate's POSITIONAL parameters. Indexing the raw `args` by that
-    /// counter treated a named-argument Pair as if it were the next
-    /// positional value whenever a candidate had more positional parameters
-    /// than the call supplied positionally (an unfilled trailing optional,
-    /// e.g. `Int $index = 10`): `type_hierarchy_distance("Int", <a Pair
-    /// value>)` scored as unrelated, adding a large penalty that a candidate
-    /// with fewer positional parameters (and hence never reaching that
-    /// out-of-range access) did not pay — so a plain untyped catch-all could
-    /// outrank a candidate that was actually the correct, narrower match
-    /// (ASN::BER's `Serializer.serialize($enum-value, ..., :$debug, :$mode)`
-    /// losing to its own `$unknown-type` fallback whenever the call passed
-    /// any named argument at all). Filtering to positional-only values first
-    /// — the same filter `resolve_function_with_types` uses to count arity —
-    /// keeps `arg_idx` aligned with the positional arguments it is meant to
-    /// index.
-    ///
-    /// The per-parameter [`RankProfile`] comes from the same walk; this is the
-    /// method half of `candidate_type_distance_profile` (one `incomparable`
-    /// relation for both).
+    /// The type distance of a method candidate's parameters from the actual
+    /// arguments, lower being narrower, with its per-parameter
+    /// [`RankProfile`]: the walk multi-SUB dispatch ranks by
+    /// ([`Self::params_type_distance_profile`]), over every parameter but the
+    /// invocant, resolving a bare type name from the package that declared the
+    /// method.
     // Cost: O(p) plus one hierarchy walk per positional parameter, p = parameters.
     pub(super) fn method_candidate_type_distance_profile(
         &self,
         args: &[Value],
         def: &MethodDef,
     ) -> (usize, RankProfile) {
-        let mut profile = RankProfile::EMPTY;
-        let mut slot = 0usize;
-        let positional_args: Vec<&Value> =
-            args.iter().filter(|v| !v.is_string_pair_value()).collect();
-        let args = positional_args.as_slice();
-        let mut total = 0usize;
-        let mut arg_idx = 0;
-        for pd in &def.param_defs {
-            if pd.is_invocant || pd.name.starts_with("__type_capture__") {
-                continue;
-            }
-            // Positional slurpy parameters (`*@x`, `**@x`) are less specific than
-            // a required positional of the same type. When a single Positional
-            // argument matches both `(@x)` and `(*@x)`, the non-slurpy candidate
-            // must win rather than being treated as equally specific (ambiguous).
-            //
-            // A named-hash slurpy (`*%h`) is NOT penalized here. It competes with
-            // other candidates only over *named* arguments, and a bare zero-arg
-            // candidate is really `(*%_)` in Raku — equivalent, not narrower — so
-            // a flat distance penalty would wrongly let `()` beat `(Bool :$b, *%h)`
-            // (`HTTP::Request.new(GET => $url)` picking the wrong `new`). Named
-            // slurpies are instead ranked by the explicit-named tie-break below:
-            // `(IO::Path :$file!)` still beats `(*%items)` because it declares an
-            // explicit named param, and `()` vs `(*%h)` correctly ties (ambiguous),
-            // matching rakudo. The implicit method `*%_` carries no penalty either.
-            if (pd.slurpy || pd.double_slurpy) && pd.name != "%_" && pd.name != "_" {
-                // A positional slurpy that receives no argument is not
-                // compared at all: rakudo checks only the positional
-                // parameters both candidates declare and consults slurpiness
-                // after those tie (the non-slurpy tie-break in
-                // `pick_method_winner`). Charging it here made
-                // `(Str:D $name, *@p)` lose `url-for('cart')` to
-                // `(Any:D $record)` (#11045).
-                if !pd.named && !pd.name.starts_with('%') && arg_idx < args.len() {
-                    // positional slurpy
-                    total += 2000;
-                    arg_idx += 1;
-                }
-                continue;
-            }
-            if pd.named || pd.slurpy || pd.double_slurpy {
-                continue;
-            }
-            if let Some(tc) = &pd.type_constraint {
-                // A coercion parameter (`IO() $p`, `Str(Int) $s`) is exactly as
-                // wide as the type it accepts (`Any` for the bare `T()` form),
-                // not the target type it coerces to.
-                let base = super::dispatch_candidates::coercion_accepted_constraint(tc)
-                    .unwrap_or_else(|| Self::constraint_base_for_distance(tc));
-                // A subset's nominal distance is that of its ultimate base type
-                // (`subset T of Any` ranks like `Any`, not as an unknown type at
-                // distance 500 — which would wrongly lose to a bare `Any`). The
-                // subset's extra narrowness is applied as a tie-break below.
-                let resolved = if self.registry().subsets.contains_key(base) {
-                    self.resolve_subset_base_type(base)
-                } else {
-                    base.to_string()
-                };
-                // A bare user type name in the signature names the type visible
-                // from the package that DECLARED the candidate (`role SI` nested
-                // in `class Outer` registers as `Outer::SI`); measuring the bare
-                // spelling against the argument's roles scored it "unrelated"
-                // and a wider `Iterator` candidate out-ranked it. The sub
-                // dispatch's ranking does the same.
-                let owner = def.lexical_package.resolve();
-                let resolved = if !owner.is_empty()
-                    && !crate::runtime::utils::is_known_type_constraint(&resolved)
-                    && !self.has_type_direct(&resolved)
-                {
-                    self.resolve_type_name_for_owner(&owner, resolved)
-                } else {
-                    resolved
-                };
-                let before = total;
-                let subset_refined = self.registry().subsets.contains_key(base);
-                if arg_idx < args.len() {
-                    // A container argument (a hash element, `%h.values[0]`,
-                    // a Pair's value) ranks by its contents, as it type-checks.
-                    let decont;
-                    let value = if args[arg_idx].is_container_ref() {
-                        decont = args[arg_idx].deref_container();
-                        &decont
-                    } else {
-                        args[arg_idx]
-                    };
-                    total += if matches!(value.view(), ValueView::Nil) {
-                        Self::nil_type_distance(&resolved)
-                    } else {
-                        // `type_hierarchy_distance` is the SAME class/role-aware
-                        // MRO walk (including the Buf/Blob family table) that
-                        // multi-SUB dispatch uses (`candidate_type_distance`).
-                        // The former method-only `builtin_type_distance` here
-                        // reimplemented a much narrower version that never
-                        // learned a value's actual class (`value_type_name`
-                        // answers the generic "Any" for every `Instance`, so
-                        // `Blob:D`/`Positional:D`/`Mu:D` all fell through to the
-                        // same 500 "unrelated" distance for a `buf8` argument
-                        // and tied — reported as `X::Multi::Ambiguous` for a
-                        // `proto method` `{*}` redispatch, issue #8516).
-                        self.type_hierarchy_distance(&resolved, value)
-                    };
-                    profile.record(
-                        slot,
-                        total - before,
-                        subset_refined
-                            || pd.literal_value.is_some()
-                            || (pd.where_constraint.is_some() && !pd.is_variadic()),
-                        Some(Symbol::intern(&resolved)),
-                    );
-                }
-            } else if (pd.name.starts_with('@') || pd.name.starts_with('%')) && arg_idx < args.len()
-            {
-                // An unconstrained `@`/`%` param carries an implicit
-                // Positional/Associative constraint, so it out-narrows an
-                // `Any`-wide candidate (same as multi-SUB dispatch).
-                let implicit = if pd.name.starts_with('@') {
-                    "Positional"
-                } else {
-                    "Associative"
-                };
-                let d = self
-                    .seq_as_positional_distance(implicit, args[arg_idx])
-                    .unwrap_or_else(|| self.type_hierarchy_distance(implicit, args[arg_idx]));
-                total += d;
-                profile.record(
-                    slot,
-                    d,
-                    pd.where_constraint.is_some(),
-                    Some(Symbol::intern(implicit)),
-                );
-            } else if arg_idx < args.len() {
-                // An untyped positional that receives no argument is not
-                // compared at all, like a typed one above (#11173).
-                //
-                // An untyped parameter is an implicit `Any` and a literal is
-                // as narrow as the argument it equals (rakudo compiles it to
-                // the literal's type plus an equality check). The distance
-                // therefore equals the explicit `Any` spelling's: a flat
-                // charge made `($n where ..., $v)` lose to `($n, Any $v)`,
-                // where rakudo ties on the second position and lets the
-                // refinement on the first win.
-                let d = if pd.literal_value.is_some() {
-                    0
-                } else {
-                    self.type_hierarchy_distance("Any", args[arg_idx])
-                };
-                total += d;
-                profile.record(
-                    slot,
-                    d,
-                    pd.literal_value.is_some() || pd.where_constraint.is_some(),
-                    None,
-                );
-            }
-            slot += 1;
-            arg_idx += 1;
-        }
-        (total, profile)
+        let owner = super::multi_type_walk::WalkOwner {
+            package: def.lexical_package,
+            literal_mask: 0,
+        };
+        self.params_type_distance_profile(args, &Self::method_rank_params(def), owner)
     }
 
     pub(crate) fn constraint_base_for_distance(constraint: &str) -> &str {
@@ -585,23 +413,6 @@ impl Interpreter {
             constraint
         };
         s.split('(').next().unwrap_or(s)
-    }
-
-    /// `value_type_name(Nil)` reports "Any", so a `Nil` argument needs its own
-    /// MRO here: a `(Nil)` candidate must out-narrow e.g. `(Str() $s)` for a
-    /// literal Nil argument (URI's `authority(Nil)`). Kept as its own small
-    /// catalog read rather than folded into `type_hierarchy_distance` (which
-    /// multi-sub dispatch also uses and has no such special case) since this
-    /// is a method-dispatch-specific fix.
-    fn nil_type_distance(constraint: &str) -> usize {
-        let nil_mro =
-            crate::builtin_types::ancestry::builtin_type_narrowness_chain("Nil").unwrap_or(&[]);
-        for (i, &ancestor) in nil_mro.iter().enumerate() {
-            if ancestor == constraint {
-                return i;
-            }
-        }
-        500
     }
 
     /// Count the visible (non-private, non-ancestor-submethod) overloads of

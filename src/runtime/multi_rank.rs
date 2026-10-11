@@ -134,6 +134,10 @@ pub(crate) struct MultiRank {
     pub(crate) distance: usize,
     pub(crate) refinement: [usize; 4],
     pub(crate) non_slurpy: bool,
+    /// `(positional count, required positional count)`, slurpies excluded:
+    /// rakudo's `num_types` and `min_arity`, for the arity-mismatch rule of
+    /// [`Self::is_narrower`].
+    pub(crate) arity: (usize, usize),
     pub(crate) bind_check: bool,
     pub(crate) optional: usize,
     /// Declaration order: a sub's `decl_order` stamp, a method's index in
@@ -178,14 +182,43 @@ impl MultiRank {
         self.profile.incomparable(&other.profile, related)
     }
 
+    /// Whether rakudo's arity-mismatch rule decides between `self` and
+    /// `other`: they differ in both positional count and required positional
+    /// count, and exactly one declares a slurpy positional. Rakudo's
+    /// `is_narrower` then compares no parameter types at all: the candidate
+    /// without the slurpy is narrower. So `multi m(Any $x, Any $y)` beats
+    /// `multi m(Int $x, *@r)` for `m(1, 2)` whatever their declaration
+    /// order, although `Int` is the narrower type at the one position they
+    /// share.
+    ///
+    /// When neither (or both) declares a slurpy, rakudo calls the pair
+    /// incomparable and its topological sort over ALL candidates — including
+    /// ones that cannot bind this call — decides which tier each lands in
+    /// (Test's `is-approx(5, 6, 1)` reaches the `$abs-tol` candidate only
+    /// because the required-named candidates sit between the two). A
+    /// pairwise relation over the candidates that bound cannot reproduce
+    /// that, so such a pair keeps the tier order.
+    // TODO: rank multi candidates by rakudo's tiered topological sort over the
+    // whole candidate set, then drop this special case (see #12795).
+    // Cost: O(1).
+    fn arity_rule_decides(&self, other: &MultiRank) -> bool {
+        self.arity.0 != other.arity.0
+            && self.arity.1 != other.arity.1
+            && self.non_slurpy != other.non_slurpy
+    }
+
     /// Whether `self` is strictly narrower than `other`: comparable with it
-    /// and ahead of it in the tier order.
+    /// and ahead of it in the tier order, or — when the arity-mismatch rule
+    /// decides (see [`Self::arity_rule_decides`]) — the non-slurpy one.
     // Cost: O(r), r = the cost of one `related` call.
     pub(crate) fn is_narrower(
         &self,
         other: &MultiRank,
         related: &dyn Fn(Symbol, Symbol) -> bool,
     ) -> bool {
+        if self.arity_rule_decides(other) {
+            return self.non_slurpy;
+        }
         self.tier_cmp(other) == Ordering::Less && !self.incomparable(other, related)
     }
 
@@ -217,6 +250,11 @@ pub(crate) fn prune_to_maximal<T>(
     }
     let ranks: Vec<MultiRank> = matches.iter().map(|(r, _)| *r).collect();
     let dominated = |k: &MultiRank| ranks.iter().any(|o| o.is_narrower(k, related));
+    if ranks.iter().all(dominated) {
+        // The arity-mismatch rule makes the relation non-transitive, so a
+        // cycle can dominate every match; leave the choice to the tier order.
+        return matches;
+    }
     let mut maximal: Vec<(MultiRank, T)> =
         matches.into_iter().filter(|(k, _)| !dominated(k)).collect();
     let first = maximal[0].0;
@@ -288,6 +326,18 @@ pub(crate) fn needs_named_bind_check(params: &[&ParamDef]) -> bool {
         || params
             .iter()
             .any(|p| p.is_variadic() && p.where_constraint.is_some())
+}
+
+/// `(positional count, required positional count)` of a candidate's
+/// dispatch-visible parameters, slurpies excluded: [`MultiRank::arity`].
+// Cost: O(p), p = parameters.
+pub(crate) fn positional_arity(params: &[&ParamDef]) -> (usize, usize) {
+    let positional = params.iter().filter(|p| !p.named && !p.is_variadic());
+    let required = positional
+        .clone()
+        .filter(|p| !(p.optional_marker || p.default.is_some()))
+        .count();
+    (positional.count(), required)
 }
 
 /// Count *optional* positional parameters — an optional or defaulted

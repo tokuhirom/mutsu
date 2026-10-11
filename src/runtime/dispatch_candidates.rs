@@ -1,6 +1,5 @@
-use super::multi_rank::{
-    self, MultiRank, PROFILE_LEN, RankProfile, prune_to_maximal,
-};
+use super::multi_rank::{self, MultiRank, RankProfile, prune_to_maximal};
+use super::multi_type_walk::WalkOwner;
 use super::*;
 use crate::runtime::types::{is_coercion_constraint, parse_coercion_type};
 use crate::value::ValueView;
@@ -101,6 +100,7 @@ impl Interpreter {
             distance,
             refinement: [constrained, subsig, writable, 0],
             non_slurpy: !multi_rank::has_slurpy_positional(&params),
+            arity: multi_rank::positional_arity(&params),
             bind_check: multi_rank::needs_named_bind_check(&params),
             optional: multi_rank::optional_positional_count(&params),
             decl_order: def.decl_order,
@@ -495,7 +495,7 @@ impl Interpreter {
     ///
     /// A subset of a subset (`subset Top of Mid of Int`) resolves through the
     /// chain; the iteration bound keeps a cyclic declaration from spinning.
-    fn dispatch_nominal_base<'a>(&self, base: &'a str) -> std::borrow::Cow<'a, str> {
+    pub(super) fn dispatch_nominal_base<'a>(&self, base: &'a str) -> std::borrow::Cow<'a, str> {
         use std::borrow::Cow;
         // `UInt` is `subset UInt of Int where * >= 0` in rakudo, but mutsu
         // implements it as a type-matching special case rather than a registry
@@ -529,102 +529,15 @@ impl Interpreter {
         Cow::Owned(current)
     }
 
+    /// [`Self::params_specificity_rank`] of a multi sub candidate's
+    /// dispatch-visible parameters.
+    // Cost: O(p) plus one hierarchy walk per coercion parameter, p = parameters.
     pub(super) fn candidate_specificity_rank_for_args(
         &self,
         def: &FunctionDef,
         args: &[Value],
     ) -> (usize, usize, usize, usize, usize) {
-        let all_params = Self::dispatch_visible_params(def);
-        // Type narrowness is computed from the POSITIONAL parameters only.
-        // A named parameter's type decides whether the candidate is
-        // *applicable*, never how narrow it is — `multi p(Any :$a)` and
-        // `multi p(Int :$a)` are equally narrow in rakudo, so `p(a => 1)`
-        // picks whichever is declared first (verified against rakudo; the
-        // positional pair `multi r(Any $x, Int :$a)` / `multi r(Int $x, Any
-        // :$a)` still resolves to the `Int $x` one). See
-        // `candidate_has_typed_named_param` for the matching ambiguity rule.
-        let params: Vec<&ParamDef> = all_params.iter().copied().filter(|p| !p.named).collect();
-        let param_args = self.dispatch_param_arguments(&params, args);
-        let effective: Vec<Option<&str>> = params
-            .iter()
-            .zip(param_args.iter())
-            .map(|(p, arg)| {
-                p.type_constraint
-                    .as_deref()
-                    .map(|tc| self.effective_dispatch_constraint(tc, arg.as_ref()))
-            })
-            .collect();
-        let literal_value_count = params.iter().filter(|p| p.literal_value.is_some()).count();
-        // A parameter is constrained by a `where` clause or by a `subset` type,
-        // and rakudo ranks the two alike: each is a bind-time check on top of
-        // the same nominal type, so `multi f(Small $x)` and `multi f(Int $x
-        // where * < 10_000)` tie and declaration order decides. Counting them
-        // as two separate components made every `where` beat every subset.
-        // A parameter carrying both still counts once, as rakudo's
-        // per-parameter "has a constraint" comparison does.
-        let constrained_count = params
-            .iter()
-            .zip(effective.iter())
-            .filter(|(p, tc)| {
-                // A `where` on a slurpy refines nothing positional; it ranks
-                // in the named bind-check step instead (see
-                // `multi_rank::needs_named_bind_check`).
-                (p.where_constraint.is_some() && !p.is_variadic())
-                    || tc
-                        .map(Self::constraint_base_name)
-                        .is_some_and(|base| self.constraint_is_subset(base))
-            })
-            .count();
-        let typed_param_count = params
-            .iter()
-            .zip(effective.iter())
-            .filter(|(p, tc)| {
-                // A bare `Mu`/`Any` constraint is no narrower than an
-                // unconstrained param (raku: unconstrained IS Any) — counting
-                // it made `(Any:D $j, Mu)` outrank `($j, @x)` wholesale
-                // (JSON::Unmarshal's fallback swallowing the Positional
-                // candidate). A smiley (`Any:D`) still counts.
-                let meaningful_type = tc.is_some_and(|tc| !matches!(tc, "Mu" | "Any"));
-                meaningful_type
-                    // An optional param (`&c = &say`, `@a?`) takes no part in
-                    // rakudo's narrowness comparison, so its implied
-                    // Positional/Associative/Callable type must not either.
-                    || (!p.slurpy
-                        && !p.optional_marker
-                        && p.default.is_none()
-                        && (p.name.starts_with('@')
-                            || p.name.starts_with('%')
-                            || p.name.starts_with('&')))
-            })
-            .count();
-        let subsig_count = params.iter().filter(|p| p.sub_signature.is_some()).count();
-        // A slurpy's `is raw` (`*@a is raw`) only keeps its elements' containers;
-        // it requires no writable argument, so it must not make the candidate
-        // narrower than `()` for a call with no arguments (P5chomp's
-        // `multi chomp()` that dies vs `multi chomp(*@a is raw)`).
-        let writable_trait_count = params
-            .iter()
-            .filter(|p| !p.slurpy && p.traits.iter().any(|t| matches!(t.as_str(), "rw" | "raw")))
-            .count();
-        (
-            // NOMINAL tier. A literal parameter is not merely a refinement:
-            // rakudo compiles it to the literal's own type plus an equality
-            // constraint, so it is nominally exactly as narrow as the argument
-            // and only then wins the tie on the constraint. It therefore leads
-            // the tier, ahead of the plain type count.
-            literal_value_count,
-            typed_param_count,
-            // REFINEMENT tier — consulted only once two candidates are tied on
-            // the nominal tier AND on type-hierarchy distance. See
-            // [`MultiRank`].
-            constrained_count,
-            subsig_count,
-            // `rw`/`raw` are dispatch-visible because they require a writable
-            // argument; `copy` changes only binding and must not outrank an
-            // otherwise equal candidate. Keep the slot for the callers that
-            // compare the nominal/refinement components separately.
-            writable_trait_count,
-        )
+        self.params_specificity_rank(&Self::dispatch_visible_params(def), args)
     }
 
     /// The constraint a parameter effectively dispatches on when `arg` binds
@@ -638,7 +551,7 @@ impl Interpreter {
     /// already IS a `T`, and only as wide-open as `F` otherwise.  So `Int() $`
     /// beats `Cool $` for `42` but loses to it for `"42"`, and `Str() $` loses
     /// to `Blob:D $` for `"x".encode`.
-    fn effective_dispatch_constraint<'a>(
+    pub(super) fn effective_dispatch_constraint<'a>(
         &self,
         constraint: &'a str,
         arg: Option<&Value>,
@@ -661,7 +574,7 @@ impl Interpreter {
     /// Pair each dispatch-visible parameter with the argument that would bind
     /// to it (`None` when the call supplies none), so ranking can ask type
     /// questions about the actual argument.
-    fn dispatch_param_arguments(&self, params: &[&ParamDef], args: &[Value]) -> Vec<Option<Value>> {
+    pub(super) fn dispatch_param_arguments(&self, params: &[&ParamDef], args: &[Value]) -> Vec<Option<Value>> {
         let mut out = Vec::with_capacity(params.len());
         let mut pos_idx = 0usize;
         for pd in params {
@@ -696,281 +609,24 @@ impl Interpreter {
     }
 
     /// [`Self::candidate_type_distance`] together with the per-parameter
-    /// [`RankProfile`] the same walk produces.
-    // Cost: O(p) plus one hierarchy walk per typed parameter, p = parameters.
+    /// [`RankProfile`] the same walk produces (see
+    /// [`Self::params_type_distance_profile`], shared with multi methods).
+    // Cost: O(p) plus one hierarchy walk per positional parameter, p = parameters.
     pub(crate) fn candidate_type_distance_profile(
         &self,
         args: &[Value],
         def: &FunctionDef,
     ) -> (usize, RankProfile) {
-        let mut total = 0usize;
-        let mut profile = RankProfile::EMPTY;
-        // The refinement bit and nominal type of the positional slot being
-        // walked; recorded once the next slot (or the end) fixes its distance.
-        let mut slot_refined = false;
-        let mut slot_nominal: Option<Symbol> = None;
-        let mut prev_total = 0usize;
-        let mut slot = 0usize;
-        let params: Vec<&ParamDef> = Self::dispatch_visible_params(def);
-        let mut pos_idx = 0usize;
-        for pd in params.iter() {
-            // A named parameter does not contribute to narrowness (see
-            // `candidate_specificity_rank_for_args`), so it must not move the
-            // distance either — neither its type (`multi p(Int :$a)` would
-            // otherwise outrank `multi p(Any :$a)` on the secondary key) nor
-            // its mere presence (an untyped named used to add the flat 1000
-            // below, so `multi K($in, :$a, :$b)` lost to `multi K($in, :$a)`
-            // purely for declaring one named more — rakudo picks whichever of
-            // the two is declared first). Nameds also never consume a
-            // positional slot, so skipping them leaves `pos_idx` correct.
-            if pd.named {
-                continue;
-            }
-            // A slurpy hash (`*%m`) takes only named arguments, so it is
-            // skipped for the same reason: charging it the flat 1000 below
-            // made `multi f(*%m where .elems == 1)` lose to `multi f(:$x!)`
-            // whatever their declaration order (#10519).
-            if pd.slurpy && pd.name.starts_with('%') {
-                continue;
-            }
-            if slot > 0 {
-                profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal);
-            }
-            prev_total = total;
-            slot_nominal = None;
-            if slot < PROFILE_LEN {
-                slot_refined = (pd.where_constraint.is_some() && !pd.is_variadic())
-                    || pd.literal_value.is_some()
-                    || pd
-                        .type_constraint
-                        .as_deref()
-                        .map(Self::constraint_base_name)
-                        .is_some_and(|base| self.constraint_is_subset(base));
-            }
-            slot += 1;
-            if let Some(constraint) = &pd.type_constraint {
-                if pos_idx < args.len() {
-                    // Skip Pair args when looking for positional args
-                    while pos_idx < args.len()
-                        && matches!(args[pos_idx].view(), ValueView::Pair(..))
-                    {
-                        pos_idx += 1;
-                    }
-                    if pos_idx >= args.len() {
-                        total += 1000;
-                        continue;
-                    }
-                    // Unwrap VarRef Capture wrappers and check the source
-                    // variable's declared type constraint for native type dispatch.
-                    let (arg, var_type) =
-                        self.unwrap_varref_for_dispatch_at(&args[pos_idx], pos_idx);
-                    pos_idx += 1;
-                    let effective = self.effective_dispatch_constraint(constraint, Some(&arg));
-                    let nominal = self.dispatch_nominal_base(Self::constraint_base_name(effective));
-                    let base = nominal.as_ref();
-                    // A bare user type name in the candidate's signature names
-                    // the type visible from the package that DECLARED it
-                    // (`my role ContentX` inside `role XML::Class` registers as
-                    // `XML::Class::ContentX`); measuring the bare spelling
-                    // against the argument's composed roles found nothing and
-                    // scored the 500 "unrelated" distance, so a wider candidate
-                    // out-ranked the role-typed one (XML::Class t/065).
-                    let owner_resolved;
-                    let base = if !crate::runtime::utils::is_known_type_constraint(base)
-                        && !self.has_type_direct(base)
-                    {
-                        let by_owner = self
-                            .resolve_type_name_for_owner(&def.package.resolve(), base.to_string());
-                        // A lexical type (`my class VL`) the candidate's module
-                        // imported is stored as `VL\u{0}<decl-id>` and the
-                        // caller's scope may not name it at all (#12710).
-                        // Applicability already resolves the bare spelling
-                        // through the registry's unique lexical key
-                        // (`type_matches_value`); rank against the same type,
-                        // or `Positional` out-narrows `VL` for a `VL` argument.
-                        owner_resolved = if by_owner == base
-                            && self.registry().has_lexical_type_key_for(base)
-                            && let Some(key) = self.unique_lexical_type_key(base)
-                        {
-                            key
-                        } else {
-                            by_owner
-                        };
-                        owner_resolved.as_str()
-                    } else {
-                        base
-                    };
-                    if slot <= PROFILE_LEN {
-                        slot_nominal = Some(Symbol::intern(base));
-                    }
-                    if pd.name.starts_with('&')
-                        && let Some(return_type) = self.callable_return_type(&arg)
-                    {
-                        total += self.type_hierarchy_distance(
-                            base,
-                            &Value::package(Symbol::intern(&return_type)),
-                        );
-                        continue;
-                    }
-                    if (pd.name.starts_with('@') || pd.name.starts_with('%'))
-                        && let Some(info) = self.container_type_metadata(&arg)
-                        && !info.value_type.is_empty()
-                    {
-                        total += self.type_hierarchy_distance(
-                            base,
-                            &Value::package(Symbol::intern(&info.value_type)),
-                        );
-                        continue;
-                    }
-                    if (pd.name.starts_with('@') || pd.name.starts_with('%'))
-                        && let Some(var_type) = var_type.as_deref()
-                    {
-                        total += self.type_hierarchy_distance(
-                            base,
-                            &Value::package(Symbol::intern(var_type)),
-                        );
-                        continue;
-                    }
-                    total +=
-                        self.type_hierarchy_distance_with_var_type(base, &arg, var_type.as_deref());
-                }
-            } else {
-                // An unconstrained `@`/`%` param carries an implicit
-                // Positional/Associative constraint: it must out-narrow a `Mu`
-                // candidate for a Positional/Associative argument
-                // (JSON::Unmarshal's `_unmarshal($json, @x)` vs `($json, Mu)`
-                // dispatching a `Positional[Dog]` attribute type).
-                if !pd.slurpy && (pd.name.starts_with('@') || pd.name.starts_with('%')) {
-                    while pos_idx < args.len()
-                        && matches!(args[pos_idx].view(), ValueView::Pair(..))
-                    {
-                        pos_idx += 1;
-                    }
-                    if pos_idx < args.len() {
-                        let (arg, var_type) =
-                            self.unwrap_varref_for_dispatch_at(&args[pos_idx], pos_idx);
-                        pos_idx += 1;
-                        let implicit = if pd.name.starts_with('@') {
-                            "Positional"
-                        } else {
-                            "Associative"
-                        };
-                        // A `Seq` binds to `@` through `PositionalBindFailover`
-                        // (it is cached into a `List`), so it ranks as that
-                        // List: `multi h(@raw)` stays narrower than
-                        // `multi h(Any:D $x)` for `h("a b".words)`, as in rakudo,
-                        // instead of scoring as unrelated to `Positional`.
-                        if let Some(distance) = self.seq_as_positional_distance(implicit, &arg) {
-                            total += distance;
-                            continue;
-                        }
-                        total += self.type_hierarchy_distance_with_var_type(
-                            implicit,
-                            &arg,
-                            var_type.as_deref(),
-                        );
-                        continue;
-                    }
-                }
-                // A LITERAL parameter (`multi f(42)`) carries no type
-                // constraint here, but it is not an unconstrained parameter:
-                // rakudo compiles it to the literal's own type plus an
-                // equality constraint, so it is nominally exactly as narrow as
-                // any argument that can bind to it. Score it at distance 0
-                // rather than at the implicit-`Any` distance below — otherwise
-                // the type distance, which now outranks the refinement tier,
-                // would hand every literal candidate's tie to a plainly-typed
-                // sibling (`multi f(42)` losing to `multi f(Int $x)`).
-                if !pd.slurpy && pd.literal_value.is_some() {
-                    while pos_idx < args.len()
-                        && matches!(args[pos_idx].view(), ValueView::Pair(..))
-                    {
-                        pos_idx += 1;
-                    }
-                    if pos_idx < args.len() {
-                        pos_idx += 1;
-                    }
-                    continue;
-                }
-                // An unconstrained positional `$`-param is an implicit `Any`
-                // constraint (raku): rank it at the Any distance instead of a
-                // flat 1000, so `($j, @x)` can out-narrow `(Any:D $j, Mu)` on
-                // the SECOND param (JSON::Unmarshal's `_unmarshal($json, @x)`
-                // vs its `(Any:D $json, Mu)` fallback).
-                if !pd.slurpy && !pd.name.starts_with('&') {
-                    while pos_idx < args.len()
-                        && matches!(args[pos_idx].view(), ValueView::Pair(..))
-                    {
-                        pos_idx += 1;
-                    }
-                    if pos_idx < args.len() {
-                        let (arg, var_type) =
-                            self.unwrap_varref_for_dispatch_at(&args[pos_idx], pos_idx);
-                        pos_idx += 1;
-                        total += self.type_hierarchy_distance_with_var_type(
-                            "Any",
-                            &arg,
-                            var_type.as_deref(),
-                        );
-                        continue;
-                    }
-                }
-                // An OPTIONAL positional the call supplied no argument for is
-                // not a wider parameter — it is one this call does not compare
-                // at all. Rakudo caps its narrowness comparison at the shorter
-                // signature's positional count whenever the two candidates
-                // share a minimum arity, so a surplus optional contributes
-                // nothing to either side. Charging it the flat 1000 made a
-                // trailing guard parameter lose to its own shorter sibling
-                // (`multi pick(Int $seed = 0, $? where { ... })` vs
-                // `multi pick(Int $seed = 0)`, `t/routines/signature/
-                // optional-param-where-runs-when-omitted.t`) once distance
-                // started outranking the refinement tier. The constrained
-                // branch above already contributes nothing in this case, so
-                // this only makes the two paths agree. A required parameter
-                // with no argument keeps the 1000: that candidate cannot bind
-                // the call at all.
-                if !pd.slurpy
-                    && !pd.name.starts_with('&')
-                    && (pd.optional_marker || pd.default.is_some())
-                    && pos_idx >= args.len()
-                {
-                    continue;
-                }
-                // A slurpy positional that receives no argument is not
-                // compared at all. Rakudo's `is_narrower` checks only the
-                // positional parameters both candidates declare, and consults
-                // slurpiness only once those are tied (the slurpy step of
-                // [`MultiRank`]). Charging it the flat 1000 here made
-                // `multi a(Str:D $n, *@p)` lose `a('c')` to
-                // `multi a(Any:D $r)` (#11045). A slurpy that does swallow an
-                // argument keeps the charge: that is rakudo's arity-mismatch
-                // rule, under which the non-slurpy candidate that binds the
-                // same call is narrower (`multi f($x)` beats `multi f(*@a)`
-                // for `f(1)`).
-                if pd.is_variadic() && !pd.name.starts_with('%') {
-                    while pos_idx < args.len()
-                        && matches!(args[pos_idx].view(), ValueView::Pair(..))
-                    {
-                        pos_idx += 1;
-                    }
-                    if pos_idx >= args.len() {
-                        continue;
-                    }
-                }
-                total += 1000;
-                pos_idx += 1;
-            }
-        }
-        if slot > 0 {
-            profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal);
-        }
-        (total, profile)
+        let owner = WalkOwner {
+            package: def.package,
+            literal_mask: self.literal_native_args,
+        };
+        self.params_type_distance_profile(args, &Self::dispatch_visible_params(def), owner)
     }
 
     /// Unwrap a [`Value::varref`] wrapper to get the inner value and the source
     /// variable's declared type constraint (if any) for dispatch.
-    fn unwrap_varref_for_dispatch(&self, value: &Value) -> (Value, Option<String>) {
+    pub(super) fn unwrap_varref_for_dispatch(&self, value: &Value) -> (Value, Option<String>) {
         match value.as_varref() {
             Some((name, inner, _)) => {
                 // Full (env-first) lookup: a typed routine lexical is env-scoped
@@ -981,38 +637,6 @@ impl Interpreter {
             }
             None => (value.clone(), None),
         }
-    }
-
-    /// `unwrap_varref_for_dispatch` for an argument at a known POSITION, which
-    /// is what lets a LITERAL rank a native candidate. A literal has no source
-    /// variable, so the plain form finds no `var_type` and `Int` ranks at
-    /// distance 0 -- `multi d(int)` / `multi d(Int)` called as `d(5)` answered
-    /// `Int` where rakudo answers `int`. The call site's
-    /// `literal_native_args` mask (published for the duration of the call by
-    /// `exec_call_func_op`) says which positions were WRITTEN as a literal, and
-    /// the value's own kind then names the native type a same-shaped variable
-    /// would have carried.
-    ///
-    /// Provenance, not the value, is the discriminator, and rakudo agrees:
-    /// `d("7".Int)` produces an in-range boxed `Int` at runtime and correctly
-    /// picks `Int`. A bigint literal yields `None` here for the same reason
-    /// rakudo answers `Int` for `d(2**70)`: it does not fit the native width.
-    fn unwrap_varref_for_dispatch_at(
-        &self,
-        value: &Value,
-        pos_idx: usize,
-    ) -> (Value, Option<String>) {
-        let (arg, var_type) = self.unwrap_varref_for_dispatch(value);
-        if var_type.is_some() || pos_idx >= 32 || self.literal_native_args & (1 << pos_idx) == 0 {
-            return (arg, var_type);
-        }
-        let synthetic = match arg.view() {
-            ValueView::Int(_) => Some("int"),
-            ValueView::Num(_) => Some("num"),
-            ValueView::Str(_) => Some("str"),
-            _ => None,
-        };
-        (arg, synthetic.map(str::to_string))
     }
 
     /// Return how many MRO levels separate `constraint` from the actual type
@@ -1297,7 +921,7 @@ impl Interpreter {
     /// When a variable declared as `int` is passed to a multi candidate expecting
     /// `int`, that should be distance 0 (exact native match). The boxed `Int`
     /// candidate should be distance 1 (autoboxing penalty).
-    fn type_hierarchy_distance_with_var_type(
+    pub(super) fn type_hierarchy_distance_with_var_type(
         &self,
         constraint: &str,
         value: &Value,

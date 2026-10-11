@@ -4,10 +4,14 @@ use std::cmp::Ordering;
 
 impl Interpreter {
     /// The parameters a method candidate is ranked on: every one but the
-    /// invocant, for the shared helpers in `multi_rank`.
+    /// invocant (and the synthetic type-capture slots), for the walks shared
+    /// with multi-sub dispatch.
     // Cost: O(p), p = parameters.
     pub(super) fn method_rank_params(def: &MethodDef) -> Vec<&ParamDef> {
-        def.param_defs.iter().filter(|p| !p.is_invocant).collect()
+        def.param_defs
+            .iter()
+            .filter(|p| !p.is_invocant && !p.name.starts_with("__type_capture__"))
+            .collect()
     }
 
     /// Number of positional parameters that participate in method specificity.
@@ -70,9 +74,11 @@ impl Interpreter {
         rank
     }
 
-    /// The [`MultiRank`] of one matched method candidate: the literal count as
-    /// its nominal tier, the type distance and profile of
-    /// `method_candidate_type_distance_profile`, the refinement tier of
+    /// The [`MultiRank`] of one matched method candidate: the nominal tier
+    /// (literal and typed positional counts) of
+    /// [`Self::params_specificity_rank`], the type distance and profile of
+    /// `method_candidate_type_distance_profile` — both the walks multi-SUB
+    /// dispatch ranks by —, the refinement tier of
     /// [`Self::method_candidate_narrowness`] at `shared_positions`, and
     /// `decl_order` (see [`Self::method_decl_order`]).
     // Cost: O(p) plus one hierarchy walk per positional parameter, p = parameters.
@@ -84,23 +90,19 @@ impl Interpreter {
         decl_order: u64,
     ) -> MultiRank {
         let params = Self::method_rank_params(def);
-        // The literal-parameter count leads the nominal tier, ahead of type
-        // distance, exactly as in multi-SUB dispatch (`candidate_rank_key`): a
-        // literal is nominally as narrow as the argument it equals, so
+        // A literal is nominally as narrow as the argument it equals, so
         // `multi method m($f, 'khz')` beats `multi method m(Numeric $n, Str:D
         // $u)` for `m(0.1, 'khz')` although its first parameter is untyped
         // (CSS::Writer's unit conversion).
-        let literals = params
-            .iter()
-            .filter(|p| !p.named && p.literal_value.is_some())
-            .count();
+        let (literals, typed, ..) = self.params_specificity_rank(&params, args);
         let (distance, profile) = self.method_candidate_type_distance_profile(args, def);
         let n = self.method_candidate_narrowness(def, shared_positions);
         MultiRank {
-            nominal: (literals, 0),
+            nominal: (literals, typed),
             distance,
             refinement: [n.0, n.1, n.2, n.3],
             non_slurpy: !multi_rank::has_slurpy_positional(&params),
+            arity: multi_rank::positional_arity(&params),
             bind_check: multi_rank::needs_named_bind_check(&params),
             optional: multi_rank::optional_positional_count(&params),
             decl_order,
