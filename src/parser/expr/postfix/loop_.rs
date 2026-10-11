@@ -1610,7 +1610,13 @@ fn postfix_expr_loop_from(
                     rest = r_name;
                     continue;
                 }
-                let (r_name, name_expr) = crate::parser::primary::primary(r)?;
+                // `.&{ ... }`: the callee is an inline block, called with the
+                // invocant like `.&(-> $x { ... })`.
+                let (r_name, name_expr) = if r.starts_with("&{") {
+                    crate::parser::primary::primary(&r[1..])?
+                } else {
+                    crate::parser::primary::primary(r)?
+                };
                 let (r_name, _) = ws(r_name)?;
                 if r_name.starts_with('(') {
                     let (r_name, _) = parse_char(r_name, '(')?;
