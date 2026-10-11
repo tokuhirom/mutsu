@@ -15,7 +15,7 @@
 //! `Any` value type itself, so `my %h{Str}` and `my Any %h{Str}` stay apart.
 
 use super::convert::{build_type_node, node_field, statement_expression};
-use super::lower::{named_child_or_positional, unsupported};
+use super::lower::unsupported;
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::keyed_hash::{IMPLICIT_VALUE_TYPE, join};
@@ -44,10 +44,14 @@ pub(super) fn split<'a>(
 pub(super) fn insert_shape(decl: &mut RakuAstNode, key: &str) -> Result<(), RuntimeError> {
     let shape = RakuAstNode {
         class: RakuAstClass::SemiList,
-        fields: vec![node_field(
-            None,
-            statement_expression(build_type_node(key)?),
-        )],
+        fields: super::type_args::type_sources(key, ';')
+            .map(|key| {
+                Ok(node_field(
+                    None,
+                    statement_expression(build_type_node(key)?),
+                ))
+            })
+            .collect::<Result<Vec<_>, RuntimeError>>()?,
     };
     let at = decl
         .fields
@@ -89,8 +93,7 @@ pub(super) fn insert_dimensions(
 /// A declaration's `shape` folded back into its type constraint: the parser's
 /// keyed-hash string, plus the implicit-value-type marker in `custom_traits`
 /// when the declaration has no `type`. A declaration without a `shape` keeps
-/// `type_constraint`; any shape other than one key type on a `%` declaration
-/// stays the boundary.
+/// `type_constraint`; each type statement on a `%` shape names one key dimension.
 // Cost: O(n), n = size of the shape.
 pub(super) fn lower(
     node: &RakuAstNode,
@@ -126,16 +129,22 @@ pub(super) fn lower_key_type(
     let super::ValueView::RakuAst(shape) = shape.view() else {
         return Err(unsupported(node));
     };
-    if sigil != "%" || shape.class != RakuAstClass::SemiList || shape.fields.len() != 1 {
+    if sigil != "%" || shape.class != RakuAstClass::SemiList || shape.fields.is_empty() {
         return Err(unsupported(node));
     }
-    let statement = named_child_or_positional(shape)?;
-    if statement.class != RakuAstClass::StatementExpression {
-        return Err(unsupported(node));
+    let mut keys = Vec::with_capacity(shape.fields.len());
+    for field in &shape.fields {
+        if field.name.is_some() {
+            return Err(unsupported(node));
+        }
+        let statement = super::lower::child_node(&field.value)?;
+        if statement.class != RakuAstClass::StatementExpression {
+            return Err(unsupported(node));
+        }
+        let key_node = super::lower::named_child(statement, "expression")?;
+        keys.push(super::type_lower::type_constraint(node, key_node)?);
     }
-    let key_node = super::lower::named_child(statement, "expression")?;
-    let key = super::type_lower::type_constraint(node, key_node)?;
-    Ok(Some(key))
+    Ok(Some(keys.join("; ")))
 }
 
 /// The dimensions of a shaped array declaration's `shape`, or `None` when the

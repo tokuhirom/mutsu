@@ -275,6 +275,11 @@ impl Interpreter {
             };
             Self::check_assign_key_writable(&hash, &key)?;
         }
+        let index = if let Some(constraint) = self.hash_key_type(&current) {
+            self.prepare_object_hash_key(&constraint, index, None)?
+        } else {
+            index
+        };
         if let Some(err) = Self::pair_subscript_store_refusal(
             &current,
             index_is_positional,

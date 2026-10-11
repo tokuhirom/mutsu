@@ -60,11 +60,12 @@ my $constructed-type = RakuAST::Type::Coercion.new(
         base-type => RakuAST::Type::Simple.new(RakuAST::Name.from-identifier('Int')),
         definite => True),
     constraint => RakuAST::Type::Simple.new(RakuAST::Name.from-identifier('Str')));
-is EVAL(RakuAST::VarDeclaration::Simple.new(
+my $built-value = EVAL(RakuAST::VarDeclaration::Simple.new(
     type => $constructed-type, sigil => '$',
     desigilname => RakuAST::Name.from-identifier('constructed'),
-    initializer => RakuAST::Initializer::Assign.new(RakuAST::StrLiteral.new('7')))),
-    7, 'constructed composed type lowers through the existing declaration compiler';
+    initializer => RakuAST::Initializer::Assign.new(RakuAST::StrLiteral.new('7'))));
+is $built-value, 7, 'constructed composed type lowers through the existing declaration compiler';
+isa-ok $built-value, Int, 'constructed declaration applies its supplied coercion';
 my Int:D(Str) $direct = '8';
 is $direct, 8, 'ordinary typed declarations resolve a definite coercion target';
 my $apostrophe-args = expression(Q[sub f(--> Hash[Doesn't, Int]) {}]).signature.returns.args.args;
@@ -83,4 +84,20 @@ $built-object.entries<a> = 11;
 is $built-object.entries<a>, 11, 'constructed attribute shape compiles and executes';
 dies-ok { $built-object.entries<a> = 'wrong' }, 'constructed attribute retains its value constraint';
 dies-ok { $built-object.entries{42} = 12 }, 'constructed attribute retains its key constraint';
+my $optional-fields = RakuAST::VarDeclaration::Simple.new(
+    type => Nil, shape => Nil, scope => 'my', sigil => '$',
+    desigilname => RakuAST::Name.from-identifier('optional'));
+nok $optional-fields.type.defined, 'Nil omits an optional constructed type';
+nok $optional-fields.shape.defined, 'Nil omits an optional constructed shape';
+is RakuAST::Class.new.body.body.statement-list.statements.elems, 0,
+    'a constructed class defaults to an empty block';
+my $multi-shape = attribute(Q[class MultiShape { has Int %.h{Str;Str} }]).shape;
+is $multi-shape.statements.elems, 2, 'each hash key dimension retains its own type node';
+isa-ok $multi-shape.statements[1].expression, RakuAST::Type::Simple,
+    'later key dimensions are source type expressions';
+same Q[my %h{Str:D;Str:D}; %h{'a';'b'} = 6; %h{'a';'b'}], 6,
+    'multidimensional variable key shapes survive execution';
+same Q[class MultiExec { has %.h{Str;Str} }; my $c = MultiExec.new;
+    $c.h{'a';'b'} = 9; $c.h{'a';'b'}], 9,
+    'multidimensional attribute key shapes survive execution';
 done-testing;

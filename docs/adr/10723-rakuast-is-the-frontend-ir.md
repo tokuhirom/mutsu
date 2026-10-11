@@ -516,3 +516,9 @@ setup now reuses ordinary statement conversion and unwraps the expression,
 preserving typed declarations and explicit initializers rather than inferring
 one from a non-Nil value. `t/rakuast/rakuast-type-shape-cohort.t` pins the measured
 structure, constructed type nodes and execution through the existing compiler.
+The shared `VarDeclaration::Simple` constructor retains scope, type, shape,
+traits, initializer and where fields, including attribute twigils. Constructed
+declarations therefore apply their supplied constraints as source declarations do.
+The attribute write-direction test also pins key validation before mutation:
+named, accessor and computed object-hash stores share key preparation, while
+QuantHash retains its numeric-allomorph rules.

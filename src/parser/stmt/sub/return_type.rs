@@ -51,9 +51,7 @@ fn move_smiley_after_parametrization(annotation: String) -> String {
             let base = &annotation[..pos];
             let params = &annotation[pos + 2..];
             if !base.is_empty()
-                && base
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ':')
+                && base.split("::").all(crate::parser::is_raku_identifier)
                 && params.ends_with(']')
             {
                 return format!("{base}{params}{}", &smiley[..2]);

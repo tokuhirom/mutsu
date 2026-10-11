@@ -13,6 +13,7 @@ mod coercion_bind;
 pub(crate) use coercion_bind::CoercionBindError;
 mod meta_parameterized;
 mod native_backed_class;
+mod object_hash_key;
 mod omitted_optional;
 mod param_exprs;
 mod readonly_capture;

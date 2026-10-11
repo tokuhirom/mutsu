@@ -9,6 +9,14 @@ use crate::value::RuntimeError;
 /// Yield comma-separated arguments without splitting inside brackets or quotes.
 struct ArgSources<'a> {
     rest: &'a str,
+    separator: char,
+}
+
+pub(super) fn type_sources(source: &str, separator: char) -> impl Iterator<Item = &str> {
+    ArgSources {
+        rest: source,
+        separator,
+    }
 }
 
 impl<'a> Iterator for ArgSources<'a> {
@@ -43,7 +51,7 @@ impl<'a> Iterator for ArgSources<'a> {
                 '\'' | '"' if opens_quote => quote = Some(ch),
                 '(' | '[' | '{' | '<' => depth += 1,
                 ')' | ']' | '}' | '>' => depth = depth.saturating_sub(1),
-                ',' if depth == 0 => {
+                ch if ch == self.separator && depth == 0 => {
                     let source = &self.rest[..i];
                     self.rest = &self.rest[i + 1..];
                     return Some(source.trim());
@@ -64,6 +72,7 @@ fn is_type_spelling(source: &str) -> bool {
     let base = source
         .strip_suffix(":D")
         .or_else(|| source.strip_suffix(":U"))
+        .or_else(|| source.strip_suffix(":_"))
         .unwrap_or(source);
     is_simple_type(base)
 }
@@ -95,19 +104,15 @@ pub(super) fn parameterized_type_node_at(
         .ok_or_else(|| unsupported("malformed parameterised type"))?;
     let base = &spelling[..open];
     let base = build_type_node_at(base, depth + 1)?;
-    let sources = ArgSources {
-        rest: &inner[open + 1..],
-    };
+    let sources = type_sources(&inner[open + 1..], ',');
     // Role-to-role forwarding keeps its ::T spelling even though the parser
     // represents the executable argument as the bare name T.
-    let captures: Vec<_> = (ArgSources {
-        rest: &inner[open + 1..],
-    })
-    .enumerate()
-    .filter_map(|(index, source)| {
-        crate::qualified::type_capture_name(source).map(|name| (index, name))
-    })
-    .collect();
+    let captures: Vec<_> = type_sources(&inner[open + 1..], ',')
+        .enumerate()
+        .filter_map(|(index, source)| {
+            crate::qualified::type_capture_name(source).map(|name| (index, name))
+        })
+        .collect();
     let mut fields = Vec::new();
     if let Some(parsed) = parsed {
         for (index, expr) in parsed.iter().enumerate() {
