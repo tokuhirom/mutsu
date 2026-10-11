@@ -119,6 +119,7 @@ impl Interpreter {
     /// with the atom's ASCII set looked up once for the run.
     // Cost: O(k) on ASCII text, O(k * g) otherwise, k = the iterations
     // matched, g = a grapheme's length.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn rx_atom_run(
         &mut self,
         program: &RxProgram,
@@ -154,6 +155,7 @@ impl Interpreter {
     /// pruning the give-backs above `j` removes only retries that fail at
     /// once, with nothing to undo.
     // Cost: O(n - j), the give-backs ruled out.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn rx_run_giveback_top(
         &mut self,
         program: &RxProgram,
