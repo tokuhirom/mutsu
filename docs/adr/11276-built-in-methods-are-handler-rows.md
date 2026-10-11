@@ -2394,3 +2394,18 @@ one call each. No behaviour change, pinned in `t/oo/method/any-misc-method-rows.
   binary only. The flag joins `RANDOM` in `RowFlags::skips_cross_check`. **Lesson:** a row whose answer is a lazy view of its receiver needs the
   flag, or the net that guards the row ends the laziness it keeps.
 
+### 9.65 `Any.list`, `Any.hash`; `Map.AT-KEY`/`Map.Str` need no row (2026-10-10)
+
+`refactor/11276-map-key-str-rows` (issue #12389, item 4). Two `Handler::Narrow` rows in `method_table::collections::any_list_hash`. Every owner
+below `Any` with a shape of its own already had `list` and `hash` rows (`List`, `Range`, `Seq`, `Map`, the quant hashes, `Capture`, `Uni`, `Blob`,
+`Backtrace`, `Supply`), so these answer the rest. `Any.list` answers a scalar or one of the four temporal classes with the one-element `List`; the
+cascade's fall-through arm of `list`/`Array` calls the same `list_of`. `Any.hash` answers through `hash_of` (an `Array`, `Seq` or `Slip` is read even
+when itemized; anything else through `value_to_list`, so a scalar is an odd initializer) for every shape that reaches it, and declines what the
+cascade routes elsewhere: a type object, `Nil`, an instance (a user class may have a `hash` accessor, a stash is a Map of its symbols), a hash, a quant
+hash and a lazy list. No behaviour change, pinned in `t/oo/method/any-list-hash-method-rows.t` against `raku`.
+
+- **`Map.AT-KEY` and `Map.Str` are not registered, and need not be.** `Hash` and `Map` share one dispatch shape, so a row on `Map` is unreachable
+  (`every_row_is_reached_and_answers` says so) and `Hash` already has `AT-KEY` (`subscript.rs`) and `Str` (`render_names.rs`). The recognition table's
+  `Map` rows for them are answered by `Hash`'s.
+- **Found, not fixed**: `(set <a>).hash.raku` is `{:a(Bool::True)}` in mutsu and `(my Bool %{Mu} = :a(Bool::True))` in Rakudo.
+

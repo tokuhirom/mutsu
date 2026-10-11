@@ -234,20 +234,9 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // itemized hash falls to the list path below and `value_to_list`
                 // treats it as one opaque element → spurious "Odd number of elements".
                 ValueView::Hash(_) => crate::builtins::method_table::map::hash(target, &[]),
-                _ => {
-                    // Iterate an Array/Seq/Slip's own elements as the hash
-                    // initializer, even when the value is itemized (`$(:a, :b).hash`):
-                    // `value_to_list` would treat an itemized list as one opaque
-                    // element and wrongly raise "Odd number of elements". This mirrors
-                    // the `my %h = $list` assignment path.
-                    let items = match target.view() {
-                        ValueView::Array(items, _) => items.iter().cloned().collect(),
-                        ValueView::Seq(items) => items.iter().cloned().collect(),
-                        ValueView::Slip(items) => items.iter().cloned().collect(),
-                        _ => crate::runtime::utils::value_to_list(target),
-                    };
-                    Some(crate::runtime::utils::build_hash_from_items(items))
-                }
+                // The `Any.hash` row's implementation
+                // (`method_table::collections::any_list_hash`).
+                _ => Some(crate::builtins::method_table::collection_any_list_hash::hash_of(target)),
             }
         }
         // `Any`'s key/value views on an undefined invocant: raku's

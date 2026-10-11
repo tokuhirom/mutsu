@@ -61,10 +61,10 @@ mod table_const;
 // The family modules keep their historical paths
 // (`method_table::str::tclc`), whichever group directory holds them.
 pub(crate) use collections::{
-    any_collection, any_misc as collection_any_misc, capture, clone as collection_clone,
-    join as collection_join, lazy, list, list_aggregate, list_transform, map, pair, positional,
-    quanthash, range, render as collection_render, render_names as collection_render_names, seq,
-    subscript,
+    any_collection, any_list_hash as collection_any_list_hash, any_misc as collection_any_misc,
+    capture, clone as collection_clone, join as collection_join, lazy, list, list_aggregate,
+    list_transform, map, pair, positional, quanthash, range, render as collection_render,
+    render_names as collection_render_names, seq, subscript,
 };
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
