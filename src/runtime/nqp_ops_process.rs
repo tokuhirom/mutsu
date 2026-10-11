@@ -205,25 +205,12 @@ impl Interpreter {
                     ))),
                 }
             }
-            // nqp::iscont($v) — int 0/1: is the operand a container. The
-            // compiler hands this op the operand's `.VAR` (see
-            // `try_compile_nqp_form`), so what arrives is the container
-            // descriptor `.VAR` produced: a `Scalar` (or a native array's
-            // `*PosRef` element descriptor), a `Proxy`, or -- for a bare value
-            // -- the value itself (#9346).
-            // Cost: O(1).
-            "iscont" => {
-                let v = args.first().cloned().unwrap_or(Value::NIL);
-                let is_cont = match v.view() {
-                    ValueView::Instance { class_name, .. } => {
-                        let name = class_name.resolve();
-                        name == "Scalar" || name == "Proxy" || name.ends_with("PosRef")
-                    }
-                    ValueView::Package(name) => name == "Scalar",
-                    ValueView::Proxy { .. } => true,
-                    _ => false,
-                };
-                Ok(Value::int(i64::from(is_cont)))
+            // nqp::iscont / iscont_i / iscont_n / iscont_s / isrwcont($v) —
+            // int 0/1 container tests over what the compiler hands them (the
+            // operand's `.VAR` and its name, `compile_nqp_container_test`).
+            // Cost: O(1) (O(d) for a native attribute, d = ancestors searched).
+            "iscont" | "iscont_i" | "iscont_n" | "iscont_s" | "isrwcont" => {
+                Ok(Value::int(i64::from(self.nqp_container_test(op, args))))
             }
 
             // nqp::isfalse($v) — the logical negation of nqp::istrue($v),

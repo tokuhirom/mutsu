@@ -220,6 +220,16 @@ pub(crate) fn bind_elem(
         return Ok(val);
     }
     let fill = typed_list_fill(nqp_elem_kind(target)).unwrap_or(fill);
+    // A native integer array (`my uint8 @u`) stores at its element width, as
+    // an assignment to the element does: `nqp::bindpos_u(@u, 2, 513)` keeps 1.
+    let val = match (target.view(), val.as_int()) {
+        (ValueView::Array(data, _), Some(n)) => data
+            .value_type
+            .as_deref()
+            .and_then(|t| crate::runtime::native_types::wrap_native_int_value(t, n))
+            .unwrap_or(val),
+        _ => val,
+    };
     let stored = val.clone();
     Interpreter::nqp_with_elems_mut(op, target, |elems| {
         if elems.len() <= i {

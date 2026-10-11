@@ -107,9 +107,12 @@ impl Interpreter {
         // change: an nqp op used to reach `exec_call_func_op_inner`, which
         // counted it here.
         crate::vm::vm_stats::record_function_dispatch();
-        let result = self
-            .fetch_nqp_proxy_operands(&mut args)
-            .and_then(|()| self.dispatch_nqp_op_by_id(id, &args));
+        let fetched = if Interpreter::nqp_op_keeps_proxy_operands(id) {
+            Ok(())
+        } else {
+            self.fetch_nqp_proxy_operands(&mut args)
+        };
+        let result = fetched.and_then(|()| self.dispatch_nqp_op_by_id(id, &args));
         self.literal_native_args = saved_literals;
         args.clear();
         self.nqp_arg_scratch = args;
