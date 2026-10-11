@@ -30,7 +30,7 @@ lane's next item is chosen (below). *Slots* is how many agents may work the lane
 | 8 | `lane:begin` | queue | | 1 | `BEGIN`/compile-time execution (ADR-0134), hoisting, `EVAL` unit semantics |
 | 9 | `lane:regex` | queue | | 1 | Regex/grammar engine correctness and speed |
 | 10 | `lane:core` | queue | | 2 | Self-contained core-semantics bugs (values, containers, Seq/List, formatting, IO) |
-| 11 | `lane:parser` | queue | | 1 | Parser gaps outside RakuAST (see "Parser changes during RakuAST Stage 2") |
+| 11 | `lane:parser` | queue | | 1 | Parser gaps; fixes land here even during RakuAST Stage 2 (see below) |
 | 12 | `lane:nqp` | campaign | #11488 | 1 | `nqp::` op coverage and representation fidelity |
 | 13 | `lane:arch` | campaign | #10779 | 1 | Interpreter decomposition, slow-path ratchets, compiler carriers |
 | 14 | `lane:tooling` | queue | | 1 | LSP, profiler, REPL, precompilation store, crash reporting, NativeCall storage |
@@ -74,10 +74,12 @@ drift. Its next item follows the queue rule.
 
 ## Parser changes during RakuAST Stage 2
 
-Until RakuAST Stage 2 (the parser emits RakuAST directly) starts, a parser fix may land from
-any lane, and the RakuAST lane rebases over it. Once Stage 2 starts, parser changes go
-through `lane:rakuast` so they are made once, in the new frontend. Whoever starts Stage 2
-updates this section.
+RakuAST Stage 2 (the parser emits RakuAST directly) will take a long time, and freezing the
+parser for that long is not realistic (user decision, 2026-10-11). So a parser fix may land
+from any lane, before and during Stage 2, and `lane:rakuast` absorbs it: the campaign rebases
+over parser changes rather than serializing them. A parser fix keeps the RakuAST round trip
+green (the files in `ci/rakuast-frontend-passing.txt`) so the two frontends do not drift
+apart, and a fix to a construct Stage 2 has already moved is made in the new path.
 
 ## Who sets what
 
