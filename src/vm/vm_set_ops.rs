@@ -205,7 +205,9 @@ impl Interpreter {
                 .iter()
                 .map(|(k, v)| (k.clone(), crate::runtime::utils::bigint_to_f64_sat(v)))
                 .collect(),
-            ValueView::Mix(items, _) => items.iter().map(|(k, v)| (k.clone(), v.to_f64())).collect(),
+            ValueView::Mix(items, _) => {
+                items.iter().map(|(k, v)| (k.clone(), v.to_f64())).collect()
+            }
             _ => HashMap::new(),
         }
     }

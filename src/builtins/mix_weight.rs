@@ -42,12 +42,22 @@ pub(crate) fn add(a: MixWeight, b: MixWeight) -> MixWeight {
 
 /// `a - b` -- the weight combination behind `(-)`/`∖` and `(^)`/`⊖`.
 pub(crate) fn sub(a: MixWeight, b: MixWeight) -> MixWeight {
-    combine(a, b, |x, y| Ok(crate::builtins::arith::arith_sub(x, y)), |x, y| x - y)
+    combine(
+        a,
+        b,
+        |x, y| Ok(crate::builtins::arith::arith_sub(x, y)),
+        |x, y| x - y,
+    )
 }
 
 /// `a * b` -- the weight combination behind `(.)`/`⊍`.
 pub(crate) fn mul(a: MixWeight, b: MixWeight) -> MixWeight {
-    combine(a, b, |x, y| Ok(crate::builtins::arith::arith_mul(x, y)), |x, y| x * y)
+    combine(
+        a,
+        b,
+        |x, y| Ok(crate::builtins::arith::arith_mul(x, y)),
+        |x, y| x * y,
+    )
 }
 
 /// Sum a run of weights left to right. Used by `Mix.total`; the caller orders

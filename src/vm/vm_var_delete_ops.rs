@@ -1136,14 +1136,15 @@ impl Interpreter {
         }) {
             return Ok(removed);
         }
-        let qh_remove_mix = |mix: &mut crate::value::MixData, key: &Value| -> Option<crate::value::MixWeight> {
-            let (k, _) = crate::runtime::utils::quanthash_elem_entry(key);
-            let removed = mix.weights.remove(&k);
-            if let Some(ok) = mix.original_keys.as_mut() {
-                ok.remove(&k);
-            }
-            removed
-        };
+        let qh_remove_mix =
+            |mix: &mut crate::value::MixData, key: &Value| -> Option<crate::value::MixWeight> {
+                let (k, _) = crate::runtime::utils::quanthash_elem_entry(key);
+                let removed = mix.weights.remove(&k);
+                if let Some(ok) = mix.original_keys.as_mut() {
+                    ok.remove(&k);
+                }
+                removed
+            };
         if let Some(removed) = container.with_mix_mut(|mix, _| match idx.view() {
             ValueView::Array(keys, ..) => {
                 let m = crate::value::gc_data_mut(mix);

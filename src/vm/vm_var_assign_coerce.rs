@@ -720,9 +720,7 @@ impl Interpreter {
                     ))
                 }
             }
-            _ => {
-                Ok(MixWeight::Int(i64::from(value.truthy())))
-            }
+            _ => Ok(MixWeight::Int(i64::from(value.truthy()))),
         }
     }
 

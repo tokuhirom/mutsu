@@ -52,7 +52,10 @@ impl MixWeight {
     /// A `Bag` count as a weight: `Int` when it fits, else the nearest `Num`.
     pub fn from_bigint(n: &num_bigint::BigInt) -> MixWeight {
         use num_traits::ToPrimitive;
-        n.to_i64().map_or_else(|| MixWeight::Num(n.to_f64().unwrap_or(f64::INFINITY)), MixWeight::Int)
+        n.to_i64().map_or_else(
+            || MixWeight::Num(n.to_f64().unwrap_or(f64::INFINITY)),
+            MixWeight::Int,
+        )
     }
 
     /// Whether the weight is exactly 1 (printed as the bare key).
@@ -85,8 +88,14 @@ impl MixWeight {
     /// The absolute value, keeping the type.
     pub fn abs(self) -> MixWeight {
         match self {
-            MixWeight::Int(i) => i.checked_abs().map_or(MixWeight::Num((i as f64).abs()), MixWeight::Int),
-            MixWeight::Rat(n, d) => n.checked_abs().map_or(MixWeight::Num(self.to_f64().abs()), |n| MixWeight::Rat(n, d)),
+            MixWeight::Int(i) => i
+                .checked_abs()
+                .map_or(MixWeight::Num((i as f64).abs()), MixWeight::Int),
+            MixWeight::Rat(n, d) => n
+                .checked_abs()
+                .map_or(MixWeight::Num(self.to_f64().abs()), |n| {
+                    MixWeight::Rat(n, d)
+                }),
             MixWeight::Num(f) => MixWeight::Num(f.abs()),
         }
     }
