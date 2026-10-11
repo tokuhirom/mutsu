@@ -46,7 +46,7 @@ impl NqpAttrName {
             name: Symbol::intern(name),
             read_key: Symbol::intern(Interpreter::nqp_attr_bare(name)),
             write_key: (!write.is_empty()).then(|| Symbol::intern(write)),
-            container_storage: matches!(write, "storage" | "reified"),
+            container_storage: matches!(write, "storage" | "reified" | "descriptor"),
             code_do: matches!(name, "$!do" | "$!signature"),
         }
     }
