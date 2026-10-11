@@ -117,10 +117,10 @@ impl Interpreter {
     /// consulted only for [`Self::method_owner_tiebreak`].
     ///
     /// The candidates are ranked by [`MultiRank`], the relation multi-sub
-    /// dispatch uses: `is default` first (among candidates tied on literal
-    /// count and type distance), then rakudo's `is_narrower` partial order
-    /// ([`prune_to_maximal`]), then the tier order, and finally the owner
-    /// tie-break among the candidates still tied.
+    /// dispatch uses: rakudo's `is_narrower` partial order
+    /// ([`prune_to_maximal`]), then the tier order, then `is default` among
+    /// the candidates tied on it, and finally the owner tie-break among the
+    /// candidates still tied.
     // Cost: O(m^2 * h + m * p), m = matches, h = one nominal-type relation
     // walk, p = parameters per candidate.
     pub(crate) fn pick_method_winner(
@@ -164,12 +164,6 @@ impl Interpreter {
                 rank.refinement = [n.0, n.1, n.2, n.3];
             }
         }
-        // `is default` breaks a tie on the leading tiers outright.
-        if lead_tied.len() > 1
-            && let Some(&i) = lead_tied.iter().find(|&&i| all_matches[i].1.is_default)
-        {
-            return Some(all_matches.swap_remove(i));
-        }
         // Across owners too: an ancestor's candidate and a subclass's that
         // are incomparable resolve by declaration order (`method_decl_order`).
         let mut ranked = prune_to_maximal(
@@ -186,6 +180,14 @@ impl Interpreter {
             .take_while(|(r, _)| r.tier_cmp(&best) == Ordering::Equal)
             .map(|(_, i)| *i)
             .collect();
+        // `is default` breaks a tie on the full tier order, as in sub
+        // dispatch: a `where` refinement that makes a candidate narrower is
+        // decided before it (#12775).
+        if tied.len() > 1
+            && let Some(&i) = tied.iter().find(|&&i| all_matches[i].1.is_default)
+        {
+            return Some(all_matches.swap_remove(i));
+        }
         let (winner, still_tied) = Self::method_owner_tiebreak(&tied, &all_matches, mro);
         // Ambiguous dispatch: two or more candidates remain equally specific
         // (same tiers and the same most-derived owner class) and none is
