@@ -157,8 +157,9 @@ impl Interpreter {
                 };
                 if self.is_core_repo_prefix(&prefix)
                     && let Some(core) = self.bundled_core_distribution()
-                    && let Some((mut items, _)) = installed.clone().into_array()
+                    && let Some((items, _)) = installed.clone().into_array()
                 {
+                    let mut items = items.to_vec();
                     items.push(core);
                     installed = Value::array(items);
                 }
