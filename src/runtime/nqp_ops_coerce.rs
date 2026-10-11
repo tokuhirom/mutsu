@@ -282,10 +282,7 @@ impl Interpreter {
             // -- tests --
             // The BOOT scalar REPRs (`runtime::boot_scalar`).
             // Cost: O(1).
-            "bootint" | "bootnum" | "bootstr" => match self.boot_scalar_type(op) {
-                Some(ty) => ty,
-                None => return None,
-            },
+            "bootint" | "bootnum" | "bootstr" => self.boot_scalar_type(op)?,
             // Cost: O(1).
             "isint" | "isnum" | "isstr" => {
                 flag(Self::boot_scalar_test(op, &operand(args, 0)).unwrap_or(false))
