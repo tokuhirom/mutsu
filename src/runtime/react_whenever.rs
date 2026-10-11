@@ -286,6 +286,24 @@ impl Interpreter {
             ));
         }
 
+        // A bare Channel source inside a `supply` block is coerced through
+        // `.Supply`, as `whenever` does for any object: only a `react` frame's
+        // drive loop understands a Channel directly.
+        // TODO: compile to bytecode -- this reuses the method-call slow path.
+        let in_react_frame = self
+            .async_state
+            .supply_emit_buffer
+            .last()
+            .is_some_and(|f| f.is_react);
+        let supply_val = if matches!(supply_val.view(), ValueView::Channel(_))
+            && !in_react_frame
+            && self.async_state.react_active == 0
+        {
+            self.call_method_with_values(supply_val, "Supply", vec![])?
+        } else {
+            supply_val
+        };
+
         let (main_body, last_bodies, quit_bodies) = self.whenever_body_split(body);
         // The `supply` block this `whenever` is written in — its body is what is
         // running right now, so this is unambiguous. Stamped onto every callback
@@ -433,6 +451,7 @@ impl Interpreter {
         }
 
         // Not in react mode: original behavior.
+        //
         //
         // When this whenever is registered at dispatch time from INSIDE another
         // whenever's body (the enclosing supply block's tap already sized its
