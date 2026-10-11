@@ -2473,7 +2473,7 @@ question that justified the decline ("does a bridge resolve this receiver furthe
   row ask it instead of each spelling the attribute.
 - **What the row declines is now exactly what has a row of its own further on:** a cell/variable reference or a `Mixin` (unwrapped by their own paths), an
   `is Array` instance (its storage is an `Array`, whose `splice` row the bridge reaches), an instance whose class declares `splice`, and a user class rooted at
-  `Mu` (`class C is Mu` has no `splice`; `is_user_class_without_any`). Everything else is answered: a plain user-class instance, a `Blob`, an `is Hash` /
+  `Mu` (`class C is Mu` has no `splice`; `is_mu_rooted_class`). Everything else is answered: a plain user-class instance, a `Blob`, an `is Hash` /
   `is BagHash` instance (their storage has no `splice`), a `Date`, a `Match`.
 - **`FALLBACK` is not consulted.** The earlier row text said a user class "may declare `splice` or `FALLBACK`"; Rakudo resolves `splice` to `Any`'s proto first, so
   `FALLBACK` never sees it. Only a declared `splice` stops the row.
@@ -2492,4 +2492,13 @@ question that justified the decline ("does a bridge resolve this receiver furthe
   `Array` reaches `Any` and must be declined here), an `is Array` instance, a user `splice`, a `Mu`-rooted user class. A wrapper alone is never a reason to decline.
 - Behaviour change toward Rakudo: the mixin's type name in the message. The instance and cell cases already matched.
 - **Found, not fixed**: Rakudo answers `(my @a = 1,2,3; @a but Tag).splice(1,1)` with `[1, 3, Mu]` (a length quirk of its mixin copy); mutsu answers `[1, 3]`. Not pinned by a test.
+
+### 9.70 `Mu`-rootedness is decided from the declared parents (2026-10-11)
+
+`fix/12648-splice-exception-utf8` (issue #12648). §9.68 detected a `Mu`-rooted class by "the registry MRO has no `Any`". That MRO is built from the
+declared parents only, so every class with a builtin ancestor (`is Exception`, the `X::*` classes, `utf8`/`utf16`) lacks `Any` in it and was taken for a `class C is Mu`:
+the `Any.splice` row declined them and the call fell through to `X::Method::NotFound`. (`.^mro` reports `Any` because it appends it itself, which is why the symptom looked like
+an earlier path intercepting the call.) `Interpreter::is_mu_rooted_class` now walks the declared inheritance graph: a class is `Mu`-rooted only when it is a declared class
+and every parent is `Mu` or such a class; a class with no explicit parent, or with any builtin ancestor, is rooted at `Any`. Behaviour change toward Rakudo: `splice` on an
+`Exception`/`X::AdHoc` instance, a user exception class and an encoding buffer raises `X::Multi::NoMatch`.
 

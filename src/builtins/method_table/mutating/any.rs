@@ -64,7 +64,7 @@ fn splice_row(
         let class = class_name.resolve();
         if InstanceBacking::Array.is_in(&attributes)
             || interp.has_user_method(&class, "splice")
-            || interp.is_user_class_without_any(&class)
+            || interp.is_mu_rooted_class(&class)
         {
             return None;
         }

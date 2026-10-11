@@ -271,15 +271,37 @@ impl Interpreter {
         false
     }
 
-    /// Whether `class_name` is a class the program declared whose MRO has no
-    /// `Any` (`class C is Mu`): Rakudo's `Any`-level methods do not exist on
-    /// it. A builtin class (not registered with an MRO) is not one.
-    // Cost: O(d), d = MRO depth.
-    pub(crate) fn is_user_class_without_any(&self, class_name: &str) -> bool {
-        self.registry()
-            .classes
-            .get(class_name)
-            .is_some_and(|def| !def.mro.is_empty() && !def.mro.iter().any(|n| n.resolve() == "Any"))
+    /// Whether `class_name` is rooted at `Mu` rather than `Any`: a class the
+    /// program declared with `is Mu`, or one inheriting only from such classes
+    /// (`class C is Mu`; `class D is C`). `Any`-level methods do not exist on
+    /// it. A class with no explicit parent, or with any builtin ancestor
+    /// (`is Exception`, `is Date`), is rooted at `Any`.
+    // Cost: O(d), d = depth of the declared inheritance graph.
+    pub(crate) fn is_mu_rooted_class(&self, class_name: &str) -> bool {
+        let registry = self.registry();
+        let mut stack = vec![class_name];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(name) = stack.pop() {
+            if !seen.insert(name) {
+                continue;
+            }
+            let Some(def) = registry.classes.get(name) else {
+                return false;
+            };
+            // Both halves are needed: a builtin class (`Blob`) can declare
+            // `Mu` as its only parent yet still sit under `Any`, and a class
+            // with a builtin ancestor (`Exception`) has no `Any` in the
+            // registry MRO yet is not `Mu`-rooted.
+            if def.parents.is_empty() || def.mro.iter().any(|n| n.as_str() == "Any") {
+                return false;
+            }
+            for parent in &def.parents {
+                if parent != "Mu" {
+                    stack.push(parent);
+                }
+            }
+        }
+        true
     }
 
     /// [`Self::has_user_method`] widened to a bare role name. A punned role

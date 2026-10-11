@@ -3,7 +3,7 @@ use Test;
 # `Any.splice` is a proto with no candidates, so an instance of a class that
 # does not declare its own `splice` and is not an `Array` gets
 # X::Multi::NoMatch, not "No such method" (ADR-11276 §9.68, #12647).
-plan 21;
+plan 26;
 
 class Foo {}
 class WithSplice { method splice(|) { 'mine' } }
@@ -56,3 +56,12 @@ is-deeply $arr.splice(1, 1).List, (2,), 'a scalar variable holding an Array stil
 is-deeply $arr.List, (1, 3), '... and mutates it';
 my %h = a => 1;
 throws-like { %h<a>.splice(1) }, X::Multi::NoMatch, 'a hash element holding an Int';
+
+# A class with a builtin ancestor is rooted at Any, not Mu (#12648).
+class MyExc is Exception { }
+class MuChild is OnlyMu { }
+throws-like { MyExc.new.splice(1) }, X::Multi::NoMatch, 'a user exception class';
+throws-like { X::AdHoc.new.splice(1) }, X::Multi::NoMatch, 'X::AdHoc';
+throws-like { Exception.new.splice(1) }, X::Multi::NoMatch, 'Exception';
+throws-like { "abc".encode.splice(1) }, X::Multi::NoMatch, 'a utf8 buffer';
+throws-like { MuChild.new.splice(1) }, X::Method::NotFound, 'a subclass of a Mu-rooted class has no splice either';
