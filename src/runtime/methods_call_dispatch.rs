@@ -1360,7 +1360,16 @@ impl Interpreter {
                 // message` wins over the stored attribute), never the raw
                 // attribute — see `exception_message_text`.
                 let target = self.stamp_thrown_exception_dynamics(&target);
-                let msg = self.exception_message_or_died_with(&target);
+                // A user `method message` is not run at the throw site: Rakudo
+                // evaluates it lazily, so `X.new.throw` under `dies-ok` never
+                // runs it (#12625). The dynamics stamped above let the later
+                // `.message` call see the throw-time dynamic variables.
+                let defer_message = self.has_user_method(&cn, "message");
+                let msg = if defer_message {
+                    format!("Died with {cn}")
+                } else {
+                    self.exception_message_or_died_with(&target)
+                };
                 let mut err = crate::value::RuntimeError::new(msg);
                 // Classes doing X::Control throw as control exceptions so
                 // CONTROL blocks catch them instead of CATCH.
@@ -1373,18 +1382,11 @@ impl Interpreter {
                 if cn == "CX::Warn" {
                     err.control = Some(crate::value::Control::Warn);
                 }
-                let thrown_target = if self.has_user_method(&cn, "message") {
-                    let target = target.clone();
-                    if let ValueView::Instance { attributes, .. } = target.view() {
-                        attributes.insert(
-                            "__mutsu_thrown_message".to_string(),
-                            Value::str(err.message.to_string()),
-                        );
-                    }
-                    target
-                } else {
-                    target.clone()
-                };
+                if defer_message {
+                    err.exception = Some(Box::new(target.clone()));
+                    return Err(err);
+                }
+                let thrown_target = target.clone();
                 err.exception = Some(Box::new(Self::stamp_thrown_exception_message(
                     &thrown_target,
                     &err.message,

@@ -79,7 +79,28 @@ impl Interpreter {
             }
         };
 
-        let message = if matches!(value.view(), ValueView::Instance { .. }) {
+        // Rakudo evaluates `.message` lazily: `die X::Foo.new` never runs a user
+        // `method message` unless something asks for the text (a `CATCH` that
+        // reads it, the top-level handler, `.message`). Running it here
+        // surfaced side effects -- and crashes, when the method makes a native
+        // call -- in code that only does `dies-ok { die X::Foo.new }` (#12625).
+        // The exception object travels in `err.exception` and every consumer
+        // asks it for the text; this string is only the fallback rendering.
+        let defer_user_message = underlying_class.is_some_and(|cn| {
+            let cn = cn.resolve();
+            self.has_user_method(&cn, "message")
+                && !value.is_match_instance()
+                && (value.instance_is_exception_by_name()
+                    || self.mro_readonly(&cn).iter().any(|p| {
+                        p == "Exception" || p.starts_with("X::") || p.starts_with("CX::")
+                    }))
+        }) && matches!(value.view(), ValueView::Instance { .. });
+        let message = if defer_user_message {
+            format!(
+                "Died with {}",
+                underlying_class.map(|c| c.resolve()).unwrap_or_default()
+            )
+        } else if matches!(value.view(), ValueView::Instance { .. }) {
             self.exception_message_text(&value).unwrap_or_else(|| {
                 // A non-exception instance, or an exception without a message,
                 // may still supply its own .Str method.
