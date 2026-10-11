@@ -1,6 +1,8 @@
+mod age_table;
 mod binary_props;
 mod char_props;
 mod lookup;
+mod prop_names;
 mod text_seg;
 
 pub(crate) use binary_props::try_binary_property;
