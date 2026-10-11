@@ -280,6 +280,16 @@ impl Interpreter {
             }
 
             // -- tests --
+            // The BOOT scalar REPRs (`runtime::boot_scalar`).
+            // Cost: O(1).
+            "bootint" | "bootnum" | "bootstr" => match self.boot_scalar_type(op) {
+                Some(ty) => ty,
+                None => return None,
+            },
+            // Cost: O(1).
+            "isint" | "isnum" | "isstr" => {
+                flag(Self::boot_scalar_test(op, &operand(args, 0)).unwrap_or(false))
+            }
             // A high-level Code/Sub is P6opaque, while its `$!do` is the
             // direct executable body (MVMCode). Use the same classification
             // that bypasses the wrap chain for that body.

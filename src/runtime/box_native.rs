@@ -28,6 +28,9 @@ impl Interpreter {
         value: Value,
     ) -> Option<Result<Value, RuntimeError>> {
         let ty = ty?;
+        if let Some(boxed) = self.box_boot_scalar(ty, &value) {
+            return Some(Ok(boxed));
+        }
         let ValueView::Package(name) = ty.view() else {
             return None;
         };
@@ -60,6 +63,9 @@ impl Interpreter {
     // Cost: O(1) for a value that is not an object; else O(m + r) like
     // `box_target_attr_name`, plus O(n) to decode a C string of n bytes.
     pub(crate) fn unbox_native_through(&mut self, obj: &Value) -> Option<Value> {
+        if let Some(inner) = Self::unbox_boot_scalar(obj) {
+            return Some(inner);
+        }
         if !matches!(obj.view(), ValueView::Instance { .. } | ValueView::Mixin(..)) {
             return None;
         }
