@@ -1128,6 +1128,20 @@ impl Interpreter {
 
         self.locals.refill_slots(cc.locals.len());
         for (i, local_name) in cc.locals.iter().enumerate() {
+            // An attribute local (`$!t`) reads `self`'s attribute cell
+            // (`read_self_attr_cell_slot`), and a capture never holds one. Past
+            // this frame's own overlay the env is the callers' frames, whose
+            // `$!t` -- a cell a caller's `my $x := $!t` published -- belongs to
+            // another invocant; seeded into the slot, it would shadow the cell
+            // read for good (#12478).
+            if cc.local_attr_key(i).is_some() {
+                if let Some(sym) = cc.local_sym(i)
+                    && let Some(val) = self.env().overlay_get_sym(sym)
+                {
+                    self.locals[i] = val.clone();
+                }
+                continue;
+            }
             // Pre-interned seed probe (#8302): `cc.local_sym(i)` is the name's
             // Symbol from the chunk's own table, so this costs a `u32` hash per
             // local instead of re-interning the name string on every call.

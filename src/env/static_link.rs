@@ -76,13 +76,17 @@ pub(crate) fn with_static_links_suppressed<R>(f: impl FnOnce() -> R) -> R {
 }
 
 /// Whether a static link skips the caller frames for `key`: a plain user
-/// lexical, or a bare type-shaped name (an unqualified identifier starting with
-/// an uppercase letter). A caller frame binds the latter only for a type it
-/// declared lexically (`my class`); a package-scoped type is found through the
-/// symbol table, not the frame.
-// Cost: O(1) for a plain user lexical (memoized flags); O(|key|) otherwise.
+/// lexical, an attribute variable (`$!t` belongs to the `self` of the method
+/// that encloses the code, never to a caller's invocant, #12478), or a bare
+/// type-shaped name (an unqualified identifier starting with an uppercase
+/// letter). A caller frame binds the latter only for a type it declared
+/// lexically (`my class`); a package-scoped type is found through the symbol
+/// table, not the frame.
+// Cost: O(1) for a plain user lexical or an attribute (memoized flags);
+// O(|key|) otherwise.
 fn lexically_scoped(key: Symbol) -> bool {
     key.is_plain_user_lexical()
+        || key.is_attr_twigil_env_key()
         || key.with_str(|s| {
             s.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
                 && s.bytes()
@@ -314,6 +318,14 @@ impl Env {
         debug_assert!(self.frame_root, "only a frame root has a static link");
         self.outer_is_unit = true;
         self.chain_has_static_link = true;
+    }
+
+    /// Whether this env is a call frame's root (`Env::scoped_child`), which
+    /// can carry a static link.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_frame_root(&self) -> bool {
+        self.frame_root
     }
 
     /// Undo [`Self::mark_outer_is_unit`] on this frame root, once the code
