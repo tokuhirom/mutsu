@@ -183,6 +183,17 @@ impl Interpreter {
         // current — the shape of every same-package sibling call.
         let pkg_guard = (!crate::qualified::is_global_package(def_package_sym))
             .then(|| self.enter_package_guarded_sym(def_package_sym));
+        // A class-body `my` static is the whole scope of its name for the class's
+        // routines, a class-scoped `sub` included: a same-named lexical of the
+        // calling frame (visible only because the env is flattened) must not
+        // shadow it. Methods get the same injection on entry; it runs before
+        // the parameters are bound, so a parameter of that name still wins.
+        // The displaced bindings are put back before the call's env merge below,
+        // so the static is not written over the caller's same-named lexical.
+        let mut shadowed_by_statics: Vec<(String, Option<Value>)> = Vec::new();
+        if pkg_guard.is_some() && self.class_has_package_lexicals(def_package) {
+            self.inject_class_body_statics_saving(def_package, &mut shadowed_by_statics);
+        }
         // When the function has where constraints and there is a &name Sub in
         // env (which carries closure env), merge the Sub's captured variables
         // into the current env so where-constraint expressions can access them.
@@ -691,6 +702,12 @@ impl Interpreter {
         // Rust panic mid-loop above, the guard's `Drop` still runs during
         // unwind even though this line is never reached.
         drop(pkg_guard);
+        for (name, previous) in shadowed_by_statics.into_iter().rev() {
+            match previous {
+                Some(v) => self.env_mut().insert(name, v),
+                None => self.env_mut().remove(&name),
+            };
+        }
         self.pop_routine();
         self.pop_test_assertion_context(pushed_assertion);
         self.pop_block();

@@ -17,9 +17,9 @@ impl Interpreter {
     /// `String` clones live in the outlined slow half, so a GLOBAL routine's
     /// call site does not even pay a call.
     #[inline]
-    pub(super) fn enter_routine_package(&mut self, cf: &CompiledFunction) -> Option<Symbol> {
+    pub(super) fn enter_routine_package(&mut self, cf: &CompiledFunction) -> RoutinePackageSave {
         if crate::qualified::is_global_package(cf.package_sym()) {
-            return None;
+            return RoutinePackageSave::default();
         }
         self.enter_routine_package_outlined(cf)
     }
@@ -39,13 +39,13 @@ impl Interpreter {
     /// it — the dominant hot shape is a routine calling a sibling in its own
     /// package, where both writes put back the value that was already there.
     #[inline(never)]
-    fn enter_routine_package_outlined(&mut self, cf: &CompiledFunction) -> Option<Symbol> {
+    fn enter_routine_package_outlined(&mut self, cf: &CompiledFunction) -> RoutinePackageSave {
         // Memoized on the routine rather than re-scanned per call: with the
         // redundant `current_package` writes gone, this substring scan over
         // the declaring package name was all that remained of this function's
         // cost -- see `CompiledFunction::package_is_routine_scoped`.
         if cf.package_is_routine_scoped() {
-            return None;
+            return RoutinePackageSave::default();
         }
         let saved = self.current_package_sym();
         debug_assert_eq!(
@@ -59,7 +59,23 @@ impl Interpreter {
         if target != saved {
             self.set_current_package_with_sym(cf.package.clone(), target);
         }
-        Some(saved)
+        // A class-body `my` static is the whole scope of its name for the
+        // class's routines, a class-scoped `sub` included: a same-named
+        // lexical of the calling frame (visible only because the env is
+        // flattened) must not shadow it, as it must not for a method (see
+        // `inject_class_body_statics`). The previous bindings are handed back
+        // for `leave_routine_package` to restore.
+        let statics = if self.class_has_package_lexicals(&cf.package) {
+            let mut shadowed = Vec::new();
+            self.inject_class_body_statics_saving(&cf.package, &mut shadowed);
+            Some(shadowed.into_boxed_slice())
+        } else {
+            None
+        };
+        RoutinePackageSave {
+            package: Some(saved),
+            statics,
+        }
     }
 
     /// Restore the package saved by [`Self::enter_routine_package`].
@@ -70,8 +86,16 @@ impl Interpreter {
     /// `current_package`, this puts it back exactly as before — so no caller
     /// has to know whether the entry switched anything.
     #[inline]
-    pub(super) fn leave_routine_package(&mut self, saved: Option<Symbol>) {
-        if let Some(sym) = saved
+    pub(super) fn leave_routine_package(&mut self, saved: RoutinePackageSave) {
+        if let Some(shadowed) = saved.statics {
+            for (name, previous) in shadowed.into_vec().into_iter().rev() {
+                match previous {
+                    Some(v) => self.env_mut().insert(name, v),
+                    None => self.env_mut().remove(&name),
+                };
+            }
+        }
+        if let Some(sym) = saved.package
             && sym != self.current_package_sym()
         {
             self.set_current_package_shared_sym(sym);
@@ -883,4 +907,17 @@ impl Interpreter {
         attrs.insert("arguments".to_string(), Value::array(arg_type_values));
         attrs
     }
+}
+
+/// What [`Interpreter::enter_routine_package`] displaced, for
+/// [`Interpreter::leave_routine_package`] to put back: the previous
+/// `current_package` (when a switch was possible) and the env bindings that
+/// the declaring class's body statics replaced.
+/// An env name and the binding a class static displaced.
+type ShadowedBinding = (String, Option<Value>);
+
+#[derive(Default)]
+pub(super) struct RoutinePackageSave {
+    package: Option<Symbol>,
+    statics: Option<Box<[ShadowedBinding]>>,
 }
