@@ -5131,7 +5131,19 @@ impl Interpreter {
                     crate::runtime::nqp_op_ids::nqp_op_name(*id),
                     *arity as usize,
                 )?;
-                match self.exec_nqp_op(*id, *arity as usize) {
+                // `nqp::bindlex*` writes a caller lexical by name: like a
+                // carrier (`EVAL`), log the write and drain it into this
+                // frame's slots so a later slot read sees it.
+                let lex_write = Self::nqp_op_binds_lexical(*id);
+                let carrier_saved = lex_write.then(|| self.begin_carrier());
+                let ran = self.exec_nqp_op(*id, *arity as usize);
+                if let Some(saved) = carrier_saved {
+                    let written = self.end_carrier(saved);
+                    if ran.is_ok() {
+                        self.writeback_carrier_writes(code, &written);
+                    }
+                }
+                match ran {
                     Ok(()) => {}
                     Err(e) => {
                         // Same resume-point recording as CallFunc: an op can

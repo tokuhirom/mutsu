@@ -62,6 +62,16 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Whether op `id` is one of `nqp::bindlex{,_i,_n,_s}`, which writes a
+    /// lexical of the running frame by name.
+    // Cost: O(1).
+    pub(super) fn nqp_op_binds_lexical(id: u16) -> bool {
+        matches!(
+            crate::runtime::nqp_op_ids::nqp_op_name(id),
+            "bindlex" | "bindlex_i" | "bindlex_n" | "bindlex_s"
+        )
+    }
+
     /// `OpCode::NqpOp` — an `nqp::` VALUE op whose identity and operand count
     /// the compiler already settled (`try_compile_nqp_value_op`).
     ///

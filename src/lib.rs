@@ -25,6 +25,7 @@ pub(crate) mod meta_ns;
 pub(crate) mod method_signature_shared;
 pub(crate) mod native_stack;
 pub(crate) mod native_types;
+pub(crate) mod nqp_op_ids;
 mod op_prec;
 mod op_scan_index;
 mod opcode;

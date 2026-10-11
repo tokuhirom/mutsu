@@ -239,6 +239,27 @@ impl Interpreter {
         }
     }
 
+    /// The lexical `name` (`$x` / `@a` / ...) as `ctx` holds it, or as one of
+    /// its callers does when `through_callers`.
+    // Cost: O(m + c), m = chars of the name, c = caller contexts walked.
+    pub(crate) fn nqp_ctx_lookup(
+        &self,
+        ctx: Option<&Value>,
+        name: &str,
+        through_callers: bool,
+    ) -> Option<Value> {
+        let key = name.strip_prefix('$').unwrap_or(name);
+        let mut id = ctx.and_then(Self::eval_context_id);
+        while let Some(i) = id {
+            let frame = self.repl_compiler.contexts.get(i)?;
+            if let Some(v) = frame.env.get(key) {
+                return Some(v.clone().into_deref());
+            }
+            id = if through_callers { frame.caller } else { None };
+        }
+        None
+    }
+
     /// `nqp::ctxlexpad($ctx)`: the context's user lexicals, as a hash keyed by
     /// their sigiled names.
     // Cost: O(v), v = variables in the context.
