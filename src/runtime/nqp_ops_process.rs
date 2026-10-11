@@ -331,7 +331,7 @@ impl Interpreter {
             "currentthread" | "newthread" | "threadrun" | "threadjoin" | "threadid"
             | "threadyield" | "threadlockcount" => return self.call_nqp_op_thread(op, args),
             // Method lookup by name (#11499): runtime/nqp_ops_object.rs.
-            "findmethod" | "tryfindmethod" | "setparameterizer" | "parameterizetype"
+            "findmethod" | "tryfindmethod" | "rebless" | "setparameterizer" | "parameterizetype"
             | "typeparameterized" | "typeparameters" | "typeparameterat" => {
                 return self.call_nqp_op_object(op, args);
             }
