@@ -2,6 +2,7 @@ mod collation_temporal;
 mod encoding_rotor_toggle;
 mod first_chunked;
 mod first_polymod_tree;
+pub(in crate::runtime) use first_polymod_tree::polymod_temporal_types;
 mod grep;
 mod grep_no_matcher;
 mod minmax_extrema;
