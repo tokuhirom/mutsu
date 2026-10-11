@@ -14,7 +14,7 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn extract_supply_on_close_callbacks(attributes: &AttrMap) -> Vec<Value> {
+    pub(crate) fn extract_supply_on_close_callbacks(attributes: &AttrMap) -> Vec<Value> {
         if let Some(ValueView::Array(callbacks, ..)) =
             attributes.get("on_close_callbacks").map(Value::view)
         {
