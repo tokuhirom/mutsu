@@ -11,6 +11,6 @@ is-deeply @c, [1, 12, 3], 'code-form cas with *-2 works on the second to last';
 
 my atomicint @n = 5, 6, 7;
 atomic-fetch-inc(@n[*-1]);
-is-deeply @n.List, (5, 6, 8), , 'atomic-fetch-inc with *-1';
+is-deeply @n.List, (5, 6, 8), 'atomic-fetch-inc with *-1';
 is atomic-fetch(@n[*-1]), 8, 'atomic-fetch with *-1';
 is atomic-fetch-dec(@n[*-3]), 5, 'atomic-fetch-dec with *-3 returns old value';
