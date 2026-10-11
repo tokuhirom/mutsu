@@ -10,75 +10,6 @@ use crate::symbol::Symbol;
 use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
 use num_traits::ToPrimitive;
 
-/// Whether `arg` is a `Real`, the type of the `Real $epsilon` parameter of
-/// `.Rat(eps)` / `.FatRat(eps)`: a number, a `Bool`, an enum value, an allomorph
-/// (`<0.01>`), or an object that carries a numeric payload (`Duration`,
-/// `Instant`). A `Str`, `Nil`, a type object, a `Complex` and every container
-/// are not.
-// Cost: O(1).
-fn is_real_epsilon(arg: &Value) -> bool {
-    match arg.view() {
-        ValueView::Num(_)
-        | ValueView::Int(_)
-        | ValueView::BigInt(_)
-        | ValueView::Rat(..)
-        | ValueView::BigRat(..)
-        | ValueView::FatRat(..)
-        | ValueView::Bool(_)
-        | ValueView::Enum { .. } => true,
-        ValueView::Mixin(inner, _) => is_real_epsilon(inner),
-        ValueView::Scalar(inner) => is_real_epsilon(inner),
-        // `Duration` and `Instant` keep their number in `value`; an instance of
-        // a user subclass of `Int` / `Num` / `Rat` keeps it in a payload.
-        ValueView::Instance { class_name, .. } => {
-            class_name == "Duration"
-                || class_name == "Instant"
-                || crate::value::numeric_payload::numeric_subclass_payload(arg).is_some()
-        }
-        _ => false,
-    }
-}
-
-/// The epsilon `.Rat(eps)` / `.FatRat(eps)` was bound to. Rakudo's parameter is
-/// `Real $epsilon`, so anything else (a `Str`, `Nil`, a type object, a
-/// `Complex`) fails the bind with `X::TypeCheck::Binding::Parameter`, as
-/// `Num.Rat('0.01')` does there (#12043). `param` is the parameter's name as
-/// Rakudo reports it: the `Num` candidates name theirs `epsilon` (`Rat`) and
-/// `$epsilon` (`FatRat`), the `Rat` candidates leave it anonymous (`<anon>`).
-/// A `Real` numifies; a non-finite one has no usable value and keeps the
-/// default `1e-6`.
-// Cost: O(1).
-fn rat_epsilon_arg(arg: &Value, param: &str) -> Result<f64, RuntimeError> {
-    if !is_real_epsilon(arg) {
-        return Err(runtime::utils::typecheck_binding_parameter_with_hint(
-            param,
-            "Real",
-            arg,
-            &runtime::utils::value_short_repr(arg),
-            None,
-        ));
-    }
-    let value = match arg.view() {
-        // `Value::to_f64` reads the `Duration` / `Instant` / payload instances.
-        ValueView::Instance { .. } => Some(arg.to_f64()),
-        _ => crate::runtime::to_float_value(arg),
-    };
-    Ok(value.filter(|f| f.is_finite()).unwrap_or(1e-6))
-}
-
-/// `f.Rat(epsilon)`: the simplest rational within `epsilon` of `f` (a continued
-/// fraction), with `NaN` as `0/0` and the infinities as `±1/0`.
-// Cost: O(log(1/epsilon)) continued-fraction steps.
-fn num_rat_with_epsilon(f: f64, epsilon: f64) -> Value {
-    if f.is_nan() {
-        Value::rat_raw(0, 0)
-    } else if f.is_infinite() {
-        Value::rat_raw(if f.is_sign_positive() { 1 } else { -1 }, 0)
-    } else {
-        crate::builtins::num_to_rat_with_epsilon(f, epsilon)
-    }
-}
-
 pub(crate) fn native_method_1arg(
     target: &Value,
     method_sym: Symbol,
@@ -436,76 +367,55 @@ pub(crate) fn native_method_1arg(
             native_method_1arg(inner, method_sym, arg)
         }
         "Rat" => {
-            // .Rat(epsilon) — use continued fraction algorithm with given epsilon.
-            // Only an invocant that binds the epsilon type-checks it: an `Int`
-            // (already rational) never does, so `7.Rat('0.01')` is `7.0`.
-            let result = match target.view() {
-                ValueView::Rat(_, _) => {
-                    if let Err(e) = rat_epsilon_arg(arg, "<anon>") {
-                        return Some(Err(e));
-                    }
-                    target.clone()
-                }
-                ValueView::Int(i) => Value::rat_raw(i, 1),
-                ValueView::Num(f) => match rat_epsilon_arg(arg, "epsilon") {
-                    Ok(epsilon) => num_rat_with_epsilon(f, epsilon),
-                    Err(e) => return Some(Err(e)),
-                },
-                ValueView::FatRat(n, d) => Value::rat_raw(n, d),
+            // .Rat(epsilon) -- the numeric types' `Rat` rows' implementation
+            // (`method_table::numeric_coerce`).
+            match target.view() {
                 // Whether the imaginary part is negligible is judged against
                 // `$*TOLERANCE`, which only the interpreter can read
                 // (`Interpreter::dispatch_complex_to_real`).
-                ValueView::Complex(..) => return None,
+                ValueView::Complex(..) => None,
                 // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
                 ValueView::Instance { class_name, .. }
                     if class_name == "Instant" || class_name == "Duration" =>
                 {
-                    return None;
+                    None
                 }
                 ValueView::Str(s) => {
                     // `Str.Rat` takes no `Real` epsilon in Rakudo; the lenient
                     // reading of whatever was passed is kept.
-                    if let Ok(f) = s.parse::<f64>() {
-                        let epsilon = rat_epsilon_arg(arg, "epsilon").unwrap_or(1e-6);
+                    Some(Ok(if let Ok(f) = s.parse::<f64>() {
+                        let epsilon = crate::builtins::method_table::numeric_coerce::epsilon_arg(
+                            arg, "epsilon",
+                        )
+                        .unwrap_or(1e-6);
                         crate::builtins::num_to_rat_with_epsilon(f, epsilon)
                     } else {
                         Value::rat_raw(0, 1)
-                    }
+                    }))
                 }
-                _ => Value::rat_raw(0, 1),
-            };
-            Some(Ok(result))
+                _ => crate::builtins::method_table::numeric_coerce::rat_with_epsilon(target, arg)
+                    .or_else(|| Some(Ok(Value::rat_raw(0, 1)))),
+            }
         }
         "FatRat" => {
-            // .FatRat(epsilon) — a `Num` is rationalized with the epsilon as
-            // `.Rat(epsilon)` does (`3.14159e0.FatRat(0.01)` is `22/7`).
-            let result = match target.view() {
-                ValueView::FatRat(_, _) => target.clone(),
-                ValueView::Int(i) => Value::fat_rat_raw(i, 1),
-                ValueView::Rat(n, d) => {
-                    if let Err(e) = rat_epsilon_arg(arg, "<anon>") {
-                        return Some(Err(e));
-                    }
-                    Value::fat_rat_raw(n, d)
-                }
-                ValueView::Num(f) => match rat_epsilon_arg(arg, "$epsilon") {
-                    Ok(epsilon) => match num_rat_with_epsilon(f, epsilon).view() {
-                        ValueView::Rat(n, d) => Value::fat_rat_raw(n, d),
-                        _ => Value::fat_rat_raw(0, 1),
-                    },
-                    Err(e) => return Some(Err(e)),
-                },
+            // .FatRat(epsilon) -- a `Num` is rationalized with the epsilon as
+            // `.Rat(epsilon)` does (`3.14159e0.FatRat(0.01)` is `22/7`); the
+            // numeric types' `FatRat` rows' implementation
+            // (`method_table::numeric_coerce`).
+            match target.view() {
                 // As for `Rat` above: the interpreter judges the imaginary part.
-                ValueView::Complex(..) => return None,
+                ValueView::Complex(..) => None,
                 // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
                 ValueView::Instance { class_name, .. }
                     if class_name == "Instant" || class_name == "Duration" =>
                 {
-                    return None;
+                    None
                 }
-                _ => Value::fat_rat_raw(0, 1),
-            };
-            Some(Ok(result))
+                _ => {
+                    crate::builtins::method_table::numeric_coerce::fat_rat_with_epsilon(target, arg)
+                        .or_else(|| Some(Ok(Value::fat_rat_raw(0, 1))))
+                }
+            }
         }
         // Cost: O(p + m) amortized, p = match position, m = chars of the needle;
         // the byte offset is converted through the cached grapheme index.

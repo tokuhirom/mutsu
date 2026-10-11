@@ -3,7 +3,7 @@
 /// are rows of `builtins::method_table::scalars::math`.)
 use crate::symbol::Symbol;
 use crate::value::str_numeric::str_numifies_to_complex;
-use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_rat};
+use crate::value::{RuntimeError, Value, ValueView, make_rat};
 
 /// Convert a string to Rat, handling integer, decimal, scientific notation, and complex forms.
 /// Parses with BigInt so values past i64 keep their magnitude
@@ -165,28 +165,12 @@ pub(super) fn dispatch(
             ValueView::Enum { .. } | ValueView::Instance { .. } => None,
             _ => Some(crate::builtins::method_table::succ_pred::pred(target, &[])),
         }),
+        // A number: the numeric types' `Rat` rows' implementation
+        // (`method_table::numeric_coerce`).
+        "Rat" if let Some(rat) = crate::builtins::method_table::numeric_coerce::rat_of(target) => {
+            Some(Some(Ok(rat)))
+        }
         "Rat" => Some(match target.view() {
-            ValueView::Rat(_, _) => Some(Ok(target.clone())),
-            // A big FatRat coerces to a big Rat: drop the FatRat flag.
-            ValueView::BigRat(n, d) if target.is_bigfatrat() => {
-                Some(Ok(Value::bigrat(n.clone(), d.clone())))
-            }
-            ValueView::BigRat(_, _) => Some(Ok(target.clone())),
-            ValueView::Int(i) => Some(Ok(make_rat(i, 1))),
-            ValueView::Num(f) => {
-                if f.is_nan() {
-                    Some(Ok(Value::rat_raw(0, 0)))
-                } else if f.is_infinite() {
-                    if f.is_sign_positive() {
-                        Some(Ok(Value::rat_raw(1, 0)))
-                    } else {
-                        Some(Ok(Value::rat_raw(-1, 0)))
-                    }
-                } else {
-                    Some(Ok(crate::builtins::num_to_rat_with_epsilon(f, 1e-6)))
-                }
-            }
-            ValueView::FatRat(n, d) => Some(Ok(make_rat(n, d))),
             // A non-numeric string yields the same lazy `X::Str::Numeric` Failure
             // `.Int`/`.Num`/`.FatRat` produce (`"foo".Rat.^name` is `Failure`).
             // Without this guard `str_to_rat` silently fell back to `0/1`.
@@ -265,34 +249,15 @@ pub(super) fn dispatch(
                 }
             }
         }),
+        // A number: the numeric types' `FatRat` rows' implementation
+        // (`method_table::numeric_coerce`).
+        "FatRat"
+            if let Some(fat) =
+                crate::builtins::method_table::numeric_coerce::fat_rat_of(target) =>
+        {
+            Some(Some(Ok(fat)))
+        }
         "FatRat" => Some(match target.view() {
-            ValueView::FatRat(_, _) => Some(Ok(target.clone())),
-            ValueView::Rat(n, d) => Some(Ok(Value::fat_rat_raw(n, d))),
-            // A big FatRat stays as-is; a big Rat gains the FatRat flag.
-            ValueView::BigRat(_, _) if target.is_bigfatrat() => Some(Ok(target.clone())),
-            ValueView::BigRat(n, d) => Some(Ok(Value::bigfatrat(n.clone(), d.clone()))),
-            ValueView::Int(i) => Some(Ok(Value::fat_rat_raw(i, 1))),
-            ValueView::BigInt(i) => Some(Ok(make_big_fat_rat(
-                (**i).clone(),
-                num_bigint::BigInt::from(1),
-            ))),
-            ValueView::Num(f) => {
-                if f.is_nan() {
-                    Some(Ok(Value::fat_rat_raw(0, 0)))
-                } else if f.is_infinite() {
-                    if f.is_sign_positive() {
-                        Some(Ok(Value::fat_rat_raw(1, 0)))
-                    } else {
-                        Some(Ok(Value::fat_rat_raw(-1, 0)))
-                    }
-                } else {
-                    let rat = crate::builtins::num_to_rat_with_epsilon(f, 1e-6);
-                    match rat.view() {
-                        ValueView::Rat(n, d) => Some(Ok(Value::fat_rat_raw(n, d))),
-                        _ => Some(Ok(Value::fat_rat_raw(0, 1))),
-                    }
-                }
-            }
             // A non-numeric string yields the same lazy `X::Str::Numeric` Failure
             // `.Int`/`.Num` produce (`"foo".FatRat.^name` is `Failure`).
             ValueView::Str(s)

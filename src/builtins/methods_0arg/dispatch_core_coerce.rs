@@ -733,14 +733,12 @@ pub(super) fn dispatch(
                 );
                 return Some(Some(Err(RuntimeError::warn_signal_with_resume(msg, zero))));
             }
+            // A real number: the numeric types' `Real` rows' implementation
+            // (`method_table::numeric_coerce`).
+            if let Some(result) = crate::builtins::method_table::numeric_coerce::real_of(target) {
+                return Some(Some(Ok(result)));
+            }
             let result = match target.view() {
-                ValueView::Int(i) => Value::int(i),
-                ValueView::BigInt(_) => target.clone(),
-                ValueView::Num(f) => Value::num(f),
-                ValueView::Rat(n, d) => Value::rat_raw(n, d),
-                ValueView::FatRat(n, d) => Value::fat_rat_raw(n, d),
-                ValueView::BigRat(n, d) => Value::bigrat(n.clone(), d.clone()),
-                ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
                 // A Complex is Real when its imaginary part is `≅ 0`; the runtime
                 // reads `$*TOLERANCE` (`Interpreter::dispatch_complex_to_real`).
                 ValueView::Complex(..) => return Some(None),
@@ -788,17 +786,18 @@ pub(super) fn dispatch(
                 );
                 return Some(Some(Err(RuntimeError::warn_signal_with_resume(msg, zero))));
             }
+            // A number: the numeric types' `Numeric` rows' implementation
+            // (`method_table::numeric_coerce`). Rationals stay exact; converting
+            // a `Rat` through f64 loses large denominators (and turns
+            // `1/100000` into the nearby `1/99999`), and `Numeric.Rat` is the
+            // identity in Rakudo. A `Complex` is preserved too: converting it to
+            // a real type belongs to `.Num`/`.Real`, where a non-zero imaginary
+            // component is rejected.
+            if let Some(result) = crate::builtins::method_table::numeric_coerce::numeric_of(target)
+            {
+                return Some(Some(Ok(result)));
+            }
             let result = match target.view() {
-                ValueView::Int(i) => Value::int(i),
-                ValueView::BigInt(_) => target.clone(),
-                ValueView::Num(f) => Value::num(f),
-                // Rational values stay exact under `.Numeric`; converting a
-                // `Rat` through f64 loses large denominators (and turns
-                // `1/100000` into the nearby `1/99999` when it is converted
-                // back to Rat). `Numeric.Rat` is the identity in Rakudo.
-                ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _) => {
-                    target.clone()
-                }
                 // Cost: O(d^2) for a d-digit integer string (num-bigint radix parse), O(n)
                 // otherwise, n = chars of the invocant.
                 ValueView::Str(s) => {
@@ -810,12 +809,6 @@ pub(super) fn dispatch(
                         return Some(Some(Ok(str_numeric_failure(&s))));
                     }
                 }
-                ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
-                // `.Numeric` preserves Complex values. Converting a Complex to
-                // a real type belongs to `.Num`/`.Real`, where a non-zero
-                // imaginary component is rejected; dropping that component
-                // here made `Complex.Numeric.Rat` silently discard it.
-                ValueView::Complex(_, _) => target.clone(),
                 // Cost: O(1) (`.Numeric` / `+@a` of an array is its element count).
                 ValueView::Array(items, ..) => Value::int(items.len() as i64),
                 ValueView::Hash(h) => Value::int(h.len() as i64),
