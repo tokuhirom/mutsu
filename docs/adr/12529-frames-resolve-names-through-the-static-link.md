@@ -508,7 +508,14 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      env still does, unmarked.
 
    With every program-scope routine linked, the whole `t/` tree and the
-   whitelisted roast pass.
+   whitelisted roast pass. Release-build Ir against the merge base: `bench-fib`
+   +0.36%, `bench-tak` +0.18%, `method-call` -0.43%, `poly-call` +0.00%,
+   `bench-ctor` -0.33%, `bench-multi-dispatch` +0.12%. A first measurement
+   showed +0.4% to +1.1%, which was none of this slice's logic:
+   `nanbox::payload_op`, the dispatch every heap clone and drop goes through,
+   had doubled in size because the optimizer inlined two `Gc::drop`s into
+   it. Its release path is now out of line (`release_gc`), which keeps it
+   the same size whatever the codegen-unit split.
 
    What is still dynamic: a reflective *write* (`EVAL q[$x = 1]`) lands in
    the frame's overlay and the return merge carries it to the caller, as
