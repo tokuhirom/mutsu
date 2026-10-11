@@ -2363,14 +2363,24 @@ fn infix_is_bind_to_subscript(node: &RakuAstNode) -> bool {
 /// `SUBSCRIPT := EXPR` through the parser's own `index_bind_expr`.
 // Cost: O(n), n = size of the node.
 fn lower_index_bind(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
-    let Expr::Index {
-        target,
-        index,
-        is_positional,
-        spelling,
-    } = lower_expr(named_child(node, "left")?)?
-    else {
-        return Err(unsupported(node));
+    let (target, index, is_positional, spelling) = match lower_expr(named_child(node, "left")?)? {
+        Expr::Index {
+            target,
+            index,
+            is_positional,
+            spelling,
+        } => (target, index, is_positional, spelling),
+        Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } => (
+            target,
+            Box::new(Expr::ArrayLiteral(dimensions)),
+            is_positional,
+            crate::ast::IndexSpelling::SemicolonDimensions,
+        ),
+        _ => return Err(unsupported(node)),
     };
     let rhs = lower_expr(named_child(node, "right")?)?;
     Ok(crate::parser::index_bind_expr(

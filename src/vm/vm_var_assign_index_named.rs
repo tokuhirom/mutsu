@@ -5138,6 +5138,17 @@ impl Interpreter {
         } else {
             val.itemize_for_element_store()
         };
+        if is_bind_value
+            && self.bind_shaped_multidim_leaf(
+                code,
+                &var_name,
+                &indices_val,
+                &val_unitemized,
+                bind_cell.as_ref(),
+            )?
+        {
+            return Ok(());
+        }
 
         // ADR-0040 §9 seen from the DESTINATION side, 3+-level twin of the
         // two-level op's probe (#8965). The addressed leaf slot can itself BE

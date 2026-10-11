@@ -877,7 +877,13 @@ impl Compiler {
             args: vec![Expr::Var(temp_name)],
             listop: false,
         };
-        self.compile_expr_index_assign(target, index, &rebound_source, outer_positional);
+        self.compile_expr_index_assign(
+            target,
+            index,
+            &rebound_source,
+            outer_positional,
+            crate::ast::IndexSpelling::Subscript,
+        );
         true
     }
 
@@ -1011,6 +1017,7 @@ impl Compiler {
         index: &Expr,
         value: &Expr,
         outer_positional: bool,
+        spelling: crate::ast::IndexSpelling,
     ) {
         // `(state buf32 $w .= new)[3] = 77` and `($a, 42, $b)[1, 3] = ...`
         // subscript what the parentheses hold, so the shape dispatch below looks
@@ -1243,7 +1250,32 @@ impl Compiler {
         let binding =
             matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value");
         if let Some(rewritten) = self.bind_method_rooted_chain_root(target, binding) {
-            self.compile_expr_index_assign(&rewritten, index, value, outer_positional);
+            self.compile_expr_index_assign(&rewritten, index, value, outer_positional, spelling);
+            return;
+        }
+        if spelling == crate::ast::IndexSpelling::SemicolonDimensions
+            && matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value")
+            && let Expr::ArrayLiteral(dimensions) = index
+            && let Some(name) = self.index_assign_target_name(target)
+        {
+            // Semicolon dimensions are nested scalar subscripts for binding.
+            // Route through the deep lvalue op, which already preserves the
+            // source cell while walking ordinary nested containers.
+            self.compile_bind_index_value(value);
+            for dimension in dimensions.iter().rev() {
+                self.compile_expr(dimension);
+            }
+            let name_idx = self.code.add_constant(Value::str(name));
+            let flags = vec![Value::truth(outer_positional); dimensions.len()];
+            let flags_idx = self.code.add_constant(Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(flags)),
+                crate::value::ArrayKind::Array,
+            ));
+            self.code.emit(OpCode::IndexAssignDeepNested {
+                name_idx,
+                depth: dimensions.len() as u32,
+                positional_flags_idx: flags_idx,
+            });
             return;
         }
         if let Some(name) = self.index_assign_target_name(target) {
@@ -1460,7 +1492,11 @@ impl Compiler {
         is_positional: bool,
     ) {
         if let Some(var_name) = self.index_assign_target_name(target) {
-            self.compile_expr(value);
+            if matches!(value, Expr::Call { name, .. } if *name == "__mutsu_bind_index_value") {
+                self.compile_bind_index_value(value);
+            } else {
+                self.compile_expr(value);
+            }
             for dim in dimensions {
                 self.compile_expr(dim);
             }
