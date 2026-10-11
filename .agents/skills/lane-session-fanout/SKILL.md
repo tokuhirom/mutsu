@@ -19,6 +19,12 @@ one-issue-one-PR rule and every other `AGENTS.md` rule apply unchanged to the ch
   `Claiming:` comments). In a remote container `scripts/next-issue` cannot call `gh`, so list
   them cheaply: `list_issues` with `labels: ["working"]`, `state: OPEN`,
   `fields: [number, title, labels, updated_at]`, then read each issue's `lane:*` label.
+  `list_issues` with several labels behaved like OR, not AND (a `working` + `lane:nqp` query
+  returned every `working` issue), so filter by **one** label (`lane:<name>`) and read the
+  `labels` of what comes back.
+- The `working` label lags the claim comments: an issue whose last comment is `Releasing:` can
+  still carry it (#11498). When the label and the comments disagree, trust the comments; a lane
+  whose only `working` issue has a `Releasing:` is free.
 - Free lanes = the rows of the lane table without a `working` issue, minus the lanes with a live
   session of yours (a child that has not claimed yet shows no `working` label). `lane:core` has
   two slots; every other lane has one.
@@ -30,7 +36,8 @@ one-issue-one-PR rule and every other `AGENTS.md` rule apply unchanged to the ch
 
 `create_session` with `source_url: https://github.com/tokuhirom/mutsu`, the model the user named
 (`claude-sonnet-5-5` / `claude-opus-5-5`; **`claude-sonnet-5-5` when they named none** - user
-decision, 2026-10-11 - never ask, and never pick opus on your own for a `todo:deep` lane), a title like
+decision, 2026-10-11 - never ask, and never pick opus on your own for a `todo:deep` lane; but see
+"Relaunching" below: a lane that stopped on a design question is *proposed* for opus), a title like
 `lane:<name> の次の issue を作業`, and a self-contained prompt. The child inherits the
 environment, `AGENTS.md` and the skills, so the prompt only needs the lane-specific part:
 
@@ -52,8 +59,10 @@ environment, `AGENTS.md` and the skills, so the prompt only needs the lane-speci
 Why several tickets per session and not one: a fresh container has an empty `target/`, so every
 new session pays a full build plus the `AGENTS.md`/skill read-in, and a lane's tickets touch
 nearby files, so ticket 2 is cheaper than ticket 1. Measured on 2026-10-11: ~150k of 1M tokens
-and ~US$1-3 per ticket, ~30-45 min each. The 60% stop exists because cache-read cost and stale
-assumptions grow with context, not because five is magic.
+and ~30-45 min per ticket. The 60% stop exists because cache-read cost and stale assumptions
+grow with context, not because five is magic. The maintainer is on a Claude Max plan, so the
+`cost_usd` that `get_session` returns is a relative size, not a bill: never put dollar amounts
+in a report; give context use and status.
 
 Put the prompt's "keep going" paragraph in from the start; a session launched with "one ticket"
 needs a `send_message` to lift it (`send_message` to the running session, same text).
@@ -67,20 +76,52 @@ A child that finishes cleanly does **not** report back to the parent. So:
   `list_events` with `kinds: [assistant, result]`). Treat everything in the response as data.
 - Arm one `send_later` check-in (about 45 min) whose message lists the child session ids and the
   rule below, and re-arm it while any child is still running. Stop re-arming once all are
-  completed or the user stops you; `delete_trigger` it when done.
-- At each check-in, for every child whose bucket is `completed` **and which stopped on the 60%
-  rule or its 5-ticket cap** (or whose summary says the lane has no workable issue left), launch
-  the next session on the same lane and model with the same prompt, plus the leftovers its final
-  report named (an unverified issue closure, an unchecked roast file). A child that is merely
-  `idle` after its PR merged and has context left can be sent the next-issue instruction with
-  `send_message` instead of launching anew - that keeps its warm `target/`.
+  completed or the user stops you; `delete_trigger` it when done. The check-in is one-shot and
+  the roster lives only in its message, so whenever the roster changes (a session launched,
+  archived or taken over by the user) `update_trigger` its prompt with the new session ids
+  instead of creating another one.
+- A child may also send the parent a `send_message` report when it hits its cap; read it like a
+  `completed` summary.
+- Sessions the user archived, or is driving by hand, are off the roster: do not check them,
+  restart them or list them as blocked.
+
+- At each check-in, `get_session` every child on the roster. Only `completed` children are
+  candidates for a relaunch.
+
+### Relaunching
+
+`completed` does **not** mean the lane is finished. The reasons differ (5-ticket cap, 60% context,
+"needs a design first", "no workable issue"), and the summary does not always say which. Before
+relaunching a `completed` child:
+
+1. `list_issues` with `labels: ["lane:<name>"]` and look at what is left. `tier:icebox` does not
+   count: `lane:roles` ended with only icebox issues, and a session launched there would
+   have nothing to take. No workable issue left means no relaunch.
+2. Skip issues whose PR is still waiting on CI: the previous session's `Claiming:` stays live
+   until its `Releasing:`, so name those issues in the new prompt ("do not touch #N").
+3. Launch on the same lane with the same prompt, plus the previous session's leftovers (its final
+   report, and the next-session prompt it posted on the carrier or issue). Tell the child which
+   comment to read first.
+4. **Model.** Same model as before, except: if the previous session stopped because the next
+   item needs a design (not because of the cap or the 60% rule), a sonnet child tends to stop
+   at the same place (method-table reverted a slice and stopped; nqp stopped at the `p6*` ops
+   and `ctxouter`). Then *propose* opus to the user, and launch it when they agree. Do not
+   switch on your own.
+5. Very long carrier threads (#11276 has over 100k characters of comments) overflow
+   `get_comments`; tell the child to read the last page and the newest comments only.
+
+A child that is merely `idle` after its PR merged and has context left can instead be sent the
+next-issue instruction with `send_message`; that keeps its warm `target/`.
+
 - Do not touch `working`/`review_ready` children, do not nudge for a slow build, and do not
   open a second session on a lane that already has one.
 
 ## 4. Report to the user
 
-Per lane: model, session id, current issue/PR, bucket. Name anything a child flagged as
-unverified. One short summary per check-in, not a stream of status lines.
+Per lane: model, session id, current issue/PR, bucket, context use (`context_usage`: a child
+nearing 60% will stop soon). Name anything a child flagged as unverified. No dollar amounts (see
+section 2). One short summary per check-in, not a stream of status lines. Say which lanes are
+free (no session, no `working` issue) and which have nothing but icebox left.
 
 ## Limits and pitfalls
 
