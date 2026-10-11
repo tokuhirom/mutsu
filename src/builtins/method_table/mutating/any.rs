@@ -32,14 +32,22 @@ fn splice_row(
     args: &[Value],
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
-    let target = place.value().descalarize();
-    // Not the value's own kind, or a receiver other entries resolve further:
-    // a cell or variable reference around the receiver (it may well hold an
-    // `Array`) and a mixin around a native value keep their paths.
-    if matches!(
-        target.view(),
-        ValueView::ContainerRef(_) | ValueView::VarRef { .. } | ValueView::Mixin(..)
-    ) {
+    // See through the wrappers a call receiver can carry: a cell around the
+    // value and the transient variable reference of an `is rw` argument. A
+    // `Mixin` stays one (its type name is `Int+{Foo}`), but what it wraps is
+    // what decides whether another entry resolves the call.
+    let unwrapped = crate::runtime::types::unwrap_varref_value_for_dispatch(place.value());
+    let target = unwrapped.descalarize();
+    let inner = match target.view() {
+        ValueView::Mixin(inner, _) => inner.descalarize().clone(),
+        _ => target.clone(),
+    };
+    // An `Array` and a `Buf` have the real `splice` (the rows before this one in
+    // the chain, reached here only because a wrapper hid them from the owner
+    // lookup), so they are not this row's.
+    if matches!(inner.view(), ValueView::Array(..))
+        || inner.dispatch_shape() == Some(crate::value::DispatchShape::Buf)
+    {
         return None;
     }
     // An instance is answered here when nothing else resolves the call further:
@@ -51,7 +59,7 @@ fn splice_row(
         class_name,
         attributes,
         ..
-    } = target.view()
+    } = inner.view()
     {
         let class = class_name.resolve();
         if InstanceBacking::Array.is_in(&attributes)
@@ -62,7 +70,7 @@ fn splice_row(
         }
     }
     // A type object of a user class that declares `splice` answers itself.
-    if let ValueView::Package(class_name) = target.view()
+    if let ValueView::Package(class_name) = inner.view()
         && interp.has_user_method(&class_name.resolve(), "splice")
     {
         return None;

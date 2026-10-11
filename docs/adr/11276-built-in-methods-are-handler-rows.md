@@ -2481,3 +2481,15 @@ question that justified the decline ("does a bridge resolve this receiver furthe
 - **Found, not fixed**: `Exception`/`X::AdHoc` instances and `utf8` still answer `X::Method::NotFound` for `.splice` (an earlier path intercepts them before
   `invoke_mut`); a `Mixin` and a cell reference still decline.
 
+### 9.69 `Any.splice` sees through a cell, a variable reference and a mixin (2026-10-11)
+
+`refactor/12653-unwrap-mixin-ref-receivers` (issue #12653). The remainder of #12647: the row no longer carries a `ContainerRef | VarRef | Mixin` decline list.
+
+- **The row unwraps the receiver once** (`unwrap_varref_value_for_dispatch`: the cell and the transient variable reference of an `is rw` argument). A `Mixin` stays a mixin
+  for the answer (`Int+{Tag}`, which is how Rakudo names it in the `X::Multi::NoMatch` message; `make_no_candidates_error` now names a mixin by its user-facing type),
+  but what it wraps decides whether the call is this row's.
+- **The decline is now only "someone else has the real `splice`"**: an `Array` and a `Buf` (the owner lookup does not see through a wrapper, so a cell around an
+  `Array` reaches `Any` and must be declined here), an `is Array` instance, a user `splice`, a `Mu`-rooted user class. A wrapper alone is never a reason to decline.
+- Behaviour change toward Rakudo: the mixin's type name in the message. The instance and cell cases already matched.
+- **Found, not fixed**: Rakudo answers `(my @a = 1,2,3; @a but Tag).splice(1,1)` with `[1, 3, Mu]` (a length quirk of its mixin copy); mutsu answers `[1, 3]`. Not pinned by a test.
+

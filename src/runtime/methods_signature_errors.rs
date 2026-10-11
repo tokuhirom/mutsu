@@ -150,7 +150,9 @@ pub(crate) fn make_no_candidates_error(
         };
         let name = match v.view() {
             // Only the user-facing spelling names a type object or an instance.
-            crate::value::ValueView::Package(_) | crate::value::ValueView::Instance { .. } => {
+            crate::value::ValueView::Package(_)
+            | crate::value::ValueView::Instance { .. }
+            | crate::value::ValueView::Mixin(..) => {
                 crate::value::types::what_type_name(v)
             }
             _ => crate::runtime::utils::value_type_name(v).to_string(),
