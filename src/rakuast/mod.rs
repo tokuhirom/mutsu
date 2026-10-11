@@ -13,11 +13,13 @@
 mod anon_state;
 mod atomic_op;
 mod attribute;
+mod attribute_decl;
 mod bare_prefix;
 mod bareword;
 mod callable_context;
 mod capture_term;
 mod chain;
+mod class_constructor;
 mod compound_stmt;
 mod constructor_positional;
 mod contextualizer;
@@ -77,10 +79,12 @@ mod symbolic_deref;
 mod temporize;
 mod thunk;
 mod type_args;
+mod type_build;
 mod type_call;
 mod type_ctor;
 mod type_lower;
 mod use_stmt;
+mod var_decl_constructor;
 mod var_does;
 mod word_quote;
 
@@ -2266,68 +2270,10 @@ pub fn construct(
         }))));
     }
     if class_name == "RakuAST::VarDeclaration::Simple" && method == "new" {
-        let sigil = named_arg(args, "sigil").ok_or_else(|| {
-            RuntimeError::new("RakuAST::VarDeclaration::Simple.new requires a `sigil` argument")
-        })?;
-        let desigilname = named_arg(args, "desigilname").ok_or_else(|| {
-            RuntimeError::new(
-                "RakuAST::VarDeclaration::Simple.new requires a `desigilname` argument",
-            )
-        })?;
-        require_rakuast_class(
-            &desigilname,
-            RakuAstClass::Name,
-            "RakuAST::VarDeclaration::Simple.new",
-        )?;
-        let mut fields = vec![RakuAstField {
-            name: Some("sigil"),
-            value: RakuAstFieldValue::Node(sigil),
-        }];
-        // Only the dynamic twigil is modelled for a hand-built declaration;
-        // the attribute twigils (`.`/`!`) come with a `has` scope this
-        // constructor does not take.
-        if let Some(twigil) = named_arg(args, "twigil")
-            && twigil.truthy()
-        {
-            if twigil.to_string_value() != "*" {
-                return Err(RuntimeError::new(format!(
-                    "RakuAST::VarDeclaration::Simple.new does not support twigil '{}'",
-                    twigil.to_string_value()
-                )));
-            }
-            fields.push(RakuAstField {
-                name: Some("twigil"),
-                value: RakuAstFieldValue::Node(twigil),
-            });
-        }
-        fields.push(RakuAstField {
-            name: Some("desigilname"),
-            value: RakuAstFieldValue::Node(desigilname),
-        });
-        if let Some(initializer) = named_arg(args, "initializer") {
-            let is_initializer = matches!(
-                initializer.view(),
-                ValueView::RakuAst(n) if matches!(
-                    n.class,
-                    RakuAstClass::InitializerAssign
-                        | RakuAstClass::InitializerBind
-                        | RakuAstClass::InitializerCallAssign
-                )
-            );
-            if !is_initializer {
-                return Err(RuntimeError::new(
-                    "RakuAST::VarDeclaration::Simple.new expects a RakuAST::Initializer node",
-                ));
-            }
-            fields.push(RakuAstField {
-                name: Some("initializer"),
-                value: RakuAstFieldValue::Node(initializer),
-            });
-        }
-        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
-            class: RakuAstClass::VarDeclarationSimple,
-            fields,
-        }))));
+        return var_decl_constructor::construct(args).map(Some);
+    }
+    if class_name == "RakuAST::Class" && method == "new" {
+        return class_constructor::construct(args).map(Some);
     }
     if matches!(
         class_name,

@@ -87,6 +87,7 @@ fn has_decl_list(
             is_rw: false,
             is_readonly: false,
             type_constraint: type_constraint.clone(),
+            hash_key_type: None,
             type_smiley: type_smiley.clone(),
             is_required: None,
             sigil: sigil as char,
@@ -984,13 +985,6 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         }
     }
 
-    if let Some(key_type) = hash_key_type {
-        type_constraint = Some(match type_constraint.take() {
-            Some(value_type) => format!("{value_type}{{{key_type}}}"),
-            None => format!("Any{{{key_type}}}"),
-        });
-    }
-
     // `is rw` on a private attribute generates no accessor, so the trait does
     // nothing — rakudo reports "Potential difficulties: useless use of 'is rw'".
     if is_rw && !is_public && !is_alias {
@@ -1198,11 +1192,12 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     }
 
     // Apply `use attributes :D/:U/:_` pragma if no explicit smiley on the type
-    let smiley_from_pragma = type_smiley.is_none() && type_constraint.is_some() && {
+    let has_type = type_constraint.is_some() || hash_key_type.is_some();
+    let smiley_from_pragma = type_smiley.is_none() && has_type && {
         let pragma = super::super::simple::current_attributes_pragma();
         matches!(pragma.as_str(), ":D" | ":U")
     };
-    let type_smiley = if type_smiley.is_none() && type_constraint.is_some() {
+    let type_smiley = if type_smiley.is_none() && has_type {
         let pragma = super::super::simple::current_attributes_pragma();
         match pragma.as_str() {
             ":D" => Some("D".to_string()),
@@ -1364,6 +1359,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         is_rw,
         is_readonly,
         type_constraint,
+        hash_key_type,
         type_smiley,
         is_required,
         sigil: sigil as char,

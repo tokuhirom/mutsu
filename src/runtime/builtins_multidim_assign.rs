@@ -72,7 +72,7 @@ impl Interpreter {
 
     /// Handle `$obj.method<key> = value` — index assignment through a method accessor.
     /// Gets the current container (hash/array) via the accessor, modifies it, writes back.
-    // Cost: O(n), n = elements in the accessor's aggregate when writeback copies it.
+    // Cost: O(n + t), n = copied aggregate elements, t = key validation/coercion cost.
     pub(super) fn builtin_index_assign_method_lvalue(
         &mut self,
         args: &[Value],
@@ -275,6 +275,11 @@ impl Interpreter {
             };
             Self::check_assign_key_writable(&hash, &key)?;
         }
+        let index = if let Some(constraint) = self.hash_key_type(&current) {
+            self.prepare_object_hash_key(&constraint, index, None)?
+        } else {
+            index
+        };
         if let Some(err) = Self::pair_subscript_store_refusal(
             &current,
             index_is_positional,

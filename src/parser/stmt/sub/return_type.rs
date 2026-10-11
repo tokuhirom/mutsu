@@ -51,9 +51,7 @@ fn move_smiley_after_parametrization(annotation: String) -> String {
             let base = &annotation[..pos];
             let params = &annotation[pos + 2..];
             if !base.is_empty()
-                && base
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == ':')
+                && base.split("::").all(crate::parser::is_raku_identifier)
                 && params.ends_with(']')
             {
                 return format!("{base}{params}{}", &smiley[..2]);
@@ -110,6 +108,19 @@ pub(crate) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
         }
 
         match b {
+            b'\''
+                if rest[..idx]
+                    .chars()
+                    .next_back()
+                    .is_some_and(crate::parser::helpers::is_raku_identifier_continue)
+                    && rest[idx + 1..]
+                        .chars()
+                        .next()
+                        .is_some_and(crate::parser::helpers::is_raku_identifier_start) =>
+            {
+                // An internal apostrophe belongs to the type name.
+                idx += 1;
+            }
             b'\'' => {
                 in_single = true;
                 idx += 1;

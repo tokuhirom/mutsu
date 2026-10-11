@@ -17,7 +17,7 @@ use super::placeholder::{is_placeholder_name, is_placeholder_param, placeholder_
 use super::routine_source::return_type_spelling;
 pub(super) use super::routine_source::routine_node;
 use super::{
-    RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, attribute, bareword, decl_traits,
+    RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode, bareword, decl_traits,
     hash_literal, name_parts, routine_traits, subscript_adverb,
 };
 use crate::ast::spelled::Spelling;
@@ -1592,112 +1592,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 custom_traits,
             },
         )?))),
-        Stmt::HasDecl {
-            name,
-            is_public,
-            default,
-            handles,
-            is_rw,
-            is_readonly,
-            type_constraint,
-            type_smiley,
-            is_required,
-            sigil,
-            where_constraint,
-            is_alias,
-            is_our,
-            is_my,
-            is_default,
-            is_type,
-            deprecated_message,
-            unknown_traits,
-            is_built,
-            default_is_seed,
-            default_is_trait,
-            default_is_bind,
-            handles_terms,
-            trait_order,
-            ..
-        } => {
-            // A `has [Type] $.x` attribute -> a `VarDeclaration::Simple` with
-            // `scope => "has"` and a `twigil` (`.` public accessor / `!`
-            // private; none for the alias `has $x`). `our $.x` has the `our`
-            // scope, `my $.x` none (the default). An explicit `= EXPR` default
-            // is both the implicit `Trait::WillBuild` and the `initializer`; a
-            // typed attribute (`has Int $.z`) carries an *implicit*
-            // `BareWord(<TypeName>)` default that is no default at all. The
-            // written traits come in written order (`rakuast::attribute`); a
-            // `:D` / `:U` smiley is the type's `Type::Definedness`; a `where`
-            // is the last field.
-            let explicit_default = default
-                .as_ref()
-                .filter(|_| !*default_is_seed && !*default_is_trait);
-            let smiley_type = match (type_constraint, type_smiley.as_deref()) {
-                (_, None) => None,
-                (Some(base), Some(smiley @ ("D" | "U"))) => Some(format!("{base}:{smiley}")),
-                _ => return Err(unsupported("attribute with a `:_` smiley")),
-            };
-            if !handles.is_empty() && handles_terms.is_empty() {
-                return Err(unsupported(
-                    "attribute with a `handles` spelling not kept as a term",
-                ));
-            }
-            let type_name = smiley_type.as_deref().or(type_constraint.as_deref());
-            let twigil = match (*is_alias, *is_public) {
-                (true, _) => None,
-                (false, true) => Some("."),
-                (false, false) => Some("!"),
-            };
-            let scope = match (*is_our, *is_my) {
-                (true, _) => Some("our"),
-                (false, true) => None,
-                (false, false) => Some("has"),
-            };
-            let full_name = if *sigil == '$' {
-                name.resolve()
-            } else {
-                format!("{}{}", sigil, name.resolve())
-            };
-            let mut decl = var_declaration(
-                &full_name,
-                explicit_default.map(|value| {
-                    if *default_is_bind {
-                        Initializer::Bind(value)
-                    } else {
-                        Initializer::Assign(value)
-                    }
-                }),
-                scope,
-                type_name,
-                twigil,
-                if *default_is_bind {
-                    None
-                } else {
-                    explicit_default
-                },
-            )?;
-            attribute::add_traits(
-                &mut decl,
-                &attribute::AttributeTraits {
-                    order: trait_order.clone(),
-                    is_rw: *is_rw,
-                    is_readonly: *is_readonly,
-                    is_required: is_required.clone(),
-                    is_default: is_default.clone(),
-                    is_built: *is_built,
-                    deprecated_message: deprecated_message.clone(),
-                    is_type: is_type.clone(),
-                    unknown_traits: unknown_traits.clone(),
-                    handles_terms: handles_terms.clone(),
-                    handles: handles.clone(),
-                },
-            )?;
-            if let Some(constraint) = where_constraint {
-                decl.fields
-                    .push(node_field(Some("where"), convert_expr(constraint)?));
-            }
-            Ok(Some(statement_expression(decl)))
-        }
+        Stmt::HasDecl { .. } => super::attribute_decl::convert(stmt),
         // `v = EXPR` where `v` is a sigilless term: rakudo's left side is the
         // `Term::Name`, and the assignment is a list assignment (no `:item`).
         Stmt::Assign {
@@ -2528,76 +2423,7 @@ pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
     }
 }
 
-/// True when a type constraint is a plain (possibly `::`-qualified) identifier
-/// (`Int`, `My::Type`) that maps to `Type::Simple`. Parameterised (`Array[Int]`)
-/// and coercion (`Str()`) types carry richer RakuAST shape, deferred — so each
-/// `::`-separated segment must be a bare identifier.
-pub(super) fn is_simple_type(t: &str) -> bool {
-    is_pseudo_type(t)
-        || !t.is_empty()
-            && name_parts::identifier_segments(t).all(|seg| {
-                !seg.is_empty() && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-            })
-}
-
-/// Build the `type => ...` RakuAST node for a mutsu type-constraint string.
-/// A plain identifier -> `Type::Simple`; a `:D`/`:U` definiteness smiley ->
-/// `Type::Definedness`, `:_` -> `Type::AnyDefinedness`; a `Base[Arg, ...]` ->
-/// `Type::Parameterized`; `Str()` -> `Type::Coercion`.
-pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
-    if let Some(base) = t.strip_suffix(":_") {
-        if !is_simple_type(base) {
-            return Err(unsupported("`:_` type over a non-simple base"));
-        }
-        return Ok(RakuAstNode {
-            class: RakuAstClass::TypeAnyDefinedness,
-            fields: vec![node_field(Some("base-type"), simple_type_node(base))],
-        });
-    }
-    if let Some(base) = t.strip_suffix(":D").or_else(|| t.strip_suffix(":U")) {
-        if !is_simple_type(base) {
-            return Err(unsupported("definite type over a non-simple base"));
-        }
-        let definite = t.ends_with(":D");
-        return Ok(RakuAstNode {
-            class: RakuAstClass::TypeDefinedness,
-            fields: vec![
-                node_field(Some("base-type"), simple_type_node(base)),
-                RakuAstField {
-                    name: Some("definite"),
-                    value: RakuAstFieldValue::Node(Value::truth(definite)),
-                },
-            ],
-        });
-    }
-    if t.find('[')
-        .is_some_and(|bracket| t.find('(').is_none_or(|paren| bracket < paren))
-    {
-        return super::type_args::parameterized_type_node(t, None);
-    }
-    // `Int()` coercion -> Type::Coercion(base-type); `Int(Cool)` adds the
-    // `constraint` the value is coerced from.
-    if let Some(open) = t.find('(')
-        && let Some(inner) = t[open + 1..].strip_suffix(')')
-    {
-        let base = &t[..open];
-        if !is_simple_type(base) {
-            return Err(unsupported("coercion type over a non-simple base"));
-        }
-        let mut fields = vec![node_field(Some("base-type"), simple_type_node(base))];
-        if !inner.is_empty() {
-            fields.push(node_field(Some("constraint"), build_type_node(inner)?));
-        }
-        return Ok(RakuAstNode {
-            class: RakuAstClass::TypeCoercion,
-            fields,
-        });
-    }
-    if is_simple_type(t) {
-        return Ok(simple_type_node(t));
-    }
-    Err(unsupported(&format!("type `{t}`")))
-}
+pub(super) use super::type_build::{build_type_node, is_simple_type};
 
 /// `my \x = 5` / `my Int \x := $s` -> `VarDeclaration::Term(type?, name,
 /// initializer)`. A scoped one (`our \x`, `state \x`) stays the boundary.
@@ -4822,32 +4648,7 @@ pub(super) fn label_fields(label: &Option<String>) -> Vec<RakuAstField> {
 /// `VarDeclaration::Simple` / `ApplyInfix` directly, not inside a
 /// `Statement::Expression`. mutsu's init is a full statement.
 fn loop_setup_node(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
-    // A `my $i = 0` init is a special case: the loop-init parse path does NOT
-    // set the `__has_initializer` trait the top-level VarDecl handler relies on,
-    // so detect the initializer from a non-Nil `expr` instead.
-    if let Stmt::VarDecl {
-        name,
-        expr,
-        type_constraint,
-        is_state,
-        is_our,
-        is_dynamic,
-        where_constraint,
-        ..
-    } = stmt
-    {
-        if type_constraint.is_some()
-            || *is_state
-            || *is_our
-            || *is_dynamic
-            || where_constraint.is_some()
-        {
-            return Err(unsupported("scoped/typed variable declaration"));
-        }
-        let init = (!expr_is_nil(expr)).then_some(Initializer::Assign(expr));
-        return var_declaration(name, init, None, None, None, None);
-    }
-    // Assignment / expression setups convert normally, then get unwrapped.
+    // Declarations and expression setups share ordinary statement conversion.
     let node = convert_stmt(stmt)?.ok_or_else(|| unsupported("empty loop setup clause"))?;
     if node.class != RakuAstClass::StatementExpression {
         return Ok(node);
@@ -4861,12 +4662,6 @@ fn loop_setup_node(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
         return Ok(inner.clone());
     }
     Err(unsupported("loop setup clause"))
-}
-
-/// True when `expr` is a `Nil` literal (mutsu's placeholder for a `my $x` with
-/// no initializer in a loop-setup clause).
-fn expr_is_nil(expr: &Expr) -> bool {
-    matches!(expr, Expr::Literal(v) | Expr::LiteralSrc(v, _) if v.is_nil())
 }
 
 /// A topic-taking block body (the `{ ... }` of an implicit-topic `for`, a
@@ -5409,7 +5204,10 @@ pub(super) fn signature(
         value: RakuAstFieldValue::List(params),
     }];
     if let Some(t) = returns {
-        fields.push(node_field(Some("returns"), build_type_node(t)?));
+        fields.push(node_field(
+            Some("returns"),
+            super::type_build::return_constraint_node(t)?,
+        ));
     }
     Ok(RakuAstNode {
         class: RakuAstClass::Signature,
@@ -5720,7 +5518,7 @@ pub(super) fn type_capture_name(pd: &ParamDef) -> Option<&str> {
 }
 
 /// `::?CLASS`, `::?ROLE`, `::?PACKAGE`, with an optional smiley.
-fn is_pseudo_type(t: &str) -> bool {
+pub(super) fn is_pseudo_type(t: &str) -> bool {
     let base = t
         .strip_suffix(":D")
         .or_else(|| t.strip_suffix(":U"))

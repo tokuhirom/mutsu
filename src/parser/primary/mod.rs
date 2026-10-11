@@ -16,7 +16,7 @@ pub(crate) use misc::{
 pub(in crate::parser) mod fragment_attempts;
 mod hexfloat;
 mod number;
-pub(crate) use number::decimal_literal_value;
+pub(crate) use number::{decimal_literal_value, numeric_literal_value};
 pub(in crate::parser) mod quote_adverbs;
 pub(crate) mod regex;
 pub(in crate::parser) mod string;

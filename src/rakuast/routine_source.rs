@@ -1,9 +1,10 @@
 //! Routine traits in written order, independently of their execution fields.
 
 use super::convert::{ReturnSpelling, blockoid, name_from_identifier, signature};
-use super::convert::{build_type_node, node_field, unsupported};
+use super::convert::{node_field, unsupported};
 use super::lower::{list_field, named_child, named_child_or_positional, positional_leaf};
 use super::name_parts;
+use super::type_build::return_constraint_node;
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::routine_trait::{RoutineTrait, TraitArgument};
 use crate::ast::{Expr, ParamDef, Stmt};
@@ -47,7 +48,7 @@ pub(super) fn apply(node: &mut RakuAstNode, body: &[Stmt]) -> Result<bool, Runti
                 } else {
                     RakuAstClass::TraitOf
                 },
-                fields: vec![node_field(None, build_type_node(ty)?)],
+                fields: vec![node_field(None, return_constraint_node(ty)?)],
             },
             RoutineTrait::Unsupported(name) => return Err(unsupported(name)),
         };
@@ -208,7 +209,7 @@ pub(super) fn routine_node(
         };
         let trait_node = RakuAstNode {
             class: trait_class,
-            fields: vec![node_field(None, build_type_node(t)?)],
+            fields: vec![node_field(None, return_constraint_node(t)?)],
         };
         fields.push(RakuAstField {
             name: Some("traits"),

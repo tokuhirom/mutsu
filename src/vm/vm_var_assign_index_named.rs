@@ -2369,30 +2369,14 @@ impl Interpreter {
                 } else {
                     None
                 };
-                let effective_key_constraint = key_constraint
-                    .as_ref()
-                    .or(quanthash_key_constraint.as_ref());
                 // A coercion key type (`my %h{Int(Str)}`) coerces the key to the
                 // target type before it is stored / `.WHICH`-keyed. A failed
                 // coercion (e.g. a non-numeric string into Int) throws, matching
                 // raku (`X::Str::Numeric`).
-                let idx = if let Some(kc) = effective_key_constraint
-                    && let Some(open) = kc.find('(')
-                    && kc.ends_with(')')
-                    && open > 0
-                    && !self.type_matches_value(&kc[..open], &idx)
-                {
-                    // A numeric coercion target rejects a non-numeric string the
-                    // raku way (`X::Str::Numeric`) rather than silently coercing
-                    // it to 0, since the lenient `coerce_value` fast path does not
-                    // throw.
-                    if matches!(
-                        &kc[..open],
-                        "Int" | "UInt" | "Num" | "Rat" | "FatRat" | "Real" | "Numeric" | "Complex"
-                    ) {
-                        runtime::utils::check_str_numeric(&idx)?;
-                    }
-                    loan_env!(self, try_coerce_value_for_constraint(kc, idx.clone()))?
+                let idx = if let Some(kc) = key_constraint.as_ref() {
+                    loan_env!(self, prepare_object_hash_key(kc, idx, Some(&var_name)))?
+                } else if let Some(kc) = quanthash_key_constraint.as_ref() {
+                    loan_env!(self, coerce_key_for_constraint(kc, idx))?
                 } else {
                     idx
                 };
@@ -2501,14 +2485,6 @@ impl Interpreter {
                     && !self.type_matches_value(&constraint, &val)
                 {
                     return Err(self.type_check_element_failure(&var_name, &constraint, &val));
-                }
-                // Check key type constraint for single-key hash element assignment
-                if var_name.starts_with('%')
-                    && let Some(key_constraint) =
-                        loan_env!(self, var_hash_key_constraint(&var_name))
-                    && !self.type_matches_value(&key_constraint, &idx)
-                {
-                    return Err(self.type_check_element_failure(&var_name, &key_constraint, &idx));
                 }
                 // Native integer arrays store the wrapped value (`-1` -> `255` in a
                 // uint8 array); the assignment expression still yields the original.
@@ -5532,8 +5508,7 @@ impl Interpreter {
     /// Generic index assignment on a stack-computed target.
     /// Stack order: target (bottom), index, value (top).
     /// If the target hash has `__callframe_depth`, routes through set_caller_var.
-    // Cost: O(1) amortized for one index into an Array/Hash or `is Array` instance
-    // target, plus O(n) to stringify the key.
+    // Cost: O(n + t), n = key/constraint text and grown array slots, t = validation/coercion cost.
     pub(super) fn exec_index_assign_generic_op(
         &mut self,
         code: &CompiledCode,
@@ -5827,6 +5802,14 @@ impl Interpreter {
                     self.stack.push(val);
                     return Ok(());
                 }
+                let idx = if let Some(constraint) = arc.key_type.clone() {
+                    loan_env!(
+                        self,
+                        prepare_object_hash_key(&constraint, idx.clone(), None)
+                    )?
+                } else {
+                    idx.clone()
+                };
                 // Interior mutation: write into the hash via raw pointer
                 // so the change is visible to all holders of the same Arc.
                 // In bind mode, store the shared cell at the key; otherwise the

@@ -2490,6 +2490,10 @@ pub(crate) enum Stmt {
         is_rw: bool,
         is_readonly: bool,
         type_constraint: Option<String>,
+        /// The written key type of a hash attribute, kept separately from
+        /// its optional value type until the compiled attribute descriptor.
+        #[serde(default)]
+        hash_key_type: Option<String>,
         /// Type smiley: "D", "U", or "_" (from `Int:D`, `Int:U`, `Int:_`)
         type_smiley: Option<String>,
         /// `is required` trait: None = not required, Some(None) = required,

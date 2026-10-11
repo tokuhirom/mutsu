@@ -50,6 +50,7 @@ pub(super) fn walk_type_member_decl_mut<V: VisitMut + ?Sized>(v: &mut V, s: &mut
             is_rw: _,
             is_readonly: _,
             type_constraint: _,
+            hash_key_type: _,
             type_smiley: _,
             is_required: _,
             sigil: _,

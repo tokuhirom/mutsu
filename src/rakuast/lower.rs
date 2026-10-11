@@ -1019,7 +1019,10 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
     let expr = lower_expr(named_child_or_positional(init)?)?;
     let type_constraint = match node.fields.iter().find(|f| f.name == Some("type")) {
-        Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
+        Some(f) => Some(super::type_lower::return_constraint(
+            node,
+            child_node(&f.value)?,
+        )?),
         None => None,
     };
     Ok(Stmt::VarDecl {
@@ -1695,7 +1698,10 @@ pub(super) fn routine_return_type(
 ) -> Result<(Option<String>, Vec<(String, Option<Expr>)>), RuntimeError> {
     let arrow = match named_child(node, "signature") {
         Ok(sig) => match sig.fields.iter().find(|f| f.name == Some("returns")) {
-            Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
+            Some(f) => Some(super::type_lower::return_constraint(
+                node,
+                child_node(&f.value)?,
+            )?),
             None => None,
         },
         Err(_) => None,
@@ -1735,7 +1741,10 @@ pub(super) fn routine_return_type(
             if via_trait.is_some() {
                 return Err(unsupported(node));
             }
-            via_trait = Some(simple_type_name(node, named_child_or_positional(t)?)?);
+            via_trait = Some(super::type_lower::return_constraint(
+                node,
+                named_child_or_positional(t)?,
+            )?);
             custom.push((marker.to_string(), None));
         }
     }
@@ -2775,7 +2784,7 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     if matches!(leaf_str(node, "scope").as_deref(), Ok("has"))
         || matches!(leaf_str(node, "twigil").as_deref(), Ok("." | "!"))
     {
-        return lower_attribute(node);
+        return super::attribute_decl::lower(node);
     }
     // The remaining scopes the converter renders are `our` and `state`; `my` is
     // the default and carries no `scope` field at all. Anything else (a scope
@@ -2937,136 +2946,6 @@ fn lower_var_decl_plain(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         export_tags: Vec::new(),
         custom_traits,
         where_constraint,
-    })
-}
-
-/// `has [Type] $.x [is rw] [= EXPR]` -> `Stmt::HasDecl`. The converter renders
-/// an attribute as a `VarDeclaration::Simple` with `scope => "has"` and a
-/// `twigil` (`.` public / `!` private, none for the alias `has $x`); `our $.x`
-/// has the `our` scope and `my $.x` none. Its traits are read by
-/// `rakuast::attribute`, and an `Initializer::Assign` is the default (the
-/// implicit `WillBuild` beside it carries the same expression).
-fn lower_attribute(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    let traits = super::attribute::lower_traits(node)?;
-    let mut default_is_bind = false;
-    let initializer = match node.fields.iter().find(|f| f.name == Some("initializer")) {
-        None => None,
-        Some(f) => {
-            let init = child_node(&f.value)?;
-            if !matches!(
-                init.class,
-                RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind
-            ) {
-                return Err(unsupported(node));
-            }
-            default_is_bind = init.class == RakuAstClass::InitializerBind;
-            Some(lower_expr(named_child_or_positional(init)?)?)
-        }
-    };
-    let where_constraint = match node.fields.iter().find(|f| f.name == Some("where")) {
-        None => None,
-        Some(f) => Some(Box::new(lower_expr(child_node(&f.value)?)?)),
-    };
-    let sigil = leaf_str(node, "sigil")?;
-    let mut chars = sigil.chars();
-    let (Some(sigil_char), None) = (chars.next(), chars.next()) else {
-        return Err(unsupported(node));
-    };
-    // The scope: `has` is the per-instance attribute; `our` and the default
-    // `my` are class-level ones (the parser makes those `is rw`).
-    let (is_our, is_my, is_has) = match node.fields.iter().find(|f| f.name == Some("scope")) {
-        None => (false, true, false),
-        Some(_) => match leaf_str(node, "scope")?.as_str() {
-            "has" => (false, false, true),
-            "our" => (true, false, false),
-            _ => return Err(unsupported(node)),
-        },
-    };
-    if is_has && default_is_bind {
-        return Err(RuntimeError::new(
-            "Cannot use := to initialize an attribute",
-        ));
-    }
-    let (is_public, is_alias) = match node.fields.iter().find(|f| f.name == Some("twigil")) {
-        // `has $x`, the alias of a private attribute.
-        None if is_has => (false, true),
-        None => return Err(unsupported(node)),
-        Some(_) => match leaf_str(node, "twigil")?.as_str() {
-            "." => (true, false),
-            "!" => (false, false),
-            _ => return Err(unsupported(node)),
-        },
-    };
-    let desigil = match positional_leaf(named_child(node, "desigilname")?)?.view() {
-        ValueView::Str(s) => s.to_string(),
-        _ => return Err(unsupported(node)),
-    };
-    let type_name = match node.fields.iter().find(|f| f.name == Some("type")) {
-        Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
-        None => None,
-    };
-    // `Int:D` comes back as the parser's base type plus its smiley.
-    let (type_constraint, type_smiley) = match type_name.as_deref() {
-        Some(name) => match name.rsplit_once(':') {
-            Some((base, smiley @ ("D" | "U"))) => {
-                (Some(base.to_string()), Some(smiley.to_string()))
-            }
-            _ => (type_name.clone(), None),
-        },
-        None => (None, None),
-    };
-    // A scalar `is default(EXPR)` attribute without an initializer starts
-    // with the trait's value, as the parser records it.
-    let default_is_trait =
-        initializer.is_none() && traits.is_default.is_some() && matches!(sigil_char, '$' | '&');
-    let initializer = if default_is_trait {
-        traits.is_default.clone()
-    } else {
-        initializer
-    };
-    // The implicit default of a typed scalar attribute (see `attribute_type_seed`).
-    let type_seed = match (&initializer, type_constraint.as_deref()) {
-        (None, Some(tc)) => crate::parser::attribute_type_seed(
-            sigil_char,
-            tc,
-            traits.is_required.is_some(),
-            traits
-                .unknown_traits
-                .iter()
-                .any(|(kind, name, _)| kind == "is" && name == "box_target"),
-        ),
-        _ => None,
-    };
-    Ok(Stmt::HasDecl {
-        name: crate::symbol::Symbol::intern(&desigil),
-        is_public,
-        // A typed attribute carries an implicit default in the internal AST
-        // (its type object, or a native type's zero); the parser plants it,
-        // and the converter skips it on the way out, so re-plant the same one
-        // here to keep the two sides symmetric.
-        default_is_seed: type_seed.is_some(),
-        default_is_trait,
-        default: initializer.or(type_seed),
-        handles: traits.handles,
-        handles_terms: traits.handles_terms,
-        is_rw: traits.is_rw || !is_has,
-        is_readonly: traits.is_readonly,
-        type_constraint,
-        type_smiley,
-        is_required: traits.is_required,
-        sigil: sigil_char,
-        where_constraint,
-        is_alias,
-        is_embedded: false,
-        is_our,
-        is_my,
-        is_default: traits.is_default,
-        is_type: traits.is_type,
-        deprecated_message: traits.deprecated_message,
-        is_built: traits.is_built,
-        unknown_traits: traits.unknown_traits,
-        default_is_bind,
-        trait_order: traits.order,
     })
 }
 
@@ -5292,7 +5171,7 @@ pub(super) fn rakuast_node_of(v: &Value) -> Option<&RakuAstNode> {
 }
 
 /// The child RakuAST node wrapped in a `Node` field value.
-fn child_node(fv: &RakuAstFieldValue) -> Result<&RakuAstNode, RuntimeError> {
+pub(super) fn child_node(fv: &RakuAstFieldValue) -> Result<&RakuAstNode, RuntimeError> {
     if let RakuAstFieldValue::Node(v) = fv
         && let Some(child) = rakuast_node_of(v)
     {

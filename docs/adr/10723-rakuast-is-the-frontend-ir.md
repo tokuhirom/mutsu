@@ -499,3 +499,32 @@ atoms and separators, including the alias body's measured wrapper shape.
 Source delimiter helpers are shared with the parser and matcher; no embedded
 code runs while a tree is built. ADR-0088 section 64 records the contract, and
 `t/rakuast/rakuast-regex-source-cohort.t` covers both directions and execution.
+
+### 6.8 S10: type composition and attribute shapes (2026-10-11)
+
+`HasDecl` retains a hash key type independently of its optional written value
+type. The compiler's existing attribute descriptor combines the two once;
+RakuAST converts the key to `shape` and the written value type to `type`, and
+lowering restores both fields without inventing an explicit `Any`. The typed
+visitor visits both type names, and compile-time type-argument validation
+checks both. This source-layout change advances the precompilation schema to 25.
+
+Definedness, coercion and parameterized types share bounded recursive building
+and lowering. Every base and argument edge consumes the same 128-level budget.
+Simple and qualified names use the parser's complete identifier grammar. Loop
+setup now reuses ordinary statement conversion and unwraps the expression,
+preserving typed declarations and explicit initializers rather than inferring
+one from a non-Nil value. `t/rakuast/rakuast-type-shape-cohort.t` pins the measured
+structure, constructed type nodes and execution through the existing compiler.
+The shared `VarDeclaration::Simple` constructor retains scope, type, shape,
+traits, initializer and where fields, including attribute twigils. Constructed
+declarations therefore apply their supplied constraints as source declarations do.
+The attribute write-direction test also pins key validation before mutation:
+named, accessor and computed object-hash stores share key preparation, while
+QuantHash retains its numeric-allomorph rules.
+
+Untyped loop header declarations record their explicit initializer through the
+same source marker as ordinary declarations. Numeric return constraints use
+literal nodes, separately from strict type identifiers, and lower back to pinned
+return values. The frontend ratchet exposed both distinctions and the cohort
+pins their structure and execution.

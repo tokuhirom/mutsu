@@ -11,7 +11,6 @@ pub(crate) use expr::{
 // `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
-pub(crate) use primary::decimal_literal_value;
 pub(crate) use primary::ident::loop_control_expr;
 pub(crate) use primary::ident::supply_block;
 pub(crate) use primary::ident::{
@@ -27,6 +26,7 @@ pub(crate) use primary::{
     ANON_COLONS_TRAIT, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
     prepend_does_header,
 };
+pub(crate) use primary::{decimal_literal_value, numeric_literal_value};
 pub(crate) use stmt::class::{
     EXPORT_TYPE_MARKER, LEADING_COLONS_TRAIT, export_type_marker, push_also_is_parent,
 };
@@ -46,6 +46,12 @@ pub(crate) use primary::container::finalize_array_sections;
 mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;
+
+/// Validate one complete identifier using the parser's lexical grammar.
+/// This does not parse expressions or execute code.
+pub(crate) fn is_raku_identifier(input: &str) -> bool {
+    stmt::parse_raku_ident(input).is_ok_and(|(rest, _)| rest.is_empty())
+}
 pub(crate) use expr::{atomic_elem_update, wrap_dot_assign};
 pub(crate) use outer_redecl::{find_scope_diagnostic, scope_diagnostic_error};
 pub(crate) use stmt::assign::{DOTTY_ASSIGN_OP, compound_assign_op_from_name};
