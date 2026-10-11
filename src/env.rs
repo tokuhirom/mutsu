@@ -3752,7 +3752,7 @@ mod tests {
         // copy shows up as the log moving to a new address.
         let mut caller = Env::new();
         for i in 0..64 {
-            caller.insert(format!("lex{i}").into(), Value::int(i));
+            caller.insert(format!("lex{i}"), Value::int(i));
         }
         let names: Vec<(String, i64)> = (0..64).map(|i| (format!("w{i}"), i)).collect();
         let refs: Vec<(&str, i64)> = names.iter().map(|(n, v)| (n.as_str(), *v)).collect();
