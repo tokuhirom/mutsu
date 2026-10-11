@@ -205,8 +205,8 @@ in kind: user-defined grammar/token/rule slang switching remains future work.
 `src/rakuast/` (6 files, ~8,250 lines) converts the internal `Stmt`/`Expr` tree to a RakuAST
 node tree (`Q[…].AST`) and lowers it back through the **same compiler** (`EVAL($tree)`), so
 there is still no second execution engine. Remaining gaps — read-direction representation
-gaps where the parser desugars before conversion, construction of advanced parameter forms, a
-blocked lowering list, and Phase 6 macros — are inventoried in
+gaps where the parser desugars before conversion, construction of advanced parameter forms,
+and a blocked lowering list — are inventoried in
 [#7564](https://github.com/tokuhirom/mutsu/issues/7564).
 
 **This layer has acquired a downstream consumer.** ADR-0088 makes RakuAST and execution share
@@ -557,7 +557,7 @@ Ordering rule, stated so it can be argued with:
 | 2 | **Supply panic propagation ([#8185](https://github.com/tokuhirom/mutsu/issues/8185)), and a mechanism against the panic-surface trend ([#8186](https://github.com/tokuhirom/mutsu/issues/8186))** (§2.4, §5) | correctness debt | Detached-worker panics are silently swallowed instead of reaching QUIT. Separately, the panic-family count rises at every measurement against an explicit "never Rust-panic" goal — a goal with no enforcement mechanism is a wish, so either add one (a budget test, a lint) or amend the goal. |
 | 3 | **Finish the call-path thread: ADR-0084** (§1.3, [#7817](https://github.com/tokuhirom/mutsu/issues/7817)) | design cleanup | ADR-0066/0077/0078/0086/0092/0094 all landed; ADR-0084 ("the frame `Env` is not the program's symbol table") is the one piece still design-only, and it is what the others' remaining overhead funnels into. |
 | 4 | **Pay hygiene debt through the work above** (§6) | completion discipline | 138 files over 1000 lines, `opcode.rs` approaching 10k, `runtime/mod.rs` at 4,802 and growing at every review. Split when a campaign opens the file and the ownership boundary is visible; a standalone line-moving campaign is not proposed, and neither is a bulk rewrite of the surviving `todo/` citations (§6 says why). This row is therefore a discipline, not a queue item — deliberately the one row with no issue behind it. |
-| 5 | **RakuAST, now demand-driven** (§1.7, [#7564](https://github.com/tokuhirom/mutsu/issues/7564)) | demand-driven feature | ADR-0088's shared regex tree gives this layer its first real execution-side consumer, so the remaining slices can be chosen by what that migration needs rather than by inventory completeness. Phase 6 macros still have no consumer. |
+| 5 | **RakuAST, now demand-driven** (§1.7, [#7564](https://github.com/tokuhirom/mutsu/issues/7564)) | demand-driven feature | ADR-0088's shared regex tree gives this layer its first real execution-side consumer, so the remaining slices can be chosen by what that migration needs rather than by inventory completeness. Phase 6 macros are withdrawn ([ADR-9885](docs/adr/9885-experimental-macros-not-planned.md): Rakudo removed them). |
 
 Explicitly **not** ranked as current architecture work: the completed ADR-0013/0015-P3b/0016/
 0018/0019/0020/0029/0058/0085 campaigns; optional ADR-0015 P3c; ADR-0016's deliberately

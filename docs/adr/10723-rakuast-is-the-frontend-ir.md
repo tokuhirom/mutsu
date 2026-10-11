@@ -164,7 +164,8 @@ nothing is gated on a big-bang switch.
 
 ### 2.3 What is dropped
 
-- **Macros, `quasi` and unquoting (ADR-0011 Phase 6)** — Rakudo drops them in 6.e. Not planned.
+- **Macros, `quasi` and unquoting (ADR-0011 Phase 6)** — Rakudo drops them in 6.e. Not planned;
+  recorded on its own as [ADR-9885](9885-experimental-macros-not-planned.md) (Accepted).
 - **"One more argument form per PR" campaigns.** ADR-0088's regex tree and the #8033 slices
   stay valid (the regex source tree is exactly the kind of non-lossy representation this ADR
   wants), but new regex slices are chosen by Stage 0/1 failures and by consumers, not by
