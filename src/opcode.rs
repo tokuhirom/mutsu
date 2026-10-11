@@ -1226,6 +1226,9 @@ pub(crate) enum OpCode {
     /// Coerce top-of-stack value to a List (ArrayKind::List).
     /// Used for `constant @x = ...` where the @-sigil should produce a List, not an Array.
     CoerceToList,
+    /// Turn a top-of-stack `Seq` into a List; any other value is left alone.
+    /// Used by the unrolled `LHS xx N`, whose repetitions are Lists, not Seqs.
+    SeqToList,
     /// Mark that the next SetLocal should treat the value as a constant
     /// (skip @/% container coercion). Similar to MarkBindContext.
     MarkConstantContext,

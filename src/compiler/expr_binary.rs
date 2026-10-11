@@ -320,6 +320,8 @@ impl Compiler {
             {
                 for _ in 0..n {
                     self.compile_expr(left);
+                    // Each repetition of a Seq is a List (Raku caches it).
+                    self.code.emit(OpCode::SeqToList);
                 }
                 self.code.emit(OpCode::MakeArray(n as u32));
                 return;

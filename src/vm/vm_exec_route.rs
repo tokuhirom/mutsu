@@ -198,6 +198,7 @@ impl Interpreter {
             | OpCode::StrShiftRight
             | OpCode::XorXor => self.exec_ops_group_06(code, ip, compiled_fns),
             OpCode::CoerceToList
+            | OpCode::SeqToList
             | OpCode::Dup
             | OpCode::MarkPromiseSink
             | OpCode::Pop

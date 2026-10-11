@@ -140,6 +140,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::MakePair
             | OpCode::MakeNamedArg
             | OpCode::CoerceToList
+            | OpCode::SeqToList
             | OpCode::Itemize
             | OpCode::DeitemizeZen
             | OpCode::Decont

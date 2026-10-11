@@ -1,5 +1,18 @@
 use super::*;
-use crate::value::ValueView;
+use crate::gc::Gc;
+use crate::value::{HashData, ValueView};
+
+/// The `Hash` a `*map` call builds from `src`'s mapped values. An object hash
+/// (`my %h{Any}`, or what `categorize` returns) is keyed by `.WHICH` strings with
+/// the real keys in `original_keys`, so the result carries both over; a bare
+/// `ValueMap` would surface the `Str|a` internal keys.
+// Cost: O(1) beyond the clone of `original_keys`, O(k), k = keys of an object hash.
+fn mapped_hash(src: &Gc<HashData>, result: ValueMap) -> Gc<HashData> {
+    let mut data = HashData::from(result);
+    data.key_type = src.key_type.clone();
+    data.original_keys = src.original_keys.clone();
+    Value::hash_arc(data)
+}
 
 /// A `Range` is `Iterable`, so the `*map` family descends into it exactly as it
 /// descends into a `List`: `(1..4).deepmap(*+1)` is `(2 4 6 8)`, and a nested
@@ -411,7 +424,7 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                Ok(Value::hash_with_data(Value::hash_arc(result)))
+                Ok(Value::hash_with_data(mapped_hash(&map, result)))
             }
             // Single non-iterable value: try the block on it directly
             _ => self.duckmap_element(block, target, false),
@@ -629,7 +642,7 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                let hash = Value::hash_with_data(Value::hash_arc(result));
+                let hash = Value::hash_with_data(mapped_hash(&map, result));
                 // A descended-into Hash is itemized in its parent exactly like a
                 // descended-into sublist (the `Array`/`Seq` arms above already
                 // honour `itemize_result`; this arm silently dropped it).
@@ -711,7 +724,7 @@ impl Interpreter {
                         Err(e) => return Err(e),
                     }
                 }
-                Ok(Value::hash_with_data(Value::hash_arc(result)))
+                Ok(Value::hash_with_data(mapped_hash(&map, result)))
             }
             // Single value: apply the block directly
             _ => self.call_sub_value(block.clone(), vec![target.clone()], false),
@@ -798,7 +811,7 @@ impl Interpreter {
                         for (k, v) in map.iter() {
                             result.insert(k.clone(), self.duckmap_element(block, v, true)?);
                         }
-                        let hash = Value::hash_with_data(Value::hash_arc(result));
+                        let hash = Value::hash_with_data(mapped_hash(&map, result));
                         if itemize {
                             Ok(Value::scalar(hash))
                         } else {

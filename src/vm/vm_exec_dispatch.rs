@@ -4489,6 +4489,16 @@ impl Interpreter {
             // Cost: O(1) for an Array/List/Range; O(e) for a Seq or Hash operand
             // (copied / turned into pairs), O(k) for a lazy list forced here, e/k
             // = elements.
+            // Cost: O(1), or O(k) for a Seq of k elements (copied into a List).
+            OpCode::SeqToList => {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                let out = match val.view() {
+                    ValueView::Seq(items) => Value::array(items.to_vec()),
+                    _ => val,
+                };
+                self.stack.push(out);
+                *ip += 1;
+            }
             OpCode::CoerceToList => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);

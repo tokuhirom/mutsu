@@ -252,7 +252,11 @@ impl Interpreter {
                         self.env.remove("_");
                     }
                 }
-                result
+                // A thunk yielding a Seq repeats as a List, like a plain Seq LHS.
+                result.map(|v| match v.view() {
+                    ValueView::Seq(items) => Value::array(items.to_vec()),
+                    _ => v,
+                })
             }
             // Seq → List when used as xx LHS (Raku caches/listifies Seq on repeat)
             ValueView::Seq(items) => Ok(Value::array(items.to_vec())),
