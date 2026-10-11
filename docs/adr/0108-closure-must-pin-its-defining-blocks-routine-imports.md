@@ -1,6 +1,6 @@
 # ADR-0108: A closure must pin the routine imports live in its defining block
 
-- **Status**: Proposed
+- **Status**: Superseded by ADR-8751
 - **Date**: 2026-09-19
 - **Addresses**: [GitHub issue #8751](https://github.com/tokuhirom/mutsu/issues/8751)
 - **Related**: [ADR-0081](0081-compunit-scoped-module-import-aliases.md) (a
