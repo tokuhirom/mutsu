@@ -5,7 +5,7 @@ use nqp;
 # A raw VMArray / VMHash (`nqp::list` / `nqp::hash`) is a different object from
 # the List / Hash `nqp::hllize` makes of it, sharing the same element storage
 # (ADR-12666). Every expected answer was checked against Rakudo 2026.09.
-plan 64;
+plan 70;
 
 my $l := nqp::list(1, 2);
 my $h := nqp::hash('x', 1);
@@ -105,3 +105,18 @@ is (sub ($x is raw) { nqp::islist($x) })($l), 0, 'an is raw parameter';
 }
 is nqp::islist(nqp::atpos(nqp::list($l), 0)), 1, 'nqp::atpos keeps it raw';
 is (1, $l)[1].^name, 'List', 'a Raku subscript hands the element over hllized';
+
+# -- strictness Rakudo shows (#12689) --
+throws-like { for $l { } }, X::Method::NotFound, method => 'iterator', typename => 'BOOTArray',
+    'for over a raw list asks for .iterator';
+throws-like { for $h { } }, X::Method::NotFound, method => 'iterator', typename => 'BOOTHash',
+    'for over a raw hash asks for .iterator';
+throws-like { my $s = "$l"; }, X::Method::NotFound, method => 'Stringy', typename => 'BOOTArray',
+    'interpolating a raw list asks for .Stringy';
+{
+    my $il := nqp::list_i(1);
+    throws-like { (sub ($x) { 1 })($il) }, X::TypeCheck::Binding::Parameter,
+        message => /'expected Any but got BOOTIntArray'/, 'a native raw array is not an Any parameter argument';
+    is (sub (Mu $x) { 1 })($il), 1, '... but binds a Mu parameter';
+}
+is (sub ($x) { 1 })($l), 1, 'an object raw list binds an Any parameter';

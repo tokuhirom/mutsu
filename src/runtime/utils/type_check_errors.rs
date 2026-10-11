@@ -75,6 +75,12 @@ pub(crate) fn short_repr_of_raku(raku: &str) -> String {
 /// names ITSELF (`Int`), not the `Package` its runtime representation is —
 /// rakudo says `but got Int (Int)`.
 pub(crate) fn got_type_name(val: &Value) -> String {
+    // A raw VM collection is its `BOOT*` type, not the `List` it views as.
+    if val.is_vm_collection()
+        && let Some(name) = val.vm_boot_type_name()
+    {
+        return name.to_string();
+    }
     match val.view() {
         // `value_type_name` answers the generic `Any` for every instance; the
         // message names the object's class (`but got F (F.new)`).

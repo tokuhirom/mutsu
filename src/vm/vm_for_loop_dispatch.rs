@@ -152,6 +152,16 @@ impl Interpreter {
 
         let mut iterable = self.stack.pop().unwrap();
 
+        // `for $raw { }` asks the BOOT collection for `.iterator`, which it
+        // lacks (#12689).
+        if iterable.is_vm_collection()
+            && let Some(name) = iterable.vm_boot_type_name()
+        {
+            return Err(crate::runtime::did_you_mean::method_not_found(
+                "iterator", name,
+            ));
+        }
+
         // Handle lazy IO lines (ADR-0034: a Seq whose `SeqSource` is
         // `IoLines`): iterate by pulling one line at a time so that
         // `$fh.tell` reflects the current read position.

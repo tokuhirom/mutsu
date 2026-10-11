@@ -39,6 +39,12 @@ impl Interpreter {
     // unrun `.map`/`.grep` callback), t = length of the value's `.raku` text; the text kept is cut to a constant length by
     // `short_repr_of_raku`. Rakudo renders the whole `.raku` too.
     pub(crate) fn type_check_got_repr(&mut self, val: &Value) -> String {
+        // A raw VM collection has no `.raku`: Rakudo shows its `BOOT*` type.
+        if val.is_vm_collection()
+            && let Some(name) = val.vm_boot_type_name()
+        {
+            return format!("({name})");
+        }
         let val = &utils::decont_for_repr(val);
         // A not-yet-run `.map`/`.grep` Seq reads as its empty seed until it is
         // pulled (ADR-0058); `.raku` reifies it, so the message does too. A
