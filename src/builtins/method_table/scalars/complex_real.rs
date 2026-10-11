@@ -1,12 +1,13 @@
-//! `Complex`'s conversions to a `Real` type: `Int`, `Num`, `Rat`, `FatRat` and
-//! `Real` (ADR-11276 §9.70).
+//! `Complex`'s conversions to a `Real` type: `Int`, `Num`, `Rat`, `FatRat`
+//! and `Real` (ADR-11276 §9.70).
 //!
 //! Rakudo's `Complex.Real` answers the real part when the imaginary part is
 //! `≅ 0` under `$*TOLERANCE`, and every other conversion goes through it.
 //! Reading the dynamic variable needs the interpreter, so these are interpreter
 //! rows; their body is [`Interpreter::dispatch_complex_to_real`], which the
 //! cascade's other entry (a `Str` that numifies to a `Complex`, `"1+2i".Int`)
-//! calls too. `UInt` is `Cool`'s: its `Int` plus a range check.
+//! calls too. `UInt` is `Cool`'s (`str_numeric::cool_uint`, an interpreter row
+//! for the same reason).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;

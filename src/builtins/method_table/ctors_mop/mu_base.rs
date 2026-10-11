@@ -74,6 +74,15 @@ pub(super) static ROWS: &[MethodRow] = &[
     base_row!("Bool", |_interp, target, _args, _named| Some(Ok(
         Value::truth(!is_type_object(target))
     ))),
+    // `Mu.Numeric` and `Mu.Int`: a type object warns and is `0`; an instance with no
+    // `Numeric` of its own is `X::Multi::NoMatch` (`Interpreter::mu_numeric_coercion`).
+    // Cost: O(1).
+    base_row!("Numeric", |interp, target, _args, _named| Some(
+        interp.mu_numeric_coercion(target, "Numeric")
+    )),
+    base_row!("Int", |interp, target, _args, _named| Some(
+        interp.mu_numeric_coercion(target, "Int")
+    )),
     // `Mu.so` and `Mu.not` ask the receiver's own `Bool`, so a user override is seen.
     // Cost: O(1) plus the receiver's `Bool`.
     base_row!("so", |interp, target, _args, _named| Some(

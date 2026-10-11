@@ -386,10 +386,19 @@ fn the_shape_test_knows_the_receiver() {
         DispatchShape::ALL.len() <= 64,
         "a shape bit must fit Table::shapes' u64"
     );
-    let int = Symbol::intern("Int");
-    assert!(shape_has_row(Receiver::instance(DispatchShape::Int), int));
-    assert!(shape_has_row(Receiver::instance(DispatchShape::Rat), int));
-    assert!(!shape_has_row(Receiver::instance(DispatchShape::Str), int));
+    let polymod = Symbol::intern("polymod");
+    assert!(shape_has_row(
+        Receiver::instance(DispatchShape::Int),
+        polymod
+    ));
+    assert!(shape_has_row(
+        Receiver::instance(DispatchShape::Rat),
+        polymod
+    ));
+    assert!(!shape_has_row(
+        Receiver::instance(DispatchShape::Str),
+        polymod
+    ));
     // An inherited row sets the bit of the shape that reaches it.
     assert!(shape_has_row(
         Receiver::instance(DispatchShape::Array),

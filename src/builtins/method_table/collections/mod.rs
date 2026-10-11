@@ -69,6 +69,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     quanthash::ROWS,
     subscript::ROWS,
     range::ROWS,
+    sampling::BOOL_ROWS,
     sampling::PICK_ROWS,
     sampling::ROLL_ROWS,
     sampling::PICKPAIRS_ROWS,

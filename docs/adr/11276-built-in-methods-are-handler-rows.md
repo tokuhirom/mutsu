@@ -1542,6 +1542,28 @@ largest block with one obvious shape, so it went first: 43 rows in four new modu
   Rakudo's), `Bool.pick`/`Bool.roll` (declared on the type object `Bool:U` only, and a type object has no shape), `Mu.Numeric`/`Mu.Int` (user overrides),
   `Cool.Int`/`Num`/`Rat`/`UInt` and `Str.Numeric`/`Int`/`Num` (the `Str` arms carry the complex-string, empty-string and radix-prefix cases).
 
+### 9.71 `Str` and `Cool` conversions, `Version`, `Capture` of scalars, `Mu.Numeric`/`Mu.Int`, `Bool.pick`/`Bool.roll` (2026-10-11)
+
+`refactor/12678-cool-str-conversion-rows` (issue #12678, the remainder of §9.70). 16 of the 17 declared rows `--inventory` listed are rows now; the seventeenth, `Cool.Int`, is unreachable (below).
+
+- **`str_numeric`**: `Str.Numeric`, `Str.Int`, `Str.Num` and `Cool.Num`, `Cool.Rat`, `Cool.UInt` (`Cool.UInt` is an interpreter row: it is reached by `Complex`, whose `UInt` is `$*TOLERANCE`-dependent and not declared by Rakudo on `Complex` itself). `numeric_of_str`, `int_of_str`, `num_of_str`,
+  `rat_of_str`, `fat_rat_of_str` and `uint_of_int` are the one implementation: the rows call them, and so do the cascade arms (an allomorph, a subclass). The
+  `Str` cases the numeric types do not have are kept: an empty string is zero, a string that numifies to a `Complex` (`"1+2i".Int`) is declined to the interpreter
+  (`$*TOLERANCE`), a non-number is the lazy `X::Str::Numeric` `Failure`. A `Cool` row numifies through `numify` (a `List`, `Array`, `Hash` is its element count).
+  `Str.Rat` now converts the *parsed number*, so `"0x1F".Rat` is `31.0`, `"NaN".Rat` is `0/0` and `":16<ff>".Rat` is `255.0` (the old text-to-Rat scanner, `str_to_rat`,
+  answered `0.0`); the scanner is gone. `List.UInt`, `Hash.Num` and the aggregates' `Version` answer instead of `X::Method::NotFound`.
+- **`Cool.Int` stays out**: every shape that inherits `Cool` declares an `Int` of its own (`List`, `Map`, `Str`, `Uni`, `Date`, `Match`, the numerics), so no shape would reach a `Cool.Int` row and `every_row_is_reached_and_answers` forbids it, as it forbade `Map` rows in §9.66. `Cool.UInt` calls the same `Int` routines. The inventory will keep listing it.
+- **`Cool.Version` / `Str.Version`** (`version::version_of`): `Version.new(self.Str)`, for every `Cool`.
+- **`Capture` of `Int`, `Num`, `Str`, `Version`** (`capture_none`): `X::Cannot::Capture` naming the value as Rakudo does (``Cannot unpack or Capture `42`.`` plus the two
+  hint lines), `.what` the value. The cascade's `value_to_capture` raises the same error for those receivers and `Bool`/`*`; `Rat`, `Complex` and the aggregates
+  were already right (the issue text said otherwise).
+- **`Mu.Numeric` / `Mu.Int`** are `DEFERRAL_BASE` rows (`mu_base`): `callsame`/`nextsame` from a user `method Numeric`/`Int` ended at nothing (`Any`) and now ends at
+  `Interpreter::mu_numeric_coercion` -- the same function the slow-path arm calls for a call on a class with no `Numeric` of its own (`X::Multi::NoMatch` for an
+  instance, the uninitialized-value warning and `0` for a type object). A class with a number behind it (`is Int`) still defers to `Int`'s answer.
+- **`Bool.pick` / `Bool.roll`** are `TYPE_OBJECT_OK` rows: `Bool.pick` samples `(False, True)`; a defined `True.pick` is `X::Multi::NoMatch`, as in Rakudo (it answered before).
+- **Not done**: `Real`, `FatRat` and `Complex` of `Str`/`Cool` (Rakudo does not declare them there; the table serves them through `Cool`), `Complex` of the aggregates
+  (`(1,2,3).Complex` is `3+0i` in Rakudo, `0+0i` here: #12688), and `Range.Version`/`Seq.UInt` (closed shapes; they need the `COOL_NUMERIC_FOR_COLLECTIONS` audit).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

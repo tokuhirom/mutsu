@@ -283,7 +283,17 @@ impl Interpreter {
                     "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist" | "say" | "print"
                         | "put" | "note"
                 ) || (matches!(method_name, "Str" | "raku")
-                    && matches!(invocant.view(), ValueView::Package(_))))))
+                    && matches!(invocant.view(), ValueView::Package(_)))
+                    // `Mu.Numeric` / `Mu.Int`: the last candidate of a user
+                    // `Numeric`/`Int` on a class with no number behind it (a
+                    // subclass of `Int` defers to `Int`'s own answer).
+                    || (matches!(method_name, "Numeric" | "Int")
+                        && matches!(
+                            invocant.view(),
+                            ValueView::Package(_) | ValueView::Instance { .. }
+                        )
+                        && crate::value::numeric_payload::numeric_subclass_payload(&invocant)
+                            .is_none()))))
             && self.has_user_method_including_role(receiver_class, method_name);
         // A user (or role-composed) override of a native container protocol
         // method on an `is Hash`/`is Array`/`is BagHash`-style subclass is the

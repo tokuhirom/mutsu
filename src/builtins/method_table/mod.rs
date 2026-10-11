@@ -75,7 +75,8 @@ pub(crate) use instances::{
 };
 pub(crate) use scalars::{
     blob, blob_read, coerce, complex, complex_math, cool_real, math, numeric_base, numeric_coerce,
-    numify, real, real_misc, str, str_iter, str_search, succ_pred, truth, uni, unicode, version,
+    numify, real, real_misc, str, str_iter, str_numeric, str_search, succ_pred, truth, uni,
+    unicode, version,
 };
 
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};

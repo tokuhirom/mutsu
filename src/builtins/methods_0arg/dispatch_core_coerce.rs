@@ -6,7 +6,6 @@ use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::value_buf::buf_len_or_zero;
 use crate::value::{RuntimeError, Value, ValueView};
 
-use super::parse_raku_int_from_str;
 use crate::value::ValueMap;
 use crate::value::types::is_stash_class_name;
 
@@ -487,32 +486,13 @@ pub(super) fn dispatch(
                 | ValueView::Rat(..)
                 | ValueView::FatRat(..)
                 | ValueView::BigRat(..) => crate::builtins::method_table::coerce::int_of(target)?,
-                // Cost: O(d^2), d = digits (num-bigint radix parse; a few O(n) copies first).
+                // The `Str.Int` row's implementation
+                // (`method_table::str_numeric`); a string that numifies to a
+                // `Complex` is the interpreter's.
                 ValueView::Str(s) => {
-                    if s.trim().is_empty() {
-                        // An empty or whitespace-only string coerces to 0, like
-                        // `"".Numeric` (a defined-but-empty string, no warning).
-                        Value::int(0)
-                    } else if let Some(v) = parse_raku_int_from_str(&s) {
-                        v
-                    } else if str_numifies_to_complex(&s).is_some() {
-                        // `"1+2i".Int` is `Complex.Int`: the runtime tests the
-                        // imaginary part (`Interpreter::dispatch_complex_to_real`).
-                        return Some(None);
-                    } else if let Some(v) =
-                        runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
-                            .as_ref()
-                            .and_then(crate::builtins::method_table::coerce::int_of)
-                    {
-                        // raku's `Str.Int` parses via the full numeric grammar
-                        // and truncates the result, so numeric string forms the
-                        // strict integer parser above rejects — radix `:16<ff>`,
-                        // rational `3/4`, ... — still coerce like their value.
-                        v
-                    } else {
-                        // Return a Failure (lazy exception) instead of throwing.
-                        return Some(Some(Ok(str_numeric_failure(&s))));
-                    }
+                    return Some(
+                        crate::builtins::method_table::str_numeric::int_of_str(&s).map(Ok),
+                    );
                 }
                 ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
                 // A Complex coerces to Int via its real part when its imaginary
@@ -542,100 +522,36 @@ pub(super) fn dispatch(
             };
             Some(Some(Ok(result)))
         }
+        // `.Int`, then the range check (the `Cool.UInt` row's implementation,
+        // `method_table::str_numeric`).
         "UInt" => {
-            // First coerce to Int, then check non-negative
-            let int_result = match target.view() {
-                ValueView::Int(i) => Some(Value::int(i)),
-                ValueView::BigInt(_) => Some(target.clone()),
-                ValueView::Num(f) if f.is_finite() => Some(Value::int(f.trunc() as i64)),
-                ValueView::Rat(n, d) if d != 0 => Some(Value::int(n / d)),
-                // A Complex coerces to UInt like `.Int` (`(5+0i).UInt` is 5): the
-                // runtime checks its imaginary part against `$*TOLERANCE`.
-                ValueView::Complex(..) => return Some(None),
-                ValueView::Bool(b) => Some(Value::int(if b { 1 } else { 0 })),
-                ValueView::Str(s) if s.trim().is_empty() => Some(Value::int(0)),
-                // Cost: O(d^2), d = digits (num-bigint radix parse; a few O(n) copies first).
-                ValueView::Str(s) => {
-                    if let Some(v) = parse_raku_int_from_str(&s) {
-                        Some(v)
-                    } else if str_numifies_to_complex(&s).is_some() {
-                        // As `.Int`: coerced as the `Complex` it numifies to.
-                        return Some(None);
-                    } else if let Some(v) =
-                        runtime::str_numeric::parse_raku_str_to_numeric(s.trim())
-                            .as_ref()
-                            .and_then(crate::builtins::method_table::coerce::int_of)
-                    {
-                        // Same numeric-string forms as `.Int` (radix `:16<ff>`,
-                        // rational `3/4`, ...): numify then truncate, then the
-                        // non-negative check below applies.
-                        Some(v)
-                    } else {
-                        // Invalid string: same X::Str::Numeric Failure (with the `⏏`
-                        // position marker) as `.Int`, rather than a hand-rolled
-                        // message that hard-codes the wrong reason and drops the marker.
-                        return Some(Some(Ok(str_numeric_failure(&s))));
-                    }
-                }
-                _ => None,
-            };
-            if let Some(int_val) = int_result {
-                // Check non-negative
-                let is_neg = match int_val.view() {
-                    ValueView::Int(i) => i < 0,
-                    ValueView::BigInt(n) => n.sign() == num_bigint::Sign::Minus,
-                    _ => false,
-                };
-                if is_neg {
-                    // Rakudo returns a soft X::OutOfRange Failure here, not a
-                    // thrown exception — callers may test/reject it (e.g. a
-                    // signature bind) without ever exploding.
-                    let msg = format!(
-                        "Coercion to UInt out of range. Is: {}, should be in 0..^Inf",
-                        int_val.to_string_value()
-                    );
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg));
-                    attrs.insert(
-                        "what".to_string(),
-                        Value::str("Coercion to UInt".to_string()),
-                    );
-                    attrs.insert("got".to_string(), int_val);
-                    attrs.insert("range".to_string(), Value::str("0..^Inf".to_string()));
-                    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
-                    let mut failure_attrs = std::collections::HashMap::new();
-                    failure_attrs.insert("exception".to_string(), ex);
-                    failure_attrs.insert("handled".to_string(), Value::FALSE);
-                    return Some(Some(Ok(Value::make_instance(
-                        Symbol::intern("Failure"),
-                        failure_attrs,
-                    ))));
-                }
-                Some(Some(Ok(int_val)))
-            } else {
-                Some(None)
+            // A Complex coerces to UInt like `.Int` (`(5+0i).UInt` is 5): the
+            // runtime checks its imaginary part against `$*TOLERANCE`. A type
+            // object is the runtime's.
+            if matches!(
+                target.view(),
+                ValueView::Complex(..) | ValueView::Package(_)
+            ) {
+                return Some(None);
             }
+            let Some(int) = dispatch(target, "Int") else {
+                return Some(None);
+            };
+            Some(int.map(|r| r.map(crate::builtins::method_table::str_numeric::uint_of_int)))
         }
-        // Cost: O(n), n = chars of the invocant.
+        // The `Cool.Version` row's implementation (`method_table::version`).
         "Version" => match target.view() {
-            // Cool.Version: Version.new(self.Str). A Version invocant is
-            // already its own version.
-            ValueView::Version { .. } => Some(Some(Ok(target.clone()))),
-            ValueView::Str(_)
+            ValueView::Version { .. }
+            | ValueView::Str(_)
             | ValueView::Int(_)
             | ValueView::BigInt(_)
             | ValueView::Num(_)
             | ValueView::Rat(_, _)
             | ValueView::BigRat(_, _)
             | ValueView::FatRat(_, _)
-            | ValueView::Bool(_) => {
-                let s = target.to_string_value();
-                if s.is_empty() {
-                    Some(Some(Ok(Value::version(Vec::new(), false, false))))
-                } else {
-                    Some(Some(Ok(Value::version_from_str(&s))))
-                }
-            }
+            | ValueView::Bool(_) => Some(Some(Ok(
+                crate::builtins::method_table::version::version_of(target),
+            ))),
             _ => None,
         },
         "Num" => {
@@ -662,49 +578,12 @@ pub(super) fn dispatch(
                 return Some(Some(Ok(result)));
             }
             let result = match target.view() {
-                // Cost: O(d^2) for a d-digit integer string, O(n) otherwise (as `.Numeric`,
-                // plus a trimmed copy).
+                // The `Str.Num` row's implementation (`method_table::str_numeric`); a
+                // string that numifies to a `Complex` is the interpreter's.
                 ValueView::Str(s) => {
-                    let trimmed = s.trim();
-                    if trimmed.is_empty() {
-                        // An empty or whitespace-only string coerces to 0, like
-                        // `"".Numeric`.
-                        Value::num(0.0)
-                    } else {
-                        // Normalize U+2212 MINUS SIGN to ASCII hyphen-minus, then use
-                        // the canonical Raku numeric parser (radix prefixes,
-                        // underscores, rationals, strict Inf/NaN) so `.Num` agrees
-                        // with `.Numeric`/`.Int`/prefix `+`. `.Num` always yields a Num.
-                        let normalized = trimmed.replace('\u{2212}', "-");
-                        if str_numifies_to_complex(&normalized).is_some() {
-                            // As `.Int`: coerced as the `Complex` it numifies to.
-                            return Some(None);
-                        }
-                        if let Some(v) =
-                            crate::runtime::str_numeric::parse_raku_str_to_numeric(&normalized)
-                        {
-                            let f = v.to_f64();
-                            // "-0"/"-0.0" parse as Int/Rat zero, which has no
-                            // sign — but `.Num` must yield the IEEE negative
-                            // zero (roast S32-num/negative-zero.t). Restore the
-                            // sign from the source string when the magnitude is
-                            // zero. (The scientific path, e.g. "-0e0", already
-                            // returns a signed Num.)
-                            let f = if f == 0.0
-                                && f.is_sign_positive()
-                                && normalized.starts_with('-')
-                            {
-                                -0.0
-                            } else {
-                                f
-                            };
-                            Value::num(f)
-                        } else {
-                            // An invalid string yields a lazy X::Str::Numeric Failure,
-                            // mirroring `.Int` (not an eager X::AdHoc RuntimeError).
-                            return Some(Some(Ok(str_numeric_failure(&s))));
-                        }
-                    }
+                    return Some(
+                        crate::builtins::method_table::str_numeric::num_of_str(&s).map(Ok),
+                    );
                 }
                 ValueView::Bool(b) => Value::num(if b { 1.0 } else { 0.0 }),
                 // The runtime checks the imaginary part against `$*TOLERANCE`
@@ -798,17 +677,8 @@ pub(super) fn dispatch(
                 return Some(Some(Ok(result)));
             }
             let result = match target.view() {
-                // Cost: O(d^2) for a d-digit integer string (num-bigint radix parse), O(n)
-                // otherwise, n = chars of the invocant.
-                ValueView::Str(s) => {
-                    if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
-                        v
-                    } else {
-                        // Same X::Str::Numeric Failure (typed, with the `⏏` marker)
-                        // as `.Int`.
-                        return Some(Some(Ok(str_numeric_failure(&s))));
-                    }
-                }
+                // The `Str.Numeric` row's implementation (`method_table::str_numeric`).
+                ValueView::Str(s) => crate::builtins::method_table::str_numeric::numeric_of_str(&s),
                 // Cost: O(1) (`.Numeric` / `+@a` of an array is its element count).
                 ValueView::Array(items, ..) => Value::int(items.len() as i64),
                 ValueView::Hash(h) => Value::int(h.len() as i64),
