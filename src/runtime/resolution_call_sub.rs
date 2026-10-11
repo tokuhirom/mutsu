@@ -678,34 +678,15 @@ impl Interpreter {
                         self.current_unit = saved_unit;
                     }
                 }
-                // Candidates are out of scope -- dispatch through captured Subs.
-                // The applicability probe binds into the CURRENT env, so it runs
-                // on a saved env that is put back afterwards: otherwise a
-                // candidate's parameters leak into the caller's frame
-                // (`multi ok(Mu $cond, $desc = '')` re-exported through a
-                // `sub EXPORT` map overwrote the enclosing `subtest`'s own
-                // `$desc` -- Test::Describe's lost subtest names).
-                for candidate in &candidates {
-                    if let ValueView::Sub(cand_data) = candidate.view() {
-                        let saved_env = self.env.clone();
-                        // The binder alone is lenient about sigil-constrained
-                        // named params (`:%env` takes `True`), so the multi
-                        // type match decides first, as in a by-name dispatch.
-                        let applicable = self
-                            .args_match_param_types(&call_args, &cand_data.param_defs)
-                            && self
-                            .bind_function_args_values(
-                                &cand_data.param_defs,
-                                &cand_data.params,
-                                &call_args,
-                            )
-                            .is_ok();
-                        self.env = saved_env;
-                        if applicable {
-                            let candidate = Self::bind_family_dispatcher(candidate, family_name.as_deref(), &func_for_family);
-                            return self.call_sub_value(candidate, call_args, false);
-                        }
-                    }
+                // Candidates are out of scope -- dispatch through captured
+                // Subs, ranked as a by-name call ranks them (#12474).
+                if let Some(candidate) = self.pick_captured_multi_candidate(
+                    family_name.as_deref().unwrap_or(""),
+                    &candidates,
+                    &call_args,
+                )? {
+                    let candidate = Self::bind_family_dispatcher(&candidate, family_name.as_deref(), &func_for_family);
+                    return self.call_sub_value(candidate, call_args, false);
                 }
                 // Slurpy catch-all
                 for candidate in &candidates {

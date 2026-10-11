@@ -67,51 +67,8 @@ impl Interpreter {
     /// Register the code value `code` as a candidate row of `proto_key`.
     // Cost: O(a + b), a = parameters of `code`, b = its body (one fingerprint hash).
     fn add_value_dispatchee(&mut self, proto_key: &str, proto_name: &str, code: &Value) {
-        let ValueView::Sub(data) = code.view() else {
+        let Some(def) = Self::dispatchee_function_def(code, proto_name) else {
             return;
-        };
-        // Two closures cloned from one literal share params and body; the
-        // value's identity keeps them distinct candidates, as in Rakudo, where
-        // the multi-registration dedup would otherwise fold them into one.
-        let fingerprint = {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            crate::ast::function_body_fingerprint(&data.params, &data.param_defs, &data.body)
-                .hash(&mut hasher);
-            data.id.hash(&mut hasher);
-            hasher.finish()
-        };
-        let body_fp_cache = std::sync::OnceLock::new();
-        let _ = body_fp_cache.set(fingerprint);
-        let def = FunctionDef {
-            package: data.package,
-            name: Symbol::intern(proto_name),
-            params: (*data.params).clone(),
-            param_defs: (*data.param_defs).clone(),
-            // Never run: the row runs `dispatchee`. Selection reads only the
-            // signature, and the fingerprint is seeded above.
-            body: Vec::new(),
-            is_test_assertion: false,
-            is_implementation_detail: false,
-            is_cached: false,
-            is_rw: data.is_rw,
-            is_raw: data.is_raw,
-            declarator: crate::ast::RoutineDeclarator::Sub,
-            empty_sig: false,
-            is_stub: false,
-            return_type: None,
-            is_default: false,
-            deprecated_message: None,
-            op_prec: None,
-            source_file: None,
-            source_line: None,
-            decl_order: crate::runtime::resolution::next_decl_order(),
-            compiled: None,
-            dispatchee: Some(code.clone()),
-            body_fp_cache,
-            captured_readonly: None,
-            body_facts_cache: std::sync::OnceLock::new(),
-            routine_cell: Default::default(),
         };
         let key = Self::dispatchee_row_key(proto_key, &def);
         self.insert_multi_overload(&key, def);
@@ -170,5 +127,102 @@ impl Interpreter {
         } else {
             format!("{proto_key}/{}", positional.len())
         }
+    }
+
+    /// A candidate row for the code value `code` as a member of the family
+    /// `name`: its signature, with the value itself as
+    /// [`FunctionDef::dispatchee`] so running the row calls the value (and the
+    /// lexicals it closed over). `None` for a non-`Sub` value.
+    // Cost: O(a + b), a = parameters of `code`, b = its body (one fingerprint hash).
+    pub(super) fn dispatchee_function_def(code: &Value, name: &str) -> Option<FunctionDef> {
+        let ValueView::Sub(data) = code.view() else {
+            return None;
+        };
+        // Two closures cloned from one literal share params and body; the
+        // value's identity keeps them distinct candidates, as in Rakudo, where
+        // the multi-registration dedup would otherwise fold them into one.
+        let fingerprint = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            crate::ast::function_body_fingerprint(&data.params, &data.param_defs, &data.body)
+                .hash(&mut hasher);
+            data.id.hash(&mut hasher);
+            hasher.finish()
+        };
+        let body_fp_cache = std::sync::OnceLock::new();
+        let _ = body_fp_cache.set(fingerprint);
+        Some(FunctionDef {
+            package: data.package,
+            name: Symbol::intern(name),
+            params: (*data.params).clone(),
+            param_defs: (*data.param_defs).clone(),
+            // Never run: the row runs `dispatchee`. Selection reads only the
+            // signature, and the fingerprint is seeded above.
+            body: Vec::new(),
+            is_test_assertion: false,
+            is_implementation_detail: false,
+            is_cached: false,
+            is_rw: data.is_rw,
+            is_raw: data.is_raw,
+            declarator: crate::ast::RoutineDeclarator::Sub,
+            empty_sig: false,
+            is_stub: false,
+            return_type: None,
+            is_default: false,
+            deprecated_message: None,
+            op_prec: None,
+            source_file: None,
+            source_line: None,
+            decl_order: crate::runtime::resolution::next_decl_order(),
+            compiled: None,
+            dispatchee: Some(code.clone()),
+            body_fp_cache,
+            captured_readonly: None,
+            body_facts_cache: std::sync::OnceLock::new(),
+            routine_cell: Default::default(),
+        })
+    }
+
+    /// The narrowest of a multi dispatcher's captured `candidates` for `args`,
+    /// for a dispatcher whose family no name reaches from the caller (a
+    /// lexical `proto`'s `&name` returned out of its module, #12474).
+    ///
+    /// The candidates become [`FunctionDef::dispatchee`] rows and go through
+    /// the by-name resolver's own ranking, so narrowness, `where` tie-breaks
+    /// and `X::Multi::Ambiguous` follow the same rules as a by-name call
+    /// rather than declaration order. `Ok(None)` when none applies.
+    // Cost: O(c * a + c log c), c = captured candidates, a = parameters per candidate.
+    pub(super) fn pick_captured_multi_candidate(
+        &mut self,
+        family: &str,
+        candidates: &[Value],
+        args: &[Value],
+    ) -> Result<Option<Value>, RuntimeError> {
+        // One declared `multi` can be captured more than once (it sits under
+        // several registry keys), each copy a distinct Sub value: keep the
+        // first copy of each declaration, as the by-name gather's dedup does.
+        let mut seen = std::collections::HashSet::new();
+        let rows: Vec<(String, std::sync::Arc<FunctionDef>)> = candidates
+            .iter()
+            .filter(|code| match code.view() {
+                ValueView::Sub(data) => seen.insert(crate::ast::function_body_fingerprint(
+                    &data.params,
+                    &data.param_defs,
+                    &data.body,
+                )),
+                _ => false,
+            })
+            .filter_map(|code| {
+                let mut def = Self::dispatchee_function_def(code, family)?;
+                // Its `where` clauses and defaults run in its declaring unit.
+                if let ValueView::Sub(data) = code.view() {
+                    def.source_file = data.source_file.clone();
+                }
+                Some((family.to_string(), std::sync::Arc::new(def)))
+            })
+            .collect();
+        Ok(self
+            .choose_best_matching_candidate(family, args, rows)?
+            .and_then(|def| def.dispatchee.clone()))
     }
 }
