@@ -32,7 +32,7 @@ is S.new.load(:at-rule({:at-keyw<page>})), 'other', 'other keyword';
 dies-ok { f4(at-rule => {:x(1)}) }, 'a missing required leaf fails the bind';
 
 # A value that does not unpack makes the candidate inapplicable.
-multi pick(:q(@)! (% (:keyw($_)!), $m)) { "first" }
-multi pick(:q(@)! ($m, *@e)) { "second" }
-is pick(q => [{ident => 'print'},]), 'second', 'missing required key: next candidate';
-is pick(q => [{keyw => 'x'}, 3]), 'first', 'fitting value: first candidate';
+multi choose(:q(@)! (% (:keyw($_)!), $m)) { "first" }
+multi choose(:q(@)! ($m, *@e)) { "second" }
+is choose(q => [{ident => 'print'},]), 'second', 'missing required key: next candidate';
+is choose(q => [{keyw => 'x'}, 3]), 'first', 'fitting value: first candidate';
