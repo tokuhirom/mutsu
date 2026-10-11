@@ -572,6 +572,11 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
+        // An object reblessed on another thread may carry a mixin type this
+        // thread has not composed yet (#11456).
+        if let ValueView::Instance { class_name, .. } = value.view() {
+            self.adopt_published_mixin(class_name.as_str());
+        }
         // A routine does the roles composed into it, through every alias
         // (ADR-11827).
         match Self::routine_current_view(value) {
