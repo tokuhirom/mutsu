@@ -1444,6 +1444,8 @@ impl Interpreter {
         // exports such as JSON::Tiny's from-json retain the normal dispatch
         // precedence because they do have a registered package routine.
         if let Some(callable) = self.export_hook_callable(&name, name_sym, code) {
+            let mut args = args;
+            self.box_rw_args_for_callable(code, &callable, &mut args, &arg_sources);
             let result =
                 self.call_lexical_callable_with_sources(callable, args, &arg_sources, None)?;
             // A raw/rw parameter binds the caller's container under its source
@@ -1456,27 +1458,8 @@ impl Interpreter {
 
         // Check wrap chain for named function calls
         if let Some(sub_val) = self.wrapped_sub_for_call(&name) {
-            // The wrapper's `|c` capture (or a native body's out-parameter
-            // write-back) can only reach the caller's variable through its
-            // container, so box each `is rw` positional argument the way the
-            // direct-call binder does (#12521).
             let mut args = args;
-            if let Some(def) = self.resolve_function(&name) {
-                for (idx, pd) in def.param_defs.iter().enumerate() {
-                    if pd.named || !pd.traits.iter().any(|t| t == "rw") {
-                        continue;
-                    }
-                    let Some(arg) = args.get(idx) else { break };
-                    let slot_hint = arg.varref_slot();
-                    if let ValueView::VarRef { name, value, .. } = arg.view() {
-                        let var = name.resolve();
-                        let inner = value.clone();
-                        let cell = self.capture_rw_arg_cell(code, &var, inner, slot_hint);
-                        self.register_container_cell_constraint_for_name(&cell, &var);
-                        args[idx] = cell;
-                    }
-                }
-            }
+            self.box_rw_args_for_callable(code, &sub_val, &mut args, &arg_sources);
             let result = self.vm_call_sub_value(sub_val, args, false)?;
             // Slice F (multi-frame coherence): a wrapper closure (`&f.wrap(-> {
             // $seen = True; callsame })`) mutates a captured caller lexical by name.
@@ -1500,6 +1483,8 @@ impl Interpreter {
         // (`env_callable_is_lexical_override`), so this never reaches the
         // interpreter terminal.
         if let Some(callable) = lexical_override {
+            let mut args = args;
+            self.box_rw_args_for_callable(code, &callable, &mut args, &arg_sources);
             let result = self.call_lexical_callable_with_sources(
                 callable,
                 args,
