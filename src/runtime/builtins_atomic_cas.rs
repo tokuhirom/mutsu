@@ -5,7 +5,6 @@
 //! `builtins_atomic_shared`.
 
 use super::*;
-use crate::runtime::shared_store::atomic_lane_str_key;
 use crate::token_kind::TokenKind;
 use crate::value::ValueView;
 
@@ -429,23 +428,21 @@ impl Interpreter {
     }
 
     /// CAS on an array element: `cas(@arr[idx], $expected, $new)`
-    /// Args: [array_name_str, index, expected, new_val]
-    /// Uses shared_vars to store the whole array for atomic cross-thread access.
-    /// The array in shared_vars is the single source of truth — reads via
-    /// `GetLocal` pick it up through the `get_shared_var` fallback path.
+    /// Args: [array_name_str, array, index, expected, new_val]
+    /// The element cell comes from `atomic_elem_cell`: the name-keyed lane for
+    /// a shared array, the frame's own binding for a re-declared one.
     pub(super) fn builtin_cas_array_elem(
         &mut self,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if args.len() != 4 {
+        if args.len() != 5 {
             return Err(RuntimeError::new(
-                "__mutsu_cas_array_elem requires 4 arguments",
+                "__mutsu_cas_array_elem requires 5 arguments",
             ));
         }
         let arr_name = args[0].to_string_value();
-        let index = self.atomic_elem_index(&arr_name, &args[1])?;
-        let expected = &args[2];
-        let new_val = args[3].clone();
+        let expected = &args[3];
+        let new_val = args[4].clone();
 
         // Typed container: reject a wrong-typed swap value like a plain element
         // assignment would. Raku checks the swap value even when the compare
@@ -454,15 +451,11 @@ impl Interpreter {
         // The element is a `Scalar`: an aggregate is itemized on the way in.
         let new_val = Self::itemize_value_for_element_store(new_val);
 
-        // Use an internal key to avoid interference with set_shared_var
-        // which would overwrite our atomic array with stale local values.
-        let atomic_key = atomic_lane_str_key(&arr_name, false);
-
         // Track B element cells: box elements at first atomic touch, then CAS
         // the one element in place through its cell (no whole-array COW per
         // op — see `init_celled_atomic_store`).
-        self.init_celled_atomic_store(atomic_key, &arr_name);
-        let cell = self.celled_array_elem(atomic_key, &arr_name, index);
+        let elem = self.atomic_elem_cell(&arr_name, &args[1], &args[2])?;
+        let cell = elem.cell;
         let mut did_swap = false;
         let current;
         {
@@ -474,7 +467,10 @@ impl Interpreter {
             }
         }
 
-        if did_swap && let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
+        if did_swap
+            && elem.on_lane
+            && let Ok(mut dirty) = self.threads.shared_vars_dirty.write()
+        {
             dirty.insert(arr_name.clone());
         }
         // Note: don't update env["@values"] here — a later locals restore could

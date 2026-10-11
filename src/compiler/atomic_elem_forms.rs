@@ -6,7 +6,7 @@
 //!
 //! A variable target compiles to the name-keyed `__mutsu_atomic_*_var` helpers
 //! (expr_call.rs). An element target compiles to the one
-//! `__mutsu_atomic_elem(container, key, op, operand?)` helper
+//! `__mutsu_atomic_elem(name, container, key, op, operand?)` helper
 //! (runtime/builtins_atomic_elem.rs), which works on the same element cell
 //! `cas(@a[0], ...)` swaps.
 
@@ -70,6 +70,9 @@ impl Compiler {
         }
         let container_idx = self.code.add_constant(Value::str(container.clone()));
         self.code.emit(OpCode::LoadConst(container_idx));
+        // The container's own read: the binding an element atomic on a
+        // re-declared name works on (`Interpreter::atomic_elem_cell`).
+        self.compile_expr(target);
         self.compile_expr(index);
         let op_idx = self.code.add_constant(Value::str_from(op));
         self.code.emit(OpCode::LoadConst(op_idx));
@@ -77,7 +80,7 @@ impl Compiler {
             (Some(d), _) => {
                 let d_idx = self.code.add_constant(Value::int(d));
                 self.code.emit(OpCode::LoadConst(d_idx));
-                4
+                5
             }
             (None, Some(operand)) => {
                 // The guard answers its operand, so it replaces compiling it.
@@ -90,9 +93,9 @@ impl Compiler {
                 if negate {
                     self.code.emit(OpCode::Negate);
                 }
-                4
+                5
             }
-            (None, None) => 3,
+            (None, None) => 4,
         };
         let call_name_idx = self
             .code

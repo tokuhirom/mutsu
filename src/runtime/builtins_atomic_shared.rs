@@ -52,6 +52,8 @@ impl Interpreter {
             .get(name)
             .cloned()
             .or_else(|| self.get_shared_var(name));
+        // A captured `@a` / `%h` is bound through its shared cell (ADR-0039).
+        let base = base.map(|b| b.deref_container());
         let celled = match base.as_ref().map(Value::view) {
             Some(ValueView::Hash(h)) => {
                 let mut data = h.as_ref().clone();
@@ -576,18 +578,18 @@ impl Interpreter {
     }
 
     /// CAS on a multi-dimensional array element: cas(@arr[d1;d2;...], $expected, $new)
-    /// Args: [array_name_str, dimensions_list, expected, new_val]
+    /// Args: [array_name_str, array, dimensions_list, expected, new_val]
     pub(super) fn builtin_cas_array_multidim(
         &mut self,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if args.len() != 4 {
+        if args.len() != 5 {
             return Err(RuntimeError::new(
-                "__mutsu_cas_array_multidim requires 4 arguments",
+                "__mutsu_cas_array_multidim requires 5 arguments",
             ));
         }
         let arr_name = args[0].to_string_value();
-        let dims: Vec<i64> = match args[1].view() {
+        let dims: Vec<i64> = match args[2].view() {
             ValueView::Array(elems, ..) => elems
                 .iter()
                 .map(|v| match v.view() {
@@ -597,16 +599,14 @@ impl Interpreter {
                 .collect(),
             _ => vec![0],
         };
-        let expected = &args[2];
-        let new_val = args[3].clone();
+        let expected = &args[3];
+        let new_val = args[4].clone();
 
         // Typed container: reject a wrong-typed swap value before the compare
         // (raku checks it even when the compare fails — roadmap T5).
         self.check_atomic_elem_type(&arr_name, &new_val)?;
         // The element is a `Scalar`: an aggregate is itemized on the way in.
         let new_val = Self::itemize_value_for_element_store(new_val);
-
-        let atomic_key = atomic_lane_str_key(&arr_name, false);
 
         // Track B element cells (T4, gc-post-3a-roadmap §2): same template as
         // the 1-dim `builtin_cas_array_elem` — box top-level elements at first
@@ -618,9 +618,9 @@ impl Interpreter {
         // cell. This also makes 1-dim and multidim CAS on the same array
         // coherent (the old republish path read plain elements and returned 0
         // once a 1-dim CAS had celled the store).
-        self.init_celled_atomic_store(atomic_key, &arr_name);
-        let cell =
-            self.celled_array_elem(atomic_key, &arr_name, dims.first().copied().unwrap_or(0));
+        let top = Value::int(dims.first().copied().unwrap_or(0));
+        let elem = self.atomic_elem_cell(&arr_name, &args[1], &top)?;
+        let cell = elem.cell;
         let inner_dims = if dims.len() > 1 { &dims[1..] } else { &[] };
         let mut did_swap = false;
         let current;
@@ -641,7 +641,10 @@ impl Interpreter {
             }
         }
 
-        if did_swap && let Ok(mut dirty) = self.threads.shared_vars_dirty.write() {
+        if did_swap
+            && elem.on_lane
+            && let Ok(mut dirty) = self.threads.shared_vars_dirty.write()
+        {
             dirty.insert(arr_name.clone());
         }
         Ok(current)
@@ -829,27 +832,26 @@ impl Interpreter {
     }
 
     /// CAS on a hash element: cas(%hash{key}, &code)
-    /// Args: [hash_name_str, key, code]
-    /// Uses shared_vars with an atomic key for cross-thread safety.
+    /// Args: [hash_name_str, hash, key, code]
+    /// The element cell comes from `atomic_elem_cell` (see there).
     pub(super) fn builtin_cas_hash_elem(
         &mut self,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if args.len() != 3 {
+        if args.len() != 4 {
             return Err(RuntimeError::new(
-                "__mutsu_cas_hash_elem requires 3 arguments (hash_name, key, code)",
+                "__mutsu_cas_hash_elem requires 4 arguments (hash_name, hash, key, code)",
             ));
         }
         let hash_name = args[0].to_string_value();
-        let key = args[1].to_string_value();
-        let code = args[2].clone();
-        let atomic_key = atomic_lane_str_key(&hash_name, true);
+        let code = args[3].clone();
 
         // Track B element cells: box every element at the container's first
         // atomic touch, then RMW individual elements in place through their
         // cell — no whole-map COW per op (see `init_celled_atomic_store`).
-        self.init_celled_atomic_store(atomic_key, &hash_name);
-        let cell = self.celled_hash_elem(atomic_key, &hash_name, &key);
+        let cell = self
+            .atomic_elem_cell(&hash_name, &args[1], &args[2])?
+            .cell;
 
         // Check if code is {.succ} or {.pred} for fast path
         if let ValueView::Sub(sub) = code.view() {

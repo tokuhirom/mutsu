@@ -116,24 +116,22 @@ impl Interpreter {
     }
 
     /// Code-form CAS on a 1-dim array element: `cas(@arr[idx], &code)`.
-    /// Args: [array_name_str, index, code]
+    /// Args: [array_name_str, array, index, code]
     pub(super) fn builtin_cas_array_elem_code(
         &mut self,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if args.len() != 3 {
+        if args.len() != 4 {
             return Err(RuntimeError::new(
-                "__mutsu_cas_array_elem_code requires 3 arguments (array_name, index, code)",
+                "__mutsu_cas_array_elem_code requires 4 arguments (array_name, array, index, code)",
             ));
         }
         let arr_name = args[0].to_string_value();
-        let index = self.atomic_elem_index(&arr_name, &args[1])?;
-        let code = args[2].clone();
-        let atomic_key = atomic_lane_str_key(&arr_name, false);
-        self.init_celled_atomic_store(atomic_key, &arr_name);
-        let cell = self.celled_array_elem(atomic_key, &arr_name, index);
-        let r = self.cas_cell_code_loop(&arr_name, &cell, &code);
+        let code = args[3].clone();
+        let elem = self.atomic_elem_cell(&arr_name, &args[1], &args[2])?;
+        let r = self.cas_cell_code_loop(&arr_name, &elem.cell, &code);
         if r.is_ok()
+            && elem.on_lane
             && let Ok(mut dirty) = self.threads.shared_vars_dirty.write()
         {
             dirty.insert(arr_name.clone());
@@ -142,7 +140,7 @@ impl Interpreter {
     }
 
     /// Code-form CAS on a multidim array element: `cas(@arr[d1;d2], &code)`.
-    /// Args: [array_name_str, dimensions_list, code]. Mirrors
+    /// Args: [array_name_str, array, dimensions_list, code]. Mirrors
     /// `builtin_cas_array_multidim`: the whole read-compute-compare+set cycle
     /// anchors on the top-level slot's cell, with the closure running outside
     /// the lock and the compare against the nested element re-done under it.
@@ -150,13 +148,13 @@ impl Interpreter {
         &mut self,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        if args.len() != 3 {
+        if args.len() != 4 {
             return Err(RuntimeError::new(
-                "__mutsu_cas_array_multidim_code requires 3 arguments (array_name, dims, code)",
+                "__mutsu_cas_array_multidim_code requires 4 arguments (array_name, array, dims, code)",
             ));
         }
         let arr_name = args[0].to_string_value();
-        let dims: Vec<i64> = match args[1].view() {
+        let dims: Vec<i64> = match args[2].view() {
             ValueView::Array(elems, ..) => elems
                 .iter()
                 .map(|v| match v.view() {
@@ -166,15 +164,15 @@ impl Interpreter {
                 .collect(),
             _ => vec![0],
         };
-        let code = args[2].clone();
-        let atomic_key = atomic_lane_str_key(&arr_name, false);
-        self.init_celled_atomic_store(atomic_key, &arr_name);
-        let cell =
-            self.celled_array_elem(atomic_key, &arr_name, dims.first().copied().unwrap_or(0));
+        let code = args[3].clone();
+        let top = Value::int(dims.first().copied().unwrap_or(0));
+        let elem = self.atomic_elem_cell(&arr_name, &args[1], &top)?;
+        let cell = elem.cell;
         let inner_dims: &[i64] = if dims.len() > 1 { &dims[1..] } else { &[] };
         if inner_dims.is_empty() {
             let r = self.cas_cell_code_loop(&arr_name, &cell, &code);
             if r.is_ok()
+                && elem.on_lane
                 && let Ok(mut dirty) = self.threads.shared_vars_dirty.write()
             {
                 dirty.insert(arr_name.clone());
