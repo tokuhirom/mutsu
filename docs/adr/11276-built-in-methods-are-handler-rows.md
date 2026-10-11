@@ -2429,6 +2429,6 @@ hash and a lazy list. No behaviour change, pinned in `t/oo/method/any-list-hash-
   few methods that apply to the junction as a whole, which the interpreter answers. `Nil` absorbs every method call (`Nil.foo` is `Nil` with a warning:
   `nil_predispatch_verdict`), which no row can express. Their cascade arms (`Junction`: `Bool`, `gist`, `raku`; `Nil`: `gist`, `raku`) stay until
   slice 5 decides what replaces the cascades for shapeless receivers.
-- **Left**: `Array`/`Hash` `name` and `dynamic` (read the variable's metadata, not the value), `List.rotate`/`Array.rotate` (a `Mut` row), `Any.splice`
+- **Left (filed as #12622)**: `Array`/`Hash` `name` and `dynamic` (read the variable's metadata, not the value), `List.rotate`/`Array.rotate` (a `Mut` row), `Any.splice`
   (the `Handler::Mut` question of §9.60) and `List.AT-POS`/`Array.AT-POS` (`positional.rs` explains why they have no row).
 
