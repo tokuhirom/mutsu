@@ -299,7 +299,7 @@ holding, and it is evidence-based rather than a judgement call: 24 hours old
 checkable by anyone, which is what keeps it from reintroducing the race.
 
 The board for `ecosystem/` distributions is
-[#11640](https://github.com/tokuhirom/mutsu/issues/11640) — the single open issue
+[#12725](https://github.com/tokuhirom/mutsu/issues/12725) — the single open issue
 labelled `ecosystem:lock`, which is the authority if the number ever drifts — and
 the procedure around it is
 [`.agents/skills/ecosystem-dist-roulette/SKILL.md`](../.agents/skills/ecosystem-dist-roulette/SKILL.md).
