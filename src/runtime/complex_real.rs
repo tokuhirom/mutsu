@@ -29,7 +29,7 @@ impl Interpreter {
     /// throw.)
     // Cost: O(d) for the `$*TOLERANCE` lookup (d = caller-stack depth), plus
     // the cost of the real part's own coercion (O(1) for a word-sized result).
-    pub(super) fn dispatch_complex_to_real(
+    pub(crate) fn dispatch_complex_to_real(
         &mut self,
         method: &str,
         re: f64,

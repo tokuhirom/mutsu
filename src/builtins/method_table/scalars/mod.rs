@@ -12,6 +12,7 @@ pub(crate) mod blob_read;
 pub(crate) mod coerce;
 pub(crate) mod complex;
 pub(crate) mod complex_math;
+pub(crate) mod complex_real;
 pub(crate) mod cool_real;
 mod int;
 pub(crate) mod math;
@@ -102,6 +103,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     numeric_base::NUM_ROWS,
     numeric_base::RAT_ROWS,
     numeric_polymod::ROWS,
+    complex_real::ROWS,
     unicode::STR_ROWS,
     unicode::COOL_ROWS,
     unicode::INT_ROWS,

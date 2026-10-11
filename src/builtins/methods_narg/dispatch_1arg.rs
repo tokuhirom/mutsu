@@ -1,5 +1,4 @@
-use super::allomorph::{allomorph_accepts, out_of_range_failure};
-use super::base::{BaseDigits, f64_to_rat, parse_radix_checked, rat_to_base};
+use super::allomorph::allomorph_accepts;
 
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use super::fmt_contains::fmt_value_needs_coercion;
@@ -833,31 +832,12 @@ pub(crate) fn native_method_1arg(
         {
             crate::builtins::method_table::numeric_base::base_of(target, arg, None)
         }
+        // An instance carrying a `value` (a `Duration`, an `Instant`) is read
+        // through that attribute.
         "base" => match target.view() {
-            // Handle Instance types (Duration, Instant, etc.) by
-            // extracting their numeric value
             ValueView::Instance { attributes, .. } => {
-                let radix = match parse_radix_checked(arg)? {
-                    Ok(r) => r,
-                    Err(_) => return Some(Ok(out_of_range_failure("base requires radix 2..36"))),
-                };
-                if let Some(val) = attributes.as_map().get("value") {
-                    match val.view() {
-                        ValueView::Int(i) => {
-                            Some(Ok(Value::str(rat_to_base(i, 1, radix, BaseDigits::Auto))))
-                        }
-                        ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
-                            Some(Ok(Value::str(rat_to_base(n, d, radix, BaseDigits::Auto))))
-                        }
-                        ValueView::Num(f) => {
-                            let (n, d) = f64_to_rat(f);
-                            Some(Ok(Value::str(rat_to_base(n, d, radix, BaseDigits::Auto))))
-                        }
-                        _ => None,
-                    }
-                } else {
-                    None
-                }
+                let value = attributes.as_map().get("value").cloned()?;
+                crate::builtins::method_table::numeric_base::base_of(&value, arg, None)
             }
             _ => None,
         },
