@@ -163,8 +163,11 @@ impl Interpreter {
                 }
                 // A raw VMArray/VMHash copies into a fresh raw object of the
                 // same kind (ADR-12666).
-                if v.is_vm_collection() {
+                if v.is_vm_collection() || v.is_iteration_buffer_view() {
                     return Some(Ok(match v.view() {
+                        ValueView::Array(items, _) if v.is_iteration_buffer_view() => {
+                            Value::iteration_buffer_view(crate::gc::Gc::new((**items).clone()))
+                        }
                         ValueView::Array(items, _) => {
                             Value::vm_array_from_gc(crate::gc::Gc::new((**items).clone()))
                         }

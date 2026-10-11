@@ -495,7 +495,8 @@ impl Interpreter {
             // attribute and return the INVOCANT rather than the value, so a
             // mutating method stays chainable. The standard way nqp code
             // hands back a freshly populated object.
-            // Cost: O(1); O(e) for a $!reified/$!storage bind, e = elements copied.
+            // Cost: O(1); O(e) for a $!reified/$!storage bind of a non-raw
+            // value, e = elements copied (a raw VMArray/VMHash is adopted, O(1)).
             // MoarVM: O(1) -- see #9134.
             "p6bindattrinvres" => {
                 let obj = args.first().cloned().unwrap_or(Value::NIL);
@@ -506,6 +507,9 @@ impl Interpreter {
                 let val = args.get(3).cloned().unwrap_or(Value::NIL);
                 if let Some(done) = self.nqp_code_do_attr(&obj, &attr, Some(&val)) {
                     return Some(done.map(|_| obj));
+                }
+                if let Some(adopted) = Self::adopt_raw_storage(&obj, &attr, &val) {
+                    return Some(Ok(adopted));
                 }
                 match Self::nqp_bindattr_value(op, &obj, &attr, val) {
                     Ok(()) => Ok(obj),

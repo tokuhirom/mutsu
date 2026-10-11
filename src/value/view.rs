@@ -964,7 +964,9 @@ impl Value {
             // A raw `VMArray` (ADR-12666) views as a `List`; a caller that
             // rebuilds from the parts gets the high-level `List` back, which
             // is what Rakudo's binder hands a native routine.
-            ValueRepr::VmArray(items) => Some((items, ArrayKind::List)),
+            ValueRepr::VmArray(items) | ValueRepr::VmIterBuf(items) => {
+                Some((items, ArrayKind::List))
+            }
             _ => None,
         }
     }
@@ -1009,7 +1011,9 @@ impl Value {
             ValueRepr::Array(items, kind) => f(items, kind),
             // A raw `VMArray` (ADR-12666) views as a `List`; its tag is not an
             // `ArrayKind`, so a kind rewrite by `f` does not apply to it.
-            ValueRepr::VmArray(items) => f(items, &mut ArrayKind::List),
+            ValueRepr::VmArray(items) | ValueRepr::VmIterBuf(items) => {
+                f(items, &mut ArrayKind::List)
+            }
             _ => unreachable!("with_array_mut probed an Array"),
         }))
     }

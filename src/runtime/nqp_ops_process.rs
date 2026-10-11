@@ -266,6 +266,11 @@ impl Interpreter {
                 if let Some(name) = v.vm_boot_type_name() {
                     return Some(Ok(Value::package(crate::symbol::Symbol::intern(name))));
                 }
+                if v.is_iteration_buffer_view() {
+                    return Some(Ok(Value::package(crate::symbol::Symbol::intern(
+                        "IterationBuffer",
+                    ))));
+                }
                 self.call_method_with_values(v, "WHAT", Vec::new())
             }
 

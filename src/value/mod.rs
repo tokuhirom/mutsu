@@ -2440,6 +2440,9 @@ pub(in crate::value) enum ValueRepr {
     VmArray(crate::gc::Gc<ArrayData>),
     /// A raw nqp `VMHash` (ADR-12666). Views as `ValueView::Hash`.
     VmHash(Gc<HashData>),
+    /// An `IterationBuffer` over an `Array`'s storage (ADR-12666 §3.6). Views
+    /// as `ValueView::Array(_, ArrayKind::List)`.
+    VmIterBuf(crate::gc::Gc<ArrayData>),
     /// The `bool` is the per-holder itemization flag (`true` when this hash sits
     /// in a `$` scalar container: `$(%h)` / `.item` / `my $h = %x`). It mirrors
     /// `ArrayKind::ItemArray` for arrays — a Value-level marker that shares the

@@ -61,7 +61,7 @@ pub(crate) fn boot_collection_type(op: &str) -> Option<Value> {
 /// `Buf`/`Blob`. A Raku `List`, `Array`, `Slip` or `Seq` is P6opaque: 0.
 // Cost: O(1) (O(n) in the length of a buffer class name).
 pub(crate) fn repr_is_vm_array(v: &Value) -> bool {
-    if v.is_vm_array() {
+    if v.is_vm_array() || v.is_iteration_buffer_view() {
         return true;
     }
     match v.view() {
@@ -74,7 +74,8 @@ pub(crate) fn repr_is_vm_array(v: &Value) -> bool {
                     .is_some_and(|t| t.starts_with("array"))
         }
         ValueView::Instance { class_name, .. } => {
-            crate::runtime::utils::is_buf_or_blob_class(class_name.as_str())
+            class_name == "IterationBuffer"
+                || crate::runtime::utils::is_buf_or_blob_class(class_name.as_str())
         }
         _ => false,
     }
@@ -112,6 +113,16 @@ impl Interpreter {
         target: &Value,
         method: &str,
     ) -> Option<Result<Value, RuntimeError>> {
+        // An `IterationBuffer` view is a high-level `Any`: it answers its own
+        // type and leaves every other method to the ordinary dispatch.
+        if target.is_iteration_buffer_view() {
+            return match method {
+                "WHAT" => Some(Ok(Value::package(Symbol::intern("IterationBuffer")))),
+                "^name" => Some(Ok(Value::str_from("IterationBuffer"))),
+                "REPR" => Some(Ok(Value::str_from("VMArray"))),
+                _ => None,
+            };
+        }
         let name = match target.vm_boot_type_name() {
             Some(name) => name,
             None => boot_type_object_name(target)?.as_str(),
@@ -139,11 +150,93 @@ impl Interpreter {
 }
 
 /// Whether a method call on `target` must go through
-/// [`Interpreter::vm_collection_method`]: a raw collection or a `BOOT*`
-/// collection type object. Two tag probes on the common path.
+/// [`Interpreter::vm_collection_method`]: a raw collection, an
+/// `IterationBuffer` view or a `BOOT*` collection type object. Tag probes on
+/// the common path.
 // Cost: O(1).
 #[inline]
 pub(crate) fn is_boot_collection_invocant(target: &Value) -> bool {
     target.is_vm_collection()
+        || target.is_iteration_buffer_view()
         || (target.is_package_value() && boot_type_object_name(target).is_some())
 }
+
+impl Interpreter {
+    /// `nqp::p6bindattrinvres($obj, T, '$!reified' | '$!storage', $raw)` with a
+    /// raw `VMArray` / `VMHash` `$raw`: Rakudo installs `$raw` as the
+    /// wrapper's storage, so the object handed back and `$raw` share every
+    /// element from then on. mutsu's high-level collection *is* its storage
+    /// node, so the answer is the high-level view (the wrapper's kind) of
+    /// `$raw`'s node — O(1), where copying the elements in was O(e) and lost
+    /// every later write through `$raw` (ADR-12666 §3.6). The wrapper's own
+    /// container metadata (element type, declared type, default) moves onto
+    /// the adopted node.
+    ///
+    /// `None` when this is not such a bind (another attribute, a non-raw
+    /// value, a shaped or lazy wrapper, an instance): the caller binds as
+    /// before. A plain `nqp::bindattr` onto an existing object cannot adopt —
+    /// every holder of the object points at its own node (#12672).
+    // Cost: O(1).
+    pub(crate) fn adopt_raw_storage(obj: &Value, attr: &str, raw: &Value) -> Option<Value> {
+        let bare = attr
+            .trim_start_matches(['$', '@', '%', '&'])
+            .trim_start_matches(['!', '.']);
+        if !matches!(bare, "reified" | "storage")
+            || obj.is_vm_collection()
+            || obj.is_iteration_buffer_view()
+        {
+            return None;
+        }
+        match (obj.view(), raw.view()) {
+            (ValueView::Array(old, kind), ValueView::Array(new, _))
+                if (raw.is_vm_array() || raw.is_iteration_buffer_view())
+                    && matches!(
+                        kind,
+                        crate::value::ArrayKind::List | crate::value::ArrayKind::Array
+                    ) =>
+            {
+                if !crate::gc::Gc::ptr_eq(&old, &new) {
+                    // SAFETY: audited aliased in-place container write (see
+                    // value::aliased_mut) — a metadata copy onto the adopted
+                    // node, no other borrow into it live across the write.
+                    let data = unsafe { crate::value::gc_contents_mut(&new) };
+                    if old.value_type.is_some() {
+                        data.value_type.clone_from(&old.value_type);
+                    }
+                    if old.declared_type.is_some() {
+                        data.declared_type.clone_from(&old.declared_type);
+                    }
+                    if old.default.is_some() {
+                        data.default.clone_from(&old.default);
+                    }
+                }
+                Some(Value::array_with_kind((*new).clone(), kind))
+            }
+            (ValueView::Hash(old), ValueView::Hash(new)) if raw.is_vm_hash() => {
+                if !crate::gc::Gc::ptr_eq(&old, &new) {
+                    // SAFETY: as above.
+                    let data = unsafe { crate::value::gc_contents_mut(&new) };
+                    if old.value_type.is_some() {
+                        data.value_type.clone_from(&old.value_type);
+                    }
+                    if old.key_type.is_some() {
+                        data.key_type.clone_from(&old.key_type);
+                    }
+                    if old.declared_type.is_some() {
+                        data.declared_type.clone_from(&old.declared_type);
+                    }
+                    if old.default.is_some() {
+                        data.default.clone_from(&old.default);
+                    }
+                    data.bare_values |= old.bare_values;
+                }
+                Some(Value::hash_with_data_itemized(
+                    (*new).clone(),
+                    obj.hash_is_itemized(),
+                ))
+            }
+            _ => None,
+        }
+    }
+}
+

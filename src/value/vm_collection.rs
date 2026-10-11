@@ -34,10 +34,48 @@ impl Value {
         Value::from_repr(ValueRepr::VmHash(Gc::new(map.into())))
     }
 
+    /// A raw `VMHash` over an existing storage node.
+    // Cost: O(1).
+    pub(crate) fn vm_hash_from_gc(data: Gc<HashData>) -> Value {
+        Value::from_repr(ValueRepr::VmHash(data))
+    }
+
+    /// The storage view of a collection's own node — what Rakudo's
+    /// `$!reified` / `$!storage` attribute holds (ADR-12666 §3.6): an
+    /// `IterationBuffer` for an `Array`, a raw `VMArray` for a `List`, a raw
+    /// `VMHash` for a `Map`/`Hash`. `None` for a value that is not a list or
+    /// hash.
+    // Cost: O(1).
+    pub(crate) fn raw_storage_view(&self) -> Option<Value> {
+        match self.view() {
+            ValueView::Array(data, kind)
+                if !self.is_vm_collection()
+                    && !matches!(kind, ArrayKind::List | ArrayKind::ItemList) =>
+            {
+                Some(Value::iteration_buffer_view((*data).clone()))
+            }
+            ValueView::Array(data, _) => Some(Value::vm_array_from_gc((*data).clone())),
+            ValueView::Hash(data) => Some(Value::vm_hash_from_gc((*data).clone())),
+            _ => None,
+        }
+    }
+
     /// Whether this is a raw `VMArray` (of any element kind). A tag probe.
     #[inline]
     pub(crate) fn is_vm_array(&self) -> bool {
         self.0.is_vm_array()
+    }
+
+    /// An `IterationBuffer` over an existing storage node.
+    // Cost: O(1).
+    pub(crate) fn iteration_buffer_view(data: Gc<ArrayData>) -> Value {
+        Value::from_repr(ValueRepr::VmIterBuf(data))
+    }
+
+    /// Whether this is an `IterationBuffer` storage view. A tag probe.
+    #[inline]
+    pub(crate) fn is_iteration_buffer_view(&self) -> bool {
+        self.0.is_iteration_buffer_view()
     }
 
     /// Whether this is a raw `VMHash`. A tag probe.
@@ -88,9 +126,24 @@ impl Value {
         }
     }
 
-    /// Whether `self` and `other` are the same raw-or-high-level object over
-    /// the same storage node: `Some(true/false)` when both are collections,
-    /// `None` when either is not (the caller falls back to its general rule).
+    /// Which object over a storage node this word is: 0 the high-level
+    /// collection, 1 a raw `VMArray`/`VMHash`, 2 an `IterationBuffer` view.
+    // Cost: O(1).
+    fn storage_view_class(&self) -> u8 {
+        if self.is_vm_collection() {
+            1
+        } else if self.is_iteration_buffer_view() {
+            2
+        } else {
+            0
+        }
+    }
+
+    /// Whether `self` and `other` are the same object over the same storage
+    /// node, telling the high-level collection, its raw `VMArray`/`VMHash`
+    /// and its `IterationBuffer` apart: `Some(..)` when either is a raw or
+    /// buffer view, `None` otherwise (the caller falls back to its general
+    /// rule).
     // Cost: O(1).
     pub(crate) fn same_collection_object(&self, other: &Value) -> Option<bool> {
         let node = |v: &Value| -> Option<usize> {
@@ -100,10 +153,13 @@ impl Value {
                 _ => None,
             }
         };
-        if !self.is_vm_collection() && !other.is_vm_collection() {
+        let (ca, cb) = (self.storage_view_class(), other.storage_view_class());
+        if ca == 0 && cb == 0 {
             return None;
         }
-        let (a, b) = (node(self)?, node(other)?);
-        Some(a == b && self.is_vm_collection() == other.is_vm_collection())
+        let (Some(a), Some(b)) = (node(self), node(other)) else {
+            return Some(false);
+        };
+        Some(a == b && ca == cb)
     }
 }

@@ -199,6 +199,12 @@ impl NqpAttrSite {
             }
             NqpAttrSiteKind::BindInvres => {
                 let val = val.unwrap_or(Value::NIL);
+                if self.name.container_storage
+                    && let Some(adopted) =
+                        Interpreter::adopt_raw_storage(&obj, self.name.name.as_str(), &val)
+                {
+                    return Ok(adopted);
+                }
                 Interpreter::nqp_bindattr_named(self.op_name(), &obj, self.name, val)?;
                 Ok(obj)
             }
