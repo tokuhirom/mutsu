@@ -2437,6 +2437,14 @@ pub(crate) struct CustomTypeData {
     pub(crate) call_accepts: bool,
     /// Whether compose_type has been called.
     pub(crate) composed: bool,
+    /// Method cache installed by `install_method_cache`: name -> code object.
+    pub(crate) method_cache: Option<Vec<(String, Value)>>,
+    /// Whether a name missing from `method_cache` is an error (no fallback).
+    pub(crate) method_cache_authoritative: bool,
+    /// Callable installed by `set_parameterizer`.
+    pub(crate) parameterizer: Option<Value>,
+    /// Parameterizations produced so far, keyed by the arguments' WHICH keys.
+    pub(crate) parameterizations: Vec<(String, Value)>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

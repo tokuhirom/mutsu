@@ -592,7 +592,7 @@ impl Interpreter {
     /// the caller keeps whatever name the type was minted with. The type object
     /// itself is passed as the argument, matching the role's
     /// `method name($obj)` signature.
-    fn custom_type_how_name(&mut self, type_val: &Value) -> Result<Option<String>, RuntimeError> {
+    pub(super) fn custom_type_how_name(&mut self, type_val: &Value) -> Result<Option<String>, RuntimeError> {
         let ValueView::CustomType(c) = type_val.view() else {
             return Ok(None);
         };
