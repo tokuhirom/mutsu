@@ -318,6 +318,15 @@ pub(crate) fn head(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
     let [arg] = args else {
         return None;
     };
+    // A buffer-backed positional mixin (upstream NativeCall's `CArray[T]`) reads
+    // its elements through its own `.list`, which needs the interpreter: this
+    // pure entry would take the mixin for one item. The caller routes it
+    // (`call_method_with_values_inner`).
+    if matches!(target.view(), ValueView::Mixin(..))
+        && crate::value::value_buf::buf_target(target).is_some()
+    {
+        return None;
+    }
     let n: i64 = match arg.view() {
         ValueView::Int(i) => i,
         ValueView::Rat(num, den) => {

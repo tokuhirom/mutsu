@@ -3,7 +3,7 @@ use NativeCall;
 
 # A CArray[T] is Positional: Any's iteration methods and a non-itemized `for`
 # walk its elements instead of treating the array as one item (#10310).
-plan 8;
+plan 12;
 
 my $a = CArray[uint16].new(1, 2, 3);
 is-deeply $a.grep(* > 1).list, (2, 3), 'grep';
@@ -31,3 +31,9 @@ is-deeply @seen, [1, 2, 3], 'for over a non-itemized CArray iterates its element
 for $a { @seen.push: $_.elems }
 is-deeply @seen, [3], 'for over an itemized CArray is one item';
 is-deeply (for arr() { .Int }).list, (1, 2, 3), 'for as an expression';
+
+# `head(n)` and the hyper method call read the elements, not the CArray as one item (#12649).
+is-deeply $a.head(2).list, (1, 2), 'head(n)';
+is-deeply $a.head.list, (1,), 'head with no count';
+is-deeply $a».Str.list, ('1', '2', '3'), 'hyper method call';
+is-deeply $a».succ.list, (2, 3, 4), 'hyper method call over a numeric method';

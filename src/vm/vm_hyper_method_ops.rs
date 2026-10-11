@@ -663,6 +663,15 @@ impl Interpreter {
             && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
             crate::value::value_buf::buf_elems_or_empty(&attributes)
+        } else if matches!(target.view(), ValueView::Mixin(..))
+            && crate::value::value_buf::buf_target(&target).is_some()
+        {
+            // A buffer-backed positional (upstream NativeCall's `CArray[T]`, a
+            // mixin over a `CArray`) is `Positional`: hyper over the elements
+            // its `.list` reads, not over the CArray as one item.
+            // Cost: O(n) to materialize the elements, n = elements.
+            let list = self.call_method_with_values(target.clone(), "list", vec![])?;
+            hyper_source_items(&list)
         } else {
             hyper_source_items(&target)
         };
