@@ -3470,12 +3470,17 @@ impl Interpreter {
             && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply" || class_name == "IO::Handle" || class_name == "IO::Pipe" || class_name == "IO::CatHandle")
             && !matches!(target.view(), ValueView::Package(name) if name.as_str().starts_with("IO::Spec"))
         {
-            // The splitter argument may be a stored regex closed over its
-            // defining scope; install it around the split the same way `~~`
-            // and `.match`/`.subst` do.
-            let splitter = args.first().cloned();
-            return self
-                .with_regex_closure_scope(splitter, |me| me.handle_split_method(target, args));
+            // `IO::Path.split` splits the file's contents, not the path (the
+            // row's routine, `method_table::io_path_content`).
+            if let ValueView::Instance { class_name, attributes, .. } = target.view()
+                && crate::value::DispatchShape::from_instance_class(class_name)
+                    == Some(crate::value::DispatchShape::IoPath)
+            {
+                let attributes = crate::value::AttrMap::clone(&attributes.as_map());
+                return self.io_path_split(&attributes, &args);
+            }
+            // The `Str`/`Cool` rows' routine (`method_table::str_interp`).
+            return self.dispatch_split_row(target, args);
         }
 
         // .of on Array/Hash

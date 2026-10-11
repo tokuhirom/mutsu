@@ -1,5 +1,5 @@
 //! `IO::Path`'s content rows (ADR-11276 §9.19): the methods that read the file
-//! the path names (`slurp`, `lines`, `words`, `comb`) or open it (`open`). They
+//! the path names (`slurp`, `lines`, `words`, `comb`, `split`) or open it (`open`). They
 //! resolve the path against the cwd and use the interpreter's handle table, so
 //! each is an interpreter row.
 
@@ -55,7 +55,14 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("comb", 0, comb_row, RowFlags::NONE, &["match", "close"]),
     row!("comb", 1, comb_row, RowFlags::ANY_ARGS, &["match", "close"]),
     row!("comb", 2, comb_row, RowFlags::ANY_ARGS, &["match", "close"]),
+    row!("split", 1, split_row, SPLIT_FLAGS, &[]),
+    row!("split", 2, split_row, SPLIT_FLAGS, &[]),
 ];
+
+/// `split` binds any splitter (a string, a list, a `Regex`) and every named
+/// argument: `:enc`/`:chomp`/`:nl-in` are the file's, the rest the split's
+/// (`:skip-empty`, `:v`, ...).
+const SPLIT_FLAGS: RowFlags = RowFlags::ANY_ARGS.or(RowFlags::ANY_NAMED);
 
 /// `IO::Path.slurp`.
 // Cost: O(b), b = the file's size in bytes.
@@ -117,4 +124,17 @@ fn comb_row(
 ) -> Option<Result<Value, RuntimeError>> {
     let ctx = PathCtx::of(target)?;
     Some(interp.io_path_comb(&ctx.attributes, &joined_args(args, named.pairs())))
+}
+
+/// `IO::Path.split($splitter)` and `split($splitter, $limit)`: the file's
+/// contents split, not the path (§9.76).
+// Cost: O(b), b = the file's size in bytes, plus the splitter's own cost.
+fn split_row(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ctx = PathCtx::of(target)?;
+    Some(interp.io_path_split(&ctx.attributes, &joined_args(args, named.pairs())))
 }

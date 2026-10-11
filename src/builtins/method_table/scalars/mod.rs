@@ -54,6 +54,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     str_numeric::STR_ROWS,
     str_numeric::COOL_ROWS,
     str_args::COOL_ROWS,
+    str_args::COOL_FMT_ROWS,
     str_args::STR_SHARED_ROWS,
     str_args::STR_ROWS,
     str_args::UNI_ROWS,

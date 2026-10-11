@@ -1,5 +1,6 @@
 //! The interpreter routines behind `Str`'s and `Cool`'s text rows that need
-//! the interpreter (ADR-11276 §9.75): `subst`, `IO`, `sprintf` and `printf`.
+//! the interpreter (ADR-11276 §9.75, §9.76): `subst`, `IO`, `sprintf`, `printf`
+//! and `split`.
 //! The `method_table::str_interp` rows and the by-name arms of
 //! `dispatch_method_by_name_1` both call these, so each has one
 //! implementation.
@@ -177,5 +178,19 @@ impl Interpreter {
             return Some(self.call_function("sprintf", full));
         }
         Some(self.builtin_sprintf(&full, false))
+    }
+
+    /// `.split($splitter, $limit?, *%adverbs)`: the receiver's string split by a
+    /// string, a list of strings or a regex. A regex splitter may be a stored
+    /// regex closed over its defining scope, installed around the split the way
+    /// `~~` and `.match`/`.subst` do.
+    // Cost: O(n) in the haystack, plus the splitter's own cost.
+    pub(crate) fn dispatch_split_row(
+        &mut self,
+        target: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let splitter = args.first().cloned();
+        self.with_regex_closure_scope(splitter, |me| me.handle_split_method(target, args))
     }
 }

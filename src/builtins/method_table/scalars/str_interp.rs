@@ -1,6 +1,6 @@
 //! `Str`'s and `Cool`'s text rows that need the interpreter (ADR-11276 §9.75):
 //! `match` on `Str`; `subst`, `trans`, `indices` and `IO` on `Str` and `Cool`;
-//! `sprintf` and `printf` on `Cool`.
+//! `sprintf` and `printf` on `Cool`; `split` on `Str` and `Cool` (§9.76).
 //!
 //! A regex argument may close over its defining scope, a replacement may be a
 //! closure, `subst`/`match` publish the caller's `$/`, `IO` reads `$*CWD` and
@@ -44,6 +44,8 @@ macro_rules! shared_rows {
             row!($owner, "indices", 1, ARGS_NAMED, indices),
             row!($owner, "indices", 2, ARGS_NAMED, indices),
             row!($owner, "IO", 0, RowFlags::NONE, io, &["CWD", "SPEC"]),
+            row!($owner, "split", 1, ARGS_NAMED, split),
+            row!($owner, "split", 2, ARGS_NAMED, split),
         ]
     };
 }
@@ -105,6 +107,17 @@ fn subst(
         return Some(answer);
     }
     Some(interp.dispatch_subst_row(target.clone(), args))
+}
+
+/// `.split`.
+// Cost: O(n) in the haystack, plus the splitter's own cost.
+fn split(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    Some(interp.dispatch_split_row(target.clone(), joined(args, named)))
 }
 
 /// `.trans`.
