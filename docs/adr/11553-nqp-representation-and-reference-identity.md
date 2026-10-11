@@ -210,3 +210,11 @@ implemented or "Not applicable" before its behavior is delivered.
   NQP representation test, instead of a string-keyed environment marker.
   `t/vm/nqp-iscoderef-code-body.t` pins both the high-level routine and its
   direct body against Rakudo. The other 16 ops remain open under #11553.
+- **BOOT scalars (`isint`/`isnum`/`isstr`, `bootint`/`bootnum`/`bootstr`)**:
+  a raw box is an instance of a lazily registered built-in class named after
+  the BOOT type, holding the native value in one hidden attribute
+  (`src/runtime/boot_scalar.rs`). `box_i/n/s`, `unbox_*`, `hllize` and the
+  three tests share that one representation, so aliases agree and
+  `hllize` yields the plain `Int`/`Num`/`Str`.
+  `t/vm/nqp-boot-scalar-repr.t` pins the Rakudo answers. The remaining 10 ops
+  (VM collections and native references) are still open.

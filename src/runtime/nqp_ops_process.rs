@@ -264,7 +264,10 @@ impl Interpreter {
             // `p6box_*`/`unbox_*` above), so every value here is already its
             // own HLL box and this is the identity function.
             // Cost: O(1).
-            "hllize" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
+            "hllize" => {
+                let v = args.first().cloned().unwrap_or(Value::NIL);
+                Ok(Self::unbox_boot_scalar(&v).unwrap_or(v))
+            }
 
             // nqp::what($v) — the type object of $v, i.e. `$v.WHAT` at the
             // nqp level. Routed through the ordinary method dispatcher, which
