@@ -31,3 +31,13 @@ reason = """rakudo caches a Str interpolated as <$rx> by mixing Match::CachedCom
 into that Str object in place, changing its .WHICH; a later `'string' (elem) @knownRegexes` \
 is then False and test 6 takes the :all path. mutsu does not reproduce the cache artefact \
 (user decision 2026-09-27)."""
+
+[[divergence]]
+dist = "NativeHelpers::Blob"
+file = "t/02-cstruct.rakutest"
+shape = { verdict = "die", ok = 0, nok = 0, plan = 34, first_failure = "Unknown VM; don't know how to compile test libraries" }
+issue = 12829
+reason = """the test's own helper t/CompileTestLib.rakumod dispatches on `$*VM.name` (moar/jvm) \
+and dies on anything else; mutsu reports 'mutsu' and will not claim 'moar' (same decision as \
+LibraryMake, user decision 2026-09-25). With the helper's check bypassed all 34 assertions pass \
+under mutsu."""

@@ -100,6 +100,22 @@ impl Interpreter {
                 Some(resolved) => std::borrow::Cow::Owned(resolved),
                 None => constraint,
             }
+        } else if !plain_builtin
+            && let Some((base, _)) = constraint.split_once('[')
+            && !base.is_empty()
+            && !crate::qualified::is_qualified_str(base)
+            && !self.unshadowed_builtin_type_name(base)
+        {
+            // A parameterized user role/class (`my LA[P] $x`) imported from a
+            // module: its type object must carry the exporter's qualified
+            // name (`LAM::LA[P]`), or `.=` and `.^name` look up the bare
+            // spelling and miss the type's methods.
+            let resolved = self.resolve_declared_type_name(&constraint);
+            if resolved == *constraint {
+                constraint
+            } else {
+                std::borrow::Cow::Owned(resolved)
+            }
         } else {
             constraint
         };

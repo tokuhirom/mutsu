@@ -352,6 +352,40 @@ impl Interpreter {
                 self.stack.push(Value::package(Symbol::intern(&resolved)));
                 return Ok(());
             }
+            // The base of a parameterized USER type imported from a module
+            // (`my LA[P] $x .= new` spells its invocant `LA[P]`) names the
+            // exporter's qualified type, exactly as the unbracketed bareword
+            // does. A role base becomes the parameterization `R[P]` the
+            // subscript form builds, so its methods are found.
+            let base = &name[..open];
+            if !base.is_empty()
+                && !crate::qualified::is_qualified_str(base)
+                && !self.unshadowed_builtin_type_name(base)
+            {
+                let qualified = self.resolve_declared_type_name(name);
+                let qualified_base = qualified.split('[').next().unwrap_or(&qualified);
+                if qualified_base != base && self.is_role(qualified_base) {
+                    let args = &name[open + 1..name.len() - 1];
+                    if !args.is_empty()
+                        && !args.contains(['[', ']'])
+                        && args.split(',').all(|a| !a.trim().is_empty())
+                    {
+                        let type_args = args
+                            .split(',')
+                            .map(|a| {
+                                Value::package(Symbol::intern(
+                                    &self.resolve_declared_type_name(a.trim()),
+                                ))
+                            })
+                            .collect();
+                        self.stack.push(Value::parametric_role(
+                            Symbol::intern(qualified_base),
+                            type_args,
+                        ));
+                        return Ok(());
+                    }
+                }
+            }
         }
         let val = if name == "Bool::True" {
             Value::TRUE
