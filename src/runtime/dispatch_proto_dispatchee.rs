@@ -198,8 +198,20 @@ impl Interpreter {
         candidates: &[Value],
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
+        // One declared `multi` can be captured more than once (it sits under
+        // several registry keys), each copy a distinct Sub value: keep the
+        // first copy of each declaration, as the by-name gather's dedup does.
+        let mut seen = std::collections::HashSet::new();
         let rows: Vec<(String, std::sync::Arc<FunctionDef>)> = candidates
             .iter()
+            .filter(|code| match code.view() {
+                ValueView::Sub(data) => seen.insert(crate::ast::function_body_fingerprint(
+                    &data.params,
+                    &data.param_defs,
+                    &data.body,
+                )),
+                _ => false,
+            })
             .filter_map(|code| {
                 let mut def = Self::dispatchee_function_def(code, family)?;
                 // Its `where` clauses and defaults run in its declaring unit.
