@@ -450,6 +450,14 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    `CALLER::`/`CALLERS::` read the caller frame through the whole chain
    (`Env::get_through_callers`), whatever links it holds.
 
+   **Slice 5 done** (`fix/12529-my-class-symbolic-scope`): a static link
+   also skips the caller frames for a bare type-shaped name (an unqualified
+   identifier starting with an uppercase letter), which closes the `my
+   class` pin. A caller frame binds such a name only for a type it declared
+   lexically; a package-scoped type is reached through the symbol table,
+   so `::('T')` in a callee still finds an `our class T` the caller
+   declared, and no longer finds its `my class T`.
+
    What is still dynamic: a reflective *write* (`EVAL q[$x = 1]`) lands in
    the frame's overlay and the return merge carries it to the caller, as
    before; only reads follow the link. The pins for §1.3's sub

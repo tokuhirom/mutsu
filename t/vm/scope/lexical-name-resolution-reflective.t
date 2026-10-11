@@ -6,7 +6,7 @@ use Test;
 # Dynamic variables still resolve through the callers. Every expectation was
 # checked against rakudo.
 
-plan 16;
+plan 20;
 
 my $p = 'program';
 
@@ -77,5 +77,20 @@ is call-sym-closure(), 'not visible', 'a program-scope closure\'s ::(\'$x\') doe
 
 sub later-write() { my $lw = 1; my &c = -> { EVAL q[$lw] }; $lw = 2; c() }
 is later-write(), 2, 'a closure made in a routine reads that routine\'s later write through EVAL';
+
+# --- type names (slice 5) --------------------------------------------------
+
+my class ProgramType { }
+sub sym-type($n) { my $t = ::($n); $t ~~ Failure ?? do { $t.so; 'not visible' } !! $t.^name }
+sub caller-my-class() { my class CallerOnlyType { }; sym-type('CallerOnlyType') }
+is caller-my-class(), 'not visible', '::($n) in a callee does not find the caller\'s `my class`';
+
+sub caller-our-class() { class CallerOurType { }; sym-type('CallerOurType') }
+is caller-our-class(), 'CallerOurType', '::($n) in a callee finds a package-scoped class the caller declared';
+
+is sym-type('ProgramType'), 'ProgramType', '::($n) finds a program-scope `my class`';
+
+sub own-my-class() { my class OwnType { }; my $t = ::('OwnType'); $t.^name }
+is own-my-class(), 'OwnType', '::($n) finds the routine\'s own `my class`';
 
 done-testing;
