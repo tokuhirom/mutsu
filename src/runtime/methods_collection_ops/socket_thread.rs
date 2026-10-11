@@ -250,7 +250,7 @@ impl Interpreter {
         // NativeCall consumers of it died: Cro::TCP::NoDelay's
         // `setsockopt(TCP_NODELAY)` failed on the bogus fd, taking down every
         // Cro client that talks to a server in its own process.
-        match Self::connect_real_tcp(&host, port) {
+        match Self::connect_real_tcp(host, port) {
             Ok(socket) => {
                 let conn_id = super::super::native_methods::next_async_socket_id();
                 let local = socket.local_addr().ok();
