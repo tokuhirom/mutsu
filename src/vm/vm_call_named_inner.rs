@@ -96,6 +96,12 @@ impl Interpreter {
         {
             let parent = self.env().clone();
             self.set_env(crate::env::Env::scoped_child(parent));
+            // A frame that skips its callers for a lexical (ADR-12529 phase 3).
+            // The binder below still resolves each argument's source variable
+            // in the caller's scope, so it runs with links suppressed.
+            if cf.code.links_frame_to_unit() {
+                self.env_mut().mark_outer_is_unit();
+            }
         }
 
         // Always push a routine frame so that &?ROUTINE works inside anonymous
@@ -206,20 +212,23 @@ impl Interpreter {
         let rw_bindings = if args.is_empty() && cf.param_defs.is_empty() && cf.params.is_empty() {
             vec![]
         } else {
-            match loan_env!(
-                self,
-                // `cf.param_name_syms` is `cf.param_defs[i].name` interned at
-                // registration time, so the binder names each parameter without
-                // re-hashing it per call (#7766).
-                bind_function_args_values_with_syms(
-                    &cf.param_defs,
-                    &cf.params,
-                    &args,
-                    Some((true, cf.code.reads_args_hash)),
-                    &cf.param_name_syms,
-                    &[]
+            let bound = crate::env::with_static_links_suppressed(|| {
+                loan_env!(
+                    self,
+                    // `cf.param_name_syms` is `cf.param_defs[i].name` interned at
+                    // registration time, so the binder names each parameter
+                    // without re-hashing it per call (#7766).
+                    bind_function_args_values_with_syms(
+                        &cf.param_defs,
+                        &cf.params,
+                        &args,
+                        Some((true, cf.code.reads_args_hash)),
+                        &cf.param_name_syms,
+                        &[]
+                    )
                 )
-            ) {
+            });
+            match bound {
                 Ok(bindings) => bindings,
                 Err(e) => {
                     // `pkg_guard` restores `current_package` when dropped by
@@ -239,12 +248,6 @@ impl Interpreter {
                 }
             }
         };
-        // A frame that skips its callers for a lexical (ADR-12529 phase 3) is
-        // marked once its parameters are bound: the binder resolves each
-        // argument's source variable, which is the caller's.
-        if cf.code.links_frame_to_unit() {
-            self.env_mut().mark_outer_is_unit();
-        }
         self.arm_rw_param_rebinds(&cf.code, &rw_bindings);
         self.record_call_capture(cf.code.uses_capture, None, &args);
         // The binding is done: the call site's `static_arg_types` must not

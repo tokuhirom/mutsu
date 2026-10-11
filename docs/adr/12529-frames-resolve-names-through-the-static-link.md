@@ -485,6 +485,38 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    paths, and `ArrayData::items` falling out of line as the call path grew
    (now `#[inline]`).
 
+   **Slice 7 done** (`fix/12641-rw-writeback-through-cells`, #12641):
+   every routine declared at program scope now links its frame
+   (`CompiledCode::links_frame_to_unit` is `outer_is_unit`), not only
+   those that name lexicals by string. #12641's last blocker, the light-call
+   `is rw` writeback, turned out not to need a new calling convention: it
+   broke because slice 6 stopped `Env::scoped_child` from chaining a new
+   frame past an empty marked caller root, and the writeback depends on that
+   chain shape. Marking a root no longer pins it in the chain. The named
+   call path marks its root at creation and runs the binder with links
+   suppressed, since a binder-opened tier can make the post-bind env a
+   non-root. Two rules keep the dynamic machinery working:
+
+   - Only the frame a lookup starts in decides where its lexicals continue:
+     the walk applies the link of the first frame root it meets and ignores
+     the links of caller frames beyond it. A closure called from a linked
+     routine (`lives-ok { ... }`) walks on past that routine into its own
+     block, where `roast/S06-signature/type-capture.t`'s `my class Foo` lives
+     (the global `class Foo` won otherwise).
+   - The fast path forces a root only for a body that names lexicals by
+     string; any other program-scope routine that would run in its caller's
+     env still does, unmarked.
+
+   With every program-scope routine linked, the whole `t/` tree and the
+   whitelisted roast pass. Release-build Ir against the merge base: `bench-fib`
+   +0.36%, `bench-tak` +0.18%, `method-call` -0.43%, `poly-call` +0.00%,
+   `bench-ctor` -0.33%, `bench-multi-dispatch` +0.12%. A first measurement
+   showed +0.4% to +1.1%, which was none of this slice's logic:
+   `nanbox::payload_op`, the dispatch every heap clone and drop goes through,
+   had doubled in size because the optimizer inlined two `Gc::drop`s into
+   it. Its release path is now out of line (`release_gc`), which keeps it
+   the same size whatever the codegen-unit split.
+
    What is still dynamic: a reflective *write* (`EVAL q[$x = 1]`) lands in
    the frame's overlay and the return merge carries it to the caller, as
    before; only reads follow the link. The pins for §1.3's sub
