@@ -246,16 +246,11 @@ impl Interpreter {
                     caps
                 });
         }
-        for start in regex_scan_positions(self, parsed, chars, 0, pkg) {
-            if let Some((end, mut caps)) =
-                self.regex_match_end_from_caps_in_pkg(parsed, chars, start, pkg)
-            {
-                caps.finish_span(start, end);
-                caps.set_target(Some(target.clone()));
-                return Some(caps);
-            }
-        }
-        None
+        let starts = regex_scan_positions(self, parsed, chars, 0, pkg);
+        let (start, end, mut caps) = self.rx_scan_first(parsed, chars, starts, pkg)?;
+        caps.finish_span(start, end);
+        caps.set_target(Some(target.clone()));
+        Some(caps)
     }
 
     fn parse_anchored_single_subrule(pattern: &str) -> Option<String> {

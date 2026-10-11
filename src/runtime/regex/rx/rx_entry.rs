@@ -125,6 +125,50 @@ impl Interpreter {
         self.rx_match_first_in(pattern, chars, start, pkg, false)
     }
 
+    /// The first start in `starts` (an unanchored scan's candidate positions,
+    /// in order) at which `pattern` matches, with the match's end and
+    /// captures: [`Self::rx_match_first`] at each start, but the pattern's
+    /// guards, program and scratch state are looked up once for the scan
+    /// rather than once per position.
+    // Cost: O(1) per start that fails at once, plus the matches attempted.
+    pub(in crate::runtime::regex) fn rx_scan_first(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        starts: impl Iterator<Item = usize>,
+        pkg: Symbol,
+    ) -> Option<(usize, usize, RegexCaptures)> {
+        if super::super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+            || pattern.ignore_mark
+        {
+            for start in starts {
+                if let Some((end, caps)) = self.rx_match_first(pattern, chars, start, pkg) {
+                    return Some((start, end, caps));
+                }
+            }
+            return None;
+        }
+        let program = program_or_raise(pattern)?;
+        let _region = crate::profile::enter(crate::profile::Region::Regex);
+        let mut scratch = SCRATCH.with(|s| s.borrow_mut().pop()).unwrap_or_default();
+        let mut found = None;
+        for start in starts {
+            crate::vm::vm_stats_regex_vm::record_regex_vm_run();
+            let goal = Goal::First;
+            let result = if program.has_call {
+                self.rx_run_in::<true>(&program, chars, start, pkg, goal, None, &mut scratch)
+            } else {
+                self.rx_run_in::<false>(&program, chars, start, pkg, goal, None, &mut scratch)
+            };
+            if let Some((end, caps)) = result {
+                found = Some((start, end, caps));
+                break;
+            }
+        }
+        SCRATCH.with(|s| s.borrow_mut().push(scratch));
+        found
+    }
+
     fn rx_match_first_in(
         &mut self,
         pattern: &RegexPattern,
