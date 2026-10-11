@@ -120,6 +120,30 @@ impl Interpreter {
             // is the whole observable effect.
             // Cost: O(1).
             "p6setautothreader" => Ok(args.first().cloned().unwrap_or(Value::NIL)),
+            // nqp::p6argvmarray(): the running call's positional arguments
+            // (a method's invocant first) as a raw list. The compiler flags a code object that reads it
+            // (`CompiledCode::uses_capture`), so the binder records the call's
+            // capture, the one `nqp::usecapture` answers (ADR-11505 §2.1).
+            // Cost: O(a), a = positional arguments.
+            "p6argvmarray" => Ok(self.nqp_p6argvmarray()),
+            // nqp::p6bindsig() / nqp::p6trybindsig(): bind the running frame's
+            // arguments to its signature, unless the frame is bound already.
+            // mutsu binds every frame before its body runs (a failed bind
+            // raises before the first statement), so wherever Raku code can
+            // reach these ops the frame is bound, and both take Rakudo's
+            // bound-frame branch: no rebinding, `p6bindsig` answers null and
+            // `p6trybindsig` 1 (ADR-11505 §2.2).
+            // Cost: O(1).
+            "p6bindsig" => Ok(Value::NIL),
+            // Cost: O(1).
+            "p6trybindsig" => Ok(Value::int(1)),
+            // nqp::p6setpre() / nqp::p6clearpre(): set / clear the running
+            // frame's "inside a PRE phaser" flag and answer null. The flag's
+            // only reader is NQP's `p6inpre`, which the Raku HLL does not
+            // register, so no Raku code can observe it: the null is the
+            // whole observable effect (ADR-11505 §2.3).
+            // Cost: O(1).
+            "p6setpre" | "p6clearpre" => Ok(Value::NIL),
             _ => return self.call_nqp_op_ffi(op, args),
         })
     }
@@ -207,6 +231,18 @@ impl Interpreter {
         let mut args = positional;
         args.extend(named.iter().map(|(k, v)| Value::pair(k.clone(), v.clone())));
         Ok(args)
+    }
+
+    fn nqp_p6argvmarray(&self) -> Value {
+        let capture = self.current_call_capture();
+        let positional = match capture.view() {
+            ValueView::Capture { positional, .. } => positional
+                .iter()
+                .map(|v| crate::runtime::types::unwrap_varref_value(v.clone()))
+                .collect(),
+            _ => Vec::new(),
+        };
+        Value::vm_array(positional)
     }
 
     fn nqp_p6isbindable(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

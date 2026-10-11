@@ -102,7 +102,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 516] = [
+static NQP_OPS: [(&str, NqpOpTable); 521] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -476,14 +476,17 @@ static NQP_OPS: [(&str, NqpOpTable); 516] = [
     ("ordat", NqpOpTable::Builtin),
     ("ordbaseat", NqpOpTable::Str),
     ("ordfirst", NqpOpTable::Str),
+    ("p6argvmarray", NqpOpTable::P6),
     ("p6bindassert", NqpOpTable::P6),
     ("p6bindattrinvres", NqpOpTable::List),
     ("p6bindcaptosig", NqpOpTable::P6),
+    ("p6bindsig", NqpOpTable::P6),
     ("p6box", NqpOpTable::P6),
     ("p6box_i", NqpOpTable::Value),
     ("p6box_n", NqpOpTable::Value),
     ("p6box_s", NqpOpTable::Value),
     ("p6capturelex", NqpOpTable::P6),
+    ("p6clearpre", NqpOpTable::P6),
     ("p6decontrv", NqpOpTable::P6),
     ("p6decontrv_6c", NqpOpTable::P6),
     ("p6definite", NqpOpTable::P6),
@@ -491,7 +494,9 @@ static NQP_OPS: [(&str, NqpOpTable); 516] = [
     ("p6isbindable", NqpOpTable::P6),
     ("p6scalarwithvalue", NqpOpTable::List),
     ("p6setautothreader", NqpOpTable::P6),
+    ("p6setpre", NqpOpTable::P6),
     ("p6trialbind", NqpOpTable::P6),
+    ("p6trybindsig", NqpOpTable::P6),
     ("p6typecheckrv", NqpOpTable::P6),
     ("parameterizetype", NqpOpTable::Process),
     ("pop", NqpOpTable::List),

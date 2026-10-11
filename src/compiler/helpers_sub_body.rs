@@ -697,7 +697,9 @@ impl Compiler {
         // dispatch picks its candidate by signature at the call site, which
         // is exactly the by-name resolution TRIR replaces; `is rw`/`is raw`
         // on the ROUTINE decline because the caller then owns the returned
-        // container.
+        // container. A routine that reads its call's capture
+        // (`nqp::usecapture`, `nqp::p6argvmarray`) declines too: a TRIR entry
+        // binds no capture for it to read.
         // A frame-lexical routine (ADR-0113) no longer sets `has_inner_subs`;
         // TRIR inlines it at its call sites (ADR-0112 Step 2), so it is
         // handed the names the frame-lexical proof admitted.
@@ -709,7 +711,8 @@ impl Compiler {
             .map(|p| p.name)
             .collect();
         frame_lexicals.dedup();
-        if !multi && !is_rw && !is_raw && !is_cached && !cf.has_inner_subs {
+        if !multi && !is_rw && !is_raw && !is_cached && !cf.has_inner_subs && !cf.code.uses_capture
+        {
             cf.trir = crate::trir::compile::compile_routine(
                 crate::symbol::Symbol::intern(name),
                 param_defs,
