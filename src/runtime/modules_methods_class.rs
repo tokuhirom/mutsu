@@ -27,6 +27,7 @@ mod methods_dispatch_match;
 mod methods_dispatch_match2;
 mod methods_dispatch_match3;
 mod methods_dispatch_new;
+mod methods_text_rows;
 mod methods_distribution;
 mod methods_distribution_cur_compunit;
 mod methods_distribution_cur_files;

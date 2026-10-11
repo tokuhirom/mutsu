@@ -1610,6 +1610,25 @@ is an interpreter row (`subst`, `trans`, `match`, `indices`, `IO`, `sprintf`, `p
   `Index out of range` where Rakudo says `Position in calling 'substr-eq' out of range` (`RuntimeError::out_of_range_failure` ignores its `what`);
   `parse-base`'s `"camel"`/`"beer"` easter-egg candidates.
 
+### 9.75 The text interpreter rows: `match`, `subst`, `trans`, `indices`, `IO`, `sprintf`, `printf` (2026-10-11)
+
+`refactor/11276-text-interp-rows`. The interpreter half of the `text` group: after it and §9.74, `--inventory text` owes only `split` and `fmt` (named
+arguments and several arities each) and the unreachable `Cool.Int` (§9.71).
+
+- **`method_table/scalars/str_interp.rs`**: `Handler::Interp` rows for `match` on `Str` (as `Any.match`, §9.60); `subst` (arities 1 and 2), `trans`
+  (slurpy), `indices` (arities 1 and 2) and `IO` (`:CWD`/`:SPEC`) on `Str` and `Cool`; `sprintf` and `printf` (slurpy) on `Cool`. `match`, `subst`, `trans`
+  and `indices` bind any positional argument (a `Regex`, a positional `Pair`, a closure) and every named one (`RowFlags::ANY_NAMED`): the adverbs are the
+  pattern's.
+- **One routine each.** The by-name arms of `dispatch_method_by_name_1` for `subst`, `IO`, `sprintf` and `printf` became `Interpreter::dispatch_subst_row`,
+  `dispatch_io_coerce`, `dispatch_sprintf_row` and `dispatch_printf_row` (`runtime/methods_text_rows.rs`); the arms and the rows call them, and the
+  rows call the existing `dispatch_match_row`, `dispatch_trans` and `dispatch_indices`.
+- **`subst` keeps the VM's native substitution.** A row runs ahead of the VM's "lever A" block, so the row calls `try_native_subst` first (a `Str`
+  receiver, a plain pattern, a literal replacement, at most `:g`) and the interpreter's `dispatch_subst_row` otherwise: the same order a call that misses
+  the table takes.
+- No behaviour change was intended; a `raku` differential probe over these names on `Str`, `Int` and `List` receivers matched before and after, except two
+  answers that were already wrong and are filed: a match inside a block called by another routine does not set the outer `$/` (#12720), and
+  `sprintf("%d", "x")` answers `0` (#12721).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

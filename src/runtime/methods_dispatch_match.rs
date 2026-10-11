@@ -95,57 +95,10 @@ impl Interpreter {
             "put" if args.is_empty() && !Self::is_io_cathandle(&target) => {
                 Some(self.dispatch_put(&target))
             }
-            "printf"
-                if args.is_empty()
-                    && !Self::is_io_cathandle(&target)
-                    && !matches!(target.view(), ValueView::Junction { .. }) =>
-            {
-                Some(self.dispatch_printf(&target))
-            }
-            // Method form `$format.printf(*@args)` == `printf($format, @args)`,
-            // the same `Cool` convention `.sprintf` already follows (documented
-            // in `Type/independent-routines.rakudoc`). Restricted to non-`Instance`
-            // receivers so `$*OUT.printf(...)` / `IO::CatHandle.printf(...)` keep
-            // their own handle-writing dispatch. Note this is `Cool.printf`, which
-            // has no `Junction:D` candidate — a Junction *argument* is a directive
-            // error here, exactly as in Rakudo, so it must NOT autothread; a
-            // Junction *invocant* does autothread (it is the `Str(Cool)` format),
-            // which `call_function` already handles, so route those through it.
-            "printf" if !matches!(target.view(), ValueView::Instance { .. }) => {
-                let mut full = Vec::with_capacity(args.len() + 1);
-                full.push(target.clone());
-                full.extend(args.iter().cloned());
-                if matches!(target.view(), ValueView::Junction { .. }) {
-                    return Some(self.call_function("printf", full));
-                }
-                Some((|| {
-                    let formatted = self.builtin_sprintf(&full, false)?;
-                    self.write_to_named_handle("$*OUT", &formatted.to_string_value(), false)?;
-                    Ok(Value::TRUE)
-                })())
-            }
-            "sprintf"
-                if args.is_empty() && !matches!(target.view(), ValueView::Junction { .. }) =>
-            {
-                Some(self.dispatch_sprintf(&target))
-            }
-            "sprintf" => {
-                // Method form `$format.sprintf(*@args)` == `sprintf($format, @args)`.
-                // Delegate to `builtin_sprintf` (the single source of truth) so a
-                // bare type object arg gets the same string-context warning and
-                // "" coercion as the sub form. Reached for 2+ args, and for the
-                // 1-arg type-object case the native fast-path defers here (the
-                // 0-arg arm above is a no-directive passthrough).
-                let mut full = Vec::with_capacity(args.len() + 1);
-                full.push(target.clone());
-                full.extend(args.iter().cloned());
-                // A Junction invocant is the `Str(Cool) $format`, which
-                // autothreads: `call_function` owns that threading.
-                if matches!(target.view(), ValueView::Junction { .. }) {
-                    return Some(self.call_function("sprintf", full));
-                }
-                Some(self.builtin_sprintf(&full, false))
-            }
+            // `Cool.printf` / `Cool.sprintf`: the rows' handlers too
+            // (`method_table::str_interp`).
+            "printf" => self.dispatch_printf_row(&target, &args),
+            "sprintf" => self.dispatch_sprintf_row(&target, &args),
             "zprintf" if !args.is_empty() => {
                 // Method form `$format.zprintf(*@args)`: mirrors the `.sprintf`
                 // arm above (interpreter-aware coercion via `builtin_sprintf`),
@@ -290,33 +243,7 @@ impl Interpreter {
             // A regex argument may be a closure over its defining scope; install
             // it around the match the same way `~~` does.
             "match" => Some(self.dispatch_match_row(target, args)),
-            "subst" => {
-                // A string (non-regex) pattern leaves the caller's `$/` alone,
-                // as in Rakudo; `dispatch_subst` publishes the match for
-                // `subst-mutate` and for a closure replacement, so restore it.
-                let keep_slash = args
-                    .first()
-                    .is_some_and(|a| matches!(a.deref_container().view(), ValueView::Str(_)))
-                    && !matches!(
-                        args.get(1).map(Value::view),
-                        Some(ValueView::Sub(_)) | Some(ValueView::WeakSub(_)) | Some(ValueView::Routine { .. })
-                    );
-                let saved = keep_slash.then(|| self.env.get("/").cloned());
-                let result = self.with_regex_closure_scope(args.first().cloned(), |me| {
-                    me.dispatch_subst(target, &args)
-                });
-                if let Some(saved) = saved {
-                    match saved {
-                        Some(v) => {
-                            self.env.insert("/".to_string(), v);
-                        }
-                        None => {
-                            self.env.remove("/");
-                        }
-                    }
-                }
-                Some(result)
-            }
+            "subst" => Some(self.dispatch_subst_row(target, args)),
             // Cost: see `dispatch_wordcase` (src/runtime/methods_string_wordcase.rs).
             "wordcase" if !args.is_empty() => Some(self.dispatch_wordcase(target, &args)),
             "comb" if !args.is_empty() => {
@@ -339,67 +266,7 @@ impl Interpreter {
                     })
                 }
             }
-            // `.IO` takes only named adverbs (`:CWD`, `:SPEC`); accept and IGNORE
-            // them. Per Raku, `'.'.IO(:CWD($x))` does NOT forward `:CWD` to the
-            // resulting IO::Path (unlike `IO::Path.new('.', :CWD($x))`), so the
-            // path keeps the current `$*CWD`/`$*SPEC`.
-            "IO" if args.is_empty()
-                || args.iter().all(|a| {
-                    matches!(a.view(), ValueView::Pair(k, _) if k == "CWD" || k == "SPEC")
-                        || matches!(a.view(), ValueView::ValuePair(k, _)
-                                if k.to_string_value() == "CWD" || k.to_string_value() == "SPEC")
-                }) =>
-            {
-                // IO handle objects have their own `.IO` (returning the path of
-                // the open file); never coerce them via stringification.
-                if matches!(target.view(), ValueView::Instance { class_name, .. }
-                    if matches!(class_name.resolve().as_str(),
-                        "IO::Handle" | "IO::Pipe" | "IO::CatHandle"))
-                {
-                    return None;
-                }
-                // ADR-0051 P4: an `Instance` receiver whose ancestry does not
-                // actually provide `.IO` (no `Cool` anywhere in its dispatch
-                // chain) must not be answered by this generic interceptor --
-                // it is receiver-class-blind by construction (unconditional
-                // `target.to_string_value()`), which is exactly the leak the
-                // ADR closes. `should_bypass_native_fastpath`/`shadows_builtin`
-                // already route this call past this function entirely for a
-                // plain (non-wildcard-handles) class; this is the direct
-                // guard the ADR also calls for, so this interceptor stays
-                // correct even if reached by a future call path that skips
-                // those two gates.
-                if matches!(target.view(), ValueView::Instance { .. })
-                    && !self.e2_native_method_exists(&target, "IO")
-                {
-                    return None;
-                }
-                // `.IO` on an IO::Path (sub)class type object returns the type
-                // object itself, so `IO::Path::Unix === IO::Path::Unix.IO`.
-                if let ValueView::Package(name) = target.view() {
-                    let n = name.resolve();
-                    if n == "IO::Path" || n.starts_with("IO::Path::") {
-                        return Some(Ok(target.clone()));
-                    }
-                    if let Some(err) = crate::runtime::utils::dateish_io_concreteness_error(&n) {
-                        return Some(Err(err));
-                    }
-                }
-                // Cool's `.IO` on an undefined invocant -- a type object
-                // (`Str.IO`) or `Nil` -- is the `IO::Path` type object, not a
-                // path named after the invocant's gist (`"(Str)".IO`) or `""`
-                // (#9495).
-                if matches!(target.view(), ValueView::Package(_) | ValueView::Nil) {
-                    return Some(Ok(Value::package(Symbol::intern("IO::Path"))));
-                }
-                let s = target.to_string_value();
-                if s.contains('\0') {
-                    return Some(Err(RuntimeError::new(
-                        "X::IO::Null: Found null byte in pathname",
-                    )));
-                }
-                Some(Ok(self.make_io_path_instance(&s)))
-            }
+            "IO" => self.dispatch_io_coerce(&target, &args),
             "contains" => Some(self.dispatch_contains(target, &args)),
             "starts-with" => Some(self.dispatch_starts_with(target, &args)),
             "ends-with" => Some(self.dispatch_ends_with(target, &args)),

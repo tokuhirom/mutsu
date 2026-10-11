@@ -28,6 +28,7 @@ pub(crate) mod real_misc;
 pub(crate) mod render;
 pub(crate) mod str;
 pub(crate) mod str_args;
+pub(crate) mod str_interp;
 pub(crate) mod str_iter;
 pub(crate) mod str_numeric;
 pub(crate) mod str_search;
@@ -56,6 +57,10 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     str_args::STR_SHARED_ROWS,
     str_args::STR_ROWS,
     str_args::UNI_ROWS,
+    str_interp::STR_ROWS,
+    str_interp::STR_MATCH_ROWS,
+    str_interp::COOL_ROWS,
+    str_interp::COOL_FORMAT_ROWS,
     int::ROWS,
     num::ROWS,
     rational::RAT_ROWS,
