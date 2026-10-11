@@ -164,11 +164,15 @@ impl Interpreter {
                     // attaching the defining scope must not drop it.
                     base.regex_signature(),
                     // A topic-only capture changes nothing about the pattern, so
-                    // its source tree survives whole.
+                    // its source tree survives whole. So does the tree of a
+                    // pattern that interpolates no name: its code blocks are
+                    // the ones the phaser lift rewrote (#10550), and the
+                    // pattern text still spells the phasers it took out.
                     base.regex_source_tree_arc().filter(|tree| {
                         topic_only
                             || tree.contains_array_interpolation()
                             || tree.contains_regex_value_interpolation()
+                            || tree.interpolation_names().is_empty()
                     }),
                     topic,
                 );

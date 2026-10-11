@@ -5,7 +5,7 @@ use Test;
 # through the exhaustive mutable visitor (ADR-10499); each expectation was
 # checked against rakudo.
 
-plan 14;
+plan 19;
 
 my @log;
 @log.push('main');
@@ -45,3 +45,17 @@ is @log.grep('param-init').elems, 1, '... but the phaser runs once';
 
 sub chk($a = CHECK { @log.push('param-check'); 5 }) { $a }
 ok before-main('param-check') && chk() == 5, 'CHECK in a parameter default of a named sub';
+
+my $lex = 7;
+sub rx-init { 'a' ~~ / a { INIT @log.push('regex-init') } / }
+ok before-main('regex-init'), 'INIT in a regex code block runs before the mainline';
+rx-init(); rx-init();
+is @log.grep('regex-init').elems, 1, '... once, however often the regex matches';
+
+sub rx-lex { 'a' ~~ / a { INIT @log.push('regex-lex'); $lex } / }
+ok before-main('regex-lex'), 'INIT in a regex code block that closes over a lexical';
+rx-lex(); rx-lex();
+is @log.grep('regex-lex').elems, 1, '... once, however often it matches';
+
+sub rx-check { 'a' ~~ / a { CHECK @log.push('regex-check') } / }
+ok before-main('regex-check'), 'CHECK in a regex code block runs before the mainline';
