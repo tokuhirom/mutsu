@@ -52,6 +52,8 @@ impl Interpreter {
             .get(name)
             .cloned()
             .or_else(|| self.get_shared_var(name));
+        // A captured `@a` / `%h` is bound through its shared cell (ADR-0039).
+        let base = base.map(|b| b.deref_container());
         let celled = match base.as_ref().map(Value::view) {
             Some(ValueView::Hash(h)) => {
                 let mut data = h.as_ref().clone();

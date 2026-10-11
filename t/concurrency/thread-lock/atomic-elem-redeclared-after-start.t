@@ -7,7 +7,7 @@ use Test;
 # go to that lane anyway and was lost. The element cell now lives in the
 # binding the frame holds.
 
-plan 12;
+plan 15;
 
 await start { 1 };
 
@@ -68,4 +68,21 @@ is-deeply f(), [0, 5, 0], 'cas inside a sub called after a start, on every call'
         is-deeply @d, [3, 9], 'the inner same-named array is swapped';
     }
     is-deeply @d, [1, 1], 'the outer same-named array is untouched';
+}
+
+# A closure capturing the container binds it through a shared cell; the
+# element atomic must land in that binding, inside and outside the closure.
+{
+    my @plain = 0, 0;
+    my &bump = { cas(@plain[0], 0, 1) };
+    bump();
+    cas(@plain[1], 0, 2);
+    is-deeply @plain, [1, 2], 'element cas on a captured array, in and out of the closure';
+}
+
+{
+    my atomicint @c = 0, 0;
+    await (^8).map: { start { atomic-fetch-inc(@c[1]) for ^100 } };
+    is @c[1], 800, 'concurrent atomic-fetch-inc on a captured element loses no update';
+    is @c[0], 0, '... and leaves the other element alone';
 }

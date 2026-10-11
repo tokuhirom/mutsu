@@ -224,7 +224,8 @@ impl Interpreter {
         let Some(base) = base else {
             return Verdict::Unknown;
         };
-        match base.view() {
+        // A captured `@a` is bound through its shared cell (ADR-0039).
+        match base.deref_container().view() {
             ValueView::Array(array, _) => {
                 let element_type = array
                     .value_type
