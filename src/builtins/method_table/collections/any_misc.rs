@@ -24,6 +24,14 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
     MethodRow {
         owner: "List",
+        name: "Supply",
+        arity: 0,
+        handler: Handler::Narrow(supply),
+        flags: RowFlags::RANDOM,
+        named: &[],
+    },
+    MethodRow {
+        owner: "List",
         name: "chrs",
         arity: 0,
         handler: Handler::Pure(chrs),
@@ -113,4 +121,46 @@ pub(crate) fn batch(target: &Value, args: &[Value]) -> Option<Result<Value, Runt
         .map(|chunk| Value::array(chunk.to_vec()))
         .collect();
     Some(Ok(Value::seq(batches)))
+}
+
+/// `List.Supply`: a (non-live) `Supply` that emits the invocant's elements.
+// Cost: O(e), e = elements of the invocant (a range is expanded through
+// `value_to_list`, which caps it).
+fn supply(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    supply_of(target).map(Ok)
+}
+
+/// The `Supply` of `target`'s elements, or `None` for a lazy list or a
+/// `Channel`, which the interpreter drains.
+// Cost: O(e), e = elements of the invocant.
+pub(crate) fn supply_of(target: &Value) -> Option<Value> {
+    if matches!(
+        target.view(),
+        ValueView::LazyList(_) | ValueView::Channel(_)
+    ) {
+        return None;
+    }
+    let values = match target.view() {
+        ValueView::Array(items, ..) => items.to_vec(),
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
+            items.to_vec()
+        }
+        // Route Range-family sources through `value_to_list`, which caps at
+        // `MAX_RANGE_EXPAND` instead of expanding `(a..=i64::MAX)` directly
+        // (`(1..Inf).Supply` once `capacity overflow`-panicked).
+        ValueView::Range(..)
+        | ValueView::RangeExcl(..)
+        | ValueView::RangeExclStart(..)
+        | ValueView::RangeExclBoth(..)
+        | ValueView::GenericRange { .. } => crate::runtime::utils::value_to_list(target),
+        _ => vec![target.clone()],
+    };
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("values".to_string(), Value::array(values));
+    attrs.insert("taps".to_string(), Value::array(Vec::new()));
+    attrs.insert("live".to_string(), Value::FALSE);
+    Some(Value::make_instance(Symbol::intern("Supply"), attrs))
 }

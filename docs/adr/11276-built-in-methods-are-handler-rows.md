@@ -2409,3 +2409,26 @@ hash and a lazy list. No behaviour change, pinned in `t/oo/method/any-list-hash-
   `Map` rows for them are answered by `Hash`'s.
 - **Found, not fixed**: `(set <a>).hash.raku` is `{:a(Bool::True)}` in mutsu and `(my Bool %{Mu} = :a(Bool::True))` in Rakudo.
 
+### 9.66 `Capture.WHICH`, `List.Supply`; no shape for `Junction`, `Nil` and `Map` (2026-10-11)
+
+`fix/12607-quanthash-nil-join` (issue #12389, items 2-3). Two rows and three decisions.
+
+- **`Capture.WHICH`** is a row of `Capture` (`collections::render`, the `WHICH` family) and `which_of` gains a `Capture` arm. A Capture is a value type:
+  `\(1, 2, :a(3)).WHICH` is the `ValueObjAt` `Capture|(Int|1)(Int|2)|a(Int|3)` (positionals as `(WHICH)`, then the named arguments sorted by key as
+  `key(WHICH)`, the two blocks joined by `|`; an empty Capture is `Capture`). The cascade answered an `ObjAt` with a counter (`Capture|1`), so two equal
+  Captures were not `===`. **Behaviour change toward Rakudo**, pinned in `t/concurrency/supply/capture-which-supply-method-rows.t`.
+- **`List.Supply`** is a `Handler::Narrow` row (`any_misc::supply`) sharing `supply_of` with the cascade's `Supply` arm. It mints a new `Supply`
+  instance per call, so the row carries `RowFlags::RANDOM`, whose doc now reads "the answer differs between two runs by design" (random, or a new
+  object with an identity of its own): the debug cross-check cannot compare two runs.
+- **Decision (item 3): `Map` stays the `Hash` shape.** An immutable `Map` is a `Hash` value with `declared_type == "Map"`. `Hash`'s rows answer `Map`'s
+  `gist`, `raku`, `Str`, `AT-KEY` and `clone` (§9.36, §9.38, §9.62, §9.65), and a row on `Map` is unreachable (`every_row_is_reached_and_answers` forbids
+  it). A `Map` shape would be closed until every `Hash` row is audited for it and would gain nothing. The recognition table's unregistered `Map` rows are
+  therefore served, not owed; `method-rows-report.py --inventory` still lists them.
+- **Decision (item 2): `Junction` and `Nil` stay receivers with no shape**, named here as ADR §10.3 rule 6 allows. A `Junction` does not dispatch by its
+  own shape: the VM autothreads a method over the eigenstates before any row or cascade runs (`vm_call_autothread.rs`), and `Bool`/`gist`/`raku` are the
+  few methods that apply to the junction as a whole, which the interpreter answers. `Nil` absorbs every method call (`Nil.foo` is `Nil` with a warning:
+  `nil_predispatch_verdict`), which no row can express. Their cascade arms (`Junction`: `Bool`, `gist`, `raku`; `Nil`: `gist`, `raku`) stay until
+  slice 5 decides what replaces the cascades for shapeless receivers.
+- **Left**: `Array`/`Hash` `name` and `dynamic` (read the variable's metadata, not the value), `List.rotate`/`Array.rotate` (a `Mut` row), `Any.splice`
+  (the `Handler::Mut` question of §9.60) and `List.AT-POS`/`Array.AT-POS` (`positional.rs` explains why they have no row).
+
