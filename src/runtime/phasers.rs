@@ -1,3 +1,4 @@
+mod decl_regex;
 mod lift;
 
 use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};

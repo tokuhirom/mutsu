@@ -28,13 +28,7 @@ pub(super) fn lift_phasers(
     check: &mut Vec<Stmt>,
     init: &mut Vec<Stmt>,
 ) {
-    let mut lifter = Lifter {
-        begin,
-        check,
-        init,
-        closure: false,
-        begin_ok: false,
-    };
+    let mut lifter = Lifter::new(begin, check, init);
     for stmt in stmts {
         lifter.visit_stmt_mut(stmt);
     }
@@ -73,7 +67,7 @@ impl VisitMut for Reorder {
     }
 }
 
-struct Lifter<'a> {
+pub(super) struct Lifter<'a> {
     begin: &'a mut Vec<Stmt>,
     check: &'a mut Vec<Stmt>,
     init: &'a mut Vec<Stmt>,
@@ -82,6 +76,23 @@ struct Lifter<'a> {
     /// A `BEGIN` expression at this position is lifted: false only for the
     /// whole expression of a current-level statement.
     begin_ok: bool,
+}
+
+impl<'a> Lifter<'a> {
+    /// A lifter at the current level, collecting into the three buckets.
+    pub(super) fn new(
+        begin: &'a mut Vec<Stmt>,
+        check: &'a mut Vec<Stmt>,
+        init: &'a mut Vec<Stmt>,
+    ) -> Self {
+        Self {
+            begin,
+            check,
+            init,
+            closure: false,
+            begin_ok: false,
+        }
+    }
 }
 
 impl Lifter<'_> {
@@ -125,11 +136,19 @@ impl VisitMut for Lifter<'_> {
             | Stmt::PackageRuntimeBody { .. }
             | Stmt::AugmentClass { .. } => {}
             // `source_regex` is a copy of the regex the body's literal value
-            // carries and runs; lifting a phaser out of the copy would leave
-            // the running one in place, so the phaser would run twice.
-            // TODO: a token's matcher parses the pattern text, not the tree,
-            // so the phaser needs lifting from the text too (#12748).
-            Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {}
+            // carries, and the matcher runs the literal's pattern text, so a
+            // phaser is lifted from the tree and the text together.
+            Stmt::TokenDecl {
+                body, source_regex, ..
+            }
+            | Stmt::RuleDecl {
+                body, source_regex, ..
+            } => super::decl_regex::lift_declaration_phasers(
+                body,
+                source_regex,
+                self.check,
+                self.init,
+            ),
             // The level's own BEGIN/CHECK/INIT phasers are reordered by
             // `reorder_at_level`; their bodies are a level of their own.
             Stmt::Phaser {
