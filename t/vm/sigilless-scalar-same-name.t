@@ -1,29 +1,32 @@
+use v6;
 use Test;
 
 plan 8;
 
-# A sigilless binding `\t` and a scalar `$t` are different symbols (#11994).
-sub nested(\t) { sub { my $t = 5; $t + t }() }
-is nested(10), 15, 'nested closure: my $t does not hide the \t parameter';
+# #12637: a sigilless term `r` and a scalar `$r` are separate namespaces,
+# also inside a routine whose `\r` parameter re-declares a name an outer
+# scope already had shadowed.
+{
+    my \r = 3;
+    my $r = 5;
+    is r, 3, 'sigilless r survives a same-named scalar';
+    is $r, 5, 'scalar $r keeps its own value';
 
-sub same-frame(\t) { my $t = 5; $t + t }
-is same-frame(10), 15, 'same frame';
+    sub bind-form(Mu \r) { my $r := 7; (r.raku, $r) }
+    is-deeply bind-form(Int), ("Int", 7), 'param \r vs my $r := in a nested sub';
 
-sub in-block(\t) { my $f = { my $t = 5; $t + t }; $f() }
-is in-block(10), 15, 'block closure';
+    sub assign-form(Mu \r) { my $r = 9; (r.raku, $r) }
+    is-deeply assign-form(Int), ("Int", 9), 'param \r vs my $r = in a nested sub';
 
-sub captured(\t) { my $t = 5; my $f = { $t + t }; $f() }
-is captured(10), 15, 'closure nested inside the shadowing scope';
+    sub read-first(Mu \r) { my $before = r.raku; my $r = 1; ($before, r.raku, $r) }
+    is-deeply read-first(Str), ("Str", "Str", 1), 'param \r read before and after my $r';
 
-sub method-case(\t) {
-    my class C { method m { my $t = 5; $t + t } }
-    C.new.m
+    is r, 3, 'outer sigilless unchanged after the calls';
 }
-is method-case(10), 15, 'method in an enclosing sub';
 
-my \u = 7;
-{ my $u = 3; is $u + u, 10, 'my \u and $u in an inner block'; }
-is u, 7, 'the sigilless term is intact after the block';
+sub plain(Mu \r) { my $r := 5; (r.raku, $r) }
+is-deeply plain(Int), ("Int", 5), 'no outer binding: param \r vs my $r :=';
 
-sub after(\x) { { my $x = 2; $x += x; }; x }
-is after(40), 40, 'bare read after the shadowing scope ends';
+my \q = 1; my $q = 2;
+my $c = -> \q { my $q = 4; (q, $q) };
+is-deeply $c(8), (8, 4), 'pointy param \q vs my $q inside a closure';
