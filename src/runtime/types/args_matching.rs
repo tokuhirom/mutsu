@@ -983,6 +983,16 @@ impl Interpreter {
                     return false;
                 }
 
+                // The trailing sub-signature (`:q(@)! (% (:keyw!), $m)`) unpacks
+                // the same value; one that does not fit makes the candidate
+                // inapplicable instead of failing its bind later.
+                if let Some(outer) = &pd.outer_sub_signature
+                    && let Some(ref val) = arg_val
+                    && !sub_signature_matches_value(self, outer, val)
+                {
+                    return false;
+                }
+
                 // Check where constraint on named param. When the named arg is
                 // absent, the constraint is still evaluated against the value the
                 // parameter would bind to (its default, or the type-object
