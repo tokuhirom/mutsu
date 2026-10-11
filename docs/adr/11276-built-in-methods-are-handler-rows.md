@@ -1637,7 +1637,8 @@ arguments and several arities each) and the unreachable `Cool.Int` (§9.71).
 - **`split` on `Str` and `Cool`** (arities 1 and 2) is a `Handler::Interp` row (`str_interp::split`) over `Interpreter::dispatch_split_row`: a regex
   splitter installed with its closure scope, then `handle_split_method`. The generic `split` handler of `call_method_with_values` calls the same routine.
   The pure cascade's `native_split_method` now reads its limit with `parse_split_limit` too (it truncated `to_f64`, so `*`, `Inf` and a `NaN` limit
-  differed from the interpreter's).
+  differed from the interpreter's), and the interpreter's string splitter is the pure one (`split::split_by_string`, which matches only at grapheme
+  boundaries); its own copy, `split_by_string_static`, searched by codepoint and is gone.
 - **`IO::Path.split` splits the file's contents** (Rakudo: `self.open(:$chomp, :$enc, :$nl-in).split(|c, :close)`); mutsu split the path string
   (`"x.txt".IO.split(",")` was `("x.txt",)`). The row (`io_path_content::split_row`) and the interpreter's handler call `Interpreter::io_path_split`
   (slurp with `:enc`, then `dispatch_split_row`); the pure cascades decline every `IO::Path` instead of only a `%?RESOURCES` entry.

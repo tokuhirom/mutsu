@@ -130,7 +130,7 @@ pub(crate) struct SplitMatch {
 /// Split a string by a string splitter. Returns list of `(segment, Option<match>)`.
 // Cost: O(n*m) worst, O(n + k) typical, n = bytes of the invocant, m = bytes
 // of the separator, k = pieces produced (grapheme-boundary-aware search).
-fn split_by_string(
+pub(crate) fn split_by_string(
     text: &str,
     sep: &str,
     limit: Option<usize>,
