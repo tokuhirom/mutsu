@@ -62,25 +62,17 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             {
                 None
             }
-            ValueView::Complex(_, _) => Some(Ok(target.clone())),
-            ValueView::Int(i) => Some(Ok(Value::complex(i as f64, 0.0))),
-            ValueView::Num(f) => Some(Ok(Value::complex(f, 0.0))),
-            ValueView::Rat(n, d) if d != 0 => {
-                Some(Ok(Value::complex(crate::value::rat_to_f64(n, d), 0.0)))
-            }
-            ValueView::FatRat(n, d) if d != 0 => {
-                Some(Ok(Value::complex(crate::value::rat_to_f64(n, d), 0.0)))
-            }
-            ValueView::BigInt(n) => Some(Ok(Value::complex(
-                num_traits::ToPrimitive::to_f64(n.as_ref()).unwrap_or(f64::INFINITY),
-                0.0,
-            ))),
-            ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
-                Some(Ok(Value::complex(
-                    num_traits::ToPrimitive::to_f64(n).unwrap_or(0.0)
-                        / num_traits::ToPrimitive::to_f64(d).unwrap_or(1.0),
-                    0.0,
-                )))
+            // A number: the numeric types' `Complex` rows' implementation
+            // (`method_table::numeric_coerce`).
+            ValueView::Complex(..)
+            | ValueView::Int(_)
+            | ValueView::BigInt(_)
+            | ValueView::Num(_)
+            | ValueView::Rat(..)
+            | ValueView::FatRat(..)
+            | ValueView::BigRat(..)
+            | ValueView::Bool(_) => {
+                crate::builtins::method_table::numeric_coerce::complex_of(target).map(Ok)
             }
             // `"1+2i".Complex` parses the numeric string (raku: <1+2i>), not 0+0i.
             // A non-numeric string yields the same lazy `X::Str::Numeric` Failure
