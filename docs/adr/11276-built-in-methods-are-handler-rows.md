@@ -1516,6 +1516,32 @@ default; a by-value `QuantHash` is mutated in place.
   instance, a `Proxy` subclass's attribute array (`proxy_subclass_array_mutate`) and an `Any:U`
   (the autovivification arms), none of which has a shape.
 
+### 9.70 The numeric conversions, `base` and `polymod` of the numbers (2026-10-11)
+
+`refactor/12675-numeric-coercion-rows` (issue #12675). Measured with `method-rows-report.py --inventory` on every group not yet measured:
+`numbers` still owed 33 declared rows, `text` 38 (spread over fifteen names), `time` 2, `match` 0, `quant hashes` 11. The numbers' conversion matrix was the
+largest block with one obvious shape, so it went first: 58 rows in five new modules of `method_table/scalars/`.
+
+- **`numeric_coerce`** (`Numeric`, `Real`, `Rat`, `FatRat`, `Complex` on `Int`, `Num`, `Rat`; `Numeric` and `Complex` on `Complex`; `Rat` and `FatRat`
+  also with an `epsilon`). Each conversion is one `*_of` function that the row and the cascade arm both call; the arms keep `Str`, the aggregates and the
+  type objects. The `epsilon` check (`Real $epsilon`, the `X::TypeCheck::Binding::Parameter` of #12043) moved here from `dispatch_1arg.rs`.
+- **`numeric_base`** (`base` with one and two arguments on `Int`, `Num`, `Rat`; `base-repeating` with zero and one on `Rat`). `base_of` replaces the
+  three copies in `dispatch_1arg.rs` / `dispatch_2arg.rs`; the `Instant`/`Duration` instance branches read their `value` attribute and call it too.
+- **`numeric_polymod`** (`Int`, `Num`, `Rat`, `Instant`, `Duration`): an interpreter row, because a lazy divisor list is pulled. `Interpreter::polymod_answer`
+  is shared with the `polymod` interceptor, which keeps receivers with no shape (a mixin, a subclass) and still declines a receiver whose ancestry
+  declares no `polymod` (`Str`, `Complex`).
+- **`complex_real`** (`Complex.Int`, `Num`, `Rat`, `FatRat`, `Real`, interpreter rows): `$*TOLERANCE` decides whether the imaginary part is negligible;
+  the body is `Interpreter::dispatch_complex_to_real`, which the `Str`-that-numifies-to-a-`Complex` path of `call_method_with_values` calls too.
+- **Behaviour changes toward Rakudo**: a big Int is no longer clamped by `.Rat` (it was `Rat 9223372036854775807.0`), `.Rat(eps)`/`.FatRat(eps)` of a big Int,
+  big Rat or `Bool` answers the number instead of `0`, `Bool.Complex` is `1+0i`, `Bool.base` answers, `.base` of a big Int takes a digits count, a `NaN` or
+  infinite `Num` fails with `Cannot convert NaN to Int` in every arity (the two-argument form answered the string `NaN`), a bad radix says
+  `base argument to base out of range. Is: 37, should be in 2..36`, and `Rat.base-repeating` takes no argument.
+- **The arm count did not fall** (368 to 369): `Numeric`, `Real`, `Rat`, `FatRat`, `Complex` and `base` are also answered, through the same functions, for `Str`,
+  `Cool`, `Mu`, the aggregates, `FatRat`'s `Bool` and the type objects, none of which has a row yet. They go with their owners' rows.
+- **Left** (each needs the owner, not the number): `Capture` on `Int`/`Num`/`Str`/`Version` (the answer differs per receiver and the messages differ from
+  Rakudo's), `Bool.pick`/`Bool.roll` (declared on the type object `Bool:U` only, and a type object has no shape), `Mu.Numeric`/`Mu.Int` (user overrides),
+  `Cool.Int`/`Num`/`Rat`/`UInt` and `Str.Numeric`/`Int`/`Num` (the `Str` arms carry the complex-string, empty-string and radix-prefix cases).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
