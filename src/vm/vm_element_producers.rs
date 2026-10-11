@@ -199,6 +199,14 @@ impl Interpreter {
         if !args.is_empty() || !ELEMENT_PRODUCERS.contains(&method) {
             return None;
         }
+        // Promoting the slots walks the backing `Vec`/`HashMap` and installs
+        // element cells into it, so it must exclude a concurrent structural
+        // writer of the same container: a `%!h.kv` racing `%!h{$k}++` on another
+        // thread read a map mid-rehash (`capacity overflow`, #11701). Keyed on
+        // the node, as the uncelled-root store routes key it (ADR-0068); the
+        // region runs no user code.
+        let _structure =
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, target);
         match target.view() {
             ValueView::Array(..) => self.array_element_producer(target, method),
             ValueView::Hash(..) if !matches!(method, "reverse" | "sort") => {

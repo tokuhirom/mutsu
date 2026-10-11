@@ -817,6 +817,15 @@ impl Interpreter {
         if let Some(slot) = self.env_root_descended_mut(key)
             && matches!(slot.view(), ValueView::Array(..))
         {
+            // The node is extended in place and other threads may hold the same
+            // node (an attribute `@!a` every thread reaches through the shared
+            // instance, #11701): a concurrent `Vec` growth under a reader or a
+            // second writer is a use after free. Exclude them on the node, the
+            // key the mutating-method funnel (`methods_call_dispatch.rs`) and the
+            // leaf structure reads take for the same uncelled container (ADR-0068).
+            let _structure = crate::value::container_lock::ContainerStructGuard::acquire_for(
+                None, slot,
+            );
             let result = slot
                 .with_array_mut(|arc_items, kind| {
                     let items = crate::value::gc_data_mut(arc_items);
