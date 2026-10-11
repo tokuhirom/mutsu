@@ -40,7 +40,10 @@ fn hash_access(rest: &str) -> bool {
     let name_len = rest
         .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '\'')))
         .unwrap_or(rest.len());
-    name_len > 0 && rest[name_len..].starts_with(['<', '{', '[', '.'])
+    let tail = &rest[name_len..];
+    name_len > 0
+        && (tail.starts_with(['<', '{', '['])
+            || tail.strip_prefix('.').is_some_and(calls_a_routine))
 }
 
 /// Whether `rest`, right after a `&`, is a routine name followed by `(`.
@@ -79,7 +82,12 @@ mod tests {
     #[test]
     fn bare_percent_text_does_not_hide_malformed_escapes() {
         assert_eq!(decode_qq_regex_quote("a%b"), Some("a%b".to_string()));
+        assert_eq!(
+            decode_qq_regex_quote("%h.keys"),
+            Some("%h.keys".to_string())
+        );
         assert!(decode_qq_regex_quote("%b\\x[QQ]").is_none());
         assert!(decode_qq_regex_quote("%h<a>").is_none());
+        assert!(decode_qq_regex_quote("%h.keys()").is_none());
     }
 }
