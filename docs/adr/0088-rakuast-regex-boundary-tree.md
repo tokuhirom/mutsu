@@ -1554,3 +1554,27 @@ named parameters remain separate boundaries.
 `t/rakuast/rakuast-regex-named-default-pointy.t` pins the read tree, source and
 hand-built RakuAST lowering, explicit named override, and outer-lexical
 reassignment at match time.
+
+## 64. Regex source retention cohort (2026-10-11)
+
+Numeric aliases use `Regex::NamedCapture(name => "N", regex => ...)`, as
+Rakudo does. Rendering them as `$N=` preserves the static positional numbering
+pass in the existing matcher. They never become associative `$<N>` captures.
+Repeated assertion prefixes retain nested `Assertion::Lookahead` nodes rather
+than collapsing their observable source structure.
+
+Regex quotes share delimiter classification with the source scanner and matcher,
+and reuse the existing qq atom scanner for nested interpolation argument quotes.
+Low Unicode quotes, Unicode qq interpolation and quoted angle brackets inside
+lookarounds retain structural trees. Building these trees does not run user code.
+
+Separated quantifier rendering preserves the three distinct whitespace
+positions: before the quantifier, before `%`, and after its separator. Rakudo's
+alias body omits the wrapper for whitespace before `%`; its atom and separator
+still retain their own wrappers. The source renderer uses those structures
+directly, and the established compiler and matcher remain the execution path.
+
+Atom recursion and iterative assertion-prefix chains are bounded at 128. An
+unrepresentable or over-budget tree is refused by the RakuAST boundary rather
+than represented as an opaque literal. `t/rakuast/rakuast-regex-source-cohort.t`
+pins read, constructed-tree and execution behavior against Rakudo.

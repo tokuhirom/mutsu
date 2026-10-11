@@ -1,0 +1,261 @@
+use super::*;
+
+impl Parser {
+    // Cost: O(n), n = assertion source; at most 128 prefix wrappers are retained.
+    pub(super) fn parse_lookaround(&mut self, sequential_interpolation: bool) -> Option<RegexNode> {
+        let start = self.pos;
+        let mut prefixes = Vec::new();
+        let mut at = start + 1;
+        while let Some(&marker @ ('?' | '!')) = self.chars.get(at) {
+            if prefixes.len() == 128 {
+                return None;
+            }
+            prefixes.push(marker == '!');
+            at += 1;
+        }
+        if prefixes.len() < 2 {
+            return self.parse_single_lookaround(sequential_interpolation);
+        }
+        // The single-assertion parser skips its initial '<'. For the inner
+        // assertion that position is the preceding prefix character instead.
+        self.pos = at - 2;
+        let Some(mut assertion) = self.parse_single_lookaround(sequential_interpolation) else {
+            self.pos = start;
+            return None;
+        };
+        prefixes.pop();
+        for negated in prefixes.into_iter().rev() {
+            assertion = RegexNode::Extension(RegexExtension::Lookahead {
+                negated,
+                assertion: Box::new(assertion),
+            });
+        }
+        Some(assertion)
+    }
+
+    /// Parse lookaround forms whose source and execution shapes are currently
+    /// shared: the explicit `<?before body>`, `<!before body>`, `<?after
+    /// body>`, and `<!after body>` forms, plus the unprefixed and dot-prefixed
+    /// named forms. The latter retain their capture policy in a separate tree
+    /// node because their RakuAST shape omits the Lookahead wrapper. Escaped
+    /// characters and ordinary scalar interpolations are accepted when the
+    /// nested tree already has a source and execution representation.
+    fn parse_single_lookaround(&mut self, sequential_interpolation: bool) -> Option<RegexNode> {
+        let start = self.pos;
+        self.pos += 1; // '<'
+        let (negated, explicit, capturing) = match self.chars.get(self.pos).copied() {
+            Some('?') => {
+                self.pos += 1;
+                (false, true, true)
+            }
+            Some('!') => {
+                self.pos += 1;
+                (true, true, true)
+            }
+            Some('.') => {
+                self.pos += 1;
+                (false, false, false)
+            }
+            _ => (false, false, true),
+        };
+
+        // `<|w>` is rakudo's spelling of the word boundary `<.wb>`, and the
+        // same node in RakuAST.
+        if !explicit && self.chars[start..].starts_with(&['<', '|', 'w', '>']) {
+            let node = RegexTree::parse_lookaround_body("<.wb>", self.in_unit_parse)?.body;
+            self.pos = start + 4;
+            return Some(node);
+        }
+
+        // `<?>` / `<!>`: the bare assertions that always pass / fail.
+        if explicit && self.chars.get(self.pos) == Some(&'>') {
+            self.pos += 1;
+            return Some(if negated {
+                RegexNode::AssertionFail
+            } else {
+                RegexNode::AssertionPass
+            });
+        }
+
+        // Predicate blocks are source-representable in RakuAST and the
+        // existing matcher already evaluates them inline. Interpolated blocks
+        // (`<{ ... }>`), and code interpolation remain outside this boundary.
+        if explicit && self.chars.get(self.pos) == Some(&'{') {
+            return self.parse_code_assertion(negated);
+        }
+
+        // `<{ ... }>` evaluates its block and interpolates the resulting value
+        // as a regex. `<!{ ... }>` above is the separate predicate assertion
+        // form and must remain zero-width.
+        if !explicit && self.chars.get(self.pos) == Some(&'{') {
+            return self.parse_code_interpolation(sequential_interpolation);
+        }
+
+        // `<&name>` and `<&name()>` are callable regex interpolations. Keep
+        // only the argument-less form in this slice; a non-empty argument
+        // list must continue through the legacy parser until its RakuAST
+        // argument tree is represented here.
+        if !explicit && self.chars.get(self.pos) == Some(&'&') {
+            return self.parse_callable(start);
+        }
+
+        // `<$name>`, `<@name>`, and `<%name>` interpolate the current lexical
+        // value as an indirect subrule. They share one RakuAST node but the
+        // sigil remains observable and gives the runtime parser its
+        // type-specific semantics. Keep all three value-sensitive forms on
+        // the established parser path.
+        if !explicit
+            && self
+                .chars
+                .get(self.pos)
+                .is_some_and(|ch| matches!(ch, '$' | '@' | '%'))
+        {
+            let sigil = self.chars[self.pos];
+            self.pos += 1;
+            let Some(name) = self.parse_twigil_variable_name() else {
+                self.pos = start;
+                return None;
+            };
+            if !self.consume_if('>') {
+                self.pos = start;
+                return None;
+            }
+            return Some(RegexNode::RegexValueInterpolation {
+                name,
+                sequential: sequential_interpolation,
+                sigil,
+            });
+        }
+
+        // `<?@name>` and `<!@name>` are the direct array-interpolation
+        // assertion forms. They have a distinct RakuAST node from the
+        // `<?before @name>` form, even though both are zero-width assertions
+        // over the current array value.
+        if explicit && self.chars.get(self.pos) == Some(&'@') {
+            self.pos += 1;
+            let name = self.parse_variable_name()?;
+            if !self.consume_if('>') {
+                self.pos = start;
+                return None;
+            }
+            return Some(RegexNode::ArrayLookaround { name, negated });
+        }
+
+        // `<?alpha>` / `<!ww>` / `<?.name>` / `<?name(args)>` / `<?[x]>`: a
+        // lookahead over a named assertion or a character class. Only the
+        // keywords `before` and `after` (followed by a space) take a regex.
+        let keyword = |word: &str| {
+            self.chars[self.pos..].starts_with(&word.chars().collect::<Vec<_>>())
+                && self
+                    .chars
+                    .get(self.pos + word.len())
+                    .is_some_and(|ch| ch.is_whitespace())
+        };
+        if explicit && !keyword("before") && !keyword("after") {
+            // The marker stands in for the `<` the assertion parsers skip.
+            self.pos = start + 1;
+            let assertion = if self
+                .chars
+                .get(self.pos + 1)
+                .is_some_and(|ch| matches!(ch, '[' | '-' | '+' | ':'))
+            {
+                self.parse_char_class_assertion()
+            } else {
+                self.parse_subrule()
+            };
+            return match assertion {
+                Some(assertion) => Some(RegexNode::Extension(RegexExtension::Lookahead {
+                    negated,
+                    assertion: Box::new(assertion),
+                })),
+                None => {
+                    self.pos = start;
+                    None
+                }
+            };
+        }
+
+        let is_behind = if self.chars[self.pos..].starts_with(&['a', 'f', 't', 'e', 'r']) {
+            self.pos += "after".chars().count();
+            true
+        } else if self.chars[self.pos..].starts_with(&['b', 'e', 'f', 'o', 'r', 'e']) {
+            self.pos += "before".chars().count();
+            false
+        } else {
+            self.pos = start;
+            return None;
+        };
+
+        if !self
+            .chars
+            .get(self.pos)
+            .is_some_and(|ch| ch.is_whitespace())
+        {
+            self.pos = start;
+            return None;
+        }
+        self.skip_whitespace();
+        let body_start = self.pos;
+        let mut nested_assertions = 0usize;
+        while let Some(ch) = self.chars.get(self.pos).copied() {
+            if crate::regex_qq_atoms::quote_closer(ch).is_some() {
+                self.pos = crate::regex_qq_atoms::quote_end(&self.chars, self.pos)? + 1;
+                continue;
+            }
+            match ch {
+                '\\' => {
+                    // Skip the escaped character while looking for the
+                    // closing angle bracket. The nested parser will decide
+                    // whether the escape has a shared-tree representation;
+                    // this also prevents an escaped `>` from ending the
+                    // assertion prematurely.
+                    self.pos += 1;
+                    if self.pos < self.chars.len() {
+                        self.pos += 1;
+                    }
+                }
+                '>' if nested_assertions > 0 => {
+                    nested_assertions -= 1;
+                    self.pos += 1;
+                }
+                '>' => break,
+                '<' => {
+                    // A nested lookaround can contain another assertion in a
+                    // static group, for example
+                    // `<?before [<?before bar>]>`. Keep scanning through the
+                    // inner terminator so the body parser receives the whole
+                    // source-level tree. Unsupported angle-bracket forms are
+                    // still rejected by `parse_static` below rather than
+                    // being mistaken for literals.
+                    nested_assertions += 1;
+                    self.pos += 1;
+                }
+                _ => self.pos += 1,
+            }
+        }
+        if self.chars.get(self.pos) != Some(&'>') || nested_assertions != 0 {
+            self.pos = start;
+            return None;
+        }
+        let body_source: String = self.chars[body_start..self.pos].iter().collect();
+        let assertion = RegexTree::parse_lookaround_body(&body_source, self.in_unit_parse)?.body;
+        if !is_supported_lookaround_body(&assertion) {
+            self.pos = start;
+            return None;
+        }
+        self.pos += 1; // '>'
+        Some(if explicit {
+            RegexNode::Lookaround {
+                assertion: Box::new(assertion),
+                negated,
+                is_behind,
+            }
+        } else {
+            RegexNode::NamedLookaround {
+                assertion: Box::new(assertion),
+                is_behind,
+                capturing,
+            }
+        })
+    }
+}

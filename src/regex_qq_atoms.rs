@@ -20,6 +20,46 @@
 //! interpolation, or a rule body parsed for a static analysis — becomes a
 //! `RegexAtom::QqInterp`, which reads the result when it is matched (#9673).
 
+/// The canonical closing delimiter of a regex quote.
+// Cost: O(1).
+pub(crate) fn quote_closer(open: char) -> Option<char> {
+    match open {
+        '\'' | '"' => Some(open),
+        '\u{2018}' | '\u{201A}' => Some('\u{2019}'),
+        '\u{201C}' | '\u{201E}' => Some('\u{201D}'),
+        '\u{FF62}' => Some('\u{FF63}'),
+        _ => None,
+    }
+}
+
+/// Low single quotes accept either directional single closing quote.
+// Cost: O(1).
+pub(crate) fn quote_closes(open: char, ch: char) -> bool {
+    quote_closer(open) == Some(ch) || (open == '\u{201A}' && ch == '\u{2018}')
+}
+
+/// Find the complete quoted atom without parsing or executing its contents.
+// Cost: O(n), n = the atom's length.
+pub(crate) fn quote_end(chars: &[char], open: usize) -> Option<usize> {
+    let quote = *chars.get(open)?;
+    quote_closer(quote)?;
+    if is_dq_opener(quote) {
+        return dq_atom_close(chars, open);
+    }
+    let mut end = open + 1;
+    while let Some(&ch) = chars.get(end) {
+        if quote_closes(quote, ch) {
+            return Some(end);
+        }
+        end += if ch == '\\' && quote != '\u{FF62}' {
+            2
+        } else {
+            1
+        };
+    }
+    None
+}
+
 /// Whether `ch` opens a double-quoted regex literal.
 pub(crate) fn is_dq_opener(ch: char) -> bool {
     matches!(ch, '"' | '\u{201C}' | '\u{201E}')
@@ -132,12 +172,8 @@ pub(crate) fn thunk_bodies(pattern: &str) -> Vec<String> {
                 let open = if chars[i + 1] == '[' { i + 1 } else { i + 2 };
                 i = skip_balanced(&chars, open, '[', ']');
             }
-            '\'' => {
-                i += 1;
-                while i < chars.len() && chars[i] != '\'' {
-                    i += if chars[i] == '\\' { 2 } else { 1 };
-                }
-                i += 1;
+            c if quote_closer(c).is_some() && !is_dq_opener(c) => {
+                i = quote_end(&chars, i).map_or(chars.len(), |end| end + 1);
             }
             c if is_dq_opener(c) => {
                 let Some(close) = dq_atom_close(&chars, i) else {

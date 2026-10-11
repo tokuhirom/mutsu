@@ -1,0 +1,122 @@
+use super::*;
+
+impl Parser {
+    // Cost: O(n), n = source consumed by the alias and its atom.
+    pub(super) fn parse_numbered_capture(&mut self) -> Option<RegexNode> {
+        self.pos += 1; // '$'
+        let start = self.pos;
+        while self.chars.get(self.pos).is_some_and(char::is_ascii_digit) {
+            self.pos += 1;
+        }
+        let name: String = self.chars[start..self.pos].iter().collect();
+        name.parse::<u32>().ok()?;
+        self.parse_capture_body(name, false)
+    }
+
+    pub(super) fn parse_named_capture(&mut self, array: bool) -> Option<RegexNode> {
+        self.pos += 2; // '$<' or '@<'
+        let start = self.pos;
+        while self.chars.get(self.pos).is_some_and(|ch| *ch != '>') {
+            self.pos += 1;
+        }
+        if self.pos == start || !self.consume_if('>') {
+            return None;
+        }
+        let name: String = self.chars[start..self.pos - 1].iter().collect();
+        self.parse_capture_body(name, array)
+    }
+
+    fn parse_capture_body(&mut self, name: String, array: bool) -> Option<RegexNode> {
+        self.skip_whitespace();
+        if !self.consume_if('=') {
+            return None;
+        }
+        self.skip_whitespace();
+        let mut regex = self.parse_atom(&[], true, false)?;
+        // An alias on a `<?before …>` / `<?after …>` assertion drops its zero
+        // width marker: Rakudo's `subrule_alias` resets the aliased subrule's
+        // subtype to `capture`, so `$<a>=<?before x>` is `$<a>=<before x>` and
+        // also publishes the `before` key. The negated spelling can never
+        // match once aliased; the runtime parser models that case.
+        match regex {
+            RegexNode::Lookaround { negated: true, .. } => {}
+            RegexNode::Lookaround {
+                assertion,
+                negated: false,
+                is_behind,
+            } => {
+                regex = RegexNode::NamedLookaround {
+                    assertion,
+                    is_behind,
+                    capturing: true,
+                };
+            }
+            _ => {}
+        }
+        let before_quantifier = self.pos;
+        self.skip_whitespace();
+        let spaced_quantifier = self.pos != before_quantifier
+            && matches!(self.chars.get(self.pos), Some('*' | '+' | '?'));
+        if !spaced_quantifier {
+            self.pos = before_quantifier;
+        }
+        let mut quantifier = self.parse_quantifier();
+        let mut spaced_separator = false;
+        if let Some(quantifier) = &mut quantifier
+            && let Some((separator, whitespace_before)) = self.parse_separator()
+        {
+            quantifier.separator = Some(Box::new(separator));
+            spaced_separator = whitespace_before;
+        }
+        // Aggregate aliases have their own list-context semantics in the
+        // legacy matcher. Keep subrule-containing forms there until the
+        // shared tree has a representation for that combination.
+        if array && contains_subrule(&regex) {
+            return None;
+        }
+        if let RegexNode::Literal(text) = &mut regex
+            && text.chars().count() > 1
+        {
+            // The alias binds to the first atom. A trailing quantifier still
+            // belongs to the final character (`$<x>=ab+` is `$<x>=a` then
+            // `b+`), matching the ordinary regex parser's literal splitting.
+            let mut chars = text.chars();
+            let first = chars.next()?;
+            let rest: String = chars.collect();
+            let mut nodes = vec![RegexNode::NamedCapture {
+                name,
+                array,
+                regex: Box::new(RegexNode::Literal(first.to_string())),
+            }];
+            if let Some(quantifier) = quantifier {
+                let mut rest_chars = rest.chars();
+                let last = rest_chars.next_back()?;
+                let prefix: String = rest_chars.collect();
+                if !prefix.is_empty() {
+                    nodes.push(RegexNode::Literal(prefix));
+                }
+                nodes.push(spaced(
+                    quantified(
+                        RegexNode::Literal(last.to_string()),
+                        quantifier,
+                        spaced_quantifier,
+                    ),
+                    spaced_separator,
+                ));
+            } else {
+                nodes.push(RegexNode::Literal(rest));
+            }
+            return Some(RegexNode::Sequence(nodes));
+        }
+        if let Some(quantifier) = quantifier {
+            // Rakudo puts pre-quantifier space on the atom, but does not
+            // wrap the alias's quantified body for space before its separator.
+            regex = quantified(regex, quantifier, spaced_quantifier);
+        }
+        Some(RegexNode::NamedCapture {
+            name,
+            array,
+            regex: Box::new(regex),
+        })
+    }
+}

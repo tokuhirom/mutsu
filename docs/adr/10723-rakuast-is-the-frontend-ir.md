@@ -489,3 +489,13 @@ synthetic-statement compilation and positional constructors have their own
 modules. Richer declaration forms that do not yet support initializer hoisting
 retain the ordinary modifier path; nested declaration groups remain a separate
 source-representation remainder.
+
+### 6.7 S10: regex source retention cohort (2026-10-11)
+
+The residual regex cohort preserves numbered aliases, nested assertion prefixes,
+Unicode quotes and interpolating qq atoms in the shared source tree. Separated
+quantifier reconstruction retains the observable whitespace placement around
+atoms and separators, including the alias body's measured wrapper shape.
+Source delimiter helpers are shared with the parser and matcher; no embedded
+code runs while a tree is built. ADR-0088 section 64 records the contract, and
+`t/rakuast/rakuast-regex-source-cohort.t` covers both directions and execution.
