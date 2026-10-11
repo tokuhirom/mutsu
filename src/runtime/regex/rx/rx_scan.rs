@@ -3,6 +3,7 @@
 //! (guards, program lookup, scratch state) per position.
 
 use super::rx_entry::{Goal, SCRATCH, program_or_raise};
+use super::super::regex_prefilter_scan::ScanPositions;
 use super::{RxOp, RxProgram};
 use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{RegexCaptures, RegexPattern};
@@ -62,7 +63,7 @@ impl Interpreter {
         &mut self,
         pattern: &RegexPattern,
         chars: &[char],
-        starts: impl Iterator<Item = usize>,
+        mut starts: ScanPositions<'_>,
         pkg: Symbol,
     ) -> Option<(usize, usize, RegexCaptures)> {
         if super::super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
@@ -84,7 +85,7 @@ impl Interpreter {
         let mut skip: Vec<usize> = Vec::new();
         let mut skip_at = 0usize;
         let mut found = None;
-        for start in starts {
+        while let Some(start) = starts.next() {
             if lead.is_some() {
                 while skip.get(skip_at).is_some_and(|&q| q < start) {
                     skip_at += 1;
@@ -105,6 +106,15 @@ impl Interpreter {
                 break;
             }
             if let Some(atom) = lead {
+                // The engine's own run of the leading atom left its end and
+                // length behind: iterations of one character each leave every
+                // start up to the end futile, so the iterator skips them
+                // rather than yielding each one only to discard it.
+                let (end, n) = scratch.first_run;
+                if end == start + n as usize {
+                    starts.advance_to(end + 1);
+                    continue;
+                }
                 skip.clear();
                 skip_at = 0;
                 self.rx_atom_run(&program, atom as usize, chars, start, u32::MAX, pkg, &mut skip);
