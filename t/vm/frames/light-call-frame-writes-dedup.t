@@ -133,33 +133,16 @@ class ResourceAccess {
 gen-words-csv($words-csv, 5000);
 gen-pets-csv($pets-csv, 2000);
 
-# Take the best of several interleaved runs of each path. A single ~0.15s
-# sample of each was at the mercy of scheduler noise from the other
-# `prove -j4` jobs (#9299: ratios of 1.54-1.56 under load, 1.01-1.17
-# standalone). The minimum discards that noise, while a genuine regression
-# is a deterministic extra cost that every sample pays, so it survives the
-# minimum. Interleaving also means neither path alone gets the cold first
-# run.
-my $runs = 3;
-my $direct = Inf;
-my $via = Inf;
-for ^$runs {
-    my $t0 = now;
-    ResourceAccess.bless.make;
-    $direct = $direct min (now - $t0).Num;
+# The O(n^2) cost itself is pinned deterministically by the `Env` unit tests
+# `repeated_writes_to_one_name_do_not_grow_the_log` and
+# `rewriting_a_logged_name_does_not_copy_a_log_shared_with_a_saved_caller_env`
+# (src/env.rs); a wall-clock ratio here depended on scheduling (#12655). This
+# file keeps the end-to-end shape: both paths must run the pipeline to
+# completion (the regression made the singleton path not finish at real-file
+# sizes) at the same size.
+my $direct = ResourceAccess.bless.make;
+ResourceAccess.reset;
+my $via = ResourceAccess.instance;
 
-    ResourceAccess.reset;
-    $t0 = now;
-    ResourceAccess.instance;
-    $via = $via min (now - $t0).Num;
-}
-
-ok 0 < $direct < Inf, 'the direct path took measurable time';
-# Fixed, the two paths cost about the same (measured ~1.0x, run to run).
-# Pre-fix, the "via" path measured ~2x the "direct" one at this size (and
-# diverges further as size grows, since the underlying cost is O(n^2) over
-# `.make()`'s own lifetime). 1.5x sits between the two with margin on both
-# sides, so this catches the regression without flagging ordinary noise.
-ok $via < $direct * 1.5,
-    "calling .make() through the singleton doesn't cost multiples of calling "
-    ~ "it directly (best of $runs: direct $direct.fmt('%.3f')s, via $via.fmt('%.3f')s)";
+is $direct.WHAT.^name, 'ResourceAccess', 'the direct path runs .make() to completion';
+is $via.WHAT.^name, 'ResourceAccess', 'the singleton path runs .make() to completion';
