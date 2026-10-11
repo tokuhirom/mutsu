@@ -77,26 +77,11 @@ pub(crate) fn native_method_2arg(
                 type_name
             ))));
         }
-        let ValueView::Int(pos) = arg2.descalarize().view() else {
-            return None;
-        };
-        if pos < 0 {
-            return None;
-        }
-        let needle = arg1.to_string_value();
-        return crate::builtins::grapheme_index::with_str_index(target, |text, idx| {
-            if pos as usize > idx.len() {
-                return None;
-            }
-            let eq = crate::builtins::str_prim::eq_at(
-                text,
-                idx,
-                pos as usize,
-                &needle,
-                crate::builtins::str_prim::Fold::Exact,
-            );
-            Some(Ok(Value::truth(eq)))
-        });
+        // The `Str.substr-eq` row's handler (`method_table::str_args`).
+        return crate::builtins::method_table::str_args::substr_eq(
+            target,
+            &[arg1.clone(), arg2.descalarize().clone()],
+        );
     }
 
     if method == "split" {

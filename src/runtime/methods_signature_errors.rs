@@ -235,7 +235,7 @@ pub(crate) fn make_multi_ambiguous_error(
 /// Cannot resolve caller has_tie(WorkingTie:D: Array:D); none of these
 /// signatures matches: ...
 /// ```
-pub(super) fn make_multi_no_match_error_detailed(
+pub(crate) fn make_multi_no_match_error_detailed(
     method_name: &str,
     invocant_type: &str,
     invocant_concrete: bool,
