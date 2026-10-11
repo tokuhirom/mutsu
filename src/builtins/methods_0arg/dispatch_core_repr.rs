@@ -155,7 +155,10 @@ pub(super) fn dispatch(
         // element that may carry a user `gist`/`raku`; this arm renders it
         // with the default form, as it always did.
         ValueView::Bag(..) | ValueView::Set(..) | ValueView::Mix(..) => {
-            if method == "gist" {
+            if method == "gist" && crate::Interpreter::quanthash_needs_element_dispatch(target) {
+                // The interpreter resolves each element's own `gist` first.
+                None
+            } else if method == "gist" {
                 Some(Ok(Value::str(
                     crate::value::gist::setbagmix_gist(target).unwrap(),
                 )))

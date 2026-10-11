@@ -415,6 +415,7 @@ impl Interpreter {
         // A list element that is an Instance may define its own `Str`, which
         // the pure stringifier below cannot call -- resolve those first, the
         // same way the `.Str` method path does (`list_element_stringify.rs`).
+        let val = self.resolve_quanthash_element_stringifiers(&val, "Str")?;
         let val = self.resolve_list_element_stringifiers(&val)?;
         self.stack
             .push(Value::str(crate::runtime::utils::coerce_to_str(&val)));
