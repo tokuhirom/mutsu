@@ -322,16 +322,14 @@ impl Interpreter {
         // Handle type smileys (:U, :D, :_)
         let type_name_resolved = type_name.resolve();
         let (base_type, smiley) = super::super::types::strip_type_smiley(&type_name_resolved);
-        // A raw `VMArray`/`VMHash` (or a `BOOT*` collection type object) has a
-        // `KnowHOW` outside `Mu`: it is of its own `BOOT*` type and no other
+        // A raw `VMArray`/`VMHash`, a BOOT scalar box, or a `BOOT*` type
+        // object has a `KnowHOW` outside `Mu`: it is of its own `BOOT*` type and no other
         // (ADR-12666).
         if left.is_iteration_buffer_view() {
             return matches!(base_type, "IterationBuffer" | "Any" | "Mu");
         }
         if crate::runtime::boot_collection::is_boot_collection_invocant(left) {
-            let own = left.vm_boot_type_name().map(crate::symbol::Symbol::intern).or_else(|| {
-                crate::runtime::boot_collection::boot_type_object_name(left)
-            });
+            let own = crate::runtime::boot_collection::boot_type_of(left);
             return own.is_some_and(|own| own.as_str() == base_type);
         }
 

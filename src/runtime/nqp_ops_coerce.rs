@@ -286,7 +286,7 @@ impl Interpreter {
             // -- tests --
             // The BOOT scalar REPRs (`runtime::boot_scalar`).
             // Cost: O(1).
-            "bootint" | "bootnum" | "bootstr" => self.boot_scalar_type(op)?,
+            "bootint" | "bootnum" | "bootstr" => Self::boot_scalar_type(op)?,
             // The raw VM collection REPRs (`runtime::boot_collection`,
             // ADR-12666).
             // Cost: O(1).
