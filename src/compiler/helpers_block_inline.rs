@@ -510,6 +510,7 @@ impl Compiler {
                             },
                             type_follows: false,
                             bind_declaration: false,
+                            shadows_by_name: false,
                         });
                         // Register the declared type constraint (e.g. `my Int %h`)
                         // so element type-checks and `:=` bind type-checks see it,

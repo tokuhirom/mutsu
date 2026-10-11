@@ -3754,6 +3754,7 @@ impl Interpreter {
             reset,
             type_follows,
             bind_declaration,
+            shadows_by_name,
         } = op
         else {
             unreachable!("SetVarDynamic handler received another opcode")
@@ -3766,6 +3767,7 @@ impl Interpreter {
             *type_follows,
             *bind_declaration,
         );
+        let shadows_by_name = *shadows_by_name;
         let name = Self::const_str(code, name_idx);
         // The env is Symbol-keyed and this op runs on *every* `my` declaration
         // (five times per iteration of a loop body that declares five lexicals),
@@ -3969,7 +3971,7 @@ impl Interpreter {
                     crate::vm::vm_method_dispatch::cheaply_unchanged(slot, &prev)
                 })
             });
-            if has_coherent_slot
+            if (has_coherent_slot || shadows_by_name)
                 && let Some(saved) = self.topic_state.loop_local_saved_env.last_mut()
                 && !saved.contains_key(&name_sym)
             {

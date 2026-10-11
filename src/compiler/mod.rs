@@ -2783,8 +2783,13 @@ impl Compiler {
                 name.to_string(),
                 if is_ancestor_shadow {
                     prev
-                } else if prev.is_none() && self.enclosing_local_names.contains(name) {
-                    // Cross-frame shadow: no outer slot exists in this chunk.
+                } else if prev.is_none()
+                    && (self.enclosing_local_names.contains(name)
+                        || self.for_param_names.iter().any(|p| p == name))
+                {
+                    // Cross-frame shadow: no outer slot exists in this chunk
+                    // (a routine's outer lexical, or an enclosing `for`'s
+                    // by-name loop parameter).
                     // u32::MAX is a compile-time-only sentinel telling scope exit
                     // to remove the dead child mapping and resume GetGlobal.
                     Some(u32::MAX)

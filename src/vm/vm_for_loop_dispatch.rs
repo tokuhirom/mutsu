@@ -372,6 +372,14 @@ impl Interpreter {
             // `HashEntryRef` so an in-loop `%h{$p.key} = X` is observable through
             // a later `$p.value` read (raku's live hash-iteration pairs).
             Self::hash_live_pairs(&gc, iterable.hash_is_itemized())
+        } else if let Some((class, _)) = crate::value::value_buf::buf_target(&iterable)
+            && self.is_carray_repr_class(class.as_str())
+        {
+            // A non-itemized `CArray[T]` (`for $obj.edges`, `for f()`) iterates
+            // its elements; `for $carray` stays one item like any `$` source.
+            // Cost: O(n), n = elements.
+            let list = self.try_compiled_method_or_interpret(iterable.clone(), "list", vec![])?;
+            crate::runtime::utils::value_to_list(&list)
         } else if let Some(items) = self.try_iterable_instance_items(&iterable)? {
             items
         } else if let Some(items) = self.try_user_iterator_items(&iterable)? {

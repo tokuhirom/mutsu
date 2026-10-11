@@ -1488,6 +1488,8 @@ impl Compiler {
                     || custom_traits
                         .iter()
                         .any(|(n, _)| n == crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT);
+                let shadows_by_name = !self.local_map.contains_key(name.as_str())
+                    && self.for_param_names.iter().any(|p| p == name);
                 let set_var_dynamic_idx = self.code.emit(OpCode::SetVarDynamic {
                     name_idx,
                     dynamic: is_dynamic,
@@ -1499,6 +1501,7 @@ impl Compiler {
                         || custom_traits
                             .iter()
                             .any(|(trait_name, _)| trait_name == "__scalar_bind"),
+                    shadows_by_name,
                 });
                 let has_explicit_initializer =
                     custom_traits.iter().any(|(n, _)| n == "__has_initializer");
