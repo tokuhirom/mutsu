@@ -202,9 +202,8 @@ pub(crate) fn base_repeating_of(
     radix: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
     let (n, d) = match target.view() {
-        ValueView::Int(i) => (i, 1i64),
+        // Declared on `Rat` only: Rakudo has no `Int`/`Num` candidate.
         ValueView::Rat(n, d) => (n, d),
-        ValueView::Num(f) => f64_to_rat(f),
         _ => return None,
     };
     let radix = match radix_arg(radix) {

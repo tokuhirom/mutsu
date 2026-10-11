@@ -42,6 +42,9 @@ fn with_count<T>(arg: &Value, f: impl FnOnce(&Value) -> T) -> T {
 // Cost: see `pick::pick_one` and `pick::pick_n`.
 pub(crate) fn pick(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let target = target.descalarize();
+    if matches!(target.view(), ValueView::Bool(_)) {
+        return Some(Err(bool_defined_error("pick", args.first())));
+    }
     match args {
         [] => pick::pick_one(target),
         [arg] => with_count(arg, |arg| pick::pick_n(target, arg)),
@@ -53,6 +56,9 @@ pub(crate) fn pick(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
 // Cost: see `roll::roll_one` and `roll::roll_n`.
 pub(crate) fn roll(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     let target = target.descalarize();
+    if matches!(target.view(), ValueView::Bool(_)) {
+        return Some(Err(bool_defined_error("roll", args.first())));
+    }
     match args {
         [] => roll::roll_one(target),
         [arg] => with_count(arg, |arg| roll::roll_n(target, arg)),
@@ -143,4 +149,18 @@ pub(crate) fn sample_weighted_bag_key(items: &crate::value::BagData) -> Option<V
     items
         .iter()
         .find_map(|(key, count)| count.is_positive().then(|| items.typed_key(key)))
+}
+
+/// `pick`/`roll` on a defined `Bool` has only `Bool:U` candidates in Rakudo.
+// Cost: O(1).
+fn bool_defined_error(method: &str, arg: Option<&Value>) -> RuntimeError {
+    let arg_desc = arg.map_or(String::new(), |a| {
+        format!("{}:D", crate::value::type_name::value_type_name(a))
+    });
+    crate::runtime::Interpreter::multi_no_match_exception(
+        method,
+        format!(
+            "Cannot resolve caller {method}(Bool:D: {arg_desc}); none of these signatures matches:\n    (Bool:U $:: *%_)\n    (Bool:U $:: $n, *%_)"
+        ),
+    )
 }
