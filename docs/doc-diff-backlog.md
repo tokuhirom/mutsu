@@ -425,7 +425,6 @@ the first "not filed" list. Paths are under `raku-doc/doc/`.
 | Type/Baggy:355 | `Baggy.hash` is a plain `Hash` | [#9880](https://github.com/tokuhirom/mutsu/issues/9880) |
 | Type/independent-routines:246 | `PROCESS::<&chdir> = …` accepted | [#9881](https://github.com/tokuhirom/mutsu/issues/9881) |
 | Type/Capture:70, Language/control:647,1368, … | arity message count / missing candidate list | [#9882](https://github.com/tokuhirom/mutsu/issues/9882) |
-| Language/experimental:66,78,93,104, Type/X/TypeCheck/Splice:30 | macros (`macro` / `quasi`) unimplemented — ADR-0011 Phase 6 (deep) | [#9885](https://github.com/tokuhirom/mutsu/issues/9885) |
 | Language/signatures:445 | `use v6.c; my Int:D $x .= new: 42` succeeds | [#9886](https://github.com/tokuhirom/mutsu/issues/9886) |
 | Type/CompUnit/Repository/Installation:46 | `.uninstall(Any)` succeeds silently | [#9887](https://github.com/tokuhirom/mutsu/issues/9887) |
 
@@ -435,6 +434,10 @@ the first "not filed" list. Paths are under `raku-doc/doc/`.
   `Type/Any:617,628` (`minpairs`/`maxpairs` return type),
   `Type/independent-routines:473` and `Type/IO/CatHandle:162` (`readchars`
   read-ahead). Revisit only if roast pins Rakudo's behaviour.
+- Upstream doc still shows a removed feature: `Language/experimental:66,78,93,104`
+  and `Type/X/TypeCheck/Splice:30` (experimental `macro` / `quasi`). Rakudo 2026.09
+  rejects `use experimental :macros`; not planned per
+  [ADR-9885](adr/9885-experimental-macros-not-planned.md) (#9885 closed).
 - Rakudo internals leaking into docs: `Type/Code:166,175,211`,
   `Type/Iterable:52`, `Type/Match:7`, `Type/Metamodel/MethodContainer:15,40`,
   `Language/classtut:805`, `Type/CallFrame:122`, `Type/ForeignCode:18`,

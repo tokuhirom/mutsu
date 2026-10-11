@@ -1,6 +1,8 @@
 # ADR-0011: RakuAST — a reflection/model layer over the internal AST, and its phasing
 
-- **Status**: Accepted (2026-07-18); proposed to be superseded by
+- **Status**: Accepted (2026-07-18); Phase 6 superseded by
+  [ADR-9885](9885-experimental-macros-not-planned.md) (2026-10-11: Rakudo removed the
+  experimental macros, so Phase 6 is withdrawn); the rest proposed to be superseded by
   [ADR-10723](10723-rakuast-is-the-frontend-ir.md) (2026-10-02, Proposed).
   The live inventory link below is dead — the roadmap is [#7564](https://github.com/tokuhirom/mutsu/issues/7564). **Progress (2026-08-02): Phases 1–5 have substantially
   landed** across ~37 slices (PRs #4679, #4729–#4804 and successors) — read (`Q[…].AST` +
@@ -536,6 +538,8 @@ earlier ones.
     `t/rakuast-eval-anonsub.t`. Next: placeholder blocks, CATCH blocks, code-block interpolation.
 - **Phase 6 — Macros / `quasi`.** `macro`, `quasi { … }`, unquoting `{{{ … }}}`, AST
   splicing — built entirely on Phases 4+5. Most complex; may be deferred indefinitely.
+  *Withdrawn by [ADR-9885](9885-experimental-macros-not-planned.md): Rakudo removed the
+  experimental macros, so this phase has no target.*
 
 ### File layout
 
