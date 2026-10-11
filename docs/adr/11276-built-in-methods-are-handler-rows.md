@@ -1579,6 +1579,20 @@ largest block with one obvious shape, so it went first: 43 rows in four new modu
 - **Left**: a string `Range` (`("a".."c").Complex` is `3+0i` in Rakudo, `0+0i` here: `numify` gives no count for it), and the uninitialized-value warning Rakudo
   emits for `List.Complex` on a type object.
 
+### 9.73 The quant hashes' `Str` and the mutable ones' `clone` (2026-10-11)
+
+`refactor/11276-quanthash-str-clone-rows`. The `quant hashes` group of `--inventory` (§9.70 counted 9 declared rows owed); after this it owes none.
+
+- **`Str` on `Set`, `SetHash`, `Bag`, `BagHash`, `Mix`, `MixHash`** is a `Handler::Narrow` row (`render::quant_str`) over `Value::to_string_value`, the renderer
+  the cascade's `Str` arm and prefix `~` use. It declines an element that may carry its own `Str`/`gist` (`has_object_element`, as `gist`/`raku` do).
+- **A `Bag` or `Mix` renders an element by its `gist`, a `Set` by its `Str`** (Rakudo's `Baggy.Str` vs `Setty.Str`): `bag(a => 1).Str` is `a => 1` and
+  `bag($[1, 2]).Str` is `[1 2]`; they were `a\t1` and `1 2`. Behaviour change toward Rakudo, in the one renderer.
+- **`clone` on `SetHash`, `BagHash`, `MixHash`** is a `Handler::Narrow` row (`clone::quant_clone`) over `container_clone`, which gains the three quant-hash arms
+  the cascade carried; the cascade arm now calls it. A pure row: a `SetHash[Int]`'s type parameter lives in the copied data, not in the interpreter's
+  container registry. An immutable `Set`/`Bag`/`Mix` has no `clone` of its own in Rakudo (`Mu.clone`) and keeps the cascade's answer.
+- **Found, not fixed**: an element whose class declares `Str`/`gist` is rendered by mutsu's default form in `.Str`, `~` and `.gist` (#12702), and a `Mix`
+  weight that is a `Rat` is stored and rendered as an `f64` (`(a => 1/3).Mix.Str` is `a(0.3333333333333333)`, Rakudo `a(0.333333)`; #12703).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

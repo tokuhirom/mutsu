@@ -1,5 +1,6 @@
-//! `WHICH` on the collections, and `gist`/`raku` on the quant hashes and
-//! `Range` (ADR-11276 remainder: the rendering and identity names).
+//! `WHICH` on the collections, `gist`/`raku`/`Str` on the quant hashes and
+//! `gist`/`raku` on `Range` (ADR-11276 remainder: the rendering and identity
+//! names; the quant hashes' `Str` is §9.73).
 //!
 //! `WHICH` is [`which_of`], the one identity routine every layer shares
 //! (`Array`, `Hash`, `Pair`, `Range`, `Set`, `Bag` and `Mix`, the owners Rakudo
@@ -35,6 +36,8 @@ pub(super) static QUANT_GIST_ROWS: &[MethodRow] =
     rows!("gist" => quant_gist: "Set", "SetHash", "Bag", "BagHash", "Mix", "MixHash");
 pub(super) static QUANT_RAKU_ROWS: &[MethodRow] =
     rows!("raku" => quant_raku: "Set", "SetHash", "Bag", "BagHash", "Mix", "MixHash");
+pub(super) static QUANT_STR_ROWS: &[MethodRow] =
+    rows!("Str" => quant_str: "Set", "SetHash", "Bag", "BagHash", "Mix", "MixHash");
 pub(super) static RANGE_ROWS: &[MethodRow] = &[MethodRow {
     owner: "Range",
     name: "raku",
@@ -120,6 +123,22 @@ pub(crate) fn quant_raku(target: &Value, _args: &[Value]) -> Option<Result<Value
         return None;
     }
     setbagmix_raku(target).map(|s| Ok(Value::str(s)))
+}
+
+/// A quant hash's `.Str`: its elements joined by spaces, a `Set`'s by their
+/// `Str`, a `Bag`'s and a `Mix`'s by their `gist` with the weight when it is not
+/// 1 (`a(2) b`). `Value::to_string_value` is the one renderer; the cascade's `Str`
+/// arm reaches it too.
+// Cost: O(n log n), n = elements (the keys are sorted).
+pub(crate) fn quant_str(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !matches!(
+        target.view(),
+        ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+    ) || has_object_element(target)
+    {
+        return None;
+    }
+    Some(Ok(Value::str(target.to_string_value())))
 }
 
 /// `Range.raku` (`Range.gist` is the same text, answered by the cascade): one rendering, `1..5`, `^5`, `"a".."c"`.

@@ -1,6 +1,8 @@
 //! `clone` of the aggregates (ADR-11276 slice 3C remainder, #12389 item 1).
 //!
-//! `Array`, `Hash` and `Pair` declare `clone` (an immutable `Map` is answered by `Hash`'s row). One copy
+//! `Array`, `Hash` and `Pair` declare `clone` (an immutable `Map` is answered by `Hash`'s row), and
+//! so do `SetHash`, `BagHash` and `MixHash` (§9.73: a pure row, the type parameter of a
+//! `SetHash[Int]` travels inside the copied data). One copy
 //! routine, [`container_clone`], serves the cascade's arm and the
 //! `Handler::Interp` rows; the row then re-tags the declared element/key type
 //! (kept in an interpreter side table for arrays), as the VM's post-hoc step
@@ -11,7 +13,36 @@ use crate::builtins::method_table::Named;
 use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value, ValueView};
 
-pub(super) static ROWS: &[MethodRow] = &[clone_row("Array"), clone_row("Hash"), clone_row("Pair")];
+pub(super) static ROWS: &[MethodRow] = &[
+    clone_row("Array"),
+    clone_row("Hash"),
+    clone_row("Pair"),
+    quant_clone_row("SetHash"),
+    quant_clone_row("BagHash"),
+    quant_clone_row("MixHash"),
+];
+
+const fn quant_clone_row(owner: &'static str) -> MethodRow {
+    MethodRow {
+        owner,
+        name: "clone",
+        arity: 0,
+        handler: Handler::Narrow(quant_clone),
+        flags: RowFlags::NONE,
+        named: &[],
+    }
+}
+
+/// The mutable quant hashes' row handler: the shared copy.
+// Cost: O(e), e = elements of the invocant.
+fn quant_clone(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    match target.view() {
+        ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+            container_clone(target).map(Ok)
+        }
+        _ => None,
+    }
+}
 
 const fn clone_row(owner: &'static str) -> MethodRow {
     MethodRow {
@@ -43,8 +74,8 @@ fn clone(
     }))
 }
 
-/// A shallow copy of an `Array`, `Hash`, `Pair` or `ValuePair`; `None` for any
-/// other receiver.
+/// A shallow copy of an `Array`, `Hash`, `Pair`, `ValuePair` or quant hash;
+/// `None` for any other receiver.
 // Cost: O(e), e = elements of the invocant (O(d) per shaped row, d = cells).
 pub(crate) fn container_clone(target: &Value) -> Option<Value> {
     Some(match target.view() {
@@ -101,6 +132,15 @@ pub(crate) fn container_clone(target: &Value) -> Option<Value> {
         ValueView::Hash(map) => Value::hash_with_data(Value::hash_arc((**map).clone())),
         ValueView::Pair(key, value) => Value::pair(key.clone(), value.clone()),
         ValueView::ValuePair(key, value) => Value::value_pair(key.clone(), value.clone()),
+        ValueView::Set(data, mutable) => {
+            Value::set_parts(crate::gc::Gc::new((**data).clone()), mutable)
+        }
+        ValueView::Bag(data, mutable) => {
+            Value::bag_parts(crate::gc::Gc::new((**data).clone()), mutable)
+        }
+        ValueView::Mix(data, mutable) => {
+            Value::mix_parts(crate::gc::Gc::new((**data).clone()), mutable)
+        }
         _ => return None,
     })
 }
