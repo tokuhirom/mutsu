@@ -2000,7 +2000,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Code", "line", 8, 60),
     ("Code", "file", 8, 60),
     ("Code", "Bool", 1, 1),
-    ("Code", "Str", 3, 25),
+    ("Code", "Str", 3, 29),
     ("Code", "gist", 8, 5),
     ("Code", "raku", 8, 5),
     ("Code", "Capture", 1, 56),

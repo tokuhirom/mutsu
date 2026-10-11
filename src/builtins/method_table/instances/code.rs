@@ -1,5 +1,5 @@
-//! `Code`'s `of`, `returns`, `arity`, `count` and `signature`, `line`, `file` and `name` (ADR-12523, slices 1-4), then the
-//! pure `Capture` and `clone` (slice 5).
+//! `Code`'s `of`, `returns`, `arity`, `count` and `signature`, `line`, `file` and `name` (ADR-12523, slices 1-4), the
+//! pure `Capture` and `clone` (slice 5), and `Str` (slice 6).
 //!
 //! A code object is a `Sub` (a routine, closure or block, with or without a
 //! body of its own), a `&name` handle on a routine reached through the
@@ -36,6 +36,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("line", line),
     row!("file", file),
     row!("name", name),
+    row!("Str", str_),
     // The pure rows: they read nothing but the value, so the zero-argument
     // cascade reaches them through [`pure_answer`].
     MethodRow {
@@ -66,7 +67,7 @@ pub(crate) fn answer(
 ) -> Option<Result<Value, RuntimeError>> {
     if !matches!(
         method,
-        "of" | "returns" | "arity" | "count" | "signature" | "line" | "file" | "name"
+        "of" | "returns" | "arity" | "count" | "signature" | "line" | "file" | "name" | "Str"
     ) || !is_code(target)
     {
         return None;
@@ -218,6 +219,17 @@ fn name(
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     interp.code_name_value(target).map(Ok)
+}
+
+/// `Code.Str`: the routine's name, with Rakudo's coercion warning.
+// Cost: O(n), n = chars of the name.
+fn str_(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    interp.code_str(target)
 }
 
 /// `Code.Capture`: a code object cannot be unpacked.

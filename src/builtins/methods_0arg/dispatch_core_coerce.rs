@@ -448,6 +448,13 @@ pub(super) fn dispatch(
             ValueView::Regex(_)
             | ValueView::RegexWithAdverbs(..)
             | ValueView::Routine { is_regex: true, .. } => None,
+            // Every other code object answers its name with the same kind of
+            // warning: the `Code.Str` row (`method_table::code`).
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                if method == "Str" =>
+            {
+                None
+            }
             // Cost: O(1) for a plain Str invocant (the value is shared, not
             // copied); O(n) otherwise, n = chars of the rendered string.
             _ if target.is_str_value() => Some(Ok(target.clone())),

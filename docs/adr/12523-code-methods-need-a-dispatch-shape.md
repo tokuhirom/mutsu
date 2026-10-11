@@ -117,3 +117,12 @@ they are. (`&f.clone === &f` stays `True` for a named sub: `===` compares routin
 through `code_name` (the interpreter), and `Regex.Bool` matches against `$_`; `gist`/`raku` render the signature and the declaration
 (`methods_sub.rs`) and are the next slice if the open questions of section 4 are settled. With them the decision on
 `DispatchShape::Code` is closed: **no shape**. This ADR's status stays Proposed until `gist`/`raku` land.
+
+Slice 6 (2026-10-11) moved `Str`, the last `Code` row `method-rows-report.py --inventory objects` listed as declared and unregistered. It is an
+interpreter row over `Interpreter::code_str`: the name (`code_name_value`, so a `set_name` shows; `""` for an anonymous routine or block) with the
+resumable warning Rakudo's `Code.Str` emits, `<Type> object coerced to string (please use .gist or .raku to do that)`. mutsu emitted it only for a
+regex (`regex_str_coercion`, which `code_str` calls for one); a `Sub`, a `Block`, a dispatcher and a built-in's `&name` handle now warn too, and the
+zero-argument cascade's `Str` arm declines a code object instead of answering `to_string_value` without the warning. The `Str` branches of the two
+arms in `methods_sub.rs` call the same routine. Left: prefix `~`, interpolation and a `.^lookup` `Method` object still stringify without the warning
+(#12762). `Bool`, `gist` and `raku` stay in the cascades for the reasons above.
+
