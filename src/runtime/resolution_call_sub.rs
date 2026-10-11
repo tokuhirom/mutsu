@@ -934,13 +934,28 @@ impl Interpreter {
                 self.exit_readonly_frame(saved_readonly);
                 return Err(Self::reject_args_for_empty_sig(&call_args));
             }
-            let rw_bindings = match self.bind_function_args_values_with_argspec(
+            // This path pushes no call frame before binding, so the binder
+            // bakes each rw source's caller slot under `len - 1`, one frame
+            // above the caller whose drain (`apply_pending_rw_writeback`)
+            // looks it up; re-key the entries this bind added.
+            let caller_depth = self.call_frames.len();
+            let baked_before = (caller_depth > 0)
+                .then(|| self.pending_rw_writeback_slots.names_at_depth(caller_depth - 1));
+            let bound = self.bind_function_args_values_with_argspec(
                 &data.param_defs,
                 &data.params,
                 &call_args,
                 Self::routine_reads_args_array(&data),
                 Self::routine_reads_args_hash(&data, &call_args),
-            ) {
+            );
+            if let (Some(before), Ok(bindings)) = (baked_before, &bound) {
+                self.pending_rw_writeback_slots.rekey_depth(
+                    bindings.iter().map(|(_, source)| source).filter(|s| !before.contains(*s)),
+                    caller_depth - 1,
+                    caller_depth,
+                );
+            }
+            let rw_bindings = match bound {
                 Ok(bindings) => bindings,
                 Err(e) => {
                     self.pop_caller_env();
