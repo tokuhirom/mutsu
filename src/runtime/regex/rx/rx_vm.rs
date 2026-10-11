@@ -72,6 +72,7 @@ impl Interpreter {
             ends,
             levels,
             ltm_order,
+            first_run,
         } = scratch;
         regs.clear();
         regs.resize(root.nregs, 0);
@@ -259,7 +260,11 @@ impl Interpreter {
                         // iterations, so count 0 is the run's own start.
                         let run = ends.len();
                         ends.push(pos);
-                        let n = self.rx_atom_run(program, atom as usize, chars, pos, max, pkg, ends);
+                        let (n, plain) =
+                            self.rx_atom_run_plain(program, atom as usize, chars, pos, max, pkg, ends);
+                        if pc == 0 && run == 0 {
+                            *first_run = (ends[run + n as usize], n);
+                        }
                         if n < min {
                             ends.truncate(run);
                             false
@@ -273,6 +278,8 @@ impl Interpreter {
                             } else if let RxOp::Atom(next) = program.ops[pc as usize + 1] {
                                 self.rx_run_giveback_top(
                                     program,
+                                    atom as usize,
+                                    plain,
                                     next as usize,
                                     chars,
                                     &ends[run..],

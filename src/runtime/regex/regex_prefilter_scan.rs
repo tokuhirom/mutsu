@@ -71,6 +71,27 @@ impl ScanPositions<'_> {
     }
 }
 
+impl ScanPositions<'_> {
+    /// Drop every candidate below `target`: the next one yielded is the first
+    /// the iterator would have yielded at `target` or later. A scan that has
+    /// proved a run of starts futile uses this instead of pulling each one.
+    // Cost: O(1) for every variant (the needle search resumes from the new
+    // position on the next pull).
+    pub(crate) fn advance_to(&mut self, target: usize) {
+        match self {
+            ScanPositions::Range(r) => {
+                if target > *r.start() {
+                    *r = target..=*r.end();
+                }
+            }
+            ScanPositions::Literal { pos, .. }
+            | ScanPositions::FirstChar { pos, .. }
+            | ScanPositions::Inner { pos, .. } => *pos = (*pos).max(target),
+            ScanPositions::Chained { inner, .. } => inner.advance_to(target),
+        }
+    }
+}
+
 impl Iterator for ScanPositions<'_> {
     type Item = usize;
 

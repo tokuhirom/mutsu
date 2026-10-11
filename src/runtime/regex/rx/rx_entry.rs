@@ -45,6 +45,10 @@ pub(super) struct Scratch {
     pub(super) ends: Vec<usize>,
     pub(super) levels: Levels,
     pub(super) ltm_order: Vec<(usize, (usize, usize))>,
+    /// Where the program's first op, when it is an `AtomRun`, left the cursor
+    /// at the last run, and its iteration count (`rx_scan` reads it to skip the
+    /// starts a failed leading run makes futile without running it again).
+    pub(super) first_run: (usize, u32),
 }
 
 thread_local! {

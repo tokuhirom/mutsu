@@ -8,10 +8,11 @@
 //! atom. At a position where the grapheme is provably that one character, the
 //! set answers; anywhere else the full function runs.
 //!
-//! "Provably one character": `c` is printable ASCII (not a control, so never
-//! half of a CR LF pair), the character before it is ASCII or absent (so no
-//! Prepend or other cluster reaches into it), and the character after it is
-//! ASCII or absent (so no Extend, SpacingMark or ZWJ extends it). Under those
+//! "Provably one character": `c` is printable ASCII, TAB, or LF after a
+//! character other than CR (so never half of a CR LF pair), the character
+//! before it is ASCII or absent (so no Prepend or other cluster reaches into
+//! it), and the character after it is ASCII or absent (so no Extend,
+//! SpacingMark or ZWJ extends it). Under those
 //! three conditions `grapheme_end(pos) == pos + 1` and `pos` is a grapheme
 //! boundary, which are exactly the two facts `match_consuming_atom` checks
 //! before testing the character; the probe below reproduces them by testing
@@ -22,8 +23,15 @@ use crate::runtime::Interpreter;
 use crate::runtime::regex_types::{ClassItem, RegexAtom};
 use crate::symbol::Symbol;
 
-/// Printable ASCII, the range the fast path covers.
+/// Printable ASCII, plus TAB and LF, the characters the fast path covers. A
+/// control character is a grapheme of its own (UAX #29 GB4/GB5) except that
+/// CR LF is one: LF is covered only after a character other than CR.
 const PRINTABLE: std::ops::Range<u32> = 0x20..0x7f;
+
+#[inline]
+fn fast_char(c: u32) -> bool {
+    PRINTABLE.contains(&c) || c == 0x09 || c == 0x0a
+}
 
 impl RxProgram {
     /// The per-atom ASCII acceptance sets, probed on first use. `None` for
@@ -46,7 +54,7 @@ impl RxProgram {
                     if composite_has_named_item(atom) {
                         return None;
                     }
-                    for c in PRINTABLE.filter_map(char::from_u32) {
+                    for c in (0x09..0x7f).filter(|&c| fast_char(c)).filter_map(char::from_u32) {
                         match interp.match_consuming_atom(atom, &[c, ' '], 0, pkg, ic) {
                             Some(1) => set |= 1u128 << (c as u32),
                             None => {}
@@ -76,11 +84,14 @@ fn composite_has_named_item(atom: &RegexAtom) -> bool {
 }
 
 /// Is the grapheme at `pos` provably the single character `chars[pos]`, and
-/// is that character printable ASCII? (See the module doc.)
+/// is that character one the fast path covers? (See the module doc.)
 #[inline]
 fn single_ascii(chars: &[char], pos: usize) -> Option<u32> {
     let c = *chars.get(pos)? as u32;
-    if !PRINTABLE.contains(&c) {
+    // The common case first: printable ASCII.
+    if c.wrapping_sub(PRINTABLE.start) >= PRINTABLE.end - PRINTABLE.start
+        && (!fast_char(c) || (c == 0x0a && pos > 0 && chars[pos - 1] == '\r'))
+    {
         return None;
     }
     if pos > 0 && !chars[pos - 1].is_ascii() {
@@ -130,20 +141,42 @@ impl Interpreter {
         pkg: Symbol,
         ends: &mut Vec<usize>,
     ) -> u32 {
+        self.rx_atom_run_plain(program, i, chars, pos, max, pkg, ends).0
+    }
+
+    /// [`Self::rx_atom_run`], also answering whether every iteration took
+    /// the ASCII-set path (each consumed character is provably one printable
+    /// ASCII grapheme the set accepted).
+    // Cost: as `rx_atom_run`.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn rx_atom_run_plain(
+        &mut self,
+        program: &RxProgram,
+        i: usize,
+        chars: &[char],
+        pos: usize,
+        max: u32,
+        pkg: Symbol,
+        ends: &mut Vec<usize>,
+    ) -> (u32, bool) {
         let set = program.ascii_sets(self, pkg)[i];
         let mut at = pos;
         let mut n = 0u32;
+        let mut plain = true;
         while n < max {
             let next = match (set, single_ascii(chars, at)) {
                 (Some(set), Some(c)) => (set & (1u128 << c) != 0).then_some(at + 1),
-                _ => self.match_consuming_atom(&program.atoms[i], chars, at, pkg, program.atom_ic[i]),
+                _ => {
+                    plain = false;
+                    self.match_consuming_atom(&program.atoms[i], chars, at, pkg, program.atom_ic[i])
+                }
             };
             let Some(next) = next else { break };
             at = next;
             ends.push(at);
             n += 1;
         }
-        n
+        (n, plain)
     }
 
     /// The largest give-back count `j` in `min..n` of a run whose positions
@@ -154,11 +187,14 @@ impl Interpreter {
     /// one printable ASCII character that `next_atom`'s ASCII set rejects, so
     /// pruning the give-backs above `j` removes only retries that fail at
     /// once, with nothing to undo.
-    // Cost: O(n - j), the give-backs ruled out.
+    // Cost: O(1) when the run is plain and its set is disjoint from the next
+    // atom's, else O(n - j), the give-backs ruled out.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rx_run_giveback_top(
         &mut self,
         program: &RxProgram,
+        run_atom: usize,
+        plain: bool,
         next_atom: usize,
         chars: &[char],
         run_ends: &[usize],
@@ -166,9 +202,16 @@ impl Interpreter {
         n: usize,
         pkg: Symbol,
     ) -> Option<usize> {
-        let Some(set) = program.ascii_sets(self, pkg)[next_atom] else {
+        let sets = program.ascii_sets(self, pkg);
+        let Some(set) = sets[next_atom] else {
             return n.checked_sub(1).filter(|&j| j >= min);
         };
+        // Every character the run consumed is one printable ASCII grapheme its
+        // own set accepted: if the next atom's set shares none of them, no
+        // give-back position can match it.
+        if plain && sets[run_atom].is_some_and(|run_set| run_set & set == 0) {
+            return None;
+        }
         (min..n).rev().find(|&j| match single_ascii(chars, run_ends[j]) {
             Some(c) => set & (1u128 << c) != 0,
             None => true,
