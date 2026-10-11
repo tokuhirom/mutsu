@@ -296,7 +296,8 @@ impl DispatchShape {
     /// Whether `Cool`'s `method` row is one a closed `Range` or `Seq` shape
     /// reaches: the numeric methods whose Rakudo body is `self.Numeric.METHOD`
     /// and whose handlers read the receiver through `numify` (a `Range` or `Seq`
-    /// numifies to its element count). Audited per method (ADR-11276 §9.16), not
+    /// numifies to its element count), and `Version`, which reads its string
+    /// form (`(1..3).Version` is `v1.2.3`). Audited per method (ADR-11276 §9.16), not
     /// per owner, so the text, iteration and search rows `Cool` also declares
     /// stay unreachable.
     // Cost: O(m), m = audited names.
@@ -361,12 +362,12 @@ impl DispatchShape {
 
 /// The `Cool` numeric methods a `Range` or `Seq` reaches
 /// ([`DispatchShape::reaches_audited_cool`]).
-const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 46] = [
+const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 49] = [
     "sin", "cos", "tan", "sec", "cosec", "cotan", "sinh", "cosh", "tanh", "sech", "cosech",
     "cotanh", "asin", "acos", "atan", "asec", "acosec", "acotan", "asinh", "acosh", "atanh",
     "asech", "acosech", "acotanh", "exp", "log", "log2", "log10", "sqrt", "cis", "atan2", "roots",
     "unpolar", "abs", "sign", "floor", "ceiling", "truncate", "round", "is-prime", "conj", "chr",
-    "rand", "int", "uint", "byte",
+    "rand", "int", "uint", "byte", "Complex", "UInt", "Version",
 ];
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned

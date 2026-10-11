@@ -149,10 +149,24 @@ impl Interpreter {
                     let count = e - s + 1;
                     return num_traits::ToPrimitive::to_f64(&count).unwrap_or(0.0) - adj;
                 }
-                let s = start.to_f64();
+                // The elements are `first`, `first + 1`, ... up to `end`, so a
+                // fractional endpoint counts whole steps: `1..^5.5` is 1..5,
+                // five elements, not `5.5 - 1 + 1 - 1`.
+                let first = start.to_f64() + if excl_start { 1.0 } else { 0.0 };
                 let e = end.to_f64();
-                let count = e - s + 1.0;
-                count - adj
+                if e.is_infinite() || first.is_infinite() {
+                    return e - first;
+                }
+                let span = e - first;
+                if span < 0.0 {
+                    return 0.0;
+                }
+                let steps = span.floor();
+                if excl_end && steps == span {
+                    steps
+                } else {
+                    steps + 1.0
+                }
             }
             _ => 0.0,
         }

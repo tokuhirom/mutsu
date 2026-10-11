@@ -1,5 +1,6 @@
 //! `Str`'s and `Cool`'s conversions to a number: `Str.Numeric`, `Str.Int`,
-//! `Str.Num`, and `Cool.Num`, `Cool.Rat`, `Cool.UInt` (ADR-11276 §9.71). `Cool.Int` has
+//! `Str.Num`, and `Cool.Num`, `Cool.Rat`, `Cool.UInt` (ADR-11276 §9.71) and
+//! `Cool.Complex` (§9.72). `Cool.Int` has
 //! no row: `List`, `Map`, `Str` and the numeric shapes all declare their own `Int`, so
 //! no shape would reach it (`every_row_is_reached_and_answers`).
 //!
@@ -56,6 +57,7 @@ pub(super) static STR_ROWS: &[MethodRow] = &[
 ];
 
 pub(super) static COOL_ROWS: &[MethodRow] = &[
+    narrow!("Cool", "Complex", cool_complex),
     narrow!("Cool", "Num", cool_num),
     narrow!("Cool", "Rat", cool_rat),
     MethodRow {
@@ -129,6 +131,40 @@ fn cool_num(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
     match number_of(target) {
         Ok(number) => super::coerce::num_of(&number?).map(Ok),
         Err(failure) => Some(Ok(failure)),
+    }
+}
+
+/// `Cool.Complex`.
+// Cost: as `complex_of_cool`.
+fn cool_complex(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    complex_of_cool(target).map(Ok)
+}
+
+/// `Cool.Complex`: `self.Numeric.Complex`. A string is parsed (`"1+2i"` is that
+/// `Complex`; a non-number is the `X::Str::Numeric` `Failure`), an aggregate is its
+/// element count (`(1, 2, 3).Complex` is `3+0i`). `None` for a receiver that is
+/// no number.
+// Cost: O(n) for a string of n chars; otherwise see `numify`.
+pub(crate) fn complex_of_cool(target: &Value) -> Option<Value> {
+    if let ValueView::Str(s) = target.view() {
+        return Some(complex_of_str(&s));
+    }
+    match numify(target) {
+        Ok(number) => super::numeric_coerce::complex_of(&number),
+        Err(failure) => Some(failure),
+    }
+}
+
+/// `.Complex` of a string: the `Complex` it spells, the real number it spells
+/// with a zero imaginary part, or the `X::Str::Numeric` `Failure`.
+// Cost: as `numeric_of_str`.
+fn complex_of_str(s: &str) -> Value {
+    match crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim()) {
+        Some(v) => match v.view() {
+            ValueView::Complex(..) => v,
+            _ => Value::complex(v.to_f64(), 0.0),
+        },
+        None => str_numeric_failure(s),
     }
 }
 

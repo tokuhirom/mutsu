@@ -74,23 +74,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             | ValueView::Bool(_) => {
                 crate::builtins::method_table::numeric_coerce::complex_of(target).map(Ok)
             }
-            // `"1+2i".Complex` parses the numeric string (raku: <1+2i>), not 0+0i.
-            // A non-numeric string yields the same lazy `X::Str::Numeric` Failure
-            // that `.Int`/`.Num` produce (`"foo".Complex.^name` is `Failure`).
-            ValueView::Str(s) => {
-                match crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim()) {
-                    Some(v) => match v.view() {
-                        ValueView::Complex(..) => Some(Ok(v)),
-                        _ => Some(Ok(Value::complex(v.to_f64(), 0.0))),
-                    },
-                    None => Some(Ok(
-                        crate::builtins::methods_0arg::dispatch_core_coerce::str_numeric_failure(
-                            s.as_str(),
-                        ),
-                    )),
-                }
-            }
-            _ => Some(Ok(Value::complex(0.0, 0.0))),
+            // A type object is `0+0i`; anything else is `Cool.Complex`'s
+            // (`method_table::str_numeric`): a string parses, an aggregate is
+            // its element count.
+            ValueView::Package(_) => Some(Ok(Value::complex(0.0, 0.0))),
+            _ => Some(Ok(
+                crate::builtins::method_table::str_numeric::complex_of_cool(target)
+                    .unwrap_or_else(|| Value::complex(0.0, 0.0)),
+            )),
         },
         "Pair" => match target.view() {
             ValueView::Pair(_, _) | ValueView::ValuePair(_, _) => Some(Ok(target.clone())),
