@@ -246,7 +246,7 @@ impl Interpreter {
         // so a live env value always wins over the pre-installed type object.
         if !crate::qualified::is_global_package(package_sym) {
             for (key, val) in self.our_vars_iter() {
-                if let Some(stash_key) = Self::our_var_stash_member(key, &package_name) {
+                if let Some(stash_key) = self.our_var_stash_member(key, &package_name) {
                     symbols.entry(stash_key).or_insert_with(|| val.clone());
                 }
             }

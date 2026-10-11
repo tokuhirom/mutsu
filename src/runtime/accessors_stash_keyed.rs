@@ -98,6 +98,11 @@ impl Interpreter {
         if is_global && !Self::is_global_root_symbol(rest) {
             return None;
         }
+        // A sigil-less `our constant` is mirrored in the env under the same
+        // spelling as a scalar; it is a term, not `$name` (#11877).
+        if Symbol::lookup(key_s).is_some_and(|sym| self.lexicals.our_term_keys.contains(&sym)) {
+            return Some(EnvStashMember::Value(rest.to_string()));
+        }
         Some(EnvStashMember::Value(Self::stash_symbol_key_from_env_tail(
             rest,
         )))
@@ -107,9 +112,15 @@ impl Interpreter {
     /// contributes. That store is where an `our` declared in a branch that
     /// never RAN is pre-installed (`EndWalker::install_our_symbol`).
     // Cost: O(m), m = bytes of the key.
-    pub(super) fn our_var_stash_member(key: &str, package_name: &str) -> Option<String> {
+    pub(super) fn our_var_stash_member(&self, key: &str, package_name: &str) -> Option<String> {
         if key.starts_with("__mutsu_") {
             return None;
+        }
+        // A sigil-less `our constant` is a term: its stash name is the bare
+        // spelling, not the `$`-scalar its store key looks like (#11877).
+        if Symbol::lookup(key).is_some_and(|sym| self.lexicals.our_term_keys.contains(&sym)) {
+            let rest = Self::stash_member_tail(key, package_name)?;
+            return (!rest.is_empty()).then(|| rest.to_string());
         }
         if let Some(stash_key) = Self::sigil_leading_stash_member(key, package_name) {
             return Some(stash_key);
@@ -273,7 +284,7 @@ impl Interpreter {
             let Some(value) = self.get_our_var(name.as_str()) else {
                 continue;
             };
-            if Self::our_var_stash_member(name.as_str(), &package_name).as_deref() == Some(key) {
+            if self.our_var_stash_member(name.as_str(), &package_name).as_deref() == Some(key) {
                 return Some(Some(value.clone()));
             }
         }

@@ -20,7 +20,23 @@ impl Interpreter {
         qualified_name: &str,
         val: &Value,
     ) {
-        if code.our_locals.is_empty() || !self.our_link_owner_in_scope(qualified_name) {
+        if code.our_locals.is_empty() {
+            return;
+        }
+        // A sigil-less `our constant` is stored under the same qualified
+        // spelling as a scalar; remember that this one is a term (#11877).
+        for &slot in code.our_slots_of(qualified_name) {
+            if code
+                .locals
+                .get(slot)
+                .is_some_and(|name| crate::runtime::term_names::term_spelling(name).is_some())
+            {
+                self.lexicals
+                    .our_term_keys
+                    .insert(Symbol::intern(qualified_name));
+            }
+        }
+        if !self.our_link_owner_in_scope(qualified_name) {
             return;
         }
         for &slot in code.our_slots_of(qualified_name) {
@@ -210,6 +226,15 @@ impl Interpreter {
         if qualified != local_name {
             crate::runtime::cow_table_mut(&mut self.lexicals.our_scalar_cell_names)
                 .insert(local_name);
+        }
+        // A sigil-less `our constant` is stored under the same qualified
+        // spelling as a scalar; remember that this one is a term (#11877).
+        if qualified != code.locals[idx]
+            && crate::runtime::term_names::term_spelling(&code.locals[idx]).is_some()
+        {
+            self.lexicals
+                .our_term_keys
+                .insert(Symbol::intern(&qualified));
         }
         // Persist under the qualified key too, matching what every other
         // `our`/package-qualified store already does (stash introspection,

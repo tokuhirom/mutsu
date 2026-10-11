@@ -51,6 +51,10 @@ pub(crate) struct LexicalState {
     /// Append-only, exactly like `our_vars` itself (which is only ever inserted
     /// into, never removed from), so a membership test can never be stale.
     pub(crate) our_var_unqualified: rustc_hash::FxHashSet<Symbol>,
+    /// The `our_vars` keys (`Pkg::answer`) that hold a sigil-less `our
+    /// constant`. The store spells such a key like a scalar's, so this is the
+    /// only record that `answer` is a term and not `$answer` (#11877).
+    pub(crate) our_term_keys: rustc_hash::FxHashSet<Symbol>,
     /// The process-level dynamics written at run time (`$PROCESS::OUT = ...`,
     /// `PROCESS::<$name> := value`, a `$*name = ...` that lands on the process
     /// binding), keyed by the dynamic-var env key (`*name`/`@*name`/`%*name`).
@@ -376,6 +380,7 @@ impl LexicalState {
             composed_nested_method_captures: Default::default(),
             our_vars: rustc_hash::FxHashMap::default(),
             our_var_unqualified: rustc_hash::FxHashSet::default(),
+            our_term_keys: rustc_hash::FxHashSet::default(),
             process_dynamics: process_stash::ProcessStash::default(),
             hll_syms: rustc_hash::FxHashMap::default(),
             package_lexicals: std::sync::Arc::new(PackageLexicals::default()),
@@ -432,6 +437,7 @@ impl LexicalState {
             composed_nested_method_captures: self.composed_nested_method_captures.clone(),
             our_vars: rustc_hash::FxHashMap::default(),
             our_var_unqualified: rustc_hash::FxHashSet::default(),
+            our_term_keys: rustc_hash::FxHashSet::default(),
             // ADR-11318: one `PROCESS::` stash for the whole lineage.
             process_dynamics: self.process_dynamics.clone(),
             hll_syms: rustc_hash::FxHashMap::default(),
