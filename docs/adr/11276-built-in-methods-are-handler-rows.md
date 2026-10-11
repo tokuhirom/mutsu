@@ -1546,7 +1546,7 @@ largest block with one obvious shape, so it went first: 43 rows in four new modu
 
 `refactor/12678-cool-str-conversion-rows` (issue #12678, the remainder of §9.70). 16 of the 17 declared rows `--inventory` listed are rows now; the seventeenth, `Cool.Int`, is unreachable (below).
 
-- **`str_numeric`**: `Str.Numeric`, `Str.Int`, `Str.Num` and `Cool.Num`, `Cool.Rat`, `Cool.UInt` (and `Complex.UInt`, an interpreter row in `complex_real`, because `Cool.UInt` is reached by `Complex` too). `numeric_of_str`, `int_of_str`, `num_of_str`,
+- **`str_numeric`**: `Str.Numeric`, `Str.Int`, `Str.Num` and `Cool.Num`, `Cool.Rat`, `Cool.UInt` (`Cool.UInt` is an interpreter row: it is reached by `Complex`, whose `UInt` is `$*TOLERANCE`-dependent and not declared by Rakudo on `Complex` itself). `numeric_of_str`, `int_of_str`, `num_of_str`,
   `rat_of_str`, `fat_rat_of_str` and `uint_of_int` are the one implementation: the rows call them, and so do the cascade arms (an allomorph, a subclass). The
   `Str` cases the numeric types do not have are kept: an empty string is zero, a string that numifies to a `Complex` (`"1+2i".Int`) is declined to the interpreter
   (`$*TOLERANCE`), a non-number is the lazy `X::Str::Numeric` `Failure`. A `Cool` row numifies through `numify` (a `List`, `Array`, `Hash` is its element count).

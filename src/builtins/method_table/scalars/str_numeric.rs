@@ -17,7 +17,9 @@
 
 use super::numify::numify;
 use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::Named;
 use crate::builtins::methods_0arg::{parse_raku_int_from_str, str_numeric_failure};
+use crate::runtime::Interpreter;
 use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -56,7 +58,14 @@ pub(super) static STR_ROWS: &[MethodRow] = &[
 pub(super) static COOL_ROWS: &[MethodRow] = &[
     narrow!("Cool", "Num", cool_num),
     narrow!("Cool", "Rat", cool_rat),
-    narrow!("Cool", "UInt", cool_uint),
+    MethodRow {
+        owner: "Cool",
+        name: "UInt",
+        arity: 0,
+        handler: Handler::Interp(cool_uint),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
 ];
 
 /// The error a `Str` row raises for a receiver that is not a `Str`; the table
@@ -135,9 +144,18 @@ fn cool_rat(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
     }
 }
 
-/// `Cool.UInt`: `.Int`, then the range check.
+/// `Cool.UInt`: `.Int`, then the range check. An interpreter row: a `Complex`
+/// is a `Real` only within `$*TOLERANCE` (`Interpreter::dispatch_complex_to_real`).
 // Cost: as `cool_int`.
-fn cool_uint(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+fn cool_uint(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if let ValueView::Complex(re, im) = target.view() {
+        return Some(interp.dispatch_complex_to_real("UInt", re, im, target, &[]));
+    }
     let int = cool_int(target, &[])?;
     Some(int.map(uint_of_int))
 }
