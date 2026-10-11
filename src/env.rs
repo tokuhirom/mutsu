@@ -2395,6 +2395,9 @@ impl Env {
                     found = Some(v);
                 }
             }
+            if let Some(v) = cur.static_capture_hit(key) {
+                return Some(v);
+            }
             if let Some(outer) = cur.static_skip(key) {
                 cur = outer;
                 continue;

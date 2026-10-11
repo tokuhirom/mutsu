@@ -6,7 +6,7 @@ use Test;
 # Dynamic variables still resolve through the callers. Every expectation was
 # checked against rakudo.
 
-plan 10;
+plan 16;
 
 my $p = 'program';
 
@@ -52,5 +52,30 @@ is ctx-caller(), 43, 'EVAL with context => CALLER:: sees the caller\'s lexical';
 sub callee-of-eval() { (try EVAL q[$between]) // 'not visible' }
 sub middle() { my $between = 'middle'; EVAL q[callee-of-eval()] }
 is middle(), 'not visible', 'a routine called from EVAL does not see the EVAL caller\'s lexical';
+
+# --- closures (slice 4) ----------------------------------------------------
+
+my $late = 1;
+my &read-late = -> { EVAL q[$late] };
+$late = 2;
+is read-late(), 2, 'a closure\'s EVAL reads the program-scope lexical\'s current value';
+
+sub call-closure(&f) { my $late = 'caller'; f() }
+is call-closure(&read-late), 2, 'a program-scope closure\'s EVAL does not see its caller\'s lexical';
+
+sub make-reader() { my $made = 'made'; -> { EVAL q[$made] } }
+sub call-reader() { my $made = 'caller'; make-reader()() }
+is call-reader(), 'made', 'a closure made in a routine reads that routine\'s lexical through EVAL';
+
+my &outer-maker = -> { -> { (try EVAL q[$callers-only]) // 'not visible' } };
+sub call-maker() { my $callers-only = 'caller'; outer-maker()() }
+is call-maker(), 'not visible', 'a closure made in a closure does not capture its maker\'s caller';
+
+my &sym-closure = -> { (try ::('$sym-caller')) // 'not visible' };
+sub call-sym-closure() { my $sym-caller = 'caller'; sym-closure() }
+is call-sym-closure(), 'not visible', 'a program-scope closure\'s ::(\'$x\') does not see its caller\'s lexical';
+
+sub later-write() { my $lw = 1; my &c = -> { EVAL q[$lw] }; $lw = 2; c() }
+is later-write(), 2, 'a closure made in a routine reads that routine\'s later write through EVAL';
 
 done-testing;

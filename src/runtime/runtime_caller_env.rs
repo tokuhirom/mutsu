@@ -156,7 +156,7 @@ impl Interpreter {
             return Ok(Value::NIL);
         }
         let env = &self.caller_env_stack[stack_len - depth];
-        if let Some(val) = env.get(name) {
+        if let Some(val) = env.get_through_callers(name) {
             // Check that the variable is declared `is dynamic`
             if !self.is_var_dynamic(name) {
                 return Err(crate::runtime::utils::caller_not_dynamic_error(name));
@@ -222,7 +222,7 @@ impl Interpreter {
         // caller's compilation unit (not bound in its env) resolves by name.
         let is_routine = name.starts_with('&');
         for env in self.caller_env_stack[..=stack_len - depth].iter().rev() {
-            if let Some(val) = env.get(name)
+            if let Some(val) = env.get_through_callers(name)
                 && (is_routine || self.is_var_dynamic(name))
             {
                 return Ok(val.clone());

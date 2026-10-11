@@ -111,7 +111,6 @@ plan 21;
     my $v = 'outer v';
     my &c = -> { EVAL q[$v] };
     sub call(&f) { my $v = 'caller v'; f() }
-    todo 'ADR-12529 phase 3: EVAL resolves through the static chain';
     is call(&c), 'outer v', 'EVAL in a closure sees the closure\'s outer lexical, not the caller\'s';
 }
 
@@ -130,7 +129,6 @@ plan 21;
 {
     my &mk = -> { -> { (try EVAL q[$hidden]) // 'not visible' } };
     sub k() { my $hidden = 'caller lexical'; mk() }
-    todo 'ADR-12529 phase 3: EVAL resolves through the static chain';
     is k()(), 'not visible', 'EVAL in a closure made by a callee does not see the caller\'s lexical (ADR §1.3)';
 }
 

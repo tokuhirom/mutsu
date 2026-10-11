@@ -97,6 +97,11 @@ pub(crate) struct Tier {
     /// for what only a reflective routine's frame has; such a frame's
     /// overlay is its own, never the shared empty one.
     static_link: Option<Arc<crate::env::static_link::StaticLink>>,
+    /// On a reflective closure's capture: it was taken while the program
+    /// scope itself was running (no call frame in the chain), so the
+    /// closure's lexical outer is the program scope, which the closure's frame
+    /// then links to (ADR-12529 phase 3).
+    program_scope_capture: bool,
 }
 
 /// What a closure capture takes from one wide env tier, built once per
@@ -127,6 +132,7 @@ impl Clone for Tier {
             container_ref_keys: self.container_ref_keys.clone(),
             capture_sys: self.capture_sys.clone(),
             static_link: self.static_link.clone(),
+            program_scope_capture: self.program_scope_capture,
         }
     }
 }
@@ -239,7 +245,21 @@ impl Tier {
             container_ref_keys: OnceLock::new(),
             capture_sys: OnceLock::new(),
             static_link: None,
+            program_scope_capture: false,
         }
+    }
+
+    /// See the `program_scope_capture` field.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_program_scope_capture(&self) -> bool {
+        self.program_scope_capture
+    }
+
+    /// Mark this tier as a capture taken at program scope.
+    // Cost: O(1).
+    pub(crate) fn mark_program_scope_capture(&mut self) {
+        self.program_scope_capture = true;
     }
 
     /// This tier's frame-root static link, if it has one.
