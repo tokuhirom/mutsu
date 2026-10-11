@@ -105,6 +105,7 @@ impl Interpreter {
             optional: multi_rank::optional_positional_count(&params),
             decl_order: def.decl_order,
             profile,
+            tier: 0,
         }
     }
 
@@ -227,6 +228,9 @@ impl Interpreter {
             let key = self.candidate_rank_key(&def, args);
             ranked.push((key, def));
         }
+        multi_rank::assign_tiers(&mut ranked, |(key, _)| key, &|x, y| {
+            self.nominal_types_related(x, y)
+        });
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.bind_ranked_candidates(name, args, ranked, rejected)
     }

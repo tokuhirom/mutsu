@@ -27,7 +27,7 @@
 //! the key for such a name, and a compunit-private name is never planned at
 //! all.
 
-use super::multi_rank::MultiRank;
+use super::multi_rank::{self, MultiRank};
 use super::*;
 
 /// One candidate of a cached dispatch-plan stage
@@ -419,14 +419,18 @@ impl Interpreter {
         mut candidates: Vec<(String, Arc<FunctionDef>)>,
     ) -> Vec<PlanEntry> {
         self.retain_visible_operator_candidates(name, &mut candidates);
-        candidates
+        let mut entries: Vec<PlanEntry> = candidates
             .into_iter()
             .map(|(_, def)| PlanEntry {
                 key: self.candidate_rank_key(&def, args),
                 reads_value: self.candidate_rank_reads_value(&def),
                 def,
             })
-            .collect()
+            .collect();
+        multi_rank::assign_tiers(&mut entries, |entry| &mut entry.key, &|x, y| {
+            self.nominal_types_related(x, y)
+        });
+        entries
     }
 
     /// Whether [`Self::candidate_rank_key`] reads an argument's *value* for
@@ -493,6 +497,12 @@ impl Interpreter {
         }
         if ranked.is_empty() {
             return Ok(None);
+        }
+        // A key re-ranked against this call's values needs its tier again.
+        if stage.iter().any(|entry| entry.reads_value) {
+            multi_rank::assign_tiers(&mut ranked, |(key, _)| key, &|x, y| {
+                self.nominal_types_related(x, y)
+            });
         }
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.bind_ranked_candidates(name, args, ranked, Some(rejected))

@@ -144,6 +144,13 @@ pub(crate) struct MultiRank {
     /// its MRO-ordered match list.
     pub(crate) decl_order: u64,
     pub(crate) profile: RankProfile,
+    /// Rakudo's tier: the candidate's layer in the topological sort of the
+    /// whole candidate set by narrowness, the first (narrowest) being 0 (see
+    /// [`assign_tiers`]). It leads every comparison, so a candidate in a
+    /// later tier never wins over a binding one in an earlier tier, even
+    /// when the pair alone is incomparable. 0 everywhere when the caller
+    /// ranks only candidates that already bound (multi methods).
+    pub(crate) tier: u32,
 }
 
 impl MultiRank {
@@ -153,6 +160,13 @@ impl MultiRank {
     /// between them.
     // Cost: O(1).
     pub(crate) fn tier_cmp(&self, other: &MultiRank) -> Ordering {
+        self.tier.cmp(&other.tier).then(self.rank_cmp(other))
+    }
+
+    /// [`Self::tier_cmp`] without the topological tier: the per-candidate
+    /// lexicographic order alone.
+    // Cost: O(1).
+    fn rank_cmp(&self, other: &MultiRank) -> Ordering {
         other
             .nominal
             .cmp(&self.nominal)
@@ -182,44 +196,51 @@ impl MultiRank {
         self.profile.incomparable(&other.profile, related)
     }
 
-    /// Whether rakudo's arity-mismatch rule decides between `self` and
-    /// `other`: they differ in both positional count and required positional
-    /// count, and exactly one declares a slurpy positional. Rakudo's
-    /// `is_narrower` then compares no parameter types at all: the candidate
-    /// without the slurpy is narrower. So `multi m(Any $x, Any $y)` beats
-    /// `multi m(Int $x, *@r)` for `m(1, 2)` whatever their declaration
-    /// order, although `Int` is the narrower type at the one position they
-    /// share.
-    ///
-    /// When neither (or both) declares a slurpy, rakudo calls the pair
-    /// incomparable and its topological sort over ALL candidates — including
-    /// ones that cannot bind this call — decides which tier each lands in
-    /// (Test's `is-approx(5, 6, 1)` reaches the `$abs-tol` candidate only
-    /// because the required-named candidates sit between the two). A
-    /// pairwise relation over the candidates that bound cannot reproduce
-    /// that, so such a pair keeps the tier order.
-    // TODO: rank multi candidates by rakudo's tiered topological sort over the
-    // whole candidate set, then drop this special case (see #12795).
+    /// Whether `self` and `other` differ in both positional count and
+    /// required positional count: rakudo's arity mismatch, under which its
+    /// `is_narrower` compares no parameter types at all.
     // Cost: O(1).
-    fn arity_rule_decides(&self, other: &MultiRank) -> bool {
-        self.arity.0 != other.arity.0
-            && self.arity.1 != other.arity.1
-            && self.non_slurpy != other.non_slurpy
+    fn arity_mismatch(&self, other: &MultiRank) -> bool {
+        self.arity.0 != other.arity.0 && self.arity.1 != other.arity.1
     }
 
-    /// Whether `self` is strictly narrower than `other`: comparable with it
-    /// and ahead of it in the tier order, or — when the arity-mismatch rule
-    /// decides (see [`Self::arity_rule_decides`]) — the non-slurpy one.
+    /// Rakudo's `is_narrower` on the candidates' own ranks, the relation the
+    /// topological tiers of [`assign_tiers`] are built from. On an arity
+    /// mismatch (see [`Self::arity_mismatch`]) a candidate without a slurpy
+    /// positional is narrower than one with it, and otherwise neither is
+    /// narrower: `multi m(Any $x, Any $y)` beats `multi m(Int $x, *@r)` for
+    /// `m(1, 2)` whatever their declaration order, while
+    /// `multi a(Numeric $g, Numeric $e, $d = '')` and
+    /// `multi a(Numeric $g, Numeric $e, Numeric $t, $d = '')` are
+    /// incomparable, so which one Test's `is-approx(5, 6, 1)` reaches is
+    /// decided by the required-named candidates that sit between them.
+    // Cost: O(r), r = the cost of one `related` call.
+    fn rakudo_narrower(&self, other: &MultiRank, related: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
+        if self.arity_mismatch(other) {
+            return self.non_slurpy && !other.non_slurpy;
+        }
+        self.rank_cmp(other) == Ordering::Less && !self.incomparable(other, related)
+    }
+
+    /// Whether `self` is strictly narrower than `other`: in an earlier tier,
+    /// or in the same one and ahead of it in the tier order while comparable
+    /// with it. Within a tier, an arity mismatch decides only when exactly
+    /// one of the two is slurpy (the non-slurpy one is narrower); otherwise
+    /// the pair keeps the rank order, which is all a caller that ranks only
+    /// the candidates that bound (multi methods) can go by.
     // Cost: O(r), r = the cost of one `related` call.
     pub(crate) fn is_narrower(
         &self,
         other: &MultiRank,
         related: &dyn Fn(Symbol, Symbol) -> bool,
     ) -> bool {
-        if self.arity_rule_decides(other) {
+        if self.tier != other.tier {
+            return self.tier < other.tier;
+        }
+        if self.arity_mismatch(other) && self.non_slurpy != other.non_slurpy {
             return self.non_slurpy;
         }
-        self.tier_cmp(other) == Ordering::Less && !self.incomparable(other, related)
+        self.rank_cmp(other) == Ordering::Less && !self.incomparable(other, related)
     }
 
     /// Whether a narrowest-first scan that already bound a candidate ranked
@@ -233,6 +254,61 @@ impl MultiRank {
         related: &dyn Fn(Symbol, Symbol) -> bool,
     ) -> bool {
         best.is_narrower(self, related)
+    }
+}
+
+/// Give each rank its rakudo tier: the candidates nothing in `ranks` is
+/// narrower than form tier 0, those only tier-0 candidates are narrower than
+/// form tier 1, and so on — rakudo's topological sort of a multi's candidate
+/// list. `ranks` is every candidate of one dispatch (whether or not it binds
+/// the call), so a pair the relation calls incomparable can still land in two
+/// tiers because of a third candidate between them (#12795). A cycle, which
+/// the relation can form across an arity mismatch, closes the remaining
+/// candidates into one tier.
+// Cost: O(n^2 * r), n = candidates, r = the cost of one `related` call.
+pub(crate) fn assign_tiers<T>(
+    items: &mut [T],
+    rank: impl Fn(&mut T) -> &mut MultiRank,
+    related: &dyn Fn(Symbol, Symbol) -> bool,
+) {
+    let n = items.len();
+    if n < 2 {
+        for item in items.iter_mut() {
+            rank(item).tier = 0;
+        }
+        return;
+    }
+    let ranks: Vec<MultiRank> = items.iter_mut().map(|item| *rank(item)).collect();
+    let narrower: Vec<Vec<bool>> = (0..n)
+        .map(|i| {
+            (0..n)
+                .map(|j| i != j && ranks[i].rakudo_narrower(&ranks[j], related))
+                .collect()
+        })
+        .collect();
+    let mut tier_of: Vec<Option<u32>> = vec![None; n];
+    let mut tier = 0u32;
+    let mut left = n;
+    while left > 0 {
+        let layer: Vec<usize> = (0..n)
+            .filter(|&j| {
+                tier_of[j].is_none()
+                    && !(0..n).any(|i| tier_of[i].is_none() && narrower[i][j])
+            })
+            .collect();
+        let layer = if layer.is_empty() {
+            (0..n).filter(|&j| tier_of[j].is_none()).collect()
+        } else {
+            layer
+        };
+        for &j in &layer {
+            tier_of[j] = Some(tier);
+        }
+        left -= layer.len();
+        tier += 1;
+    }
+    for (item, tier) in items.iter_mut().zip(tier_of) {
+        rank(item).tier = tier.unwrap_or(0);
     }
 }
 
