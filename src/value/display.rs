@@ -673,12 +673,15 @@ impl Value {
                 })
                 .unwrap_or_else(|| "...".to_string())
             }
+            // A `Bag`/`Mix` renders each element by its `gist` (`Baggy.Str`:
+            // `bag(a => 1).Str` is `a => 1`, `bag($[1, 2]).Str` is `[1 2]`), a
+            // `Set` by its `Str`.
             ValueView::Bag(b, _) => {
                 let ptr = crate::gc::Gc::as_ptr(&b) as usize;
                 with_quanthash_render_guard(ptr, || {
                     let mut keys: Vec<(String, &num_bigint::BigInt)> = b
                         .iter()
-                        .map(|(k, v)| (b.typed_key(k).to_string_value(), v))
+                        .map(|(k, v)| (crate::value::gist::gist_value(&b.typed_key(k)), v))
                         .collect();
                     keys.sort_by_key(|(k, _)| k.clone());
                     keys.iter()
@@ -699,7 +702,7 @@ impl Value {
                 with_quanthash_render_guard(ptr, || {
                     let mut keys: Vec<(String, &f64)> = m
                         .iter()
-                        .map(|(k, v)| (m.typed_key(k).to_string_value(), v))
+                        .map(|(k, v)| (crate::value::gist::gist_value(&m.typed_key(k)), v))
                         .collect();
                     keys.sort_by_key(|(k, _)| k.clone());
                     keys.iter()

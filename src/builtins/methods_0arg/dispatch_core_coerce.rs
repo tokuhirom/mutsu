@@ -219,7 +219,11 @@ pub(super) fn dispatch(
                 ValueView::LazyList(ll) => Some(Some(Ok(Value::lazy_list(crate::gc::Gc::new(
                     (**ll).clone(),
                 ))))),
-                ValueView::Array(..) | ValueView::Hash(..) => Some(
+                ValueView::Array(..)
+                | ValueView::Hash(..)
+                | ValueView::Set(..)
+                | ValueView::Bag(..)
+                | ValueView::Mix(..) => Some(
                     crate::builtins::method_table::collection_clone::container_clone(target)
                         .map(Ok),
                 ),
@@ -231,18 +235,6 @@ pub(super) fn dispatch(
                 ValueView::Slip(items) => Some(Some(Ok(
                     Value::slip(items.to_vec()).with_slip_itemized(target.slip_is_itemized())
                 ))),
-                ValueView::Set(data, mutable) => Some(Some(Ok(Value::set_parts(
-                    crate::gc::Gc::new((**data).clone()),
-                    mutable,
-                )))),
-                ValueView::Bag(data, mutable) => Some(Some(Ok(Value::bag_parts(
-                    crate::gc::Gc::new((**data).clone()),
-                    mutable,
-                )))),
-                ValueView::Mix(data, mutable) => Some(Some(Ok(Value::mix_parts(
-                    crate::gc::Gc::new((**data).clone()),
-                    mutable,
-                )))),
                 // The `Code.clone` row's implementation (`method_table::code`).
                 ValueView::Sub(_) => Some(crate::builtins::method_table::code::pure_answer(
                     target, "clone",

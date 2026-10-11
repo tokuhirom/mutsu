@@ -40,6 +40,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     render::WHICH_ROWS,
     render::LIST_GIST_ROWS,
     render::QUANT_GIST_ROWS,
+    render::QUANT_STR_ROWS,
     render::QUANT_RAKU_ROWS,
     render::RANGE_ROWS,
     render_names::RAKU_ROWS,
