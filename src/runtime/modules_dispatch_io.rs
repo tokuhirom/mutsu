@@ -8,6 +8,7 @@ pub(crate) mod did_you_mean;
 mod dispatch;
 pub(crate) use dispatch::Resolved;
 mod dispatch_candidates;
+mod multi_rank;
 pub(crate) mod dispatch_key;
 mod dispatch_narrow;
 mod dispatch_proto;

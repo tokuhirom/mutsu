@@ -27,14 +27,14 @@
 //! the key for such a name, and a compunit-private name is never planned at
 //! all.
 
-use super::dispatch_candidates::CandidateRankKey;
+use super::multi_rank::MultiRank;
 use super::*;
 
 /// One candidate of a cached dispatch-plan stage
 /// ([`crate::runtime::multi_dispatch_plan`]).
 pub(crate) struct PlanEntry {
     /// The rank key against the argument types the plan was built for.
-    pub(super) key: CandidateRankKey,
+    pub(super) key: MultiRank,
     /// The key also depends on the argument values, so it is recomputed per
     /// call (see `Interpreter::candidate_rank_reads_value`).
     pub(super) reads_value: bool,
@@ -462,7 +462,7 @@ impl Interpreter {
     ) -> Resolved {
         let core_outranks = Self::core_io_path_candidate_applies(name, args);
         let mut seen: Vec<u64> = Vec::with_capacity(stage.len());
-        let mut ranked: Vec<(CandidateRankKey, Arc<FunctionDef>)> = Vec::with_capacity(stage.len());
+        let mut ranked: Vec<(MultiRank, Arc<FunctionDef>)> = Vec::with_capacity(stage.len());
         for entry in stage {
             let fp = entry.def.body_fingerprint();
             if core_outranks && Self::candidate_is_untyped_where(&entry.def) {
@@ -482,7 +482,7 @@ impl Interpreter {
         if ranked.is_empty() {
             return Ok(None);
         }
-        ranked.sort_by(|a, b| Self::candidate_rank_cmp(a.0, b.0));
+        ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.bind_ranked_candidates(name, args, ranked, Some(rejected))
     }
 }

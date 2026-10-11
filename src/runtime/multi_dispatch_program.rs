@@ -22,8 +22,8 @@
 //! positional signature (`args_match_simple_positional`'s shape) and a rank
 //! that does not read argument values; any other stage keeps the general walk.
 
-use super::dispatch_candidates::CandidateRankKey;
 use super::multi_dispatch_plan::PlanEntry;
+use super::multi_rank::MultiRank;
 use super::*;
 
 /// A value-dependent check left for call time, against argument `arg`.
@@ -37,7 +37,7 @@ enum ValueCheck {
 }
 
 struct ProgramStep {
-    key: CandidateRankKey,
+    key: MultiRank,
     fingerprint: u64,
     def: Arc<FunctionDef>,
     /// Every check that the argument-type key decides, answered once.
@@ -97,7 +97,7 @@ impl Interpreter {
                 checks,
             });
         }
-        steps.sort_by(|a, b| Self::candidate_rank_cmp(a.key, b.key));
+        steps.sort_by(|a, b| a.key.total_cmp(&b.key));
         Some(StageProgram { steps })
     }
 
@@ -155,24 +155,22 @@ impl Interpreter {
         program: &StageProgram,
         rejected: &mut std::collections::HashSet<u64>,
     ) -> Resolved {
-        let mut matches: Vec<(CandidateRankKey, Arc<FunctionDef>)> = Vec::new();
-        let mut best_key: Option<CandidateRankKey> = None;
+        let mut matches: Vec<(MultiRank, Arc<FunctionDef>)> = Vec::new();
+        let mut best_key: Option<MultiRank> = None;
         let mut threw: Option<(Arc<FunctionDef>, RuntimeError)> = None;
         let outer_where_exception = self.pending_where_exception.take();
         for step in &program.steps {
             if rejected.contains(&step.fingerprint) {
                 continue;
             }
+            // Strictly wider than the best match and comparable with it; an
+            // incomparable one is still a contender (#11943).
             if let Some(best) = best_key
-                && Self::candidate_rank_cmp(
-                    Self::rank_key_ignoring_decl_order(step.key),
-                    Self::rank_key_ignoring_decl_order(best),
-                ) == std::cmp::Ordering::Greater
+                && step
+                    .key
+                    .scan_may_skip(&best, &|x, y| self.nominal_types_related(x, y))
             {
-                // Incomparable with the best match: still a contender (#11943).
-                if !self.rank_keys_incomparable(&step.key, &best) {
-                    continue;
-                }
+                continue;
             }
             let ok = step.nominal_ok
                 && self.with_candidate_scope(&step.def, |this| {
