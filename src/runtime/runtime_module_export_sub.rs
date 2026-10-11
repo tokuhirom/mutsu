@@ -245,7 +245,12 @@ impl Interpreter {
                 // Same compunit anchoring as the first-load path above.
                 let saved_unit = self.current_unit;
                 self.current_unit = self.unit_of_declaring_file(d.source_file.as_deref());
+                // The module's own multi/proto families may have been dropped
+                // with an earlier importing block's scope; EXPORT reads them
+                // through `UNIT::` (#11246).
+                let reinstated = self.reinstate_own_families(module);
                 let r = self.compile_and_call_function_def(&d, export_args, &empty_fns);
+                self.remove_reinstated_families(reinstated);
                 self.current_unit = saved_unit;
                 r?
             }

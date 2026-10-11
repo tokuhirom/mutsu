@@ -112,6 +112,11 @@ pub(crate) struct ModuleState {
     /// can run it again with the new import's arguments.
     pub(crate) module_export_defs:
         HashMap<String, crate::runtime::runtime_module_export_sub::ModuleExportDef>,
+    /// Each loaded package-less module's own `multi`/`proto` candidates, kept
+    /// so a re-`use` can put them back for the module's `sub EXPORT` after an
+    /// import-scope pop dropped them (#11246).
+    pub(crate) module_own_families:
+        HashMap<String, crate::runtime::unit_multi_scope::OwnFamilies>,
     pub(crate) loaded_modules: std::sync::Arc<HashSet<String>>,
     /// Package-qualified routine keys a module load introduced (`M::helper`,
     /// `M::EXPORT::ALL::foo`) — never the bare `GLOBAL::` import aliases, which
@@ -530,6 +535,7 @@ impl ModuleState {
             pending_use_export_args: None,
             pending_inner_export_subs: ValueMap::default(),
             module_export_defs: HashMap::new(),
+            module_own_families: HashMap::new(),
             loaded_modules: Default::default(),
             module_registered_functions: Default::default(),
             packages_with_deferred_use_imports: Default::default(),
@@ -608,6 +614,7 @@ impl ModuleState {
             pending_use_export_args: None,
             pending_inner_export_subs: ValueMap::default(),
             module_export_defs: HashMap::new(),
+            module_own_families: HashMap::new(),
             loaded_modules: self.loaded_modules.clone(),
             module_registered_functions: self.module_registered_functions.clone(),
             packages_with_deferred_use_imports: self.packages_with_deferred_use_imports.clone(),

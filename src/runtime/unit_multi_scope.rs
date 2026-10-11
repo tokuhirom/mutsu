@@ -27,7 +27,129 @@
 use super::dispatch_resolve::function_key_base_name;
 use super::*;
 
+/// A module's own package-less `multi`/`proto` candidates, by registry key.
+#[derive(Clone, Default)]
+pub(crate) struct OwnFamilies {
+    functions: Vec<(Symbol, Arc<FunctionDef>)>,
+    protos: Vec<(Symbol, Arc<FunctionDef>)>,
+    /// The keys of `protos` that were also in the proto-name set.
+    proto_subs: Vec<String>,
+}
+
+/// What [`Interpreter::reinstate_own_families`] added, to take out again.
+#[derive(Default)]
+pub(crate) struct ReinstatedFamilies {
+    functions: Vec<Symbol>,
+    protos: Vec<Symbol>,
+    proto_subs: Vec<String>,
+}
+
 impl Interpreter {
+    /// Remember the package-less families `module`'s body declared, once its
+    /// load has scoped them ([`Self::scope_unit_multi_families`]).
+    ///
+    /// An import scope that ends (`{ use M <f> }`) drops every `GLOBAL::`
+    /// candidate it did not snapshot, the module's own included, because an
+    /// exported family's keys are the very keys its import aliases use. The
+    /// module stays loaded, so its `sub EXPORT` re-runs on the next import
+    /// and must see its own family again ([`Self::reinstate_own_families`]).
+    // Cost: O(r + p), r = registered functions, p = registered protos; once per
+    // module load.
+    pub(crate) fn remember_own_families(&mut self, module: &str, source_path: &str) {
+        let decl_unit = self.unit_of_source(Some(source_path));
+        let mut own = OwnFamilies::default();
+        {
+            let registry = self.registry();
+            let scoped = |base: &str| {
+                Symbol::lookup(base)
+                    .and_then(|name| self.module.operator_import_units.get(&name))
+                    .is_some_and(|families| families.contains_key(&decl_unit))
+            };
+            for (key, def) in registry.functions.iter() {
+                let ks = key.as_str();
+                let base = function_key_base_name(ks);
+                if ks
+                    .strip_prefix("GLOBAL::")
+                    .and_then(|tail| tail.strip_prefix(base))
+                    .is_some_and(|rest| rest.starts_with('/'))
+                    && crate::qualified::is_global_package(def.package)
+                    && self.unit_of_source(def.source_file.as_deref()) == decl_unit
+                    && scoped(base)
+                {
+                    own.functions.push((*key, def.clone()));
+                }
+            }
+            for (key, def) in registry.proto_functions.iter() {
+                let ks = key.as_str();
+                if Self::toplevel_global_routine_name(ks).is_some()
+                    && self.unit_of_source(def.source_file.as_deref()) == decl_unit
+                    && scoped(function_key_base_name(ks))
+                {
+                    own.protos.push((*key, def.clone()));
+                    if registry.proto_subs_contains(ks) {
+                        own.proto_subs.push(ks.to_string());
+                    }
+                }
+            }
+        }
+        if own.functions.is_empty() && own.protos.is_empty() {
+            return;
+        }
+        self.module.module_own_families.insert(module.to_string(), own);
+    }
+
+    /// Put `module`'s own remembered families back into the registry where an
+    /// import-scope pop dropped them, so its `sub EXPORT` can read them
+    /// through `UNIT::`. Returns what was added; hand it to
+    /// [`Self::remove_reinstated_families`] once EXPORT has returned, so the
+    /// block that is importing does not keep the module's lexicals.
+    // Cost: O(f), f = the module's own candidates.
+    pub(crate) fn reinstate_own_families(&mut self, module: &str) -> ReinstatedFamilies {
+        let mut added = ReinstatedFamilies::default();
+        let Some(own) = self.module.module_own_families.get(module).cloned() else {
+            return added;
+        };
+        for (key, def) in own.functions {
+            if !self.registry().functions.contains_key(&key) {
+                self.registry_mut().functions_mut().insert(key, def);
+                added.functions.push(key);
+            }
+        }
+        for (key, def) in own.protos {
+            if !self.registry().proto_functions.contains_key(&key) {
+                self.registry_mut().proto_functions_mut().insert(key, def);
+                added.protos.push(key);
+            }
+        }
+        for key in own.proto_subs {
+            if !self.registry().proto_subs_contains(&key) {
+                self.registry_mut().proto_subs_insert(key.clone());
+                added.proto_subs.push(key);
+            }
+        }
+        if !(added.functions.is_empty() && added.protos.is_empty()) {
+            self.invalidate_fn_resolution();
+        }
+        added
+    }
+
+    /// Take out what [`Self::reinstate_own_families`] added.
+    // Cost: O(f), f = the reinstated candidates.
+    pub(crate) fn remove_reinstated_families(&mut self, added: ReinstatedFamilies) {
+        if added.functions.is_empty() && added.protos.is_empty() {
+            return;
+        }
+        for key in &added.functions {
+            self.registry_mut().functions_mut().remove(key);
+        }
+        for key in &added.protos {
+            self.registry_mut().proto_functions_mut().remove(key);
+        }
+        let gone: HashSet<&String> = added.proto_subs.iter().collect();
+        self.registry_mut().proto_subs_retain(|key| !gone.contains(key));
+        self.invalidate_fn_resolution();
+    }
+
     /// Scope the package-less `multi`/`proto` families the compunit at
     /// `source_path` declared to that compunit: from now on only its own
     /// code, and units that import the family, see them.
