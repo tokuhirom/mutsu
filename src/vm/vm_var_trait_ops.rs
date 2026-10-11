@@ -428,6 +428,26 @@ impl Interpreter {
                 self.stack.pop(); // discard unused trait argument
             }
             let name_str = name.to_string();
+            // `Map.STORE` builds the Map from the initializer itself, as
+            // `Map.new` does: its values are bare, so a `Nil` stays `Nil`.
+            // The declaration's hash assignment ran first and put each value in
+            // a Hash container, which turned a `Nil` into `Any`
+            // (`my %type is Map = a => Nil; %type<a> =:= Nil`, #12478).
+            let from_init = stashed_init
+                .as_ref()
+                .filter(|raw| {
+                    matches!(
+                        raw.view(),
+                        ValueView::Array(..) | ValueView::Pair(..) | ValueView::Seq(..)
+                    )
+                })
+                .and_then(|raw| crate::builtins::map_hash_coerce::to_map(raw.clone()).ok())
+                .filter(|map| matches!(map.view(), ValueView::Hash(_)));
+            if let Some(map) = from_init
+                && !self.write_var_trait_target(code, eff_slot, &name_str, map.clone())
+            {
+                self.set_env_with_main_alias(&name_str, map);
+            }
             // Register container type metadata with declared_type "Map"
             if let Some(mut container) = self.read_var_trait_target(code, eff_slot, &name_str) {
                 // A Map holds its values bare: the declaration's hash

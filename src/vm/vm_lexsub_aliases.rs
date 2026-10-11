@@ -92,6 +92,9 @@ impl Interpreter {
             return;
         }
         let owner = Self::lexsub_plan_owner(plan, compiled_fns);
+        // Only the hoisted registration can run before a free variable's
+        // declaration (see `lexsub_alias_cell`).
+        let hoisted_pass = plan.custom_traits.iter().any(|(t, _)| t == "__hoisted");
         for a in &plan.lexsub_free_aliases {
             // The hoisted pass runs before a declaration in the sub's own
             // scope has: whatever the slot holds is not that variable yet (a
@@ -115,7 +118,8 @@ impl Interpreter {
                 }
                 _ => None,
             };
-            let Some(cell) = seeded.or_else(|| self.lexsub_alias_cell(code, a)) else {
+            let Some(cell) = seeded.or_else(|| self.lexsub_alias_cell(code, a, hoisted_pass))
+            else {
                 // This activation has no cell for the variable (the hoisted
                 // pass before its `my` ran, or a variable that cannot be
                 // boxed): a stale entry from an earlier activation or the
@@ -161,7 +165,12 @@ impl Interpreter {
     /// The cell `a`'s free variable is bound to in the running (declaring)
     /// frame, boxing a local of that frame in place. `None` leaves the
     /// variable on the ordinary by-name resolution.
-    fn lexsub_alias_cell(&mut self, code: &CompiledCode, a: &LexSubFreeAlias) -> Option<Value> {
+    fn lexsub_alias_cell(
+        &mut self,
+        code: &CompiledCode,
+        a: &LexSubFreeAlias,
+        hoisted_pass: bool,
+    ) -> Option<Value> {
         let name = a.var.resolve();
         if let Some(slot) = a.var_slot.map(|s| s as usize)
             && code.locals.get(slot).is_some_and(|n| *n == name)
@@ -178,8 +187,12 @@ impl Interpreter {
                 return Some(cur);
             }
             // Hoisted pass before the variable's own declaration ran: the
-            // in-sequence pass binds it.
-            if cur.is_nil() || self.type_constrained_unboxable(&name) {
+            // in-sequence pass binds it. On the in-sequence pass the
+            // declaration has run, and a `Nil` there is its value (`my $t :=
+            // %h<absent>`): without a cell of its own, this activation's
+            // alias kept the cell an earlier iteration of an inline loop
+            // body left bound (#12478).
+            if (cur.is_nil() && hoisted_pass) || self.type_constrained_unboxable(&name) {
                 return None;
             }
             let boxed = cur.into_container_ref();

@@ -5,7 +5,7 @@ use Test;
 # the outer activation's (#12478). Every expectation was checked against
 # rakudo.
 
-plan 8;
+plan 9;
 
 sub bind-param($t, $n) {
     my $type := $t;
@@ -57,6 +57,16 @@ sub deep($n) {
     ($n,).map(&walk).join
 }
 is deep(3), '0,1,2,3', 'every recursion level keeps its own bound lexical';
+
+my %kinds is Map = (a => Str);
+sub per-iteration() {
+    <a b>.map(-> $name {
+        my $kind := %kinds{$name};
+        sub kind-of($v) { $kind =:= Nil ?? 'nil' !! $kind.^name }
+        $name => (1,).map(&kind-of).List
+    }).List
+}
+is per-iteration().raku, '(:a(("Str",)), :b(("nil",)))', 'a Nil-bound lexical is per loop iteration for a sub declared there';
 
 role Tagged[$tag] {
     method tagged($x) { (1,).map(-> $n { "$tag:$x" }).join }
