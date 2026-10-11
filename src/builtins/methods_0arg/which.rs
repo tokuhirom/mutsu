@@ -162,13 +162,13 @@ pub(crate) fn which_of(target: &Value) -> Value {
             format!("Bag|{:016X}", hasher.finish())
         }
         ValueView::Mix(mix, _) => {
-            let mut pairs: Vec<(&String, &f64)> = mix.iter().collect();
+            let mut pairs: Vec<(&String, &crate::value::MixWeight)> = mix.iter().collect();
             pairs.sort_by(|a, b| a.0.cmp(b.0));
             use std::hash::{Hash, Hasher};
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             for (k, v) in &pairs {
                 k.hash(&mut hasher);
-                v.to_bits().hash(&mut hasher);
+                v.to_f64().to_bits().hash(&mut hasher);
             }
             format!("Mix|{:016X}", hasher.finish())
         }

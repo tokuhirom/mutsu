@@ -2787,7 +2787,7 @@ impl Interpreter {
                 keys.iter()
                     .map(|k| {
                         let (key, _) = crate::runtime::utils::quanthash_elem_entry(k);
-                        Self::mix_weight_as_value(*m.get(&key).unwrap_or(&0.0))
+                        Self::mix_weight_as_value(m.get(&key).copied().unwrap_or_default())
                     })
                     .collect(),
             ),
@@ -2797,7 +2797,7 @@ impl Interpreter {
             }
             (ValueView::Mix(m, _), _) => {
                 let (key, _) = crate::runtime::utils::quanthash_elem_entry(&index);
-                Self::mix_weight_as_value(*m.get(&key).unwrap_or(&0.0))
+                Self::mix_weight_as_value(m.get(&key).copied().unwrap_or_default())
             }
             // Range indexing (supports infinite ranges)
             (_, ValueView::Int(i)) if target.is_range() => {

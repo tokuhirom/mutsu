@@ -8,7 +8,7 @@
 //! gives the result the left operand's shape: its mutability, and its role
 //! mixin when the result stayed at the left operand's own type.
 use super::*;
-use crate::value::ValueMap;
+use crate::value::{MixWeight, ValueMap};
 
 /// A binary set operator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -145,9 +145,9 @@ fn combine_bags(
 /// Combine two weight maps; only non-zero weights survive.
 fn combine_mixes(
     op: SetOp,
-    mut a: HashMap<String, f64>,
-    b: HashMap<String, f64>,
-) -> HashMap<String, f64> {
+    mut a: HashMap<String, MixWeight>,
+    b: HashMap<String, MixWeight>,
+) -> HashMap<String, MixWeight> {
     use crate::builtins::mix_weight;
     match op {
         SetOp::Union => {
@@ -157,7 +157,7 @@ fn combine_mixes(
         }
         SetOp::Addition => {
             for (k, v) in b {
-                let e = a.entry(k).or_insert(0.0);
+                let e = a.entry(k).or_insert(MixWeight::Int(0));
                 *e = mix_weight::add(*e, v);
             }
         }
@@ -165,13 +165,13 @@ fn combine_mixes(
         SetOp::Multiply => a = keep_common(a, &b, |x, y| mix_weight::mul(*x, *y)),
         SetOp::Diff => {
             for (k, v) in b {
-                let e = a.entry(k).or_insert(0.0);
+                let e = a.entry(k).or_insert(MixWeight::Int(0));
                 *e = mix_weight::sub(*e, v);
             }
         }
         SetOp::SymDiff => {
             for (k, v) in b {
-                let e = a.entry(k).or_insert(0.0);
+                let e = a.entry(k).or_insert(MixWeight::Int(0));
                 *e = mix_weight::sub(*e, v);
             }
             for v in a.values_mut() {

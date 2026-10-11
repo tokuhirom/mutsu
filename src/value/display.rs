@@ -700,7 +700,7 @@ impl Value {
             ValueView::Mix(m, _) => {
                 let ptr = crate::gc::Gc::as_ptr(&m) as usize;
                 with_quanthash_render_guard(ptr, || {
-                    let mut keys: Vec<(String, &f64)> = m
+                    let mut keys: Vec<(String, &crate::value::MixWeight)> = m
                         .iter()
                         .map(|(k, v)| (crate::value::gist::gist_value(&m.typed_key(k)), v))
                         .collect();

@@ -63,7 +63,7 @@ impl Interpreter {
     // Cost: O(1).
     pub(super) fn empty_mutable_quanthash(type_name: &str) -> Value {
         match type_name {
-            "MixHash" => Value::mix_hash(std::collections::HashMap::new()),
+            "MixHash" => Value::mix_hash(std::collections::HashMap::<String, crate::value::MixWeight>::new()),
             "BagHash" => {
                 let mut bag = Value::bag_typed_big(Default::default(), ValueMap::default());
                 let _ = bag.with_bag_mut(|_, m| *m = true);

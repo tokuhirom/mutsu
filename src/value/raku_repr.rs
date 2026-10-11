@@ -1398,15 +1398,11 @@ pub(crate) fn setbagmix_raku_named(v: &Value, type_override: Option<&str>) -> Op
             let type_name = type_override.unwrap_or(if mutable { "MixHash" } else { "Mix" });
             let ptr = crate::gc::Gc::as_ptr(&m) as usize;
             let pairs = crate::value::with_quanthash_render_guard(ptr, || {
-                let mut keys: Vec<(&String, &f64)> = m.iter().collect();
+                let mut keys: Vec<(&String, &crate::value::MixWeight)> = m.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
                 keys.iter()
                     .map(|(k, w)| {
-                        let w_str = if w.fract() == 0.0 {
-                            format!("{}", **w as i64)
-                        } else {
-                            format!("{}", w)
-                        };
+                        let w_str = raku_value(&w.to_value());
                         format!("{}=>{}", raku_value(&m.typed_key(k)), w_str)
                     })
                     .collect::<Vec<_>>()

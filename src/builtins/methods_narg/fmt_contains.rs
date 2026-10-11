@@ -273,7 +273,7 @@ pub(crate) fn fmt_native(target: &Value, args: &[Value]) -> Option<Result<Value,
                 items
                     .iter()
                     .map(|(k, v)| {
-                        runtime::format_sprintf_args(&fmt, &[items.typed_key(k), Value::num(*v)])
+                        runtime::format_sprintf_args(&fmt, &[items.typed_key(k), v.to_value()])
                     })
                     .collect(),
                 "\n",

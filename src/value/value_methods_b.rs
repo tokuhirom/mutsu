@@ -456,28 +456,34 @@ impl Value {
             true,
         )
     }
-    pub fn mix(mut m: HashMap<String, f64>) -> Self {
+    pub fn mix<W: Into<MixWeight>>(m: HashMap<String, W>) -> Self {
+        let mut m: HashMap<String, MixWeight> = m.into_iter().map(|(k, w)| (k, w.into())).collect();
         m.retain(|_, weight| *weight != 0.0);
         Value::Mix(crate::gc::Gc::new(MixData::new(m)), false)
     }
-    pub fn mix_hash(mut m: HashMap<String, f64>) -> Self {
+    pub fn mix_hash<W: Into<MixWeight>>(m: HashMap<String, W>) -> Self {
+        let mut m: HashMap<String, MixWeight> = m.into_iter().map(|(k, w)| (k, w.into())).collect();
         m.retain(|_, weight| *weight != 0.0);
         Value::Mix(crate::gc::Gc::new(MixData::new(m)), true)
     }
-    pub fn mix_with_original_keys(
-        mut weights: HashMap<String, f64>,
+    pub fn mix_with_original_keys<W: Into<MixWeight>>(
+        weights: HashMap<String, W>,
         original_keys: ValueMap,
     ) -> Self {
+        let mut weights: HashMap<String, MixWeight> =
+            weights.into_iter().map(|(k, w)| (k, w.into())).collect();
         weights.retain(|_, weight| *weight != 0.0);
         Value::Mix(
             crate::gc::Gc::new(MixData::with_original_keys(weights, original_keys)),
             false,
         )
     }
-    pub fn mix_hash_with_original_keys(
-        mut weights: HashMap<String, f64>,
+    pub fn mix_hash_with_original_keys<W: Into<MixWeight>>(
+        weights: HashMap<String, W>,
         original_keys: ValueMap,
     ) -> Self {
+        let mut weights: HashMap<String, MixWeight> =
+            weights.into_iter().map(|(k, w)| (k, w.into())).collect();
         weights.retain(|_, weight| *weight != 0.0);
         Value::Mix(
             crate::gc::Gc::new(MixData::with_original_keys(weights, original_keys)),

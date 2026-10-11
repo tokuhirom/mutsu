@@ -125,9 +125,9 @@ impl PartialEq for SetData {
 }
 
 impl MixData {
-    pub fn new(weights: HashMap<String, f64>) -> Self {
+    pub fn new<W: Into<MixWeight>>(weights: HashMap<String, W>) -> Self {
         MixData {
-            weights,
+            weights: weights.into_iter().map(|(k, w)| (k, w.into())).collect(),
             original_keys: None,
             value_type: None,
             key_type: None,
@@ -135,9 +135,12 @@ impl MixData {
         }
     }
 
-    pub fn with_original_keys(weights: HashMap<String, f64>, original_keys: ValueMap) -> Self {
+    pub fn with_original_keys<W: Into<MixWeight>>(
+        weights: HashMap<String, W>,
+        original_keys: ValueMap,
+    ) -> Self {
         MixData {
-            weights,
+            weights: weights.into_iter().map(|(k, w)| (k, w.into())).collect(),
             original_keys: Some(original_keys),
             value_type: None,
             key_type: None,
@@ -168,7 +171,7 @@ impl MixData {
 }
 
 impl Deref for MixData {
-    type Target = HashMap<String, f64>;
+    type Target = HashMap<String, MixWeight>;
     fn deref(&self) -> &Self::Target {
         &self.weights
     }

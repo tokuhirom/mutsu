@@ -121,7 +121,7 @@ impl Interpreter {
                 if mix.is_empty() {
                     Value::seq(Vec::new())
                 } else {
-                    let mut best_weight: Option<f64> = None;
+                    let mut best_weight: Option<crate::value::MixWeight> = None;
                     let mut out: Vec<Value> = Vec::new();
                     for (key, weight) in mix.iter() {
                         let ord = if let Some(current) = best_weight {

@@ -7,7 +7,7 @@
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::runtime::utils::quanthash_typed_pair;
-use crate::value::{RuntimeError, Value, ValueView, mix_weight_to_value};
+use crate::value::{MixWeight, RuntimeError, Value, ValueView, mix_weight_to_value};
 
 /// One row of a pure, no-argument method.
 macro_rules! row {
@@ -240,14 +240,14 @@ pub(crate) fn total(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
             // regardless of HashMap iteration order: a weight that only
             // decodes to `Num` still sums non-associatively (e.g.
             // 1.1+1.1+3.3+3.3 vs 1.1+3.3+1.1+3.3).
-            let mut vals: Vec<f64> = m.values().copied().collect();
-            vals.sort_by(|a, b| a.total_cmp(b));
+            let mut vals: Vec<MixWeight> = m.values().copied().collect();
+            vals.sort_by(|a, b| a.to_f64().total_cmp(&b.to_f64()));
             // Sum under the numeric tower and decode the total the same way
             // every other weight read-out does, so `.total` is `Int` for a
             // whole total and an exact `Rat` for a decimal one. The old
             // `f64_to_rat` reconstruction snapped anything within 1e-10 of a
             // whole number, turning `(a => 1.00000000001).Mix.total` into 1.
-            mix_weight_to_value(crate::builtins::mix_weight::sum(vals))
+            crate::builtins::mix_weight::sum(vals).to_value()
         }
         _ => return None,
     }))
