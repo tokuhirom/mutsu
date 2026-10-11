@@ -478,6 +478,12 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    the changes above; the last, the light-call `is rw` writeback, needs that
    convention to share a cell end to end instead of writing back by name.
    It is tracked as #12641, the next prerequisite of this phase.
+   Release-build Ir against the merge base: `bench-fib` +0.16%,
+   `bench-tak` +0.31%, `method-call` +0.08%, `poly-call` +0.59%,
+   `bench-ctor` +0.08%, `bench-multi-dispatch` +0.02%. A first cut cost
+   ~1% on the call rows: a per-call `Option` guard on the light and fast
+   paths, and `ArrayData::items` falling out of line as the call path grew
+   (now `#[inline]`).
 
    What is still dynamic: a reflective *write* (`EVAL q[$x = 1]`) lands in
    the frame's overlay and the return merge carries it to the caller, as
