@@ -11,9 +11,20 @@ impl Interpreter {
     /// every type sharing the metamethod inherits: Rakudo gives each type's HOW
     /// its own copy, so two types calling `^model` see separate containers.
     /// Keying the state scope by the receiver type name reproduces that.
+    ///
+    /// A role method's `state` likewise belongs to each class composing the
+    /// role (Rakudo clones the method per composition), so `class A does R`
+    /// and `class B does R` keep separate containers.
+    // TODO: key by the composing class, not the receiver: a subclass instance
+    // gets its own container here where Rakudo shares its parent's.
     // Cost: O(n), n = length of the receiver type name.
-    fn scope_metamethod_state(&self, method_name: &str, receiver_class_name: &str) {
-        if method_name.starts_with('^') {
+    fn scope_metamethod_state(
+        &self,
+        method_name: &str,
+        receiver_class_name: &str,
+        owner_is_role: bool,
+    ) {
+        if method_name.starts_with('^') || owner_is_role {
             use std::hash::{Hash, Hasher};
             let mut h = std::collections::hash_map::DefaultHasher::new();
             receiver_class_name.hash(&mut h);
@@ -980,7 +991,11 @@ impl Interpreter {
         // init under `key#c<caller>` and sync under `key`, so `method m { state
         // $n; $n++ }` restarted on every call. Restored after the sync.
         let saved_state_scope = self.lexicals.state_scope_id.take();
-        self.scope_metamethod_state(method_name, receiver_class_name);
+        self.scope_metamethod_state(
+            method_name,
+            receiver_class_name,
+            owner_is_role || method_def.role_origin.is_some(),
+        );
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
             // `state_scope_id` is `None` here (cleared just above), so this
@@ -2488,7 +2503,11 @@ impl Interpreter {
         // See the sibling path: a method body's `state` is keyed by the method,
         // not by the caller's closure scope. Restored after the sync.
         let saved_state_scope = self.lexicals.state_scope_id.take();
-        self.scope_metamethod_state(method_name, receiver_class_name);
+        self.scope_metamethod_state(
+            method_name,
+            receiver_class_name,
+            owner_is_role || method_def.role_origin.is_some(),
+        );
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
             // `state_scope_id` is `None` here (cleared just above), so this
