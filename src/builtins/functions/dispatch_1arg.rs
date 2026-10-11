@@ -872,6 +872,9 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             if is_infinite_range(arg) {
                 return Some(Ok(arg.clone()));
             }
+            if crate::value::flat::has_deferred_seq(arg) {
+                return None;
+            }
             let mut flat = Vec::new();
             // Flatten the argument with flatten_arrays=true so that
             // top-level arrays (including @a in `flat (6, @a)`) are

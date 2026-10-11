@@ -23,6 +23,22 @@ pub(crate) fn is_infinite_range(value: &Value) -> bool {
     }
 }
 
+/// Whether flattening `v` would meet a `Seq` that has not been read yet (the
+/// result of `.map`, `.lines`, ...). `flat_val` is pure and sees such a body as
+/// empty, so a caller that cannot read it must decline and let the interpreter
+/// pull it first (`flat((1, 2).map: -> $x { ($x, $x).map: ... })`).
+// Cost: O(n), n = elements of the Lists and reified Seqs descended into.
+pub(crate) fn has_deferred_seq(v: &Value) -> bool {
+    match v.view() {
+        ValueView::Seq(body) | ValueView::HyperSeq(body) | ValueView::RaceSeq(body) => {
+            body.needs_touch() || body.iter().any(has_deferred_seq)
+        }
+        ValueView::Array(items, ArrayKind::List) => items.iter().any(has_deferred_seq),
+        ValueView::Slip(items) => items.iter().any(has_deferred_seq),
+        _ => false,
+    }
+}
+
 /// Recursively flatten a value for `flat()`.
 ///
 /// `flatten_arrays`: when true, `ArrayKind::Array` values are flattened
