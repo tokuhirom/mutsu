@@ -1,5 +1,5 @@
 use super::multi_rank::{
-    self, MultiRank, OptionalRule, PROFILE_LEN, RankProfile, prune_to_maximal,
+    self, MultiRank, PROFILE_LEN, RankProfile, prune_to_maximal,
 };
 use super::*;
 use crate::runtime::types::{is_coercion_constraint, parse_coercion_type};
@@ -102,7 +102,7 @@ impl Interpreter {
             refinement: [constrained, subsig, writable, 0],
             non_slurpy: !multi_rank::has_slurpy_positional(&params),
             bind_check: multi_rank::needs_named_bind_check(&params),
-            optional: multi_rank::optional_positional_count(&params, OptionalRule::Sub),
+            optional: multi_rank::optional_positional_count(&params),
             decl_order: def.decl_order,
             profile,
         }

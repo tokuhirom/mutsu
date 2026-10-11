@@ -290,26 +290,8 @@ pub(crate) fn needs_named_bind_check(params: &[&ParamDef]) -> bool {
             .any(|p| p.is_variadic() && p.where_constraint.is_some())
 }
 
-/// Which candidates [`optional_positional_count`] counts nothing for, and
-/// whether a slurpy positional counts as an optional one.
-// TODO: unify on `Method`. It is the rule rakudo follows (`multi
-// j($a?, $c?, *%h where .elems == 0)` and `multi j($b?, :$x)` tie for
-// `j(1)` and the first declared wins), while `Sub` picks the named one; the
-// two only differ there, and the sub side is kept as is until that is fixed
-// with its own regression test.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OptionalRule {
-    /// Zero for a candidate that [`declares_named`]; a slurpy positional
-    /// counts as optional.
-    Sub,
-    /// Zero for a candidate that [`needs_named_bind_check`]; slurpies are
-    /// not counted.
-    Method,
-}
-
-/// Count *optional* positional parameters — an optional or defaulted (and
-/// under [`OptionalRule::Sub`], slurpy) positional param is one the caller
-/// may omit, which makes the candidate accept more calls and therefore LESS
+/// Count *optional* positional parameters — an optional or defaulted
+/// positional param is one the caller may omit, which makes the candidate accept more calls and therefore LESS
 /// specific. Raku ranks a candidate with a required parameter as narrower
 /// than one where that parameter is optional (`multi f(Int:D)` beats
 /// `multi f(Int $z?)` for `f(42)`; `f(Int $a)` beats `f(*@a)` and
@@ -320,30 +302,20 @@ pub(crate) enum OptionalRule {
 /// however, an omitted optional positional does not make one candidate
 /// narrower: `multi f($x = 1, :$a)` and `multi f(:$b)` tie and declaration
 /// order decides; the named-parameter step already decides a mixed pair.
+///
+/// A slurpy is not counted (the non-slurpy tier ranks it first), and a
+/// candidate that needs a named bind check (an explicit named parameter, or a
+/// `where` on a slurpy) counts nothing: rakudo ties `multi j($a?, $c?, *%h
+/// where .elems == 0)` with `multi j($b?, :$x)` for `j(1)`, and the first
+/// declared wins (#12774).
 // Cost: O(p), p = parameters.
-pub(crate) fn optional_positional_count(params: &[&ParamDef], rule: OptionalRule) -> usize {
-    match rule {
-        OptionalRule::Sub => {
-            if declares_named(params) {
-                return 0;
-            }
-            // A slurpy hash (`*%m`) is not a positional at all: rakudo finds
-            // `multi f(*%m)` and `multi f()` ambiguous for `f()`.
-            params
-                .iter()
-                .filter(|p| !p.named && !(p.slurpy && p.name.starts_with('%')))
-                .filter(|p| p.is_variadic() || p.optional_marker || p.default.is_some())
-                .count()
-        }
-        OptionalRule::Method => {
-            if needs_named_bind_check(params) {
-                return 0;
-            }
-            params
-                .iter()
-                .filter(|p| !p.named && !p.slurpy && !p.double_slurpy)
-                .filter(|p| p.optional_marker || p.default.is_some())
-                .count()
-        }
+pub(crate) fn optional_positional_count(params: &[&ParamDef]) -> usize {
+    if needs_named_bind_check(params) {
+        return 0;
     }
+    params
+        .iter()
+        .filter(|p| !p.named && !p.slurpy && !p.double_slurpy)
+        .filter(|p| p.optional_marker || p.default.is_some())
+        .count()
 }

@@ -1,4 +1,4 @@
-use super::multi_rank::{self, MultiRank, OptionalRule, prune_to_maximal};
+use super::multi_rank::{self, MultiRank, prune_to_maximal};
 use super::*;
 use std::cmp::Ordering;
 
@@ -102,7 +102,7 @@ impl Interpreter {
             refinement: [n.0, n.1, n.2, n.3],
             non_slurpy: !multi_rank::has_slurpy_positional(&params),
             bind_check: multi_rank::needs_named_bind_check(&params),
-            optional: multi_rank::optional_positional_count(&params, OptionalRule::Method),
+            optional: multi_rank::optional_positional_count(&params),
             decl_order,
             profile,
         }
