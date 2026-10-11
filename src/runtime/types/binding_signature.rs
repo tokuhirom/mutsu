@@ -2643,13 +2643,19 @@ impl Interpreter {
                             // Named `$` params are item bindings too (raku:
                             // `f(v => [1,2])` binds `$v` as `$[1, 2]`); rw
                             // cells pass through untouched.
-                            let bound_value = Self::itemize_plain_scalar_param(pd, bound_value);
+                            let bound_value = Self::itemize_plain_scalar_param(pd, bound_value.clone());
                             self.bind_param_value_sym(binding_name, pd_name_sym(), bound_value);
                             self.bind_param_type_constraint_sym(
                                 binding_name,
                                 pd_name_sym(),
                                 pd.assignment_type_constraint(),
                             );
+                        }
+                        // `:x($r) (Str $a, Int $b)` / `:rule(%) (:$kw!)`: the
+                        // trailing sub-signature destructures the named
+                        // argument's value, beside the alias binding above.
+                        if let Some(outer) = &pd.outer_sub_signature {
+                            bind_sub_signature_from_value(self, outer, &bound_value)?;
                         }
                         found = true;
                         break;

@@ -774,7 +774,10 @@ impl Interpreter {
                 key.strip_prefix("__mutsu_role__")
                     .map(|name| name.to_string())
             }) {
-                if let Some(role) = self.registry().roles.get(&role_name)
+                // The candidate this mixin was built from, not the name's
+                // registry entry: a role group (`role R[\u] {...}` beside a
+                // bare `role R {...}`) keeps the last-declared body there.
+                if let Some(role) = self.role_def_for_mixin_role(mixins, &role_name)
                     && let Some(defs) = role.methods.get(&method_name)
                 {
                     for def in defs {

@@ -298,7 +298,55 @@ impl Interpreter {
         Ok(Value::array(result))
     }
 
-    pub(super) fn builtin_flat(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    /// Pull every still-deferred `Seq` that `flat` is about to descend into
+    /// (`flat((1, 2).map: -> $x { ($x, $x).map: ... })`: the outer map's
+    /// elements are themselves unread `map` Seqs). The shared `flat_val`
+    /// helper is pure and only sees a deferred body as empty.
+    // Cost: O(n), n = elements reached through the descended Seqs and Lists.
+    fn touch_flat_operand(&mut self, v: &Value) -> Result<(), RuntimeError> {
+        match v.view() {
+            ValueView::Seq(body) | ValueView::HyperSeq(body) | ValueView::RaceSeq(body) => {
+                if matches!(
+                    body.view(),
+                    crate::value::SeqView::ItemSeq | crate::value::SeqView::ItemList
+                ) {
+                    return Ok(());
+                }
+                let body = std::sync::Arc::clone(&body);
+                let items = if body.needs_touch() {
+                    self.reify_seq_body(&body)?
+                } else {
+                    body.iter().cloned().collect()
+                };
+                for item in &items {
+                    self.touch_flat_operand(item)?;
+                }
+            }
+            ValueView::Array(items, crate::value::ArrayKind::List) => {
+                for item in items.iter() {
+                    self.touch_flat_operand(item)?;
+                }
+            }
+            ValueView::Slip(items) => {
+                for item in items.iter() {
+                    self.touch_flat_operand(item)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    pub(super) fn builtin_flat(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        for arg in args {
+            // The sole operand is un-itemized before it is flattened (see
+            // below), so a `$`-held Seq is read too.
+            if args.len() == 1 {
+                self.touch_flat_operand(&crate::builtins::deitemize_flat_operand(arg))?;
+            } else {
+                self.touch_flat_operand(arg)?;
+            }
+        }
         // `flat(a, b, c)` flattens the argument *list*, so wrap the args in a
         // `List` and run the single shared `flat` helper (the same one the pure
         // `native_function("flat", ..)` path uses). The previous `flat_into`

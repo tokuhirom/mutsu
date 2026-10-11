@@ -4651,6 +4651,11 @@ pub(crate) enum OpCode {
         /// `:=` binds the initializer's container. Its pre-initializer value
         /// must not be replaced with a type-object seed.
         bind_declaration: bool,
+        /// The name is bound, in the enclosing scope, only by name in env (an
+        /// enclosing `for`'s single loop parameter has no slot), so the
+        /// shadowed value is recoverable only from env: the loop-exit
+        /// restore must record it although no slot is coherent with it.
+        shadows_by_name: bool,
     },
     /// Register a variable declared `is export`, after its value has been
     /// stored. Stack: `[] → []`. `name_idx` is the constant-pool index of the

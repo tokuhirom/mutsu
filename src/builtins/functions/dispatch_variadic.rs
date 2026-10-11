@@ -148,6 +148,9 @@ pub(crate) fn native_function_variadic(
             // Onearg rule: `flat($(1,2,3))` un-itemizes its sole argument (the
             // slurpy `**@list` treats a single container arg as the list), but
             // `flat(0, $(1,2,3))` keeps each itemized arg as a single element.
+            if args.iter().any(crate::value::flat::has_deferred_seq) {
+                return None;
+            }
             let single = args.len() == 1;
             let mut result = Vec::new();
             for arg in args {

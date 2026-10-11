@@ -573,6 +573,15 @@ impl Compiler {
             self.compile_stmt(s);
             self.decl_is_sigilless = false;
         }
+        // The parameters the declarations above gave no slot stay by-name env
+        // bindings for the whole body.
+        let by_name_mark = self.by_name_for_params.len();
+        for p in param.iter().chain(params.iter()) {
+            let bare = p.strip_prefix('\\').unwrap_or(p);
+            if !self.local_map.contains_key(bare) {
+                self.by_name_for_params.push(bare.to_string());
+            }
+        }
         // Hand the declarations to the body's frame without restoring anything
         // yet: the bindings stay visible until the body's scope exits.
         self.pending_scope_frame = self.local_scopes.pop();
@@ -644,6 +653,7 @@ impl Compiler {
         }
         self.callframe_block_depth -= 1;
         self.for_param_names.truncate(for_param_mark);
+        self.by_name_for_params.truncate(by_name_mark);
         for n in &newly_registered {
             self.sigilless_locals.remove(n);
         }

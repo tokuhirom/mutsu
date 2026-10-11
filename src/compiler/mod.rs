@@ -1747,6 +1747,10 @@ pub(crate) struct Compiler {
     /// (`package P { for @a <-> $v { $v = 9 } }` wrote `$P::v`, losing the rw
     /// write-back).
     for_param_names: Vec<String>,
+    /// Loop parameters of the `for` loops being compiled that live only in env
+    /// by name (a single-parameter loop has no slot); a nested `my` of the same
+    /// name shadows them, see [`Self::declare_local`].
+    by_name_for_params: Vec<String>,
     /// Free variables (reads and writes) of each named sub declared inside a
     /// ROUTINE body that is lexically visible here, keyed by the sub's name.
     /// Such a sub resolves its free variables against the env live at call
@@ -2040,6 +2044,7 @@ impl Compiler {
             decl_is_sigilless: false,
             enclosing_local_names: std::collections::HashSet::new(),
             for_param_names: Vec::new(),
+            by_name_for_params: Vec::new(),
             lexical_sub_free_vars: Default::default(),
             lexical_sub_written_vars: Default::default(),
             prebound_placeholder_params: std::collections::HashSet::new(),
@@ -2791,8 +2796,13 @@ impl Compiler {
                 name.to_string(),
                 if is_ancestor_shadow {
                     prev
-                } else if prev.is_none() && self.enclosing_local_names.contains(name) {
-                    // Cross-frame shadow: no outer slot exists in this chunk.
+                } else if prev.is_none()
+                    && (self.enclosing_local_names.contains(name)
+                        || self.by_name_for_params.iter().any(|p| p == name))
+                {
+                    // Cross-frame shadow: no outer slot exists in this chunk
+                    // (a routine's outer lexical, or an enclosing `for`'s
+                    // by-name loop parameter).
                     // u32::MAX is a compile-time-only sentinel telling scope exit
                     // to remove the dead child mapping and resume GetGlobal.
                     Some(u32::MAX)

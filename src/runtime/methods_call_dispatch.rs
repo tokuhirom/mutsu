@@ -812,6 +812,19 @@ impl Interpreter {
             let list = target.match_positional_list(method == "Array");
             return self.call_method_with_values(list, method, args);
         }
+        // A buffer-backed positional (upstream NativeCall's `CArray[T]`, a
+        // mixin over `CArray`) is `Positional`: `Any`'s iteration methods read
+        // its elements through `.list`, not the CArray as one item.
+        if matches!(
+            method,
+            "grep" | "map" | "first" | "sort" | "head" | "tail" | "flat"
+        ) && crate::value::value_buf::buf_target(&target).is_some()
+            && !self.mixin_composes_method(&target, method)
+        {
+            // Cost: O(n) to materialize the elements, n = elements.
+            let list = self.call_method_with_values(target.clone(), "list", vec![])?;
+            return self.call_method_with_values(list, method, args);
+        }
         // A user class that `does Iterable` and defines its own `iterator`
         // method is list-like for Any's ITERATION methods: `.first`/`.map`/...
         // operate on the iterator's elements (as `for $obj` already does via
