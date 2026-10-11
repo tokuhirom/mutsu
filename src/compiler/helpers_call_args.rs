@@ -646,6 +646,51 @@ impl Compiler {
             self.code.patch_jump(jump_end);
             return;
         }
+        // `f($at-eos ?? $p !! $p = $p + 1)` — JSON::Fast's comment scanner.
+        // The conditional binds tighter than `=`, so this is an assignment to
+        // `($at-eos ?? $p !! $p)`, and an assignment yields the container it
+        // wrote. When both arms are native `is rw` parameters, run the
+        // assignment inside whichever arm is chosen, then pass that arm's
+        // reference on (the condition is evaluated exactly once).
+        if let Expr::Call {
+            name,
+            args,
+            listop: false,
+        } = arg
+            && name.resolve() == "__mutsu_assign_callable_lvalue"
+            && args.len() == 3
+            && let Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } = &args[0]
+            && let (Expr::Var(then_var), Expr::Var(else_var)) =
+                (then_expr.as_ref(), else_expr.as_ref())
+            && self.native_rw_params.contains(then_var)
+            && self.native_rw_params.contains(else_var)
+        {
+            self.compile_expr(cond);
+            let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+            let mut jump_end = None;
+            for (i, var) in [then_var, else_var].into_iter().enumerate() {
+                // Assign inside the chosen arm, then pass that parameter on.
+                self.compile_expr(&Expr::AssignExpr {
+                    name: var.clone(),
+                    expr: Box::new(args[2].clone()),
+                    is_bind: false,
+                });
+                self.code.emit(OpCode::Pop);
+                self.compile_call_arg_with_escape(&Expr::Var(var.clone()), escaping);
+                if i == 0 {
+                    jump_end = Some(self.code.emit(OpCode::Jump(0)));
+                    self.code.patch_jump(jump_else);
+                }
+            }
+            if let Some(j) = jump_end {
+                self.code.patch_jump(j);
+            }
+            return;
+        }
         // Read-and-clear immediately: this call is the *direct* bind-target
         // compile iff the caller just set the flag for us. Clearing it up
         // front (before any nested `compile_expr`/`compile_call_arg`
