@@ -828,10 +828,16 @@ impl Interpreter {
             .copied()
             .unwrap_or(super::end_order::RUNTIME);
         self.control.module_load_order.push(order);
-        let saved_suppress = std::mem::replace(&mut self.module.suppress_exports, true);
+        // Like the `need` statement: the module's `is export` routines are
+        // registered, so its `EXPORT::<tag>` stashes are populated
+        // (`CompUnit::Handle.export-package`, #11002), but nothing is
+        // imported into the caller's scope.
+        let saved_suppress = std::mem::replace(&mut self.module.suppress_exports, false);
+        let saved_no_import = std::mem::replace(&mut self.module.loading_without_import, true);
         let func_keys_before: HashSet<Symbol> = self.registry().functions.keys().copied().collect();
         let result = self.load_module_inner(module, Some((source_path, None)));
         self.module.suppress_exports = saved_suppress;
+        self.module.loading_without_import = saved_no_import;
         if result.is_ok() {
             // Same bookkeeping as `use_module_with_tags_inner`: the routines the
             // module's own body registered (its definitions and what its nested

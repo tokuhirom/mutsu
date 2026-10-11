@@ -68,6 +68,7 @@ pub(crate) use collections::{
 };
 #[cfg(test)]
 pub(crate) use instances::instant::sample as instances_sample;
+pub(crate) use instances::compunit_handle::owners_of as compunit_handle_owners_of;
 pub(crate) use instances::rakuast_node::{origin_value, owners_of as rakuast_owners_of};
 pub(crate) use instances::{
     backtrace, code, date, dateish, datetime, exception, failure, regex_match, signature, supply,

@@ -243,6 +243,10 @@ impl Interpreter {
                     if let Some(syms) = attributes.get("globalish-symbols") {
                         handle_attrs.insert("globalish-symbols".to_string(), syms.clone());
                     }
+                    // The unit the handle belongs to, for `export-package`.
+                    if let Some(name) = attributes.get("short-name") {
+                        handle_attrs.insert("unit-name".to_string(), name.clone());
+                    }
                     Value::make_instance(Symbol::intern("CompUnit::Handle"), handle_attrs)
                 }
             },
