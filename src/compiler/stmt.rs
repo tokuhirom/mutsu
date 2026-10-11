@@ -1489,7 +1489,7 @@ impl Compiler {
                         .iter()
                         .any(|(n, _)| n == crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT);
                 let shadows_by_name = !self.local_map.contains_key(name.as_str())
-                    && self.for_param_names.iter().any(|p| p == name);
+                    && self.by_name_for_params.iter().any(|p| p == name);
                 let set_var_dynamic_idx = self.code.emit(OpCode::SetVarDynamic {
                     name_idx,
                     dynamic: is_dynamic,
