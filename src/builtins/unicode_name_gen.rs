@@ -236,6 +236,10 @@ fn char_by_name_matches_unicode_names2_for_every_name() {
     }
 }
 
+// Multi-word aliases (`BYTE ORDER MARK`, `LATIN CAPITAL LETTER GHA`) are left
+// out on purpose: since unicode_names2 4.0 the crate matches them loosely,
+// while Rakudo (and so the caller, `lookup_unicode_char_by_name`) matches them
+// exactly. `t/types/string/unicode-name-alias-spelling.t` pins that side.
 #[test]
 fn char_by_name_matches_unicode_names2_on_edge_spellings() {
     for query in [
@@ -251,8 +255,6 @@ fn char_by_name_matches_unicode_names2_on_edge_spellings() {
         "VS256",
         "ZWJ",
         "BOM",
-        "BYTE ORDER MARK",
-        "LATIN CAPITAL LETTER GHA",
         "nonsense",
         "LATIN SMALL LETTER A!",
         "HANGUL JUNGSEONG O-E",

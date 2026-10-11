@@ -141,7 +141,7 @@ cranelift-native = { version = "0.136", optional = true }
 # committed Unicode name tables `builtins::unicode_name_data` (#10438). Its
 # build script pulls in phf_codegen + rand, which is why it is not a runtime
 # dependency.
-unicode_names2 = "3"
+unicode_names2 = "4"
 # Used only by tests: `ucd::gc_gen` cross-checks the committed
 # General_Category tables against the ordered `regex` probe they replaced, and
 # the scanners that replaced runtime `regex` patterns (#10439) are pinned
