@@ -642,6 +642,7 @@ impl Interpreter {
 
     pub(super) fn exec_negate_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
+        let val = self.fetch_proxy_operand(val)?;
         // Type objects: `Mu` has no `prefix:<->` candidate (hard error). A class
         // with a user `Numeric` method dispatches even on the bare type object,
         // then negates. Every other type object warns and resumes with its

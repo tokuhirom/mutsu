@@ -361,6 +361,8 @@ impl Interpreter {
     pub(super) fn exec_string_repeat_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let right = self.fetch_proxy_operand(right)?;
+        let left = self.fetch_proxy_operand(left)?;
 
         // Warn on uninitialized type object used as repeat count
         if let ValueView::Package(name) = right.view()

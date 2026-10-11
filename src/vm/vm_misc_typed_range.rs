@@ -339,6 +339,8 @@ impl Interpreter {
     pub(super) fn exec_make_range_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let right = self.fetch_proxy_operand(right)?;
+        let left = self.fetch_proxy_operand(left)?;
         let result = Self::build_range_value(left, right)?;
         self.stack.push(result);
         Ok(())
@@ -347,6 +349,8 @@ impl Interpreter {
     pub(super) fn exec_make_range_excl_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let right = self.fetch_proxy_operand(right)?;
+        let left = self.fetch_proxy_operand(left)?;
         let result = Self::build_range_excl_value(left, right)?;
         self.stack.push(result);
         Ok(())
@@ -355,6 +359,8 @@ impl Interpreter {
     pub(super) fn exec_make_range_excl_start_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let right = self.fetch_proxy_operand(right)?;
+        let left = self.fetch_proxy_operand(left)?;
         let result = Self::build_range_excl_start_value(left, right)?;
         self.stack.push(result);
         Ok(())
@@ -363,6 +369,8 @@ impl Interpreter {
     pub(super) fn exec_make_range_excl_both_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let right = self.fetch_proxy_operand(right)?;
+        let left = self.fetch_proxy_operand(left)?;
         let result = Self::build_range_excl_both_value(left, right)?;
         self.stack.push(result);
         Ok(())

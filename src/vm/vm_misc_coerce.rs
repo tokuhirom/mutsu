@@ -422,6 +422,18 @@ impl Interpreter {
         Ok(())
     }
 
+    /// An operand read by value: a `Proxy` (a `:=`-bound `Proxy` variable, or an
+    /// element of a native `CArray`) is FETCHed, as rakudo decontainerizes it
+    /// (#12782). Tag-probed, so the common non-`Proxy` operand costs one check.
+    // Cost: O(1) + the FETCH body's own work when the operand is a Proxy.
+    pub(super) fn fetch_proxy_operand(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        if value.is_proxy_value() {
+            loan_env!(self, auto_fetch_proxy(&value))
+        } else {
+            Ok(value)
+        }
+    }
+
     pub(super) fn exec_upto_range_op(&mut self) -> Result<(), RuntimeError> {
         // The bound is read by value: a `Proxy` (an element of a native
         // `CArray`) is FETCHed first, as `prefix:<+>` does.
