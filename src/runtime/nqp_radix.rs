@@ -96,7 +96,7 @@ fn scan(op: &str, args: &[Value]) -> Result<Option<(u32, Scan)>, RuntimeError> {
 }
 
 fn result(value: Value, scan: &Scan) -> Value {
-    Value::array(vec![
+    Value::vm_array(vec![
         value,
         Value::int(scan.digits.len() as i64),
         Value::int(scan.cursor as i64),
@@ -104,7 +104,7 @@ fn result(value: Value, scan: &Scan) -> Value {
 }
 
 fn no_match() -> Value {
-    Value::array(vec![Value::int(0), Value::int(0), Value::int(-1)])
+    Value::vm_array(vec![Value::int(0), Value::int(0), Value::int(-1)])
 }
 
 /// `nqp::radix($radix, $str, $pos, $flags)`: the native-int form.

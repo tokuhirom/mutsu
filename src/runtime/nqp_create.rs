@@ -155,9 +155,9 @@ impl Interpreter {
                 };
                 Ok(Value::uni_from_codepoints(form, std::iter::empty()))
             }
-            CreateKind::VmHash => Ok(Value::hash_with_data(Value::hash_arc(ValueMap::default()))),
+            CreateKind::VmHash => Ok(Value::vm_hash(ValueMap::default())),
             // List-kind: a VMArray, not a high-level Array (see `nqp_backing`).
-            CreateKind::VmArray => Ok(Value::array(Vec::new())),
+            CreateKind::VmArray => Ok(Value::vm_array(Vec::new())),
             CreateKind::CArray => self.create_carray_instance(Symbol::intern(name), &ty),
             CreateKind::New => self.call_method_with_values(ty, "new", vec![]),
             // Allocate directly rather than through `call_method_with_values`,

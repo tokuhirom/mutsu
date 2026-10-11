@@ -132,7 +132,7 @@ impl Interpreter {
                         .map(|s| Value::str(s.to_string()))
                         .collect()
                 };
-                Ok(Value::array(parts))
+                Ok(Value::vm_array(parts))
             }
 
             // nqp::defined($v) / nqp::isconcrete($v) — int 0/1: false for a

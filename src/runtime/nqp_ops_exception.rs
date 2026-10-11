@@ -227,13 +227,13 @@ impl Interpreter {
             // once `Backtrace.new` can be constructed from an explicit frame
             // list instead of always sampling the live stack -- see #8573.
             // Cost: O(1).
-            "backtrace" => Ok(Value::array(Vec::new())),
+            "backtrace" => Ok(Value::vm_array(Vec::new())),
             // nqp::backtracestrings($ex): the backtrace of a thrown exception,
             // one `   at FILE:LINE  (FILE:ROUTINE)` line per frame (` from`
             // after the first), as MoarVM renders it. An exception that was
             // never thrown has none.
             // Cost: O(f), f = frames in the backtrace.
-            "backtracestrings" => Ok(Value::array(Self::nqp_backtrace_strings(&arg(args, 0)))),
+            "backtracestrings" => Ok(Value::vm_array(Self::nqp_backtrace_strings(&arg(args, 0)))),
             _ => return None,
         })
     }
