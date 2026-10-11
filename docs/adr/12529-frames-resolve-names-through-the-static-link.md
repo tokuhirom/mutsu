@@ -517,6 +517,63 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    it. Its release path is now out of line (`release_gc`), which keeps it
    the same size whatever the codegen-unit split.
 
+   **Slice 8 done** (`fix/12478-flattened-frame-program-scope`, #12478):
+   methods of a class declared at program scope link the frames they get, and
+   the link survives a flattened caller. Before this slice a linked frame
+   found the program scope as "the env below the deepest frame root". A
+   method dispatch or a closure capture flattens the running frame
+   (`flatten_scoped_env`, `MAX_OVERLAY_DEPTH`), and the flattened env merges
+   that frame's names with every caller's. A frame called from there skipped
+   its callers straight into theirs, so a recursive call's `my $x := $t`
+   bound the outer activation's `$t` cell. Four changes:
+
+   - A flatten that replaces a live frame's chain records the program scope
+     its frames ran over on the collapsed tier, as a `StaticLink` of a
+     non-root env (`Env::flattened_recording_program_scope`); a closure
+     capture's flatten does not. The record is inert for lookups through
+     the flattened env itself. `program_scope_from`,
+     `link_static_outer_to_unit` and the next flattening read it.
+   - The light, typed-light and fast call paths mark a linked frame before
+     seeding its locals from the env, so a local never starts as a caller's
+     same-named variable. The light path lifts the mark again for the binder,
+     which resolves the arguments in the caller.
+   - A `:=` bind whose source has a slot in the running code takes its cell
+     from that slot or this frame's own overlay, never from a caller's
+     same-named binding.
+   - Attribute variables (`$!t`) are lexically scoped for the link. A bind of a
+     scalar attribute aliases the attribute's own cell on its invocant (the
+     invocant is the attribute's home, as the compunit store is a unit
+     lexical's), and is no longer published under `!t` in the env or the
+     ancestor frames. A callee running on another invocant read that entry as
+     its own attribute. #12478's repro overwrote the inner node's `$!t`.
+
+   A role method keeps resolving through its frame chain, because the role's
+   parameters are a scope between the method and the program scope. A method
+   that creates closures still runs in its caller's env without a root of its
+   own, as before, so it is not linked: giving it a root costs a flatten on
+   every method call in its body (+1.6% on `bench-ctor`), and the closure
+   frames above it carry its names through their captures.
+
+   The real SBOM::CycloneDX `t/90-valid.rakutest` exposed three more callers
+   of the leak, fixed in this slice:
+
+   - The closure-return writeback asked the caller's env whether it holds a
+     name, through the caller's static link, so a rebind made in a closure
+     called by a program-scope routine was dropped
+     (`roast/S02-types/array-shapes.t`). It now searches the caller chain, as
+     the other writeback paths do.
+   - A regex literal in a routine did not capture a kebab-case lexical it
+     interpolates (`$full-path`); the match found it in the caller chain, which
+     a linked matcher (`Test::like`) no longer reaches
+     (`roast/S24-testing/line-numbers.t`). It is captured from its slot, as a
+     short name is.
+   - `my %m is Map = a => Nil` stored `Any`, and a sub's per-activation alias
+     of a `Nil`-bound lexical kept the previous loop iteration's cell.
+
+   Release-build Ir against the merge base: `bench-fib` -0.12%, `bench-tak`
+   -0.06%, `method-call` -0.00%, `poly-call` +0.01%, `bench-ctor` +0.19%,
+   `bench-multi-dispatch` +0.03%.
+
    What is still dynamic: a reflective *write* (`EVAL q[$x = 1]`) lands in
    the frame's overlay and the return merge carries it to the caller, as
    before; only reads follow the link. The pins for §1.3's sub

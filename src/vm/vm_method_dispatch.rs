@@ -451,6 +451,11 @@ impl Interpreter {
         // via set_env(saved_env) and the merge path's `merge_method_env` iterates
         // it overlay-only (the method's own writes). No closure/thread body runs
         // under the overlay.
+        // A method declared at program scope links the root it gets past its
+        // callers (ADR-12529). One that creates closures runs in its caller's
+        // env, unlinked: a root of its own would cost a flatten per method
+        // call in its body.
+        let links_frame = cc.links_frame_to_unit();
         if cc.closure_compiled_codes.is_empty() {
             let parent = self.env().clone();
             self.set_env(crate::env::Env::scoped_child(parent));
@@ -968,7 +973,13 @@ impl Interpreter {
         let thread_param_mask_guard =
             crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(self, bind_param_defs.iter());
 
-        // Initialize locals from env
+        // Initialize locals from env. The parameters are bound, so a linked
+        // frame is marked first: a local is never a caller's variable, and
+        // the seed reads through the link (#12478).
+        let marked_frame = links_frame && self.env().is_frame_root();
+        if marked_frame {
+            self.env_mut().mark_outer_is_unit();
+        }
         self.locals.refill_slots(cc.locals.len());
         for (i, local_name) in cc.locals.iter().enumerate() {
             if let Some(val) = self.env().get(local_name) {
@@ -1119,6 +1130,10 @@ impl Interpreter {
             }
         }
 
+        // The return path reads values across frames.
+        if marked_frame {
+            self.env_mut().unmark_outer_is_unit();
+        }
         // Restore the caller's `when_matched` — a bare `when` inside this method
         // body must not leak its match state to an enclosing given/with.
         self.set_when_matched(saved_when_matched);
@@ -1949,6 +1964,11 @@ impl Interpreter {
         // own writes, which is exactly what the merge needs). Gated to methods
         // with no inner closures so no closure/thread/gather body captures or
         // iterates the scoped env for a full lexical view.
+        // A method declared at program scope links the root it gets past its
+        // callers (ADR-12529). One that creates closures runs in its caller's
+        // env, unlinked: a root of its own would cost a flatten per method
+        // call in its body.
+        let links_frame = cc.links_frame_to_unit();
         let use_scoped = cc.closure_compiled_codes.is_empty();
         if use_scoped {
             let parent = self.env().clone();
@@ -2412,7 +2432,13 @@ impl Interpreter {
         crate::alloc_scope_named!(_sc_loc_init, "mfast:loc:init");
         // Populate locals directly. Attribute reads take one read guard over
         // the live cell for the whole loop (dropped before the body runs) —
-        // no whole-map snapshot is materialized.
+        // no whole-map snapshot is materialized. A linked frame is marked
+        // first, so a local seeded from the env reads through the link
+        // (#12478).
+        let marked_frame = links_frame && self.env().is_frame_root();
+        if marked_frame {
+            self.env_mut().mark_outer_is_unit();
+        }
         self.locals.refill_slots(cc.locals.len());
 
         {
@@ -2671,6 +2697,10 @@ impl Interpreter {
             }
         }
 
+        // The return path reads values across frames.
+        if marked_frame {
+            self.env_mut().unmark_outer_is_unit();
+        }
         // Restore the caller's `when_matched` — see the slow path above.
         self.set_when_matched(saved_when_matched);
         self.module.lexical_fatal_mode = saved_lexical_fatal_mode;

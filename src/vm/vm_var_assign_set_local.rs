@@ -3036,15 +3036,32 @@ impl Interpreter {
                 // it off from `$x`'s, so a write through `$d` never reached `$x`
                 // (nor, for an rw param, the caller). Mirrors the whole-container
                 // bind path, which already reuses the source cell.
+                // A source that is a variable of this frame (it has a slot here)
+                // keeps its cell in that slot or in this frame's own overlay:
+                // the rest of the env chain holds its callers, whose
+                // same-named variable is another binding. Taking that cell
+                // aliased the two -- under recursion, a method's `$!t` with
+                // the outer invocant's attribute, which the write-back then
+                // stored into the inner object (#12478).
+                let source_is_frame_local =
+                    Self::bind_source_local_slot(code, bind_source_slot, &resolved_source)
+                        .is_some();
                 let source_cell =
                     Self::bind_source_local_slot(code, bind_source_slot, &source_name)
                         .and_then(|s| match self.locals[s].view() {
                             ValueView::ContainerRef(arc) => Some(arc.clone()),
                             _ => None,
                         })
-                        .or_else(|| match self.env().get(&resolved_source).map(Value::view) {
-                            Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
-                            _ => None,
+                        .or_else(|| {
+                            let env_entry = if source_is_frame_local {
+                                self.env().overlay_get(&resolved_source)
+                            } else {
+                                self.env().get(&resolved_source)
+                            };
+                            match env_entry.map(Value::view) {
+                                Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
+                                _ => None,
+                            }
                         })
                         // ADR-0024: an intervening frame's own identically-named
                         // local (e.g. a raw-captured constructor parameter that
@@ -3078,7 +3095,23 @@ impl Interpreter {
                             .env()
                             .get(&resolved_source)
                             .is_some_and(|slot| Self::binding_cell_of(slot).is_some());
+                // A scalar attribute (`my $x := $!t`) lives on its invocant:
+                // the bind aliases the attribute's own cell there, and the
+                // binding is not published under `!t` in any env tier. A
+                // callee's code reads `$!t` of ITS invocant, and an env entry
+                // of this frame's would shadow that for every frame called
+                // from here (#12478).
+                let attr_home_cell = if !resolved_source.starts_with(['@', '%', '&'])
+                    && !val.is_container_ref()
+                    && let Some((bare, _)) = crate::value::attr_twigil_base(&resolved_source)
+                {
+                    self.try_promote_attr_container_named(code, bare)
+                } else {
+                    None
+                };
+                let source_is_attr_home = attr_home_cell.is_some();
                 let container = match (val.view(), source_cell) {
+                    _ if let Some(cell) = attr_home_cell => cell,
                     // `val` can be the source's binding cell itself (a
                     // `WrapVarRef` of a mainline lexical carries the raw cell):
                     // bind to the container behind it, as `source_cell` does.
@@ -3140,7 +3173,9 @@ impl Interpreter {
                         Self::bind_source_local_slot(code, bind_source_slot, &resolved_source)
                 {
                     self.locals[source_idx] = container.clone();
-                    self.flush_local_to_env(code, source_idx);
+                    if !source_is_attr_home {
+                        self.flush_local_to_env(code, source_idx);
+                    }
                 }
                 // Carry the binding to wherever the SOURCE actually lives.
                 //
@@ -3165,6 +3200,7 @@ impl Interpreter {
                 //   inherit the outer cell". That marker means the opposite of
                 //   what the splice reads it as.
                 if !source_keeps_binding_cell
+                    && !source_is_attr_home
                     && !self.unit_scope_lexical_bind(&resolved_source, &container)
                 {
                     // Update source in env

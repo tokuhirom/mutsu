@@ -590,6 +590,13 @@ impl Interpreter {
         // non-Nil unless the bound value itself was Nil — in which case the
         // param was also mirrored into the overlay env (the `is_nil` gate), so
         // the read-through finds that same value and stays coherent.
+        //
+        // The parameters are bound, so a frame linked to the program scope
+        // (ADR-12529) is marked before the seed: a local is never one of its
+        // callers' variables, and the seed reads through the link (#12478).
+        if outer_is_unit && caller_env.is_some() {
+            self.env_mut().mark_outer_is_unit();
+        }
         if cf.code.locals_sym.len() == num_locals {
             for (i, sym) in cf.code.locals_sym.iter().enumerate() {
                 if self.locals[i].is_nil()
@@ -665,11 +672,6 @@ impl Interpreter {
         // path below does, then resume the unwind. Zero cost on the
         // non-panicking path. See
         // `news/2026-08/light-call-state-leak-on-panic-unwind.md`.
-        // Marked once the parameters are bound: the binder resolves each
-        // argument's source variable, which is the caller's (ADR-12529).
-        if outer_is_unit && caller_env.is_some() {
-            self.env_mut().mark_outer_is_unit();
-        }
         let body_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let mut ip = 0;
             let mut result = Ok(());

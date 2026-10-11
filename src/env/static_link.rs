@@ -76,13 +76,17 @@ pub(crate) fn with_static_links_suppressed<R>(f: impl FnOnce() -> R) -> R {
 }
 
 /// Whether a static link skips the caller frames for `key`: a plain user
-/// lexical, or a bare type-shaped name (an unqualified identifier starting with
-/// an uppercase letter). A caller frame binds the latter only for a type it
-/// declared lexically (`my class`); a package-scoped type is found through the
-/// symbol table, not the frame.
-// Cost: O(1) for a plain user lexical (memoized flags); O(|key|) otherwise.
+/// lexical, an attribute variable (`$!t` belongs to the `self` of the method
+/// that encloses the code, never to a caller's invocant, #12478), or a bare
+/// type-shaped name (an unqualified identifier starting with an uppercase
+/// letter). A caller frame binds the latter only for a type it declared
+/// lexically (`my class`); a package-scoped type is found through the symbol
+/// table, not the frame.
+// Cost: O(1) for a plain user lexical or an attribute (memoized flags);
+// O(|key|) otherwise.
 fn lexically_scoped(key: Symbol) -> bool {
     key.is_plain_user_lexical()
+        || key.is_attr_twigil_env_key()
         || key.with_str(|s| {
             s.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
                 && s.bytes()
@@ -119,7 +123,14 @@ impl Env {
             }
             match &cur.parent {
                 Some(below) => cur = below,
-                None => break,
+                None => {
+                    // A flattened frame below: its record names the program
+                    // scope (see `flattened_program_scope`).
+                    if let Some(StaticLink::UnitOuter { target, .. }) = cur.inner.static_link() {
+                        seg = target;
+                    }
+                    break;
+                }
             }
         }
         let seg = Arc::clone(seg);
@@ -142,9 +153,76 @@ impl Env {
             }
             match &cur.parent {
                 Some(parent) => cur = parent,
-                None => return false,
+                // A flattened call frame still ran in a frame (see
+                // `flattened_program_scope`).
+                None => return cur.inner.static_link().is_some(),
             }
         }
+    }
+
+    /// [`Self::flattened`] for a flatten that replaces the chain a live frame
+    /// runs in (`flatten_scoped_env`, `MAX_OVERLAY_DEPTH`): the collapsed tier
+    /// records the program scope below the chain's call frames
+    /// ([`Self::flattened_program_scope`]). A capture's flatten does not: a
+    /// closure's frame reaches its capture through a fallback, never as the
+    /// bottom of its chain.
+    // Cost: O(n) for the flatten, n = visible entries; plus O(d), d = chain
+    // tiers.
+    pub(crate) fn flattened_recording_program_scope(&self) -> Env {
+        let mut flat = self.flattened();
+        if let Some(record) = self.flattened_program_scope() {
+            let StaticLink::UnitOuter { target, .. } = &*record;
+            // A chain whose frames hold nothing collapses to the program
+            // scope itself, which needs no record of itself.
+            if !Arc::ptr_eq(&flat.inner, &target.inner) {
+                flat.cow_mut().set_static_link(record);
+            }
+        }
+        flat
+    }
+
+    /// What a flattening of this chain keeps of its frame structure: the
+    /// program scope below its call frames, which
+    /// [`Self::flattened_recording_program_scope`] records on the collapsed
+    /// tier as a [`StaticLink`] of a non-root env. `None` when the chain is
+    /// the program scope itself.
+    ///
+    /// A flattened env merges a frame's names with every caller's and the
+    /// program scope's, so "below the deepest frame root" no longer finds the
+    /// program scope once a frame is collapsed into the bottom of a chain: a
+    /// frame linked above it would skip its callers straight into theirs
+    /// (#12478). The record is inert for lookups through the flattened env
+    /// itself, which only a frame root's link redirects; it is read where the
+    /// program scope is looked for (`program_scope_from`,
+    /// `link_static_outer_to_unit`, the next flattening).
+    // Cost: O(d), d = chain tiers.
+    fn flattened_program_scope(&self) -> Option<Arc<StaticLink>> {
+        let unit = |target: &Arc<Env>| {
+            Arc::new(StaticLink::UnitOuter {
+                target: Arc::clone(target),
+                capture_first: false,
+            })
+        };
+        let mut seg: Option<&Arc<Env>> = None;
+        let mut cur = self;
+        loop {
+            if cur.frame_root {
+                if let Some(StaticLink::UnitOuter { target, .. }) = cur.inner.static_link() {
+                    return Some(unit(target));
+                }
+                if let Some(below) = &cur.parent {
+                    seg = Some(below);
+                }
+            }
+            match &cur.parent {
+                Some(below) => cur = below,
+                None => break,
+            }
+        }
+        if let Some(StaticLink::UnitOuter { target, .. }) = cur.inner.static_link() {
+            return Some(unit(target));
+        }
+        seg.map(unit)
     }
 
     /// [`Self::flattened`] as the scope this env's static links describe: a
@@ -231,6 +309,21 @@ impl Env {
         with_static_links_suppressed(|| self.get(key))
     }
 
+    /// [`Self::contains_key_sym`] through the whole chain, callers included,
+    /// whatever static links it holds -- the membership twin of
+    /// [`Self::get_through_callers`], for the same writeback machinery.
+    // Cost: O(d), d = chain tiers.
+    pub(crate) fn contains_key_sym_through_callers(&self, key: Symbol) -> bool {
+        with_static_links_suppressed(|| self.contains_key_sym(key))
+    }
+
+    /// [`Self::get_sym`] through the whole chain; see
+    /// [`Self::get_through_callers`].
+    // Cost: O(d), d = chain tiers.
+    pub(crate) fn get_sym_through_callers(&self, key: Symbol) -> Option<&Value> {
+        with_static_links_suppressed(|| self.get_sym(key))
+    }
+
     /// Where a lookup of `key` that missed this env continues, when this env
     /// is a frame root whose static link skips the callers for it.
     // Cost: O(1) for a stored link; O(d) for a flagged frame
@@ -264,6 +357,14 @@ impl Env {
         self.chain_has_static_link = true;
     }
 
+    /// Whether this env is a call frame's root (`Env::scoped_child`), which
+    /// can carry a static link.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_frame_root(&self) -> bool {
+        self.frame_root
+    }
+
     /// Undo [`Self::mark_outer_is_unit`] on this frame root, once the code
     /// it ran is done and the call's return path reads values across frames.
     /// The chain-level latch stays set; it only selects the walk that checks.
@@ -284,7 +385,9 @@ impl Env {
     }
 
     /// The program scope's part of the chain starting at `self`: the env
-    /// below the deepest frame root, or `self` when no frame root is below.
+    /// below the deepest frame root, or `self` when no frame root is below --
+    /// unless the chain bottoms out at a flattened frame, whose record names
+    /// it.
     // Cost: O(d), d = chain tiers.
     fn program_scope_from(&self) -> &Env {
         let mut seg = self;
@@ -297,7 +400,14 @@ impl Env {
             }
             match cur.parent.as_deref() {
                 Some(below) => cur = below,
-                None => return seg,
+                // A flattened frame at the bottom records the program scope
+                // its frames ran over (`flattened_program_scope`).
+                None => {
+                    return match cur.inner.static_link() {
+                        Some(StaticLink::UnitOuter { target, .. }) => target,
+                        None => seg,
+                    };
+                }
             }
         }
     }

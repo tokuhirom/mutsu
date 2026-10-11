@@ -168,7 +168,13 @@ impl Interpreter {
 
         // Reuse a pooled locals vec to avoid per-call allocation
         // Seed from the pre-interned local names (see the matching comment in
-        // `call_compiled_function_positional_light`).
+        // `call_compiled_function_positional_light`). A frame linked to the
+        // program scope (ADR-12529) is marked first, so the seed reads through
+        // the link rather than a caller's same-named lexical (#12478); this
+        // path binds no parameters, so nothing after it reads the caller.
+        if outer_is_unit && caller_env.is_some() {
+            self.env_mut().mark_outer_is_unit();
+        }
         if cf.code.locals_sym.len() == num_locals {
             for (i, sym) in cf.code.locals_sym.iter().enumerate() {
                 if let Some(val) = self.env().get_sym(*sym) {
@@ -228,11 +234,6 @@ impl Interpreter {
             cf.source_file_sym(),
         );
         let let_mark = self.let_saves_len();
-        // Marked once the parameters are bound: the binder resolves each
-        // argument's source variable, which is the caller's (ADR-12529).
-        if outer_is_unit && caller_env.is_some() {
-            self.env_mut().mark_outer_is_unit();
-        }
         // Frame-less path: roll back the line the body's ops advanced to manually.
         let saved_line = self.cur_source_line;
         let mut ip = 0;
