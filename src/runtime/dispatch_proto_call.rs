@@ -353,6 +353,7 @@ impl Interpreter {
                 let b_has_where = b.1.param_defs.iter().any(|p| p.where_constraint.is_some());
                 b_has_where.cmp(&a_has_where).then(a.0.cmp(&b.0))
             });
+            self.merge_flexible_arity_candidates(name, &mut candidates);
             if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates)? {
                 return Ok(Some((*def).clone()));
             }

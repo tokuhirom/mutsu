@@ -277,36 +277,6 @@ impl Interpreter {
     /// optional / defaulted / slurpy positional parameter — gathered across ALL
     /// registered arities, sorted most-specific first.
     ///
-    /// Multi candidates are registered under `Pkg::name/<arity>…` keys built
-    /// from the *declared* parameter count, so a call that omits a defaulted
-    /// trailing parameter never matches the exact-arity keys. The bare-name
-    /// path has long had this fallback; the qualified path did not, so
-    /// `NativeLibs::cannon-name('foo')` could not reach
-    /// `multi cannon-name(Str $l, Version $v = Version)` even though the
-    /// identical bare call resolved fine.
-    pub(super) fn qualified_flexible_arity_candidates(
-        &mut self,
-        name: &str,
-    ) -> Vec<(String, Arc<FunctionDef>)> {
-        let prefix = format!("{}/", name);
-        let base_keys = self.fn_keys_for_base(name);
-        let registry = self.registry();
-        let mut candidates: Vec<(String, Arc<FunctionDef>)> = base_keys
-            .iter()
-            .filter_map(|k| registry.functions.get(k).map(|def| (k.as_str(), def)))
-            .filter(|(ks, def)| {
-                ks.starts_with(&prefix)
-                    && def.param_defs.iter().any(|p| {
-                        !p.named && (p.optional_marker || p.default.is_some() || p.is_variadic())
-                    })
-            })
-            .map(|(ks, def)| (ks.to_string(), def.clone()))
-            .collect();
-        drop(registry);
-        self.sort_candidates_by_specificity(&mut candidates);
-        candidates
-    }
-
     pub(super) fn resolve_function_with_arity(
         &self,
         name: &str,
@@ -438,6 +408,7 @@ impl Interpreter {
                     .map(|(key, def)| (key.resolve(), def.clone()))
                     .collect()
             };
+            self.merge_flexible_arity_candidates(name, &mut candidates);
             self.sort_candidates_by_specificity(&mut candidates);
             if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates)? {
                 return Ok(Some(def));
