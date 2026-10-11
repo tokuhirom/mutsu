@@ -128,11 +128,10 @@ impl Interpreter {
             }
             _ => return None,
         };
-        Some(self.nqp_create(Value::package(class)).map(|object| {
+        Some(self.nqp_create(Value::package(class)).inspect(|object| {
             if let ValueView::Instance { attributes, .. } = object.view() {
                 attributes.insert(payload_key, value.clone());
             }
-            object
         }))
     }
 
