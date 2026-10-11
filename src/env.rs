@@ -3724,6 +3724,53 @@ mod tests {
     }
 
     #[test]
+    fn repeated_writes_to_one_name_do_not_grow_the_log() {
+        // #8489: the log is a set of names. A frame rewriting the same few
+        // lexicals once per iteration must not append once per write.
+        let mut caller = Env::new();
+        caller.insert("caller-lex".into(), Value::int(1));
+        let mut flat = scoped_with(caller, &[("mine", 0)]).flattened_for_frame();
+        let before = flat.frame_writes().expect("recording").len();
+        for i in 0..1000 {
+            flat.insert("mine".into(), Value::int(i));
+            flat.insert("other".into(), Value::int(i));
+        }
+        let writes = flat.frame_writes().expect("still recording");
+        assert_eq!(writes.len(), before + 1, "only `other` is new");
+        let mut sorted: Vec<_> = writes.to_vec();
+        sorted.sort_by_key(|k| k.resolve());
+        sorted.dedup();
+        assert_eq!(sorted.len(), writes.len(), "each key appears at most once");
+    }
+
+    #[test]
+    fn rewriting_a_logged_name_does_not_copy_a_log_shared_with_a_saved_caller_env() {
+        // #8489: `push_call_frame` clones the env (sharing the log's `Arc`) once
+        // per nested call. A write to an already-logged name must stay
+        // read-only, or the first one after each share deep-copies the whole
+        // log -- O(log length) per call, O(n^2) over the frame's lifetime. A
+        // copy shows up as the log moving to a new address.
+        let mut caller = Env::new();
+        for i in 0..64 {
+            caller.insert(format!("lex{i}").into(), Value::int(i));
+        }
+        let names: Vec<(String, i64)> = (0..64).map(|i| (format!("w{i}"), i)).collect();
+        let refs: Vec<(&str, i64)> = names.iter().map(|(n, v)| (n.as_str(), *v)).collect();
+        let mut flat = scoped_with(caller, &refs).flattened_for_frame();
+        for _ in 0..100 {
+            let saved = flat.clone();
+            let addr = flat.frame_writes().expect("recording").as_ptr();
+            flat.insert("w7".into(), Value::int(9));
+            assert_eq!(
+                flat.frame_writes().expect("recording").as_ptr(),
+                addr,
+                "a write to an already-logged name copied the shared log"
+            );
+            assert_eq!(saved.frame_writes().expect("recording").as_ptr(), addr);
+        }
+    }
+
+    #[test]
     fn a_bulk_overlay_edit_drops_the_log_rather_than_leaving_it_stale() {
         let mut caller = Env::new();
         caller.insert("caller-lex".into(), Value::int(1));
