@@ -151,6 +151,15 @@ impl Interpreter {
         // drops, so only the dispatch work itself can still be holding one
         // (`crate::profile::region`).
         let _region = crate::profile::enter(crate::profile::Region::MethodDispatch);
+        // A `create_type` type object with an installed method cache answers
+        // from it (`Metamodel::Primitives.install_method_cache`).
+        if let Some(cached) = self.custom_type_cached_method(&target, method) {
+            let code = cached?;
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            call_args.push(target.clone());
+            call_args.extend(args);
+            return self.call_sub_value(code, call_args, false);
+        }
         // A user `method ^find_method` answers every call on its type, the
         // internal ones too (`say` asking for `.gist`, `~` for `.Str`):
         // `find_method_intercept`.

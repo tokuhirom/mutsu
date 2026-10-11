@@ -16,6 +16,9 @@ impl Interpreter {
             "compose_type" => self.mp_compose_type(args),
             "rebless" => self.mp_rebless(args),
             "is_type" => self.mp_is_type(args),
+            "install_method_cache" => self.mp_install_method_cache(args),
+            "set_parameterizer" => self.mp_set_parameterizer(args),
+            "parameterize_type" => self.mp_parameterize_type(args),
             _ => Err(RuntimeError::new(format!(
                 "X::Method::NotFound: No such method '{}' for Metamodel::Primitives",
                 method
@@ -47,6 +50,10 @@ impl Interpreter {
                 authoritative: false,
                 call_accepts: false,
                 composed: false,
+                method_cache: None,
+                method_cache_authoritative: true,
+                parameterizer: None,
+                parameterizations: Vec::new(),
             },
         );
 
@@ -127,6 +134,151 @@ impl Interpreter {
         }
 
         Ok(type_val)
+    }
+
+    fn custom_type_id(type_val: &Value, op: &str) -> Result<u64, RuntimeError> {
+        match type_val.view() {
+            ValueView::CustomType(c) => Ok(c.id),
+            _ => Err(RuntimeError::new(format!(
+                "{op}: first argument must be a custom type"
+            ))),
+        }
+    }
+
+    /// Metamodel::Primitives.install_method_cache($type, %cache, :$authoritative = True)
+    // Cost: O(c), c = entries of the cache.
+    fn mp_install_method_cache(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        let type_val = args
+            .first()
+            .cloned()
+            .ok_or_else(|| RuntimeError::new("install_method_cache requires a type argument"))?;
+        let id = Self::custom_type_id(&type_val, "install_method_cache")?;
+        let mut entries = Vec::new();
+        if let Some(cache) = args.get(1)
+            && let ValueView::Hash(items) = cache.view()
+        {
+            for (k, v) in items.iter() {
+                entries.push((k.to_string(), v.clone()));
+            }
+        }
+        let mut authoritative = true;
+        for arg in args.iter().skip(2) {
+            if let ValueView::Pair(k, v) = arg.view()
+                && k.as_str() == "authoritative"
+            {
+                authoritative = v.truthy();
+            }
+        }
+        if let Some(data) = self.types.custom_type_data.get_mut(&id) {
+            data.method_cache = Some(entries);
+            data.method_cache_authoritative = authoritative;
+        }
+        Ok(Value::NIL)
+    }
+
+    /// Metamodel::Primitives.set_parameterizer($obj, &parameterizer)
+    // Cost: O(1).
+    fn mp_set_parameterizer(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new("set_parameterizer requires two arguments"));
+        }
+        // A package or a custom type may carry the cache; key it by identity.
+        let id = match args[0].view() {
+            ValueView::CustomType(c) => c.id,
+            _ => package_cache_id(&args[0]),
+        };
+        let entry = self.types.custom_type_data.entry(id).or_insert_with(|| {
+            CustomTypeData {
+                type_check_cache: None,
+                authoritative: false,
+                call_accepts: false,
+                composed: false,
+                method_cache: None,
+                method_cache_authoritative: true,
+                parameterizer: None,
+                parameterizations: Vec::new(),
+            }
+        });
+        entry.parameterizer = Some(args[1].clone());
+        entry.parameterizations.clear();
+        Ok(Value::NIL)
+    }
+
+    /// Metamodel::Primitives.parameterize_type($obj, @args): the cached
+    /// parameterization for these arguments, produced on first use by the
+    /// installed parameterizer called as `(root, args)`.
+    // Cost: O(p * a) per lookup, p = cached parameterizations, a = argument count.
+    fn mp_parameterize_type(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        if args.len() < 2 {
+            return Err(RuntimeError::new("parameterize_type requires two arguments"));
+        }
+        let root = args[0].clone();
+        let id = match root.view() {
+            ValueView::CustomType(c) => c.id,
+            _ => package_cache_id(&root),
+        };
+        let list = args[1].clone();
+        // A List's own identity is per-object; the arguments' element keys
+        // are what make two calls with the same arguments share a result.
+        let key = match list.view() {
+            ValueView::Array(items, _) => items
+                .iter()
+                .map(crate::value::which_key::value_which_key)
+                .collect::<Vec<_>>()
+                .join("\u{1f}"),
+            _ => crate::value::which_key::value_which_key(&list),
+        };
+        let Some(data) = self.types.custom_type_data.get(&id) else {
+            return Err(RuntimeError::new(
+                "parameterize_type: no parameterizer was set for this type",
+            ));
+        };
+        if let Some((_, hit)) = data.parameterizations.iter().find(|(k, _)| *k == key) {
+            return Ok(hit.clone());
+        }
+        let Some(parameterizer) = data.parameterizer.clone() else {
+            return Err(RuntimeError::new(
+                "parameterize_type: no parameterizer was set for this type",
+            ));
+        };
+        let result = self.call_sub_value(parameterizer, vec![root, list], false)?;
+        if let Some(data) = self.types.custom_type_data.get_mut(&id) {
+            data.parameterizations.push((key, result.clone()));
+        }
+        Ok(result)
+    }
+
+    /// The method-cache entry for `name` on a custom type object: `Some(Ok(v))`
+    /// when installed, `Some(Err)` when the cache is authoritative and lacks it,
+    /// `None` when no cache applies.
+    // Cost: O(c), c = entries of the cache.
+    pub(crate) fn custom_type_cached_method(
+        &mut self,
+        type_val: &Value,
+        name: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::CustomType(c) = type_val.view() else {
+            return None;
+        };
+        let data = self.types.custom_type_data.get(&c.id)?;
+        let cache = data.method_cache.as_ref()?;
+        if let Some((_, code)) = cache.iter().find(|(k, _)| k == name) {
+            return Some(Ok(code.clone()));
+        }
+        // Only ordinary lowercase names are subject to the cache: the
+        // upper-case introspection methods (`WHAT`, `HOW`, `WHICH`, ...) and
+        // `^meta` calls are answered by the object system itself.
+        let ordinary = name.chars().next().is_some_and(|ch| ch.is_ascii_lowercase());
+        if !(data.method_cache_authoritative && ordinary) {
+            return None;
+        }
+        let class = match self.custom_type_how_name(type_val) {
+            Ok(Some(named)) => named,
+            _ => c.name.resolve(),
+        };
+        Some(Err(RuntimeError::new(format!(
+            "X::Method::NotFound: Method '{name}' not found for invocant of class '{class}'"
+        ))))
     }
 
     /// Metamodel::Primitives.rebless($obj, $type)
@@ -511,4 +663,12 @@ impl Interpreter {
         }
         Ok(())
     }
+}
+
+/// Identity key for a non-CustomType parameterization root (a package).
+fn package_cache_id(root: &Value) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    crate::value::which_key::value_which_key(root).hash(&mut h);
+    h.finish() | (1 << 63)
 }
