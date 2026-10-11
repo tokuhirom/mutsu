@@ -106,15 +106,25 @@ pub(crate) fn atomic_lane_entries_exist() -> bool {
     ATOMIC_LANE_ENTRY_EXISTS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Source of [`SharedStore::id`].
+static NEXT_LINEAGE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 #[derive(Debug)]
 pub(crate) struct SharedStore {
     own: RwLock<HashMap<String, Value>>,
     /// Names whose entry in `own` was written by a thread (`set`,
-    /// `with_entry_mut`) since it was last seeded or declared. A seeded entry is
-    /// only a snapshot of the spawning binding, not a value any thread
-    /// published, and must not be pulled over another thread's own binding of
-    /// the same bare name (#12204).
-    written: Mutex<rustc_hash::FxHashSet<String>>,
+    /// `with_entry_mut`) since it was last seeded or declared, mapped to the
+    /// [`Self::id`] of the lineage that wrote it last. A seeded entry is only a
+    /// snapshot of the spawning binding, not a value any thread published, and
+    /// must not be pulled over another thread's own binding of the same bare
+    /// name (#12204). Neither must an entry this lineage wrote itself: its own
+    /// env already holds that write, and the name may now be a different
+    /// binding in an outer frame (a callee's `my $now` written before an
+    /// `await` in a caller that has its own `$now`, #11545).
+    written: Mutex<HashMap<String, u64>>,
+    /// This lineage's process-unique identity, recorded in `written`. Not the
+    /// address: a freed lineage's address can be reused by a new one.
+    id: u64,
     parent: Option<Arc<SharedStore>>,
     /// The root of the chain. `None` when this store *is* the root.
     root: Option<Arc<SharedStore>>,
@@ -141,6 +151,7 @@ impl SharedStore {
         Self {
             own: RwLock::new(HashMap::default()),
             written: Mutex::new(Default::default()),
+            id: NEXT_LINEAGE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             parent,
             root,
             redirects: RwLock::new(HashMap::default()),
@@ -258,7 +269,11 @@ impl SharedStore {
         note_inserted_key(key);
         let target = self.owner_of(key).unwrap_or_else(|| self.scope_for(key));
         target.own.write().unwrap().insert(key.to_string(), value);
-        target.written.lock().unwrap_or_else(|e| e.into_inner()).insert(key.to_string());
+        target
+            .written
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(key.to_string(), self.id);
     }
 
     /// Bind the name into THIS lineage, shadowing any ancestor entry. Used by
@@ -275,13 +290,20 @@ impl SharedStore {
         target.written.lock().unwrap_or_else(|e| e.into_inner()).remove(key);
     }
 
-    /// True when the entry `key` resolves to is a mere seed: the spawning
-    /// binding's snapshot, which no thread has written since (#12204). Such a
-    /// value says nothing about what another thread's own `key` binding holds.
+    /// True when the entry `key` resolves to holds nothing another lineage
+    /// published for this one to pull: either a mere seed, the spawning
+    /// binding's snapshot that no thread has written since (#12204), or a value
+    /// this lineage wrote itself (#11545), which its own env already has. Such
+    /// an entry says nothing about what this thread's own `key` binding holds.
     // Cost: O(d), d = chain depth (spawn nesting).
-    pub(crate) fn is_unwritten_seed(&self, key: &str) -> bool {
+    pub(crate) fn is_seed_or_own_write(&self, key: &str) -> bool {
         match self.owner_of(key) {
-            Some(Holder::Chain(h)) => !h.written.lock().unwrap_or_else(|e| e.into_inner()).contains(key),
+            Some(Holder::Chain(h)) => h
+                .written
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(key)
+                .is_none_or(|writer| *writer == self.id),
             _ => false,
         }
     }
@@ -356,7 +378,11 @@ impl SharedStore {
         let mut guard = target.own.write().unwrap();
         let r = guard.get_mut(key).map(f);
         if r.is_some() {
-            target.written.lock().unwrap_or_else(|e| e.into_inner()).insert(key.to_string());
+            target
+                .written
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(key.to_string(), self.id);
         }
         r
     }
