@@ -10,7 +10,7 @@ impl Interpreter {
         key: Value,
         variable: Option<&str>,
     ) -> Result<Value, RuntimeError> {
-        if matches!(constraint, "Any" | "Mu") {
+        if constraint == "Mu" {
             return Ok(key);
         }
         let key = self.coerce_key_for_constraint(constraint, key)?;
@@ -31,6 +31,11 @@ impl Interpreter {
         constraint: &str,
         key: Value,
     ) -> Result<Value, RuntimeError> {
+        // Parentheses in an inline subset belong to its predicate, not to a
+        // coercion type. The ordinary matcher resolves and caches the subset.
+        if constraint.trim_start().starts_with("subset ::") {
+            return Ok(key);
+        }
         if let Some((target, _)) = parse_coercion_type(constraint)
             && !self.type_matches_value(target, &key)
         {
