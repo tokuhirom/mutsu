@@ -68,7 +68,7 @@ impl Interpreter {
         let statics = if self.class_has_package_lexicals(&cf.package) {
             let mut shadowed = Vec::new();
             self.inject_class_body_statics_saving(&cf.package, &mut shadowed);
-            Some(Box::new(shadowed))
+            Some(shadowed.into_boxed_slice())
         } else {
             None
         };
@@ -88,7 +88,7 @@ impl Interpreter {
     #[inline]
     pub(super) fn leave_routine_package(&mut self, saved: RoutinePackageSave) {
         if let Some(shadowed) = saved.statics {
-            for (name, previous) in shadowed.into_iter().rev() {
+            for (name, previous) in shadowed.into_vec().into_iter().rev() {
                 match previous {
                     Some(v) => self.env_mut().insert(name, v),
                     None => self.env_mut().remove(&name),
@@ -913,8 +913,11 @@ impl Interpreter {
 /// [`Interpreter::leave_routine_package`] to put back: the previous
 /// `current_package` (when a switch was possible) and the env bindings that
 /// the declaring class's body statics replaced.
+/// An env name and the binding a class static displaced.
+type ShadowedBinding = (String, Option<Value>);
+
 #[derive(Default)]
 pub(super) struct RoutinePackageSave {
     package: Option<Symbol>,
-    statics: Option<Box<Vec<(String, Option<Value>)>>>,
+    statics: Option<Box<[ShadowedBinding]>>,
 }
