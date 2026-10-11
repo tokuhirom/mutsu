@@ -6,7 +6,7 @@ use nqp;
 # about the operand's binding: its native kind and whether it is writable
 # (ADR-11553 §3.2, #12673). Every expected answer was checked against Rakudo
 # 2026.09.
-plan 38;
+plan 44;
 
 # -- native kind --
 {
@@ -95,4 +95,18 @@ plan 38;
     is nqp::iscont_i($i.VAR), 0, 'an explicit .VAR is a container object, not a native container';
     is nqp::isrwcont($x.VAR), 0, '... and not a writable binding';
     is nqp::iscont($x.VAR), 1, '... but iscont says it is a container';
+}
+
+# -- the result of an is raw / is rw routine (#12712) --
+{
+    my $x = 1;
+    sub r() is raw { $x }
+    sub rw() is rw { $x }
+    sub pl() { $x }
+    is nqp::isrwcont(r()), 1, 'an is raw routine result is a writable container';
+    is nqp::iscont(r()), 1, '... and a container';
+    is nqp::isrwcont(rw()), 1, 'an is rw routine result is a writable container';
+    is nqp::iscont(rw()), 1, '... and a container';
+    is nqp::isrwcont(pl()), 0, 'a plain routine result is a value';
+    is nqp::iscont(pl()), 0, '... not a container';
 }
