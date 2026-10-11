@@ -276,11 +276,11 @@ fn lower_condition_modifier(modifier: &RakuAstNode, statement: Stmt) -> Result<S
         RakuAstClass::StatementModifierWithout => Some(GivenWithKind::Without),
         _ => None,
     } {
-        return Ok(lower_with_modifier(
+        return lower_with_modifier(
             kind,
             lower_expr(named_child_or_positional(modifier)?)?,
             statement,
-        ));
+        );
     }
     // `STMT when COND`: the synthetic `given $_` over a modifier `When`.
     if modifier.class == RakuAstClass::StatementModifierWhen {
@@ -303,11 +303,13 @@ fn lower_condition_modifier(modifier: &RakuAstNode, statement: Stmt) -> Result<S
     let written_cond = lower_expr(named_child_or_positional(modifier)?)?;
     let statement =
         crate::parser::rewrite_placeholder_block_modifier_stmt(statement, &written_cond);
-    let cond = negate_if(written_cond, is_unless);
     // A declaration is split from its gated initializer, as the parser does.
-    if let Some(split) = crate::parser::try_split_decl_modifier(&statement, &cond, is_unless) {
+    if let Some(split) =
+        crate::parser::conditional_declaration(&statement, &written_cond, is_unless)?
+    {
         return Ok(split);
     }
+    let cond = negate_if(written_cond, is_unless);
     Ok(Stmt::If {
         cond,
         then_branch: vec![statement],
@@ -323,7 +325,18 @@ fn lower_condition_modifier(modifier: &RakuAstNode, statement: Stmt) -> Result<S
 /// parser produces for `STMT with TOPIC` (condition negated for `without`),
 /// carrying the `with_kind` tag the converter reads back. Keeping the lowered
 /// form identical to the parsed one is what makes the round trip stable.
-fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stmt {
+fn lower_with_modifier(
+    kind: GivenWithKind,
+    topic: Expr,
+    statement: Stmt,
+) -> Result<Stmt, RuntimeError> {
+    if let Some(expanded) = crate::parser::topical_declaration(
+        &statement,
+        &topic,
+        matches!(kind, GivenWithKind::Without),
+    )? {
+        return Ok(expanded);
+    }
     let defined = Expr::MethodCall {
         target: Box::new(Expr::Var("_".to_string())),
         name: crate::symbol::Symbol::intern("defined"),
@@ -341,7 +354,7 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
     } else {
         defined
     };
-    Stmt::Given {
+    Ok(Stmt::Given {
         topic,
         body: vec![Stmt::If {
             cond,
@@ -354,7 +367,7 @@ fn lower_with_modifier(kind: GivenWithKind, topic: Expr, statement: Stmt) -> Stm
         }],
         is_statement_modifier: true,
         with_kind: Some(kind),
-    }
+    })
 }
 
 /// The calls `lower_stmt_inner` turns into statements of their own, which a

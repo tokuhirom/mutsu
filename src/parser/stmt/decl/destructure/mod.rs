@@ -8,13 +8,10 @@ use super::parse_decl_type_constraint;
 use crate::ast::{Expr, Stmt};
 use crate::value::Value;
 
-use super::parse_comma_or_expr;
-
 mod bind_arity;
 mod elements;
 mod named;
 use elements::{collect_nested_group_vars, parse_element_traits};
-use named::parse_named_destructuring;
 pub(crate) mod desugar;
 use crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical;
 
@@ -399,16 +396,11 @@ fn parse_destructuring_with_rhs(
         &input[1..]
     };
     let (rest, _) = ws(rest)?;
-    let has_named = vars.iter().any(|v| v.is_named);
     // A loose word-logical (`and`/`or`/...) binds looser than list assignment:
     // `my ($z) = () and $z.defined` is `(my ($z) = ()) and $z.defined`. The
     // positional form stops the RHS before it and re-attaches it below with
     // the assigned LHS list as its left operand.
-    let (rest, raw_rhs) = if has_named {
-        parse_comma_or_expr(rest)?
-    } else {
-        parse_comma_or_expr_no_word_logical(rest)?
-    };
+    let (rest, raw_rhs) = parse_comma_or_expr_no_word_logical(rest)?;
     // If the RHS is followed (after whitespace) by a `{` block, that block is a
     // separate statement / conditional body — NOT a hash subscript of the
     // declaration. Preserve the whitespace so the expression-context postfix
@@ -420,10 +412,6 @@ fn parse_destructuring_with_rhs(
     let has_following_block = rest_ws.starts_with('{');
     let rest = if has_following_block { rest } else { rest_ws };
 
-    if has_named {
-        let rhs = raw_rhs;
-        return parse_named_destructuring(rest, vars, rhs, type_constraint, is_state);
-    }
     let decl = SignatureDecl {
         vars,
         is_state,

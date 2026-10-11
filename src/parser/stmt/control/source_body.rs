@@ -35,6 +35,14 @@ impl<'ast> Visit<'ast> for Budget {
         // their bodies too, since nested records duplicate the same subtree.
         match stmt {
             Stmt::SourceForm(form) => match form.as_ref() {
+                SourceForm::DeclarationModifier {
+                    declaration,
+                    condition,
+                    ..
+                } => {
+                    self.visit_stmt(declaration);
+                    self.visit_expr(condition);
+                }
                 SourceForm::ControlPointy {
                     condition,
                     param_defs,
@@ -141,7 +149,11 @@ impl<'ast> Visit<'ast> for Budget {
 }
 
 // Cost: O(n), n = copied nodes; recursion and accepted copies are bounded.
-pub(super) fn check(cond: &Expr, params: &[ParamDef], body: &[Stmt]) -> Result<(), RuntimeError> {
+pub(in crate::parser::stmt) fn check(
+    cond: &Expr,
+    params: &[ParamDef],
+    body: &[Stmt],
+) -> Result<(), RuntimeError> {
     let mut budget = Budget::default();
     budget.visit_expr(cond);
     for param in params {
@@ -202,5 +214,23 @@ mod tests {
                 "{keyword}: {error:?}"
             );
         }
+    }
+
+    #[test]
+    fn declaration_modifier_source_records_share_the_copy_budget() {
+        let condition = Expr::Literal(Value::TRUE);
+        let mut body = vec![Stmt::Expr(Expr::Literal(Value::NIL))];
+        for _ in 0..32 {
+            if check(&condition, &[], &body).is_err() {
+                return;
+            }
+            let record = Stmt::SourceForm(Box::new(SourceForm::DeclarationModifier {
+                declaration: Box::new(Stmt::SyntheticBlock(body.clone())),
+                condition: condition.clone(),
+                kind: crate::ast::decl_modifier::DeclarationModifier::If,
+            }));
+            body = vec![record, Stmt::SyntheticBlock(body)];
+        }
+        panic!("the declaration source copy budget did not bound nested records");
     }
 }

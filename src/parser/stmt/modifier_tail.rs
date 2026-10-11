@@ -18,6 +18,13 @@ pub(super) fn modifier_operand_ends_with_subscript(stmt: &Stmt) -> bool {
         Stmt::If { cond, .. } | Stmt::While { cond, .. } => cond,
         Stmt::For { iterable, .. } => iterable,
         Stmt::Given { topic, .. } => topic,
+        Stmt::SyntheticBlock(parts) => match parts.first() {
+            Some(Stmt::SourceForm(form)) => match form.as_ref() {
+                crate::ast::SourceForm::DeclarationModifier { condition, .. } => condition,
+                _ => return false,
+            },
+            _ => return false,
+        },
         _ => return false,
     };
     crate::parser::expr::is_subscript_expr(rightmost_term(operand))

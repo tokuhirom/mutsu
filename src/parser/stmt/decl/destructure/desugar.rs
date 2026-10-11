@@ -21,8 +21,8 @@ pub(crate) fn source_form(decl: SignatureDecl) -> Stmt {
 pub(crate) fn signature_decl(decl: SignatureDecl) -> Stmt {
     let mut stmts = match &decl.init {
         None => expand_bare(&decl),
-        Some(init) => {
-            let (mut stmts, result) = expand_assigned(&decl, init);
+        Some(_) => {
+            let (mut stmts, result) = expand_with_rhs(&decl);
             stmts.push(Stmt::Expr(result));
             stmts
         }
@@ -35,6 +35,14 @@ pub(crate) fn signature_decl(decl: SignatureDecl) -> Stmt {
 /// yields. The caller appends the expression (a parser may first fold a
 /// trailing word-logical into it).
 pub(crate) fn expand_with_rhs(decl: &SignatureDecl) -> (Vec<Stmt>, Expr) {
+    if decl.vars.iter().any(|var| var.is_named)
+        && let Some(init) = &decl.init
+    {
+        return (
+            super::named::expand(decl, init.rhs.clone()),
+            Expr::Literal(Value::NIL),
+        );
+    }
     match &decl.init {
         Some(init) => expand_assigned(decl, init),
         None => (expand_bare(decl), Expr::Literal(Value::NIL)),

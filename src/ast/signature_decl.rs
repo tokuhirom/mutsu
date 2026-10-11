@@ -16,6 +16,12 @@ use super::{Expr, Stmt};
 /// expansion. The compiler skips it.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum SourceForm {
+    /// The declaration and modifier before their shared executable expansion.
+    DeclarationModifier {
+        declaration: Box<Stmt>,
+        condition: Expr,
+        kind: super::decl_modifier::DeclarationModifier,
+    },
     /// A control pointy block before its shared executable expansion.
     ControlPointy {
         kind: ControlPointyKind,
