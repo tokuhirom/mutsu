@@ -55,7 +55,9 @@ impl Interpreter {
         let (base_constraint, _) = crate::runtime::types::strip_type_smiley(constraint);
         let declared_constraint = base_constraint
             .split_once('(')
-            .map_or(base_constraint, |(target, _)| target);
+            .map_or(base_constraint, |(target, _)| {
+                crate::runtime::types::strip_type_smiley(target).0
+            });
         let mut value = self.stack.last().expect("TypeCheck: empty stack").clone();
         if var_name.is_some_and(|name| name.starts_with('%')) {
             return Ok(());

@@ -411,10 +411,15 @@ impl<'ast> Visit<'ast> for TypeArgs<'_> {
         match stmt {
             Stmt::VarDecl {
                 type_constraint, ..
-            }
-            | Stmt::HasDecl {
-                type_constraint, ..
             } => self.check(type_constraint.as_deref()),
+            Stmt::HasDecl {
+                type_constraint,
+                hash_key_type,
+                ..
+            } => {
+                self.check(type_constraint.as_deref());
+                self.check(hash_key_type.as_deref());
+            }
             _ => {}
         }
         let added = signature_captures(stmt_signatures(stmt));

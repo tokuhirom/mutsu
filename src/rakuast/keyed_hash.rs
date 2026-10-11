@@ -98,12 +98,27 @@ pub(super) fn lower(
     type_constraint: Option<String>,
     custom_traits: &mut Vec<(String, Option<Expr>)>,
 ) -> Result<Option<String>, RuntimeError> {
-    let Some(field) = node.fields.iter().find(|f| f.name == Some("shape")) else {
+    let Some(key) = lower_key_type(node, sigil)? else {
         return Ok(type_constraint);
+    };
+    if type_constraint.is_none() {
+        custom_traits.push((IMPLICIT_VALUE_TYPE.to_string(), None));
+    }
+    Ok(Some(join(type_constraint.as_deref(), &key)))
+}
+
+/// The source key type shared by variable and attribute declarations.
+// Cost: O(n), n = size of the shape.
+pub(super) fn lower_key_type(
+    node: &RakuAstNode,
+    sigil: &str,
+) -> Result<Option<String>, RuntimeError> {
+    let Some(field) = node.fields.iter().find(|f| f.name == Some("shape")) else {
+        return Ok(None);
     };
     // The shape of an array is its dimensions, read by `lower_dimensions`.
     if sigil == "@" {
-        return Ok(type_constraint);
+        return Ok(None);
     }
     let RakuAstFieldValue::Node(shape) = &field.value else {
         return Err(unsupported(node));
@@ -120,10 +135,7 @@ pub(super) fn lower(
     }
     let key_node = super::lower::named_child(statement, "expression")?;
     let key = super::type_lower::type_constraint(node, key_node)?;
-    if type_constraint.is_none() {
-        custom_traits.push((IMPLICIT_VALUE_TYPE.to_string(), None));
-    }
-    Ok(Some(join(type_constraint.as_deref(), &key)))
+    Ok(Some(key))
 }
 
 /// The dimensions of a shaped array declaration's `shape`, or `None` when the

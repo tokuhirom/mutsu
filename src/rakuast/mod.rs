@@ -13,6 +13,7 @@
 mod anon_state;
 mod atomic_op;
 mod attribute;
+mod attribute_decl;
 mod bare_prefix;
 mod bareword;
 mod callable_context;
@@ -77,6 +78,7 @@ mod symbolic_deref;
 mod temporize;
 mod thunk;
 mod type_args;
+mod type_build;
 mod type_call;
 mod type_ctor;
 mod type_lower;

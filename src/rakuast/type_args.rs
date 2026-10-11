@@ -1,6 +1,7 @@
 //! Source spelling and parsed expressions for parameterized type arguments.
 
-use super::convert::{build_type_node, convert_expr, is_simple_type, node_field, unsupported};
+use super::convert::{convert_expr, is_simple_type, node_field, unsupported};
+use super::type_build::{MAX_TYPE_DEPTH, application_open, build_type_node_at};
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
 use crate::value::RuntimeError;
@@ -20,7 +21,10 @@ impl<'a> Iterator for ArgSources<'a> {
         let mut depth = 0usize;
         let mut quote = None;
         let mut escaped = false;
+        let mut previous = None;
         for (i, ch) in self.rest.char_indices() {
+            let opens_quote = super::type_build::opens_quote(previous, ch);
+            previous = Some(ch);
             if escaped {
                 escaped = false;
                 continue;
@@ -36,7 +40,7 @@ impl<'a> Iterator for ArgSources<'a> {
                 continue;
             }
             match ch {
-                '\'' | '"' => quote = Some(ch),
+                '\'' | '"' if opens_quote => quote = Some(ch),
                 '(' | '[' | '{' | '<' => depth += 1,
                 ')' | ']' | '}' | '>' => depth = depth.saturating_sub(1),
                 ',' if depth == 0 => {
@@ -70,16 +74,27 @@ pub(super) fn parameterized_type_node(
     spelling: &str,
     parsed: Option<&[Expr]>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    let open = spelling
-        .find('[')
-        .ok_or_else(|| unsupported("malformed parameterised type"))?;
+    parameterized_type_node_at(spelling, parsed, 0)
+}
+
+pub(super) fn parameterized_type_node_at(
+    spelling: &str,
+    parsed: Option<&[Expr]>,
+    depth: usize,
+) -> Result<RakuAstNode, RuntimeError> {
+    if depth >= MAX_TYPE_DEPTH {
+        return Err(unsupported("type composition exceeds 128 levels"));
+    }
+    let (open, delimiter) =
+        application_open(spelling)?.ok_or_else(|| unsupported("malformed parameterised type"))?;
+    if delimiter != '[' {
+        return Err(unsupported("malformed parameterised type"));
+    }
     let inner = spelling
         .strip_suffix(']')
         .ok_or_else(|| unsupported("malformed parameterised type"))?;
     let base = &spelling[..open];
-    if !is_simple_type(base) {
-        return Err(unsupported("parameterised type over a non-simple base"));
-    }
+    let base = build_type_node_at(base, depth + 1)?;
     let sources = ArgSources {
         rest: &inner[open + 1..],
     };
@@ -117,7 +132,7 @@ pub(super) fn parameterized_type_node(
             } else if let Expr::BareWord(name) = expr
                 && is_type_spelling(name)
             {
-                build_type_node(name)?
+                build_type_node_at(name, depth + 1)?
             } else {
                 convert_expr(expr)?
             };
@@ -125,13 +140,13 @@ pub(super) fn parameterized_type_node(
         }
     } else {
         for source in sources {
-            fields.push(node_field(None, build_type_node(source)?));
+            fields.push(node_field(None, build_type_node_at(source, depth + 1)?));
         }
     }
     Ok(RakuAstNode {
         class: RakuAstClass::TypeParameterized,
         fields: vec![
-            node_field(Some("base-type"), super::bareword::simple_type_node(base)),
+            node_field(Some("base-type"), base),
             node_field(
                 Some("args"),
                 RakuAstNode {

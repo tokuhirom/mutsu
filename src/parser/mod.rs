@@ -46,6 +46,12 @@ pub(crate) use primary::container::finalize_array_sections;
 mod quote_shadow;
 pub(crate) mod sink_warn;
 mod stmt;
+
+/// Validate one complete identifier using the parser's lexical grammar.
+/// This does not parse expressions or execute code.
+pub(crate) fn is_raku_identifier(input: &str) -> bool {
+    stmt::parse_raku_ident(input).is_ok_and(|(rest, _)| rest.is_empty())
+}
 pub(crate) use expr::{atomic_elem_update, wrap_dot_assign};
 pub(crate) use outer_redecl::{find_scope_diagnostic, scope_diagnostic_error};
 pub(crate) use stmt::assign::{DOTTY_ASSIGN_OP, compound_assign_op_from_name};

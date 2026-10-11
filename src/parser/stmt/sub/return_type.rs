@@ -110,6 +110,19 @@ pub(crate) fn parse_return_type_annotation(input: &str) -> PResult<'_, String> {
         }
 
         match b {
+            b'\''
+                if rest[..idx]
+                    .chars()
+                    .next_back()
+                    .is_some_and(crate::parser::helpers::is_raku_identifier_continue)
+                    && rest[idx + 1..]
+                        .chars()
+                        .next()
+                        .is_some_and(crate::parser::helpers::is_raku_identifier_start) =>
+            {
+                // An internal apostrophe belongs to the type name.
+                idx += 1;
+            }
             b'\'' => {
                 in_single = true;
                 idx += 1;

@@ -170,13 +170,7 @@ pub(super) fn identifier_segments(
 /// contains `::`, such as the operator name `infix:<::=>`, is not.
 pub(super) fn is_qualified_identifier(name: &str) -> bool {
     let mut segments = identifier_segments(name);
-    segments.clone().nth(1).is_some()
-        && segments.all(|seg| {
-            !seg.is_empty()
-                && seg
-                    .chars()
-                    .all(|ch| ch.is_alphanumeric() || matches!(ch, '_' | '-' | '\''))
-        })
+    segments.clone().nth(1).is_some() && segments.all(crate::parser::is_raku_identifier)
 }
 
 /// The `Name` of a qualified identifier, one simple part per segment.

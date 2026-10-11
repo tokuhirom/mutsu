@@ -21,6 +21,19 @@ pub(super) fn type_constraint(
     owner: &RakuAstNode,
     type_node: &RakuAstNode,
 ) -> Result<String, RuntimeError> {
+    type_constraint_at(owner, type_node, 0)
+}
+
+fn type_constraint_at(
+    owner: &RakuAstNode,
+    type_node: &RakuAstNode,
+    depth: usize,
+) -> Result<String, RuntimeError> {
+    if depth >= super::type_build::MAX_TYPE_DEPTH {
+        return Err(RuntimeError::new(
+            "RakuAST: type composition exceeds 128 levels",
+        ));
+    }
     match type_node.class {
         RakuAstClass::TypeSimple => {
             let name_node = named_child_or_positional(type_node)?;
@@ -31,7 +44,7 @@ pub(super) fn type_constraint(
         }
         // `Int:D` / `Int:U`.
         RakuAstClass::TypeDefinedness => {
-            let base = simple_base(owner, type_node)?;
+            let base = composed_base(owner, type_node, depth + 1)?;
             let definite = match named_bool(type_node, "definite") {
                 Some(definite) => definite,
                 None => return Err(unsupported(owner)),
@@ -40,12 +53,12 @@ pub(super) fn type_constraint(
         }
         // `Int:_`.
         RakuAstClass::TypeAnyDefinedness => {
-            let base = simple_base(owner, type_node)?;
+            let base = composed_base(owner, type_node, depth + 1)?;
             Ok(format!("{base}:_"))
         }
         // `Int()` / `Int(Cool)`, spelled the way the parser records them.
         RakuAstClass::TypeCoercion => {
-            let base = simple_base(owner, type_node)?;
+            let base = composed_base(owner, type_node, depth + 1)?;
             let constraint = match type_node.fields.as_slice() {
                 [_] => String::new(),
                 [_, constraint] if constraint.name == Some("constraint") => {
@@ -55,7 +68,7 @@ pub(super) fn type_constraint(
                     let ValueView::RakuAst(constraint) = value.view() else {
                         return Err(unsupported(owner));
                     };
-                    type_constraint(owner, constraint)?
+                    type_constraint_at(owner, constraint, depth + 1)?
                 }
                 _ => return Err(unsupported(owner)),
             };
@@ -64,7 +77,7 @@ pub(super) fn type_constraint(
         // `Array[Int]` / `Hash[Str, Int]`, args joined the way the parser
         // spells them.
         RakuAstClass::TypeParameterized => {
-            let base = simple_base(owner, type_node)?;
+            let base = composed_base(owner, type_node, depth + 1)?;
             let args = named_child(type_node, "args")?;
             if args.class != RakuAstClass::ArgList || args.fields.is_empty() {
                 return Err(unsupported(owner));
@@ -85,7 +98,9 @@ pub(super) fn type_constraint(
                     | RakuAstClass::TypeDefinedness
                     | RakuAstClass::TypeAnyDefinedness
                     | RakuAstClass::TypeCoercion
-                    | RakuAstClass::TypeParameterized => argument_type_constraint(owner, arg)?,
+                    | RakuAstClass::TypeParameterized => {
+                        argument_type_constraint_at(owner, arg, depth + 1)?
+                    }
                     _ => regex_subrule_argument_source(arg)?,
                 });
             }
@@ -136,7 +151,15 @@ fn argument_type_constraint(
     owner: &RakuAstNode,
     node: &RakuAstNode,
 ) -> Result<String, RuntimeError> {
-    let name = type_constraint(owner, node)?;
+    argument_type_constraint_at(owner, node, 0)
+}
+
+fn argument_type_constraint_at(
+    owner: &RakuAstNode,
+    node: &RakuAstNode,
+    depth: usize,
+) -> Result<String, RuntimeError> {
+    let name = type_constraint_at(owner, node, depth)?;
     if node.class == RakuAstClass::TypeSimple
         && name_parts::has_leading_empty(named_child_or_positional(node)?)
     {
@@ -146,14 +169,14 @@ fn argument_type_constraint(
     }
 }
 
-/// The `base-type` of a definedness / coercion / parameterized type, which the
-/// converter only ever renders as a `Type::Simple`.
-fn simple_base(owner: &RakuAstNode, type_node: &RakuAstNode) -> Result<String, RuntimeError> {
+/// Composed bases use the same bounded recursion as type arguments.
+fn composed_base(
+    owner: &RakuAstNode,
+    type_node: &RakuAstNode,
+    depth: usize,
+) -> Result<String, RuntimeError> {
     let base = named_child(type_node, "base-type")?;
-    if base.class != RakuAstClass::TypeSimple {
-        return Err(unsupported(owner));
-    }
-    type_constraint(owner, base)
+    type_constraint_at(owner, base, depth)
 }
 
 fn named_bool(node: &RakuAstNode, name: &str) -> Option<bool> {
@@ -164,5 +187,26 @@ fn named_bool(node: &RakuAstNode, name: &str) -> Option<bool> {
     match value.view() {
         ValueView::Bool(b) => Some(b),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn composed_type_lowering_shares_one_depth_budget() {
+        let mut node = super::super::bareword::simple_type_node("Int");
+        for _ in 0..super::super::type_build::MAX_TYPE_DEPTH {
+            node = RakuAstNode {
+                class: RakuAstClass::TypeCoercion,
+                fields: vec![super::super::convert::node_field(Some("base-type"), node)],
+            };
+        }
+        assert!(type_constraint(&node, &node).is_err());
+        let node = super::super::type_build::build_type_node("Int:D(Str)").unwrap();
+        assert_eq!(type_constraint(&node, &node).unwrap(), "Int:D(Str)");
+        let node = super::super::type_build::build_type_node("Hash[Int:D]:D").unwrap();
+        assert_eq!(type_constraint(&node, &node).unwrap(), "Hash[Int:D]:D");
     }
 }

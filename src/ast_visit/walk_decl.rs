@@ -56,6 +56,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
             is_rw: _,
             is_readonly: _,
             type_constraint,
+            hash_key_type,
             type_smiley: _,
             is_required: _,
             sigil: _,
@@ -82,6 +83,7 @@ pub(super) fn walk_type_member_decl<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s:
                 walk_handle_spec(v, h);
             }
             names(v, type_constraint.iter(), NameKind::Type);
+            names(v, hash_key_type.iter(), NameKind::Type);
             if let Some(e) = where_constraint {
                 v.visit_expr(e);
             }
