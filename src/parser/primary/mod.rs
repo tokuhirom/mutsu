@@ -130,14 +130,12 @@ pub(super) fn set_original_source(source: &str) {
             ptr: source.as_ptr() as usize,
             len: source.len(),
             newlines: Some(newlines.clone()),
-            attempts: source
-                .contains("trace")
-                .then(|| {
-                    std::rc::Rc::new(RefCell::new(StatementAttempts {
-                        newlines: newlines.clone(),
-                        ..StatementAttempts::default()
-                    }))
-                }),
+            attempts: source.contains("trace").then(|| {
+                std::rc::Rc::new(RefCell::new(StatementAttempts {
+                    newlines: newlines.clone(),
+                    ..StatementAttempts::default()
+                }))
+            }),
             attempt_base: None,
         };
     });
@@ -357,9 +355,7 @@ pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
             // A fragment copied out of the enclosing unit starts on the line
             // its copy came from.
             let unit_lines = match (&origin.attempts, origin.attempt_base) {
-                (Some(attempts), Some(base)) => {
-                    newlines_before(&attempts.borrow().newlines, base)
-                }
+                (Some(attempts), Some(base)) => newlines_before(&attempts.borrow().newlines, base),
                 _ => 0,
             };
             return unit_lines + newlines_before(origin.newlines(), offset) + 1;
