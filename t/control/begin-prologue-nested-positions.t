@@ -7,7 +7,7 @@ use Test;
 # against rakudo: the BEGIN runs once, before the unit's mainline, even when
 # its enclosing code never runs.
 
-plan 13;
+plan 15;
 
 my @log;
 
@@ -53,3 +53,10 @@ is-deeply @runs, [3, 3], 'a value-form BEGIN operand is a constant of its site';
 
 sub compound { my $y = 1; $y += BEGIN { @log.push('compound'); 1 }; $y }
 is @log.grep('compound').elems, 1, 'a BEGIN on the right of a compound assignment runs once';
+
+if False { 'a' ~~ / a { BEGIN @log.push('regex') } / }
+ok @log.first('regex'), 'a BEGIN in a regex code block runs although the regex never does';
+
+my $lexical = 1;
+sub rx-lex { 'a' ~~ / a { BEGIN @log.push('regex-lex'); $lexical } / }
+is @log.grep('regex-lex').elems, 1, 'a BEGIN in a regex code block that closes over a lexical runs once';

@@ -106,12 +106,6 @@ impl Lifter<'_> {
 }
 
 impl VisitMut for Lifter<'_> {
-    // TODO: lift from a regex code block too, as rakudo does. The regex a
-    // match runs is not always this tree: a code block that closes over a
-    // lexical runs from the copy the literal's value carries (and its source
-    // text), so lifting from the tree would run the phaser twice. See #10550.
-    fn visit_regex_node_mut(&mut self, _node: &mut crate::regex_tree::RegexNode) {}
-
     /// Every statement list reached below the current level is a child
     /// closure body: its statement-level CHECK/INIT phasers are extracted.
     fn visit_stmts_mut(&mut self, body: &mut Vec<Stmt>) {
@@ -133,6 +127,8 @@ impl VisitMut for Lifter<'_> {
             // `source_regex` is a copy of the regex the body's literal value
             // carries and runs; lifting a phaser out of the copy would leave
             // the running one in place, so the phaser would run twice.
+            // TODO: a token's matcher parses the pattern text, not the tree,
+            // so the phaser needs lifting from the text too (#12748).
             Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {}
             // The level's own BEGIN/CHECK/INIT phasers are reordered by
             // `reorder_at_level`; their bodies are a level of their own.
