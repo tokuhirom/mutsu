@@ -321,6 +321,23 @@ The PR body states: the distribution and version, its status and baseline files 
 fixed, and the issue number for every file still red. Write the accomplishment up as
 `news/YYYY-MM/<slug>.md`, and close any issue the fix resolves with `Closes #NNNN`.
 
+## Closing an `ecosystem` ticket: run the real module, file what else breaks
+
+(User decision, 2026-10-11.) A synthetic repro going green does not show that the issue is
+resolved: #12521's wrapper repro passed while the real Compress::Bzip2 still returned a buffer of
+the wrong length, because the module reaches the routine through a different call path. So for any
+`ecosystem`-labelled issue, before the PR is opened:
+
+1. Install or unpack the distribution the issue names (`mzef install --/test <Dist>` plus the
+   dependency closure, or the ledger's checkout) and run what the ticket was about -- the
+   dist's own test file or the minimal script from the issue -- against the binary you built, next
+   to `raku`.
+2. State in the PR body whether the real module now behaves like rakudo. If it does not, the ticket
+   is not resolved: keep fixing, or say exactly which part remains and file it.
+3. File every *additional* problem the run exposes (a crash, a parse failure, a wrong answer further
+   along in the suite) as its own `tokuhirom/mutsu` issue with a repro and the rakudo output, and link it
+   from the PR body. Check first that it reproduces without your change.
+
 ## Done means
 
 Either the distribution re-measures `green`, or every remaining non-`parity` baseline file is

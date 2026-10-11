@@ -491,6 +491,10 @@ release targets (Linux/macOS × x64/arm64) are required; do not weaken one to pa
   does not cover becomes its own issue (per the bullet above) before your PR is opened — not a line
   in the PR body or a chat report only. Link it from the PR body. This applies even to small
   findings you could fix later yourself; a finding that lives only in a session transcript is lost.
+- **An `ecosystem` ticket is verified on the real module** (user decision, 2026-10-11): after the
+  fix, run the distribution the issue names against your build next to `raku`, say in the PR body
+  whether it now matches, and file each additional problem that run exposes as its own issue. The
+  procedure is the `ecosystem-dist-fix` skill's "Closing an `ecosystem` ticket" section.
 - **Claim an issue before working it** — agents run in parallel. Post a comment whose **first
   line** is `Claiming: <branch>`, re-read the comments, and yield if a live claim with a lower
   comment id exists; the **lowest comment id is the whole tiebreaker** ("I'm further along" or "the
