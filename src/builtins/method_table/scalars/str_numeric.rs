@@ -1,5 +1,7 @@
 //! `Str`'s and `Cool`'s conversions to a number: `Str.Numeric`, `Str.Int`,
-//! `Str.Num`, and `Cool.Int`, `Cool.Num`, `Cool.Rat`, `Cool.UInt` (ADR-11276 §9.71).
+//! `Str.Num`, and `Cool.Num`, `Cool.Rat`, `Cool.UInt` (ADR-11276 §9.71). `Cool.Int` has
+//! no row: `List`, `Map`, `Str` and the numeric shapes all declare their own `Int`, so
+//! no shape would reach it (`every_row_is_reached_and_answers`).
 //!
 //! Rakudo's `Cool` bodies are `self.Numeric.METHOD`, so a `Cool` row numifies its
 //! receiver through [`numify`] (a `List`, `Array`, `Hash` is its element count)
@@ -52,7 +54,6 @@ pub(super) static STR_ROWS: &[MethodRow] = &[
 ];
 
 pub(super) static COOL_ROWS: &[MethodRow] = &[
-    narrow!("Cool", "Int", cool_int),
     narrow!("Cool", "Num", cool_num),
     narrow!("Cool", "Rat", cool_rat),
     narrow!("Cool", "UInt", cool_uint),
@@ -98,7 +99,7 @@ fn number_of(target: &Value) -> Result<Option<Value>, Value> {
     })
 }
 
-/// `Cool.Int`.
+/// `Cool.Int`, the first step of `Cool.UInt`.
 // Cost: O(d^2) for a Str of d digits; O(1) otherwise.
 fn cool_int(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if let ValueView::Str(s) = target.view() {

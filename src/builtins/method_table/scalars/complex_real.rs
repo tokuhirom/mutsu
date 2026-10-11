@@ -1,12 +1,13 @@
-//! `Complex`'s conversions to a `Real` type: `Int`, `Num`, `Rat`, `FatRat` and
-//! `Real` (ADR-11276 §9.70).
+//! `Complex`'s conversions to a `Real` type: `Int`, `UInt`, `Num`, `Rat`,
+//! `FatRat` and `Real` (ADR-11276 §9.70).
 //!
 //! Rakudo's `Complex.Real` answers the real part when the imaginary part is
 //! `≅ 0` under `$*TOLERANCE`, and every other conversion goes through it.
 //! Reading the dynamic variable needs the interpreter, so these are interpreter
 //! rows; their body is [`Interpreter::dispatch_complex_to_real`], which the
 //! cascade's other entry (a `Str` that numifies to a `Complex`, `"1+2i".Int`)
-//! calls too. `UInt` is `Cool`'s: its `Int` plus a range check.
+//! calls too. `UInt` is `Cool`'s: its `Int` plus a range check, which
+//! `dispatch_complex_to_real` applies to the real part.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -36,6 +37,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     complex_row!("Int", 0, int),
     complex_row!("Num", 0, num),
     complex_row!("Real", 0, real),
+    complex_row!("UInt", 0, uint),
     complex_row!("Rat", 0, rat),
     complex_row!("FatRat", 0, fat_rat),
     complex_row!("Rat", 1, rat),
@@ -100,4 +102,13 @@ fn fat_rat(
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     coerce(interp, "FatRat", target, args)
+}
+
+fn uint(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    coerce(interp, "UInt", target, args)
 }

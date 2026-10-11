@@ -1544,14 +1544,15 @@ largest block with one obvious shape, so it went first: 43 rows in four new modu
 
 ### 9.71 `Str` and `Cool` conversions, `Version`, `Capture` of scalars, `Mu.Numeric`/`Mu.Int`, `Bool.pick`/`Bool.roll` (2026-10-11)
 
-`refactor/12678-cool-str-conversion-rows` (issue #12678, the remainder of §9.70). All 17 declared rows `--inventory` listed are rows now.
+`refactor/12678-cool-str-conversion-rows` (issue #12678, the remainder of §9.70). 16 of the 17 declared rows `--inventory` listed are rows now; the seventeenth, `Cool.Int`, is unreachable (below).
 
-- **`str_numeric`**: `Str.Numeric`, `Str.Int`, `Str.Num` and `Cool.Int`, `Cool.Num`, `Cool.Rat`, `Cool.UInt`. `numeric_of_str`, `int_of_str`, `num_of_str`,
+- **`str_numeric`**: `Str.Numeric`, `Str.Int`, `Str.Num` and `Cool.Num`, `Cool.Rat`, `Cool.UInt` (and `Complex.UInt`, an interpreter row in `complex_real`, because `Cool.UInt` is reached by `Complex` too). `numeric_of_str`, `int_of_str`, `num_of_str`,
   `rat_of_str`, `fat_rat_of_str` and `uint_of_int` are the one implementation: the rows call them, and so do the cascade arms (an allomorph, a subclass). The
   `Str` cases the numeric types do not have are kept: an empty string is zero, a string that numifies to a `Complex` (`"1+2i".Int`) is declined to the interpreter
   (`$*TOLERANCE`), a non-number is the lazy `X::Str::Numeric` `Failure`. A `Cool` row numifies through `numify` (a `List`, `Array`, `Hash` is its element count).
   `Str.Rat` now converts the *parsed number*, so `"0x1F".Rat` is `31.0`, `"NaN".Rat` is `0/0` and `":16<ff>".Rat` is `255.0` (the old text-to-Rat scanner, `str_to_rat`,
   answered `0.0`); the scanner is gone. `List.UInt`, `Hash.Num` and the aggregates' `Version` answer instead of `X::Method::NotFound`.
+- **`Cool.Int` stays out**: every shape that inherits `Cool` declares an `Int` of its own (`List`, `Map`, `Str`, `Uni`, `Date`, `Match`, the numerics), so no shape would reach a `Cool.Int` row and `every_row_is_reached_and_answers` forbids it, as it forbade `Map` rows in §9.66. `Cool.UInt` calls the same `Int` routines. The inventory will keep listing it.
 - **`Cool.Version` / `Str.Version`** (`version::version_of`): `Version.new(self.Str)`, for every `Cool`.
 - **`Capture` of `Int`, `Num`, `Str`, `Version`** (`capture_none`): `X::Cannot::Capture` naming the value as Rakudo does (``Cannot unpack or Capture `42`.`` plus the two
   hint lines), `.what` the value. The cascade's `value_to_capture` raises the same error for those receivers and `Bool`/`*`; `Rat`, `Complex` and the aggregates
