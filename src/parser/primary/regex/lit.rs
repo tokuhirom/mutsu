@@ -1355,6 +1355,29 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
     }
     // .&foo(...) / .&foo: ... — call a code object/sub with topic as first arg
     if let Some(r) = r.strip_prefix('&') {
+        // `.&{ ... }` — an inline block as the callee, called with the topic.
+        if r.starts_with('{') {
+            let (rest, block) = crate::parser::primary::primary(r)?;
+            let mut args = vec![Expr::Var("_".to_string())];
+            let rest = if rest.starts_with('(') {
+                let (rest, _) = parse_char(rest, '(')?;
+                let (rest, _) = ws(rest)?;
+                let (rest, call_args) = parse_call_arg_list(rest)?;
+                args.extend(call_args);
+                let (rest, _) = ws(rest)?;
+                let (rest, _) = parse_char(rest, ')')?;
+                rest
+            } else {
+                rest
+            };
+            return Ok((
+                rest,
+                Expr::CallOn {
+                    target: Box::new(block),
+                    args,
+                },
+            ));
+        }
         let (rest, name) = take_while1(r, |c: char| c.is_alphanumeric() || c == '_' || c == '-')?;
         let mut args = vec![Expr::Var("_".to_string())];
         let rest = if rest.starts_with('(') {
