@@ -450,8 +450,8 @@ pub(crate) fn native_method_0arg_cascade(
     }
 
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
-    // payload (`builtins::numeric_subclass`).
-    if let Some(result) = super::numeric_subclass::dispatch(target, method_sym, &[]) {
+    // payload (`builtins::native_base`).
+    if let Some(result) = super::native_base::dispatch(target, method_sym, &[]) {
         return Some(result);
     }
 

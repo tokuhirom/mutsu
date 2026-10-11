@@ -638,6 +638,12 @@ mod tests {
             let type_obj = Value::package(Symbol::intern(owner));
             for row in native_method_rows(owner) {
                 if row.flags.contains(NativeRowFlags::TYPE_OBJECT_OK) {
+                    // A `Cool` text method on a `Cool` type object is answered
+                    // by the type-object gate ahead of the table and the
+                    // cascades (ADR-11276 §9.79).
+                    if crate::runtime::admits_cool_type_object(row.name) {
+                        continue;
+                    }
                     let observed = native_method_arities(&type_obj, row.name);
                     assert_ne!(
                         observed, 0,

@@ -17,11 +17,7 @@
 //! through; the rule itself lives here once.
 
 use super::*;
-use crate::value::numeric_payload::{INT_PAYLOAD, NUM_PAYLOAD, numeric_payload_of};
-
-/// The reserved attribute an `is Str` subclass instance keeps its payload in
-/// (seeded by `runtime::seed_native_subclass_payloads`).
-const STR_PAYLOAD: &str = "__mutsu_str_value";
+use crate::value::numeric_payload::{INT_PAYLOAD, NUM_PAYLOAD, STR_PAYLOAD, numeric_payload_of};
 
 impl Interpreter {
     /// `nqp::box_{i,n,s,u}($value, $type)` when `$type` is a class that boxes

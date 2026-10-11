@@ -136,7 +136,7 @@ pub(crate) fn seed_native_subclass_payloads(
     args: &[Value],
     positional_args: &[Value],
 ) {
-    use crate::builtins::numeric_subclass::{INT_PAYLOAD, NUM_PAYLOAD, RAT_PAYLOAD};
+    use crate::builtins::native_base::{INT_PAYLOAD, NUM_PAYLOAD, RAT_PAYLOAD};
     if class_mro.iter().any(|name| name == "Int") && !attrs.contains_key(INT_PAYLOAD) {
         let payload = positional_args.first().map_or(0, crate::runtime::to_int);
         attrs.insert(INT_PAYLOAD, Value::int(payload));
@@ -611,6 +611,8 @@ include!("modules_state_run.rs");
 include!("modules_supply_system.rs");
 include!("modules_utilities.rs");
 pub(crate) use self::any_cool_method_gate::cool_method_not_found as cool_method_not_found_on_any;
+#[cfg(test)]
+pub(crate) use self::cool_type_object_gate::admits_cool_type_object;
 pub(crate) use self::locals::Locals;
 pub(crate) use self::methods_subscript_protocol::refuse_map_removal;
 pub(crate) use self::output_sink::OutputSink;

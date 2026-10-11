@@ -288,8 +288,29 @@ fn dispatch(
     if !super::names_a_row(method, arity) {
         return None;
     }
-    let receiver = Receiver::of_settled(target)?;
-    let id = super::resolve(receiver, method, arity)?;
+    let payload;
+    let (target, id) = match Receiver::of_settled(target) {
+        Some(receiver) => (target, super::resolve(receiver, method, arity)?),
+        // The native-base resolution (§9.79): an instance of a user class
+        // deriving from a built-in scalar type has no shape of its own, and is
+        // answered by the rows of its payload's shape, the payload as invocant.
+        None => match crate::builtins::native_base::redirect(target, method.as_str()) {
+            Some(base) => {
+                payload = base;
+                let receiver = Receiver::of_settled(&payload)?;
+                (&payload, super::resolve(receiver, method, arity)?)
+            }
+            // A shapeless `Cool` (an enum value, a `Seq` still being
+            // produced, an instance of a user class `is Cool`) reaches the
+            // rows `Cool` declares, itself as invocant: their handlers read
+            // it through `.Str` and `.Numeric` as Rakudo's `Cool` methods do.
+            None if is_shapeless_cool(interp.as_deref_mut(), target) => (
+                target,
+                super::owner_row(Symbol::intern("Cool"), method, arity)?,
+            ),
+            None => return None,
+        },
+    };
     let row = row(id);
     // The caller's veto, asked once the row is known and before the handler
     // runs: an interpreter row has effects, so it must not run and then be
@@ -314,6 +335,31 @@ fn dispatch(
         return None;
     }
     call(row, interp, target, &positional, Named::new(&named))
+}
+
+/// Whether `target`, a receiver with no shape, is a `Cool`: an enum value, a
+/// `Seq` or `Slip` the table has no settled shape for, or an instance whose
+/// class has `Cool` in its MRO. An instance is asked of the interpreter, so a
+/// pure entry declines it.
+// Cost: O(1) for a non-instance; for an instance one memoized MRO read and
+// O(d) compares, d = MRO depth.
+fn is_shapeless_cool(interp: Option<&mut Interpreter>, target: &Value) -> bool {
+    use crate::value::ValueView;
+    match target.view() {
+        ValueView::Enum { .. }
+        | ValueView::LazyList(_)
+        | ValueView::Seq(_)
+        | ValueView::HyperSeq(_)
+        | ValueView::RaceSeq(_)
+        | ValueView::Slip(_) => true,
+        ValueView::Instance { class_name, .. } => interp.is_some_and(|interp| {
+            interp
+                .class_mro(class_name.as_str())
+                .iter()
+                .any(|class| class == "Cool")
+        }),
+        _ => false,
+    }
 }
 
 /// Whether the named argument `pair` is one `row` binds.

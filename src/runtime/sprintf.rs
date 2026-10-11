@@ -203,14 +203,14 @@ fn format_sprintf_impl(fmt: &str, args: &[Value], z_mode: bool) -> String {
         };
         let _mixin_storage: Value;
         // A Mixin formats as its inner value, and an `Int` subclass instance
-        // as its `Int` payload (`builtins::numeric_subclass`).
+        // as its `Int` payload (`builtins::native_base`).
         let arg = match raw_arg.map(Value::view) {
             Some(ValueView::Mixin(inner, _)) => {
                 _mixin_storage = (**inner).clone();
                 Some(&_mixin_storage)
             }
             Some(ValueView::Instance { .. }) => {
-                match raw_arg.and_then(crate::builtins::numeric_subclass::numeric_subclass_payload)
+                match raw_arg.and_then(crate::builtins::native_base::numeric_subclass_payload)
                 {
                     Some(payload) => {
                         _mixin_storage = payload;
