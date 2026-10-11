@@ -359,7 +359,10 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
             // Nothing is recorded for a purely stylistic LEADING pipe (no
             // branch content between the group's open / the previous pipe
             // and this one) — see `BracketCtx::branch_start`.
-            if c == '|' {
+            // Only a bare `|` is an alternation operator: the `|` of `<|w>`
+            // (and `<|b>`, `<|c>`, ...) is part of an assertion, and treating
+            // it as a branch boundary spliced a `<.ws>` into the assertion.
+            if c == '|' && angle_depth == 0 {
                 let is_second_of_double = out.ends_with('|');
                 if !is_second_of_double
                     && let Some(ctx) = bracket_stack.last_mut()
