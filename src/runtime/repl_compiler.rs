@@ -47,6 +47,11 @@ pub(crate) struct EvalContext {
     env: Env,
     /// Where `nqp::ctxcaller` of this context leads, when known.
     caller: Option<usize>,
+    /// The scopes enclosing the frame, innermost first, as they stood when
+    /// `nqp::ctx` ran (what `nqp::ctxouter` walks).
+    outers: Vec<crate::env::OuterScope>,
+    /// The outermost context (rakudo's setting): `nqp::ctxouter` of it is null.
+    top: bool,
     routines: Vec<(Symbol, Arc<FunctionDef>)>,
     infix_ops: Vec<(String, HashSet<Symbol>)>,
 }
@@ -202,11 +207,42 @@ impl Interpreter {
             Some(id)
         });
         let env = self.env.flattened();
+        let outers = self.env.enclosing_scopes();
         self.new_eval_context(EvalContext {
             env,
             caller,
+            outers,
             ..EvalContext::default()
         })
+    }
+
+    /// `nqp::ctxouter($ctx)`: the context of the scope enclosing `$ctx`'s
+    /// frame (a closure's creating scope, then the program scope, then the
+    /// empty outermost context), or null past the outermost.
+    // Cost: O(v), v = variables visible in the enclosing scope (flattened into the snapshot).
+    pub(crate) fn nqp_ctxouter(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let Some(ctx) = args
+            .first()
+            .and_then(Self::eval_context_id)
+            .and_then(|id| self.repl_compiler.contexts.get(id))
+        else {
+            return Err(RuntimeError::new("ctxouter needs an MVMContext"));
+        };
+        if ctx.top {
+            return Ok(Value::NIL);
+        }
+        let outer = match ctx.outers.split_first() {
+            Some((first, rest)) => EvalContext {
+                env: first.to_env(),
+                outers: rest.to_vec(),
+                ..EvalContext::default()
+            },
+            None => EvalContext {
+                top: true,
+                ..EvalContext::default()
+            },
+        };
+        Ok(self.new_eval_context(outer))
     }
 
     /// A context over `env`, as `nqp::p6getouterctx` answers it for the scope a
@@ -377,6 +413,7 @@ impl Interpreter {
             caller: None,
             routines,
             infix_ops,
+            ..EvalContext::default()
         });
 
         // rakudo's mainline ends with `$*CTXSAVE.ctxsave` when the caller

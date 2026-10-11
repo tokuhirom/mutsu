@@ -118,6 +118,8 @@ impl Interpreter {
             "ctx" => Ok(self.nqp_ctx()),
             // Cost: O(1).
             "ctxcaller" => Ok(self.nqp_ctxcaller(args)),
+            // Cost: O(v), v = variables visible in the enclosing scope.
+            "ctxouter" => self.nqp_ctxouter(args),
             // Cost: O(v), v = variables in the context.
             "ctxlexpad" => Ok(self.nqp_ctxlexpad(args)),
             // Cost: O(m), m = chars of the key (copied by to_string_value, then hashed); a non-Hash target adds an AT-KEY method dispatch.

@@ -113,13 +113,19 @@ impl Interpreter {
             // (`OUTERS::`); this arm serves a name only known at run time, and
             // a literal no enclosing scope of the compilation declares (a
             // setting name, or one an `EVAL`'s outer context holds).
-            // TODO: compile a computed name through the baked scope chain
-            // (`LexScopeChain`, as `$::($n)::x` does); a by-name lookup here
-            // sees a binding of the running scope that shadows the outer one.
+            // The enclosing scopes are the ones `nqp::ctxouter` walks
+            // (`Env::enclosing_scopes`), so a binding of the running scope
+            // that shadows the outer one is skipped; a name none of them
+            // holds falls back to the by-name lookup.
             // Cost: O(m + s), m = chars of $name, s = scope-chain depth walked.
             "getlexouter" => {
                 let name = name_operand(args, 0);
-                self.nqp_lex_lookup(&name)
+                let key = lex_key(&name);
+                self.env
+                    .enclosing_scopes()
+                    .iter()
+                    .find_map(|scope| scope.get(key))
+                    .or_else(|| self.nqp_lex_lookup(&name))
                     .map(Value::into_deref)
                     .ok_or_else(|| {
                         RuntimeError::new(format!("No lexical found with name '{name}'"))
