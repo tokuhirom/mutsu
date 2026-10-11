@@ -26,6 +26,7 @@ pub(crate) mod quanthash;
 pub(crate) mod range;
 pub(crate) mod render;
 pub(crate) mod render_names;
+pub(crate) mod rotate;
 mod sampling;
 pub(crate) mod seq;
 pub(crate) mod subscript;
@@ -61,6 +62,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     list_transform::FLAT_ROWS,
     map::ROWS,
     positional::ROWS,
+    rotate::ROWS,
     pair::ROWS,
     quanthash::ROWS,
     subscript::ROWS,
