@@ -1662,6 +1662,29 @@ against Rakudo's answers.
 - **Rakudo difference noticed, not a row matter**: `augment class Any { multi method map(|c) { ... } }` is never called in Rakudo for a `List`
   receiver (the built-in candidates are narrower than `|c`); mutsu calls the user candidate first. That is multi ranking, filed as #12751.
 
+### 9.78 Slice 5 finding: a shapeless receiver reaches `Cool`/`Str` text methods only through the cascade (2026-10-11)
+
+`refactor/11276-retire-text-arms` tried the first slice-5 deletion: the arms of `methods_0arg/dispatch_core_str.rs` (`trim`, `trim-leading`,
+`trim-trailing`, `flip`, `codes`, `words`, `comb`, `naive-word-wrapper`, `Date`, `DateTime`, `fmt`), each of which only re-calls a row handler.
+It was reverted: no arm can go yet.
+
+- **Why.** The arms are the *only* path for a receiver with no `DispatchShape`. `class MyStr is Str { }; MyStr.new(value => "abc").flip` (pinned
+  by `t/oo/method/str-text-method-rows.t`) answers `X::Method::NotFound` once the `flip` arm is gone, although `Str.flip` and `Cool.flip` are rows,
+  because the table is keyed by shape and `invoke_owner` is called only for the receivers that name their owners (`IO::Spec`, RakuAST, the
+  concurrency types). `uc`/`lc`/`tc`/`chars`/`ord` look as if they work for such an instance only because their arms live in other files
+  (`dispatch_core_math.rs`, `dispatch_core_coerce.rs`).
+- **What else the attempt showed** (all fixable once the above is settled):
+  1. `IO::Path` (a closed shape) needs an audited `Cool` text list for `trim`, `trim-leading`, `trim-trailing`, `flip` and `codes`
+     (`roast/S32-str/trim.t` calls `.IO.trim`), the way `Range`/`Seq` have `COOL_NUMERIC_FOR_COLLECTIONS`.
+  2. The consistency tests `e11_slice2_owner_rows_are_backed_by_the_cascade` and `type_object_ok_rows_are_backed_by_a_real_type_object_probe` ask
+     the cascade whether a row's arity/type-object claim is real; `native_method_arities` asks the table only for arities 1 and 2, and a type
+     object's admission is decided by `cool_type_object_gate`, not by a row flag. Both need a table-first probe (arity 0, owner rows) before any
+     arm is removed; they are slice 5's "E2 inverse probes" anyway.
+- **What slice 5 needs first.** A *native-base resolution* for a shapeless receiver: an `Instance`/mixin whose class derives from a native type
+  (`is Str`, `is Int`, `is List`...) is answered by the rows of that base's shape, with the receiver's backing value as the invocant, and a
+  plain user class keeps `X::Method::NotFound`. Today each family of arms re-implements "stringify the instance" on its own. With that in
+  place the arms of all eight families in `dispatch_core_families` can be deleted together, not one file at a time.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
