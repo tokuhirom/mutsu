@@ -145,6 +145,15 @@ impl Interpreter {
                 if let Some(attrs) = crate::runtime::carray_ref::ref_attrs(&list) {
                     return Some(self.carray_ref_at(&attrs, idx));
                 }
+                // An Array's `$!reified` (its `IterationBuffer` view) holds
+                // Scalar containers in Rakudo: a slot reads as the element's
+                // container, the one `@a[$i].VAR` and `atposref` hand out, so a
+                // bind to it writes through to the Array (#12698).
+                if list.is_iteration_buffer_view()
+                    && let Some(cell) = Self::reified_slot_container(&list, idx)
+                {
+                    return Some(Ok(cell));
+                }
                 crate::runtime::nqp_backing::elem_at(&list, idx).map(|e| e.unwrap_or(Value::NIL))
             }
             // nqp::ordat($str, $pos): the codepoint of the grapheme at `$pos`
@@ -544,6 +553,19 @@ impl Interpreter {
             _ => {}
         }
         Ok(())
+    }
+
+    /// The container of slot `idx` of an Array's `$!reified` view; `None`
+    /// past the end or for a hole, which read as the op's plain answer.
+    // Cost: O(1) (the slot is promoted to a shared cell once).
+    fn reified_slot_container(view: &Value, idx: i64) -> Option<Value> {
+        let len = Self::nqp_elems_len_of(view)?;
+        let i = crate::runtime::nqp_backing::resolve_index(idx, len).ok()?;
+        if i >= len || Self::nqp_elem_at(view, i).is_none_or(|e| e.is_nil()) {
+            return None;
+        }
+        view.array_slot_ref(i, true)
+            .filter(|cell| matches!(cell.view(), ValueView::ContainerRef(_)))
     }
 
     /// The bare attribute name of an nqp `'$!name'` operand. nqp always spells
