@@ -16,6 +16,7 @@ impl Interpreter {
         let try_only = match op {
             "findmethod" => false,
             "tryfindmethod" => true,
+            "rebless" => return Some(self.nqp_rebless(args)),
             "setparameterizer" => return Some(self.nqp_set_parameterizer(args.to_vec())),
             "parameterizetype" => return Some(self.nqp_parameterize_type(args.to_vec())),
             "typeparameterized" | "typeparameters" | "typeparameterat" => {
@@ -61,5 +62,48 @@ impl Interpreter {
             _ => None,
         };
         Ok(item.unwrap_or(Value::NIL))
+    }
+
+    /// `nqp::rebless($obj, $type)`: give `$obj` the type `$type`, which must be
+    /// a mixin type (`$obj.^mixin(R)`'s type object), as Rakudo requires. The
+    /// roles of `$type` are composed onto `$obj` the way `.^mixin` / `does`
+    /// compose them on a real object (`eval_does_values_mutating`), so every
+    /// alias of the object sees them. Answers `$obj`.
+    // Cost: O(r * c), r = roles of the type, c = the cost of composing one role.
+    fn nqp_rebless(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let operand = |i: usize| {
+            crate::runtime::types::unwrap_varref_value(args.get(i).cloned().unwrap_or(Value::NIL))
+                .deref_container()
+        };
+        let (obj, ty) = (operand(0), operand(1));
+        let name_of = |v: &Value| match v.view() {
+            ValueView::Package(name) => name.resolve().to_string(),
+            ValueView::Instance { class_name, .. } => class_name.resolve().to_string(),
+            _ => crate::runtime::utils::value_type_name(v).to_string(),
+        };
+        let ValueView::Mixin(_, mixins) = ty.view() else {
+            // Rebless to the object's own type changes nothing.
+            if matches!(ty.view(), ValueView::Package(_)) && name_of(&ty) == name_of(&obj) {
+                return Ok(obj);
+            }
+            return Err(RuntimeError::new(format!(
+                "New type {} for {} is not a mixin type",
+                name_of(&ty),
+                name_of(&obj)
+            )));
+        };
+        // `.^roles` order is last applied first; compose in application order.
+        let mut result = obj;
+        for name in crate::value::types::mixin_roles_applied_last_first(mixins, "")
+            .iter()
+            .rev()
+        {
+            let role = Value::package(crate::symbol::Symbol::intern(name));
+            if !self.is_role_application(&role) {
+                continue;
+            }
+            result = self.eval_does_values_mutating(result, role)?;
+        }
+        Ok(result)
     }
 }
