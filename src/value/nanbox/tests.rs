@@ -437,7 +437,7 @@ fn every_variant_roundtrips_losslessly() {
         ),
         ValueRepr::Mix(
             Gc::new(MixData {
-                weights: HashMap::from([("m".to_string(), 0.5)]),
+                weights: HashMap::from([("m".to_string(), crate::value::MixWeight::Num(0.5))]),
                 original_keys: None,
                 value_type: None,
                 key_type: None,

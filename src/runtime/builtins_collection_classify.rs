@@ -282,7 +282,7 @@ impl Interpreter {
                 }
                 _ => None,
             };
-        let mut mix_counts: Option<HashMap<String, f64>> =
+        let mut mix_counts: Option<HashMap<String, crate::value::MixWeight>> =
             match into_target.as_ref().map(Value::view) {
                 Some(ValueView::Mix(m, _)) => {
                     if let Some(ref orig) = m.original_keys {
@@ -390,7 +390,10 @@ impl Interpreter {
                             &key,
                             &elem,
                         );
-                        *counts.entry(key).or_insert(0.0) += 1.0;
+                        {
+                            let e = counts.entry(key).or_insert(crate::value::MixWeight::Int(0));
+                            *e = crate::builtins::mix_weight::add(*e, crate::value::MixWeight::Int(1));
+                        }
                     }
                 }
                 continue;

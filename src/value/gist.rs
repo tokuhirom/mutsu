@@ -261,7 +261,7 @@ pub(crate) fn setbagmix_gist_named(value: &Value, type_override: Option<&str>) -
             let type_name = type_override.unwrap_or(if mutable { "MixHash" } else { "Mix" });
             let ptr = crate::gc::Gc::as_ptr(&m) as usize;
             let inner = crate::value::with_quanthash_render_guard(ptr, || {
-                let mut keys: Vec<(&String, &f64)> = m.iter().collect();
+                let mut keys: Vec<(&String, &crate::value::MixWeight)> = m.iter().collect();
                 keys.sort_by_key(|(k, _)| (*k).clone());
                 keys.iter()
                     .map(|(k, v)| {

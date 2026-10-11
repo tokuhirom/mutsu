@@ -309,7 +309,7 @@ impl Interpreter {
             ValueView::Mix(items, _) => {
                 let mut lines = Vec::with_capacity(items.len());
                 for (k, v) in items.iter() {
-                    lines.push(format_pair(self, items.typed_key(k), Value::num(*v))?);
+                    lines.push(format_pair(self, items.typed_key(k), v.to_value())?);
                 }
                 Ok(Value::str(lines.join("\n")))
             }

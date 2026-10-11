@@ -10,7 +10,7 @@
 //! weighed `a` as 2 under `(+)` but was taken as one opaque Pair element under
 //! `(-)`, and the `[∪]` form counted `b` once where `∪` counted it twice.
 use super::*;
-use crate::value::ValueMap;
+use crate::value::{MixWeight, ValueMap};
 
 /// A set operator's promotion level.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -117,7 +117,7 @@ pub(crate) fn operand_bag_counts(val: &Value, originals: &mut ValueMap) -> HashM
         ValueView::Mix(m, _) => {
             extend_quanthash_originals(originals, &m.original_keys);
             m.iter()
-                .map(|(k, v)| (k.clone(), BigInt::from(*v as i64)))
+                .map(|(k, v)| (k.clone(), BigInt::from(v.to_f64() as i64)))
                 .collect()
         }
         ValueView::Hash(map) => {
@@ -147,7 +147,7 @@ pub(crate) fn operand_bag_counts(val: &Value, originals: &mut ValueMap) -> HashM
 
 /// The Mix weight of a Pair value or a Hash value: its numeric value, and
 /// the truthiness of anything that is not a number.
-fn mix_weight_of(v: &Value) -> f64 {
+fn mix_weight_of(v: &Value) -> MixWeight {
     let v = v.deref_container().deitemize_element();
     match v.view() {
         ValueView::Int(_)
@@ -155,20 +155,16 @@ fn mix_weight_of(v: &Value) -> f64 {
         | ValueView::Num(_)
         | ValueView::Rat(_, _)
         | ValueView::FatRat(_, _)
-        | ValueView::BigRat(_, _) => v.to_f64(),
-        _ => {
-            if v.truthy() {
-                1.0
-            } else {
-                0.0
-            }
+        | ValueView::BigRat(_, _) => {
+            MixWeight::from_value(&v).unwrap_or_else(|| MixWeight::Num(v.to_f64()))
         }
+        _ => MixWeight::Int(i64::from(v.truthy())),
     }
 }
 
 /// Add one list element's weight to a weight map: a Pair weighs its value,
 /// anything else counts once.
-fn mix_add_item(result: &mut HashMap<String, f64>, originals: &mut ValueMap, item: &Value) {
+fn mix_add_item(result: &mut HashMap<String, MixWeight>, originals: &mut ValueMap, item: &Value) {
     let (key, weight) = match item.view() {
         ValueView::Pair(k, v) => (str_elem_key(k), mix_weight_of(v)),
         ValueView::ValuePair(k, v) => {
@@ -179,17 +175,17 @@ fn mix_add_item(result: &mut HashMap<String, f64>, originals: &mut ValueMap, ite
         _ => {
             let (key, elem) = quanthash_elem_entry(item);
             record_quanthash_original(originals, &key, &elem);
-            (key, 1.0)
+            (key, MixWeight::Int(1))
         }
     };
-    let e = result.entry(key).or_insert(0.0);
+    let e = result.entry(key).or_insert(MixWeight::Int(0));
     *e = crate::builtins::mix_weight::add(*e, weight);
 }
 
 /// An operand read as a Mix: element -> weight, non-zero weights only.
-pub(crate) fn operand_mix_weights(val: &Value, originals: &mut ValueMap) -> HashMap<String, f64> {
+pub(crate) fn operand_mix_weights(val: &Value, originals: &mut ValueMap) -> HashMap<String, MixWeight> {
     let val = &set_operand(val);
-    let mut result: HashMap<String, f64> = match val.view() {
+    let mut result: HashMap<String, MixWeight> = match val.view() {
         ValueView::Mix(m, _) => {
             extend_quanthash_originals(originals, &m.original_keys);
             m.weights.clone()
@@ -198,18 +194,18 @@ pub(crate) fn operand_mix_weights(val: &Value, originals: &mut ValueMap) -> Hash
             extend_quanthash_originals(originals, &b.original_keys);
             resolve_bag_tab_keys(&b)
                 .iter()
-                .map(|(k, v)| (k.clone(), bigint_to_f64_sat(v)))
+                .map(|(k, v)| (k.clone(), MixWeight::from_bigint(v)))
                 .collect()
         }
         ValueView::Set(s, _) => {
             extend_quanthash_originals(originals, &s.original_keys);
-            s.iter().map(|k| (k.clone(), 1.0)).collect()
+            s.iter().map(|k| (k.clone(), MixWeight::Int(1))).collect()
         }
         ValueView::Hash(map) => {
             let mut result = HashMap::new();
             for (k, v) in map.iter() {
                 let key = hash_elem_key(&map, k, originals);
-                let e = result.entry(key).or_insert(0.0);
+                let e = result.entry(key).or_insert(MixWeight::Int(0));
                 *e = crate::builtins::mix_weight::add(*e, mix_weight_of(v));
             }
             result

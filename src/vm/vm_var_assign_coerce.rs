@@ -700,16 +700,19 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn mix_assignment_weight(value: &Value) -> Result<f64, RuntimeError> {
+    pub(crate) fn mix_assignment_weight(
+        value: &Value,
+    ) -> Result<crate::value::MixWeight, RuntimeError> {
+        use crate::value::MixWeight;
         match value.view() {
-            ValueView::Int(i) => Ok(i as f64),
-            ValueView::Num(n) => Ok(n),
-            ValueView::Rat(n, d) if d != 0 => Ok(crate::value::rat_to_f64(n, d)),
-            ValueView::Bool(flag) => Ok(if flag { 1.0 } else { 0.0 }),
+            ValueView::Int(i) => Ok(MixWeight::Int(i)),
+            ValueView::Num(n) => Ok(MixWeight::Num(n)),
+            ValueView::Rat(n, d) if d != 0 => Ok(MixWeight::Rat(n, d)),
+            ValueView::Bool(flag) => Ok(MixWeight::Int(i64::from(flag))),
             ValueView::Str(s) => {
                 // Try to parse as numeric; throw X::Str::Numeric on failure
                 if let Ok(n) = s.parse::<f64>() {
-                    Ok(n)
+                    Ok(MixWeight::from(n))
                 } else {
                     Err(RuntimeError::str_numeric(
                         &s,
@@ -717,13 +720,7 @@ impl Interpreter {
                     ))
                 }
             }
-            _ => {
-                if value.truthy() {
-                    Ok(1.0)
-                } else {
-                    Ok(0.0)
-                }
-            }
+            _ => Ok(MixWeight::Int(i64::from(value.truthy()))),
         }
     }
 

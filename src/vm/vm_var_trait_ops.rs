@@ -611,7 +611,12 @@ impl Interpreter {
                                             nk,
                                             el,
                                         );
-                                        *weights.entry(nk.clone()).or_insert(0.0) += *w;
+                                        {
+                                            let e = weights
+                                                .entry(nk.clone())
+                                                .or_insert(crate::value::MixWeight::Int(0));
+                                            *e = crate::builtins::mix_weight::add(*e, *w);
+                                        }
                                     }
                                     let new_data = crate::value::MixData::with_original_keys(
                                         weights, originals,

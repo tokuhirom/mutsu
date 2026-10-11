@@ -105,7 +105,8 @@ impl crate::Interpreter {
                     if let Some(o) = rebuilt.original_keys.as_mut() {
                         o.remove(&k);
                     }
-                    *rebuilt.weights.entry(new_key).or_default() += w;
+                    let e = rebuilt.weights.entry(new_key).or_default();
+                    *e = crate::builtins::mix_weight::add(*e, w);
                 }
                 Ok(Value::mix_parts(crate::gc::Gc::new(rebuilt), is_mut))
             }

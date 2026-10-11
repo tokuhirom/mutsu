@@ -44,7 +44,10 @@ enum SerValue {
     // (`original_keys`) so a non-Str element survives the roundtrip.
     Set(HashSet<String>, HashMap<String, Box<SerValue>>),
     Bag(HashMap<String, NumBigInt>, HashMap<String, Box<SerValue>>),
-    Mix(HashMap<String, f64>, HashMap<String, Box<SerValue>>),
+    Mix(
+        HashMap<String, crate::value::MixWeight>,
+        HashMap<String, Box<SerValue>>,
+    ),
     CompUnitDepSpec {
         short_name: Symbol,
     },

@@ -301,7 +301,7 @@ fn mixhash_delete_key(
     let (key, _) = crate::runtime::utils::quanthash_elem_entry(&args[0]);
     let old = mix.with_mix_mut(|gc, _| {
         let data = crate::value::gc_data_mut(gc);
-        let old = data.weights.remove(&key).unwrap_or(0.0);
+        let old = data.weights.remove(&key).unwrap_or_default();
         if let Some(originals) = data.original_keys.as_mut() {
             originals.remove(&key);
         }

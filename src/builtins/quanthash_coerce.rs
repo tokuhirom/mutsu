@@ -21,7 +21,7 @@ use crate::runtime::utils::{
     quanthash_elem_entry, quanthash_insert_set, record_quanthash_original, str_elem_key,
 };
 use crate::value::ValueMap;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{MixWeight, RuntimeError, Value, ValueView};
 use num_bigint::BigInt;
 use num_traits::Signed;
 use std::collections::{HashMap, HashSet};
@@ -345,7 +345,7 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
             ValueView::Mix(m, _) if flatten => {
                 for (k, v) in m.iter() {
                     record_quanthash_original(original_keys, k, &m.typed_key(k));
-                    counts.insert(k.clone(), BigInt::from(*v as i64));
+                    counts.insert(k.clone(), BigInt::from(v.to_f64() as i64));
                 }
             }
             ValueView::Bag(b, _) if flatten => {
@@ -643,7 +643,7 @@ fn mix_add_item_with_keys(
                 record_quanthash_original(original_keys, k, &m.typed_key(k));
                 // A Mix already stores f64 weights, so this fold is inherently
                 // f64-precision (there is no exact source to recover here).
-                mix_accum(weights, k.clone(), Value::num(*v))?;
+                mix_accum(weights, k.clone(), MixWeight::to_value(*v))?;
             }
         }
         _ => {
@@ -733,8 +733,14 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
             mix_accum(&mut weights, key, Value::int(1))?;
         }
     }
-    // Lower the exact-`Value` weights to the stored `f64` representation.
-    let weights: HashMap<String, f64> = weights.into_iter().map(|(k, v)| (k, v.to_f64())).collect();
+    // Lower the exact-`Value` weights to their stored `MixWeight` (keeps the type).
+    let weights: HashMap<String, MixWeight> = weights
+        .into_iter()
+        .map(|(k, v)| {
+            let w = MixWeight::from_value(&v).unwrap_or_else(|| MixWeight::Num(v.to_f64()));
+            (k, w)
+        })
+        .collect();
     Ok(Value::mix_with_original_keys(weights, original_keys))
 }
 

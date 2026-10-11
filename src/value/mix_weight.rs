@@ -1,12 +1,161 @@
-//! Decoding a Mix/MixHash weight (stored as `f64`) back to the Raku value it
-//! stands for, and the one rule for printing it beside its key. The weight
-//! *arithmetic* lives in `builtins::mix_weight`.
+//! A Mix/MixHash weight and the one rule for printing it beside its key. The
+//! weight *arithmetic* lives in `builtins::mix_weight`.
+//!
+//! A Raku `Mix` weight is a `Real` that keeps its own type: `(a => 1/3).Mix<a>`
+//! is a `Rat`, `(a => 0.5e0).Mix<a>` a `Num`. [`MixWeight`] stores exactly
+//! that, so reading a weight back never guesses its type.
 
 use super::{Value, make_rat};
 
-/// Convert a Mix/MixHash weight (f64) back to a Raku Value.
-/// Returns Int for whole numbers, Rat for representable fractions, Num otherwise.
-pub fn mix_weight_to_value(w: f64) -> Value {
+/// One Mix/MixHash weight: an `Int`, a `Rat` (reduced, `den > 0`) or a `Num`.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub enum MixWeight {
+    Int(i64),
+    Rat(i64, i64),
+    Num(f64),
+}
+
+impl MixWeight {
+    /// The weight as a double (for sorting, sampling and other float uses).
+    // Cost: O(1).
+    pub fn to_f64(self) -> f64 {
+        match self {
+            MixWeight::Int(i) => i as f64,
+            MixWeight::Rat(n, d) => super::rat_to_f64(n, d),
+            MixWeight::Num(f) => f,
+        }
+    }
+
+    /// The weight as the Raku value it stands for.
+    // Cost: O(1).
+    pub fn to_value(self) -> Value {
+        match self {
+            MixWeight::Int(i) => Value::Int(i),
+            MixWeight::Rat(n, d) => make_rat(n, d),
+            MixWeight::Num(f) => Value::Num(f),
+        }
+    }
+
+    /// Store a numeric Raku value, keeping its type. `None` for a non-`Real`
+    /// (or a big value that has no 64-bit form; those degrade to a `Num`).
+    // Cost: O(1) for machine-sized values.
+    pub fn from_value(v: &Value) -> Option<MixWeight> {
+        match v.view() {
+            super::ValueView::Int(i) => Some(MixWeight::Int(i)),
+            super::ValueView::Rat(n, d) if d != 0 => Some(MixWeight::Rat(n, d)),
+            super::ValueView::Num(f) => Some(MixWeight::Num(f)),
+            super::ValueView::Rat(..) => Some(MixWeight::Num(v.to_f64())),
+            _ => None,
+        }
+    }
+
+    /// A `Bag` count as a weight: `Int` when it fits, else the nearest `Num`.
+    pub fn from_bigint(n: &num_bigint::BigInt) -> MixWeight {
+        use num_traits::ToPrimitive;
+        n.to_i64().map_or_else(
+            || MixWeight::Num(n.to_f64().unwrap_or(f64::INFINITY)),
+            MixWeight::Int,
+        )
+    }
+
+    /// Whether the weight is exactly 1 (printed as the bare key).
+    pub fn is_one(self) -> bool {
+        match self {
+            MixWeight::Int(i) => i == 1,
+            MixWeight::Rat(n, d) => n == d,
+            MixWeight::Num(f) => f == 1.0,
+        }
+    }
+}
+
+impl Default for MixWeight {
+    fn default() -> Self {
+        MixWeight::Int(0)
+    }
+}
+
+impl MixWeight {
+    /// The larger of two weights (`self` on a tie), keeping its own type.
+    pub fn max(self, other: MixWeight) -> MixWeight {
+        if other > self { other } else { self }
+    }
+
+    /// The smaller of two weights (`self` on a tie), keeping its own type.
+    pub fn min(self, other: MixWeight) -> MixWeight {
+        if other < self { other } else { self }
+    }
+
+    /// The absolute value, keeping the type.
+    pub fn abs(self) -> MixWeight {
+        match self {
+            MixWeight::Int(i) => i
+                .checked_abs()
+                .map_or(MixWeight::Num((i as f64).abs()), MixWeight::Int),
+            MixWeight::Rat(n, d) => n
+                .checked_abs()
+                .map_or(MixWeight::Num(self.to_f64().abs()), |n| {
+                    MixWeight::Rat(n, d)
+                }),
+            MixWeight::Num(f) => MixWeight::Num(f.abs()),
+        }
+    }
+
+    /// Whether the weight is a finite number (a `Num` may be NaN/Inf).
+    pub fn is_finite(self) -> bool {
+        self.to_f64().is_finite()
+    }
+}
+
+impl PartialEq<f64> for MixWeight {
+    fn eq(&self, other: &f64) -> bool {
+        self.to_f64() == *other
+    }
+}
+
+impl PartialOrd<f64> for MixWeight {
+    fn partial_cmp(&self, other: &f64) -> Option<std::cmp::Ordering> {
+        self.to_f64().partial_cmp(other)
+    }
+}
+
+impl PartialEq for MixWeight {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (MixWeight::Int(a), MixWeight::Int(b)) => a == b,
+            (MixWeight::Rat(a, b), MixWeight::Rat(c, d)) => a == c && b == d,
+            _ => self.to_f64() == other.to_f64(),
+        }
+    }
+}
+
+impl PartialOrd for MixWeight {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.to_f64().partial_cmp(&other.to_f64())
+    }
+}
+
+/// Transitional constructor for call sites that still compute in `f64`: a
+/// whole number becomes `Int`, a decimal that round-trips `Rat`, anything else
+/// `Num` (the old decoding, applied once at the store boundary).
+impl From<f64> for MixWeight {
+    fn from(w: f64) -> Self {
+        match decode_f64(w).view() {
+            super::ValueView::Int(i) => MixWeight::Int(i),
+            super::ValueView::Rat(n, d) => MixWeight::Rat(n, d),
+            _ => MixWeight::Num(w),
+        }
+    }
+}
+
+/// Decode a stored weight (or an `f64` from a not-yet-converted caller; see
+/// `From<f64> for MixWeight`) to the Raku value it stands for.
+pub fn mix_weight_to_value(w: impl Into<MixWeight>) -> Value {
+    w.into().to_value()
+}
+
+/// Legacy `f64` decoding: `Int` for a whole number, `Rat` for a decimal that
+/// round-trips, `Num` otherwise.
+fn decode_f64(w: f64) -> Value {
     if w.is_nan() || w.is_infinite() {
         return Value::Num(w);
     }
@@ -45,10 +194,10 @@ pub fn mix_weight_to_value(w: f64) -> Value {
 /// They each used to carry their own copy of the rule, whose `w as i64`
 /// shortcut for whole weights saturated: `(a => 2e300).Mix` printed
 /// `Mix(a(9223372036854775807))`.
-pub(crate) fn mix_weight_render(w: f64) -> Option<String> {
-    if (w - 1.0).abs() < f64::EPSILON {
+pub(crate) fn mix_weight_render(w: MixWeight) -> Option<String> {
+    if w.is_one() {
         None
     } else {
-        Some(mix_weight_to_value(w).to_string_value())
+        Some(w.to_value().to_string_value())
     }
 }

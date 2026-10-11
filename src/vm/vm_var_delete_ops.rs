@@ -1136,24 +1136,27 @@ impl Interpreter {
         }) {
             return Ok(removed);
         }
-        let qh_remove_mix = |mix: &mut crate::value::MixData, key: &Value| -> Option<f64> {
-            let (k, _) = crate::runtime::utils::quanthash_elem_entry(key);
-            let removed = mix.weights.remove(&k);
-            if let Some(ok) = mix.original_keys.as_mut() {
-                ok.remove(&k);
-            }
-            removed
-        };
+        let qh_remove_mix =
+            |mix: &mut crate::value::MixData, key: &Value| -> Option<crate::value::MixWeight> {
+                let (k, _) = crate::runtime::utils::quanthash_elem_entry(key);
+                let removed = mix.weights.remove(&k);
+                if let Some(ok) = mix.original_keys.as_mut() {
+                    ok.remove(&k);
+                }
+                removed
+            };
         if let Some(removed) = container.with_mix_mut(|mix, _| match idx.view() {
             ValueView::Array(keys, ..) => {
                 let m = crate::value::gc_data_mut(mix);
                 let removed = keys
                     .iter()
-                    .map(|key| Value::num(qh_remove_mix(m, key).unwrap_or(0.0)))
+                    .map(|key| qh_remove_mix(m, key).unwrap_or_default().to_value())
                     .collect();
                 Value::array(removed)
             }
-            _ => Value::num(qh_remove_mix(crate::value::gc_data_mut(mix), &idx).unwrap_or(0.0)),
+            _ => qh_remove_mix(crate::value::gc_data_mut(mix), &idx)
+                .unwrap_or_default()
+                .to_value(),
         }) {
             return Ok(removed);
         }
@@ -1163,7 +1166,7 @@ impl Interpreter {
         })
     }
 
-    pub(super) fn mix_weight_as_value(weight: f64) -> Value {
+    pub(super) fn mix_weight_as_value(weight: crate::value::MixWeight) -> Value {
         crate::value::mix_weight_to_value(weight)
     }
 }

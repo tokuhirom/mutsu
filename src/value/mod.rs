@@ -524,7 +524,7 @@ pub(crate) struct SetData {
 /// Implements Deref to HashMap<String, f64> so existing code works unchanged.
 #[derive(Debug, Clone)]
 pub(crate) struct MixData {
-    pub weights: HashMap<String, f64>,
+    pub weights: HashMap<String, MixWeight>,
     /// Maps string keys back to original Values (e.g. Int(2), Bool(false)).
     /// Only populated when the Mix is created from mixed-type data.
     pub original_keys: Option<ValueMap>,
@@ -587,6 +587,7 @@ mod mix_weight;
 /// NaN-boxed 8-byte representation core (3b-1 step B): the packed word that
 /// IS the `Value` storage. The only module that knows the bit layout.
 mod nanbox;
+pub use mix_weight::MixWeight;
 pub(crate) use mix_weight::mix_weight_render;
 pub use mix_weight::mix_weight_to_value;
 pub(crate) mod numeric_coerce;

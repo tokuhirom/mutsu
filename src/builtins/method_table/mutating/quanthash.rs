@@ -465,7 +465,7 @@ fn grabpairs_mix(node: &mut Value, args: &[Value]) -> Result<Value, RuntimeError
         for _ in 0..count.min(keys.len()) {
             let key = keys.swap_remove(random_index(keys.len()));
             let elem = data.typed_key(&key);
-            let weight = data.weights.remove(&key).unwrap_or(0.0);
+            let weight = data.weights.remove(&key).unwrap_or_default();
             if let Some(originals) = data.original_keys.as_mut() {
                 originals.remove(&key);
             }

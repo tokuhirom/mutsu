@@ -818,12 +818,7 @@ pub(crate) fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         ValueView::Mix(m, _) => {
             let mut named = ValueMap::default();
             for (k, v) in m.iter() {
-                // Use Int when the weight is a whole number
-                let val = if v.fract() == 0.0 && v.is_finite() {
-                    Value::int(*v as i64)
-                } else {
-                    Value::num(*v)
-                };
+                let val = v.to_value();
                 named.insert(m.typed_key(k).to_string_value(), val);
             }
             Ok(Value::capture(vec![], named))

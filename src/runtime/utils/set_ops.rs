@@ -1,5 +1,5 @@
 use super::*;
-use crate::value::ValueMap;
+use crate::value::{MixWeight, ValueMap};
 
 /// Whether a set operator's left operand makes the result a mutable QuantHash.
 /// Raku's set operators (`(|)`/`(&)`/`(-)`/`(^)`/`(.)`/`(+)`) take their
@@ -48,7 +48,7 @@ pub(crate) fn set_sym_diff_multi(args: &[Value]) -> Value {
     match level {
         SetLevel::Mix => {
             // Mix-level: collect all weight vectors per key, then max - second_max
-            let maps: Vec<HashMap<String, f64>> = args
+            let maps: Vec<HashMap<String, MixWeight>> = args
                 .iter()
                 .map(|a| operand_mix_weights(a, &mut originals))
                 .collect();
@@ -58,14 +58,14 @@ pub(crate) fn set_sym_diff_multi(args: &[Value]) -> Value {
             }
             let mut result = HashMap::new();
             for k in all_keys {
-                let mut weights: Vec<f64> = maps
+                let mut weights: Vec<MixWeight> = maps
                     .iter()
-                    .map(|m| m.get(&k).copied().unwrap_or(0.0))
+                    .map(|m| m.get(&k).copied().unwrap_or_default())
                     .collect();
                 weights.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
                 let diff = crate::builtins::mix_weight::sub(
                     weights[0],
-                    weights.get(1).copied().unwrap_or(0.0),
+                    weights.get(1).copied().unwrap_or_default(),
                 );
                 if diff != 0.0 {
                     result.insert(k, diff);

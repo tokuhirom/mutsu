@@ -96,7 +96,7 @@ pub(crate) fn sample_weighted_mix_key(items: &crate::value::MixData) -> Option<V
     let mut total = 0.0;
     for weight in items.values() {
         if weight.is_finite() && *weight > 0.0 {
-            total += *weight;
+            total += weight.to_f64();
         }
     }
     if total <= 0.0 {
@@ -107,10 +107,10 @@ pub(crate) fn sample_weighted_mix_key(items: &crate::value::MixData) -> Option<V
         if !weight.is_finite() || *weight <= 0.0 {
             continue;
         }
-        if needle <= *weight {
+        if needle <= weight.to_f64() {
             return Some(items.typed_key(key));
         }
-        needle -= *weight;
+        needle -= weight.to_f64();
     }
     items
         .iter()
