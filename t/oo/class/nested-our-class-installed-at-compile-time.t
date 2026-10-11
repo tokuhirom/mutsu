@@ -4,7 +4,7 @@ use Test;
 # its package at compile time, whether or not the code declaring it ever
 # runs (#10470).
 
-plan 17;
+plan 23;
 
 sub never-called { class NeverCalled { method m { 42 } } }
 is NeverCalled.^name, 'NeverCalled', 'class in an uncalled sub is installed';
@@ -60,3 +60,26 @@ sub make-param-reader($x) {
 }
 is make-param-reader(1).value, 1, 'parameterized role method sees the first entry';
 is make-param-reader(2).value, 2, 'and the second entry';
+
+# Every nested declaration's compile-time shell is a BEGIN-time effect at its
+# statement's place in the unit, role or no role (#10524): a nested class
+# whose parent is declared after run-time statements finds that parent, a
+# BEGIN after the routine sees the nested class, and the declarations the
+# prologue's bound now reaches still keep their run-time initializers.
+my $seen-at-begin;
+class LateParent { method lp { 'late' } }
+sub declares-late-child { class LateChild is LateParent { } }
+BEGIN $seen-at-begin = LateChild.^name;
+is $seen-at-begin, 'LateChild', 'a BEGIN after the routine sees its nested class';
+is LateChild.lp, 'late', 'the nested class inherits the unit class declared before it';
+is LateChild.^mro.map(*.^name).join(','), 'LateChild,LateParent,Any,Mu', 'with the full MRO';
+
+class SameName { has $.a }
+my SameName $SameName .= new(:a(2));
+is $SameName.a, 2, 'a `.=` initializer inside the prologue\'s bound still runs';
+my SameName $plain = SameName.new(:a(3));
+is $plain.a, 3, 'and so does a plain initializer';
+sub declares-after { class AfterInit { method v { 'after' } } }
+is AfterInit.v, 'after', 'a nested class after the initializers is installed';
+
+BEGIN { 1 }

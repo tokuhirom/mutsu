@@ -14,16 +14,14 @@
 //! class body's statements keep running at run time (as in Rakudo) and the
 //! type object stays the same one.
 //!
-//! Where the shells run: in a unit with a nested class that composes a role
-//! ([`nested_decl_composes_role`]), the BEGIN prologue (ADR-0134) collects
-//! each top-level statement's nested declarations ([`nested_type_decls`])
-//! into a [`Stmt::NestedTypeShells`] marker at that statement's place among
-//! the unit's BEGIN-time effects, so a shell runs after the declarations that
-//! precede it and sees the unit's lexicals in their static state: a role body
-//! that bumps `my $n` declared above the routine leaves `$n` bumped. Any other
-//! unit shells its nested declarations at its head
-//! ([`Compiler::hoist_nested_type_decl_shells`]); there no shell runs user
-//! code, so the place is not observable (#10524 tracks retiring this).
+//! Where the shells run: the BEGIN prologue (ADR-0134) collects each
+//! top-level statement's nested declarations ([`nested_type_decls`]) into a
+//! [`Stmt::NestedTypeShells`] marker at that statement's place among the
+//! unit's BEGIN-time effects, so a shell runs after the declarations that
+//! precede it (a role or parent class declared above the routine is
+//! registered by then) and sees the unit's lexicals in their static state: a
+//! role body that bumps `my $n` declared above the routine leaves `$n`
+//! bumped (#10524).
 
 use super::Compiler;
 use crate::ast::{NestedTypeShell, Stmt};
@@ -128,18 +126,6 @@ pub(crate) fn nested_type_decls(stmt: &Stmt) -> Vec<NestedTypeShell> {
     collector.found
 }
 
-/// Whether a nested declaration composes a role, so that its compile-time
-/// composition runs the role's body.
-// Cost: O(len(body)).
-pub(crate) fn nested_decl_composes_role(decl: &Stmt) -> bool {
-    match decl {
-        Stmt::ClassDecl {
-            does_parents, body, ..
-        } => !does_parents.is_empty() || body.iter().any(|s| matches!(s, Stmt::DoesDecl { .. })),
-        _ => false,
-    }
-}
-
 impl Compiler {
     /// Emit the shell registration of one nested declaration, qualified
     /// against the packages enclosing it inside its top-level statement.
@@ -161,76 +147,5 @@ impl Compiler {
         }
         self.emit_type_decl_shell(&shell.decl, true);
         (self.current_package, self.in_unit_package) = saved;
-    }
-
-    /// Emit a declaration-only shell registration for every non-lexical
-    /// class/role declared inside code anywhere in a unit whose BEGIN
-    /// prologue did not place them itself (see the module doc comment). Only a mainline unit runs this pass: a routine
-    /// body is part of a unit that already shelled its nested declarations.
-    ///
-    /// The shells are emitted in source order, the order Rakudo composes the
-    /// types in at compile time. A nested declaration may compose a role or
-    /// inherit a class declared at unit level before it (`role R { };
-    /// sub f { class C does R { } }`), and a unit-level type that only
-    /// declarations precede registers in place without a forward shell
-    /// (`hoist_type_decl_shells`), so it would not exist yet at the head of
-    /// the unit. Such a type gets a shell of its own here, ahead of the
-    /// nested ones that follow it.
-    // Cost: O(n), n = size of the unit's AST.
-    pub(super) fn hoist_nested_type_decl_shells(&mut self, stmts: &[Stmt]) {
-        if stmts
-            .iter()
-            .any(|stmt| matches!(stmt, Stmt::NestedTypeShells(_)))
-        {
-            return;
-        }
-        let per_stmt: Vec<Vec<NestedTypeShell>> = stmts.iter().map(nested_type_decls).collect();
-        let Some(last) = per_stmt.iter().rposition(|found| !found.is_empty()) else {
-            return;
-        };
-        let original_package = self.current_package.clone();
-        let original_in_unit_package = self.in_unit_package;
-        let mut in_prefix = true;
-        for (i, stmt) in stmts[..=last].iter().enumerate() {
-            if let Stmt::Package {
-                name,
-                is_unit: true,
-                ..
-            } = stmt
-            {
-                // As in `hoist_type_decl_shells`: the rest of the scope is in
-                // the unit package.
-                self.current_package = self.qualify_package_name(&name.resolve());
-                self.in_unit_package = true;
-            }
-            in_prefix = in_prefix && Self::runs_no_user_code(stmt);
-            if in_prefix && i < last && Self::is_shellable_unit_type_decl(stmt) {
-                self.emit_type_decl_shell(stmt, true);
-            }
-            for shell in &per_stmt[i] {
-                self.emit_nested_type_shell(shell);
-            }
-        }
-        self.current_package = original_package;
-        self.in_unit_package = original_in_unit_package;
-    }
-
-    /// Whether a unit-level declaration is one a shell can stand in for: an
-    /// `our`-scoped, statically named, non-stub class, or an `our` role.
-    // Cost: O(len(body)) for the stub check.
-    fn is_shellable_unit_type_decl(stmt: &Stmt) -> bool {
-        match stmt {
-            Stmt::ClassDecl {
-                is_lexical: false,
-                is_unit: false,
-                name_expr: None,
-                body,
-                ..
-            } => !Self::is_stub_class_body(body),
-            Stmt::RoleDecl { custom_traits, .. } => {
-                !custom_traits.iter().any(|(t, _)| t == "__my_scoped")
-            }
-            _ => false,
-        }
     }
 }
