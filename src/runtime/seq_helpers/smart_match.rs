@@ -323,14 +323,16 @@ impl Interpreter {
         let type_name_resolved = type_name.resolve();
         let (base_type, smiley) = super::super::types::strip_type_smiley(&type_name_resolved);
         // A raw `VMArray`/`VMHash`, a BOOT scalar box, or a `BOOT*` type
-        // object has a `KnowHOW` outside `Mu`: it is of its own `BOOT*` type and no other
-        // (ADR-12666).
+        // object has a `KnowHOW` outside `Mu`: it smartmatches its own `BOOT*`
+        // type and `Mu` only (ADR-12666, #12670).
         if left.is_iteration_buffer_view() {
             return matches!(base_type, "IterationBuffer" | "Any" | "Mu");
         }
         if crate::runtime::boot_collection::is_boot_collection_invocant(left) {
+            // `Mu.ACCEPTS` takes anything (`nqp::istype` does not get here
+            // for one: the `KnowHOW` has no type check, see `nqp::istype`).
             let own = crate::runtime::boot_collection::boot_type_of(left);
-            return own.is_some_and(|own| own.as_str() == base_type);
+            return base_type == "Mu" || own.is_some_and(|own| own.as_str() == base_type);
         }
 
         // Every enum type object and every enum value does the

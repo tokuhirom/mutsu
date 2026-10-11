@@ -497,9 +497,12 @@ impl Interpreter {
                     _ => String::new(),
                 };
                 // The same type check `~~` makes (smiley, enum and the `is Mu`
-                // MRO correction included), not the bare type walk.
+                // MRO correction included), not the bare type walk. A BOOT
+                // value's `KnowHOW` has no type check at all: it is not even of
+                // its own `BOOT*` type (ADR-12666, #12670).
                 Ok(bool_int(
                     !type_name.is_empty()
+                        && crate::runtime::boot_collection::boot_type_of(&v).is_none()
                         && self.type_object_accepts(&v, crate::symbol::Symbol::intern(&type_name)),
                 ))
             }
