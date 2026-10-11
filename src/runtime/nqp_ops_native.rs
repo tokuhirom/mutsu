@@ -147,7 +147,6 @@ impl Interpreter {
                         .declared_type
                         .as_deref()
                         .is_some_and(|t| t.starts_with("array"));
-                drop(arr);
                 match crate::runtime::nqp_backing::resolve_index(idx, len) {
                     Ok(i) if native && op != "atposref_s" => {
                         Ok(crate::runtime::native_pos_ref::native_pos_ref(
