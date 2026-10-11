@@ -45,15 +45,13 @@ impl Interpreter {
         // other `Proxy` is read once by the parameter that binds it (a bound
         // `Mu $test` of `grep`), and a bind keeps the container.
         // Cost: O(n) tag probes, n = arguments; no allocation unless one is a reference.
-        if args
-            .iter()
-            .any(crate::runtime::native_pos_ref::is_native_pos_ref)
+        if args.iter().any(|a| a.is_proxy_value())
             && !method_sym.as_str().starts_with("BIND")
             && !method_sym.as_str().starts_with("bind")
         {
             let mut fetched = Vec::with_capacity(args.len());
             for arg in args {
-                if crate::runtime::native_pos_ref::is_native_pos_ref(arg) {
+                if arg.is_proxy_value() {
                     match self.auto_fetch_proxy(arg) {
                         Ok(value) => fetched.push(value),
                         Err(e) => return Some(Err(e)),

@@ -16,3 +16,7 @@ Closes #10667.
 A scalar bind (`my $x := Proxy.new(...)`) in a unit that has a BEGIN-time effect
 after it was split into a static half plus an assignment, which FETCHed the
 Proxy into a plain Scalar. It stays whole and binds now.
+
+A native method now takes the FETCHed value of any Proxy argument
+(`$blob.subbuf(0, $p)` with a `:=`-bound Proxy `$p`), not only a native
+`CArray` element reference; operators on a bound Proxy are tracked in #12782.

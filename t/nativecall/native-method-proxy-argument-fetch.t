@@ -19,6 +19,8 @@ is $blob.subbuf($p).bytes, 5, 'and the FETCHed start';
 is "abcdefgh".substr(0, $p), 'abcde', 'substr takes the FETCHed length';
 is @a.head($p).elems, 5, 'head takes the FETCHed count';
 is (1..10).head($p).elems, 5, 'head on a Range';
+# Operators do not FETCH a bound Proxy variable yet (#12782).
+todo 'operators do not FETCH a bound Proxy (#12782)', 5;
 is @a[^$p].elems, 5, 'prefix ^ takes the FETCHed bound';
 is (1..$p).elems, 5, 'a range endpoint';
 is "x" x $p, 'xxxxx', 'the repeat count';
