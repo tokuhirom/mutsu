@@ -218,6 +218,19 @@ impl Interpreter {
     }
 
         // Cost: O(m), m = methods declared directly on the class.
+    // Cost: O(m), m = methods declared directly on the type.
+    pub(crate) fn mop_find_private_method(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+            let type_name = self.mop_receiver_owner(&args[0]);
+            let name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
+            Ok(self.class_find_private_method(&type_name, &name))
+    }
+
+    // Cost: O(m), m = methods declared directly on the type.
+    pub(crate) fn mop_private_method_names(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+            let type_name = self.mop_receiver_owner(&args[0]);
+            Ok(self.class_private_method_names(&type_name))
+    }
+
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_private_methods(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
             let type_name = self.mop_receiver_owner(&args[0]);

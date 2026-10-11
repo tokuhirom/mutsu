@@ -761,6 +761,8 @@ impl Interpreter {
                 | "language-revision"
                 | "method_table"
                 | "private_method_table"
+                | "private_method_names"
+                | "find_private_method"
                 | "private_methods"
                 | "submethod_table"
         ) {
