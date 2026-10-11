@@ -6,6 +6,8 @@ the expansion that declares variables unconditionally and gates their initialize
 Topical modifiers support list assignment and binding, including array aliases
 and named declarator lists. Named declarations retain their signature and use
 the same expansion for ordinary source and constructed RakuAST nodes.
+Declaring signature bindings yield their Signature value; assignment retains
+positional STORE semantics even for named parameters.
 
 Conditional and loop modifier nodes expose their single-expression constructors.
 Source records use bounded copies. The compiler also discards intermediate

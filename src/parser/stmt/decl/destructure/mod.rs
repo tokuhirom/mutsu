@@ -9,6 +9,7 @@ use crate::ast::{Expr, Stmt};
 use crate::value::Value;
 
 mod bind_arity;
+mod binding_result;
 mod elements;
 mod named;
 use elements::{collect_nested_group_vars, parse_element_traits};
@@ -371,7 +372,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
         has_nested_group,
         init: None,
     };
-    let stmt = decl_stmt_of(decl);
+    let stmt = decl_stmt_of(decl).map_err(PError::from_typed)?;
     match tail {
         Some(tail) => Ok((rest, Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)]))),
         None => Ok((rest, stmt)),
@@ -429,7 +430,9 @@ fn parse_destructuring_with_rhs(
         // Keep the declaration as the left operand. Flattening its expansion
         // before parsing the tail destroys the source form and prevents the
         // frontend from retaining the signature contracts.
-        let seed = Expr::DoStmt(Box::new(desugar::signature_decl(decl)));
+        let seed = Expr::DoStmt(Box::new(
+            desugar::signature_decl(decl).map_err(PError::from_typed)?,
+        ));
         let (r, tail) = crate::parser::expr::word_logical_tail_pub(r, seed)?;
         let (r_ws, _) = ws(r)?;
         let stmt = Stmt::Expr(tail);
@@ -439,7 +442,7 @@ fn parse_destructuring_with_rhs(
             parse_statement_modifier(r_ws, stmt)
         };
     }
-    let (mut stmts, result) = desugar::expand_with_rhs(&decl);
+    let (mut stmts, result) = desugar::expand_with_rhs(&decl).map_err(PError::from_typed)?;
     stmts.push(Stmt::Expr(result));
     stmts.insert(0, desugar::source_form(decl));
     let block = Stmt::SyntheticBlock(stmts);

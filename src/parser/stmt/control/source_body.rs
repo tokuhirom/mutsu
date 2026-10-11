@@ -15,6 +15,27 @@ struct Budget {
 }
 
 impl Budget {
+    fn signature(&mut self, decl: &crate::ast::SignatureDecl) {
+        for var in &decl.vars {
+            if !self.enter() {
+                return;
+            }
+            for expr in [&var.default, &var.where_constraint, &var.literal_value]
+                .into_iter()
+                .flatten()
+            {
+                self.visit_expr(expr);
+            }
+            self.depth -= 1;
+        }
+        if let Some(expr) = &decl.group_default {
+            self.visit_expr(expr);
+        }
+        if let Some(init) = &decl.init {
+            self.visit_expr(&init.rhs);
+        }
+    }
+
     fn enter(&mut self) -> bool {
         if self.exceeded || self.nodes == MAX_NODES || self.depth == MAX_DEPTH {
             self.exceeded = true;
@@ -79,20 +100,7 @@ impl<'ast> Visit<'ast> for Budget {
                     self.visit_expr(value);
                 }
                 SourceForm::SignatureDecl(decl) => {
-                    for var in &decl.vars {
-                        for expr in [&var.default, &var.where_constraint, &var.literal_value]
-                            .into_iter()
-                            .flatten()
-                        {
-                            self.visit_expr(expr);
-                        }
-                    }
-                    if let Some(expr) = &decl.group_default {
-                        self.visit_expr(expr);
-                    }
-                    if let Some(init) = &decl.init {
-                        self.visit_expr(&init.rhs);
-                    }
+                    self.signature(decl);
                 }
                 SourceForm::MethodAssignDecl(decl) => {
                     for expr in &decl.args {
@@ -169,6 +177,21 @@ pub(in crate::parser::stmt) fn check(
     }
 }
 
+// Cost: O(n), n = signature nodes; traversal and accepted allocation are bounded.
+pub(in crate::parser::stmt) fn check_signature(
+    decl: &crate::ast::SignatureDecl,
+) -> Result<(), RuntimeError> {
+    let mut budget = Budget::default();
+    budget.signature(decl);
+    if budget.exceeded {
+        Err(RuntimeError::new(
+            "Signature declaration source form exceeds its size or depth limit",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,5 +255,24 @@ mod tests {
             body = vec![record, Stmt::SyntheticBlock(body)];
         }
         panic!("the declaration source copy budget did not bound nested records");
+    }
+
+    #[test]
+    fn signature_materialization_reports_oversized_parameters_before_expansion() {
+        let declaration = crate::ast::SignatureDecl {
+            vars: vec![crate::ast::SignatureVar::plain("$value"); MAX_NODES + 1],
+            is_state: false,
+            is_our: false,
+            type_constraint: None,
+            group_default: None,
+            has_nested_group: false,
+            init: Some(crate::ast::SignatureInit {
+                is_binding: true,
+                rhs: Expr::ArrayLiteral(Vec::new()),
+            }),
+        };
+        let error = crate::parser::signature_decl_expansion(declaration)
+            .expect_err("signature allocation has a catchable budget error");
+        assert!(error.message.contains("source form exceeds"));
     }
 }

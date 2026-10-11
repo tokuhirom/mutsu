@@ -106,4 +106,21 @@ for (
         'modifier constructor retains its expression operand';
 }
 
+is EVAL(Q[(my (:$a, :@b) := %(a => 1, b => [2, 3])).^name].AST),
+    'Signature', 'named binding expression yields its declaring signature';
+is EVAL(Q[(my (:$a, :@b) := %(a => 1, b => [2, 3])).params[0].name].AST),
+    '$a', 'binding result contains the actual parameter definition';
+is EVAL(Q[my (:$a, :@b) = (1, 2, 3); "$a/{@b.join(',')}"].AST),
+    '1/2,3', 'assignment to a named signature stores positional values';
+is EVAL(Q[my (:$a, :@b) = (1, 2, 3) with 42; "$a/{@b.join(',')}"].AST),
+    '1/2,3', 'topical named assignment retains positional STORE semantics';
+is EVAL(Q[(my ($a, @b) := (1, [2, 3])).^name].AST),
+    'Signature', 'positional and named declaration bindings yield signatures';
+is EVAL(Q[(my ($a, @b) := (1, [2, 3])).params[1].name].AST),
+    '@b', 'positional binding result retains its aggregate parameter';
+is EVAL(Q[(my ($a, $b = 5) := (1,)).params[1].optional].AST),
+    True, 'binding result retains optional parameter metadata';
+is EVAL(Q[(my ($a, *@rest) := (1, 2, 3)).params[1].slurpy].AST),
+    True, 'binding result retains the slurpy parameter';
+
 done-testing;
