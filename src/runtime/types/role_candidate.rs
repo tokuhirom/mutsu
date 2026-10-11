@@ -55,6 +55,9 @@ impl Interpreter {
     pub(crate) fn role_candidate_group(&self, name: &str) -> Option<(String, u64)> {
         let (group, role_id) = split_role_candidate_type_name(name)?;
         let reg = self.registry();
+        if reg.declaring_role_ids.get(group) == Some(&role_id) {
+            return Some((group.to_string(), role_id));
+        }
         let group_def = reg.roles.get(group)?;
         let live = group_def.role_id == role_id
             || reg

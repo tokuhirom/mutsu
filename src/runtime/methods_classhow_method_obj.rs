@@ -1150,6 +1150,7 @@ impl Interpreter {
                         | "add_multi_method"
                         | "add_fallback"
                         | "set_body_block"
+                        | "multi_methods_to_incorporate"
                         | "compose"
                         | "methods"
                         | "method_names"

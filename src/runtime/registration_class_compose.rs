@@ -188,6 +188,29 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Queue a post-registration `specialize` call for `class_name` when the
+    /// role's HOW (the individual role's, or the group's) had a role with a
+    /// user `specialize` method mixed in -- rakudo drives
+    /// `ParametricRoleHOW.specialize` when a class composes the role.
+    fn queue_role_how_specialize(&mut self, class_name: &str, role_name: &str, role_id: u64) {
+        let candidate_key = crate::runtime::types::role_candidate_type_name(role_name, role_id);
+        let key = [candidate_key, role_name.to_string()]
+            .into_iter()
+            .find(|k| {
+                self.registry()
+                    .class_how_values
+                    .get(k)
+                    .is_some_and(|how| self.mixin_has_hook(how, "specialize"))
+            });
+        if let Some(key) = key {
+            self.registry_mut().pending_role_specialize.push((
+                class_name.to_string(),
+                key,
+                role_name.to_string(),
+            ));
+        }
+    }
+
     /// Compose one resolved role candidate (attributes, methods, deferred
     /// body, transitive parents) into the class under construction.
     pub(super) fn compose_role_into_class(
@@ -221,6 +244,7 @@ impl Interpreter {
                     .insert(base_role_name.to_string());
             }
         }
+        self.queue_role_how_specialize(cx.name, base_role_name, role.role_id);
         cx.out
             .composed_roles_list
             .push(resolved_parent_name.to_string());
