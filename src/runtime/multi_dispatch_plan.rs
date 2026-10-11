@@ -322,7 +322,11 @@ impl Interpreter {
         // positions when their minimum arities agree, so `multi s(Int $x,
         // *@r)` beats `multi s(Any $x, Any $y?)` for `s(1, 2)` (#12791);
         // only when both arities differ does the non-slurpy one win outright,
-        // which `MultiRank::is_narrower` decides.
+        // which `MultiRank::is_narrower` decides. A capture with a
+        // sub-signature (`multi f(|c($x))`) stays out: dispatch ranks it by
+        // the flattened sub-signature, which hides that rakudo treats the
+        // capture as slurpy, so here it would tie `multi f($n)` instead of
+        // losing to it (`roast/S06-multi/subsignature.t`).
         let optional_prefixes: Vec<String> = search_pkgs
             .iter()
             .map(|pkg| format!("{}::{}/", pkg, name))
@@ -338,7 +342,7 @@ impl Interpreter {
                     .any(|prefix| ks.starts_with(prefix))
                     && def.param_defs.iter().any(|p| {
                         (!p.named && (p.optional_marker || p.default.is_some()))
-                            || p.is_variadic()
+                            || (p.is_variadic() && !p.is_capture_subsignature())
                     })
             })
             .map(|(k, def)| (k.resolve(), def.clone()))

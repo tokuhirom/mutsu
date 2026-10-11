@@ -48,16 +48,25 @@ impl Interpreter {
         name: &str,
         candidates: &mut Vec<(String, Arc<FunctionDef>)>,
     ) {
-        let consumes_optional = candidates.iter().any(|(_, def)| {
+        // A capture with a sub-signature (`|c($x)`) is ranked by its
+        // flattened sub-signature, which hides that rakudo treats it as
+        // slurpy; it keeps its later fallback (see `build_bare_multi_plan`).
+        let flexible_arity = |def: &FunctionDef| {
             def.param_defs.iter().any(|p| {
-                !p.named && (p.optional_marker || p.default.is_some() || p.is_variadic())
+                !p.named
+                    && (p.optional_marker
+                        || p.default.is_some()
+                        || (p.is_variadic() && !p.is_capture_subsignature()))
             })
-        });
-        if !consumes_optional {
+        };
+        if !candidates.iter().any(|(_, def)| flexible_arity(def)) {
             return;
         }
         for flexible in self.qualified_flexible_arity_candidates(name) {
-            if !candidates.iter().any(|(key, _)| *key == flexible.0) {
+            if flexible_arity(&flexible.1)
+                && !flexible.1.param_defs.iter().any(|p| p.is_capture_subsignature())
+                && !candidates.iter().any(|(key, _)| *key == flexible.0)
+            {
                 candidates.push(flexible);
             }
         }
