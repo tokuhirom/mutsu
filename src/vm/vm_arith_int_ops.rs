@@ -419,7 +419,16 @@ impl Interpreter {
                 self.stack.push(Value::seq(items));
                 return Ok(());
             }
-            let items = self.vm_xx_repeat_thunk(&data, n)?;
+            // A Seq-valued repetition becomes a List, as `repeat_lhs_once` does
+            // for a non-thunked left side (Rakudo caches a Seq on repeat).
+            let items = self
+                .vm_xx_repeat_thunk(&data, n)?
+                .into_iter()
+                .map(|v| match v.view() {
+                    ValueView::Seq(seq) => Value::array(seq.to_vec()),
+                    _ => v,
+                })
+                .collect();
             self.stack.push(Value::seq(items));
             return Ok(());
         }
