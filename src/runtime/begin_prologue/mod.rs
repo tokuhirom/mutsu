@@ -75,7 +75,10 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     let mut moved_slots = Vec::new();
     let mut moved_phasers: Vec<Vec<Stmt>> = Vec::with_capacity(stmts.len());
     let mut composed_early: Vec<bool> = Vec::with_capacity(stmts.len());
+    let mut seen_runtime_stmt = false;
     for stmt in stmts.iter_mut() {
+        let composes_after_runtime = seen_runtime_stmt && composes_roles(stmt);
+        seen_runtime_stmt |= !crate::compiler::Compiler::runs_no_user_code(stmt);
         let mut moved = package_phasers::Moved::default();
         package_phasers::move_package_phasers(stmt, &mut moved);
         moved_slots.append(&mut moved.slots);
@@ -84,7 +87,11 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
         // The phasers nested code gave up because they read a lexical of it
         // (#10562) follow the ones moved out of a declaration.
         moved.phasers.append(&mut lifted.phasers);
-        composed_early.push(moved.needs_prologue || std::mem::take(&mut lifted.needs_prologue));
+        composed_early.push(
+            moved.needs_prologue
+                || std::mem::take(&mut lifted.needs_prologue)
+                || composes_after_runtime,
+        );
         moved_phasers.push(moved.phasers);
         if let Some(off) = strict_pragma(stmt) {
             unit.strict_off = off;
@@ -156,6 +163,27 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     rest.extend(tail);
     *stmts = rest;
     prologue
+}
+
+/// Whether `stmt` is a class declaration that composes a role. Rakudo composes
+/// it at BEGIN time and runs the role's body then, once, over the unit's
+/// lexicals in their static state; a declaration after a run-time statement
+/// therefore joins the prologue, rather than being shelled ahead of the
+/// mainline and composed again in place (#10667).
+// Cost: O(b), b = statements in the class body.
+fn composes_roles(stmt: &Stmt) -> bool {
+    matches!(
+        stmt,
+        Stmt::ClassDecl {
+            is_lexical: false,
+            is_unit: false,
+            name_expr: None,
+            body,
+            does_parents,
+            ..
+        } if !does_parents.is_empty()
+            || body.iter().any(|s| matches!(s, Stmt::DoesDecl { .. }))
+    )
 }
 
 /// What a statement does to `strict`: `Some(true)` for `no strict`,

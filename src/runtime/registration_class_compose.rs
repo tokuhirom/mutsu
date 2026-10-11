@@ -602,6 +602,11 @@ impl Interpreter {
         // news/2026-08/role-composition-memo-key-raku-case-table.md), so the
         // key must include the target class name, not just the role.
         //
+        // A class that composes a role after a run-time statement no longer
+        // gets a forward shell: the BEGIN prologue takes the declaration
+        // itself (`begin_prologue::composes_roles`, #10667), so the body runs
+        // once there. What follows covers the shells that remain.
+        //
         // A `__hoisted` forward-reference shell (see
         // `ClassDeclModifiers::is_hoisted_shell`'s doc comment) is exempt
         // from this memo and always runs the deferred body unconditionally,
