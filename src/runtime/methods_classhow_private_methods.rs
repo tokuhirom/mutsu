@@ -3,6 +3,7 @@
 //! own private-method rows.
 
 use super::*;
+use crate::symbol::Symbol;
 use crate::value::ValueMap;
 
 impl Interpreter {
@@ -64,6 +65,30 @@ impl Interpreter {
             self.class_private_method_entries(class_name)
                 .into_iter()
                 .map(|(_, method)| method)
+                .collect(),
+        )
+    }
+
+    /// `.^find_private_method($name)`: the class's own private `Method`, or
+    /// `Mu` when it declares none by that name (inherited ones are not
+    /// searched, as in Rakudo).
+    // Cost: O(m), m = methods declared directly on the class.
+    pub(super) fn class_find_private_method(&self, class_name: &str, name: &str) -> Value {
+        self.class_private_method_entries(class_name)
+            .into_iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, method)| method)
+            .unwrap_or_else(|| Value::package(Symbol::intern("Mu")))
+    }
+
+    /// `.^private_method_names`: the names of the class's own private methods,
+    /// in declaration order.
+    // Cost: O(m), m = methods declared directly on the class.
+    pub(super) fn class_private_method_names(&self, class_name: &str) -> Value {
+        Value::array(
+            self.class_private_method_entries(class_name)
+                .into_iter()
+                .map(|(name, _)| Value::str(name))
                 .collect(),
         )
     }
