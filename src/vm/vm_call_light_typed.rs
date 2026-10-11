@@ -115,7 +115,7 @@ impl Interpreter {
             let parent = self.env().clone();
             let mut frame = crate::env::Env::scoped_child(parent);
             if links_static_outer {
-                frame.link_static_outer_to_unit();
+                frame.link_static_outer_to_unit(false);
             }
             Some(std::mem::replace(self.env_mut(), frame))
         };

@@ -1149,7 +1149,17 @@ impl Interpreter {
         // `use Test` made every closure creation clone the importer's whole env
         // and every closure call merge it back key by key.
         if crate::opcode::reflective_name_access_possible() && cc.needs_reflective_capture {
-            let mut flat = self.clone_env();
+            // The creating frame's scalars the closure reads through its
+            // capture are shared cells, so a write after this point reaches it
+            // (ADR-12529 phase 3; the compiler put them in `needs_cell_locals`).
+            let at_program_scope = !self.env().chain_has_frame_root();
+            if !at_program_scope {
+                self.box_locals_for_reflective_capture(code);
+            }
+            // The creating frame's lexical scope, not its callers': a static
+            // link in the chain hides what it skips (ADR-12529 phase 3).
+            let mut flat = self.env().flattened_static_view();
+
             // Even when capturing the whole env by name, a slot-only local (a
             // pointy-block/sub parameter that this frame never mirrors into `env`,
             // e.g. `-> $r { * ~~ /<$r>/ }` where `$r` is read only inside a stored
@@ -1202,6 +1212,12 @@ impl Interpreter {
             flat.retain(|k, _| !k.is_attr_twigil_env_key());
             self.capture_bare_callees(cc, &mut flat);
             self.materialize_frame_self_into_capture(code, &mut flat);
+            // Taken while the program scope itself runs: the closure's frame
+            // links to the live program scope when it is called (ADR-12529),
+            // so its scalars need no cells.
+            if at_program_scope {
+                flat.mark_program_scope_capture();
+            }
             return flat;
         }
         // Both sets are pure functions of `cc`, so they are built once per chunk
@@ -1236,6 +1252,9 @@ impl Interpreter {
                 None => self.env().filtered_flat_capture(&keep, probe),
             };
         self.finish_closure_capture(code, cc, &mut env);
+        if cc.indirect_name_lookup && !self.env().chain_has_frame_root() {
+            env.mark_program_scope_capture();
+        }
         env
     }
 
@@ -1287,6 +1306,35 @@ impl Interpreter {
     /// shadowing block — instead of the sub's own true lexical binding
     /// (ADR-0024 row 3). A closure created inside a plain (non-mainline)
     /// frame is unaffected: the predicate is false there, so this is a no-op.
+    /// Box every plain scalar of the creating frame that `needs_cell_locals`
+    /// names into a shared cell (slot and env alike), before an escaping
+    /// reflective closure copies the frame's scope: the closure reads them by
+    /// name through its capture, ahead of its callers, so a snapshot would miss
+    /// the frame's later writes (ADR-12529 phase 3). Only a slot whose value is
+    /// the name's visible env binding is boxed, since boxing rebinds the name.
+    // Cost: O(l), l = the creating frame's locals.
+    fn box_locals_for_reflective_capture(&mut self, code: &CompiledCode) {
+        if code.needs_cell_locals.is_empty() || code.locals_sym.len() != code.locals.len() {
+            return;
+        }
+        for idx in 0..code.locals.len() {
+            let sym = code.locals_sym[idx];
+            // Only the slot that is this name's visible binding: a name can
+            // own several slots (one per shadowing block), and boxing puts the
+            // cell under the name in the env as well.
+            if code.needs_cell_locals.contains(&sym)
+                && idx < self.locals.len()
+                && !self.locals[idx].is_container_ref()
+                && self
+                    .env()
+                    .get_sym(sym)
+                    .is_some_and(|v| v.same_binding(&self.locals[idx]))
+            {
+                self.box_decl_local_cell(code, idx);
+            }
+        }
+    }
+
     fn inject_mainline_lexical_captures(&self, cc: &CompiledCode, env: &mut Env) {
         self.inject_lexsub_alias_captures(cc, env);
         let Some(bucket) = self.active_unit_lexical_bucket() else {

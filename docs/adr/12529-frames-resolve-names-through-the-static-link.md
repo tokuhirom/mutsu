@@ -422,7 +422,28 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    that hold one through the walk that follows it. Release-build Ir against
    the merge base, same machine: `bench-fib` +0.20%, `bench-tak` -0.50%,
    `method-call` -0.03%, `poly-call` -0.07%, `bench-ctor` +0.16%,
-   `bench-multi-dispatch` +0.29% -- within the layout noise of two builds. The pins for §1.3's sub
+   `bench-multi-dispatch` +0.29% -- within the layout noise of two builds.
+
+   **Slice 4 done** (`perf/12529-phase3-reflective-closure-link`): a
+   closure that looks names up reflectively links its frame too, which
+   closes the two closure pins. Its capture is built as the creating
+   frame's static view (`Env::flattened_static_view`: a static link in the
+   creating chain hides what it skips), so a closure made in a callee no
+   longer carries that callee's callers. Created while the program scope
+   itself runs (no frame root in the chain), the capture is marked
+   (`Tier::program_scope_capture`) and the closure's frame links to the live
+   program scope. Created inside a call frame, the link is `capture_first`:
+   the capture answers a plain lexical before the program scope, past the
+   callers. For that to stay live, the compiler puts every plain scalar of a
+   frame that creates an escaping reflective closure into
+   `needs_cell_locals`, and the capture boxes the visible ones into shared
+   cells first (`box_locals_for_reflective_capture`), as an escaping
+   closure's mutated free variables already are (ADR-0018). A closure that
+   only runs `::($name)` (`indirect_name_lookup`) is linked the same way.
+
+   What is still dynamic: a reflective *write* (`EVAL q[$x = 1]`) lands in
+   the frame's overlay and the return merge carries it to the caller, as
+   before; only reads follow the link. The pins for §1.3's sub
    case and the symbolic lookup pass. Only frames that ask get the link, so
    the call paths that reuse or skip a frame root (`overlay_is_shared_empty`
    reuse, the fast path's unscoped calls) give such a body a root of its

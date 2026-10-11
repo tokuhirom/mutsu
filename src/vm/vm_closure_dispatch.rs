@@ -504,6 +504,14 @@ impl Interpreter {
         let capture_tier = data.env.capture_view();
         self.env_mut()
             .set_capture_fallback(std::sync::Arc::clone(&capture_tier));
+        // A reflective closure's frame skips its callers for a lexical
+        // (ADR-12529 phase 3, `env::static_link`). Created at program scope,
+        // the live program scope is its outer; created in a call frame, its
+        // capture (that frame's scope) answers first.
+        if cc.needs_reflective_capture || cc.indirect_name_lookup {
+            let capture_first = !data.env.is_program_scope_capture();
+            self.env_mut().link_static_outer_to_unit(capture_first);
+        }
         // EXCEPTION: a `ContainerRef` captured value is a *shared container cell*
         // (box-on-capture, lever C Slice 2). It is the single source of truth for
         // that lexical, so it must OVERWRITE any stale plain value the caller env
