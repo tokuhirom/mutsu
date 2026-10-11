@@ -58,10 +58,7 @@ impl Interpreter {
             let key = args[1].to_string_value();
             self.celled_hash_elem(atomic_key, &name, &key)
         } else {
-            let index = match args[1].view() {
-                ValueView::Int(i) => i,
-                _ => args[1].to_string_value().parse::<i64>().unwrap_or(0),
-            };
+            let index = self.atomic_elem_index(&name, &args[1])?;
             self.celled_array_elem(atomic_key, &name, index)
         };
         let result = match op {
