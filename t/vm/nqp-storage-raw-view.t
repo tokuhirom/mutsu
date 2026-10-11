@@ -6,7 +6,7 @@ use nqp;
 # `%!hash` are raw VMArray / VMHash objects sharing the collection's storage,
 # and `p6bindattrinvres` installs a raw one by sharing it (ADR-12666 §3.6,
 # #12669). Every expected answer was checked against Rakudo 2026.09.
-plan 22;
+plan 27;
 
 {
     my @a = 1, 2;
@@ -82,4 +82,21 @@ plan 22;
     my $raw := nqp::list(3, 4);
     my $L := nqp::p6bindattrinvres(nqp::create(List), List, '$!reified', $raw);
     is $L.join(','), '3,4', 'the adopted List reads its elements';
+}
+
+{
+    # An Array's reified slots hold Scalar containers (#12698); a List's do
+    # not. Checked against Rakudo.
+    my @a = 1, 2;
+    my $r := nqp::getattr(@a, List, '$!reified');
+    is nqp::iscont(nqp::atpos($r, 0)), 1, 'an Array slot read through $!reified is a container';
+    is nqp::atpos($r, 1), 2, '... that reads as the element';
+    my $c := nqp::atpos($r, 0);
+    $c = 5;
+    is @a[0], 5, 'a write through the slot container reaches the Array';
+    nqp::bindpos($r, 1, 7);
+    is @a[1], 7, 'bindpos through $!reified still writes the Array';
+    my $l := (1, 2);
+    is nqp::iscont(nqp::atpos(nqp::getattr($l, List, '$!reified'), 0)), 0,
+        'a List slot is a bare value';
 }

@@ -41,6 +41,9 @@ fn classify_container(v: &Value) -> (bool, Option<char>) {
             (name == "Scalar" || name == "Proxy" || kind.is_some(), kind)
         }
         ValueView::Package(name) => (name == "Scalar", None),
+        // A shared element cell handed out as a value (an Array slot read
+        // through `$!reified`, `atposref`) is that element's Scalar.
+        ValueView::ContainerRef(_) => (true, None),
         _ => (false, None),
     }
 }
