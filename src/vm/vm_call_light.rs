@@ -419,6 +419,16 @@ impl Interpreter {
         // arity check already returned on a shortfall), so seeding them is a
         // wasted overlay-chain walk per call — for an all-params body like
         // `fib` the whole seed disappears.
+        //
+        // A frame linked to the program scope (ADR-12529) seeds through its
+        // link: a local is never one of its callers' variables, so a caller's
+        // same-named lexical must not reach it (#12478). The mark is lifted
+        // again for the binder, which resolves the arguments' source
+        // variables in the caller.
+        let seed_through_link = !params_fill_frame && outer_is_unit && caller_env.is_some();
+        if seed_through_link {
+            self.env_mut().mark_outer_is_unit();
+        }
         if params_fill_frame {
             // Every local is a parameter, so both arms below would skip every
             // slot. Not entering them also means the frame may still be empty.
@@ -441,6 +451,9 @@ impl Interpreter {
                     self.locals[i] = val.clone();
                 }
             }
+        }
+        if seed_through_link {
+            self.env_mut().unmark_outer_is_unit();
         }
 
         // RAII (`ReadonlyFrameGuard`,

@@ -1558,7 +1558,7 @@ impl Env {
                     .flatten()
                     .map(Box::new);
                 Self {
-                    inner: Arc::new(Tier::new(merged)),
+                    inner: Arc::new(self.flattened_tier(merged)),
                     parent: None,
                     tombstones,
                     depth: 0,
@@ -1580,6 +1580,18 @@ impl Env {
                 }
             }
         }
+    }
+
+    /// The collapsed tier of a flattening of this chain: `merged`, recording
+    /// the program scope below the chain's call frames when it has any
+    /// ([`Self::flattened_program_scope`]).
+    // Cost: O(d), d = chain tiers.
+    fn flattened_tier(&self, merged: SymMap) -> Tier {
+        let mut tier = Tier::new(merged);
+        if let Some(record) = self.flattened_program_scope() {
+            tier.set_static_link(record);
+        }
+        tier
     }
 
     /// Push every capture [`fallback`](Self::fallback) in this chain into
@@ -1693,7 +1705,7 @@ impl Env {
             .flatten()
             .map(Box::new);
         Self {
-            inner: Arc::new(Tier::new(merged)),
+            inner: Arc::new(self.flattened_tier(merged)),
             parent: None,
             tombstones,
             depth: 0,

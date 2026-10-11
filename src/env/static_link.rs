@@ -119,7 +119,14 @@ impl Env {
             }
             match &cur.parent {
                 Some(below) => cur = below,
-                None => break,
+                None => {
+                    // A flattened frame below: its record names the program
+                    // scope (see `flattened_program_scope`).
+                    if let Some(StaticLink::UnitOuter { target, .. }) = cur.inner.static_link() {
+                        seg = target;
+                    }
+                    break;
+                }
             }
         }
         let seg = Arc::clone(seg);
@@ -142,9 +149,54 @@ impl Env {
             }
             match &cur.parent {
                 Some(parent) => cur = parent,
-                None => return false,
+                // A flattened call frame still ran in a frame (see
+                // `flattened_program_scope`).
+                None => return cur.inner.static_link().is_some(),
             }
         }
+    }
+
+    /// What a flattening of this chain keeps of its frame structure: the
+    /// program scope below its call frames, which [`Self::flattened`] records
+    /// on the collapsed tier as a [`StaticLink`] of a non-root env. `None` when
+    /// the chain is the program scope itself.
+    ///
+    /// A flattened env merges a frame's names with every caller's and the
+    /// program scope's, so "below the deepest frame root" no longer finds the
+    /// program scope once a frame is collapsed into the bottom of a chain: a
+    /// frame linked above it would skip its callers straight into theirs
+    /// (#12478). The record is inert for lookups through the flattened env
+    /// itself, which only a frame root's link redirects; it is read where the
+    /// program scope is looked for (`program_scope_from`,
+    /// `link_static_outer_to_unit`, the next flattening).
+    // Cost: O(d), d = chain tiers.
+    pub(super) fn flattened_program_scope(&self) -> Option<Arc<StaticLink>> {
+        let unit = |target: &Arc<Env>| {
+            Arc::new(StaticLink::UnitOuter {
+                target: Arc::clone(target),
+                capture_first: false,
+            })
+        };
+        let mut seg: Option<&Arc<Env>> = None;
+        let mut cur = self;
+        loop {
+            if cur.frame_root {
+                if let Some(StaticLink::UnitOuter { target, .. }) = cur.inner.static_link() {
+                    return Some(unit(target));
+                }
+                if let Some(below) = &cur.parent {
+                    seg = Some(below);
+                }
+            }
+            match &cur.parent {
+                Some(below) => cur = below,
+                None => break,
+            }
+        }
+        if let Some(StaticLink::UnitOuter { target, .. }) = cur.inner.static_link() {
+            return Some(unit(target));
+        }
+        seg.map(unit)
     }
 
     /// [`Self::flattened`] as the scope this env's static links describe: a
@@ -284,7 +336,9 @@ impl Env {
     }
 
     /// The program scope's part of the chain starting at `self`: the env
-    /// below the deepest frame root, or `self` when no frame root is below.
+    /// below the deepest frame root, or `self` when no frame root is below --
+    /// unless the chain bottoms out at a flattened frame, whose record names
+    /// it.
     // Cost: O(d), d = chain tiers.
     fn program_scope_from(&self) -> &Env {
         let mut seg = self;
@@ -297,7 +351,14 @@ impl Env {
             }
             match cur.parent.as_deref() {
                 Some(below) => cur = below,
-                None => return seg,
+                // A flattened frame at the bottom records the program scope
+                // its frames ran over (`flattened_program_scope`).
+                None => {
+                    return match cur.inner.static_link() {
+                        Some(StaticLink::UnitOuter { target, .. }) => target,
+                        None => seg,
+                    };
+                }
             }
         }
     }
