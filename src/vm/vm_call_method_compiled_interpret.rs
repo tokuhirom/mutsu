@@ -75,6 +75,7 @@ impl Interpreter {
                 && self.is_role(role_name)
                 // CALL-ME already has the role callable/coercion dispatch path.
                 && !matches!(method, "new" | "CALL-ME")
+                && !crate::runtime::role_type_object_keeps_mu_method(method)
                 && self.role_or_parent_has_method(&self.role_group_name(role_name), method)
             {
                 self.ensure_role_punned_to_class(role_name)?;

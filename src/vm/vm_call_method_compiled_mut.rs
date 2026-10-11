@@ -83,7 +83,8 @@ impl Interpreter {
                 // included: it must see the defaults too, #11652); a
                 // meta-method such as `.^name` still answers for the role
                 // itself.
-                if self.role_or_parent_has_method(&self.role_group_name(pkg), method)
+                if !crate::runtime::role_type_object_keeps_mu_method(method)
+                    && self.role_or_parent_has_method(&self.role_group_name(pkg), method)
                     && let Some(punned) = self.default_parametric_role_pun(&target)?
                 {
                     return self.try_compiled_method_mut_or_interpret_sym(
@@ -96,6 +97,7 @@ impl Interpreter {
                 // A callable role type object follows its own CALL-ME/coercion
                 // path; registering a pun here changes later role composition.
                 if !matches!(method, "new" | "CALL-ME")
+                    && !crate::runtime::role_type_object_keeps_mu_method(method)
                     && self.role_or_parent_has_method(&self.role_group_name(pkg), method)
                 {
                     self.ensure_role_punned_to_class(pkg)?;

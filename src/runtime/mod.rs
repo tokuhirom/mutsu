@@ -48,6 +48,18 @@ use std::process::Command;
 use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, Mutex, RwLock};
 
+/// Stringifiers a role TYPE OBJECT answers from `Mu`, never from the role.
+///
+/// A call on a role type object puns the role only for a method `Mu` does not
+/// have: Rakudo answers `R.Str`, `R.gist`, `R.raku` from `Mu` even when `R`
+/// (or a role it does) declares its own `Str`, and so it never complains that
+/// the role still has a `method m { ... }` stub that a pun could not satisfy
+/// (Map::Agnostic's `Map::Agnostic.gist`).
+// Cost: O(1), compares the method name against four constants.
+pub(crate) fn role_type_object_keeps_mu_method(method: &str) -> bool {
+    matches!(method, "Str" | "gist" | "raku" | "perl")
+}
+
 /// A role's `role_id` is drawn from the SAME process-global counter as the
 /// parse-time declaration-site ids (`crate::ast::next_global_decl_id`). Both
 /// end up after a `\u{0}` in a type name -- `R\u{0}<role_id>` is one parametric
