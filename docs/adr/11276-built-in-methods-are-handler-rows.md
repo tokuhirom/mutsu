@@ -1561,7 +1561,7 @@ largest block with one obvious shape, so it went first: 43 rows in four new modu
   instance, the uninitialized-value warning and `0` for a type object). A class with a number behind it (`is Int`) still defers to `Int`'s answer.
 - **`Bool.pick` / `Bool.roll`** are `TYPE_OBJECT_OK` rows: `Bool.pick` samples `(False, True)`; a defined `True.pick` is `X::Multi::NoMatch`, as in Rakudo (it answered before).
 - **Not done**: `Real`, `FatRat` and `Complex` of `Str`/`Cool` (Rakudo does not declare them there; the table serves them through `Cool`), `Complex` of the aggregates
-  (`(1,2,3).Complex` is `3+0i` in Rakudo, `0+0i` here: #12683), and `Range.Version`/`Seq.UInt` (closed shapes; they need the `COOL_NUMERIC_FOR_COLLECTIONS` audit).
+  (`(1,2,3).Complex` is `3+0i` in Rakudo, `0+0i` here: #12688), and `Range.Version`/`Seq.UInt` (closed shapes; they need the `COOL_NUMERIC_FOR_COLLECTIONS` audit).
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
