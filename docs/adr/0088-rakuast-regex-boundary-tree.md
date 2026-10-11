@@ -1580,3 +1580,10 @@ Atom recursion and iterative assertion-prefix chains are bounded at 128. An
 unrepresentable or over-budget tree is refused by the RakuAST boundary rather
 than represented as an opaque literal. `t/rakuast/rakuast-regex-source-cohort.t`
 pins read, constructed-tree and execution behavior against Rakudo.
+
+Ordinary qq and regex qq share complete validation of hexadecimal and octal
+codepoint escapes. A list is decoded transactionally, so an invalid later entry
+cannot leave a partial literal. Internal underscore separators are accepted,
+and an underscore outside an unbracketed numeral remains ordinary text.
+Surrogate codepoints require a different Str representation; that gap is
+tracked separately in [#12640](https://github.com/tokuhirom/mutsu/issues/12640).

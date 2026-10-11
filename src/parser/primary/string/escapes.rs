@@ -36,90 +36,17 @@ pub(crate) fn process_escape_sequence<'a>(
         '"' => current.push('"'),
         '\'' => current.push('\''),
         ' ' => current.push(' '),
-        'x' => {
-            let r = after_escape;
-            if r.starts_with('[') {
-                if let Some(end) = r.find(']') {
-                    let content = &r[1..end];
-                    // Handle comma-separated hex values: \x[0041,0300]
-                    for part in content.split(',') {
-                        let hex = part.trim();
-                        if let Ok(n) = u32::from_str_radix(hex, 16)
-                            && let Some(ch) = char::from_u32(n)
-                        {
-                            current.push(ch);
-                        }
-                    }
-                    // NFC-normalize: combining characters from \x[...] should
-                    // compose with the preceding character
-                    use unicode_normalization::UnicodeNormalization;
-                    let normalized: String = current.nfc().collect();
-                    current.clear();
-                    current.push_str(&normalized);
-                    return Ok(Some((&r[end + 1..], true)));
-                }
-                // \x[ without closing ] is a compile error
-                return Err("Missing closing bracket for \\x[".to_string());
-            } else {
-                let hex_chars: String = r.chars().take_while(|ch| ch.is_ascii_hexdigit()).collect();
-                let len = hex_chars.len();
-                if len == 0 {
-                    // \x not followed by hex digits or [ is unrecognized
-                    return Err(
-                        "X::Backslash::UnrecognizedSequence: Unrecognized backslash sequence: '\\x'"
-                            .to_string(),
-                    );
-                }
-                if let Ok(n) = u32::from_str_radix(&hex_chars, 16)
-                    && let Some(ch) = char::from_u32(n)
-                {
-                    current.push(ch);
-                }
-                // NFC-normalize: \xHHHH escapes may introduce characters that
-                // should compose with surrounding text
+        'x' | 'o' => {
+            let (remaining, text) = super::escape_codepoint::numeric_escape(after_escape, c)?;
+            current.push_str(&text);
+            if c == 'x' {
+                // Preserve qq's normalization of combining codepoints.
                 use unicode_normalization::UnicodeNormalization;
                 let normalized: String = current.nfc().collect();
                 current.clear();
                 current.push_str(&normalized);
-                return Ok(Some((&r[len..], true)));
             }
-        }
-        'o' => {
-            let r = after_escape;
-            if r.starts_with('[') {
-                if let Some(end) = r.find(']') {
-                    let content = &r[1..end];
-                    // Handle comma-separated octal values: \o[101,102,103]
-                    for part in content.split(',') {
-                        let oct = part.trim();
-                        if let Ok(n) = u32::from_str_radix(oct, 8)
-                            && let Some(ch) = char::from_u32(n)
-                        {
-                            current.push(ch);
-                        }
-                    }
-                    return Ok(Some((&r[end + 1..], true)));
-                }
-                // \o[ without closing ] is a compile error
-                return Err("Missing closing bracket for \\o[".to_string());
-            } else {
-                let oct_chars: String =
-                    r.chars().take_while(|ch| matches!(ch, '0'..='7')).collect();
-                let len = oct_chars.len();
-                if len == 0 {
-                    // \o not followed by octal digits or [ is unrecognized
-                    return Err(
-                        "X::Backslash::UnrecognizedSequence: Unrecognized backslash sequence: '\\o'"
-                            .to_string(),
-                    );
-                }
-                if let Ok(n) = u32::from_str_radix(&oct_chars, 8)
-                    && let Some(ch) = char::from_u32(n)
-                {
-                    current.push(ch);
-                }
-                return Ok(Some((&r[len..], true)));
-            }
+            return Ok(Some((remaining, true)));
         }
         'c' => {
             let r = after_escape;

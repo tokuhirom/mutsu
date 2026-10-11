@@ -10,6 +10,10 @@ rebuilt from RakuAST. Aliases retain the complete quantified body, and numeric
 aliases render as `$N=` so the matcher keeps its static capture-slot numbering.
 The existing compiler and matcher execute the reconstructed tree.
 
+Numeric qq escapes validate every hexadecimal or octal codepoint before
+appending a decoded list. Malformed entries cannot disappear into a partial
+literal, and valid internal underscore separators use the same shared decoder.
+
 The parser helpers are split into bounded atom parsing, aliases, lookarounds
 and quotes. Nested atoms and assertion-prefix chains are limited to 128 rather
 than growing without a bound. The regression cohort checks source structure,

@@ -2262,6 +2262,7 @@ t/lang/scalar-item-assign-precedence.t
 t/lang/sigil-colliding-attr-slots.t
 t/lang/sigil-contextualizer-circumfix.t
 t/lang/sigil-contextualizer-stacked-slip.t
+t/lang/string-codepoint-escape-validation.t
 t/lang/string-comparison.t
 t/lang/string-interp-hash-sigil-hyphen.t
 t/lang/string-methods.t
