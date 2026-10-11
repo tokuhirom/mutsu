@@ -1,0 +1,7 @@
+unit module InstConst;
+use InstConst::Raw;
+
+sub pick($x) is export {
+    sub f($a, $b) { $b }
+    f(1, ($x) ?? IC_RUN !! IC_FLUSH);
+}

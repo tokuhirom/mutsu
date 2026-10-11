@@ -1,0 +1,10 @@
+{
+    "name": "InstConst",
+    "version": "0.1.0",
+    "auth": "zef:test",
+    "api": "0",
+    "provides": {
+        "InstConst::Raw": { "file": "instconst-raw" },
+        "InstConst": { "file": "instconst-main" }
+    }
+}

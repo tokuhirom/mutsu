@@ -7,6 +7,7 @@ mod decl_scan;
 mod dynamic_stash;
 mod enum_values;
 mod export_hook;
+mod installed_repo;
 mod source_scan;
 use decl_scan::scan_module_decls;
 use dynamic_stash::probe_dynamic_exports;
@@ -633,15 +634,17 @@ fn find_module_file(module: &str) -> Option<String> {
     // within one path), matching `Interpreter::resolve_module_path`: the parser
     // and the runtime must agree on which file a module is, or the parser can
     // extract exports from one file while the runtime loads another. An `inst#`
-    // entry names an installed repository, not a directory; the runtime resolves
-    // those through the dist metadata, which this scan does not do yet, so skip
-    // them rather than probing a path that can never exist.
+    // entry names an installed repository, not a directory; it is resolved
+    // through the dist metadata, like the runtime does (#12626).
     // No implicit fallback to the script's directory or the current
     // directory: the runtime searches neither (#11213), and the two must agree.
     LIB_PATHS.with(|paths| {
         let paths = paths.borrow();
         for base in paths.iter() {
-            if base.starts_with("inst#") {
+            if let Some(prefix) = base.strip_prefix("inst#") {
+                if let Some(found) = installed_repo::find_in_installed_repo(prefix, module) {
+                    return Some(found);
+                }
                 continue;
             }
             let base_path = std::path::Path::new(base);

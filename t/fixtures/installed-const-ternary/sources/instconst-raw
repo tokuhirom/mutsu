@@ -1,0 +1,4 @@
+unit module InstConst::Raw;
+
+constant IC_RUN is export = 11;
+constant IC_FLUSH is export = 22;
