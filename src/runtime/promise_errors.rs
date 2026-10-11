@@ -25,6 +25,23 @@ impl Interpreter {
         Self::exception_instance_of(value).is_some()
     }
 
+    /// A broken promise's cause as Raku code sees it (`.cause`, a `whenever`
+    /// source's quit): an exception object passes through untouched, any
+    /// other reason (`$p.break("boom")`) is wrapped in `X::AdHoc`. Gated on
+    /// the value's shape, not its type name, so a user class that `is
+    /// Exception` without an `X::` name passes through too.
+    // Cost: O(n), n = the reason's string length when it is wrapped.
+    pub(crate) fn promise_cause_value(reason: Value) -> Value {
+        if Self::is_exception_object(&reason) {
+            return reason;
+        }
+        let text = reason.to_string_value();
+        let mut attrs = HashMap::new();
+        attrs.insert("payload".to_string(), Value::str(text.clone()));
+        attrs.insert("message".to_string(), Value::str(text));
+        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+    }
+
     /// The underlying object `Instance` of a (possibly role-mixed) exception
     /// value, looking through any number of `but`/`does` wrappers.
     pub(crate) fn exception_instance_of(value: &Value) -> Option<Value> {

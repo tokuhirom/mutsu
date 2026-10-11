@@ -129,53 +129,11 @@ impl Interpreter {
                     } => {
                         // Capture values the whenever block `emit`s so a
                         // later `done` resolves the promise with the last one.
-                        self.async_state
-                            .supply_emit_buffer
-                            .push(crate::runtime::EmitFrame::default());
-                        let cb_result =
-                            self.call_react_callback(&sub.callback.clone(), vec![value]);
-                        let emitted = self
-                            .async_state
-                            .supply_emit_buffer
-                            .pop()
-                            .unwrap_or_default()
-                            .values;
-                        for item in emitted {
-                            // A `whenever` nested in this body registered
-                            // its subscription marker into the same
-                            // frame. It is not a value the supply
-                            // emitted: hand it to the adoption queue
-                            // instead of letting it become the promise's
-                            // result.
-                            if Self::is_whenever_subscription_marker(&item) {
-                                self.async_state.pending_react_subscriptions.push(item);
-                            } else {
-                                *last_value = item;
-                            }
-                        }
-                        if promise.is_resolved() {
+                        let callback = sub.callback.clone();
+                        if self.run_promise_policy_callback(promise, last_value, |vm| {
+                            vm.call_react_callback(&callback, vec![value]).map(|_| ())
+                        }) {
                             return Ok(ReceiverFlow::Return);
-                        }
-                        if let Err(err) = cb_result {
-                            // `done`/`last` inside the whenever complete the
-                            // supply: keep the promise with the last emitted
-                            // value immediately rather than spinning to the
-                            // deadline.
-                            if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
-                                promise.keep(last_value.clone(), String::new(), String::new());
-                                return Ok(ReceiverFlow::Return);
-                            }
-                            // `next`/`redo` are loop control, not completion.
-                            if !err.is_next() && !err.is_redo() {
-                                // A `die` quits the supply: break with the cause.
-                                let cause = err
-                                    .exception
-                                    .as_deref()
-                                    .cloned()
-                                    .unwrap_or_else(|| Value::str(err.message.to_string()));
-                                promise.break_with(cause, String::new(), String::new());
-                                return Ok(ReceiverFlow::Return);
-                            }
                         }
                     }
                     SupplyDrivePolicy::React => {
@@ -225,14 +183,39 @@ impl Interpreter {
             }
             Ok(SupplyEvent::Quit(error)) => {
                 *progressed = true;
-                if matches!(policy, SupplyDrivePolicy::Promise { .. }) {
-                    // On the await path an inner quit just retires the
-                    // receiver; the promise is resolved/broken elsewhere.
+                if let SupplyDrivePolicy::Promise {
+                    promise,
+                    last_value,
+                    ..
+                } = policy
+                {
                     sub.done = true;
+                    // A source that quits quits the supply block, unless the
+                    // whenever's QUIT phaser handles it — the same rule the
+                    // react path below applies (#12789). Leaving the promise
+                    // alone parked `Promise(supply { whenever $broken {...} })`
+                    // until the drive's deadline and then kept it.
+                    if sub.quit_callbacks.is_empty() {
+                        promise.break_with(error, String::new(), String::new());
+                        return Ok(ReceiverFlow::Return);
+                    }
+                    let quit_cbs = sub.quit_callbacks.clone();
+                    if self.run_promise_policy_callback(promise, last_value, |vm| {
+                        for quit_cb in quit_cbs {
+                            vm.call_whenever_quit_phaser(quit_cb, error.clone())?;
+                        }
+                        Ok(())
+                    }) {
+                        return Ok(ReceiverFlow::Return);
+                    }
                 } else {
                     let mut handled = false;
-                    for quit_cb in &sub.quit_callbacks {
-                        self.call_supply_quit_handler(quit_cb.clone(), error.clone())?;
+                    for quit_cb in sub.quit_callbacks.clone() {
+                        if let Err(err) = self.call_whenever_quit_phaser(quit_cb, error.clone()) {
+                            sub.done = true;
+                            self.whenever_quit_failed(err, policy)?;
+                            return Ok(ReceiverFlow::Return);
+                        }
                         handled = true;
                     }
                     sub.done = true;
@@ -250,5 +233,129 @@ impl Interpreter {
             }
         }
         Ok(ReceiverFlow::Continue)
+    }
+
+    /// Run a `whenever` body or QUIT phaser of a supply block driven for its
+    /// Promise (`SupplyDrivePolicy::Promise`), capturing what it `emit`s:
+    /// the last emitted value becomes `last_value`, a nested `whenever`'s
+    /// subscription marker goes to the adoption queue, `done`/`last` keeps
+    /// the promise and a `die` breaks it. Returns whether the promise is
+    /// resolved, so the drive should stop.
+    // Cost: O(e) beyond the callback itself, e = values it emits.
+    fn run_promise_policy_callback(
+        &mut self,
+        promise: &crate::value::SharedPromise,
+        last_value: &mut Value,
+        run: impl FnOnce(&mut Self) -> Result<(), RuntimeError>,
+    ) -> bool {
+        self.async_state
+            .supply_emit_buffer
+            .push(crate::runtime::EmitFrame::default());
+        let cb_result = run(self);
+        let emitted = self
+            .async_state
+            .supply_emit_buffer
+            .pop()
+            .unwrap_or_default()
+            .values;
+        for item in emitted {
+            // A `whenever` nested in this body registered its subscription
+            // marker into the same frame. It is not a value the supply
+            // emitted: hand it to the adoption queue instead of letting it
+            // become the promise's result.
+            if Self::is_whenever_subscription_marker(&item) {
+                self.async_state.pending_react_subscriptions.push(item);
+            } else {
+                *last_value = item;
+            }
+        }
+        if promise.is_resolved() {
+            return true;
+        }
+        if let Err(err) = cb_result {
+            // `done`/`last` complete the supply: keep the promise with the
+            // last emitted value immediately rather than spinning to the
+            // deadline.
+            if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
+                promise.keep(last_value.clone(), String::new(), String::new());
+                return true;
+            }
+            // `next`/`redo` are loop control, not completion.
+            if !err.is_next() && !err.is_redo() {
+                // A `die` quits the supply: break with the cause.
+                let cause = err
+                    .exception
+                    .as_deref()
+                    .cloned()
+                    .unwrap_or_else(|| Value::str(err.message.to_string()));
+                promise.break_with(cause, String::new(), String::new());
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Run a `whenever`'s `QUIT` phaser with the quit `reason` as `$_`. Like
+    /// `CATCH`, the phaser handles the exception only when a `when`/`default`
+    /// matches (or it `succeed`s); otherwise the exception is rethrown, so it
+    /// quits the enclosing `react`/`supply` block — rakudo's behaviour, and
+    /// what Cro's client relies on when its request `QUIT` matches neither
+    /// of its two `when`s (#12789). Tap `quit => { ... }` callbacks are plain
+    /// blocks and go through `call_supply_quit_handler` instead.
+    // Cost: O(1) beyond running the phaser body.
+    pub(crate) fn call_whenever_quit_phaser(
+        &mut self,
+        quit_cb: Value,
+        reason: Value,
+    ) -> Result<(), RuntimeError> {
+        let saved_when = self.when_matched();
+        loan_env!(self, set_when_matched(false));
+        let result = self.call_react_callback(&quit_cb, vec![reason.clone()]);
+        let matched = self.when_matched();
+        loan_env!(self, set_when_matched(saved_when));
+        match result {
+            Ok(_) if matched => Ok(()),
+            Ok(_) => Err(crate::runtime::Interpreter::runtime_error_from_supply_reason(reason)),
+            Err(err) if err.is_succeed() => Ok(()),
+            Err(err) => Err(err),
+        }
+    }
+
+    /// A `whenever`'s `QUIT` phaser ended with `err` — a rethrown or new
+    /// exception, or `done`. Under the Promise policy the supply block
+    /// completes (`done` keeps the promise with the last emitted value, an
+    /// exception breaks it) and `Ok(())` tells the caller to stop driving; under
+    /// the react policy `done` propagates as is and an exception dies the react.
+    // Cost: O(1), plus the `X::React::Died` wrap on the react path.
+    pub(super) fn whenever_quit_failed(
+        &mut self,
+        err: RuntimeError,
+        policy: &SupplyDrivePolicy,
+    ) -> Result<(), RuntimeError> {
+        match policy {
+            SupplyDrivePolicy::Promise {
+                promise,
+                last_value,
+                ..
+            } => {
+                if err.is_react_done() || err.is_supply_body_done() {
+                    promise.keep(last_value.clone(), String::new(), String::new());
+                } else {
+                    let cause = err
+                        .exception
+                        .as_deref()
+                        .cloned()
+                        .unwrap_or_else(|| Value::str(err.message.to_string()));
+                    promise.break_with(cause, String::new(), String::new());
+                }
+                Ok(())
+            }
+            SupplyDrivePolicy::React => {
+                if err.is_react_done() || err.is_return() {
+                    return Err(err);
+                }
+                Err(self.wrap_react_died_if_needed(err))
+            }
+        }
     }
 }

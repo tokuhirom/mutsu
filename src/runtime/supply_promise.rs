@@ -643,6 +643,10 @@ impl Interpreter {
         // events runs on a *cloned* interpreter with its own (freshly empty)
         // `supply_stream_consumers`, not on `self`.
         let stream_consumers_base = self.async_state.supply_stream_consumers.len();
+        // Likewise for the `whenever <Promise>` stand-ins a nested stage's
+        // body parks for arming (`normalize_promise_whenever_markers`): only
+        // the drive loop that registers their sinks may arm them.
+        let promise_arms_base = self.async_state.pending_promise_whenever_arms.len();
         for sub_val in &subscriptions {
             if let ValueView::Array(items, ..) = sub_val.view()
                 && items.len() >= 2
@@ -657,20 +661,16 @@ impl Interpreter {
                     .get(3)
                     .and_then(Self::value_array_items)
                     .unwrap_or_default();
-                // A promise source fires once: feed its result through a
-                // one-shot channel followed by Done, the same shape the react
-                // loop builds for `react { whenever $promise { … } }`.
+                // A promise source fires once, through the same one-shot
+                // stream the react loop builds for `react { whenever $promise
+                // { … } }`: a Broken promise quits the block (or reaches the
+                // whenever's QUIT phaser) instead of emitting its cause as a
+                // value (#12789).
                 if let ValueView::Promise(shared) = source.view() {
-                    let (tx, rx) =
-                        crate::runtime::native_methods::supply_channel::supply_event_channel();
-                    // Same thread-free delivery as the react loop's promise
-                    // source (see `vm/vm_react_loop.rs`): the promise's own
-                    // waiter list, not an OS thread parked in `wait()`.
-                    shared.mark_observed();
-                    shared.on_resolve(Box::new(move |_status, result, _output, _stderr| {
-                        let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Emit(result));
-                        let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Done);
-                    }));
+                    let rx =
+                        crate::runtime::native_methods::supply_channel::promise_source_events(
+                            &shared,
+                        );
                     react_subs.push(crate::runtime::react_whenever::ReactSubscription {
                         receiver: Some(rx),
                         promise: Some(shared.clone()),
@@ -772,6 +772,9 @@ impl Interpreter {
                             self.async_state
                                 .supply_stream_consumers
                                 .truncate(stream_consumers_base);
+                            self.async_state
+                                .pending_promise_whenever_arms
+                                .truncate(promise_arms_base);
                             return Ok(());
                         }
                         continue;
@@ -822,6 +825,9 @@ impl Interpreter {
             self.async_state
                 .supply_stream_consumers
                 .truncate(stream_consumers_base);
+            self.async_state
+                .pending_promise_whenever_arms
+                .truncate(promise_arms_base);
             let result = static_last_value
                 .or_else(|| plain_values.last().cloned())
                 .unwrap_or(Value::NIL);
@@ -904,6 +910,17 @@ impl Interpreter {
                 .supply_stream_consumers
                 .split_off(stream_consumers_base),
         );
+        // The drive loop arms them right after registering its sinks; left
+        // on `self`, a nested `whenever $promise` never fired, and the
+        // promise waited out the drive's deadline (#12789).
+        thread_interp
+            .async_state
+            .pending_promise_whenever_arms
+            .extend(
+                self.async_state
+                    .pending_promise_whenever_arms
+                    .split_off(promise_arms_base),
+            );
         // A refused thread (ADR-0123) is a catchable X::AdHoc, not a panic.
         crate::runtime::builtins_system::try_spawn_user_thread(
             "react",
