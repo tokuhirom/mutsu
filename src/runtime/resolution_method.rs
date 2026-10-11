@@ -829,16 +829,20 @@ impl Interpreter {
             } else if arg_idx < args.len() {
                 // An untyped positional that receives no argument is not
                 // compared at all, like a typed one above (#11173).
-                total += 1000;
-                // For the partial order an untyped parameter is an implicit
-                // `Any` and a literal is as narrow as the argument it equals
-                // (rakudo compiles it to the literal's type plus an equality
-                // check), so neither pays the flat charge above.
+                //
+                // An untyped parameter is an implicit `Any` and a literal is
+                // as narrow as the argument it equals (rakudo compiles it to
+                // the literal's type plus an equality check). The distance
+                // therefore equals the explicit `Any` spelling's: a flat
+                // charge made `($n where ..., $v)` lose to `($n, Any $v)`,
+                // where rakudo ties on the second position and lets the
+                // refinement on the first win.
                 let d = if pd.literal_value.is_some() {
                     0
                 } else {
                     self.type_hierarchy_distance("Any", args[arg_idx])
                 };
+                total += d;
                 profile.record(
                     slot,
                     d,
