@@ -7,7 +7,7 @@ use Test;
 # it created for itself, so the push succeeded on the worker and was lost to
 # everyone else.
 
-plan 7;
+plan 8;
 
 {
     my $s = Supplier.new;
@@ -68,4 +68,24 @@ plan 7;
     await @workers.map: -> $p { $p.then({ add($_) for ^50 }) };
     is @all.elems, 200, 'appends from several threads all land';
     is @all.grep(* == 0).elems, 4, 'and each one landed once';
+}
+
+{
+    # Removal methods share the same home as the appends: a worker that pushes
+    # and shifts must see its own pushes, and the declaring frame the result.
+    my $go = Promise.new;
+    my @workers = (^4).map: -> $w { start { await $go; $w } };
+    my @q = ^10;
+    my $lock = Lock.new;
+    my &churn = -> $v {
+        $lock.protect: {
+            @q.push($v, $v);
+            @q.shift;
+            @q.pop;
+            @q.splice(0, 1, 'x');
+        }
+    };
+    $go.keep;
+    await @workers.map: -> $p { $p.then({ churn($_) for ^25 }) };
+    is @q.elems, 10, 'push/shift/pop/splice from several threads keep one array';
 }

@@ -21,8 +21,12 @@ path into the name-keyed `__mutsu_atomic_arr::` lane. That lane only knows the
 names seeded when a worker was spawned, so for a later `@got` the worker made a
 private entry. The sub form `push @got, $t` lost the push the same way.
 
-Now a celled binding appends into its cell, under the cell's ADR-0068 structure
-lock plus the cell's own mutex. Concurrent appends from many threads still all
-land. LLM::Chat's `t/07-mock-backend.rakutest` passes 17/17.
+Now every method that lane served (`push`, `unshift`, `append`, `prepend`,
+`pop`, `shift`, `splice`) mutates a celled binding inside its cell. Each call
+holds the cell's ADR-0068 structure lock and the cell's own mutex. A binding
+therefore never splits its elements between two homes: a first cut that moved
+only the appends left `shift` on the lane, and concurrent push/shift then lost
+elements. Concurrent appends from many threads still all land.
+LLM::Chat's `t/07-mock-backend.rakutest` passes 17/17.
 
 Pin: `t/concurrency/thread-lock/thread-late-declared-array-push.t`.

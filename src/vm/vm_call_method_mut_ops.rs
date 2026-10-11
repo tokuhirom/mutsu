@@ -1442,25 +1442,69 @@ impl Interpreter {
                 .env()
                 .get(target_name)
                 .is_some_and(Value::is_container_ref);
-        if celled
-            && matches!(method, "push" | "unshift" | "append" | "prepend")
-            && !args.is_empty()
-            && Self::is_plain_lexical_array_name(target_name)
-        {
-            let items = if matches!(method, "push" | "unshift") {
-                crate::runtime::Interpreter::normalize_push_unshift_args(args.clone())
-            } else {
-                crate::runtime::flatten_append_args(args.clone())
-            };
-            let items = self.wrap_native_int_items(target_name, items);
-            let front = matches!(method, "unshift" | "prepend");
-            if let Some(result) = self.celled_array_extend(target_name, items, front) {
-                crate::vm::vm_stats::record_dispatch_entry_intercept(
-                    "callmethodmut",
-                    "celled-array-push",
-                );
-                self.stack.push(result);
-                return Ok(());
+        // Every method the lane below serves goes through the cell, so the
+        // binding's elements never end up split between the two homes.
+        if celled && Self::is_plain_lexical_array_name(target_name) {
+            match method {
+                "push" | "unshift" | "append" | "prepend" if !args.is_empty() => {
+                    let items = if matches!(method, "push" | "unshift") {
+                        crate::runtime::Interpreter::normalize_push_unshift_args(args.clone())
+                    } else {
+                        crate::runtime::flatten_append_args(args.clone())
+                    };
+                    let items = self.wrap_native_int_items(target_name, items);
+                    let front = matches!(method, "unshift" | "prepend");
+                    if let Some(result) = self.celled_array_extend(target_name, items, front) {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "celled-array-push",
+                        );
+                        self.stack.push(result);
+                        return Ok(());
+                    }
+                }
+                "pop" | "shift"
+                    if args.is_empty()
+                        && matches!(
+                            target.view(),
+                            ValueView::Array(_, crate::value::ArrayKind::Array)
+                        ) =>
+                {
+                    if let Some((result, _)) = self.celled_array_mutate(target_name, |data| {
+                        if data.items().is_empty() {
+                            crate::runtime::utils::make_empty_array_failure_what(method, "Array")
+                        } else if method == "shift" {
+                            data.remove(0)
+                        } else {
+                            data.pop().unwrap_or(Value::NIL)
+                        }
+                    }) {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "celled-array-pop-shift",
+                        );
+                        self.stack.push(result);
+                        return Ok(());
+                    }
+                }
+                "splice"
+                    if matches!(
+                        target.view(),
+                        ValueView::Array(_, crate::value::ArrayKind::Array)
+                    ) =>
+                {
+                    if let Some((removed, _)) = self.celled_array_mutate(target_name, |data| {
+                        crate::runtime::Interpreter::splice_array_data(data, &args)
+                    }) {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "celled-array-splice",
+                        );
+                        self.stack.push(Value::real_array(removed));
+                        return Ok(());
+                    }
+                }
+                _ => {}
             }
         }
         if target_name.starts_with('@')
