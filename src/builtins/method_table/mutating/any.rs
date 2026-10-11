@@ -32,6 +32,14 @@ fn splice_row(
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     let target = place.value().descalarize();
+    // A cell or a variable reference around the receiver is not the value's
+    // own kind (it may well hold an `Array`): the other entries unwrap it.
+    if matches!(
+        target.view(),
+        ValueView::ContainerRef(_) | ValueView::VarRef { .. }
+    ) {
+        return None;
+    }
     // A user class (or a type object of one) that declares `splice` answers
     // the call itself; `native_lever_a_user_override_sym` cannot see it, an
     // instance's type name there being `Any`.
