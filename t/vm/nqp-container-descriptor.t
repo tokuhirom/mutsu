@@ -41,4 +41,4 @@ dies-ok { nqp::bindattr(@v, Array, '$!descriptor', 42) }, 'bind of a non-descrip
 # is default travels with the descriptor.
 my @dd is default(7);
 is nqp::getattr(@dd, Array, '$!descriptor').default, 7, '.default of an is-default Array';
-is nqp::getattr(@dd, Array, '$!descriptor').^name, 'ContainerDescriptor', 'is default makes it typed';
+is nqp::getattr(@dd, Array, '$!descriptor').^name, 'ContainerDescriptor::Untyped', 'only the element type makes it typed';

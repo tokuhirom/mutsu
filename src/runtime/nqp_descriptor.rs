@@ -71,7 +71,7 @@ impl Interpreter {
             ),
             _ => return None,
         };
-        let typed = of.as_deref().is_some_and(|t| !matches!(t, "Mu" | "Any")) || default_value.is_some();
+        let typed = of.as_deref().is_some_and(|t| !matches!(t, "Mu" | "Any"));
         let class = if typed {
             "ContainerDescriptor"
         } else {
