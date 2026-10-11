@@ -5,7 +5,7 @@ use Test;
 # through the exhaustive mutable visitor (ADR-10499); each expectation was
 # checked against rakudo.
 
-plan 27;
+plan 31;
 
 my @log;
 @log.push('main');
@@ -77,3 +77,12 @@ is @log.grep('rule-match').elems, 2, '... while the plain code block ran per mat
 my token lexical-tok { x { INIT @log.push('my-token-init') } }
 ok before-main('my-token-init') && ('x' ~~ &lexical-tok), 'INIT in a lexical token';
 is @log.grep('my-token-init').elems, 1, '... once';
+
+grammar G12812 {
+    token TOP { a { if 1 { INIT @log.push('nested-init') }; for 1 { CHECK @log.push('nested-check'); } } b }
+}
+ok @log.first('nested-init') && @log.first('nested-check'), 'INIT/CHECK nested in a token code block run without a match';
+G12812.parse('ab'); G12812.parse('ab');
+is @log.grep('nested-init').elems, 1, '... the nested INIT ran once, however often it matches';
+is @log.grep('nested-check').elems, 1, '... and so did the nested CHECK';
+ok G12812.parse('ab'), '... and the grammar still matches';

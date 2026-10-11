@@ -5,9 +5,10 @@
 //! pattern *text* instead, and that text still spells the phaser: the lift has
 //! to take the statement out of the text as well. The tree knows which
 //! statements it lifted but not where they sit in the text, so the text is
-//! scanned for the top-level `INIT`/`CHECK` statements of each code block and
-//! each is replaced by the lifted phaser's slot. A declaration the scan cannot
-//! account for statement by statement keeps its phasers where they are.
+//! scanned for the `INIT`/`CHECK` statements of each code block, nested blocks
+//! included, and each is replaced by the lifted phaser's slot. A declaration
+//! the scan cannot account for statement by statement keeps its phasers where
+//! they are.
 
 use super::lift::Lifter;
 use crate::ast::{Expr, Stmt};
@@ -86,18 +87,27 @@ struct CodeBlocks {
 impl VisitMut for CodeBlocks {
     fn visit_regex_node_mut(&mut self, node: &mut RegexNode) {
         if let RegexNode::CodeBlock { code, body } = node {
-            let slots = body
-                .iter()
-                .filter_map(|stmt| match stmt {
-                    Stmt::Expr(Expr::Var(name)) if name.starts_with(SLOT_PREFIX) => {
-                        Some(name.clone())
-                    }
-                    _ => None,
-                })
-                .collect();
+            let mut collector = SlotCollector::default();
+            collector.visit_stmts_mut(body);
+            let slots = collector.slots;
             self.blocks.push((code.clone(), slots));
         } else {
             crate::ast_visit::walk_regex_node_mut(self, node);
+        }
+    }
+}
+
+/// The slots of the lifted phasers a statement list reads, in source order.
+#[derive(Default)]
+struct SlotCollector {
+    slots: Vec<String>,
+}
+
+impl VisitMut for SlotCollector {
+    fn visit_expr_mut(&mut self, expr: &mut Expr) {
+        match expr {
+            Expr::Var(name) if name.starts_with(SLOT_PREFIX) => self.slots.push(name.clone()),
+            _ => crate::ast_visit::walk_expr_mut(self, expr),
         }
     }
 }
@@ -180,15 +190,16 @@ impl VisitMut for CodeRewriter<'_> {
     }
 }
 
-/// Byte spans of the `INIT`/`CHECK` statements at the top level of a code
-/// block's text: the keyword and the block or expression it applies to, without
-/// the `;` that ends it.
+/// Byte spans of the `INIT`/`CHECK` statements of a code block's text, in
+/// source order, at any depth of nested blocks: the keyword and the block or
+/// expression it applies to, without the `;` that ends it.
 // Cost: O(n), n = length of `code`.
 fn phaser_statement_spans(code: &str) -> Vec<std::ops::Range<usize>> {
     let bytes = code.as_bytes();
     let mut spans = Vec::new();
     let mut at_start = true;
-    let mut depth = 0usize;
+    // The open brackets: a statement starts only directly inside a block.
+    let mut open: Vec<u8> = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
         let b = bytes[i];
@@ -197,18 +208,19 @@ fn phaser_statement_spans(code: &str) -> Vec<std::ops::Range<usize>> {
             i = next;
             continue;
         }
+        let in_block = open.last().is_none_or(|&top| top == b'{');
         match b {
             b' ' | b'\t' | b'\r' | b'\n' => {}
             b'(' | b'[' | b'{' => {
-                depth += 1;
-                at_start = false;
+                open.push(b);
+                at_start = b == b'{';
             }
             b')' | b']' | b'}' => {
-                depth = depth.saturating_sub(1);
-                at_start = depth == 0 && b == b'}';
+                open.pop();
+                at_start = b == b'}' && open.last().is_none_or(|&top| top == b'{');
             }
-            b';' if depth == 0 => at_start = true,
-            _ if depth == 0 && at_start => {
+            b';' => at_start = in_block,
+            _ if in_block && at_start => {
                 if let Some(keyword) = phaser_keyword(code, i) {
                     let end = statement_end(code, i + keyword.len());
                     spans.push(i..end);
@@ -253,8 +265,10 @@ fn statement_end(code: &str, from: usize) -> usize {
         }
         match bytes[i] {
             b'(' | b'[' | b'{' => depth += 1,
+            // The bracket that closes the enclosing block ends the statement.
+            b')' | b']' | b'}' if depth == 0 => break,
             b')' | b']' | b'}' => {
-                depth = depth.saturating_sub(1);
+                depth -= 1;
                 if block && depth == 0 {
                     return i + 1;
                 }
@@ -313,8 +327,9 @@ mod tests {
     }
 
     #[test]
-    fn ignores_nested_and_quoted_phasers() {
-        assert!(spelled("if $x { INIT 1 }").is_empty());
+    fn finds_nested_and_ignores_quoted_phasers() {
+        assert_eq!(spelled("if $x { INIT 1 }"), ["INIT 1"]);
+        assert!(spelled("foo(INIT 1)").is_empty());
         assert!(spelled("say 'INIT'; # INIT x").is_empty());
         assert!(spelled("INITIALIZE(); $INIT").is_empty());
     }

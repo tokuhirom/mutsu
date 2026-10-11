@@ -16,6 +16,6 @@ code blocks in the pattern text so each reads the lifted phaser's slot
 (`src/runtime/phasers/decl_regex.rs`). A declaration whose phasers it cannot account for
 statement by statement keeps them where they were.
 
-Not covered yet: a phaser nested in a statement of the code block (`{ if $x { INIT ... } }`)
-and `BEGIN` in a declaration body.
+A phaser nested in a statement of the code block (`{ if $x { INIT ... } }`) is lifted too
+(#12812). Not covered yet: `BEGIN` in a declaration body.
 (#12748)
