@@ -640,9 +640,17 @@ impl Interpreter {
         {
             return Some(stored);
         }
-        if matches!(method_name, "ASSIGN-KEY" | "DELETE-KEY")
-            && matches!(inner.view(), ValueView::Hash(..))
+        if matches!(
+            method_name,
+            "ASSIGN-KEY" | "STORE_AT_KEY" | "BIND-KEY" | "DELETE-KEY"
+        ) && matches!(inner.view(), ValueView::Hash(..))
         {
+            // `STORE_AT_KEY` and `BIND-KEY` store the value, as `ASSIGN-KEY` does.
+            let method_name = if matches!(method_name, "STORE_AT_KEY" | "BIND-KEY") {
+                "ASSIGN-KEY"
+            } else {
+                method_name
+            };
             // The `Mixin`'s inner value IS the hash's real backing storage, so
             // the `Hash` row writes through its shared node (ADR-11276 §9.37).
             let mut storage = inner.as_ref().clone();
