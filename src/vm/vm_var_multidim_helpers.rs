@@ -181,6 +181,27 @@ impl Interpreter {
         indices: &[Value],
         val: Value,
     ) -> Result<(), RuntimeError> {
+        Self::array_multidim_store(target, indices, val, false)
+    }
+
+    /// Bind to a shaped array leaf, replacing its slot cell instead of storing
+    /// through the cell that currently occupies it.
+    // Cost: O(d), d = dimensions.
+    pub(super) fn bind_array_multidim(
+        target: &mut Value,
+        indices: &[Value],
+        val: Value,
+    ) -> Result<(), RuntimeError> {
+        Self::array_multidim_store(target, indices, val, true)
+    }
+
+    // Cost: O(d), d = dimensions.
+    fn array_multidim_store(
+        target: &mut Value,
+        indices: &[Value],
+        val: Value,
+        bind_leaf: bool,
+    ) -> Result<(), RuntimeError> {
         // Write *through* a `ContainerRef` level (Track B element cell or a
         // `:=`-bound element): mutate the cell's inner value under its lock so
         // every snapshot holder observes the write, instead of failing the
@@ -190,7 +211,7 @@ impl Interpreter {
             let cell = c.clone();
             let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
             let mut inner = guard.clone();
-            Self::assign_array_multidim(&mut inner, indices, val)?;
+            Self::array_multidim_store(&mut inner, indices, val, bind_leaf)?;
             *guard = inner;
             return Ok(());
         }
@@ -219,7 +240,11 @@ impl Interpreter {
             // Container identity (§3): write through a shared backing node.
             let arr = crate::value::gc_data_mut(items);
             if indices.len() == 1 {
-                Value::assign_element_slot(&mut arr[i], val);
+                if bind_leaf {
+                    arr[i] = val;
+                } else {
+                    Value::assign_element_slot(&mut arr[i], val);
+                }
                 // Record the write in the embedded `initialized` set so
                 // `ArrayData::hole_at` (ADR-0049 §1.6/§4 slice 5) can tell an
                 // explicitly-assigned `Any`/type-object value apart from a
@@ -228,7 +253,7 @@ impl Interpreter {
                 // write path bypasses entirely.
                 arr.mark_initialized(i);
             } else {
-                Self::assign_array_multidim(&mut arr[i], &indices[1..], val)?;
+                Self::array_multidim_store(&mut arr[i], &indices[1..], val, bind_leaf)?;
             }
             if let Some(shape) = shape.as_deref() {
                 crate::runtime::utils::mark_shaped_array_items(items, Some(shape));

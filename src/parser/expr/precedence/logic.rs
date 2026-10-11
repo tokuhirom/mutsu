@@ -345,6 +345,26 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                         },
                     ));
                 }
+                Expr::MultiDimIndex {
+                    target,
+                    dimensions,
+                    is_positional,
+                } if matches!(
+                    target.as_ref(),
+                    Expr::ArrayVar(_) | Expr::HashVar(_) | Expr::Var(_) | Expr::PseudoStash(_)
+                ) =>
+                {
+                    return Ok((
+                        r2,
+                        crate::parser::index_bind_expr(
+                            target,
+                            Box::new(Expr::ArrayLiteral(dimensions)),
+                            is_positional,
+                            crate::ast::IndexSpelling::SemicolonDimensions,
+                            rhs,
+                        ),
+                    ));
+                }
                 // Indexed element bind: `%h<k> := v`, `@a[i] := v`. Desugar to an
                 // IndexAssign whose value carries the `__mutsu_bind_index_value`
                 // marker so the VM takes *bind* (not assign) semantics — matching

@@ -3,6 +3,49 @@ use crate::value::ValueMap;
 use crate::vm::vm_comparison_ops::expand_range_to_list;
 
 impl Interpreter {
+    /// Bind one leaf of a shaped array while retaining its fixed dimensions.
+    /// Returns `false` for an ordinary nested array, whose deep lvalue path
+    /// owns the write.
+    // Cost: O(d), d = dimensions in the shaped array.
+    pub(super) fn bind_shaped_multidim_leaf(
+        &mut self,
+        code: &CompiledCode,
+        var_name: &str,
+        dims: &[Value],
+        source: &Value,
+        bind_cell: Option<&crate::gc::Gc<crate::value::ContainerCell>>,
+    ) -> Result<bool, RuntimeError> {
+        let target = self.env().get(var_name).cloned().unwrap_or(Value::NIL);
+        if crate::runtime::utils::shaped_array_shape(&target.deref_container()).is_none() {
+            return Ok(false);
+        }
+        let indices = self.resolve_multidim_indices_for_assign(&target, dims)?;
+        let encoded = indices
+            .iter()
+            .map(Value::to_string_value)
+            .collect::<Vec<_>>()
+            .join(";");
+        if self.is_bound_index(var_name, &encoded) {
+            return Err(RuntimeError::assignment_ro(None));
+        }
+        if crate::value::readonly_cells_possible()
+            && let Some(bound) = Self::multidim_readonly_slot(&target, &indices)
+        {
+            return Err(RuntimeError::assignment_ro_typename(
+                crate::runtime::utils::value_type_name(&bound),
+                &bound.to_string_value(),
+            ));
+        }
+        let value = bind_cell
+            .map(|cell| Value::container_ref(cell.clone()))
+            .unwrap_or_else(|| Value::bound_element(source.clone()));
+        self.mutate_named_container(code, var_name, false, move |_slf, container| {
+            Self::bind_array_multidim(container, &indices, value)
+        })?;
+        self.stack.push(source.clone());
+        Ok(true)
+    }
+
     /// Multi-dimensional indexing: @a[$x;$y;$z]
     /// Stack: `[target, dim0, dim1, ..., dimN-1] → [result]`
     pub(super) fn exec_multi_dim_index_op(

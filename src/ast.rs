@@ -1030,6 +1030,11 @@ pub(crate) enum IndexSpelling {
     Subscript,
     /// `<...>`: a literal word-list key.
     Angle,
+    /// Semicolon-separated dimensions on an indexed bind. The parser normally
+    /// represents these as `MultiDimIndex`; the bind execution path flattens
+    /// dimensions into `IndexAssign.index`, so retain the separator here for
+    /// RakuAST conversion. Used only by `IndexAssign`.
+    SemicolonDimensions,
 }
 
 /// Which contextualizer an [`Expr::Contextualizer`] spells.
