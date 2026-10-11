@@ -12,3 +12,7 @@ assignment, so the trait role's `STORE` still receives the initializer with
 `:INITIALIZE`.
 
 Closes #10667.
+
+A scalar bind (`my $x := Proxy.new(...)`) in a unit that has a BEGIN-time effect
+after it was split into a static half plus an assignment, which FETCHed the
+Proxy into a plain Scalar. It stays whole and binds now.

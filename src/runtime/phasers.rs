@@ -606,6 +606,13 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     if custom_traits.iter().any(|(t, _)| !t.starts_with("__")) {
         return None;
     }
+    // A scalar bind (`my $x := EXPR`) is not an initializer to assign: the
+    // whole declaration stays at its position and binds, or a Proxy on the
+    // right would be FETCHed into a plain Scalar. The caller declares its
+    // static half separately.
+    if custom_traits.iter().any(|(t, _)| t == "__scalar_bind") {
+        return None;
+    }
     // A declaration a lifted BEGIN gave a static cell (ADR-0134 slice 2) is
     // already its static half: its initializer reads the static value.
     if custom_traits.iter().any(|(t, _)| t == BEGIN_STATIC_TRAIT) {
