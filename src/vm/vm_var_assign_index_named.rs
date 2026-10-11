@@ -1147,6 +1147,25 @@ impl Interpreter {
         } else {
             val
         };
+        // `c[0] = x` on a Capture whose element is the caller's container (a
+        // `|c` parameter fed an `is rw` argument, `\($a)`): write through the
+        // cell and keep the Capture, rather than falling through to the
+        // generic store that rebuilds it as a plain Array and severs the
+        // caller's variable (#12521).
+        if is_positional
+            && !bind_mode
+            && let Some(target) = self.env().get(&var_name).map(Value::deref_container)
+            && let ValueView::Capture { positional, .. } = target.view()
+            && let idx_i = crate::runtime::utils::to_int(&idx)
+            && idx_i >= 0
+            && let Some(elem) = positional.get(idx_i as usize)
+            && elem.is_container_ref()
+        {
+            let mut slot = elem.clone();
+            Value::assign_element_slot(&mut slot, val.clone());
+            self.stack.push(val);
+            return Ok(());
+        }
         // `$vec[1] = x` / `$vec[1]--` on an `is Array` subclass instance held in
         // a scalar: write into the backing `__mutsu_array_storage` element in
         // place, instead of the associative path treating the instance as a hash
