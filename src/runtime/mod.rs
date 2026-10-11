@@ -516,13 +516,18 @@ impl std::hash::Hash for WheneverBodyKey {
 pub(crate) enum CarrierCacheKey {
     Site(Arc<Vec<crate::ast::Stmt>>),
     Id(u64),
+    /// A registered `token`/`rule` declaration, named by its
+    /// `FunctionDef::decl_order` (unique per registration, never 0 for a
+    /// declared candidate). Its own namespace: it must not collide with an
+    /// [`Id`](Self::Id) from another counter.
+    Decl(u64),
 }
 
 impl PartialEq for CarrierCacheKey {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Site(a), Self::Site(b)) => Arc::ptr_eq(a, b),
-            (Self::Id(a), Self::Id(b)) => a == b,
+            (Self::Id(a), Self::Id(b)) | (Self::Decl(a), Self::Decl(b)) => a == b,
             _ => false,
         }
     }
@@ -539,6 +544,10 @@ impl std::hash::Hash for CarrierCacheKey {
             }
             Self::Id(a) => {
                 1u8.hash(state);
+                a.hash(state);
+            }
+            Self::Decl(a) => {
+                2u8.hash(state);
                 a.hash(state);
             }
         }

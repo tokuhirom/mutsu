@@ -371,7 +371,7 @@ impl Interpreter {
         };
         self.record_profile_routine_frame(&frame);
         self.routine_stack.push(frame);
-        let result = self.eval_block_value(&def.body);
+        let result = self.eval_decl_body_value(def);
         self.routine_stack.pop();
         // Subrule-call arguments are evaluated below, in the caller's scope; an
         // assignment in one (`<x($c++)>`) is logged in `pending_local_updates`

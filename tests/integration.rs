@@ -59,4 +59,5 @@ mod routine_resolution_memo;
 mod stash_bind_key;
 mod statement_call_resolves_once;
 mod static_operator_intern_budget;
+mod token_body_compile_cache;
 mod unrelated_bind_keeps_local_read_fast_path;

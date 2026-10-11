@@ -403,6 +403,29 @@ impl Interpreter {
         )
     }
 
+    /// [`Interpreter::eval_block_value`] for the body of a registered
+    /// `token`/`rule` declaration `def`: its compiled chunk is reused across
+    /// evaluations, keyed by the registration (`decl_order`). A def built
+    /// outside a registration path (`decl_order == 0`) is compiled afresh.
+    // Cost: O(1) on a hit (one hash probe and a context-key compare);
+    // O(b) on a miss, b = the body's size.
+    pub(crate) fn eval_decl_body_value(
+        &mut self,
+        def: &crate::ast::FunctionDef,
+    ) -> Result<Value, RuntimeError> {
+        if def.decl_order == 0 {
+            return self.eval_block_value(&def.body);
+        }
+        self.eval_block_value_inner(
+            &def.body,
+            CarrierBody::Unowned,
+            false,
+            Some(CarrierCacheKey::Decl(def.decl_order)),
+            None,
+            None,
+        )
+    }
+
     /// [`Interpreter::eval_block_value_cached`], additionally reporting the
     /// block's compile-time `free_var_writes` — the free variables the body
     /// *assigns* — into `free_var_writes_out`.
