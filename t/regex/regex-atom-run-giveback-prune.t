@@ -4,7 +4,7 @@ use Test;
 # the engine consumes the run in a tight ASCII loop and skips the give-backs
 # that the following atom provably rejects. None of that changes a result.
 
-plan 14;
+plan 24;
 
 is ("ab 1" ~~ /\w+ \s \d/).Str, "ab 1", 'greedy run then disjoint atom';
 nok ("ab  1" ~~ /\w+ \s \d/).defined, 'disjoint atom fails after the whole run';
@@ -20,5 +20,18 @@ is ("e\x[301]x y" ~~ /\w+ \s/).Str, "e\x[301]x ", 'combining mark is not split';
 is ("\x[e9]\x[e9]1" ~~ /\w+ \d/).Str, "\x[e9]\x[e9]1", 'non-ASCII run';
 is ("abc" ~~ /\w+ <[c]>/).Str, "abc", 'next atom accepts the last char of the run';
 is ("ab" ~~ /\w+ \s?/).Str, "ab", 'optional next atom is not pruned';
+
+
+# A failed start's leading `X+` run: later starts inside that run are skipped.
+is ("aaa1 bb2 3" ~~ /\w+ \s \d/).Str, "bb2 3", 'scan skips starts inside a failed run';
+nok ("abc abd" ~~ /\w+ \s \d/).defined, 'no match anywhere';
+is ("ab-cd 5" ~~ /\w+ \s \d/).Str, "cd 5", 'match starts after a failed run';
+is ("xxxy" ~~ /x+ y/).from, 0, 'leading run match from';
+is ("zzxxy" ~~ /x+ y/).from, 2, 'first start after the failed prefix';
+is ("aab aab" ~~ /a+ b$/).from, 4, 'AssertEnd tail';
+is ("aaa" ~~ /a+ a**2/).Str, "aaa", 'counted tail still gives back';
+is ("e\x[301]e\x[301]- e\x[301] 1" ~~ /\w+ \s \d/).Str, "e\x[301] 1", 'marks inside the run';
+is ("ab12 cd34 ef" ~~ /\d+ \s <[a..z]>/).Str, "12 c", 'digits run then space then letter';
+is ("1 2 3" ~~ /\d+ \s \d+/).Str, "1 2", 'unbounded tail run';
 
 done-testing;

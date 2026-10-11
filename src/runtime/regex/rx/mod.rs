@@ -37,6 +37,7 @@ mod rx_entry;
 mod rx_frame;
 mod rx_levels;
 mod rx_ltm;
+mod rx_scan;
 mod rx_scope;
 mod rx_vm;
 
