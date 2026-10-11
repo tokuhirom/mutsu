@@ -1,8 +1,6 @@
-use super::multi_rank::RankProfile;
+use super::multi_rank::{self, MultiRank, OptionalRule, prune_to_maximal};
 use super::*;
-
-/// (literals, distance, narrowness, profile) of one matched method candidate.
-type MethodRank = (usize, usize, (usize, usize, usize, usize), RankProfile);
+use std::cmp::Ordering;
 
 impl Interpreter {
     /// The parameters a method candidate is ranked on: every one but the
@@ -72,79 +70,188 @@ impl Interpreter {
         rank
     }
 
-    /// Apply rakudo's `is_narrower` partial order to the matched candidates of
-    /// one owner: drop every candidate another one out-narrows and, when what
-    /// is left is split by INCOMPARABLE candidates (one wins a parameter by a
-    /// refinement -- `where`, literal, subset -- the other by a nominal type),
-    /// keep only the first declared, which is what rakudo's tier walk runs.
-    /// The method half of `prune_incomparable_matches`; both rest on
-    /// [`RankProfile::incomparable`] ([#11175](https://github.com/tokuhirom/mutsu/issues/11175)).
-    /// Candidates of different owners, or sets with no incomparable pair, are
-    /// left to the tie-breaks in `pick_method_winner`.
-    // Cost: O(m^2 * p), m = matched candidates, p = positional parameters.
-    pub(super) fn prune_incomparable_method_matches(
+    /// The [`MultiRank`] of one matched method candidate: the literal count as
+    /// its nominal tier, the type distance and profile of
+    /// `method_candidate_type_distance_profile`, the refinement tier of
+    /// [`Self::method_candidate_narrowness`] at `shared_positions`, and
+    /// `decl_order` (its index in the MRO-ordered match list).
+    // Cost: O(p) plus one hierarchy walk per positional parameter, p = parameters.
+    pub(super) fn method_rank_key(
         &self,
         args: &[Value],
-        all_matches: &mut Vec<(Symbol, MethodDef)>,
-    ) {
-        if all_matches.len() < 2 || all_matches.iter().any(|(o, _)| *o != all_matches[0].0) {
-            return;
-        }
-        let related = |a: Symbol, b: Symbol| self.nominal_types_related(a, b);
-        // (literals, distance, narrowness) -- the order `pick_method_winner`
-        // applies its filters in; the first is higher-is-narrower.
-        let keys: Vec<MethodRank> = all_matches
+        def: &MethodDef,
+        shared_positions: usize,
+        decl_order: usize,
+    ) -> MultiRank {
+        let params = Self::method_rank_params(def);
+        // The literal-parameter count leads the nominal tier, ahead of type
+        // distance, exactly as in multi-SUB dispatch (`candidate_rank_key`): a
+        // literal is nominally as narrow as the argument it equals, so
+        // `multi method m($f, 'khz')` beats `multi method m(Numeric $n, Str:D
+        // $u)` for `m(0.1, 'khz')` although its first parameter is untyped
+        // (CSS::Writer's unit conversion).
+        let literals = params
             .iter()
-            .map(|(_, def)| {
-                let literals = def
+            .filter(|p| !p.named && p.literal_value.is_some())
+            .count();
+        let (distance, profile) = self.method_candidate_type_distance_profile(args, def);
+        let n = self.method_candidate_narrowness(def, shared_positions);
+        MultiRank {
+            nominal: (literals, 0),
+            distance,
+            refinement: [n.0, n.1, n.2, n.3],
+            non_slurpy: !multi_rank::has_slurpy_positional(&params),
+            bind_check: multi_rank::needs_named_bind_check(&params),
+            optional: multi_rank::optional_positional_count(&params, OptionalRule::Method),
+            decl_order: decl_order as u64,
+            profile,
+        }
+    }
+
+    /// Pick the winning candidate from an MRO walk's collected multi-method
+    /// matches, raising `X::Multi::Ambiguous` (`self.dispatch.dispatch_ambiguous`)
+    /// when nothing breaks the tie. Extracted from
+    /// `resolve_method_with_owner_impl` (ADR-0019 E4a) so a candidate list
+    /// collected a different way — e.g. `resolution_sequence::resolve_sequence`'s
+    /// TypeId-chain walk — is ranked with the exact same rules. `mro` is
+    /// consulted only for [`Self::method_owner_tiebreak`].
+    ///
+    /// The candidates are ranked by [`MultiRank`], the relation multi-sub
+    /// dispatch uses: `is default` first (among candidates tied on literal
+    /// count and type distance), then rakudo's `is_narrower` partial order
+    /// ([`prune_to_maximal`]), then the tier order, and finally the owner
+    /// tie-break among the candidates still tied.
+    // Cost: O(m^2 * h + m * p), m = matches, h = one nominal-type relation
+    // walk, p = parameters per candidate.
+    pub(crate) fn pick_method_winner(
+        &mut self,
+        mro: &[Symbol],
+        arg_values: &[Value],
+        invocant: Option<&Value>,
+        mut all_matches: Vec<(Symbol, MethodDef)>,
+    ) -> Option<(Symbol, MethodDef)> {
+        if all_matches.len() <= 1 {
+            return all_matches.into_iter().next();
+        }
+        let mut ranks: Vec<MultiRank> = all_matches
+            .iter()
+            .enumerate()
+            .map(|(i, (_, def))| self.method_rank_key(arg_values, def, usize::MAX, i))
+            .collect();
+        // The candidates tied on the leading tiers (literal count, type
+        // distance), in match-list order.
+        let lead = |r: &MultiRank| (std::cmp::Reverse(r.nominal), r.distance);
+        let best_lead = ranks.iter().map(lead).min()?;
+        let lead_tied: Vec<usize> = (0..ranks.len())
+            .filter(|&i| lead(&ranks[i]) == best_lead)
+            .collect();
+        // Rank refinements only at positions shared by all competing owners
+        // (see `method_candidate_narrowness`).
+        if lead_tied
+            .iter()
+            .any(|&i| all_matches[i].0 != all_matches[lead_tied[0]].0)
+        {
+            let shared = lead_tied
+                .iter()
+                .map(|&i| Self::method_specificity_positions(&all_matches[i].1))
+                .min()
+                .unwrap_or(0);
+            for (rank, (_, def)) in ranks.iter_mut().zip(all_matches.iter()) {
+                let n = self.method_candidate_narrowness(def, shared);
+                rank.refinement = [n.0, n.1, n.2, n.3];
+            }
+        }
+        // `is default` breaks a tie on the leading tiers outright.
+        if lead_tied.len() > 1
+            && let Some(&i) = lead_tied.iter().find(|&&i| all_matches[i].1.is_default)
+        {
+            return Some(all_matches.swap_remove(i));
+        }
+        let mut ranked: Vec<(MultiRank, usize)> = ranks.into_iter().zip(0..).collect();
+        // TODO: drop this gate (#12468 step 4).
+        if all_matches.iter().all(|(o, _)| *o == all_matches[0].0) {
+            ranked = prune_to_maximal(ranked, &|x, y| self.nominal_types_related(x, y));
+        }
+        ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let best = ranked[0].0;
+        let tied: Vec<usize> = ranked
+            .iter()
+            .take_while(|(r, _)| r.tier_cmp(&best) == Ordering::Equal)
+            .map(|(_, i)| *i)
+            .collect();
+        let (winner, still_tied) = Self::method_owner_tiebreak(&tied, &all_matches, mro);
+        // Ambiguous dispatch: two or more candidates remain equally specific
+        // (same tiers and the same most-derived owner class) and none is
+        // marked `is default`. Raku raises X::Multi::Ambiguous here.
+        // Named parameters never make a dispatch ambiguous (rakudo): tied
+        // candidates that all declare explicit named params (the bind-check
+        // tier, which every tied candidate shares) resolve by declaration
+        // order (`(Any :$file!)` vs `(Str :$file!)` picks the first).
+        // Only a resolution that HAS the invocant can legitimately declare an
+        // ambiguity: without it, `method_args_match_for_invocant` skips every
+        // invocant type/definedness constraint, so a `:U:`/`:D:` multi pair
+        // (or any invocant-narrowed candidates) all "match" and tie spuriously.
+        // Such invocant-less resolutions come from introspection/speculative
+        // callers (`has_user_method`, `Bool`/`Str` existence probes) that never
+        // consume `dispatch_ambiguous`; leaving the flag set here instead leaks
+        // a false ambiguity into the NEXT real dispatch (a defined-instance
+        // `.gist`/`.Str` call poisoning a following `self.pairs`). The real
+        // dispatch always re-resolves WITH the invocant, so deferring the
+        // decision to it loses nothing.
+        // A bind-check winner (a `where`, a subset, a literal or a
+        // destructuring sub-signature) is never ambiguous either: rakudo
+        // trial-binds tied candidates and the first declared that binds
+        // wins (#11027), as the sub dispatch's
+        // `candidate_uses_order_sensitive_dispatch` does.
+        if still_tied > 1
+            && !best.bind_check
+            && invocant.is_some()
+            && !self.params_use_order_sensitive_dispatch(
+                all_matches[winner]
+                    .1
                     .param_defs
                     .iter()
-                    .filter(|p| !p.is_invocant && !p.named && p.literal_value.is_some())
-                    .count();
-                let (dist, profile) = self.method_candidate_type_distance_profile(args, def);
-                (
-                    literals,
-                    dist,
-                    self.method_candidate_narrowness(def, usize::MAX),
-                    profile,
-                )
-            })
-            .collect();
-        let n = keys.len();
-        let incomparable = |i: usize, j: usize| keys[i].3.incomparable(&keys[j].3, &related);
-        if !(0..n).any(|i| (i + 1..n).any(|j| incomparable(i, j))) {
-            return;
+                    .filter(|p| !p.is_invocant),
+            )
+        {
+            self.dispatch.dispatch_ambiguous = true;
         }
-        let narrower = |o: usize, k: usize| {
-            use std::cmp::Ordering::*;
-            if incomparable(o, k) {
-                return false;
-            }
-            keys[k]
-                .0
-                .cmp(&keys[o].0)
-                .then(keys[o].1.cmp(&keys[k].1))
-                .then(keys[k].2.cmp(&keys[o].2))
-                == Less
-        };
-        let maximal: Vec<usize> = (0..n)
-            .filter(|&k| !(0..n).any(|o| o != k && narrower(o, k)))
+        Some(all_matches.swap_remove(winner))
+    }
+
+    /// Break a tie between equally narrow method candidates (`tied`, indices
+    /// into `matches` in declaration order) by their owners: a `multi method`
+    /// defined on the receiver's own class is more specific than one
+    /// inherited from an ancestor, so the most-derived owner (earliest in
+    /// `mro`) wins; then a candidate the class declares itself outranks an
+    /// equally narrow one composed into it from a role (rakudo: the class's
+    /// own `multi method new(A:U: :$raw-error)` beats the role's
+    /// `new(::?CLASS: :$raw-error = False, *%in)`), whatever order the
+    /// registry happened to push them in; then the first declared. Returns
+    /// the winner and how many candidates were still tied with it before
+    /// declaration order, for the ambiguity check.
+    // Cost: O(t * r), t = tied candidates, r = MRO length.
+    fn method_owner_tiebreak(
+        tied: &[usize],
+        matches: &[(Symbol, MethodDef)],
+        mro: &[Symbol],
+    ) -> (usize, usize) {
+        let mro_index =
+            |owner: Symbol| mro.iter().position(|cn| *cn == owner).unwrap_or(usize::MAX);
+        let best_mro = tied
+            .iter()
+            .map(|&i| mro_index(matches[i].0))
+            .min()
+            .unwrap_or(usize::MAX);
+        let mut narrowed: Vec<usize> = tied
+            .iter()
+            .copied()
+            .filter(|&i| mro_index(matches[i].0) == best_mro)
             .collect();
-        let same_rank = |i: usize, j: usize| {
-            (keys[i].0, keys[i].1, keys[i].2) == (keys[j].0, keys[j].1, keys[j].2)
-        };
-        let keep: Vec<usize> = if maximal.iter().all(|&i| same_rank(i, maximal[0])) {
-            maximal
-        } else {
-            // Incomparable survivors: declaration order decides.
-            maximal.into_iter().take(1).collect()
-        };
-        let mut idx = 0;
-        all_matches.retain(|_| {
-            let kept = keep.contains(&idx);
-            idx += 1;
-            kept
-        });
+        if narrowed.iter().any(|&i| matches[i].1.role_origin.is_none()) {
+            narrowed.retain(|&i| matches[i].1.role_origin.is_none());
+        }
+        (narrowed[0], narrowed.len())
     }
 
     /// The nominal distance of an argument from the implicit constraint of an
