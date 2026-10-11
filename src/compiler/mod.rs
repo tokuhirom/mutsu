@@ -1132,6 +1132,7 @@ mod mixin_rhs;
 mod native_str_coercion;
 mod nqp_atomic_forms;
 mod nqp_cond_forms;
+mod nqp_lexical_forms;
 mod nqp_container_test;
 pub(crate) mod nqp_forms;
 mod nqp_object_forms;
@@ -2907,9 +2908,27 @@ impl Compiler {
     }
 
     /// Emit a read of `bare` via `OUTERS::` ("Symbols in any outer lexical scope").
-    fn emit_outers_var_access(&mut self, bare: String) {
+    pub(super) fn emit_outers_var_access(&mut self, bare: String) {
+        // The nearest enclosing scope that declares the name is an `OUTER::`
+        // at that depth, so a binding of an enclosing frame that this frame
+        // shadows is read through the same capture `OUTER::` uses.
+        if let Some(depth) = self.outers_declaring_depth(&bare)
+            && self.try_emit_outer_capture_read(&bare, depth)
+        {
+            return;
+        }
         let res = lex_scope::resolve_outers(&self.full_scope_chain(), &self.local_map, &bare);
         self.emit_outer_resolution(bare, res);
+    }
+
+    /// How many scopes out the nearest scope enclosing the current one that
+    /// declares `bare` sits, or `None` when no enclosing scope known to this
+    /// compilation declares it.
+    // Cost: O(s), s = scopes in the chain.
+    pub(super) fn outers_declaring_depth(&self, bare: &str) -> Option<usize> {
+        let chain = self.full_scope_chain();
+        let n = chain.len();
+        (1..n).find(|&depth| chain[n - 1 - depth].contains_key(bare))
     }
 
     /// Emit a read of `bare` via `UNIT::` (the compilation unit's outermost

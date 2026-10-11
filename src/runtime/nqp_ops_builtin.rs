@@ -34,6 +34,9 @@ impl Interpreter {
         if let Some(result) = self.call_nqp_interpreter_op(op, args) {
             return result;
         }
+        if let Some(result) = self.call_nqp_op_lexical(op, args) {
+            return result;
+        }
         if let Some(result) = self.call_nqp_op(op, args) {
             return result;
         }
@@ -76,6 +79,7 @@ impl Interpreter {
             NqpOpTable::Decoder => self.call_nqp_op_decoder(op, args),
             NqpOpTable::Capture => self.call_nqp_op_capture(op, args),
             NqpOpTable::Sc => self.call_nqp_op_sc(op, args),
+            NqpOpTable::Lexical => self.call_nqp_op_lexical(op, args),
         };
         match claimed {
             Some(result) => result,
@@ -270,62 +274,6 @@ impl Interpreter {
                         "No such dynamic variable: {name}"
                     ))),
                 }
-            }
-            // nqp::getlex($name) / getlex_{i,n,s}: read a lexical of the
-            // running scope by its sigiled name, through the same by-name
-            // chokepoint a compiled read of a captured lexical uses, so the
-            // answer is the cell closures share. The `_i`/`_n`/`_s` forms
-            // coerce like `getattr_*`.
-            // Cost: O(m + s), m = chars of $name, s = scope-chain depth walked.
-            "getlex" | "getlex_i" | "getlex_n" | "getlex_s" => {
-                let name = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let key = Self::nqp_lex_key(&name);
-                match self.get_env_with_main_alias(key) {
-                    Some(v) => Ok(super::nqp_attr::NqpAttrConv::of_op(op).read(Some(v))),
-                    None => Err(RuntimeError::new(format!("Lexical '{name}' not found"))),
-                }
-            }
-            // nqp::getlexrel($ctx, $name) / getlexreldyn / getlexrelcaller: a
-            // lexical looked up in a captured context; the last also walks the
-            // context's callers. A miss is an error, as in Rakudo.
-            // Cost: O(m + c), m = chars of $name, c = caller contexts walked.
-            "getlexrel" | "getlexreldyn" | "getlexrelcaller" => {
-                let name = args.get(1).map(|v| v.to_string_value()).unwrap_or_default();
-                match self.nqp_ctx_lookup(args.first(), &name, op == "getlexrelcaller") {
-                    Some(v) => Ok(v),
-                    None => Err(RuntimeError::new(format!(
-                        "No lexical found with name '{name}'"
-                    ))),
-                }
-            }
-            // nqp::curlexpad(): the lexpad of the current frame, the same hash
-            // `nqp::ctxlexpad(nqp::ctx())` answers.
-            // Cost: O(v), v = variables visible in the current frame.
-            "curlexpad" => {
-                let ctx = self.nqp_ctx();
-                Ok(self.nqp_ctxlexpad(&[ctx]))
-            }
-            // nqp::bindlex($name, $value) / bindlex_{i,n,s}: write the lexical
-            // in place; a captured lexical's shared cell sees the new value.
-            // Cost: O(m + s), m = chars of $name, s = scope-chain depth walked.
-            "bindlex" | "bindlex_i" | "bindlex_n" | "bindlex_s" => {
-                let name = args
-                    .first()
-                    .map(|v| v.to_string_value())
-                    .unwrap_or_default();
-                let key = Self::nqp_lex_key(&name);
-                if self.get_env_with_main_alias(key).is_none() {
-                    return Some(Err(RuntimeError::new(format!(
-                        "Lexical '{name}' not found"
-                    ))));
-                }
-                let raw = args.get(1).cloned().unwrap_or(Value::NIL);
-                let val = super::nqp_attr::NqpAttrConv::of_op(op).bind(raw);
-                self.set_env_with_main_alias(key, val.clone());
-                Ok(val)
             }
             // nqp::bindattr($obj, Type, '$!attr', value): write an attribute
             // cell directly, bypassing accessors (roast's Test::Compile uses it
@@ -583,13 +531,6 @@ impl Interpreter {
             _ => {}
         }
         Ok(())
-    }
-
-    /// The env key of a lexical spelled `$x` / `@a` / `%h` / `&f`: a scalar
-    /// is keyed without its sigil, the containers keep it.
-    // Cost: O(1).
-    fn nqp_lex_key(name: &str) -> &str {
-        name.strip_prefix('$').unwrap_or(name)
     }
 
     /// The bare attribute name of an nqp `'$!name'` operand. nqp always spells
