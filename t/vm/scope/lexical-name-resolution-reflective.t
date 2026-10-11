@@ -6,7 +6,7 @@ use Test;
 # Dynamic variables still resolve through the callers. Every expectation was
 # checked against rakudo.
 
-plan 22;
+plan 25;
 
 my $p = 'program';
 
@@ -100,5 +100,22 @@ is call-block({ my $bx = 'block'; sub read-bx { EVAL q[$bx] }; read-bx() }), 'bl
     'EVAL in a sub declared inside a block sees the block\'s lexical';
 is call-block({ my $by = 'block'; sub read-by { ::('$by') }; read-by() }), 'block',
     '::(\'$x\') in a sub declared inside a block sees the block\'s lexical';
+
+# --- every program-scope routine is linked (#12641) ------------------------
+
+class ShadowedType { method who { 'global' } }
+sub run-closure(&c) { c() }
+is call-block({
+    my class ShadowedType { method who { 'block' } }
+    run-closure({ ShadowedType.who })
+}), 'block', 'a closure called by a linked routine still sees its block\'s `my class`';
+
+sub closure-from-caller() { my $cv = 'caller'; run-closure({ (try EVAL q[$cv]) // 'not visible' }) }
+is closure-from-caller(), 'caller', 'a closure called by a linked routine still sees its own outer lexical';
+
+my $prog-g = 'program';
+sub read-prog-g() { $prog-g }
+sub shadow-prog-g() { my $prog-g = 'caller'; read-prog-g() }
+is shadow-prog-g(), 'program', 'a routine\'s free variable is the program-scope one, not its caller\'s';
 
 done-testing;

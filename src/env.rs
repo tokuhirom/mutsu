@@ -2392,6 +2392,11 @@ impl Env {
         // closure's body chains over it, and the outer capture is the enclosing
         // lexical scope of the inner one.
         let mut found = None;
+        // Only the frame the lookup starts in has a say in where its lexicals
+        // continue: its root is the first one the walk meets. A caller
+        // frame's static link describes the caller's scope, not this one's, so
+        // a closure called from a linked routine still walks on past it.
+        let mut origin_root_seen = false;
         loop {
             if let Some(v) = cur.inner.get(&key) {
                 return Some(v);
@@ -2413,12 +2418,15 @@ impl Env {
                     found = Some(v);
                 }
             }
-            if let Some(v) = cur.static_capture_hit(key) {
-                return Some(v);
-            }
-            if let Some(outer) = cur.static_skip(key) {
-                cur = outer;
-                continue;
+            if cur.frame_root && !origin_root_seen {
+                origin_root_seen = true;
+                if let Some(v) = cur.static_capture_hit(key) {
+                    return Some(v);
+                }
+                if let Some(outer) = cur.static_skip(key) {
+                    cur = outer;
+                    continue;
+                }
             }
             match &cur.parent {
                 Some(parent) => cur = parent,

@@ -162,6 +162,8 @@ impl Env {
         }
         let mut hidden: Vec<Symbol> = Vec::new();
         let mut target: Option<*const Env> = None;
+        // Only the first frame root's link applies, as in the lookup walk.
+        let mut origin_root_seen = false;
         let mut cur = self;
         loop {
             if target.is_some_and(|t| std::ptr::eq(t, cur)) {
@@ -172,6 +174,8 @@ impl Env {
                 if let Some(fb) = &cur.fallback {
                     hidden.extend(fb.iter().map(|(k, _)| *k).filter(|k| lexically_scoped(*k)));
                 }
+            } else if cur.frame_root && origin_root_seen {
+                // A caller frame's link: not this scope's.
             } else if cur.outer_is_unit
                 && let Some(parent) = cur.parent.as_deref()
             {
@@ -179,6 +183,9 @@ impl Env {
             } else if let Some(link) = cur.inner.static_link() {
                 let StaticLink::UnitOuter { target: seg, .. } = link;
                 target = Some(Arc::as_ptr(seg));
+            }
+            if cur.frame_root {
+                origin_root_seen = true;
             }
             match &cur.parent {
                 Some(parent) => cur = parent,
