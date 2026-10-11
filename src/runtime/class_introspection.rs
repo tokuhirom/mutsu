@@ -271,6 +271,17 @@ impl Interpreter {
         false
     }
 
+    /// Whether `class_name` is a class the program declared whose MRO has no
+    /// `Any` (`class C is Mu`): Rakudo's `Any`-level methods do not exist on
+    /// it. A builtin class (not registered with an MRO) is not one.
+    // Cost: O(d), d = MRO depth.
+    pub(crate) fn is_user_class_without_any(&self, class_name: &str) -> bool {
+        self.registry()
+            .classes
+            .get(class_name)
+            .is_some_and(|def| !def.mro.is_empty() && !def.mro.iter().any(|n| n.resolve() == "Any"))
+    }
+
     /// [`Self::has_user_method`] widened to a bare role name. A punned role
     /// (`Role.new`) carries the role as its type name, but the role's methods
     /// live in the role registry, which the class MRO does not reach — so a
