@@ -142,13 +142,22 @@ impl Interpreter {
                 let depspec = args.first().cloned().unwrap_or(Value::NIL);
                 Some(self.cur_inst_candidates(&prefix, &depspec))
             }
-            "install" => {
+            "install" | "uninstall" => {
                 let dist = args.first().cloned().unwrap_or(Value::NIL);
-                Some(self.cur_inst_install(&prefix, &dist))
-            }
-            "uninstall" => {
-                let dist = args.first().cloned().unwrap_or(Value::NIL);
-                Some(self.cur_inst_uninstall(&prefix, &dist))
+                // Both take `Distribution $distribution`; an untyped value
+                // must never reach the repository (`site` is a real store).
+                if !self.type_matches_value("Distribution", &dist) {
+                    return Some(Err(self.typecheck_binding_parameter_failure(
+                        "$distribution",
+                        "Distribution",
+                        &dist,
+                    )));
+                }
+                Some(if method == "install" {
+                    self.cur_inst_install(&prefix, &dist)
+                } else {
+                    self.cur_inst_uninstall(&prefix, &dist)
+                })
             }
             "installed" => {
                 let mut installed = match self.cur_inst_installed(&prefix) {
