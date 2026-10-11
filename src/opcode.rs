@@ -9363,9 +9363,16 @@ impl CompiledCode {
                 // frame's slots must be mirrored into `env` like for `EVAL`.
                 OpCode::NqpOp { id, .. } => matches!(
                     crate::runtime::nqp_op_ids::nqp_op_name(*id),
-                    "getlex" | "getlex_i" | "getlex_n" | "getlex_s"
-                        | "bindlex" | "bindlex_i" | "bindlex_n" | "bindlex_s"
-                        | "curlexpad" | "ctx"
+                    "getlex"
+                        | "getlex_i"
+                        | "getlex_n"
+                        | "getlex_s"
+                        | "bindlex"
+                        | "bindlex_i"
+                        | "bindlex_n"
+                        | "bindlex_s"
+                        | "curlexpad"
+                        | "ctx"
                 ),
                 // `EVAL`/`EVALFILE`/`repl` are reflective whichever call shape the
                 // call site compiled to. A statement-position call once had
@@ -10445,10 +10452,10 @@ impl CompiledCode {
         // declares may change, and a closure capturing one must share its cell.
         let binds_lexical_by_name = self.ops.iter().any(|op| {
             matches!(op, OpCode::NqpOp { id, .. }
-                if matches!(
-                    crate::runtime::nqp_op_ids::nqp_op_name(*id),
-                    "bindlex" | "bindlex_i" | "bindlex_n" | "bindlex_s"
-                ))
+            if matches!(
+                crate::runtime::nqp_op_ids::nqp_op_name(*id),
+                "bindlex" | "bindlex_i" | "bindlex_n" | "bindlex_s"
+            ))
         });
         if binds_lexical_by_name {
             for name in &self.locals {
