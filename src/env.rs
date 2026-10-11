@@ -960,7 +960,6 @@ impl Env {
             && parent.tombstones.is_none()
             && parent.fallback.is_none()
             && parent.inner.static_link().is_none()
-            && !parent.outer_is_unit
             && let Some(gp) = parent.parent.take()
         {
             let mut arc = gp;
@@ -968,7 +967,6 @@ impl Env {
                 && arc.tombstones.is_none()
                 && arc.fallback.is_none()
                 && arc.inner.static_link().is_none()
-                && !arc.outer_is_unit
                 && let Some(gp) = &arc.parent
             {
                 let gp = Arc::clone(gp);

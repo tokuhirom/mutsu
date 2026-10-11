@@ -8536,14 +8536,11 @@ impl CompiledCode {
 
     /// Whether a frame running this chunk is marked to skip its callers for
     /// a lexical (ADR-12529 phase 3, `env::static_link`): a routine declared
-    /// at program scope that names lexicals by string. Every other frame
-    /// keeps the dynamic chain, because the call machinery (`is rw`
-    /// writeback, a raw parameter's source name) still reads caller-scope
-    /// names through it -- see #12529's phase 3 notes.
+    /// at program scope, whose lexical outer is the program scope.
     // Cost: O(1).
     #[inline]
     pub(crate) fn links_frame_to_unit(&self) -> bool {
-        self.static_name_lookup && self.outer_is_unit
+        self.outer_is_unit
     }
 
     /// This chunk's free variables as a `Symbol` set, built once. The closure

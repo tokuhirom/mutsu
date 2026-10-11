@@ -90,10 +90,11 @@ impl Interpreter {
         // positional-light path has always installed this overlay without
         // consulting the flag.
         // A routine whose frame skips its callers for a lexical (ADR-12529
-        // phase 3) needs a root of its own to mark, even when it would run in
-        // its caller's env otherwise.
+        // phase 3) marks its root when it gets one.
         let outer_is_unit = cf.code.links_frame_to_unit() && !cf.has_inner_subs;
-        let forced_root = outer_is_unit;
+        // Only a body that names lexicals by string needs the root forced: the
+        // rest may run in the caller's env as before, unmarked.
+        let forced_root = outer_is_unit && cf.code.static_name_lookup;
         let use_scoped =
             (forced_root || has_locals || (cf.code.is_routine && cf.code.has_env_writes))
                 && !cf.has_inner_subs;
