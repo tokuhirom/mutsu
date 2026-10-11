@@ -129,10 +129,15 @@ pub(super) fn set_original_source(source: &str) {
         *s.borrow_mut() = SourceOrigin {
             ptr: source.as_ptr() as usize,
             len: source.len(),
-            newlines: Some(newlines),
+            newlines: Some(newlines.clone()),
             attempts: source
                 .contains("trace")
-                .then(|| std::rc::Rc::new(RefCell::new(StatementAttempts::default()))),
+                .then(|| {
+                    std::rc::Rc::new(RefCell::new(StatementAttempts {
+                        newlines: newlines.clone(),
+                        ..StatementAttempts::default()
+                    }))
+                }),
             attempt_base: None,
         };
     });
@@ -156,6 +161,10 @@ pub(in crate::parser) struct StatementAttempts {
     /// Whether any `use trace` hook was made, i.e. whether the numbering will
     /// be read at all.
     hooked: bool,
+    /// The newline offsets of the unit's own text: a fragment parsed on the
+    /// lent list reports its lines relative to its copy, and adds the lines of
+    /// the unit that precede the copy (see [`current_line_number`]).
+    newlines: NewlineIndex,
 }
 
 /// Record that rakudo's `statement` rule is attempted at `input`, returning the
@@ -345,7 +354,15 @@ pub(in crate::parser) fn current_line_number(input: &str) -> i64 {
         let input_ptr = input.as_ptr() as usize;
         if input_ptr >= origin.ptr && input_ptr <= origin.ptr + origin.len {
             let offset = input_ptr - origin.ptr;
-            return newlines_before(origin.newlines(), offset) + 1;
+            // A fragment copied out of the enclosing unit starts on the line
+            // its copy came from.
+            let unit_lines = match (&origin.attempts, origin.attempt_base) {
+                (Some(attempts), Some(base)) => {
+                    newlines_before(&attempts.borrow().newlines, base)
+                }
+                _ => 0,
+            };
+            return unit_lines + newlines_before(origin.newlines(), offset) + 1;
         }
         // Check leaked regions (from heredoc parsing)
         LEAKED_REGIONS.with(|r| {
