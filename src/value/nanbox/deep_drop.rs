@@ -89,20 +89,22 @@ pub(super) unsafe fn release_nested(kind: Kind, bits: u64) {
         let _ = DEFERRED.try_with(|q| q.borrow_mut().push(word));
         return;
     }
-    DEPTH.set(depth + 1);
+    let _ = DEPTH.try_with(|d| d.set(depth + 1));
     // SAFETY: forwarded from the caller.
     unsafe { payload_op(kind, bits, PayloadOp::Release) };
     if depth == 0 {
         drain_deferred();
     }
-    DEPTH.set(depth);
+    let _ = DEPTH.try_with(|d| d.set(depth));
 }
 
 /// Release every parked word, each from depth 1 so the drain itself never
 /// recurses into another drain. Runs only from the outermost release, with
 /// [`DEPTH`] at 1.
 fn drain_deferred() {
-    while let Some(word) = DEFERRED.with(|q| q.borrow_mut().pop()) {
+    // `try_with`: a thread-local `Value` dropped during thread teardown runs
+    // here after the work list itself may be gone (nothing is parked then).
+    while let Some(word) = DEFERRED.try_with(|q| q.borrow_mut().pop()).ok().flatten() {
         drop(word);
     }
 }
