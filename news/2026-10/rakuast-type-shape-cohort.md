@@ -13,6 +13,8 @@ grammar, including hyphens, apostrophes and Unicode. Typed C-style loop setup
 uses ordinary declaration conversion, retaining its initializer and type.
 The VM's declaration check also resolves the bare target of a definite
 coercion such as `Int:D(Str)` before checking whether that type is declared.
+Numeric return constraints retain literal nodes and lower as pinned values.
+Untyped loop headers now record explicit initializers just like typed declarations.
 
 The focused cohort checks measured source fields, round-trip execution and
 constructed type trees against Rakudo. Attribute conversion and type building

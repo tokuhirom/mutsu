@@ -1019,7 +1019,10 @@ fn lower_constant(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     }
     let expr = lower_expr(named_child_or_positional(init)?)?;
     let type_constraint = match node.fields.iter().find(|f| f.name == Some("type")) {
-        Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
+        Some(f) => Some(super::type_lower::return_constraint(
+            node,
+            child_node(&f.value)?,
+        )?),
         None => None,
     };
     Ok(Stmt::VarDecl {
@@ -1695,7 +1698,10 @@ pub(super) fn routine_return_type(
 ) -> Result<(Option<String>, Vec<(String, Option<Expr>)>), RuntimeError> {
     let arrow = match named_child(node, "signature") {
         Ok(sig) => match sig.fields.iter().find(|f| f.name == Some("returns")) {
-            Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
+            Some(f) => Some(super::type_lower::return_constraint(
+                node,
+                child_node(&f.value)?,
+            )?),
             None => None,
         },
         Err(_) => None,
@@ -1735,7 +1741,10 @@ pub(super) fn routine_return_type(
             if via_trait.is_some() {
                 return Err(unsupported(node));
             }
-            via_trait = Some(simple_type_name(node, named_child_or_positional(t)?)?);
+            via_trait = Some(super::type_lower::return_constraint(
+                node,
+                named_child_or_positional(t)?,
+            )?);
             custom.push((marker.to_string(), None));
         }
     }

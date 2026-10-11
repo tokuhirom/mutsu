@@ -19,6 +19,15 @@ pub(super) fn build_type_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
     build_type_node_at(t, 0)
 }
 
+/// A return constraint may pin a numeric value instead of naming a type.
+// Cost: O(n), n = constraint spelling length.
+pub(super) fn return_constraint_node(t: &str) -> Result<RakuAstNode, RuntimeError> {
+    if let Some(value) = crate::parser::numeric_literal_value(t) {
+        return super::convert::convert_literal(&value);
+    }
+    build_type_node(t)
+}
+
 pub(super) fn build_type_node_at(t: &str, depth: usize) -> Result<RakuAstNode, RuntimeError> {
     if depth >= MAX_TYPE_DEPTH {
         return Err(unsupported("type composition exceeds 128 levels"));

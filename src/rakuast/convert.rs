@@ -5204,7 +5204,10 @@ pub(super) fn signature(
         value: RakuAstFieldValue::List(params),
     }];
     if let Some(t) = returns {
-        fields.push(node_field(Some("returns"), build_type_node(t)?));
+        fields.push(node_field(
+            Some("returns"),
+            super::type_build::return_constraint_node(t)?,
+        ));
     }
     Ok(RakuAstNode {
         class: RakuAstClass::Signature,

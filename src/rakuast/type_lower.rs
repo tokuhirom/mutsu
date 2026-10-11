@@ -15,6 +15,20 @@ use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::value::{RuntimeError, ValueView};
 
+/// Return-value literals retain their expression form instead of becoming names.
+// Cost: O(n), n = constraint spelling length.
+pub(super) fn return_constraint(
+    owner: &RakuAstNode,
+    node: &RakuAstNode,
+) -> Result<String, RuntimeError> {
+    match node.class {
+        RakuAstClass::IntLiteral | RakuAstClass::NumLiteral | RakuAstClass::RatLiteral => {
+            regex_subrule_argument_source(node)
+        }
+        _ => type_constraint(owner, node),
+    }
+}
+
 /// The parser's spelling of `type_node`; `owner` names the node a refusal
 /// reports.
 pub(super) fn type_constraint(

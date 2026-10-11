@@ -522,3 +522,9 @@ declarations therefore apply their supplied constraints as source declarations d
 The attribute write-direction test also pins key validation before mutation:
 named, accessor and computed object-hash stores share key preparation, while
 QuantHash retains its numeric-allomorph rules.
+
+Untyped loop header declarations record their explicit initializer through the
+same source marker as ordinary declarations. Numeric return constraints use
+literal nodes, separately from strict type identifiers, and lower back to pinned
+return values. The frontend ratchet exposed both distinctions and the cohort
+pins their structure and execution.

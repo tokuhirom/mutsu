@@ -6,7 +6,7 @@ use crate::value::{RuntimeError, Value};
 
 const CONSTRUCTOR: &str = "RakuAST::Class.new";
 
-// Cost: O(a + t), a = constructor arguments, t = supplied traits.
+// Cost: O(a + t + s), a = arguments, t = traits, s = stringified scope length.
 pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
     let mut fields = Vec::new();
     if let Some(scope) = named_arg(args, "scope")

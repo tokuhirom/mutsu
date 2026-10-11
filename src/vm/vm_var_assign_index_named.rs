@@ -5508,8 +5508,7 @@ impl Interpreter {
     /// Generic index assignment on a stack-computed target.
     /// Stack order: target (bottom), index, value (top).
     /// If the target hash has `__callframe_depth`, routes through set_caller_var.
-    // Cost: O(1) amortized for one index into an Array/Hash or `is Array` instance
-    // target, plus O(n) to stringify the key.
+    // Cost: O(n + t), n = key/constraint text and grown array slots, t = validation/coercion cost.
     pub(super) fn exec_index_assign_generic_op(
         &mut self,
         code: &CompiledCode,
@@ -5803,8 +5802,11 @@ impl Interpreter {
                     self.stack.push(val);
                     return Ok(());
                 }
-                let idx = if let Some(constraint) = arc.key_type.as_deref() {
-                    loan_env!(self, prepare_object_hash_key(constraint, idx.clone(), None))?
+                let idx = if let Some(constraint) = arc.key_type.clone() {
+                    loan_env!(
+                        self,
+                        prepare_object_hash_key(&constraint, idx.clone(), None)
+                    )?
                 } else {
                     idx.clone()
                 };

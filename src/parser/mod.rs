@@ -11,7 +11,6 @@ pub(crate) use expr::{
 // `but`-mixing a plain value composes an anonymous role at RUNTIME, and it must
 // draw its `<anon|N>` id from the same counter the parser uses for a `role { }`
 // literal (see `Interpreter::apply_single_mixin`).
-pub(crate) use primary::decimal_literal_value;
 pub(crate) use primary::ident::loop_control_expr;
 pub(crate) use primary::ident::supply_block;
 pub(crate) use primary::ident::{
@@ -27,6 +26,7 @@ pub(crate) use primary::{
     ANON_COLONS_TRAIT, next_anon_class_name, next_anon_grammar_name, next_anon_role_name,
     prepend_does_header,
 };
+pub(crate) use primary::{decimal_literal_value, numeric_literal_value};
 pub(crate) use stmt::class::{
     EXPORT_TYPE_MARKER, LEADING_COLONS_TRAIT, export_type_marker, push_also_is_parent,
 };

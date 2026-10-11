@@ -100,4 +100,10 @@ same Q[my %h{Str:D;Str:D}; %h{'a';'b'} = 6; %h{'a';'b'}], 6,
 same Q[class MultiExec { has %.h{Str;Str} }; my $c = MultiExec.new;
     $c.h{'a';'b'} = 9; $c.h{'a';'b'}], 9,
     'multidimensional attribute key shapes survive execution';
+same Q[my $sum = 0; loop (my $i = 0; $i < 3; $i++) { $sum += $i }; $sum], 3,
+    'untyped loop setup retains its explicit initializer';
+isa-ok expression(Q[sub pinned(--> 42) { 5 }]).signature.returns, RakuAST::IntLiteral,
+    'a numeric return value remains a literal rather than a type name';
+same Q[sub pinned(--> 42) { 5 }; pinned()], 42,
+    'numeric return constraints execute after AST lowering';
 done-testing;

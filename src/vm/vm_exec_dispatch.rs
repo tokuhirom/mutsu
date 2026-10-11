@@ -7179,7 +7179,7 @@ impl Interpreter {
                 self.exec_make_lambda_op(code, *idx, *cc_idx, *is_wc)?;
                 *ip += 1;
             }
-            // Cost: O(1) amortized for one index into an Array/Hash or an `is Array` instance.
+            // Cost: O(n + t), n = key/constraint text and grown array slots, t = validation/coercion cost.
             OpCode::IndexAssignGeneric { is_positional } => {
                 self.exec_index_assign_generic_op(code, *is_positional)?;
                 *ip += 1;

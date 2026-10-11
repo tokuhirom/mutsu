@@ -72,7 +72,7 @@ impl Interpreter {
 
     /// Handle `$obj.method<key> = value` — index assignment through a method accessor.
     /// Gets the current container (hash/array) via the accessor, modifies it, writes back.
-    // Cost: O(n), n = elements in the accessor's aggregate when writeback copies it.
+    // Cost: O(n + t), n = copied aggregate elements, t = key validation/coercion cost.
     pub(super) fn builtin_index_assign_method_lvalue(
         &mut self,
         args: &[Value],

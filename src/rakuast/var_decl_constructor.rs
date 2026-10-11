@@ -6,7 +6,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 const CONSTRUCTOR: &str = "RakuAST::VarDeclaration::Simple.new";
 
-// Cost: O(a + t), a = constructor arguments, t = supplied traits.
+// Cost: O(a + t + s), a = arguments, t = traits, s = stringified leaf length.
 pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
     let sigil = named_arg(args, "sigil")
         .ok_or_else(|| RuntimeError::new(format!("{CONSTRUCTOR} requires a `sigil` argument")))?;
