@@ -49,6 +49,42 @@ pub(crate) enum StaticLink {
     },
 }
 
+/// One scope enclosing a running frame, as `nqp::ctxouter` and a computed
+/// `nqp::getlexouter` see it.
+#[derive(Clone)]
+pub(crate) enum OuterScope {
+    /// The program scope (or another env): its tiers, callers excluded.
+    Env(Env),
+    /// A closure's capture: the scope that created it.
+    Capture(Arc<crate::env_capture_view::CaptureView>),
+}
+
+impl OuterScope {
+    /// The scope as a flat env.
+    // Cost: O(n), n = entries visible in the scope.
+    pub(crate) fn to_env(&self) -> Env {
+        match self {
+            OuterScope::Env(env) => env.flattened(),
+            OuterScope::Capture(view) => {
+                let mut env = Env::default();
+                for (k, v) in view.iter() {
+                    env.insert_sym(*k, v.clone());
+                }
+                env
+            }
+        }
+    }
+
+    /// A lexical by its env key, `None` when the scope has no such name.
+    // Cost: O(d), d = chain tiers (an env) or capture layers.
+    pub(crate) fn get(&self, key: &str) -> Option<Value> {
+        match self {
+            OuterScope::Env(env) => env.get(key).cloned(),
+            OuterScope::Capture(view) => view.get(&Symbol::intern(key)).cloned(),
+        }
+    }
+}
+
 thread_local! {
     /// Depth of `EVAL ..., context => ...` calls running on this thread. While
     /// it is non-zero a static link is not followed -- see the module docs.
@@ -282,6 +318,40 @@ impl Env {
             }
         }
         flat
+    }
+
+    /// The scopes lexically enclosing the frame this env runs in, innermost
+    /// first: a closure's capture (the creating scope) when its static link
+    /// puts it ahead, then the program scope. Empty at the program scope
+    /// itself. Captured when `nqp::ctx` runs, because a context is a
+    /// flattened snapshot with no scope structure of its own.
+    // Cost: O(d), d = chain tiers walked to the frame root.
+    pub(crate) fn enclosing_scopes(&self) -> Vec<OuterScope> {
+        let mut root = self;
+        while !root.frame_root {
+            match root.parent.as_deref() {
+                Some(parent) => root = parent,
+                None => return Vec::new(),
+            }
+        }
+        let mut scopes = Vec::new();
+        if root.outer_is_unit {
+            if let Some(parent) = root.parent.as_deref() {
+                scopes.push(OuterScope::Env(parent.program_scope_from().clone()));
+            }
+        } else if let Some(StaticLink::UnitOuter {
+            target,
+            capture_first,
+        }) = root.inner.static_link()
+        {
+            if *capture_first && let Some(fb) = &root.fallback {
+                scopes.push(OuterScope::Capture(Arc::clone(fb)));
+            }
+            scopes.push(OuterScope::Env(Env::clone(target)));
+        } else if let Some(fb) = &root.fallback {
+            scopes.push(OuterScope::Capture(Arc::clone(fb)));
+        }
+        scopes
     }
 
     /// Mark this env, a reflective closure's capture, as taken at program
