@@ -6114,6 +6114,10 @@ pub(crate) fn deferred_body_op_declared_vars(stmt: &Stmt) -> Vec<Symbol> {
                     ..
                 } => out.push(Symbol::intern(name)),
                 Stmt::Phaser { body, .. } => pending.push(body),
+                // A nested `my role` binds its bare name in the body scope like a
+                // `my` variable; keep it so two roles' same-named nested roles stay
+                // apart after composition (#12773).
+                Stmt::RoleDecl { name, .. } => out.push(*name),
                 _ => {}
             }
         }
