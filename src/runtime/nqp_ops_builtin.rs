@@ -30,6 +30,18 @@ impl Interpreter {
         op: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        super::nqp_repr_check::check_operand_named(op, args)?;
+        self.dispatch_nqp_op_unchecked(op, args)
+    }
+
+    /// [`Self::dispatch_nqp_op`] without the REPR check of its operand: for a
+    /// caller that already holds the storage the op works on, such as the
+    /// multi-dimensional ops walking a shaped array's rows.
+    pub(crate) fn dispatch_nqp_op_unchecked(
+        &mut self,
+        op: &str,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
         let _region = crate::profile::enter(crate::profile::Region::Nqp);
         if let Some(result) = self.call_nqp_interpreter_op(op, args) {
             return result;
@@ -64,6 +76,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let _region = crate::profile::enter(crate::profile::Region::Nqp);
+        super::nqp_repr_check::check_operand(id, args)?;
         let op = crate::runtime::nqp_op_ids::nqp_op_name(id);
         let claimed = match crate::runtime::nqp_op_ids::nqp_op_table(id) {
             NqpOpTable::Builtin => self.call_nqp_interpreter_op(op, args),
@@ -83,7 +96,7 @@ impl Interpreter {
         };
         match claimed {
             Some(result) => result,
-            None => self.dispatch_nqp_op(op, args),
+            None => self.dispatch_nqp_op_unchecked(op, args),
         }
     }
 

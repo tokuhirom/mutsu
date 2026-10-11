@@ -63,7 +63,7 @@ impl Interpreter {
             // Cost: O(1) (the host probe is cached).
             "uname" => {
                 let host = crate::runtime::io_sysinfo_host::host_info();
-                Ok(Value::array(vec![
+                Ok(Value::vm_array(vec![
                     Value::str(host.sysname.clone()),
                     Value::str(host.release.clone()),
                     Value::str(host.version.clone()),
@@ -73,7 +73,7 @@ impl Interpreter {
             // nqp::getsignals(): name, number, name, number, ... for every
             // signal MoarVM knows (0 where this platform lacks it).
             // Cost: O(s), s = signals listed (a constant 35).
-            "getsignals" => Ok(Value::array(
+            "getsignals" => Ok(Value::vm_array(
                 crate::runtime::signal_table::SIGNALS
                     .iter()
                     .flat_map(|(name, num)| [Value::str_from(name), Value::int(*num)])
@@ -82,12 +82,12 @@ impl Interpreter {
             // nqp::getenvhash(): a fresh hash of the process environment, the
             // map `%*ENV` starts from.
             // Cost: O(e), e = total size of the environment.
-            "getenvhash" => Ok(Value::hash(crate::runtime::runtime_init::os_env_hash())),
+            "getenvhash" => Ok(Value::vm_hash(crate::runtime::runtime_init::os_env_hash())),
             // nqp::backendconfig(): the backend's configuration hash, the one
             // `$*VM.config` answers. mutsu reports its own build facts there,
             // not MoarVM's.
             // Cost: O(k), k = keys in the config.
-            "backendconfig" => Ok(Value::hash(
+            "backendconfig" => Ok(Value::vm_hash(
                 crate::runtime::io_sysinfo_vm_config::vm_config(),
             )),
 
@@ -105,7 +105,7 @@ impl Interpreter {
             // Cost: O(1) plus one `localtime_r(3)`.
             "decodelocaltime" => {
                 let epoch = args.first().map(crate::runtime::to_int).unwrap_or(0);
-                Ok(Value::array(
+                Ok(Value::vm_array(
                     crate::runtime::sys_resources::decode_local_time(epoch)
                         .into_iter()
                         .map(Value::int)

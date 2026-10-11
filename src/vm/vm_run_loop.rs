@@ -1200,6 +1200,11 @@ impl Interpreter {
     /// only itemized in the `@a = $var` path — see `ItemizeVar` — not in general
     /// `$(...)` itemization, to avoid leaking a `Scalar` wrapper into set ops.)
     pub(crate) fn itemize_value(val: Value) -> Value {
+        // A raw VM collection has no itemized form: a `$` container holds the
+        // same raw object (ADR-12666), as `.item` keeps it.
+        if val.is_vm_collection() || val.is_iteration_buffer_view() {
+            return val;
+        }
         match val.view() {
             ValueView::Array(items, kind) if !kind.is_itemized() => {
                 Value::array_with_kind(items.clone(), kind.itemize())
@@ -1319,6 +1324,10 @@ impl Interpreter {
     /// The value half of [`Self::itemize_scalar_store`], for a caller that has
     /// already settled the name half.
     pub(crate) fn itemize_scalar_store_value(val: Value) -> Value {
+        // A raw VM collection stays raw in a `$` container (ADR-12666).
+        if val.is_vm_collection() || val.is_iteration_buffer_view() {
+            return val;
+        }
         match val.view() {
             ValueView::Array(items, kind) if !kind.is_itemized() => {
                 Value::array_with_kind(items.clone(), kind.itemize())

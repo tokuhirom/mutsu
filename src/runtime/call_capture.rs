@@ -127,7 +127,7 @@ impl Interpreter {
             }
             // nqp::capturenamedshash($c): the named arguments as a hash.
             // Cost: O(k), k = named arguments.
-            "capturenamedshash" => Ok(Value::hash(named.clone())),
+            "capturenamedshash" => Ok(Value::vm_hash(named.clone())),
             // Cost: O(1).
             "captureposarg" => positional_at(index()),
             // The native readers want a native argument; mutsu passes every

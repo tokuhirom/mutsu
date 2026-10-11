@@ -172,7 +172,9 @@ impl Interpreter {
         }
         let mut one_dim_args = vec![row, Value::int(last)];
         one_dim_args.extend(val);
-        self.dispatch_nqp_op(one_dim_op(op), &one_dim_args)
+        // The rows of a shaped array are its own storage, whatever REPR
+        // they report: the op is applied to them directly.
+        self.dispatch_nqp_op_unchecked(one_dim_op(op), &one_dim_args)
     }
 }
 

@@ -101,9 +101,10 @@ impl Interpreter {
             // the argument through `itemize_scalar_store`, whose name half
             // (`name_is_itemize_exempt`) the `light_bindable` gate already
             // settled — no bare identifier is exempt.
-            let val = Self::itemize_scalar_store_value(crate::runtime::types::unwrap_varref_value(
-                args[i].clone(),
-            ));
+            // Binding a parameter hllizes a raw `VMArray`/`VMHash` (ADR-12666).
+            let val = Self::itemize_scalar_store_value(
+                crate::runtime::types::unwrap_varref_value(args[i].clone()).hllize_vm_collection(),
+            );
             // A `Callable` bound to a `$` parameter is also published under its
             // `&`-sigiled spelling (`bind_param_value_sym` does the same). Only
             // that one branch of that function can fire for a bare identifier:
