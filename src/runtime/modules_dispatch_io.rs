@@ -9,6 +9,7 @@ mod dispatch;
 pub(crate) use dispatch::Resolved;
 mod dispatch_candidates;
 mod multi_rank;
+mod multi_type_walk;
 pub(crate) mod dispatch_key;
 mod dispatch_narrow;
 mod dispatch_proto;
