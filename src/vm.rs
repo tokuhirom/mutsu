@@ -134,6 +134,7 @@ mod vm_call_eligibility;
 mod vm_call_exec_ops;
 mod vm_call_fast;
 mod vm_call_func_ops;
+mod vm_lexical_use;
 mod vm_call_helpers;
 mod vm_call_lexical_override;
 mod vm_call_light;

@@ -2420,6 +2420,15 @@ impl Interpreter {
                     self.set_pending_call_arg_sources(None);
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))
+                } else if !code.lexical_use_modules.is_empty()
+                    && let Some(key) = self.lexical_use_export_key(code, name)
+                {
+                    // TODO: compile to bytecode (bind the import lexically, ADR-12529 phase 2)
+                    self.set_pending_call_arg_sources(arg_sources.clone());
+                    let result = self.vm_call_function_fallback(&key, &args);
+                    self.set_pending_call_arg_sources(None);
+                    let result = result?;
+                    loan_env!(self, maybe_fetch_rw_proxy(result, true))
                 } else if self
                     .module
                     .imported_env_aliases

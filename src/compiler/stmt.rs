@@ -4606,6 +4606,17 @@ impl Compiler {
                     arg.as_ref(),
                 ) {
                     self.unit_use_ctx.note_use(name);
+                    // A `use` below the unit's top level scopes its routines to
+                    // the enclosing block; code nested in it (a closure built in
+                    // `sub EXPORT`) must keep resolving them after the block's
+                    // dynamic import scope pops (#8751).
+                    // TODO: resolve at compile time once imports bind lexically (ADR-12529 phase 2).
+                    if !(self.fold_root && self.decl_scope_depth == 0) {
+                        let sym = Symbol::intern(name);
+                        if !self.code.lexical_use_modules.contains(&sym) {
+                            self.code.lexical_use_modules.push(sym);
+                        }
+                    }
                 }
                 let name_idx = self.code.add_constant(Value::str(module.clone()));
                 let entries = tags.iter().cloned().map(Value::str).collect::<Vec<Value>>();

@@ -2646,6 +2646,7 @@ impl Compiler {
         sub.lexical_sub_free_vars = self.lexical_sub_free_vars.clone();
         sub.lexical_sub_written_vars = self.lexical_sub_written_vars.clone();
         sub.variables_pragma = self.variables_pragma;
+        sub.code.lexical_use_modules = self.code.lexical_use_modules.clone();
         sub.lexical_type_shadows
             .extend(self.lexical_type_shadows.iter().cloned());
     }
