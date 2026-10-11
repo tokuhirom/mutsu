@@ -36,16 +36,50 @@ fn boot_collection_op_type(op: &str) -> Option<&'static str> {
     })
 }
 
-/// The `BOOT*` collection type a type object names, if any.
+/// Whether `name` is one of the BOOT types: a collection (`BOOTArray`,
+/// `BOOTHash`, `BOOT*Array`) or a scalar box type (`BOOTInt`, `BOOTNum`,
+/// `BOOTStr`).
+// Cost: O(1).
+fn is_boot_type_name(name: &str) -> bool {
+    name == "BOOTHash"
+        || boot_array_elem(name).is_some()
+        || super::boot_scalar::boot_scalar_kind(name).is_some()
+}
+
+/// The `BOOT*` type a type object names, if any.
 // Cost: O(1).
 pub(crate) fn boot_type_object_name(v: &Value) -> Option<Symbol> {
     match v.view() {
-        ValueView::Package(name)
-            if name.as_str() == "BOOTHash" || boot_array_elem(name.as_str()).is_some() =>
-        {
-            Some(name)
-        }
+        ValueView::Package(name) if is_boot_type_name(name.as_str()) => Some(name),
         _ => None,
+    }
+}
+
+/// The `BOOT*` type of a raw value or BOOT type object: a raw `VMArray` /
+/// `VMHash`, a `BOOT*` type object, or a BOOT scalar box
+/// (`nqp::box_i($i, nqp::bootint())`). `None` for anything else.
+// Cost: O(1).
+pub(crate) fn boot_type_of(v: &Value) -> Option<Symbol> {
+    if let Some(name) = v.vm_boot_type_name() {
+        return Some(Symbol::intern(name));
+    }
+    match v.view() {
+        ValueView::Package(name) | ValueView::Instance {
+            class_name: name, ..
+        } if is_boot_type_name(name.as_str()) => Some(name),
+        _ => None,
+    }
+}
+
+/// The REPR a `BOOT*` type has.
+// Cost: O(1).
+fn boot_repr(name: &str) -> &'static str {
+    match name {
+        "BOOTHash" => "VMHash",
+        "BOOTInt" => "P6int",
+        "BOOTNum" => "P6num",
+        "BOOTStr" => "P6str",
+        _ => "VMArray",
     }
 }
 
@@ -89,25 +123,25 @@ pub(crate) fn repr_is_vm_hash(v: &Value) -> bool {
 }
 
 impl Interpreter {
-    /// `nqp::create` of a `BOOT*` collection type object (or of a raw
-    /// collection, whose type it takes): an empty raw value of that kind.
+    /// `nqp::create` of a `BOOT*` type object (or of a raw value, whose type
+    /// it takes): an empty raw collection, or a scalar box holding zero.
     // Cost: O(1).
     pub(crate) fn create_boot_collection(ty: &Value) -> Option<Value> {
-        let name = match ty.vm_boot_type_name() {
-            Some(name) => Symbol::intern(name),
-            None => boot_type_object_name(ty)?,
-        };
+        let name = boot_type_of(ty)?;
+        if let Some(boxed) = Self::create_boot_scalar(name.as_str()) {
+            return Some(boxed);
+        }
         Some(match boot_array_elem(name.as_str()) {
             Some(kind) => Value::nqp_typed_list(Vec::new(), kind),
             None => Value::vm_hash(crate::value::ValueMap::default()),
         })
     }
 
-    /// A method call on a raw `VMArray` / `VMHash` or a `BOOT*` collection type
-    /// object: Rakudo gives them a `KnowHOW` and no methods, so only the
-    /// meta-level questions are answered and every other name dies with
-    /// `X::Method::NotFound` naming the `BOOT*` type. `None` for any other
-    /// invocant.
+    /// A method call on a raw `VMArray` / `VMHash`, a BOOT scalar box or a
+    /// `BOOT*` type object: Rakudo gives them a `KnowHOW` and no methods, so
+    /// only the meta-level questions are answered and every other name dies
+    /// with `X::Method::NotFound` naming the `BOOT*` type. `None` for any
+    /// other invocant.
     // Cost: O(1).
     pub(crate) fn vm_collection_method(
         target: &Value,
@@ -123,18 +157,11 @@ impl Interpreter {
                 _ => None,
             };
         }
-        let name = match target.vm_boot_type_name() {
-            Some(name) => name,
-            None => boot_type_object_name(target)?.as_str(),
-        };
+        let name = boot_type_of(target)?.as_str();
         Some(match method {
             "WHAT" => Ok(Value::package(Symbol::intern(name))),
             "^name" => Ok(Value::str_from(name)),
-            "REPR" => Ok(Value::str_from(if name == "BOOTHash" {
-                "VMHash"
-            } else {
-                "VMArray"
-            })),
+            "REPR" => Ok(Value::str_from(boot_repr(name))),
             "HOW" => Ok(Value::package(Symbol::intern("KnowHOW"))),
             "VAR" => Ok(target.clone()),
             // Any other meta-method asks the `KnowHOW`, which has no such
@@ -151,14 +178,16 @@ impl Interpreter {
 
 /// Whether a method call on `target` must go through
 /// [`Interpreter::vm_collection_method`]: a raw collection, an
-/// `IterationBuffer` view or a `BOOT*` collection type object. Tag probes on
-/// the common path.
+/// `IterationBuffer` view, a BOOT scalar box or a `BOOT*` type object. Tag
+/// probes on the common path; an object pays one class-name match.
 // Cost: O(1).
 #[inline]
 pub(crate) fn is_boot_collection_invocant(target: &Value) -> bool {
     target.is_vm_collection()
         || target.is_iteration_buffer_view()
         || (target.is_package_value() && boot_type_object_name(target).is_some())
+        || matches!(target.view(), ValueView::Instance { class_name, .. }
+            if super::boot_scalar::boot_scalar_kind(class_name.as_str()).is_some())
 }
 
 impl Interpreter {

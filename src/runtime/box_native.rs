@@ -37,7 +37,7 @@ impl Interpreter {
         value: Value,
     ) -> Option<Result<Value, RuntimeError>> {
         let ty = ty?;
-        if let Some(boxed) = self.box_boot_scalar(ty, &value) {
+        if let Some(boxed) = Self::box_boot_scalar(ty, &value) {
             return Some(Ok(boxed));
         }
         if let Some(boxed) = self.box_into_declared_storage(ty, &value) {
