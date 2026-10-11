@@ -93,6 +93,9 @@ set -u
 # so scripts/ as a whole stays off the allowlist.
 is_doc_path() {
   case "$1" in
+    # `make check-next-issue` (a `make checks` step) runs scripts/next-issue,
+    # which reads its lane order from this table. Before `docs/*`: order decides.
+    docs/lanes.md) return 1 ;;
     docs/*|news/*|TODO_roast/*|old-design-docs/*|raku-doc/*) return 0 ;;
     .claude/*|.agents/*) return 0 ;;
     ecosystem/*) return 0 ;;
@@ -359,6 +362,7 @@ self_test() {
   check false 'skill + src'             .claude/skills/x/SKILL.md src/vm/vm.rs
   check false 'src change'              src/vm/vm.rs
   check false 'docs + src'              docs/adr/0016-x.md src/vm/vm.rs
+  check false 'lane table (next-issue)' docs/lanes.md
   check false 'workflow change'         .github/workflows/ci.yml
   check false 'test change'             t/regex.t
   check false 'roast whitelist'         roast-whitelist.txt
