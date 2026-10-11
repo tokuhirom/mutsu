@@ -18,27 +18,40 @@ pub(crate) fn source_form(decl: SignatureDecl) -> Stmt {
 }
 
 /// The whole expansion of `decl`, opened by its source-form record.
-pub(crate) fn signature_decl(decl: SignatureDecl) -> Stmt {
+pub(crate) fn signature_decl(decl: SignatureDecl) -> Result<Stmt, crate::value::RuntimeError> {
+    crate::parser::stmt::control::source_body::check_signature(&decl)?;
     let mut stmts = match &decl.init {
         None => expand_bare(&decl),
-        Some(init) => {
-            let (mut stmts, result) = expand_assigned(&decl, init);
+        Some(_) => {
+            let (mut stmts, result) = expand_with_rhs(&decl)?;
             stmts.push(Stmt::Expr(result));
             stmts
         }
     };
     stmts.insert(0, source_form(decl));
-    Stmt::SyntheticBlock(stmts)
+    Ok(Stmt::SyntheticBlock(stmts))
 }
 
 /// The statements of an initialized declaration and the expression its block
 /// yields. The caller appends the expression (a parser may first fold a
 /// trailing word-logical into it).
-pub(crate) fn expand_with_rhs(decl: &SignatureDecl) -> (Vec<Stmt>, Expr) {
-    match &decl.init {
+pub(crate) fn expand_with_rhs(
+    decl: &SignatureDecl,
+) -> Result<(Vec<Stmt>, Expr), crate::value::RuntimeError> {
+    crate::parser::stmt::control::source_body::check_signature(decl)?;
+    if decl.vars.iter().any(|var| var.is_named)
+        && let Some(init) = &decl.init
+        && init.is_binding
+    {
+        return Ok((
+            super::named::expand(decl, init.rhs.clone()),
+            super::binding_result::binding_result(decl),
+        ));
+    }
+    Ok(match &decl.init {
         Some(init) => expand_assigned(decl, init),
         None => (expand_bare(decl), Expr::Literal(Value::NIL)),
-    }
+    })
 }
 
 /// `my ($a, @b);` -- one declaration per element, holding its default.
@@ -424,9 +437,9 @@ fn expand_assigned(decl: &SignatureDecl, init: &SignatureInit) -> (Vec<Stmt>, Ex
     // invocant: `(my ($x, $y) = 1, 2, 3)` is `$(1, 2)`, and an infinite RHS
     // (`my ($x, $y) = 1 xx *`) must not leak out, since sinking it would force
     // it (#9342). A literal postconstraint element yields its staged value.
-    // Binding mode keeps yielding the staged RHS list.
+    // Binding a declaring signature yields the signature itself.
     let result = if is_binding {
-        Expr::ArrayVar(array_bare)
+        super::binding_result::binding_result(decl)
     } else {
         Expr::ArrayLiteral(
             vars.iter()

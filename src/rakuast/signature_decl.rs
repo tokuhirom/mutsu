@@ -273,7 +273,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             rhs: lower_expr(named_child_or_positional(init)?)?,
         }),
     };
-    Ok(crate::parser::signature_decl_expansion(SignatureDecl {
+    crate::parser::signature_decl_expansion(SignatureDecl {
         vars,
         is_state,
         is_our,
@@ -286,7 +286,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             .transpose()?,
         has_nested_group: false,
         init,
-    }))
+    })
 }
 
 /// A declarator-list element, back from its `Parameter`.

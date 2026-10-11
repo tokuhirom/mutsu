@@ -1,18 +1,12 @@
 //! Named destructuring (`my (:$a, :@b) := %h`): bind from a hash.
 
-use super::super::super::super::parse_result::PResult;
-use super::DestructureVar;
-use crate::ast::{Expr, Stmt};
+use crate::ast::{Expr, SignatureDecl, Stmt};
 use crate::value::Value;
 
-/// Parse named destructuring: bind from a hash.
-pub(super) fn parse_named_destructuring(
-    rest: &str,
-    vars: Vec<DestructureVar>,
-    rhs: Expr,
-    type_constraint: Option<String>,
-    is_state: bool,
-) -> PResult<'_, Stmt> {
+/// Expand the named part of a signature declaration through ordinary bytecode
+/// declarations. Parsing and RakuAST lowering share this implementation.
+// Cost: O(n), n = declaration nodes and named parameters.
+pub(super) fn expand(decl: &SignatureDecl, rhs: Expr) -> Vec<Stmt> {
     let tmp_name = "%__destructure_tmp__".to_string();
     let hash_bare = "__destructure_tmp__".to_string();
     // The named targets read the source's named part: `.hash` is the Hash
@@ -38,7 +32,7 @@ pub(super) fn parse_named_destructuring(
         custom_traits: Vec::new(),
         where_constraint: None,
     }];
-    for dvar in &vars {
+    for dvar in &decl.vars {
         let bare_name = if dvar.name.starts_with('@')
             || dvar.name.starts_with('%')
             || dvar.name.starts_with('&')
@@ -90,9 +84,9 @@ pub(super) fn parse_named_destructuring(
         stmts.push(Stmt::VarDecl {
             name: dvar.name.clone(),
             expr: value_expr,
-            type_constraint: type_constraint.clone(),
-            is_state,
-            is_our: false,
+            type_constraint: decl.type_constraint.clone(),
+            is_state: decl.is_state,
+            is_our: decl.is_our,
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
@@ -100,5 +94,5 @@ pub(super) fn parse_named_destructuring(
             where_constraint: None,
         });
     }
-    Ok((rest, Stmt::SyntheticBlock(stmts)))
+    stmts
 }

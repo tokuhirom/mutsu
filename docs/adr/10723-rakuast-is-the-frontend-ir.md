@@ -444,3 +444,48 @@ so cold and cached module loads use the same names.
 Mainline diagnostic conversion remains a separate residual path.
 An ordinary-frontend gap for lowercase constants imported inside EVAL is
 tracked separately in #12574.
+
+### 6.6 S10: declaration modifiers and named declarator lists (2026-10-11)
+
+`DeclarationModifier` records the written declaration, condition and keyword
+before initializer hoisting. Conversion reads that record instead of guessing
+the original declaration from assignments to staging locals. `if`, `unless`,
+`with` and `without` share their declaration expansions between the parser and
+RakuAST lowering. The declaration remains unconditional, while assignment or
+binding runs only when the modifier selects it. Topical modifiers support
+declarator lists as well as individual variables; a list binding retains its
+complete staging, arity checks and aliases. Compile-time constants and bare
+declarations retain their written modifiers without changing execution.
+
+Named declarator lists now retain `SignatureDecl` too. The ordinary parser and
+constructed signature lowering both use the same named-part expansion, including
+the empty-array default for an absent named array. Named declarations also use
+the common loose-word-logical and statement-modifier parsing boundaries.
+Assignment to a declaring signature uses positional STORE semantics even when
+its parameters have names. Binding uses the named part when appropriate and
+yields the declaring Signature value, materialized through the same helpers as
+signature literals. Positional and named binding results share that construction
+and retain parameter names, optionality, slurpy flags and traits.
+
+The source-copy visitor counts declaration records, their original declarations
+and conditions before copying them, with the same node and depth budgets as
+control signatures. Signature expansion also validates the parameter and
+expression budget before materializing its result; parser and lowering paths
+propagate the resource error without replacing the expansion. Source-record
+and signature traversal belongs to the exhaustive typed AST visitor. Its
+source-record hook defaults to skipping compiler-inert duplicates, while the
+copy budget opts into walking them. The compiler discards net-value statements inside a
+statement-position synthetic block, as it does in other discarded statement
+sequences; an initializer's topicalizer can no longer leave a value underneath
+the enclosing unit's real result. Expression and tail-position synthetic blocks
+continue through their existing value-producing compilation paths.
+
+All nine single-expression conditional and loop modifier classes expose their
+positional constructors. Read, constructed-tree and execution behavior is pinned
+in `t/rakuast/rakuast-declaration-modifier-cohort.t`, measured against Rakudo.
+The large modifier parser is separated into statement-chain parsing, individual
+modifiers and for-modifier signature handling. Shared declaration expansion,
+synthetic-statement compilation and positional constructors have their own
+modules. Richer declaration forms that do not yet support initializer hoisting
+retain the ordinary modifier path; nested declaration groups remain a separate
+source-representation remainder.

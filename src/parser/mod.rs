@@ -58,7 +58,7 @@ pub(crate) use stmt::decl::build_sigilless_bind_stmt;
 pub(crate) use stmt::decl::destructure::desugar::signature_decl as signature_decl_expansion;
 pub(crate) use stmt::simple_expr_stmt::predicates::index_bind_target_is_immutable;
 pub(crate) use stmt::simple_expr_stmt::topic_dot_assign;
-pub(crate) use stmt::try_split_decl_modifier;
+pub(crate) use stmt::{conditional_declaration, topical_declaration};
 
 /// Parse a regex callable's argument list without exposing the parser's
 /// private diagnostic type to the source-level regex tree.

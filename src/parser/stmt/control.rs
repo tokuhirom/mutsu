@@ -454,7 +454,7 @@ mod labeled_loop;
 mod loop_repeat;
 mod pointy_param;
 mod react;
-mod source_body;
+pub(in crate::parser::stmt) mod source_body;
 mod while_until;
 mod with_stmt;
 

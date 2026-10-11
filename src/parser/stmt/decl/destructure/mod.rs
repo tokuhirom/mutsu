@@ -8,13 +8,11 @@ use super::parse_decl_type_constraint;
 use crate::ast::{Expr, Stmt};
 use crate::value::Value;
 
-use super::parse_comma_or_expr;
-
 mod bind_arity;
+mod binding_result;
 mod elements;
 mod named;
 use elements::{collect_nested_group_vars, parse_element_traits};
-use named::parse_named_destructuring;
 pub(crate) mod desugar;
 use crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical;
 
@@ -374,7 +372,7 @@ pub(in crate::parser::stmt) fn parse_destructuring_decl(
         has_nested_group,
         init: None,
     };
-    let stmt = decl_stmt_of(decl);
+    let stmt = decl_stmt_of(decl).map_err(PError::from_typed)?;
     match tail {
         Some(tail) => Ok((rest, Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(tail)]))),
         None => Ok((rest, stmt)),
@@ -399,16 +397,11 @@ fn parse_destructuring_with_rhs(
         &input[1..]
     };
     let (rest, _) = ws(rest)?;
-    let has_named = vars.iter().any(|v| v.is_named);
     // A loose word-logical (`and`/`or`/...) binds looser than list assignment:
     // `my ($z) = () and $z.defined` is `(my ($z) = ()) and $z.defined`. The
     // positional form stops the RHS before it and re-attaches it below with
     // the assigned LHS list as its left operand.
-    let (rest, raw_rhs) = if has_named {
-        parse_comma_or_expr(rest)?
-    } else {
-        parse_comma_or_expr_no_word_logical(rest)?
-    };
+    let (rest, raw_rhs) = parse_comma_or_expr_no_word_logical(rest)?;
     // If the RHS is followed (after whitespace) by a `{` block, that block is a
     // separate statement / conditional body — NOT a hash subscript of the
     // declaration. Preserve the whitespace so the expression-context postfix
@@ -420,10 +413,6 @@ fn parse_destructuring_with_rhs(
     let has_following_block = rest_ws.starts_with('{');
     let rest = if has_following_block { rest } else { rest_ws };
 
-    if has_named {
-        let rhs = raw_rhs;
-        return parse_named_destructuring(rest, vars, rhs, type_constraint, is_state);
-    }
     let decl = SignatureDecl {
         vars,
         is_state,
@@ -441,7 +430,9 @@ fn parse_destructuring_with_rhs(
         // Keep the declaration as the left operand. Flattening its expansion
         // before parsing the tail destroys the source form and prevents the
         // frontend from retaining the signature contracts.
-        let seed = Expr::DoStmt(Box::new(desugar::signature_decl(decl)));
+        let seed = Expr::DoStmt(Box::new(
+            desugar::signature_decl(decl).map_err(PError::from_typed)?,
+        ));
         let (r, tail) = crate::parser::expr::word_logical_tail_pub(r, seed)?;
         let (r_ws, _) = ws(r)?;
         let stmt = Stmt::Expr(tail);
@@ -451,7 +442,7 @@ fn parse_destructuring_with_rhs(
             parse_statement_modifier(r_ws, stmt)
         };
     }
-    let (mut stmts, result) = desugar::expand_with_rhs(&decl);
+    let (mut stmts, result) = desugar::expand_with_rhs(&decl).map_err(PError::from_typed)?;
     stmts.push(Stmt::Expr(result));
     stmts.insert(0, desugar::source_form(decl));
     let block = Stmt::SyntheticBlock(stmts);

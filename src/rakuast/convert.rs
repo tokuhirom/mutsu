@@ -363,6 +363,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         // A signature declaration (`my ($a, @b) = …`): the parser keeps its
         // source form as the expansion's first statement.
         Stmt::SyntheticBlock(_) if source_form(stmt).is_some() => match source_form(stmt) {
+            Some(crate::ast::SourceForm::DeclarationModifier {
+                declaration,
+                condition,
+                kind,
+            }) => declaration_modifier_node(declaration, condition, *kind).map(Some),
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => Ok(Some(statement_expression(
                 super::signature_decl::convert(decl)?,
             ))),
@@ -497,15 +502,6 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
         // `proceed` / `succeed` without arguments are bare calls as well.
         Stmt::Proceed => Ok(Some(statement_expression(control_call("proceed", &[])?))),
         Stmt::Succeed => Ok(Some(statement_expression(control_call("succeed", &[])?))),
-        // `my $x = 5 if COND`: the parser's split of the declaration and the
-        // gated assignment is rakudo's one statement with a modifier.
-        Stmt::SyntheticBlock(_)
-            if crate::ast::decl_modifier::modified_declaration(stmt).is_some() =>
-        {
-            let modified =
-                crate::ast::decl_modifier::modified_declaration(stmt).expect("just checked");
-            convert_stmt(&modified)
-        }
         // A package-like declaration with `:ver<..>` adverbs or `is export`.
         Stmt::SyntheticBlock(_) if crate::ast::package_header::unwrap(stmt).is_some() => {
             let (declaration, header) =
@@ -3439,6 +3435,11 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         }
         // A signature declaration in expression position (`if my ($a, $b) = …`).
         Expr::DoStmt(stmt) if source_form(stmt).is_some() => match source_form(stmt) {
+            Some(crate::ast::SourceForm::DeclarationModifier {
+                declaration,
+                condition,
+                kind,
+            }) => declaration_modifier_node(declaration, condition, *kind),
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => {
                 super::signature_decl::convert(decl)
             }

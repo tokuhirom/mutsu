@@ -1,5 +1,29 @@
 use super::*;
 
+/// Convert the written declaration, never its staged initialization helpers.
+pub(super) fn declaration_modifier_node(
+    declaration: &Stmt,
+    condition: &Expr,
+    kind: crate::ast::decl_modifier::DeclarationModifier,
+) -> Result<RakuAstNode, RuntimeError> {
+    use crate::ast::decl_modifier::DeclarationModifier;
+    let mut statement =
+        convert_stmt(declaration)?.ok_or_else(|| unsupported("empty declaration modifier"))?;
+    statement.fields.push(node_field(
+        Some("condition-modifier"),
+        RakuAstNode {
+            class: match kind {
+                DeclarationModifier::If => RakuAstClass::StatementModifierIf,
+                DeclarationModifier::Unless => RakuAstClass::StatementModifierUnless,
+                DeclarationModifier::With => RakuAstClass::StatementModifierWith,
+                DeclarationModifier::Without => RakuAstClass::StatementModifierWithout,
+            },
+            fields: vec![node_field(None, convert_expr(condition)?)],
+        },
+    ));
+    Ok(statement)
+}
+
 /// `with X { ... }` / `without X { ... }` -> `Statement::With` / `::Without`.
 ///
 /// The parser desugars the block forms into

@@ -1,9 +1,130 @@
 //! Splitting a `my`/`our` declaration out of a statement modifier: the
 //! declaration takes effect unconditionally, only its initializer is gated.
 
+use crate::ast::decl_modifier::DeclarationModifier;
 use crate::ast::{Expr, SignatureDecl, SourceForm, Stmt};
 use crate::symbol::Symbol;
+use crate::value::RuntimeError;
 use crate::value::Value;
+
+/// Keep the written declaration beside its unconditional declaration and
+/// gated initializer. Both parsing and RakuAST lowering use this expansion.
+// Cost: O(n), n = declaration and condition nodes; source copies are bounded.
+pub(crate) fn conditional_declaration(
+    stmt: &Stmt,
+    condition: &Expr,
+    is_unless: bool,
+) -> Result<Option<Stmt>, RuntimeError> {
+    if !is_declaration(stmt) {
+        return Ok(None);
+    }
+    super::control::source_body::check(condition, &[], std::slice::from_ref(stmt))?;
+    let effective = if is_unless {
+        Expr::Unary {
+            op: crate::token_kind::TokenKind::Bang,
+            expr: Box::new(condition.clone()),
+            word: false,
+        }
+    } else {
+        condition.clone()
+    };
+    Ok(
+        try_split_decl_modifier(stmt, &effective, is_unless)?.map(|expanded| {
+            record(
+                stmt,
+                condition,
+                if is_unless {
+                    DeclarationModifier::Unless
+                } else {
+                    DeclarationModifier::If
+                },
+                expanded,
+            )
+        }),
+    )
+}
+
+fn record(stmt: &Stmt, condition: &Expr, kind: DeclarationModifier, expanded: Stmt) -> Stmt {
+    Stmt::SyntheticBlock(vec![
+        Stmt::SourceForm(Box::new(SourceForm::DeclarationModifier {
+            declaration: Box::new(stmt.clone()),
+            condition: condition.clone(),
+            kind,
+        })),
+        expanded,
+    ])
+}
+
+/// Topicalize only a declaration's initializer, preserving list binding and
+/// keeping all declared names available even when the condition is undefined.
+// Cost: O(n), n = declaration and topic nodes; source copies are bounded.
+pub(crate) fn topical_declaration(
+    stmt: &Stmt,
+    topic: &Expr,
+    is_without: bool,
+) -> Result<Option<Stmt>, RuntimeError> {
+    if !is_declaration(stmt) {
+        return Ok(None);
+    }
+    super::control::source_body::check(topic, &[], std::slice::from_ref(stmt))?;
+    let Some((decl, assignment)) = split_decl_for_topic_modifier(stmt)? else {
+        return Ok(None);
+    };
+    let defined = Expr::MethodCall {
+        target: Box::new(Expr::Var("_".into())),
+        name: Symbol::intern("defined"),
+        args: Vec::new(),
+        modifier: None,
+        quoted: false,
+        sugar: false,
+    };
+    let cond = if is_without {
+        Expr::Unary {
+            op: crate::token_kind::TokenKind::Bang,
+            expr: Box::new(defined),
+            word: false,
+        }
+    } else {
+        defined
+    };
+    let expanded = Stmt::SyntheticBlock(vec![
+        decl,
+        Stmt::Given {
+            topic: topic.clone(),
+            body: vec![Stmt::If {
+                cond,
+                then_branch: assignment.into_iter().collect(),
+                else_branch: Vec::new(),
+                binding_var: None,
+                is_statement_modifier: true,
+                is_unless: false,
+                with_kind: None,
+            }],
+            is_statement_modifier: true,
+            with_kind: Some(if is_without {
+                crate::ast::GivenWithKind::Without
+            } else {
+                crate::ast::GivenWithKind::With
+            }),
+        },
+    ]);
+    Ok(Some(record(
+        stmt,
+        topic,
+        if is_without {
+            DeclarationModifier::Without
+        } else {
+            DeclarationModifier::With
+        },
+        expanded,
+    )))
+}
+
+fn is_declaration(stmt: &Stmt) -> bool {
+    matches!(stmt, Stmt::VarDecl { .. })
+        || matches!(stmt,
+        Stmt::SyntheticBlock(parts) if matches!(parts.first(), Some(Stmt::SourceForm(form)) if matches!(form.as_ref(), SourceForm::SignatureDecl(_))))
+}
 
 /// A `my`/`our` declaration carrying a conditional statement modifier
 /// (`my $x = 5 if COND`, `my $x unless COND`) keeps its *declaration* lexically
@@ -23,14 +144,18 @@ use crate::value::Value;
 /// assignment keeps it, as the generic modifier wrapping does, so the
 /// RakuAST conversion can tell `unless C` from `if !C`.
 // Cost: O(n), n = size of the declaration's initializer (it is cloned).
-pub(crate) fn try_split_decl_modifier(
+fn try_split_decl_modifier(
     stmt: &Stmt,
     effective_cond: &Expr,
     is_unless: bool,
-) -> Option<Stmt> {
+) -> Result<Option<Stmt>, RuntimeError> {
     if let Stmt::SyntheticBlock(parts) = stmt {
         return split_signature_decl(parts, effective_cond, is_unless);
     }
+    Ok(split_simple_declaration(stmt, effective_cond, is_unless))
+}
+
+fn split_simple_declaration(stmt: &Stmt, effective_cond: &Expr, is_unless: bool) -> Option<Stmt> {
     let Stmt::VarDecl {
         name,
         expr,
@@ -110,39 +235,47 @@ pub(crate) fn try_split_decl_modifier(
 /// statement that belongs in the modifier's body (the gated assignment, or
 /// `None` when there is no initializer). `None` for anything the split
 /// does not apply to.
-pub(super) fn split_decl_for_topic_modifier(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
-    let Stmt::VarDecl { custom_traits, .. } = stmt else {
-        return None;
-    };
-    if custom_traits.iter().any(|(n, _)| n == "__constant") {
-        return None;
+fn split_decl_for_topic_modifier(
+    stmt: &Stmt,
+) -> Result<Option<(Stmt, Option<Stmt>)>, RuntimeError> {
+    if matches!(stmt, Stmt::VarDecl { custom_traits, .. } if custom_traits.iter().any(|(n, _)| n == "__constant"))
+    {
+        return Ok(None);
     }
     let always = Expr::Literal(Value::TRUE);
-    match try_split_decl_modifier(stmt, &always, false)? {
-        Stmt::SyntheticBlock(mut parts) if parts.len() == 2 => {
+    Ok(match try_split_decl_modifier(stmt, &always, false)? {
+        None => None,
+        Some(Stmt::SyntheticBlock(mut parts)) if parts.len() == 2 => {
             let Some(Stmt::If { then_branch, .. }) = parts.pop() else {
-                return None;
+                return Ok(None);
             };
-            let decl = parts.pop()?;
-            let assign = then_branch.into_iter().next()?;
-            Some((decl, Some(assign)))
+            let Some(decl) = parts.pop() else {
+                return Ok(None);
+            };
+            Some((decl, Some(Stmt::SyntheticBlock(then_branch))))
         }
-        decl @ Stmt::VarDecl { .. } => Some((decl, None)),
+        Some(decl @ Stmt::VarDecl { .. }) => Some((decl, None)),
         _ => None,
-    }
+    })
 }
 
 /// `my ($a, @b) = RHS if COND`: the list declaration is unconditional, only the
 /// list assignment is gated. Only a declarator list of plain `$`/`@`/`%`
 /// elements is split; anything else keeps the generic modifier wrapping.
-fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) -> Option<Stmt> {
+fn split_signature_decl(
+    parts: &[Stmt],
+    effective_cond: &Expr,
+    is_unless: bool,
+) -> Result<Option<Stmt>, RuntimeError> {
     let Some(Stmt::SourceForm(form)) = parts.first() else {
-        return None;
+        return Ok(None);
     };
     let SourceForm::SignatureDecl(decl) = &**form else {
-        return None;
+        return Ok(None);
     };
-    let init = decl.init.as_ref()?;
+    let Some(init) = decl.init.as_ref() else {
+        return Ok(None);
+    };
     if decl.is_state
         || decl.is_our
         || decl.has_nested_group
@@ -151,7 +284,6 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
         || !decl.vars.iter().all(|v| {
             !v.is_slurpy
                 && !v.is_optional
-                && !v.is_named
                 && v.default.is_none()
                 && v.per_var_type_constraint.is_none()
                 && v.where_constraint.is_none()
@@ -160,7 +292,7 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
                 && v.param_trait.is_none()
         })
     {
-        return None;
+        return Ok(None);
     }
     let bare = SignatureDecl {
         init: None,
@@ -171,19 +303,22 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
     // the unconditional bare declaration. A statement modifier opens no scope,
     // so the names declared inside the gated body are the declared ones.
     if init.is_binding {
+        let Some(then_branch) = rebind_staged_decls(decl)? else {
+            return Ok(None);
+        };
         let gated = Stmt::If {
             cond: effective_cond.clone(),
-            then_branch: rebind_staged_decls(decl)?,
+            then_branch,
             else_branch: Vec::new(),
             binding_var: None,
             is_statement_modifier: true,
             is_unless,
             with_kind: None,
         };
-        return Some(Stmt::SyntheticBlock(vec![
-            super::decl::destructure::desugar::signature_decl(bare),
+        return Ok(Some(Stmt::SyntheticBlock(vec![
+            super::decl::destructure::desugar::signature_decl(bare)?,
             gated,
-        ]));
+        ])));
     }
     let targets = decl
         .vars
@@ -217,10 +352,10 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
         is_unless,
         with_kind: None,
     };
-    Some(Stmt::SyntheticBlock(vec![
-        super::decl::destructure::desugar::signature_decl(bare),
+    Ok(Some(Stmt::SyntheticBlock(vec![
+        super::decl::destructure::desugar::signature_decl(bare)?,
         gated,
-    ]))
+    ])))
 }
 
 /// The statements of an initialized `:=` list declaration with every element
@@ -229,11 +364,11 @@ fn split_signature_decl(parts: &[Stmt], effective_cond: &Expr, is_unless: bool) 
 /// declaration as the only one. Only the staging temp keeps its declaration.
 /// `None` for an element form this rewrite does not cover (sigilless or
 /// `is rw` binds), which keeps the generic modifier wrapping.
-fn rebind_staged_decls(decl: &SignatureDecl) -> Option<Vec<Stmt>> {
+fn rebind_staged_decls(decl: &SignatureDecl) -> Result<Option<Vec<Stmt>>, RuntimeError> {
     let Stmt::SyntheticBlock(stmts) =
-        super::decl::destructure::desugar::signature_decl(decl.clone())
+        super::decl::destructure::desugar::signature_decl(decl.clone())?
     else {
-        return None;
+        return Ok(None);
     };
     let mut out = Vec::new();
     let last = stmts.len().saturating_sub(1);
@@ -248,7 +383,11 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Option<Vec<Stmt>> {
                 expr,
                 custom_traits,
                 ..
-            } if name == "@__destructure_tmp__" => {
+            } if matches!(
+                name.as_str(),
+                "@__destructure_tmp__" | "%__destructure_tmp__"
+            ) =>
+            {
                 out.push(Stmt::VarDecl {
                     name,
                     expr,
@@ -292,11 +431,11 @@ fn rebind_staged_decls(decl: &SignatureDecl) -> Option<Vec<Stmt>> {
                         target_is_sigilless: false,
                     });
                 }
-                _ => return None,
+                _ => return Ok(None),
             },
             other @ (Stmt::MarkReadonly(..) | Stmt::If { .. }) => out.push(other),
-            _ => return None,
+            _ => return Ok(None),
         }
     }
-    Some(out)
+    Ok(Some(out))
 }
