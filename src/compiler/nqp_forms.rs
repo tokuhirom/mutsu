@@ -522,7 +522,7 @@ impl Compiler {
         if self.try_compile_nqp_attr_op(op, args) || self.try_compile_nqp_create(op, args) {
             return true;
         }
-        if matches!(op, "usecapture" | "savecapture") {
+        if matches!(op, "usecapture" | "savecapture" | "p6argvmarray") {
             self.code.uses_capture = true;
         }
         for (i, arg) in args.iter().enumerate() {
