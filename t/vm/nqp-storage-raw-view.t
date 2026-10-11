@@ -6,7 +6,7 @@ use nqp;
 # `%!hash` are raw VMArray / VMHash objects sharing the collection's storage,
 # and `p6bindattrinvres` installs a raw one by sharing it (ADR-12666 §3.6,
 # #12669). Every expected answer was checked against Rakudo 2026.09.
-plan 33;
+plan 34;
 
 {
     my @a = 1, 2;
@@ -122,4 +122,12 @@ plan 33;
     nqp::bindpos($l, 0, $t);
     $t = 2;
     is nqp::atpos($l, 0), 2, 'bindpos of a variable into a raw list shares it too';
+}
+
+{
+    # The $!reified view is an IterationBuffer, which derives from Any alone
+    # (#12700). Checked against Rakudo.
+    my @a = 1, 2;
+    my $r := nqp::getattr(@a, List, '$!reified');
+    is $r.^mro.map(*.^name).join(' '), 'IterationBuffer Any Mu', 'the view has IterationBuffer\'s MRO';
 }
