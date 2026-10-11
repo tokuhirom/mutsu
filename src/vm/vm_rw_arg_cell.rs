@@ -46,4 +46,56 @@ impl Interpreter {
             self.lexicals.readonly_rw_tail = Some(top.clone());
         }
     }
+
+    /// Box each `is rw` positional `VarRef` argument of `callable` into the
+    /// caller's shared cell, the way the direct-call binder does. A wrapper's
+    /// `|c` capture, or a native body's out-parameter write-back, can only
+    /// reach the caller's variable through its container (#12521). The
+    /// signature is the routine's own, not a registry lookup by call name: an
+    /// imported routine (`EXPORT` returning `&sub`) is not registered under
+    /// the name it is called by.
+    // Cost: O(p + l), p = parameters of the callable, l = frame locals (the by-name slot fallback).
+    pub(super) fn box_rw_args_for_callable(
+        &mut self,
+        code: &CompiledCode,
+        callable: &Value,
+        args: &mut [Value],
+        arg_sources: &Option<Vec<Option<String>>>,
+    ) {
+        let callable = Self::unwrap_callable_mixin(callable.clone());
+        let ValueView::Sub(sub) = callable.view() else {
+            return;
+        };
+        for (idx, pd) in sub.param_defs.iter().enumerate() {
+            if pd.named || !pd.traits.iter().any(|t| t == "rw") {
+                continue;
+            }
+            let Some(arg) = args.get(idx) else { break };
+            let slot_hint = arg.varref_slot();
+            let (var, inner) = if let ValueView::VarRef { name, value, .. } = arg.view() {
+                (name.resolve().to_string(), value.clone())
+            } else if !arg.is_container_ref()
+                && let Some(Some(source)) = arg_sources
+                    .as_ref()
+                    .filter(|s| s.len() == args.len())
+                    .and_then(|s| s.get(idx))
+                && source
+                    .as_bytes()
+                    .first()
+                    .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+            {
+                // A call site that hands over plain values and names the
+                // caller's variable separately (an `EXPORT`-installed `&sub`).
+                (source.clone(), arg.clone())
+            } else {
+                continue;
+            };
+            if self.name_is_readonly_binding(&var) {
+                continue;
+            }
+            let cell = self.capture_rw_arg_cell(code, &var, inner, slot_hint);
+            self.register_container_cell_constraint_for_name(&cell, &var);
+            args[idx] = cell;
+        }
+    }
 }
