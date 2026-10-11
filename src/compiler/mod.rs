@@ -1141,7 +1141,7 @@ mod package_runtime_body;
 mod proto_decl;
 mod require_stubs;
 mod type_decl_value;
-pub(crate) use hoist_nested_types::{nested_decl_composes_role, nested_type_decls};
+pub(crate) use hoist_nested_types::nested_type_decls;
 pub(crate) use package_runtime_body::CLASS_LEXICAL;
 mod param_chunks;
 mod regex_qq_thunks;
@@ -4581,11 +4581,6 @@ impl Compiler {
         // already construct the type (Raku type declarations are compile-time;
         // see `hoist_type_decl_shells`).
         self.hoist_type_decl_shells(stmts);
-        // Install `our` classes/roles declared inside routines and blocks at
-        // compile time, before the code that declares them runs (#10470).
-        if self.is_mainline && !self.is_routine {
-            self.hoist_nested_type_decl_shells(stmts);
-        }
         // Register `our` subs declared inside nested blocks early so they are
         // reachable via `OUR::` before their declaring block runs (Raku
         // installs `our sub`s into the package at compile time).

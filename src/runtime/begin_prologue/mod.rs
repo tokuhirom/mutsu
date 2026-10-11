@@ -69,7 +69,6 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     // after the lift, so a type declared in a lifted BEGIN registers there
     // alone.
     let mut type_shells: Vec<Option<Stmt>> = Vec::with_capacity(stmts.len());
-    let mut composes_role = false;
     // The INIT and CHECK phasers of each type or package declaration move out
     // ahead of it (#10552). One that re-enters its package makes the
     // declaration a BEGIN-time effect, so the package is composed by then.
@@ -95,19 +94,7 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
         // (#10328).
         package_effects.push(std::mem::take(&mut lifted.package_effects));
         let shells = crate::compiler::nested_type_decls(stmt);
-        composes_role |= shells
-            .iter()
-            .any(|shell| crate::compiler::nested_decl_composes_role(&shell.decl));
         type_shells.push((!shells.is_empty()).then_some(Stmt::NestedTypeShells(shells)));
-    }
-    // Only a composition runs user code (a role body), so only then does it
-    // matter where among the unit's statements the shells run.
-    // TODO: place every unit's shells here and drop the compiler's head-of-
-    // unit fallback (`hoist_nested_type_decl_shells`). Extending the
-    // prologue's bound over every unit with a nested type exposes partition
-    // bugs that make that unsafe for now (#10524).
-    if !composes_role {
-        type_shells.iter_mut().for_each(|shells| *shells = None);
     }
     let decls = lifted.decls;
     // A `use` and a `constant` are BEGIN-time effects on their own (slice 3),

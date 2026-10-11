@@ -94,6 +94,15 @@ pub(crate) struct LexicalState {
     /// any (class, name) recorded here.
     pub(crate) class_body_static_names:
         std::sync::Arc<HashMap<String, std::collections::HashSet<String>>>,
+    /// The declared scalar type of each typed class-body `my` static
+    /// (`class C { my Int $x; ... }`), keyed by class then the static's
+    /// `package_lexicals` name. A by-name store from one of the class's
+    /// methods checks against this record, not against the name-keyed env
+    /// lane, which belongs to the calling scope: the body's own
+    /// `__mutsu_type::` entry is restored with its binding when the body is
+    /// left, so a second class with a same-named static no longer imposes its
+    /// type on the first class's methods (#10524).
+    pub(crate) class_body_static_types: std::sync::Arc<HashMap<String, HashMap<String, String>>>,
     /// File-scope `my` lexicals of a loaded `unit` compunit, keyed by the unit
     /// package name then env var name, each holding a shared `ContainerRef` cell.
     ///
@@ -371,6 +380,7 @@ impl LexicalState {
             hll_syms: rustc_hash::FxHashMap::default(),
             package_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             class_body_static_names: Default::default(),
+            class_body_static_types: Default::default(),
             unit_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             mainline_lexical_subs: Default::default(),
             lexsub_free_aliases: Default::default(),
@@ -427,6 +437,7 @@ impl LexicalState {
             hll_syms: rustc_hash::FxHashMap::default(),
             package_lexicals: self.package_lexicals.clone(),
             class_body_static_names: self.class_body_static_names.clone(),
+            class_body_static_types: self.class_body_static_types.clone(),
             unit_lexicals: self.unit_lexicals.clone(),
             mainline_lexical_subs: self.mainline_lexical_subs.clone(),
             lexsub_free_aliases: self.lexsub_free_aliases.clone(),

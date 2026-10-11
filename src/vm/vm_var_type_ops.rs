@@ -476,8 +476,10 @@ impl Interpreter {
     /// env, so its `__mutsu_type::` entry can be a same-named typed `my` of the
     /// calling scope (#10049). The constraint belongs to the container
     /// (ADR-0042), so for such a store the cell's own `of` is authoritative,
-    /// and an untyped cell means no constraint at all. Every other store keeps
-    /// the name-keyed lane.
+    /// and an untyped cell means no constraint at all. A store to a class-body
+    /// static checks the type its class recorded for it
+    /// (`class_body_static_store_type`). Every other store keeps the
+    /// name-keyed lane.
     // Cost: O(p + e), p = packages probed by `unit_lexical_slot`, e = env
     // chain depth for the name-keyed fallback.
     pub(crate) fn by_name_store_scalar_constraint(
@@ -493,6 +495,9 @@ impl Interpreter {
             let constraint = crate::value::lookup_cell_constraint(&cell)
                 .filter(|c| c.element_of.is_none())
                 .map(|c| c.ty);
+            return (constraint, true);
+        }
+        if free_var_store && let Some(constraint) = self.class_body_static_store_type(name) {
             return (constraint, true);
         }
         (self.var_type_constraint_sym(name_sym), false)
