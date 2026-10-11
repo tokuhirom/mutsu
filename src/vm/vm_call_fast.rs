@@ -97,9 +97,6 @@ impl Interpreter {
         let use_scoped =
             (forced_root || has_locals || (cf.code.is_routine && cf.code.has_env_writes))
                 && !cf.has_inner_subs;
-        // The argument binding below resolves source variables in the
-        // caller's scope, through this frame: no static link applies to it.
-        let binding_suppression = outer_is_unit.then(crate::env::suppress_static_links);
         let caller_env: Option<Env> = if use_scoped {
             // Chain a child over the whole caller env (itself possibly scoped):
             // no flatten, so nested fast calls don't pay the O(env) merge.
@@ -232,7 +229,6 @@ impl Interpreter {
         let let_mark = self.let_saves_len();
         // Marked once the parameters are bound: the binder resolves each
         // argument's source variable, which is the caller's (ADR-12529).
-        drop(binding_suppression);
         if outer_is_unit && caller_env.is_some() {
             self.env_mut().mark_outer_is_unit();
         }

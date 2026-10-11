@@ -396,9 +396,6 @@ impl Interpreter {
         // that is itself such an empty frame, which sees exactly the same
         // program scope past it.
         let outer_is_unit = cf.code.links_frame_to_unit();
-        // The argument binding below resolves source variables in the
-        // caller's scope, through this frame: no static link applies to it.
-        let binding_suppression = outer_is_unit.then(crate::env::suppress_static_links);
         let caller_env = if self.env().overlay_is_shared_empty()
             && (!outer_is_unit || self.env().is_empty_unit_frame())
         {
@@ -890,7 +887,6 @@ impl Interpreter {
         // `news/2026-08/light-call-state-leak-on-panic-unwind.md`.
         // Marked once the parameters are bound: the binder resolves each
         // argument's source variable, which is the caller's (ADR-12529).
-        drop(binding_suppression);
         if outer_is_unit && caller_env.is_some() {
             self.env_mut().mark_outer_is_unit();
         }

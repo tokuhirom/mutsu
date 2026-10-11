@@ -466,9 +466,9 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    program scope is now `CompiledCode::outer_is_unit`, which also excludes a
    sub declared inside a closure body (`Compiler::in_closure_body`): slice 3
    linked `call { my $x; sub g { EVAL q[$x] }; g() }` past the block that
-   declares `$x`. A frame is marked only once its arguments are bound, and
-   the light and fast binders run with links suppressed, since binding
-   resolves each argument's source variable in the caller's scope. A CONTROL
+   declares `$x`. A frame is marked only once its arguments are bound,
+   since binding resolves each argument's source variable in the caller's
+   scope. A CONTROL
    handler, whose body runs on the raise site's env, runs with links
    suppressed as well.
 

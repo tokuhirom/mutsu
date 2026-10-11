@@ -61,26 +61,6 @@ pub(crate) fn suppressed() -> bool {
     SUPPRESSED.with(Cell::get) != 0
 }
 
-/// A scope in which static links are ignored, ended by dropping the guard:
-/// a call's argument binding, which resolves each argument's source variable
-/// in the caller's scope while the callee's frame is already the running env.
-#[must_use]
-pub(crate) struct StaticLinksSuppressed(());
-
-impl Drop for StaticLinksSuppressed {
-    fn drop(&mut self) {
-        SUPPRESSED.with(|c| c.set(c.get() - 1));
-    }
-}
-
-/// Start a [`StaticLinksSuppressed`] scope.
-// Cost: O(1).
-#[inline]
-pub(crate) fn suppress_static_links() -> StaticLinksSuppressed {
-    SUPPRESSED.with(|c| c.set(c.get() + 1));
-    StaticLinksSuppressed(())
-}
-
 /// Run `f` with static links ignored: an EVAL whose `context` names a scope
 /// the running frame cannot express. Restores the previous depth on unwind.
 pub(crate) fn with_static_links_suppressed<R>(f: impl FnOnce() -> R) -> R {
