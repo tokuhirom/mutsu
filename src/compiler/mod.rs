@@ -1250,6 +1250,12 @@ pub(crate) struct Compiler {
     /// without this a bare `f()` in `method g { f() }` would not know `&f` is
     /// a lexical and would dispatch to an outer `sub f` instead.
     role_param_scope: Option<lex_scope::ScopeFrame>,
+    /// Set while a role's method bodies compile. A role body is a scope of
+    /// its own between its methods and the program scope -- its parameters
+    /// (`role Native[Routine $routine]`) and lexicals are bound when the role
+    /// is composed -- so its methods do not link to the program scope
+    /// (`CompiledCode::outer_is_unit`, ADR-12529).
+    in_role_body: bool,
     /// Index (within `local_scopes`) of this compilation UNIT's outermost scope —
     /// the scope `UNIT::` names. 0 for a file's own compiler; an `EVAL`'d unit
     /// (`mark_as_eval_unit`) pushes an empty wrapper frame first so that
@@ -1974,6 +1980,7 @@ impl Compiler {
             enclosing_scopes: Vec::new(),
             outer_write_names: Default::default(),
             role_param_scope: None,
+            in_role_body: false,
             unit_root_scope: 0,
             in_lexical_scope: false,
             lexical_dup_routines: HashSet::new(),

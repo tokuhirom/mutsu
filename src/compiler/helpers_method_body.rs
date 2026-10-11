@@ -156,12 +156,12 @@ impl Compiler {
         cc.source_line = decl_line;
         // ADR-12529 phase 3: a method of a class declared outside every routine
         // and closure body has the program scope as its lexical outer, as a
-        // named sub there does. A role body's parameters are a scope between
-        // the two, so a role method keeps resolving through its frame chain.
+        // named sub there does. A role body is a scope between the two, so a
+        // role method keeps resolving through its frame chain.
         cc.outer_is_unit = !(self.is_routine
             || self.lexically_in_routine
             || self.in_closure_body
-            || self.role_param_scope.is_some());
+            || self.in_role_body);
         // ADR-0032 D2: bubble this method body's container-capture edges
         // (recorded in `cc.container_ref_capture_syms` by D1, during
         // `method_compiler`'s own independent compile above) to `self` — the

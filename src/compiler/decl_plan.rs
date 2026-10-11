@@ -786,6 +786,7 @@ impl Compiler {
             &mut self.role_param_scope,
             (!role_param_scope.is_empty()).then_some(role_param_scope),
         );
+        let saved_in_role_body = std::mem::replace(&mut self.in_role_body, true);
         let method_compiled_keys = self.compile_method_body_keys(
             body,
             package_name.as_deref(),
@@ -795,6 +796,7 @@ impl Compiler {
             false,
             is_hoisted_shell,
         );
+        self.in_role_body = saved_in_role_body;
         self.role_param_scope = saved_role_param_scope;
         // ADR-0019 D8-2: unlike `method_compiled_keys` above (whose
         // `package_name`-gated skip is harmless — the shell registration

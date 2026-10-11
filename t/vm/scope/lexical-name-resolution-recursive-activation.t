@@ -5,7 +5,7 @@ use Test;
 # the outer activation's (#12478). Every expectation was checked against
 # rakudo.
 
-plan 7;
+plan 8;
 
 sub bind-param($t, $n) {
     my $type := $t;
@@ -57,5 +57,12 @@ sub deep($n) {
     ($n,).map(&walk).join
 }
 is deep(3), '0,1,2,3', 'every recursion level keeps its own bound lexical';
+
+role Tagged[$tag] {
+    method tagged($x) { (1,).map(-> $n { "$tag:$x" }).join }
+}
+class TaggedNode does Tagged['role-param'] { }
+sub call-tagged { my $tag = 'caller'; TaggedNode.new.tagged('v') }
+is call-tagged(), 'role-param:v', 'a role method still sees its role\'s parameters';
 
 done-testing;
