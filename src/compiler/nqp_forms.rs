@@ -483,7 +483,9 @@ impl Compiler {
             return None;
         }
         match &args[3] {
-            Expr::Var(raw) if !raw.is_empty() && !raw.starts_with(['*', '!', '.', '?', '^', ':']) => {
+            Expr::Var(raw)
+                if !raw.is_empty() && !raw.starts_with(['*', '!', '.', '?', '^', ':']) =>
+            {
                 Some(raw.clone())
             }
             _ => None,
