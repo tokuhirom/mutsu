@@ -331,3 +331,29 @@ for a program Rakudo runs, and is tracked with the other leniencies in
   onto it. `t/vm/nqp-storage-raw-view.t` pins it against Rakudo. Out of scope and filed:
   Scalar containers in an Array's reified slots (#12698), a stash's `$!storage` (#12699), and
   the two `IterationBuffer` representations (#12700).
+
+## 9. Amendment (2026-10-11): `bindattr` onto an existing object rebinds the raw handle (#12672)
+
+§3.6 left `bindattr` onto an **existing** HLL object copying, because every holder of `%r`
+points at the object's node and cannot be redirected to `$raw`'s. The two candidate designs in
+#12672 both fail on cost or exactness: a forwarding node adds a check to every access of every
+collection, and rebinding the *target* variable is exact only when the target is a variable
+(`bindattr(self, ...)` has none) and leaves every alias of it on the old node.
+
+The decision is to move the redirection to the **other side**. The object's node is the one
+many holders share and must stay put; the raw handle is almost always a fresh `nqp::hash` /
+`nqp::list` held by one variable (or by nothing, as an operand). So:
+
+- The contents still move into the object's node (O(e), as today).
+- When the handle operand is a plain scalar variable and the object operand a plain variable,
+  the compiler lowers `nqp::bindattr(OBJ, T, '$!storage' | '$!reified', $raw)` to the bind
+  followed by `$raw := nqp::getattr(OBJ, T, <same attribute>)` — the raw view of the object's
+  own node that §3.6 already defines. `$raw` and the object then share one store, so a write
+  through either is seen by both. Cost: one extra `getattr` and a rebind; no runtime change.
+
+Residual divergence, accepted: a handle held anywhere other than that variable (an attribute,
+a list element, a closure's second capture) keeps the detached node it had, and a bind whose
+object operand is not a plain variable keeps the plain copy. The first is exactly what
+`$raw := ...` aliasing already is in Rakudo's own compiler output for an NQP local; no surveyed
+caller (§2.1) mutates the handle through a second holder. The `IterationBuffer` instance
+representation (#12700) is a separate question that this amendment does not change.
