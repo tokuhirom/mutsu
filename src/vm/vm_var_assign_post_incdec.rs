@@ -483,10 +483,9 @@ impl Interpreter {
                 (false, true) => "postfix:<++>",
                 (false, false) => "postfix:<-->",
             };
-            return Err(crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(
-                op,
-                Some(&current),
-            ));
+            return Err(
+                crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, Some(&current)),
+            );
         }
         // QuantHash element stores are `.WHICH`-keyed (a plain hash/array keeps
         // the display-string key); the element object goes into `original_keys`

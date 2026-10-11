@@ -152,9 +152,7 @@ impl Interpreter {
             None
         };
         match decision {
-            Some(FreeVarBinding::Readonly(..)) => {
-                Err(self.incdec_readonly_error(op, name))
-            }
+            Some(FreeVarBinding::Readonly(..)) => Err(self.incdec_readonly_error(op, name)),
             // Still ask the sigilless marker: it is a separate mechanism the
             // decision does not cover.
             Some(FreeVarBinding::Writable) => {
