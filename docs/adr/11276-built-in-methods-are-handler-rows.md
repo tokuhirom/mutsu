@@ -2462,3 +2462,22 @@ hash and a lazy list. No behaviour change, pinned in `t/oo/method/any-list-hash-
   `positional.rs` said they would be, now that slice 4 (#12387) is done.
 - **Found, not fixed**: `my @e; my @a = 1; @e = @a; @e.name` is `@a` in mutsu and `@e` in Rakudo (an assignment into an empty container replaces the node
   and its descriptor).
+
+### 9.68 `Any.splice` answers an `Instance` (2026-10-11)
+
+`refactor/12647-instance-backing-in-resolver` (issue #12647). The first step of slice 5: the `Any.splice` row stops declining every `Instance`, because the
+question that justified the decline ("does a bridge resolve this receiver further?") now has one answer in one place.
+
+- **`InstanceBacking`** (`src/runtime/instance_backing.rs`) names the reserved attribute of each native storage an instance delegates to
+  (`__mutsu_array_storage`, `__mutsu_hash_storage`, `__baggy_data__`). The three storage bridges (`native_{array,hash,baggy}_storage_base`) and the `Any.splice`
+  row ask it instead of each spelling the attribute.
+- **What the row declines is now exactly what has a row of its own further on:** a cell/variable reference or a `Mixin` (unwrapped by their own paths), an
+  `is Array` instance (its storage is an `Array`, whose `splice` row the bridge reaches), an instance whose class declares `splice`, and a user class rooted at
+  `Mu` (`class C is Mu` has no `splice`; `is_user_class_without_any`). Everything else is answered: a plain user-class instance, a `Blob`, an `is Hash` /
+  `is BagHash` instance (their storage has no `splice`), a `Date`, a `Match`.
+- **`FALLBACK` is not consulted.** The earlier row text said a user class "may declare `splice` or `FALLBACK`"; Rakudo resolves `splice` to `Any`'s proto first, so
+  `FALLBACK` never sees it. Only a declared `splice` stops the row.
+- Behaviour change toward Rakudo: those receivers raised `X::Method::NotFound`, now `X::Multi::NoMatch`. `t/types/any-splice-instance-receivers.t` pins it.
+- **Found, not fixed**: `Exception`/`X::AdHoc` instances and `utf8` still answer `X::Method::NotFound` for `.splice` (an earlier path intercepts them before
+  `invoke_mut`); a `Mixin` and a cell reference still decline.
+

@@ -1,6 +1,8 @@
 use super::*;
 use crate::symbol::Symbol;
 
+use super::instance_backing::InstanceBacking;
+
 /// Extract `(positional_arg_index, sigil-less_param_name)` for each scalar
 /// `is rw`/`is raw` positional parameter of a multi candidate's signature.
 /// Used by the nextsame/callsame+rw redispatch chain (§D capstone) to locate the
@@ -502,7 +504,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if !attributes.contains_key("__mutsu_array_storage")
+        if !InstanceBacking::Array.is_in(&attributes)
             || !self
                 .mro_readonly(&class_name.resolve())
                 .iter()
@@ -565,7 +567,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if !attributes.contains_key("__mutsu_hash_storage")
+        if !InstanceBacking::Hash.is_in(&attributes)
             || !self
                 .mro_readonly(&class_name.resolve())
                 .iter()

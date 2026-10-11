@@ -123,7 +123,7 @@ impl Interpreter {
         let ValueView::Instance { attributes, .. } = invocant.view() else {
             return None;
         };
-        if !attributes.contains_key("__baggy_data__") {
+        if !super::instance_backing::InstanceBacking::Baggy.is_in(&attributes) {
             return None;
         }
         // Every mutator (`ASSIGN-KEY`/`DELETE-KEY`, `set`/`unset`, `add`/`remove`,
