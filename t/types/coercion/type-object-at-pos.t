@@ -6,7 +6,7 @@ use Test;
 plan 2;
 
 class IndexedType {
-    method table($index) is also<AT-KEY> { $index }
+    method AT-KEY($index) { $index }
     method AT-POS(Int $index) { self.AT-KEY($index) + 1 }
 }
 
