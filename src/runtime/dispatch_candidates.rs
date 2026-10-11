@@ -1047,8 +1047,23 @@ impl Interpreter {
                     let base = if !crate::runtime::utils::is_known_type_constraint(base)
                         && !self.has_type_direct(base)
                     {
-                        owner_resolved = self
+                        let by_owner = self
                             .resolve_type_name_for_owner(&def.package.resolve(), base.to_string());
+                        // A lexical type (`my class VL`) the candidate's module
+                        // imported is stored as `VL\u{0}<decl-id>` and the
+                        // caller's scope may not name it at all (#12710).
+                        // Applicability already resolves the bare spelling
+                        // through the registry's unique lexical key
+                        // (`type_matches_value`); rank against the same type,
+                        // or `Positional` out-narrows `VL` for a `VL` argument.
+                        owner_resolved = if by_owner == base
+                            && self.registry().has_lexical_type_key_for(base)
+                            && let Some(key) = self.unique_lexical_type_key(base)
+                        {
+                            key
+                        } else {
+                            by_owner
+                        };
                         owner_resolved.as_str()
                     } else {
                         base
