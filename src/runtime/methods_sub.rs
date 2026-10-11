@@ -310,13 +310,16 @@ impl Interpreter {
                 .collect();
             return Some(Ok(Value::array(matching)));
         }
-        if matches!(method, "gist" | "Str") && args.is_empty() {
+        // `.Str` is the `Code.Str` row's routine (`method_table::code`).
+        if method == "Str" && args.is_empty() {
+            return self.code_str(target);
+        }
+        if method == "gist" && args.is_empty() {
             // Rakudo: a Sub handle gists as `&name` and a builtin-method
-            // lookup handle (package = owning type) as the bare name; `.Str`
-            // is the bare name for both (Rakudo warns on the coercion too).
+            // lookup handle (package = owning type) as the bare name.
             let display = super::methods_instance_ops::format_operator_name(name);
             let is_method = !(crate::qualified::is_global_name(package) || package.is_empty());
-            if method == "gist" && !is_method {
+            if !is_method {
                 return Some(Ok(Value::str(format!("&{}", display))));
             }
             return Some(Ok(Value::str(display)));
@@ -863,6 +866,28 @@ impl Interpreter {
         }
     }
 
+    /// `Code.Str`: the routine's name (`""` for an anonymous one), with the
+    /// resumable warning Rakudo's `Code.Str` emits, `<Type> object coerced to
+    /// string (please use .gist or .raku to do that)`. A regex says `Regex`
+    /// (`regex_str_coercion`). `None` for a value that is not a code object.
+    // Cost: O(n) to format the name and the warning, n = chars of the name.
+    pub(crate) fn code_str(&mut self, target: &Value) -> Option<Result<Value, RuntimeError>> {
+        if let Some(answer) = self.regex_str_coercion(target) {
+            return Some(answer);
+        }
+        let name = self.code_name_value(target)?;
+        let name = if name.to_string_value() == "<anon>" {
+            Value::str_from("")
+        } else {
+            name
+        };
+        let type_name = crate::value::types::what_type_name(target);
+        Some(self.raise_resumable_warning(
+            &format!("{type_name} object coerced to string (please use .gist or .raku to do that)"),
+            name,
+        ))
+    }
+
     /// Dispatch methods on Sub.
     /// Returns Some(result) if handled, None to fall through.
     pub(super) fn dispatch_sub_method(
@@ -1292,7 +1317,11 @@ impl Interpreter {
         {
             return Some(Ok(Value::str(raku)));
         }
-        if matches!(method, "raku" | "perl" | "gist" | "Str") && args.is_empty() {
+        // `.Str` is the `Code.Str` row's routine (`method_table::code`).
+        if method == "Str" && args.is_empty() {
+            return self.code_str(target);
+        }
+        if matches!(method, "raku" | "perl" | "gist") && args.is_empty() {
             let sig = self.sub_signature_value(data);
             let sig_gist = if let ValueView::Instance { attributes, .. } = sig.view() {
                 attributes
@@ -1342,11 +1371,6 @@ impl Interpreter {
                     return Some(Ok(Value::str(name)));
                 }
                 return Some(Ok(Value::str(format!("&{}", name))));
-            }
-            if method == "Str" {
-                // Rakudo: Code.Str is the routine's name (with a coercion
-                // warning, which mutsu does not emit).
-                return Some(Ok(Value::str(name)));
             }
             // .raku / .perl — an empty signature is omitted entirely:
             // `sub foo { ... }`, `sub ($x) { ... }`, `sub { ... }`.
