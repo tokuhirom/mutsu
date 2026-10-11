@@ -519,6 +519,9 @@ impl Value {
             // Cost: O(t), t = total chars of the joined element strings (one `join`,
             // no repeated concatenation). Backs `.Str`, `~@a` and `"@a[]"`.
             ValueView::Array(items, ..) => {
+                if crate::value::render_guard::render_too_deep() {
+                    return crate::value::render_guard::TRUNCATED.to_string();
+                }
                 // Cycle detection for recursive array structures
                 thread_local! {
                     static SEEN_ARR_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -570,6 +573,9 @@ impl Value {
             }
             ValueView::Uni(u) => u.text(),
             ValueView::Hash(items) => {
+                if crate::value::render_guard::render_too_deep() {
+                    return crate::value::render_guard::TRUNCATED.to_string();
+                }
                 // Cycle detection for recursive hash structures
                 thread_local! {
                     static SEEN_HASH_PTRS: std::cell::RefCell<Vec<usize>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -718,8 +724,16 @@ impl Value {
             // `(B => Any).Str eq (B => Mu).Str` (both "B\t"), so `is %h<k>:!p,
             // (k => SomeType)` compares equal for any type-object default
             // (S32-hash/adverbs object-hash missing-key defaults).
-            ValueView::Pair(k, v) => format!("{}\t{}", k, v.to_str_context()),
+            ValueView::Pair(k, v) => {
+                if crate::value::render_guard::render_too_deep() {
+                    return crate::value::render_guard::TRUNCATED.to_string();
+                }
+                format!("{}\t{}", k, v.to_str_context())
+            }
             ValueView::ValuePair(k, v) => {
+                if crate::value::render_guard::render_too_deep() {
+                    return crate::value::render_guard::TRUNCATED.to_string();
+                }
                 format!("{}\t{}", k.to_str_context(), v.to_str_context())
             }
             // String context is the enum's `.Str`, which for a base-typed

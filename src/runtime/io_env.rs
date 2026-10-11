@@ -469,6 +469,11 @@ impl Interpreter {
         text: &str,
         newline: bool,
     ) -> Result<(), RuntimeError> {
+        // #11217: `text` was rendered by a renderer that ran out of native
+        // stack and truncated it; raise instead of printing it.
+        if crate::value::render_guard::take_render_overflow() {
+            return Err(crate::value::render_guard::render_overflow_error());
+        }
         if let Some(handle) = self.get_dynamic_handle(name) {
             // `print` is `$*OUT.print(...)`, so a wrapped `IO::Handle.print`
             // sees it (the `say`/`put`/`note` routines have methods of their own).
@@ -534,6 +539,11 @@ impl Interpreter {
     /// dedicated re-wrap (integration/error-reporting.t test 21).
     /// TODO: `render_str_value` (put/print) still swallows these signals.
     pub(crate) fn render_gist_value(&mut self, value: &Value) -> Result<String, RuntimeError> {
+        // #11217: raise when a renderer below ran out of native stack.
+        crate::value::render_guard::check_render(self.render_gist_value_unchecked(value))
+    }
+
+    fn render_gist_value_unchecked(&mut self, value: &Value) -> Result<String, RuntimeError> {
         // A container is transparent to rendering: `say` shows what it holds.
         // `call_method_with_values` takes the target by value and does not
         // decontainerize (only the `CallMethod` opcode does), so a

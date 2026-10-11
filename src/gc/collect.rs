@@ -78,40 +78,64 @@ struct Metrics {
     revived: usize,
 }
 
-fn mark_gray(node: &ErasedGc, m: &mut Metrics) {
-    if node.gc_color() == Color::Gray {
-        return;
-    }
-    node.gc_set_color(Color::Gray);
-    m.traced += 1;
-    for child in children(node) {
-        child.gc_strong_dec();
-        mark_gray(&child, m);
-    }
-}
+// The four traversals below walk the candidate subgraph with an explicit work
+// list, not native recursion: a structure built at run time can be a million
+// nodes deep (`$a = [$a]` in a loop), and recursing once per edge walked the
+// collecting thread off its stack (#11217).
 
-fn scan(node: &ErasedGc, m: &mut Metrics) {
-    if node.gc_color() != Color::Gray {
-        return;
-    }
-    if node.gc_strong() > 0 {
-        // Kept alive by an external reference — restore the subgraph.
-        scan_black(node, m);
-    } else {
-        node.gc_set_color(Color::White);
-        for child in children(node) {
-            scan(&child, m);
+// Cost: O(n + e), n = nodes, e = edges of the subgraph reachable from `node`.
+fn mark_gray(node: &ErasedGc, m: &mut Metrics) {
+    let mut work = vec![node.clone()];
+    while let Some(node) = work.pop() {
+        if node.gc_color() == Color::Gray {
+            continue;
+        }
+        node.gc_set_color(Color::Gray);
+        m.traced += 1;
+        for child in children(&node) {
+            child.gc_strong_dec();
+            work.push(child);
         }
     }
 }
 
+// Cost: O(n + e) over the gray subgraph reachable from `node`.
+fn scan(node: &ErasedGc, m: &mut Metrics) {
+    let mut work = vec![node.clone()];
+    while let Some(node) = work.pop() {
+        if node.gc_color() != Color::Gray {
+            continue;
+        }
+        if node.gc_strong() > 0 {
+            // Kept alive by an external reference — restore the subgraph.
+            scan_black(&node, m);
+        } else {
+            node.gc_set_color(Color::White);
+            work.extend(children(&node));
+        }
+    }
+}
+
+/// Recolor `node` and every non-black node reachable from it black, giving
+/// back the strong count trial deletion took for each edge out of a node it
+/// blackens. `node` itself must not be black yet.
+// Cost: O(n + e) over the non-black subgraph reachable from `node`.
 fn scan_black(node: &ErasedGc, m: &mut Metrics) {
-    node.gc_set_color(Color::Black);
-    m.revived += 1;
-    for child in children(node) {
-        child.gc_strong_inc();
-        if child.gc_color() != Color::Black {
-            scan_black(&child, m);
+    let mut work = vec![node.clone()];
+    while let Some(node) = work.pop() {
+        // A node can be queued twice (two edges reached it before either copy
+        // was processed); only the first copy blackens it and restores its
+        // out-edges.
+        if node.gc_color() == Color::Black {
+            continue;
+        }
+        node.gc_set_color(Color::Black);
+        m.revived += 1;
+        for child in children(&node) {
+            child.gc_strong_inc();
+            if child.gc_color() != Color::Black {
+                work.push(child);
+            }
         }
     }
 }
@@ -128,15 +152,21 @@ fn scan_black(node: &ErasedGc, m: &mut Metrics) {
 /// here is sound: whiteness was proven on the frozen post-STW counts, and the
 /// re-buffered entry is only a `Weak` handle that fails to upgrade at the
 /// next drain once reclaim frees the node.
+// Cost: O(n + e) over the white subgraph reachable from `node`.
 fn collect_white(node: &ErasedGc, out: &mut Vec<ErasedGc>, seen: &mut HashSet<usize>) -> bool {
     if node.gc_color() != Color::White {
         return false;
     }
     let started = seen.insert(erased_id(node));
-    node.gc_set_color(Color::Black);
-    out.push(node.clone());
-    for child in children(node) {
-        collect_white(&child, out, seen);
+    let mut work = vec![node.clone()];
+    while let Some(node) = work.pop() {
+        if node.gc_color() != Color::White {
+            continue;
+        }
+        seen.insert(erased_id(&node));
+        node.gc_set_color(Color::Black);
+        work.extend(children(&node));
+        out.push(node);
     }
     started
 }
@@ -611,6 +641,32 @@ mod tests {
         // property is just that an (almost-)empty collect is a sound no-op.
         let _ = collect_cycles();
         let _ = collect_cycles();
+    }
+
+    /// #11217: the trial-deletion traversals use work lists, so a cycle far
+    /// longer than the test thread's 2 MiB stack could recurse through is
+    /// traced and reclaimed.
+    #[test]
+    fn a_very_long_cycle_is_reclaimed_without_recursion() {
+        let _g = lock();
+        drain_candidates();
+        let before = DROPS.load(Ordering::Relaxed);
+        const LEN: usize = 200_000;
+        let head = TestNode::new();
+        let mut tail = head.clone();
+        for _ in 1..LEN {
+            let next = TestNode::new();
+            TestNode::link(&tail, &next);
+            tail = next;
+        }
+        TestNode::link(&tail, &head);
+        head.buffer_as_candidate();
+        drop(tail);
+        drop(head);
+
+        let stats = collect_cycles();
+        assert!(stats.reclaimed_nodes >= LEN);
+        assert_eq!(DROPS.load(Ordering::Relaxed) - before, LEN);
     }
 
     #[test]
