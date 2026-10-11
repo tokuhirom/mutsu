@@ -1564,6 +1564,21 @@ largest block with one obvious shape, so it went first: 43 rows in four new modu
 - **Not done**: `Real`, `FatRat` and `Complex` of `Str`/`Cool` (Rakudo does not declare them there; the table serves them through `Cool`), `Complex` of the aggregates
   (`(1,2,3).Complex` is `3+0i` in Rakudo, `0+0i` here: #12688), and `Range.Version`/`Seq.UInt` (closed shapes; they need the `COOL_NUMERIC_FOR_COLLECTIONS` audit).
 
+### 9.72 `Cool.Complex`; `Range` and `Seq` reach `Cool`'s `Complex`, `UInt` and `Version` (2026-10-11)
+
+`fix/12688-aggregate-complex-version` (issue #12688, found by §9.71).
+
+- **`Cool.Complex` is a `Handler::Narrow` row** (`str_numeric::complex_of_cool`): `self.Numeric.Complex`, so a `List`, `Array`, `Hash` or `Map` is its element
+  count (`(1, 2, 3).Complex` is `3+0i`; it was `0+0i`) and a string parses as before. Rakudo declares `Complex` on `Cool` (`Cool.^method_table`), which the
+  recognition table had missed; it gains the `("Cool", "Complex")` row. The cascade's `Complex` arm calls the same function for receivers with no shape and keeps
+  `0+0i` for a type object.
+- **`Complex`, `UInt` and `Version` join `COOL_NUMERIC_FOR_COLLECTIONS`**, so the closed `Range` and `Seq` shapes reach those three `Cool` rows:
+  `(1..5).Version` is `v1.2.3.4.5`, `(1, 2, 3).Seq.UInt` is `3`. `Version` reads the string form, not `numify`; the audit is per method either way.
+- **`Range.Numeric` of a fractional endpoint.** `range_elems_f64` counted `1..^5.5` as `5.5 - 1 + 1 - 1 = 4.5` elements (so `(1..^5.5).sqrt` was `2`); it now counts
+  whole steps from the first element, as `.elems` does.
+- **Left**: a string `Range` (`("a".."c").Complex` is `3+0i` in Rakudo, `0+0i` here: `numify` gives no count for it), and the uninitialized-value warning Rakudo
+  emits for `List.Complex` on a type object.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
