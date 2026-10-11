@@ -463,6 +463,9 @@ impl Interpreter {
         // those first, the same way `.Str` / prefix `~` / interpolation do
         // (`runtime/list_element_stringify.rs`). `is @list, 'text'` in the
         // vendored Test module lands here through infix `eq`.
+        if Self::quanthash_needs_element_dispatch(&v) {
+            return self.resolve_quanthash_element_stringifiers(&v, "Str");
+        }
         if Self::list_str_needs_interpreter(&v) {
             return self.resolve_list_element_stringifiers(&v);
         }

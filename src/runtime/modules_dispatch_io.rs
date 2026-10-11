@@ -68,6 +68,7 @@ mod lock_reentry;
 pub(crate) mod loop_handler_depth;
 mod lvalue_container_return;
 mod lvalue_quanthash_store;
+mod quanthash_element_stringify;
 mod main_args;
 mod main_usage;
 mod main_usage_program;

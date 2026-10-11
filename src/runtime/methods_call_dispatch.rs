@@ -427,6 +427,15 @@ impl Interpreter {
             let resolved = self.resolve_proxies_in_value(&target)?;
             return self.call_method_with_values_inner(resolved, method, args, reify_seq);
         }
+        // A quant hash renders each element through the element's own
+        // `Str`/`gist` (`quanthash_element_stringify.rs`).
+        if matches!(method, "Str" | "Stringy" | "gist")
+            && args.is_empty()
+            && Self::quanthash_needs_element_dispatch(&target)
+        {
+            let resolved = self.resolve_quanthash_element_stringifiers(&target, method)?;
+            return self.call_method_with_values_inner(resolved, method, args, reify_seq);
+        }
 
         // Array-subclass instance delegation, the interpreter-entry twin of the
         // one in `vm_call_method_ops.rs`. An `is Array`/`is List` subclass keeps

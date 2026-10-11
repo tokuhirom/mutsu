@@ -856,6 +856,7 @@ impl Interpreter {
             // which the pure stringifier below cannot call -- resolve those
             // first, the same way `.Str` / prefix `~` do
             // (`runtime/list_element_stringify.rs`).
+            let v = self.resolve_quanthash_element_stringifiers(&v, "Str")?;
             let v = self.resolve_list_element_stringifiers(&v)?;
             result.push_value(&v);
         }

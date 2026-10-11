@@ -25,6 +25,11 @@ fn needs_method_dispatch(v: &Value) -> bool {
         // dispatch; `render_gist_value`/`render_str_value` fall back to the
         // default `(TypeName)` rendering when no such method exists.
         ValueView::Package(..) => true,
+        // A quant hash with an object element renders it through the element's
+        // own `gist`/`Str` (`quanthash_element_stringify.rs`).
+        ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+            crate::Interpreter::quanthash_needs_element_dispatch(v)
+        }
         // A LazyList (gather/take, infinite sequence, lazy map/grep pipeline)
         // must be rendered via `.gist`/`.Str` method dispatch: an eager gather
         // is forced to its elements, while a genuinely lazy/infinite one
