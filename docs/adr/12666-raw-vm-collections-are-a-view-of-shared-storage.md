@@ -321,4 +321,13 @@ for a program Rakudo runs, and is tracked with the other leniencies in
   an exact `islist` are registered (`src/runtime/boot_collection.rs`); `hlllist` / `hllhash`
   answer `BOOTArray` / `BOOTHash`. `t/vm/nqp-vm-collection-repr.t` pins the §2.2 matrix
   (it passes unchanged under Rakudo 2026.09).
-
+- **#12669 (slice 2) — delivered.** `nqp::getattr` of `$!reified` / `$!storage` answers the
+  storage view of the collection's own node (`Value::raw_storage_view`): a raw `VMArray` for a
+  `List`, a raw `VMHash` for a `Map`/`Hash`, and for an `Array` an `IterationBuffer` — a third
+  kind, `Kind::VmIterBuf`, because Rakudo's Array storage is an `IterationBuffer` (an `Any`
+  with methods), not a `BOOTArray`. A Capture's `@!list` / `%!hash` are raw too.
+  `p6bindattrinvres` of a raw collection into a fresh wrapper adopts the raw node in O(1)
+  (`Interpreter::adopt_raw_storage`), carrying the wrapper's element/declared type and default
+  onto it. `t/vm/nqp-storage-raw-view.t` pins it against Rakudo. Out of scope and filed:
+  Scalar containers in an Array's reified slots (#12698), a stash's `$!storage` (#12699), and
+  the two `IterationBuffer` representations (#12700).

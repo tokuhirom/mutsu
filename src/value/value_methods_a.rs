@@ -834,7 +834,9 @@ impl Value {
             ValueRepr::Array(items, kind) => Value::Array(items, kind.itemize()),
             // A raw VM collection has no itemized form: Rakudo keeps the same
             // raw object in a `$` container (ADR-12666).
-            raw @ (ValueRepr::VmArray(_) | ValueRepr::VmHash(_)) => Value::from_repr(raw),
+            raw @ (ValueRepr::VmArray(_) | ValueRepr::VmHash(_) | ValueRepr::VmIterBuf(_)) => {
+                Value::from_repr(raw)
+            }
             // Itemization is a Value-level flag now, so `.item` keeps the SAME
             // `HashData` `Gc` (no copy-on-write, so `.WHICH` identity and
             // `=`-shared mutation are preserved).

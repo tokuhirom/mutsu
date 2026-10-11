@@ -191,6 +191,10 @@ pub(in crate::value) enum Kind {
     /// A raw nqp `VMHash` (`nqp::hash`, ADR-12666): a `Gc<HashData>`, viewed
     /// as a `Hash`.
     VmHash,
+    /// Rakudo's `IterationBuffer` over an `Array`'s storage (its `$!reified`,
+    /// ADR-12666 §3.6): a `Gc<ArrayData>` viewed as a `List`. Unlike a raw
+    /// `VMArray` it is a high-level `Any` with methods.
+    VmIterBuf,
     // -- inline kinds (payload in bits 8..40) --
     Nil,
     Whatever,
@@ -486,7 +490,8 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             | Kind::ArrayItemArray
             | Kind::ArrayShaped
             | Kind::ArrayLazy
-            | Kind::VmArray => gc_op::<ArrayData>(bits, op),
+            | Kind::VmArray
+            | Kind::VmIterBuf => gc_op::<ArrayData>(bits, op),
             Kind::BufStorage => gc_op::<BufData>(bits, op),
             Kind::HashPlain | Kind::HashItemized | Kind::VmHash => gc_op::<HashData>(bits, op),
             Kind::SetImm | Kind::SetMut => gc_op::<SetData>(bits, op),

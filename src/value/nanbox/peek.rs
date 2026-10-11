@@ -202,6 +202,12 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::VmArray))
     }
 
+    /// Whether this word is an `IterationBuffer` storage view (ADR-12666).
+    #[inline]
+    pub(in crate::value) fn is_iteration_buffer_view(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::VmIterBuf))
+    }
+
     /// Whether this word is a raw nqp `VMHash` (ADR-12666).
     #[inline]
     pub(in crate::value) fn is_vm_hash(&self) -> bool {
@@ -230,7 +236,8 @@ impl NanBox {
             | Kind::ArrayItemArray
             | Kind::ArrayShaped
             | Kind::ArrayLazy
-            | Kind::VmArray => Some(unsafe { peek_gc::<ArrayData>(bits) }.live_slice_raw()),
+            | Kind::VmArray
+            | Kind::VmIterBuf => Some(unsafe { peek_gc::<ArrayData>(bits) }.live_slice_raw()),
             Kind::Slip | Kind::SlipItemized => Some(&unsafe { peek_arc::<Vec<Value>>(bits) }[..]),
             Kind::Seq => Some(&unsafe { peek_arc::<crate::value::SeqBody>(bits) }[..]),
             Kind::HyperSeq | Kind::RaceSeq if with_hyper => {
@@ -907,6 +914,7 @@ impl NanBox {
                     | Kind::ArrayShaped
                     | Kind::ArrayLazy
                     | Kind::VmArray
+                    | Kind::VmIterBuf
                     | Kind::Slip
                     | Kind::SlipItemized
                     | Kind::Seq
@@ -982,7 +990,8 @@ impl NanBox {
                 | Kind::ArrayItemArray
                 | Kind::ArrayShaped
                 | Kind::ArrayLazy
-                | Kind::VmArray => VARIANT_ARRAY,
+                | Kind::VmArray
+                | Kind::VmIterBuf => VARIANT_ARRAY,
                 Kind::HashPlain | Kind::HashItemized | Kind::VmHash => VARIANT_HASH,
                 // Both Slip tags view as `ValueView::Slip`, so a variant
                 // comparison must not split them (as it must not split the
@@ -1227,7 +1236,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
             // `Hash` over the same node, so every native builtin sees it the
             // way Rakudo's argument binder would hand it over (hllized). The
             // raw identity is read through `Value::is_vm_array`/`is_vm_hash`.
-            Kind::VmArray => ValueView::Array(gc_guard(bits), ArrayKind::List),
+            Kind::VmArray | Kind::VmIterBuf => ValueView::Array(gc_guard(bits), ArrayKind::List),
             Kind::VmHash => ValueView::Hash(gc_guard(bits)),
             Kind::BufStorage => ValueView::BufStorage(gc_guard(bits)),
             Kind::HashPlain | Kind::HashItemized => ValueView::Hash(gc_guard(bits)),

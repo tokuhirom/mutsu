@@ -583,35 +583,27 @@ impl Interpreter {
     }
 
     pub(super) fn nqp_attr_value(obj: &Value, name: &str) -> Option<Value> {
-        // `nqp::getattr($map, Map, '$!storage')` reaches for the hash a Map
-        // wraps, so that nqp's bindkey/deletekey can build it in place. In
-        // mutsu a Map/Hash IS that storage — there is no wrapper object with a
-        // separate `$!storage` slot — so the hash answers for itself, and the
-        // in-place mutations the caller then performs land on the same `Gc`
-        // the Map value holds.
         if Self::nqp_attr_bare(name) == "descriptor"
             && let Some(desc) = Self::nqp_container_descriptor(obj)
         {
             return Some(desc);
         }
+        let bare = Self::nqp_attr_bare(name);
+        // `nqp::getattr(%h, Map, '$!storage')` / `nqp::getattr(@a, List,
+        // '$!reified')` reach for the raw VMHash / VMArray a Map or List
+        // wraps, so that nqp's bindkey/bindpos can build it in place. In mutsu
+        // the high-level collection and its storage are one node, so the
+        // answer is the raw view of that node (ADR-12666 §3.6): `islist` /
+        // `ishash` 1, the same object on every read, and every write through
+        // it seen by the collection.
+        if matches!(bare, "reified" | "storage")
+            && matches!(obj.view(), ValueView::Array(..) | ValueView::Hash(_))
+        {
+            return obj.raw_storage_view();
+        }
+        // Any other attribute of a hash answers with the hash itself.
         if let ValueView::Hash(_) = obj.view() {
             return Some(obj.clone());
-        }
-        // Rakudo represents a slurpy List's reified storage as the value of
-        // `$!reified`.  mutsu stores List/Array elements directly in the
-        // Array value, so expose that same backing value to nqp code such as
-        // Array::Sorted::Util's `insert-also`.
-        let bare = Self::nqp_attr_bare(name);
-        if let ValueView::Array(items, _) = obj.view()
-            && matches!(bare, "reified" | "storage")
-        {
-            // A List-kind alias of the same node: the VMArray the high-level
-            // Array wraps, which the positional ops accept (and the Array
-            // itself they reject).
-            return Some(Value::array_with_kind(
-                items.clone(),
-                crate::value::ArrayKind::List,
-            ));
         }
         match obj.view() {
             ValueView::Pair(key, value) => {
@@ -630,13 +622,14 @@ impl Interpreter {
             }
             // A Capture's `@!list` is its positionals and `%!hash` its
             // nameds. Upstream NativeCall reads `@!list` off the `|c` of its
-            // replacement body and hands it to `nqp::nativecall`. The answer
-            // is a fresh list, as rakudo's is one the caller may rebind
+            // replacement body and hands it to `nqp::nativecall`. Rakudo keeps
+            // both as a raw VMArray / VMHash (ADR-12666 §3.6). The answer
+            // is a fresh one, as rakudo's is one the caller may rebind
             // elements of without touching the Capture.
             ValueView::Capture { positional, named } => {
                 return match bare {
-                    "list" => Some(Value::array(positional.to_vec())),
-                    "hash" => Some(Value::hash((*named).clone())),
+                    "list" => Some(Value::vm_array(positional.to_vec())),
+                    "hash" => Some(Value::vm_hash((*named).clone())),
                     _ => None,
                 };
             }
@@ -696,7 +689,7 @@ impl Interpreter {
         if bare == "storage"
             && let Some(storage) = attrs.get("__mutsu_hash_storage")
         {
-            return Some(storage.clone());
+            return Some(storage.raw_storage_view().unwrap_or_else(|| storage.clone()));
         }
         if bare == "reified"
             && let Some(storage) = attrs.get("__mutsu_array_storage")
