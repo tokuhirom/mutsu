@@ -1110,8 +1110,12 @@ impl Interpreter {
             // short name `Hash`, shadowing CORE's `Hash` for its whole body
             // (and `Crane::List`'s `List.new` for the whole `Crane` dist).
             // Real nesting (`unit module NL; class Hash`) still resolves.
+            // Only a core name needs the guard: a non-core `Foo::Bar` is found
+            // from inside `Foo` through its stash (`unit class Foo; use
+            // Foo::Bar; Bar.new`).
             if (crate::qualified::is_qualified(name_sym)
-                || !self.compound_name_segment_is_not_a_scope(qualified))
+                || !(self.compound_name_segment_is_not_a_scope(qualified)
+                    && self.unshadowed_builtin_type_name(name_sym.as_str())))
                 && let Some(key) = self.resolve_lexical_type_key(qualified)
             {
                 return Some(key);
