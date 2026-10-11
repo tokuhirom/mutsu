@@ -31,7 +31,11 @@ impl Compiler {
         }
         // Only the running scope declares it: a by-name lookup at run time
         // would find that binding, which is not an outer one.
-        if self.local_scopes.last().is_some_and(|own| own.contains_key(&bare)) {
+        if self
+            .local_scopes
+            .last()
+            .is_some_and(|own| own.contains_key(&bare))
+        {
             let msg = format!("No lexical found with name '{}'", name.as_str());
             let idx = self.code.add_constant(Value::str(msg));
             self.code.emit(OpCode::LoadConst(idx));

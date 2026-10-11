@@ -1132,9 +1132,9 @@ mod mixin_rhs;
 mod native_str_coercion;
 mod nqp_atomic_forms;
 mod nqp_cond_forms;
-mod nqp_lexical_forms;
 mod nqp_container_test;
 pub(crate) mod nqp_forms;
+mod nqp_lexical_forms;
 mod nqp_object_forms;
 mod nqp_p6_forms;
 mod numeric_operand_names;
@@ -2919,16 +2919,6 @@ impl Compiler {
         }
         let res = lex_scope::resolve_outers(&self.full_scope_chain(), &self.local_map, &bare);
         self.emit_outer_resolution(bare, res);
-    }
-
-    /// How many scopes out the nearest scope enclosing the current one that
-    /// declares `bare` sits, or `None` when no enclosing scope known to this
-    /// compilation declares it.
-    // Cost: O(s), s = scopes in the chain.
-    pub(super) fn outers_declaring_depth(&self, bare: &str) -> Option<usize> {
-        let chain = self.full_scope_chain();
-        let n = chain.len();
-        (1..n).find(|&depth| chain[n - 1 - depth].contains_key(bare))
     }
 
     /// Emit a read of `bare` via `UNIT::` (the compilation unit's outermost
