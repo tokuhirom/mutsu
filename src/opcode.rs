@@ -9361,19 +9361,7 @@ impl CompiledCode {
                 // `nqp::getlex`/`bindlex` (and their native forms) name a
                 // lexical of the running frame by a runtime string, so the
                 // frame's slots must be mirrored into `env` like for `EVAL`.
-                OpCode::NqpOp { id, .. } => matches!(
-                    crate::runtime::nqp_op_ids::nqp_op_name(*id),
-                    "getlex"
-                        | "getlex_i"
-                        | "getlex_n"
-                        | "getlex_s"
-                        | "bindlex"
-                        | "bindlex_i"
-                        | "bindlex_n"
-                        | "bindlex_s"
-                        | "curlexpad"
-                        | "ctx"
-                ),
+                OpCode::NqpOp { id, .. } => nqp_op_names_lexical(*id, false),
                 // `EVAL`/`EVALFILE`/`repl` are reflective whichever call shape the
                 // call site compiled to. A statement-position call once had
                 // its own opcodes (`ExecCall`/`ExecCallPairs`, since retired);
@@ -10450,13 +10438,10 @@ impl CompiledCode {
         // `nqp::bindlex*` writes a lexical of this frame by a runtime name, so
         // no name-write op shows which one: every plain scalar this frame
         // declares may change, and a closure capturing one must share its cell.
-        let binds_lexical_by_name = self.ops.iter().any(|op| {
-            matches!(op, OpCode::NqpOp { id, .. }
-            if matches!(
-                crate::runtime::nqp_op_ids::nqp_op_name(*id),
-                "bindlex" | "bindlex_i" | "bindlex_n" | "bindlex_s"
-            ))
-        });
+        let binds_lexical_by_name = self
+            .ops
+            .iter()
+            .any(|op| matches!(op, OpCode::NqpOp { id, .. } if nqp_op_names_lexical(*id, true)));
         if binds_lexical_by_name {
             for name in &self.locals {
                 if crate::env::is_plain_user_lexical(name)
@@ -13752,4 +13737,18 @@ mod compiled_fns_identity {
         assert!(CALL_IC_WAYS.is_power_of_two());
         assert!(CallIcSlot::way(crate::symbol::Symbol::intern("anything")) < CALL_IC_WAYS);
     }
+}
+
+/// Whether `nqp::` op `id` names a lexical of the running frame by a runtime
+/// string: any `getlex*`/`bindlex*`/`curlexpad`/`ctx` (or, with `binds_only`,
+/// just the `bindlex*` writers).
+// Cost: O(1).
+fn nqp_op_names_lexical(id: u16, binds_only: bool) -> bool {
+    let name = crate::nqp_op_ids::nqp_op_name(id);
+    matches!(name, "bindlex" | "bindlex_i" | "bindlex_n" | "bindlex_s")
+        || (!binds_only
+            && matches!(
+                name,
+                "getlex" | "getlex_i" | "getlex_n" | "getlex_s" | "curlexpad" | "ctx"
+            ))
 }
