@@ -257,6 +257,14 @@ pub(crate) struct TypeState {
     /// Rebless mapping: instance_id -> new HOW value.
     /// Used by Metamodel::Primitives.rebless to track reblessed objects.
     pub(crate) rebless_map: HashMap<u64, Value>,
+    /// Runtime-created mixin types (`C+{R}`), published process-wide so a
+    /// thread that meets an object reblessed on another thread can compose
+    /// the same type into its own registry (#11456). Shared by every fork, not
+    /// snapshotted: see [`super::published_mixins`].
+    pub(crate) published_mixins: Arc<super::published_mixins::PublishedMixins>,
+    /// Mixin types this thread is composing from a published recipe right
+    /// now (`Interpreter::adopt_published_mixin`'s re-entry guard).
+    pub(crate) adopting_mixins: Vec<String>,
     /// The serialization contexts the `nqp::` SC ops build (`nqp_ops_sc.rs`).
     pub(crate) sc: super::nqp_ops_sc::ScState,
     /// Names of classes the user declared with a `class`/`role`/`grammar`/`enum`
@@ -316,6 +324,8 @@ impl TypeState {
             squish_iterator_meta: HashMap::new(),
             custom_type_data: HashMap::new(),
             rebless_map: HashMap::new(),
+            published_mixins: Default::default(),
+            adopting_mixins: Vec::new(),
             sc: super::nqp_ops_sc::ScState::new(),
         }
     }
@@ -383,6 +393,8 @@ impl TypeState {
             squish_iterator_meta: HashMap::new(),
             custom_type_data: self.custom_type_data.clone(),
             rebless_map: self.rebless_map.clone(),
+            published_mixins: Arc::clone(&self.published_mixins),
+            adopting_mixins: Vec::new(),
             sc: self.sc.fork_for_thread(),
             user_declared_classes: self.user_declared_classes.clone(),
         }

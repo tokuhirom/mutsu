@@ -85,7 +85,60 @@ impl Interpreter {
         if !self.types.user_declared_classes.contains(base_class) {
             crate::runtime::cow_table_mut(&mut self.types.user_declared_classes).remove(&name);
         }
+        // The object about to be reblessed may be reachable from other
+        // threads, whose registries do not have this type (#11456).
+        self.types.published_mixins.publish(
+            &name,
+            crate::runtime::published_mixins::MixinRecipe {
+                base: base_class.to_string(),
+                roles: fresh,
+            },
+        );
         Ok(name)
+    }
+
+    /// Compose the mixin type `class_name` into this interpreter's registry
+    /// when another thread created it (see `crate::runtime::published_mixins`).
+    /// Returns whether the type is registered afterwards. Called where an
+    /// object's class name misses the registry.
+    // Cost: O(1) when no mixin type was ever published or the name is
+    // registered or not a mixin name; otherwise one class composition per
+    // missing level of a stacked `C+{A}+{B}`.
+    pub(crate) fn adopt_published_mixin(&mut self, class_name: &str) -> bool {
+        if !self.types.published_mixins.may_hold(class_name) {
+            return false;
+        }
+        if self.registry().classes.contains_key(class_name) {
+            return true;
+        }
+        let Some(recipe) = self.types.published_mixins.lookup(class_name) else {
+            return false;
+        };
+        // Composing the type may itself resolve names; never start composing
+        // the same type twice on one thread.
+        if self.types.adopting_mixins.iter().any(|n| n == class_name) {
+            return false;
+        }
+        // A stacked type inherits from the mixin type below it, which this
+        // thread may not have either.
+        if !self.registry().classes.contains_key(&recipe.base)
+            && !crate::runtime::registration_class_decl::BUILTIN_PARENT_TYPES
+                .contains(&recipe.base.as_str())
+            && !self.adopt_published_mixin(&recipe.base)
+        {
+            return false;
+        }
+        if recipe
+            .roles
+            .iter()
+            .any(|role| !self.registry().roles.contains_key(role))
+        {
+            return false;
+        }
+        self.types.adopting_mixins.push(class_name.to_string());
+        let composed = self.ensure_mixin_class(&recipe.base, &recipe.roles);
+        self.types.adopting_mixins.retain(|n| n != class_name);
+        matches!(composed, Ok(name) if name == class_name)
     }
 
     /// Whether `class_name` is a routine meta-object class (`Method`,

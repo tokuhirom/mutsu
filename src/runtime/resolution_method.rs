@@ -264,6 +264,9 @@ impl Interpreter {
         boundary_owner: Option<Symbol>,
     ) -> Option<(Symbol, MethodDef)> {
         self.dispatch.dispatch_ambiguous = false;
+        // An object reblessed on another thread may carry a mixin type this
+        // thread has not composed yet (#11456).
+        self.adopt_published_mixin(class_name);
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro_full = self.class_mro(class_name);
         let truncate_at: Option<usize> =
