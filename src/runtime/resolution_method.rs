@@ -275,6 +275,9 @@ impl Interpreter {
         // Collect all matching multi candidates across the MRO, then pick the
         // most specific one by type hierarchy distance.
         let mut all_matches: Vec<(Symbol, MethodDef)> = Vec::new();
+        // The visible multi candidates that did not bind: they still shape
+        // rakudo's tiers (see `pick_method_winner`).
+        let mut rivals: Vec<(Symbol, MethodDef)> = Vec::new();
         // Track whether a non-multi submethod was found on an ancestor
         // (submethods block MRO search for their class but not for
         // descendants).
@@ -366,6 +369,8 @@ impl Interpreter {
                             return Some((*cn, def));
                         }
                         all_matches.push((*cn, def));
+                    } else if def.is_multi {
+                        rivals.push((*cn, def));
                     }
                 }
                 // A non-multi submethod on an ancestor blocks the MRO search
@@ -384,7 +389,7 @@ impl Interpreter {
             }
         }
         let _ = submethod_blocks; // used for control flow above
-        self.pick_method_winner(mro, arg_values, invocant, all_matches)
+        self.pick_method_winner(mro, arg_values, invocant, all_matches, rivals)
     }
 
     /// The type distance of a method candidate's parameters from the actual

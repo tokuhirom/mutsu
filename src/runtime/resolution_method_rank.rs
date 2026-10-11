@@ -125,14 +125,21 @@ impl Interpreter {
     /// ([`prune_to_maximal`]), then the tier order, then `is default` among
     /// the candidates tied on it, and finally the owner tie-break among the
     /// candidates still tied.
-    // Cost: O(m^2 * h + m * p), m = matches, h = one nominal-type relation
-    // walk, p = parameters per candidate.
+    ///
+    /// `rivals` are the visible multi candidates that did not bind. With the
+    /// matches they form the candidate set rakudo sorts into topological
+    /// tiers (`multi_rank::assign_tiers`, #12795), so a match in a later tier
+    /// loses to one in an earlier tier even when the pair alone is
+    /// incomparable.
+    // Cost: O((m + r)^2 * h + (m + r) * p), m = matches, r = rivals, h = one
+    // nominal-type relation walk, p = parameters per candidate.
     pub(crate) fn pick_method_winner(
         &mut self,
         mro: &[Symbol],
         arg_values: &[Value],
         invocant: Option<&Value>,
         mut all_matches: Vec<(Symbol, MethodDef)>,
+        rivals: Vec<(Symbol, MethodDef)>,
     ) -> Option<(Symbol, MethodDef)> {
         if all_matches.len() <= 1 {
             return all_matches.into_iter().next();
@@ -168,10 +175,24 @@ impl Interpreter {
                 rank.refinement = [n.0, n.1, n.2, n.3];
             }
         }
+        // Rakudo's tiers over every candidate, the ones that did not bind
+        // included.
+        let matched = ranks.len();
+        let mut tiered: Vec<MultiRank> = ranks.clone();
+        tiered.extend(rivals.iter().enumerate().map(|(j, (owner, def))| {
+            let order = Self::method_decl_order(mro, *owner, matched + j);
+            self.method_rank_key(arg_values, def, usize::MAX, order)
+        }));
+        multi_rank::assign_tiers(&mut tiered, |rank| rank, &|x, y| {
+            self.nominal_types_related(x, y)
+        });
+        for (rank, tiered) in ranks.iter_mut().zip(&tiered) {
+            rank.tier = tiered.tier;
+            rank.tiered = true;
+        }
         // Across owners too: an ancestor's candidate and a subclass's that
         // are incomparable resolve by declaration order (`method_decl_order`).
-        // Method ranks are untiered, so the arity-ambiguity flag never sets.
-        let (mut ranked, _) = prune_to_maximal(
+        let (mut ranked, ambiguous) = prune_to_maximal(
             ranks
                 .into_iter()
                 .zip(0..)
@@ -179,6 +200,18 @@ impl Interpreter {
             &|x, y| self.nominal_types_related(x, y),
         );
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
+        // An arity-incomparable split in one tier with no bind-time check:
+        // rakudo's `X::Multi::Ambiguous`, unless `is default` picks one.
+        if ambiguous {
+            if let Some(&(_, i)) = ranked.iter().find(|(_, i)| all_matches[*i].1.is_default) {
+                return Some(all_matches.swap_remove(i));
+            }
+            if invocant.is_some() {
+                self.dispatch.dispatch_ambiguous = true;
+            }
+            let i = ranked[0].1;
+            return Some(all_matches.swap_remove(i));
+        }
         let best = ranked[0].0;
         let tied: Vec<usize> = ranked
             .iter()

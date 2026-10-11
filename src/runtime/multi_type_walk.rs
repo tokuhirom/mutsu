@@ -254,7 +254,11 @@ impl Interpreter {
                 if slot <= PROFILE_LEN {
                     slot_nominal = Some(Symbol::intern(&base));
                 }
-                total += self.typed_param_distance(pd, &base, &arg, var_type.as_deref());
+                let distance = self.typed_param_distance(pd, &base, &arg, var_type.as_deref());
+                if distance >= UNRELATED_DISTANCE {
+                    profile.mark_unrelated();
+                }
+                total += distance;
                 continue;
             }
             // An unconstrained `@`/`%` param carries an implicit
@@ -273,10 +277,14 @@ impl Interpreter {
                 // h(@raw)` stays narrower than `multi h(Any:D $x)` for
                 // `h("a b".words)`, as in rakudo, instead of scoring as
                 // unrelated to `Positional`.
-                total += match self.seq_as_positional_distance(implicit, &arg) {
+                let distance = match self.seq_as_positional_distance(implicit, &arg) {
                     Some(distance) => distance,
                     None => self.arg_type_distance(implicit, &arg, var_type.as_deref()),
                 };
+                if distance >= UNRELATED_DISTANCE {
+                    profile.mark_unrelated();
+                }
+                total += distance;
                 continue;
             }
             // A LITERAL parameter (`multi f(42)`) carries no type constraint

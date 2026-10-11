@@ -510,33 +510,42 @@ impl Interpreter {
             // `X::TypeCheck::Binding::Parameter`, as rakudo does, rather than
             // a dispatch `X::Multi::NoMatch`.
             let sole_private = is_private_call && overloads.len() == 1 && !overloads[0].is_multi;
-            let matching: Vec<(Symbol, MethodDef)> = overloads
+            // The visible multis that do not bind are kept as rivals: they
+            // still shape the tiers of `pick_method_winner` (#12795).
+            let (matching, rivals): (Vec<MethodDef>, Vec<MethodDef>) = overloads
                 .into_iter()
-                .filter(|def| {
-                    // For private calls, only match private methods; for public calls, skip private.
+                // For private calls, only match private methods; for public calls, skip private.
+                .filter(|def| is_private_call == def.is_private)
+                .partition(|def| {
                     // Use the invocant-aware matcher (not `method_args_match`) so an
                     // invocant-discriminated multi pair (`::?ROLE:U:` / `::?ROLE:D:`)
                     // is told apart by the mixin's definedness, matching the ordinary
                     // MRO dispatch path (`resolve_method_with_owner_impl`). Without
                     // this, a punned role's `:D:` candidate never won over `:U:`
                     // because this filter never looked at the invocant at all.
-                    is_private_call == def.is_private
-                        && (sole_private
-                            || self.method_args_match_for_invocant(
+                    sole_private
+                        || self.method_args_match_for_invocant(
                             &role_name,
                             def,
                             &args,
                             None,
                             Some(target),
-                        ))
-                })
-                .map(|def| (Symbol::intern(&role_name), def))
+                        )
+                });
+            let owner = Symbol::intern(&role_name);
+            let matching: Vec<(Symbol, MethodDef)> =
+                matching.into_iter().map(|def| (owner, def)).collect();
+            let rivals: Vec<(Symbol, MethodDef)> = rivals
+                .into_iter()
+                .filter(|def| def.is_multi)
+                .map(|def| (owner, def))
                 .collect();
             let Some((_, def)) = self.pick_method_winner(
                 &[Symbol::intern(&role_name)],
                 &args,
                 Some(target),
                 matching,
+                rivals,
             ) else {
                 for (name, previous) in saved_role_params {
                     if let Some(prev) = previous {
