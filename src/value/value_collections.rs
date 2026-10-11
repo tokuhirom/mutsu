@@ -206,6 +206,13 @@ impl ArrayData {
     }
 
     /// Borrow the element vector through the representation chokepoint.
+    ///
+    /// `#[inline]`: one branch over two field reads, on the call path of every
+    /// positional argument list. Left to the heuristics it fell out of line
+    /// whenever an unrelated change grew a caller, costing the call itself
+    /// (bench-tak: ~16M Ir, ~0.9%).
+    // Cost: O(1) for a boxed array; a native one syncs its boxed view first.
+    #[inline]
     pub(crate) fn items(&self) -> &[Value] {
         match &self.native {
             None => &self.items[self.head..],
