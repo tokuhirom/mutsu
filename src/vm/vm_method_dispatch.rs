@@ -3148,6 +3148,16 @@ fn merge_method_env(
             }) {
                 return None;
             }
+            // An attribute alias (`$!d := $_` in a `TWEAK`) names a variable of
+            // the method frame -- the topic, a param or a local. That variable
+            // is not the caller's, so the alias must not outlive the frame:
+            // merged back, it left `$!d` aliased to the caller's own `$_`.
+            if k.starts_with("__mutsu_sigilless_alias::!")
+                && let ValueView::Str(source) = v.view()
+                && (source.as_str() == "_" || is_method_local(source.as_str()))
+            {
+                return None;
+            }
             let keep = saved.contains_key_sym(*k)
                 || (k.starts_with("&") && !k.starts_with("&?"))
                 || k.starts_with("__mutsu_method_value::")
