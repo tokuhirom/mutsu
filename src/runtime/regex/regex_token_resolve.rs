@@ -590,7 +590,7 @@ impl Interpreter {
             };
             interp.record_profile_routine_frame(&frame);
             interp.routine_stack.push(frame);
-            let result = interp.eval_block_value(&def.body);
+            let result = interp.eval_decl_body_value(def);
             interp.routine_stack.pop();
             let value = match result {
                 Ok(v) => Some(v),
