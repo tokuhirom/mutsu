@@ -20,6 +20,7 @@ mod builtins_atomic_cas_code;
 mod builtins_atomic_target;
 mod builtins_atomic_elem;
 mod builtins_atomic_index;
+mod builtins_atomic_elem_cell;
 mod builtins_atomic_lexical_cells;
 mod builtins_atomic_shared;
 mod builtins_coerce;

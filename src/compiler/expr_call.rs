@@ -1767,8 +1767,9 @@ impl Compiler {
         // Rewrite cas($target, $expected, $new)
         else if name == "cas" && args.len() == 3 {
             // For array element CAS: cas(@arr[idx], $expected, $new)
-            // Emit __mutsu_cas_array_elem("@arr_name", idx, expected, new)
-            // Single-dim array element CAS: cas(@arr[idx], $expected, $new)
+            // Emit __mutsu_cas_array_elem("@arr_name", @arr, idx, expected, new):
+            // the name picks the shared lane, the read the frame's own binding
+            // (see `Interpreter::atomic_elem_cell`).
             if let Expr::Index { target, index, .. } = &args[0]
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
@@ -1779,12 +1780,13 @@ impl Compiler {
                     .add_constant(Value::str_from("__mutsu_cas_array_elem"));
                 let name_idx = self.code.add_constant(Value::str(arr_name));
                 self.code.emit(OpCode::LoadConst(name_idx));
+                self.compile_expr(target);
                 self.compile_expr(index);
                 self.compile_expr(&args[1]);
                 self.compile_expr(&args[2]);
                 self.code.emit(OpCode::CallFunc {
                     name_idx: call_name_idx,
-                    arity: 4,
+                    arity: 5,
                     arg_sources_idx: None,
                     literal_native_args: 0,
                     static_arg_types: false,
@@ -1822,12 +1824,14 @@ impl Compiler {
             } = &args[0]
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
-                // Pass dimensions as a list: __mutsu_cas_array_multidim("@arr", [d1,d2,...], expected, new)
+                // Pass dimensions as a list:
+                //   __mutsu_cas_array_multidim("@arr", @arr, [d1,d2,...], expected, new)
                 let call_name_idx = self
                     .code
                     .add_constant(Value::str_from("__mutsu_cas_array_multidim"));
                 let name_idx = self.code.add_constant(Value::str(arr_name));
                 self.code.emit(OpCode::LoadConst(name_idx));
+                self.compile_expr(target);
                 // Build the dimensions as a list
                 for dim in dimensions {
                     self.compile_expr(dim);
@@ -1838,7 +1842,7 @@ impl Compiler {
                 self.compile_expr(&args[2]);
                 self.code.emit(OpCode::CallFunc {
                     name_idx: call_name_idx,
-                    arity: 4,
+                    arity: 5,
                     arg_sources_idx: None,
                     literal_native_args: 0,
                     static_arg_types: false,
@@ -1976,17 +1980,18 @@ impl Compiler {
                     _ => None,
                 }
             {
-                // cas(%hash{key}, &code) -> __mutsu_cas_hash_elem("%hash", key, code)
+                // cas(%hash{key}, &code) -> __mutsu_cas_hash_elem("%hash", %hash, key, code)
                 let call_name_idx = self
                     .code
                     .add_constant(Value::str_from("__mutsu_cas_hash_elem"));
                 let name_idx = self.code.add_constant(Value::str(hash_name));
                 self.code.emit(OpCode::LoadConst(name_idx));
+                self.compile_expr(target);
                 self.compile_expr(index);
                 self.compile_expr(&args[1]);
                 self.code.emit(OpCode::CallFunc {
                     name_idx: call_name_idx,
-                    arity: 3,
+                    arity: 4,
                     arg_sources_idx: None,
                     literal_native_args: 0,
                     static_arg_types: false,
@@ -1994,17 +1999,18 @@ impl Compiler {
             } else if let Expr::Index { target, index, .. } = &args[0]
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
-                // cas(@arr[idx], &code) -> __mutsu_cas_array_elem_code("@arr", idx, code)
+                // cas(@arr[idx], &code) -> __mutsu_cas_array_elem_code("@arr", @arr, idx, code)
                 let call_name_idx = self
                     .code
                     .add_constant(Value::str_from("__mutsu_cas_array_elem_code"));
                 let name_idx = self.code.add_constant(Value::str(arr_name));
                 self.code.emit(OpCode::LoadConst(name_idx));
+                self.compile_expr(target);
                 self.compile_expr(index);
                 self.compile_expr(&args[1]);
                 self.code.emit(OpCode::CallFunc {
                     name_idx: call_name_idx,
-                    arity: 3,
+                    arity: 4,
                     arg_sources_idx: None,
                     literal_native_args: 0,
                     static_arg_types: false,
@@ -2015,12 +2021,13 @@ impl Compiler {
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
             {
                 // cas(@arr[d1;d2], &code) ->
-                //   __mutsu_cas_array_multidim_code("@arr", [d1,d2,...], code)
+                //   __mutsu_cas_array_multidim_code("@arr", @arr, [d1,d2,...], code)
                 let call_name_idx = self
                     .code
                     .add_constant(Value::str_from("__mutsu_cas_array_multidim_code"));
                 let name_idx = self.code.add_constant(Value::str(arr_name));
                 self.code.emit(OpCode::LoadConst(name_idx));
+                self.compile_expr(target);
                 for dim in dimensions {
                     self.compile_expr(dim);
                 }
@@ -2028,7 +2035,7 @@ impl Compiler {
                 self.compile_expr(&args[1]);
                 self.code.emit(OpCode::CallFunc {
                     name_idx: call_name_idx,
-                    arity: 3,
+                    arity: 4,
                     arg_sources_idx: None,
                     literal_native_args: 0,
                     static_arg_types: false,
