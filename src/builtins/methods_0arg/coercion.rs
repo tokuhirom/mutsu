@@ -779,7 +779,7 @@ pub(crate) fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             Ok(Value::capture(vec![], named))
         }
         // Version.Capture throws X::Cannot::Capture
-        ValueView::Version { .. } => Err(cannot_capture("Version")),
+        ValueView::Version { .. } => Err(cannot_capture_value(target)),
         // Signature/Failure .Capture throw X::Cannot::Capture (both the type
         // object and an instance).
         ValueView::Instance { class_name, .. }
@@ -1012,9 +1012,7 @@ pub(crate) fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         | ValueView::BigInt(_)
         | ValueView::Num(_)
         | ValueView::Whatever
-        | ValueView::HyperWhatever => {
-            Err(cannot_capture(&crate::value::types::what_type_name(target)))
-        }
+        | ValueView::HyperWhatever => Err(cannot_capture_value(target)),
         // Sub → X::Cannot::Capture (Callable)
         ValueView::Sub(..) => Err(cannot_capture(&crate::value::types::what_type_name(target))),
         // Regex → X::Cannot::Capture. RegexWithAdverbs is the metadata-carrying
@@ -1042,6 +1040,25 @@ pub(crate) fn cannot_capture(type_name: &str) -> RuntimeError {
     attrs.insert(
         "message".to_string(),
         Value::str(format!("Cannot unpack or Capture {}", type_name)),
+    );
+    RuntimeError::typed("X::Cannot::Capture", attrs)
+}
+
+/// `X::Cannot::Capture` for a value that has no `Capture` (an `Int`, `Num`, `Str`,
+/// `Bool`, `Version`, `*`): Rakudo names the value by its `.gist` in backticks
+/// and explains how to write a `Capture`, and keeps the value as `.what`.
+// Cost: O(n), n = chars of the value's gist.
+pub(crate) fn cannot_capture_value(target: &Value) -> RuntimeError {
+    let mut attrs = ValueMap::default();
+    attrs.insert("what".to_string(), target.clone());
+    attrs.insert(
+        "message".to_string(),
+        Value::str(format!(
+            "Cannot unpack or Capture `{}`.\nTo create a Capture, add parentheses: \\(...)\n\
+             If unpacking in a signature, perhaps you needlessly used parentheses? -> ($x) {{}} vs. -> $x {{}}\n\
+             or missed `:` in signature unpacking? -> &c:(Int) {{}}",
+            crate::value::gist::gist_value(target)
+        )),
     );
     RuntimeError::typed("X::Cannot::Capture", attrs)
 }

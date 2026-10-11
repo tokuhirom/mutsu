@@ -3208,42 +3208,7 @@ impl Interpreter {
                 _ => Ok(Value::str(target.to_string_value())),
             },
             "Numeric" | "Real" | "Int" if args.is_empty() => {
-                let num_name = match target.view() {
-                    ValueView::Package(name) => Some(name.resolve()),
-                    ValueView::Str(name) => Some(name.to_string()),
-                    _ => None,
-                };
-                if let Some(name) = num_name {
-                    // A bare type object (no user `.Numeric`/`.Real`/`.Int`, and not
-                    // one of the concrete numeric types handled on the fast path —
-                    // `Int.Int` identity, `Num.Int` concreteness error) inherits
-                    // Mu's coercion: warn "uninitialized ... in numeric context" and
-                    // return 0. Roles keep their existing silent 0 for back-compat.
-                    if self.registry().roles.contains_key(&name) {
-                        Ok(Value::int(0))
-                    } else {
-                        let msg = format!(
-                            "Use of uninitialized value of type {} in numeric context",
-                            name
-                        );
-                        // Settled at the raise site — see
-                        // `raise_resumable_warning`: an unwinding
-                        // `warn_signal_with_resume` would be applied as an
-                        // explicit `return` by the enclosing routine boundary.
-                        self.raise_resumable_warning(&msg, Value::int(0))
-                    }
-                } else if let (true, ValueView::Instance { class_name, .. }) =
-                    (matches!(method, "Numeric" | "Int"), target.view())
-                {
-                    Err(crate::runtime::mu_coercion_no_match_error(
-                        method,
-                        &class_name.resolve(),
-                    ))
-                } else {
-                    Err(super::methods_signature_errors::method_not_found_for_value(
-                        method, &target,
-                    ))
-                }
+                self.mu_numeric_coercion(&target, method)
             }
             "EVAL" if args.is_empty() => {
                 // .EVAL works on strings, Buf, and numeric types

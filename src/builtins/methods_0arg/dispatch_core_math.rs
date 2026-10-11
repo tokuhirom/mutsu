@@ -2,83 +2,9 @@
 /// sink, item, race/hyper, NFC/NFD/NFKC/NFKD. (The transcendental math methods
 /// are rows of `builtins::method_table::scalars::math`.)
 use crate::symbol::Symbol;
-use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::{RuntimeError, Value, ValueView, make_rat};
 
-/// Convert a string to Rat, handling integer, decimal, scientific notation, and complex forms.
-/// Parses with BigInt so values past i64 keep their magnitude
-/// (`"18446744073709551616".Rat`); `make_big_rat` reduces and downcasts to a
-/// small Rat whenever both parts fit.
-fn str_to_rat(s: &str) -> Value {
-    use num_bigint::BigInt;
-    let big = |s: &str| s.parse::<BigInt>().ok();
-    let pow10 = |e: u32| BigInt::from(10).pow(e);
-    let trimmed = s.trim();
-    if trimmed.is_empty() {
-        return make_rat(0, 1);
-    }
-    if let Some((n_str, d_str)) = trimmed.split_once('/') {
-        let n = big(n_str.trim()).unwrap_or_default();
-        let mut d = big(d_str.trim()).unwrap_or_else(|| BigInt::from(1));
-        if num_traits::Zero::is_zero(&d) {
-            d = BigInt::from(1);
-        }
-        return crate::value::make_big_rat(n, d);
-    }
-    let real_str = if let Some(pos) = trimmed
-        .find('+')
-        .or_else(|| trimmed[1..].find('-').map(|p| p + 1))
-    {
-        let after = &trimmed[pos + 1..];
-        if after.ends_with('i') {
-            &trimmed[..pos]
-        } else {
-            trimmed
-        }
-    } else if trimmed.ends_with('i') {
-        return make_rat(0, 1);
-    } else {
-        trimmed
-    };
-    if real_str.contains('.') {
-        let negative = real_str.starts_with('-');
-        let abs_str = if negative { &real_str[1..] } else { real_str };
-        let (decimal_part, exp_part) = if let Some(e_pos) = abs_str.find(['e', 'E']) {
-            (&abs_str[..e_pos], abs_str[e_pos + 1..].parse::<i32>().ok())
-        } else {
-            (abs_str, None)
-        };
-        if let Some((int_part, frac_part)) = decimal_part.split_once('.') {
-            let frac_digits = frac_part.len() as u32;
-            let denom = pow10(frac_digits);
-            let int_val = big(int_part).unwrap_or_default();
-            let frac_val = big(frac_part).unwrap_or_default();
-            let mut numer = int_val * &denom + frac_val;
-            if negative {
-                numer = -numer;
-            }
-            return match exp_part {
-                Some(exp) if exp >= 0 => {
-                    crate::value::make_big_rat(numer * pow10(exp as u32), denom)
-                }
-                Some(exp) => crate::value::make_big_rat(numer, denom * pow10((-exp) as u32)),
-                None => crate::value::make_big_rat(numer, denom),
-            };
-        }
-    }
-    if let Some(e_pos) = real_str.find(['e', 'E']) {
-        let base = &real_str[..e_pos];
-        let exp = real_str[e_pos + 1..].parse::<i32>().unwrap_or(0);
-        if let Some(base_val) = big(base) {
-            if exp >= 0 {
-                return crate::value::make_big_rat(base_val * pow10(exp as u32), BigInt::from(1));
-            }
-            return crate::value::make_big_rat(base_val, pow10((-exp) as u32));
-        }
-    }
-    let n = big(real_str).unwrap_or_default();
-    crate::value::make_big_rat(n, BigInt::from(1))
-}
+use crate::builtins::method_table::str_numeric::{fat_rat_of_str, rat_of_str};
 
 /// Levenshtein edit distance between two strings (by Unicode scalar), used for
 /// the numeric value of a `StrDistance`.
@@ -171,20 +97,10 @@ pub(super) fn dispatch(
             Some(Some(Ok(rat)))
         }
         "Rat" => Some(match target.view() {
-            // A non-numeric string yields the same lazy `X::Str::Numeric` Failure
-            // `.Int`/`.Num`/`.FatRat` produce (`"foo".Rat.^name` is `Failure`).
-            // Without this guard `str_to_rat` silently fell back to `0/1`.
-            ValueView::Str(s)
-                if crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim()).is_none() =>
-            {
-                Some(Ok(
-                    crate::builtins::methods_0arg::dispatch_core_coerce::str_numeric_failure(&s),
-                ))
-            }
-            // `"1+2i".Rat` is `Complex.Rat`: the runtime tests the imaginary part.
-            ValueView::Str(s) if str_numifies_to_complex(&s).is_some() => None,
-            // Cost: O(d^2), d = digits (parsed twice: the guard above and `str_to_rat`).
-            ValueView::Str(s) => Some(Ok(str_to_rat(&s))),
+            // The `Cool.Rat` row's implementation (`method_table::str_numeric`); a
+            // string that numifies to a `Complex` (`"1+2i".Rat` is `Complex.Rat`)
+            // is the interpreter's.
+            ValueView::Str(s) => rat_of_str(&s).map(Ok),
             // A Complex is Real when its imaginary part is `≅ 0`; the runtime
             // reads `$*TOLERANCE` (`Interpreter::dispatch_complex_to_real`).
             ValueView::Complex(..) => None,
@@ -258,27 +174,9 @@ pub(super) fn dispatch(
             Some(Some(Ok(fat)))
         }
         "FatRat" => Some(match target.view() {
-            // A non-numeric string yields the same lazy `X::Str::Numeric` Failure
-            // `.Int`/`.Num` produce (`"foo".FatRat.^name` is `Failure`).
-            ValueView::Str(s)
-                if crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim()).is_none() =>
-            {
-                Some(Ok(
-                    crate::builtins::methods_0arg::dispatch_core_coerce::str_numeric_failure(&s),
-                ))
-            }
-            // As `.Rat`: coerced as the `Complex` it numifies to.
-            ValueView::Str(s) if str_numifies_to_complex(&s).is_some() => None,
-            ValueView::Str(s) => {
-                let rat = str_to_rat(&s);
-                match rat.view() {
-                    ValueView::Rat(n, d) => Some(Ok(Value::fat_rat_raw(n, d))),
-                    ValueView::BigRat(n, d) => {
-                        Some(Ok(crate::value::make_big_fat_rat(n.clone(), d.clone())))
-                    }
-                    _ => Some(Ok(Value::fat_rat_raw(0, 1))),
-                }
-            }
+            // The `Str.FatRat` conversion (`method_table::str_numeric`); a string that
+            // numifies to a `Complex` is the interpreter's, as for `.Rat`.
+            ValueView::Str(s) => fat_rat_of_str(&s).map(Ok),
             // As `.Rat`: the runtime checks `$*TOLERANCE`.
             ValueView::Complex(..) => None,
             ValueView::Array(items, ..) => Some(Ok(Value::fat_rat_raw(items.len() as i64, 1))),

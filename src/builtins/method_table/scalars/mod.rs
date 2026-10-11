@@ -9,6 +9,7 @@ use super::{Handler, MethodRow, RowFlags};
 pub(crate) mod blob;
 pub(crate) mod blob_decode;
 pub(crate) mod blob_read;
+mod capture_none;
 pub(crate) mod coerce;
 pub(crate) mod complex;
 pub(crate) mod complex_math;
@@ -27,6 +28,7 @@ pub(crate) mod real_misc;
 pub(crate) mod render;
 pub(crate) mod str;
 pub(crate) mod str_iter;
+pub(crate) mod str_numeric;
 pub(crate) mod str_search;
 mod stringify;
 pub(crate) mod succ_pred;
@@ -47,6 +49,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     str_search::STR_SUBSTR_2,
     str_search::COOL_SUBSTR_2,
     stringify::ROWS,
+    str_numeric::STR_ROWS,
+    str_numeric::COOL_ROWS,
     int::ROWS,
     num::ROWS,
     rational::RAT_ROWS,
@@ -75,6 +79,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     truth::BOOL_ROWS,
     truth::UNI_ROWS,
     version::ROWS,
+    version::COOL_ROWS,
+    capture_none::ROWS,
     blob::ROWS,
     blob::COERCE_ROWS,
     blob_decode::ROWS,

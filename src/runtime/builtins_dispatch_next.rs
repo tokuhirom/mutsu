@@ -434,6 +434,53 @@ impl Interpreter {
         Some(self.call_method_with_values(invocant, "bless", args))
     }
 
+    /// `Mu.Numeric`, `Mu.Real` and `Mu.Int`: what a receiver with no `.Numeric`
+    /// of its own answers. A bare type object (not one of the concrete numeric
+    /// types handled on the fast path: `Int.Int` is the identity, `Num.Int` a
+    /// concreteness error) warns "uninitialized ... in numeric context" and
+    /// answers `0`; a role keeps its silent `0`; an instance is the
+    /// `X::Multi::NoMatch` Rakudo throws for `Numeric`/`Int` and the plain
+    /// no-such-method for `Real`. The `Mu.Numeric`/`Mu.Int` base rows
+    /// (`method_table::ctors_mop::mu_base`) end here too, as the last candidate
+    /// of a user `method Numeric { callsame }`.
+    // Cost: O(1).
+    pub(crate) fn mu_numeric_coercion(
+        &mut self,
+        target: &Value,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        let num_name = match target.view() {
+            ValueView::Package(name) => Some(name.resolve()),
+            ValueView::Str(name) => Some(name.to_string()),
+            _ => None,
+        };
+        if let Some(name) = num_name {
+            if self.registry().roles.contains_key(&name) {
+                Ok(Value::int(0))
+            } else {
+                let msg = format!(
+                    "Use of uninitialized value of type {} in numeric context",
+                    name
+                );
+                // Settled at the raise site -- see `raise_resumable_warning`: an
+                // unwinding `warn_signal_with_resume` would be applied as an
+                // explicit `return` by the enclosing routine boundary.
+                self.raise_resumable_warning(&msg, Value::int(0))
+            }
+        } else if let (true, ValueView::Instance { class_name, .. }) =
+            (matches!(method, "Numeric" | "Int"), target.view())
+        {
+            Err(crate::runtime::mu_coercion_no_match_error(
+                method,
+                &class_name.resolve(),
+            ))
+        } else {
+            Err(super::methods_signature_errors::method_not_found_for_value(
+                method, target,
+            ))
+        }
+    }
+
     /// When a user BUILDALL/POPULATE/clone method (typically installed by a
     /// custom HOW's `add_method` — OO::Monitors) exhausts the user MRO via
     /// `callsame`/`nextsame`, provide the NATIVE Mu base behavior as the final
@@ -465,7 +512,7 @@ impl Interpreter {
                 std::slice::from_ref(&invocant),
             ),
             "defined" | "Bool" | "so" | "not" | "WHICH" | "WHERE" | "gist" | "Str" | "raku" | "say"
-            | "print" | "put" | "note" => {
+            | "print" | "put" | "note" | "Numeric" | "Int" => {
                 crate::builtins::method_table::invoke_base(
                     self,
                     "Mu",

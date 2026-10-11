@@ -38,6 +38,45 @@ pub(super) static ROWS: &[MethodRow] = &[
     },
 ];
 
+/// `Cool.Version` and `Str.Version`.
+pub(super) static COOL_ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "Cool",
+        name: "Version",
+        arity: 0,
+        handler: Handler::Narrow(cool_version),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Str",
+        name: "Version",
+        arity: 0,
+        handler: Handler::Narrow(cool_version),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+];
+
+fn cool_version(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    Some(Ok(version_of(target)))
+}
+
+/// `Cool.Version`: `Version.new(self.Str)`; a `Version` is its own version and an
+/// empty string is the empty `Version`.
+// Cost: O(n), n = chars of the receiver's string form.
+pub(crate) fn version_of(target: &Value) -> Value {
+    if let ValueView::Version { .. } = target.view() {
+        return target.clone();
+    }
+    let text = target.to_string_value();
+    if text.is_empty() {
+        Value::version(Vec::new(), false, false)
+    } else {
+        Value::version_from_str(&text)
+    }
+}
+
 /// `Version.Str`: the version without the `v` prefix (`1.2.3+`).
 // Cost: O(n), n = chars of the rendering.
 pub(crate) fn text(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
