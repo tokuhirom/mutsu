@@ -45,27 +45,14 @@ pub(super) fn dispatch(
         // method-not-found in raku. Invalid/out-of-range strings surface the
         // same X::Temporal::InvalidFormat / X::OutOfRange the constructors throw.
         // Cost: O(n), n = chars of the invocant.
+        // The `Str` rows' handlers (`method_table::str_args`).
         "Date" if matches!(target.view(), ValueView::Str(_)) => {
-            let s = target.to_string_value();
-            Some(Some(
-                super::temporal::parse_date_string(&s)
-                    .map(|(y, m, d)| super::temporal::make_date(y, m, d)),
-            ))
+            Some(crate::builtins::method_table::str_args::date(target, &[]))
         }
         // Cost: O(n), n = chars of the invocant.
-        "DateTime" if matches!(target.view(), ValueView::Str(_)) => {
-            let s = target.to_string_value();
-            // A bare `yyyy-mm-dd` (no time component) becomes midnight UTC.
-            let result = if s.contains(['T', 't']) {
-                super::temporal::parse_datetime_string(&s).map(|(y, mo, d, h, mi, se, tz)| {
-                    super::temporal::make_datetime(y, mo, d, h, mi, se, tz)
-                })
-            } else {
-                super::temporal::parse_date_string(&s)
-                    .map(|(y, m, d)| super::temporal::make_datetime(y, m, d, 0, 0, 0.0, 0))
-            };
-            Some(Some(result))
-        }
+        "DateTime" if matches!(target.view(), ValueView::Str(_)) => Some(
+            crate::builtins::method_table::str_args::date_time(target, &[]),
+        ),
         // Cost: O(n), n = chars of the invocant's string form.
         "trim" => Some(Some(crate::builtins::method_table::str::trim(target, &[]))),
         // Cost: O(n), n = chars of the invocant's string form.

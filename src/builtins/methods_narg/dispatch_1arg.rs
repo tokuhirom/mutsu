@@ -2,7 +2,6 @@ use super::allomorph::allomorph_accepts;
 
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use super::fmt_contains::fmt_value_needs_coercion;
-use super::indent::str_indent;
 use super::numeric::{int_to_subscript, int_to_superscript};
 use crate::runtime;
 use crate::symbol::Symbol;
@@ -335,24 +334,17 @@ pub(crate) fn native_method_1arg(
                 crate::builtins::method_table::str_search::ends_with(target, args)
             })
         }
+        // The `Str`/`Cool` rows' handlers (`method_table::str_args`).
         // Cost: O(n + m), n = chars of the invocant, m = chars of the mark source.
-        "samemark" => {
-            let target_str = target.to_string_value();
-            let source_str = arg.to_string_value();
-            Some(Ok(Value::str(crate::builtins::samemark_string(
-                &target_str,
-                &source_str,
-            ))))
-        }
+        "samemark" => Some(crate::builtins::method_table::str_args::samemark(
+            target,
+            std::slice::from_ref(arg),
+        )),
         // Cost: O(n + m), n = chars of the invocant, m = chars of the case pattern.
-        "samecase" => {
-            let source_str = target.to_string_value();
-            let pattern_str = arg.to_string_value();
-            Some(Ok(Value::str(crate::builtins::samecase_string(
-                &source_str,
-                &pattern_str,
-            ))))
-        }
+        "samecase" => Some(crate::builtins::method_table::str_args::samecase(
+            target,
+            std::slice::from_ref(arg),
+        )),
         // An allomorph (`IntStr`/`RatStr`/`NumStr`) answers with its numeric
         // inner value, so the epsilon binds exactly where it does for that type.
         // Cost: O(1) plus the inner value's own `Rat`/`FatRat` cost.
@@ -437,20 +429,10 @@ pub(crate) fn native_method_1arg(
         // cached (see `native_substr_slice`).
         "substr" => crate::builtins::substr::native_substr_slice(target, arg, None),
         // Cost: O(n + L * s), n = chars of the invocant, L = lines, s = |steps|.
-        "indent" => {
-            let s = target.to_string_value();
-            let (result, warning) = match str_indent(&s, arg) {
-                Ok(r) => r,
-                Err(e) => return Some(Err(e)),
-            };
-            if let Some(warn_msg) = warning {
-                return Some(Err(crate::value::RuntimeError::warn_signal_with_resume(
-                    warn_msg,
-                    Value::str(result),
-                )));
-            }
-            Some(Ok(Value::str(result)))
-        }
+        "indent" => Some(crate::builtins::method_table::str_args::indent(
+            target,
+            std::slice::from_ref(arg),
+        )),
         // A Capture's positional part: the `Capture` row's implementation
         // (`method_table::capture`).
         // A `Uni`'s positional subscript: the `Uni` rows' implementation
@@ -810,12 +792,7 @@ pub(crate) fn native_method_1arg(
         }
         // Cost: see `parse_base` (src/builtins/parse_base.rs).
         "parse-base" => {
-            let radix = match arg.view() {
-                ValueView::Int(n) => n,
-                _ => return None,
-            };
-            let s = target.to_string_value();
-            Some(crate::builtins::parse_base::parse_base(&s, radix))
+            crate::builtins::method_table::str_args::parse_base(target, std::slice::from_ref(arg))
         }
         // A number: the numeric types' `base` rows' implementation
         // (`method_table::numeric_base`).

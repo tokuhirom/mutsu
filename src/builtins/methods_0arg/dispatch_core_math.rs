@@ -1,7 +1,6 @@
 /// Miscellaneous methods: tclc, wordcase, succ, pred, Rat, FatRat, tree, encode,
 /// sink, item, race/hyper, NFC/NFD/NFKC/NFKD. (The transcendental math methods
 /// are rows of `builtins::method_table::scalars::math`.)
-use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView, make_rat};
 
 use crate::builtins::method_table::str_numeric::{fat_rat_of_str, rat_of_str};
@@ -254,13 +253,11 @@ pub(super) fn dispatch(
             usize::MAX,
         )))),
         // Cost: O(n), n = bytes of the invocant.
-        "encode" => {
-            let s = target.to_string_value();
-            Some(Some(Ok(crate::value::value_buf::make_buf_from_bytes(
-                Symbol::intern("utf8"),
-                s.as_bytes(),
-            ))))
-        }
+        // The `Str`/`Cool` rows' handler (`method_table::str_args`).
+        "encode" => Some(Some(crate::builtins::method_table::str_args::encode(
+            target,
+            &[],
+        ))),
         "sink" => {
             crate::builtins::method_table::list::sink(target, &[])
                 .map(Some)

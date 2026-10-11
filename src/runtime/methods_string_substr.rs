@@ -93,7 +93,12 @@ impl Interpreter {
         } else {
             0
         };
-        if start < 0 || start > len {
+        // A position past the end cannot match (Rakudo answers `False`); only a
+        // negative one is out of range.
+        if start > len {
+            return Ok(Value::FALSE);
+        }
+        if start < 0 {
             return Ok(RuntimeError::out_of_range_failure(
                 "start",
                 Value::int(start),

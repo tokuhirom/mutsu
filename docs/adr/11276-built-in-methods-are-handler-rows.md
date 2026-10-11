@@ -1593,6 +1593,23 @@ largest block with one obvious shape, so it went first: 43 rows in four new modu
 - **Found, not fixed**: an element whose class declares `Str`/`gist` is rendered by mutsu's default form in `.Str`, `~` and `.gist` (#12702), and a `Mix`
   weight that is a `Rat` is stored and rendered as an `f64` (`(a => 1/3).Mix.Str` is `a(0.3333333333333333)`, Rakudo `a(0.333333)`; #12703).
 
+### 9.74 The text methods with an argument: `samecase`, `samemark`, `indent`, `encode`, `parse-base`, `substr-eq`, `naive-word-wrapper`, `Date`, `DateTime`, `Stringy` (2026-10-11)
+
+`refactor/11276-text-pure-rows`. The pure half of the `text` group's declared rows: `--inventory text` went from 30 declared rows owed to 16, and every one left
+is an interpreter row (`subst`, `trans`, `match`, `indices`, `IO`, `sprintf`, `printf`), `split`/`fmt` (named arguments and several arities), or `Cool.Int`
+(unreachable, §9.71).
+
+- **`method_table/scalars/str_args.rs`**: `samecase`, `samemark`, `indent`, `encode` on `Str` and `Cool` (one handler each, reading the receiver through
+  `with_str`); `parse-base`, `substr-eq` (arities 1 and 2), `naive-word-wrapper` (a `Handler::Named` row binding `:max`/`:indent`), `Date`, `DateTime` and
+  `Stringy` on `Str`; `encode` on `Uni`. The cascade arms call the same handlers.
+- **`indent` keeps its warning**: removing more columns than a line has returns the `warn_signal_with_resume` error the arm returned, carrying the result.
+- **Behaviour changes toward Rakudo**: `"abcd".substr-eq("bc", 10)` is `False` (it was an `X::OutOfRange` `Failure`; the interpreter's `:i`/`:m` path agrees now),
+  `"11".parse-base("2")` and `.parse-base(2.0)` are `X::Multi::NoMatch` listing Rakudo's three candidates (they were `X::Method::NotFound`), and `Uni.encode`
+  answers a `Buf` (it was `utf8`).
+- **Left**: `"a".indent("x")` answers `"a"` (Rakudo: `X::Str::Numeric`, `indent` coerces its argument with `Int()`); a negative `substr-eq` position says
+  `Index out of range` where Rakudo says `Position in calling 'substr-eq' out of range` (`RuntimeError::out_of_range_failure` ignores its `what`);
+  `parse-base`'s `"camel"`/`"beer"` easter-egg candidates.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
