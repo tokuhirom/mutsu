@@ -940,7 +940,7 @@ impl Interpreter {
             .clone()
             .or_else(|| {
                 crate::qualified::is_global_package(self.current_package_sym())
-                    .then(|| self.module.unit_module_loading_stack.last().cloned())
+                    .then(|| self.enclosing_unit_module_for_operators())
                     .flatten()
             })
             .unwrap_or_else(|| current_pkg.clone());

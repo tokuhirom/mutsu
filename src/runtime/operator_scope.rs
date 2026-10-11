@@ -66,6 +66,28 @@ impl Interpreter {
         }
     }
 
+    /// The `unit module` an operator import should be installed into, if the
+    /// module whose body is running declares one.
+    ///
+    /// `unit_module_loading_stack` names the innermost *declared* unit module,
+    /// which is an ENCLOSING module's when the body running is a bare file
+    /// (no `unit` declarator) loaded from inside it -- `unit module A; use B;`
+    /// with a bare `B.rakumod` that itself `use`s an operator provider. Taking
+    /// that name installed the operator into `A`'s package, so `B`'s own
+    /// bodies (which live in `GLOBAL`) lost it. A bare file imports into its
+    /// own compunit instead.
+    // Cost: O(1).
+    pub(crate) fn enclosing_unit_module_for_operators(&self) -> Option<String> {
+        let unit_mod = self.module.unit_module_loading_stack.last()?;
+        let bare_body = self.module.module_load_stack.last().is_some_and(|loading| {
+            !self
+                .module
+                .module_declared_unit_packages
+                .contains_key(&Symbol::intern(loading))
+        });
+        (!bare_body).then(|| unit_mod.clone())
+    }
+
     /// Record the importing unit in the name-level operator gate
     /// (`user_declared_infix_ops`) for an imported `infix:<op>`: the operator
     /// is lexically visible in the unit that imported it, not everywhere.

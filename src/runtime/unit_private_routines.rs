@@ -255,7 +255,13 @@ impl Interpreter {
             .filter_map(|key| {
                 let ks = key.resolve();
                 let name = Self::toplevel_global_routine_name(&ks)?;
-                if name == "MAIN" || name.contains(":<") {
+                // Operators (`infix:<op>` ...) are secluded like any routine:
+                // left in `GLOBAL::`, the alias is dropped when the loading
+                // scope's own entries come back and the importer's bodies lose
+                // the operator once its load returns. The other categorical
+                // names (`trait_mod:<is>`) are additive multis and stay put.
+                if name == "MAIN" || (name.contains(":<") && !Self::is_operator_routine_name(name))
+                {
                     return None;
                 }
                 Some((*key, Symbol::intern(name)))
@@ -315,6 +321,15 @@ impl Interpreter {
         if moved {
             self.invalidate_fn_resolution();
         }
+    }
+
+    /// Whether `name` spells an operator routine (`infix:<+>`, `circumfix:<[ ]>`).
+    // Cost: O(1).
+    fn is_operator_routine_name(name: &str) -> bool {
+        matches!(
+            name.split_once(":<").map(|(category, _)| category),
+            Some("prefix" | "postfix" | "infix" | "circumfix" | "postcircumfix")
+        )
     }
 
     /// Every routine name `module` itself exports, in any form.
