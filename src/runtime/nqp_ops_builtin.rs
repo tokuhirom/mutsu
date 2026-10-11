@@ -510,6 +510,9 @@ impl Interpreter {
                 "nqp::{op}: empty attribute name"
             )));
         }
+        if attr_key == "descriptor" && Self::nqp_container_descriptor(obj).is_some() {
+            return Self::nqp_bind_container_descriptor(obj, &val);
+        }
         if Self::nqp_bind_container_storage(attr_key, obj, &val) {
             return Ok(());
         }
@@ -589,6 +592,11 @@ impl Interpreter {
         // separate `$!storage` slot — so the hash answers for itself, and the
         // in-place mutations the caller then performs land on the same `Gc`
         // the Map value holds.
+        if Self::nqp_attr_bare(name) == "descriptor"
+            && let Some(desc) = Self::nqp_container_descriptor(obj)
+        {
+            return Some(desc);
+        }
         if let ValueView::Hash(_) = obj.view() {
             return Some(obj.clone());
         }

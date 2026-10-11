@@ -31,6 +31,7 @@ pub(crate) mod native_pos_ref;
 pub(crate) mod nqp_attr;
 pub(crate) mod nqp_backing;
 mod nqp_create;
+mod nqp_descriptor;
 mod nqp_iter;
 pub(crate) mod nqp_native;
 pub(crate) mod nqp_op_ids;
