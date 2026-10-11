@@ -25,8 +25,10 @@ sub named-sub { 99 }
 class A4 does RCall[&named-sub] { }
 is A4.new.apply, 99, '&sub-ref still binds to &f';
 
-my &blk = { 100 };
+# A role argument is read when the class is composed, at BEGIN time, so only a
+# constant &-variable holds its value by then.
+my constant &blk = { 100 };
 class A5 does RCall[&blk] { }
-is A5.new.apply, 100, 'a &-sigil variable still binds to &f';
+is A5.new.apply, 100, 'a &-sigil constant still binds to &f';
 
 done-testing;

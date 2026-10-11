@@ -25,9 +25,12 @@ role R {
 # Declaring the role runs nothing:
 is $side, 0, 'role body does not run at declaration';
 
-# The role is usable and composable; composing it runs the deferred body:
+# The role is usable and composable. Like Rakudo, composing it runs the
+# deferred body once, at BEGIN time: it reads `@outer` and writes `$side` in
+# their static state (`@outer` empty), and `my $side = 0` then initialises
+# `$side` again at run time.
 class C does R { }
-is $side, 300, 'deferred role body read @outer and mutated outer $side';
+is $side, 0, 'deferred role body ran at BEGIN time, before the initialisers';
 
 # Outer execution registers intact after the nested run:
 is @outer.elems, 3, 'outer array survived nested run';

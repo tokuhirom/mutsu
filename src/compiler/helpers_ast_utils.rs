@@ -879,7 +879,7 @@ impl Compiler {
     /// symbols but runs no user code, so nothing can forward-reference a
     /// later type while it runs.
     // Cost: O(1).
-    pub(super) fn runs_no_user_code(stmt: &Stmt) -> bool {
+    pub(crate) fn runs_no_user_code(stmt: &Stmt) -> bool {
         matches!(
             stmt,
             Stmt::SetLine(_)

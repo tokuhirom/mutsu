@@ -20,10 +20,13 @@ class D does R[p => "f"] { }
 is C.new.go(1), 'int1', 'multi sub of a parametric role, composed without arguments';
 is D.new.go("a"), 'stra', 'multi sub of a parametric role, composed with arguments';
 
+# The nested role is named `W2`: two roles declaring a nested `my role` of the
+# same name collide in mutsu's flat type table, and both roles compose at BEGIN
+# time (#12773).
 role Plain {
-    my role W { method add($v) { plain-helper($v) } }
+    my role W2 { method add($v) { plain-helper($v) } }
     multi sub plain-helper(Int $v) { "int$v" }
-    method go($v) { my $x = Any.new; $x does W; $x.add($v) }
+    method go($v) { my $x = Any.new; $x does W2; $x.add($v) }
 }
 class E does Plain { }
 is E.new.go(2), 'int2', 'multi sub of a non-parametric role';

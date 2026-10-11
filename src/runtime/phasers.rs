@@ -600,6 +600,12 @@ pub(crate) fn split_var_decl(stmt: &Stmt) -> Option<(Stmt, Option<Stmt>)> {
     if is_shaped_decl(init_expr, custom_traits) {
         return None;
     }
+    // A user trait (`my %m is R = 1, 2`) is applied with the initializer in
+    // hand: the role's `STORE` receives the values with `:INITIALIZE`. An
+    // empty static half plus a plain assignment would hand it neither.
+    if custom_traits.iter().any(|(t, _)| !t.starts_with("__")) {
+        return None;
+    }
     // A declaration a lifted BEGIN gave a static cell (ADR-0134 slice 2) is
     // already its static half: its initializer reads the static value.
     if custom_traits.iter().any(|(t, _)| t == BEGIN_STATIC_TRAIT) {
