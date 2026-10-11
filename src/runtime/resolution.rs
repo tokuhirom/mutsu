@@ -255,21 +255,6 @@ impl Interpreter {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 
-    /// Put `token_defs` back to a snapshot taken before a `:my token …` inside
-    /// a regex could add to it, invalidating every generation-keyed memo built
-    /// while the extra definition was visible (`PROTO_VARIANT_KEYS`,
-    /// `PARSED_TOKEN_CANDIDATES`, `REGEX_PARSE_CACHE`, the call-graph tables).
-    /// The declaration itself bumped the generation on the way in; the removal
-    /// has to bump it on the way out for the same reason.
-    pub(crate) fn restore_token_defs(
-        &mut self,
-        saved: std::sync::Arc<crate::runtime::registry::TokenDefsMap>,
-    ) {
-        self.registry_mut().token_defs = saved;
-        crate::runtime::regex_parse::TOKEN_DEFS_GEN
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    }
-
     /// The lowest declaration order among the candidates registered under one
     /// `token_defs` key — Rakudo's LTM tie-break. Takes the key as a `Symbol`
     /// because that is how `token_defs` is keyed, so a scan never re-interns a

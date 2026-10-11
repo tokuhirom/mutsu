@@ -71,8 +71,8 @@ pub(crate) struct MethodEntry {
 }
 
 /// The grammar token/rule table's shape: name -> its registered overloads.
-/// Named so the snapshot/restore paths (`Interpreter::restore_token_defs`) can
-/// spell it without re-writing the type.
+/// Named so the snapshot/restore paths can spell it without re-writing the
+/// type.
 pub(crate) type TokenDefsMap = HashMap<Symbol, Vec<std::sync::Arc<FunctionDef>>>;
 
 /// Program declaration registry. See module docs.
