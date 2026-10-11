@@ -129,7 +129,13 @@ impl Interpreter {
                     .to_string();
             // `pkg` re-derived from a compound declared name is not a scope —
             // see `Registry::compound_declared_types`.
-            if self.registry().compound_declared_types.contains_key(&key) {
+            // Only a core name needs the guard: `Foo::List` declared at file
+            // scope does not shadow `List` inside `Foo`, but a non-core
+            // `Foo::Bar` is found through `Foo`'s stash (`unit class Foo;
+            // use Foo::Bar; ... Bar.new`).
+            if self.registry().compound_declared_types.contains_key(&key)
+                && self.unshadowed_builtin_type_name(name)
+            {
                 return None;
             }
             (self.has_class(&key) || self.has_role(&key)).then_some(key)
