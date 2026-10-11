@@ -501,6 +501,9 @@ impl Interpreter {
         role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
     ) -> Option<(Symbol, MethodDef)> {
         let mut all_matches: Vec<(Symbol, MethodDef)> = Vec::new();
+        // The visible multi candidates that did not bind, for the tiers of
+        // `pick_method_winner`.
+        let mut rivals: Vec<(Symbol, MethodDef)> = Vec::new();
         let mut idx = 0;
         while idx < candidates.len() {
             let ResolvedCandidate::User { level, .. } = &candidates[idx] else {
@@ -562,13 +565,15 @@ impl Interpreter {
                     invocant,
                 ) {
                     all_matches.push((owner.symbol(), (**def).clone()));
+                } else if def.is_multi {
+                    rivals.push((owner.symbol(), (**def).clone()));
                 }
             }
         }
         if all_matches.is_empty() {
             None
         } else {
-            self.pick_method_winner(mro, arg_values, invocant, all_matches)
+            self.pick_method_winner(mro, arg_values, invocant, all_matches, rivals)
         }
     }
 

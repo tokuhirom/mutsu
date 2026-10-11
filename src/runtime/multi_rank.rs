@@ -36,6 +36,10 @@ pub(crate) struct RankProfile {
     /// difference is only read as "narrower" between related types.
     nominal: [Option<Symbol>; PROFILE_LEN],
     refined: bool,
+    /// Some positional argument is unrelated to its parameter's type: the
+    /// candidate cannot bind these arguments, and its distances say nothing
+    /// about its narrowness (see [`assign_tiers`]).
+    unrelated: bool,
 }
 
 impl RankProfile {
@@ -43,6 +47,7 @@ impl RankProfile {
         scores: [u16::MAX; PROFILE_LEN],
         nominal: [None; PROFILE_LEN],
         refined: false,
+        unrelated: false,
     };
 
     /// Record positional parameter `slot`: its type-hierarchy distance from the
@@ -63,6 +68,13 @@ impl RankProfile {
             self.nominal[slot] = nominal;
             self.refined |= refined;
         }
+    }
+
+    /// Record that some positional argument is unrelated to its parameter's
+    /// type (the type-distance walk scored the "unrelated" distance).
+    // Cost: O(1).
+    pub(crate) fn mark_unrelated(&mut self) {
+        self.unrelated = true;
     }
 
     /// Whether neither candidate is narrower than the other because of a
@@ -294,10 +306,22 @@ pub(crate) fn assign_tiers<T>(
         return;
     }
     let ranks: Vec<MultiRank> = items.iter_mut().map(|item| *rank(item)).collect();
+    // A candidate whose arguments are unrelated to its parameter types
+    // cannot bind them, and its rank is then made of "unrelated" distances,
+    // not of its declared types — the types rakudo's tiers are built from.
+    // It takes no part in the relation: comparing it would let an
+    // argument-dependent artifact push a binding candidate into a later
+    // tier (`multi w(1, 'em')` putting `multi w($f, 'khz')` behind
+    // `multi w(Numeric $n, Str:D $u)` for `w(0.1, 'khz')`).
     let narrower: Vec<Vec<bool>> = (0..n)
         .map(|i| {
             (0..n)
-                .map(|j| i != j && ranks[i].rakudo_narrower(&ranks[j], related))
+                .map(|j| {
+                    i != j
+                        && !ranks[i].profile.unrelated
+                        && !ranks[j].profile.unrelated
+                        && ranks[i].rakudo_narrower(&ranks[j], related)
+                })
                 .collect()
         })
         .collect();
