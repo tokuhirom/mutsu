@@ -517,6 +517,38 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    it. Its release path is now out of line (`release_gc`), which keeps it
    the same size whatever the codegen-unit split.
 
+   **Slice 8 done** (`fix/12478-flattened-frame-program-scope`, #12478):
+   methods of a class declared at program scope link their frames too, and
+   the link survives a flattened caller. Before this slice a linked frame
+   found the program scope as "the env below the deepest frame root". A
+   method dispatch or a closure capture flattens the running frame
+   (`flatten_scoped_env`, `MAX_OVERLAY_DEPTH`), and the flattened env merges
+   that frame's names with every caller's. A frame called from there skipped
+   its callers straight into theirs, so a recursive call's `my $x := $t`
+   bound the outer activation's `$t` cell. Four changes:
+
+   - A flattening records the program scope its frames ran over on the
+     collapsed tier, as a `StaticLink` of a non-root env
+     (`Env::flattened_program_scope`). The record is inert for lookups through
+     the flattened env itself. `program_scope_from`,
+     `link_static_outer_to_unit` and the next flattening read it.
+   - The light, typed-light and fast call paths mark a linked frame before
+     seeding its locals from the env, so a local never starts as a caller's
+     same-named variable. The light path lifts the mark again for the binder,
+     which resolves the arguments in the caller.
+   - A `:=` bind whose source has a slot in the running code takes its cell
+     from that slot or this frame's own overlay, never from a caller's
+     same-named binding.
+   - Attribute variables (`$!t`) are lexically scoped for the link. A bind of a
+     scalar attribute aliases the attribute's own cell on its invocant (the
+     invocant is the attribute's home, as the compunit store is a unit
+     lexical's), and is no longer published under `!t` in the env or the
+     ancestor frames. A callee running on another invocant read that entry as
+     its own attribute. #12478's repro overwrote the inner node's `$!t`.
+
+   A role method keeps resolving through its frame chain, because the role's
+   parameters are a scope between the method and the program scope.
+
    What is still dynamic: a reflective *write* (`EVAL q[$x = 1]`) lands in
    the frame's overlay and the return merge carries it to the caller, as
    before; only reads follow the link. The pins for §1.3's sub
