@@ -1780,20 +1780,23 @@ fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Ex
     if name != "__mutsu_assign_method_lvalue" {
         return None;
     }
-    // Only the five-argument record `parser::assign_to_target_expr` builds for
-    // `CALL = value` renders: lowering the `ApplyInfix` hands the method call
-    // back to that function, so a record it would not rebuild (the compound
-    // forms' six-argument writeback, a topic write-back name) stays the
-    // boundary.
-    let [
-        target,
-        method,
-        Expr::ArrayLiteral(method_args),
-        value,
-        write_back,
-    ] = args
-    else {
-        return None;
+    // The five-argument record comes from `assign_to_target_expr`; the
+    // six-argument record is the method-lvalue compound-assignment expansion.
+    // Both retain the method call and final value needed to rebuild through
+    // the parser's assignment path. A non-true sixth argument is not a source
+    // form this conversion recognizes.
+    let (target, method, method_args, value, write_back) = match args {
+        [target, method, Expr::ArrayLiteral(method_args), value, write_back] => {
+            (target, method, method_args, value, write_back)
+        }
+        [target, method, Expr::ArrayLiteral(method_args), value, write_back, Expr::Literal(flag)]
+            if matches!(flag.view(), ValueView::Bool(true)) =>
+        {
+            (target, method, method_args, value, write_back)
+        }
+        _ => {
+            return None;
+        }
     };
     let (Expr::Literal(method) | Expr::LiteralSrc(method, _)) = method else {
         return None;
