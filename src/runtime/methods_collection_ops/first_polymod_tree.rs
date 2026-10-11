@@ -260,25 +260,6 @@ impl Interpreter {
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
 
-    /// `polymod` of a `Real`: the decomposition of the number, or of the seconds of
-    /// an `Instant` or `Duration` (both do `Real`, which divides the receiver's
-    /// `Real` value) with Rakudo's element types for those. The `polymod` rows'
-    /// handler and the `polymod` interceptor's arm both end here.
-    // Cost: see `method_polymod`.
-    pub(crate) fn polymod_answer(
-        &mut self,
-        target: &Value,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let Some(seconds) = crate::builtins::method_table::numify::temporal_seconds(target) else {
-            return self.method_polymod(target, args);
-        };
-        let is_duration = matches!(target.view(), ValueView::Instance { class_name, .. }
-            if class_name.resolve() == "Duration");
-        self.method_polymod(&seconds, args)
-            .map(|res| polymod_temporal_types(res, is_duration))
-    }
-
     /// `$n.polymod(@divisors)` — successive modular decomposition.
     pub(in crate::runtime) fn method_polymod(
         &mut self,
