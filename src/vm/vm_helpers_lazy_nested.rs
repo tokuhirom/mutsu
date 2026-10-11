@@ -28,7 +28,16 @@ impl Interpreter {
             }
             ValueView::Array(items, _) => {
                 if seen.insert((1, crate::gc::Gc::as_ptr(&items) as usize)) {
-                    for item in items.iter() {
+                    // Clone the elements under the stripe (a leaf: no user code),
+                    // then recurse with nothing held (#12631).
+                    let elems: Vec<Value> = {
+                        let _guard =
+                            crate::value::container_lock::ContainerStructGuard::acquire_for(
+                                None, value,
+                            );
+                        items.iter().cloned().collect()
+                    };
+                    for item in &elems {
                         self.reify_nested_map_grep_for_read_inner(item, true, seen)?;
                     }
                 }
@@ -64,7 +73,15 @@ impl Interpreter {
             }
             ValueView::Hash(h) => {
                 if seen.insert((2, crate::gc::Gc::as_ptr(&*h) as *const () as usize)) {
-                    let values: Vec<Value> = h.map.values().cloned().collect();
+                    // Under the container stripe: another thread may be inserting
+                    // into a shared hash (#12631).
+                    let values: Vec<Value> = {
+                        let _guard =
+                            crate::value::container_lock::ContainerStructGuard::acquire_for(
+                                None, value,
+                            );
+                        h.map.values().cloned().collect()
+                    };
                     for item in &values {
                         self.reify_nested_map_grep_for_read_inner(item, true, seen)?;
                     }
