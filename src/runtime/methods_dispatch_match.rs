@@ -176,20 +176,10 @@ impl Interpreter {
             // declares no `polymod` (`Str`, `Complex`, ...) falls through to
             // normal resolution and `X::Method::NotFound`, as in Rakudo.
             "polymod" if !self.e2_native_method_exists(&target, "polymod") => None,
-            // `Instant`/`Duration` get `polymod` from their `Real` role, which
-            // divides the receiver's `Real` value: its seconds (`Real` itself
-            // is the object, as in Rakudo).
-            "polymod"
-                if let Some(seconds) =
-                    crate::builtins::method_table::numify::temporal_seconds(&target) =>
-            {
-                let is_duration = matches!(target.view(), ValueView::Instance { class_name, .. }
-                    if class_name.resolve() == "Duration");
-                Some(self.method_polymod(&seconds, &args).map(|res| {
-                    super::methods_collection_ops::polymod_temporal_types(res, is_duration)
-                }))
-            }
-            "polymod" => Some(self.method_polymod(&target, &args)),
+            // The `polymod` rows' implementation; an `Instant` or `Duration`
+            // gets `polymod` from its `Real` role, which divides the receiver's
+            // seconds. Reached for a receiver with no shape (a mixin, a subclass).
+            "polymod" => Some(self.polymod_answer(&target, &args)),
             "VAR" if args.is_empty() => {
                 // Proxy .VAR returns a decontainerized copy
                 if matches!(target.view(), ValueView::Proxy { .. }) {

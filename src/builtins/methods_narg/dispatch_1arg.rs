@@ -1,5 +1,5 @@
 use super::allomorph::{allomorph_accepts, out_of_range_failure};
-use super::base::{BaseDigits, f64_to_rat, parse_radix_checked, rat_base_repeating, rat_to_base};
+use super::base::{BaseDigits, f64_to_rat, parse_radix_checked, rat_to_base};
 
 use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use super::fmt_contains::fmt_value_needs_coercion;
@@ -7,7 +7,7 @@ use super::indent::str_indent;
 use super::numeric::{int_to_subscript, int_to_superscript};
 use crate::runtime;
 use crate::symbol::Symbol;
-use crate::value::{ArrayKind, RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::ToPrimitive;
 
 pub(crate) fn native_method_1arg(
@@ -818,61 +818,22 @@ pub(crate) fn native_method_1arg(
             let s = target.to_string_value();
             Some(crate::builtins::parse_base::parse_base(&s, radix))
         }
+        // A number: the numeric types' `base` rows' implementation
+        // (`method_table::numeric_base`).
+        "base"
+            if matches!(
+                target.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Num(_)
+                    | ValueView::Rat(..)
+                    | ValueView::FatRat(..)
+            ) =>
+        {
+            crate::builtins::method_table::numeric_base::base_of(target, arg, None)
+        }
         "base" => match target.view() {
-            ValueView::Int(_) | ValueView::BigInt(_) => {
-                let radix = match arg.view() {
-                    ValueView::Int(r) if (2..=36).contains(&r) => r as u32,
-                    ValueView::Str(s) => match s.parse::<u32>() {
-                        Ok(r) if (2..=36).contains(&r) => r,
-                        _ => {
-                            return Some(Ok(out_of_range_failure("base requires radix 2..36")));
-                        }
-                    },
-                    _ => {
-                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
-                    }
-                };
-                Some(Ok(Value::str(crate::builtins::int_to_base(target, radix))))
-            }
-            ValueView::Num(f) => {
-                if f.is_infinite() || f.is_nan() {
-                    return Some(Err(RuntimeError::new(format!(
-                        "X::Numeric::CannotConvert: Cannot convert {} to base",
-                        if f.is_nan() {
-                            "NaN"
-                        } else if f > 0.0 {
-                            "Inf"
-                        } else {
-                            "-Inf"
-                        },
-                    ))));
-                }
-                let radix = match arg.view() {
-                    ValueView::Int(r) if (2..=36).contains(&r) => r as u32,
-                    ValueView::Int(_) => {
-                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
-                    }
-                    ValueView::Str(s) => match s.parse::<u32>() {
-                        Ok(r) if (2..=36).contains(&r) => r,
-                        _ => {
-                            return Some(Ok(out_of_range_failure("base requires radix 2..36")));
-                        }
-                    },
-                    _ => {
-                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
-                    }
-                };
-                // Convert Num to Rat for precise base conversion
-                let (n, d) = f64_to_rat(f);
-                Some(Ok(Value::str(rat_to_base(n, d, radix, BaseDigits::Auto))))
-            }
-            ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
-                let radix = match parse_radix_checked(arg)? {
-                    Ok(r) => r,
-                    Err(_) => return Some(Ok(out_of_range_failure("base requires radix 2..36"))),
-                };
-                Some(Ok(Value::str(rat_to_base(n, d, radix, BaseDigits::Auto))))
-            }
             // Handle Instance types (Duration, Instant, etc.) by
             // extracting their numeric value
             ValueView::Instance { attributes, .. } => {
@@ -900,25 +861,10 @@ pub(crate) fn native_method_1arg(
             }
             _ => None,
         },
+        // The `Rat.base-repeating` row's implementation
+        // (`method_table::numeric_base`).
         "base-repeating" => {
-            let radix = match parse_radix_checked(arg)? {
-                Ok(r) => r,
-                Err(e) => return Some(Err(e)),
-            };
-            let (n, d) = match target.view() {
-                ValueView::Int(i) => (i, 1i64),
-                ValueView::Rat(n, d) => (n, d),
-                ValueView::Num(f) => f64_to_rat(f),
-                _ => return None,
-            };
-            let (non_repeating, repeating) = rat_base_repeating(n, d, radix);
-            Some(Ok(Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(vec![
-                    Value::str(non_repeating),
-                    Value::str(repeating),
-                ])),
-                ArrayKind::List,
-            )))
+            crate::builtins::method_table::numeric_base::base_repeating_of(target, arg)
         }
         // `round($scale)` is the `Cool.round` row's handler; this arm keeps the
         // receivers the table has no shape for (an allomorph: `<1.5>.round(0.5)`).

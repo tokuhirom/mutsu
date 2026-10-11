@@ -1,5 +1,3 @@
-use super::allomorph::out_of_range_failure;
-use super::base::{BaseDigits, f64_to_rat, rat_to_base};
 use super::buf::{
     bigint_to_value, buf_class_name, buf_get_int_items, buf_get_raw_bytes, is_buf_like,
     make_buf_from_int_items, out_of_range_error, read_ubits_from_bytes, resolve_buf_index,
@@ -157,58 +155,16 @@ pub(crate) fn native_method_2arg(
         // Cost: O(k), k = chars returned, once the invocant's grapheme index is
         // cached (see `native_substr_slice`).
         "substr" => crate::builtins::substr::native_substr_slice(target, arg1, Some(arg2)),
-        "base" => {
-            let radix = match arg1.view() {
-                ValueView::Int(r) if (2..=36).contains(&r) => r as u32,
-                ValueView::Str(s) => match s.parse::<u32>() {
-                    Ok(r) if (2..=36).contains(&r) => r,
-                    _ => {
-                        return Some(Ok(out_of_range_failure("base requires radix 2..36")));
-                    }
-                },
-                _ => {
-                    return Some(Ok(out_of_range_failure("base requires radix 2..36")));
-                }
-            };
-            let digits_mode = match arg2.view() {
-                ValueView::Int(d) if d < 0 => {
-                    return Some(Ok(out_of_range_failure("digits must be non-negative")));
-                }
-                ValueView::Int(d) => BaseDigits::Fixed(d as u32),
-                ValueView::Whatever => BaseDigits::Whatever,
-                _ => None?,
-            };
-            match target.view() {
-                ValueView::Int(i) => Some(Ok(Value::str(rat_to_base(i, 1, radix, digits_mode)))),
-                ValueView::Num(f) => {
-                    let (n, d) = f64_to_rat(f);
-                    Some(Ok(Value::str(rat_to_base(n, d, radix, digits_mode))))
-                }
-                ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
-                    Some(Ok(Value::str(rat_to_base(n, d, radix, digits_mode))))
-                }
-                ValueView::Instance { attributes, .. } => {
-                    if let Some(val) = attributes.as_map().get("value") {
-                        match val.view() {
-                            ValueView::Int(i) => {
-                                Some(Ok(Value::str(rat_to_base(i, 1, radix, digits_mode))))
-                            }
-                            ValueView::Rat(n, d) | ValueView::FatRat(n, d) => {
-                                Some(Ok(Value::str(rat_to_base(n, d, radix, digits_mode))))
-                            }
-                            ValueView::Num(f) => {
-                                let (n, d) = f64_to_rat(f);
-                                Some(Ok(Value::str(rat_to_base(n, d, radix, digits_mode))))
-                            }
-                            _ => None,
-                        }
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
+        // The numeric types' `base` rows' implementation
+        // (`method_table::numeric_base`); an `Instance` carrying a `value` (a
+        // user subclass) is read through that attribute.
+        "base" => match target.view() {
+            ValueView::Instance { attributes, .. } => {
+                let value = attributes.as_map().get("value").cloned()?;
+                crate::builtins::method_table::numeric_base::base_of(&value, arg1, Some(arg2))
             }
-        }
+            _ => crate::builtins::method_table::numeric_base::base_of(target, arg1, Some(arg2)),
+        },
         "read-ubits" | "read-bits" => {
             let (bytes, _) = buf_get_raw_bytes(target)?;
             let from = runtime::to_int(arg1);

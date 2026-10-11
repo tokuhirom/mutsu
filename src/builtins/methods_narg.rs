@@ -5,8 +5,8 @@
 //! visibility through explicit named re-exports so callers (`methods_narg::<name>`) keep
 //! working unchanged. `mod.rs` and other external files are untouched.
 
-mod allomorph;
-mod base;
+pub(crate) mod allomorph;
+pub(crate) mod base;
 pub(crate) mod buf;
 mod dispatch_1arg;
 mod dispatch_2arg;
