@@ -366,7 +366,7 @@ impl Interpreter {
         if let Some(exact) = polymod_exact_int(target, &divisors, has_infinite) {
             return Ok(Value::seq(exact));
         }
-        if !has_infinite && let Some(exact) = polymod_exact(target, &divisors) {
+        if let Some(exact) = polymod_exact(target, &divisors, has_infinite) {
             return Ok(Value::seq(exact));
         }
         let mut result = Vec::new();
@@ -591,12 +591,14 @@ fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
     a.abs()
 }
 
+/// `has_infinite` marks a divisor list continuing past the reified elements.
+///
 /// Exact rational `polymod`: `n.polymod(d1, d2, ...)` yields
 /// `(n mod d1, (n div d1) mod d2, ..., final quotient)`, all computed without
 /// floating point. Returns `None` (bail to float) when any operand is out of
 /// the non-negative Int/Rat domain, a divisor is zero, or an intermediate
 /// value overflows `i128` / does not fit back into a `Rat`.
-fn polymod_exact(target: &Value, divisors: &[Value]) -> Option<Vec<Value>> {
+fn polymod_exact(target: &Value, divisors: &[Value], has_infinite: bool) -> Option<Vec<Value>> {
     let (mut nn, mut nd) = polymod_rat(target)?;
     let kind = match target.view() {
         ValueView::Rat(..) => PolymodKind::Rat,
@@ -608,6 +610,17 @@ fn polymod_exact(target: &Value, divisors: &[Value]) -> Option<Vec<Value>> {
         let (dn, dd) = polymod_rat(d)?;
         if dn == 0 {
             return None; // zero divisor: leave to the float path's own handling
+        }
+        if has_infinite {
+            // As in `polymod_exact_int`: an exhausted invocant ends a lazy
+            // divisor list, and a divisor of one would never terminate.
+            if nn == 0 {
+                return Some(result);
+            }
+            if dn == dd {
+                result.push(polymod_rat_value(nn, nd, kind)?);
+                return Some(result);
+            }
         }
         // q = floor( (nn/nd) / (dn/dd) ) = floor( (nn*dd) / (nd*dn) ); all terms
         // are non-negative here, so truncating division already floors.

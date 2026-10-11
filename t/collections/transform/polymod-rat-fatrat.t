@@ -1,6 +1,6 @@
 use Test;
 
-plan 7;
+plan 9;
 
 # A Rat/FatRat invocant keeps its non-zero whole elements rational; a zero
 # element is an Int.
@@ -12,3 +12,5 @@ is FatRat.new(7, 2).polymod(2).raku, '(FatRat.new(3, 2), FatRat.new(1, 1)).Seq',
 # An Int invocant is unchanged.
 is 5.polymod(2.5).raku, '(0, 2).Seq', 'Int invocant with a Rat divisor stays Int';
 is 86400.polymod(60, 60, 24).raku, '(0, 0, 0, 1).Seq', 'Int polymod unchanged';
+is-deeply 42.Rat.polymod(lazy 2, 3), 42.Rat.polymod(2, 3), 'Rat invocant with a lazy divisor list';
+is 42.Rat.polymod(lazy 2, 3).raku, '(0, 0, 7.0).Seq', 'lazy divisors keep the Rat type';
