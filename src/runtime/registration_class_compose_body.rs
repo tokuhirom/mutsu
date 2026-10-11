@@ -310,6 +310,7 @@ impl Interpreter {
             } else {
                 // Header roles compose before the class shell is published.
                 let mut shell = cx.class_def.clone();
+                shell.parents.retain(|p| !registry.roles.contains_key(p.split('[').next().unwrap_or(p)));
                 shell.attributes = added;
                 shell.attribute_built.extend(built);
                 registry.classes.insert(cx.name.to_string(), shell.into());
@@ -319,9 +320,10 @@ impl Interpreter {
             // No `has` declarations to show, but the body still sees the class
             // with its parents (`::?CLASS.^mro`, `.^find_method`), as Rakudo
             // specializes a role after the class's `is Parent` traits apply.
-            self.registry_mut()
-                .classes
-                .insert(cx.name.to_string(), cx.class_def.clone().into());
+            let mut shell = cx.class_def.clone();
+            let mut registry = self.registry_mut();
+            shell.parents.retain(|p| !registry.roles.contains_key(p.split('[').next().unwrap_or(p)));
+            registry.classes.insert(cx.name.to_string(), shell.into());
             unpublished = true;
         }
         // Custom attribute traits (`is hidden-from-ValueType`) have already run
