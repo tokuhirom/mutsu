@@ -324,6 +324,8 @@ impl Compiler {
                     self.code.emit(OpCode::SeqToList);
                 }
                 self.code.emit(OpCode::MakeArray(n as u32));
+                // `LHS xx N` is a Seq, not the List `MakeArray` builds.
+                self.code.emit(OpCode::ListToSeq);
                 return;
             }
             // Raku's list repeat reevaluates call-like lhs expressions on each

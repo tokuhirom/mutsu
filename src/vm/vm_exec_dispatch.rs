@@ -4499,6 +4499,18 @@ impl Interpreter {
                 self.stack.push(out);
                 *ip += 1;
             }
+            // Cost: O(k), k = elements (copied into a Seq); O(1) for a non-List.
+            OpCode::ListToSeq => {
+                let val = self.stack.pop().unwrap_or(Value::NIL);
+                let out = match val.view() {
+                    ValueView::Array(items, kind) if !kind.is_real_array() => {
+                        Value::seq(items.to_vec())
+                    }
+                    _ => val,
+                };
+                self.stack.push(out);
+                *ip += 1;
+            }
             OpCode::CoerceToList => {
                 self.sync_source_line(code, *ip);
                 let val = self.stack.pop().unwrap_or(Value::NIL);

@@ -1060,6 +1060,10 @@ pub(crate) enum OpCode {
     /// Turn a top-of-stack `Seq` into a List; any other value is left alone.
     /// Used by the unrolled `LHS xx N`, whose repetitions are Lists, not Seqs.
     SeqToList,
+    /// Turn a top-of-stack List (not an Array) into a `Seq` of the same
+    /// elements; any other value is left alone. Used by the unrolled
+    /// `LHS xx N`, whose result is a Seq built from `MakeArray`'s List.
+    ListToSeq,
     /// Mark that the next SetLocal should treat the value as a constant
     /// (skip @/% container coercion). Similar to MarkBindContext.
     MarkConstantContext,
