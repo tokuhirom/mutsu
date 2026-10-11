@@ -11340,7 +11340,11 @@ impl CompiledCode {
         // it through its own upvalue -- still gets an index here, so the
         // nested closure's capture can take the binding from this frame's
         // upvalue array instead of resolving the name (`capture_upvalues`).
-        for sym in &eligible_code {
+        // `eligible_code` is a hash set: walk it in name order so the indices
+        // (stored in the precomp cache) do not depend on per-process hashing.
+        let mut handed_on: Vec<Symbol> = eligible_code.iter().copied().collect();
+        handed_on.sort_by_cached_key(|sym| sym.with_str(str::to_owned));
+        for sym in &handed_on {
             if !index_of.contains_key(sym)
                 && self
                     .closure_compiled_codes
