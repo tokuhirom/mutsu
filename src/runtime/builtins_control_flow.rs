@@ -629,7 +629,12 @@ impl Interpreter {
             .first()
             .map(Value::to_string_value)
             .unwrap_or_else(|| "postfix:<++>".to_string());
-        Err(crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(&caller, "..."))
+        // The operand, evaluated by the call (`++(++$x)` steps `$x` first).
+        let operand = args.get(1).map(|v| v.clone().deref_container());
+        Err(crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(
+            &caller,
+            operand.as_ref(),
+        ))
     }
 
     pub(super) fn builtin_hyper_prefix(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

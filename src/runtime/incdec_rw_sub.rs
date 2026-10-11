@@ -24,24 +24,85 @@
 //! code object, the way `k($v) = 5` assigns through it (#10965).
 
 use crate::runtime::Interpreter;
-use crate::symbol::Symbol;
 use crate::value::{RuntimeError, SubData, Value, ValueView};
 
 /// The `X::Multi::NoMatch` Raku's `++`/`--` multi raises for an argument with
 /// no container to write: `op` is the routine (`postfix:<++>`, ...), `arg`
-/// what the message names it by (a variable name, `Int:D`, `...`).
-// Cost: O(n), n = length of the message.
-pub(crate) fn incdec_requires_mutable_error(op: &str, arg: &str) -> RuntimeError {
-    let msg =
-        format!("Cannot resolve caller {op}({arg}); the parameter requires mutable arguments");
-    let mut err = RuntimeError::new(msg.clone());
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("message".to_string(), Value::str(msg));
-    err.exception = Some(Box::new(Value::make_instance(
-        Symbol::intern("X::Multi::NoMatch"),
-        attrs,
-    )));
-    err
+/// the value passed (`None` when it is not at hand).
+///
+/// The message is Rakudo's `X::Multi::NoMatch.message` over the operator's
+/// core candidates (`rakudo_candidates.txt`): the candidates whose parameter
+/// accepts the argument, held in a fresh container, are listed in declaration
+/// order as needing mutable arguments; the rest follow, sorted, as not
+/// matching for other reasons.
+// Cost: O(c log c), c = core candidates of `op`.
+pub(crate) fn incdec_requires_mutable_error(op: &str, arg: Option<&Value>) -> RuntimeError {
+    let candidates: Vec<&'static str> =
+        crate::builtins::rakudo_candidates::core_sub_candidates(op)
+            .iter()
+            .map(|c| c.signature.strip_prefix(':').unwrap_or(c.signature))
+            .collect();
+    let Some(arg) = arg else {
+        let mut msg = format!("Cannot resolve caller {op}(...); none of these signatures matches:");
+        for cand in &candidates {
+            msg.push_str("\n    ");
+            msg.push_str(cand);
+        }
+        return crate::runtime::methods_signature_errors::make_no_match_error_with_message(msg);
+    };
+    let (rw, mut other): (Vec<&str>, Vec<&str>) = candidates
+        .iter()
+        .partition(|cand| first_param_accepts(cand, arg));
+    let mut msg = format!(
+        "Cannot resolve caller {op}({}); the following candidates\n\
+         match the type but require mutable arguments:",
+        Interpreter::typed_arg_label(arg)
+    );
+    for cand in &rw {
+        msg.push_str("\n    ");
+        msg.push_str(cand);
+    }
+    if !other.is_empty() {
+        other.sort_unstable();
+        msg.push_str("\n\nThe following do not match for other reasons:");
+        for cand in &other {
+            msg.push_str("\n    ");
+            msg.push_str(cand);
+        }
+    }
+    crate::runtime::methods_signature_errors::make_no_match_error_with_message(msg)
+}
+
+/// Whether the first parameter of the signature gist `sig` (`(Int:D $a is rw
+/// --> Int:D)`) accepts `arg` by type and definiteness. A native-typed `is rw`
+/// parameter accepts any argument here: Rakudo's `Signature.ACCEPTS` of a
+/// capture in a fresh `Scalar` does not unbox it, so `(int $a is rw)` is
+/// listed as matching even a `Str:D`.
+// Cost: O(t), t = length of the parameter's type name.
+fn first_param_accepts(sig: &str, arg: &Value) -> bool {
+    let Some(ty) = sig.trim_start_matches('(').split_whitespace().next() else {
+        return false;
+    };
+    let (base, smiley) = match ty.rsplit_once(':') {
+        Some((base, smiley @ ("D" | "U"))) => (base, Some(smiley)),
+        _ => (ty, None),
+    };
+    if base.starts_with(|c: char| c.is_ascii_lowercase()) {
+        return true;
+    }
+    let (arg_type, defined) = match arg.view() {
+        ValueView::Package(name) => (name.to_string(), false),
+        _ => (
+            crate::runtime::utils::value_type_name(arg).to_string(),
+            crate::runtime::types::value_is_defined(arg),
+        ),
+    };
+    let definite_ok = match smiley {
+        Some("D") => defined,
+        Some("U") => !defined,
+        _ => true,
+    };
+    definite_ok && Interpreter::type_matches(base, &arg_type)
 }
 
 impl Interpreter {
@@ -108,7 +169,10 @@ impl Interpreter {
 
         if !self.named_sub_is_rw_capable(&name, &call_args) {
             let Some(callable) = self.rw_capable_callable_var(&name) else {
-                return self.builtin_incdec_nomatch(std::slice::from_ref(&op_label));
+                // Raku calls the routine, then finds no container in what
+                // it returned.
+                let result = self.call_function(&name, call_args)?;
+                return self.builtin_incdec_nomatch(&[op_label, result]);
             };
             let old = self
                 .call_sub_value(callable.clone(), call_args.clone(), true)?

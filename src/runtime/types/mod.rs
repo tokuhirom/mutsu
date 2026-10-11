@@ -650,7 +650,11 @@ impl Interpreter {
         // "requires mutable arguments") the same way it rejects a readonly
         // sub parameter's `++$n`.
         if self.name_is_readonly_binding_for(name, name_sym) {
-            return Err(crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(op, name));
+            let current = self.env.get(name).map(|v| v.clone().deref_container());
+            return Err(crate::runtime::incdec_rw_sub::incdec_requires_mutable_error(
+                op,
+                current.as_ref(),
+            ));
         }
         Ok(())
     }

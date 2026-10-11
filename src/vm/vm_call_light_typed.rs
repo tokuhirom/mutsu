@@ -267,6 +267,7 @@ impl Interpreter {
                                 .with_parameter_object(pd, Some(&*self));
                             bind_err = Some(self.enhance_binding_error_at_site(
                                 err,
+                                cf.package_sym(),
                                 func_name,
                                 &cf.param_defs,
                                 args,
@@ -338,6 +339,7 @@ impl Interpreter {
                         ));
                         bind_err = Some(self.enhance_binding_error_at_site(
                             err,
+                            cf.package_sym(),
                             func_name,
                             &cf.param_defs,
                             args,
@@ -477,6 +479,7 @@ impl Interpreter {
                     ));
                     bind_err = Some(self.enhance_binding_error_at_site(
                         err,
+                        cf.package_sym(),
                         func_name,
                         &cf.param_defs,
                         args,
