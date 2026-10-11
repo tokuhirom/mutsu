@@ -54,7 +54,7 @@ thread_local! {
     // tests it), and each level keeps its own warm scratch. The boxes are
     // the point: popping one out moves a pointer, not the struct.
     #[allow(clippy::vec_box)]
-    static SCRATCH: std::cell::RefCell<Vec<Box<Scratch>>> = const { std::cell::RefCell::new(Vec::new()) };
+    pub(super) static SCRATCH: std::cell::RefCell<Vec<Box<Scratch>>> = const { std::cell::RefCell::new(Vec::new()) };
 }
 
 /// The pattern's compiled program, compiled at most once per pattern.
@@ -84,7 +84,7 @@ fn ignoremark_target(chars: &[char]) -> crate::value::regex_caps::MatchTarget {
 /// pattern of the suites does (ADR-0135 D7) — an error raised for the match,
 /// naming why (`X::NYI`-style: the construct is not implemented).
 // Cost: O(1) after the pattern's first compile.
-fn program_or_raise(pattern: &RegexPattern) -> Option<Arc<RxProgram>> {
+pub(super) fn program_or_raise(pattern: &RegexPattern) -> Option<Arc<RxProgram>> {
     if let Some(program) = program_for(pattern) {
         return Some(Arc::clone(program));
     }

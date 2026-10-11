@@ -167,16 +167,11 @@ impl Interpreter {
             return None;
         }
         let start_pos = if parsed.anchor_start { 0 } else { from_pos };
-        for start in regex_scan_positions(self, &parsed, orig_chars, start_pos, pkg) {
-            if let Some((end, mut caps)) =
-                self.regex_match_end_from_caps_in_pkg(&parsed, orig_chars, start, pkg)
-            {
-                caps.finish_span(start, end);
-                caps.set_target(Some(target.clone()));
-                return Some(caps);
-            }
-        }
-        None
+        let starts = regex_scan_positions(self, &parsed, orig_chars, start_pos, pkg);
+        let (start, end, mut caps) = self.rx_scan_first(&parsed, orig_chars, starts, pkg)?;
+        caps.finish_span(start, end);
+        caps.set_target(Some(target.clone()));
+        Some(caps)
     }
 
     pub(in crate::runtime) fn regex_match_all_with_captures(
@@ -444,26 +439,21 @@ impl Interpreter {
             return None;
         }
         let search_start = if parsed.anchor_start { 0 } else { min_pos };
-        for start in regex_scan_positions(self, parsed, orig_chars, search_start, pkg) {
-            if let Some((end, caps)) =
-                self.regex_match_end_from_caps_in_pkg(parsed, orig_chars, start, pkg)
-            {
-                // `<( … )>` narrows the reported match to the marked region even
-                // though the pattern consumed more, exactly as the other match
-                // entry points do. `.subst`'s native fast path spans a
-                // replacement with what this returns, so ignoring the markers
-                // would overwrite the context the pattern only looked at
-                // (`'xaby'.subst(/a <( b )>/, 'Z')` is `xaZy`, not `xZy`).
-                return Some((
-                    caps.capture_start.unwrap_or(start),
-                    caps.capture_end.unwrap_or(end),
-                    super::regex_helpers::pos_slot_texts(&caps.positional, orig_chars),
-                    super::regex_helpers::named_slot_texts(&caps.named, orig_chars),
-                    caps,
-                ));
-            }
-        }
-        None
+        let starts = regex_scan_positions(self, parsed, orig_chars, search_start, pkg);
+        let (start, end, caps) = self.rx_scan_first(parsed, orig_chars, starts, pkg)?;
+        // `<( … )>` narrows the reported match to the marked region even
+        // though the pattern consumed more, exactly as the other match
+        // entry points do. `.subst`'s native fast path spans a
+        // replacement with what this returns, so ignoring the markers
+        // would overwrite the context the pattern only looked at
+        // (`'xaby'.subst(/a <( b )>/, 'Z')` is `xaZy`, not `xZy`).
+        Some((
+            caps.capture_start.unwrap_or(start),
+            caps.capture_end.unwrap_or(end),
+            super::regex_helpers::pos_slot_texts(&caps.positional, orig_chars),
+            super::regex_helpers::named_slot_texts(&caps.named, orig_chars),
+            caps,
+        ))
     }
 
     pub(crate) fn regex_find_first(&mut self, pattern: &str, text: &str) -> Option<(usize, usize)> {

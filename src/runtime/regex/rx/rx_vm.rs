@@ -259,34 +259,39 @@ impl Interpreter {
                         // iterations, so count 0 is the run's own start.
                         let run = ends.len();
                         ends.push(pos);
-                        let mut n = 0u32;
-                        let mut at = pos;
-                        while n < max {
-                            let Some(next) =
-                                self.rx_atom_at(program, atom as usize, chars, at, pkg)
-                            else {
-                                break;
-                            };
-                            at = next;
-                            ends.push(at);
-                            n += 1;
-                        }
+                        let n = self.rx_atom_run(program, atom as usize, chars, pos, max, pkg, ends);
                         if n < min {
                             ends.truncate(run);
                             false
                         } else {
                             pos = ends[run + n as usize];
-                            if possessive || n == min {
-                                ends.truncate(run);
+                            // Give back counts n-1 down to min, less the top
+                            // ones a directly following one-grapheme atom
+                            // provably rejects (they fail at once).
+                            let top = if possessive || n == min {
+                                None
+                            } else if let RxOp::Atom(next) = program.ops[pc as usize + 1] {
+                                self.rx_run_giveback_top(
+                                    program,
+                                    next as usize,
+                                    chars,
+                                    &ends[run..],
+                                    min as usize,
+                                    n as usize,
+                                    pkg,
+                                )
                             } else {
-                                // Give back counts n-1 down to min.
-                                push_choice!(Choice::Run {
+                                Some(n as usize - 1)
+                            };
+                            match top {
+                                None => ends.truncate(run),
+                                Some(top) => push_choice!(Choice::Run {
                                     pc: pc + 1,
                                     base: run,
                                     lo: run + min as usize,
-                                    hi: run + n as usize,
+                                    hi: run + top + 1,
                                     mark: mark!(),
-                                });
+                                }),
                             }
                             pc += 1;
                             true
