@@ -193,7 +193,13 @@ impl Interpreter {
             self.pending_where_exception = outer_where_exception;
             return Ok(None);
         }
-        let matches = self.prune_incomparable_matches(matches);
+        let matches = match self.prune_incomparable_matches(name, args, matches) {
+            Ok(matches) => matches,
+            Err(err) => {
+                self.pending_where_exception = outer_where_exception;
+                return Err(err);
+            }
+        };
         self.settle_ranked_matches(name, args, matches, threw, outer_where_exception)
     }
 

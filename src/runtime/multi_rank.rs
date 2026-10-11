@@ -151,6 +151,10 @@ pub(crate) struct MultiRank {
     /// when the pair alone is incomparable. 0 everywhere when the caller
     /// ranks only candidates that already bound (multi methods).
     pub(crate) tier: u32,
+    /// Whether [`assign_tiers`] ranked this candidate against the whole
+    /// candidate set. Only then is an arity-incomparable pair left
+    /// incomparable within a tier (see [`Self::is_narrower`]).
+    pub(crate) tiered: bool,
 }
 
 impl MultiRank {
@@ -224,10 +228,10 @@ impl MultiRank {
 
     /// Whether `self` is strictly narrower than `other`: in an earlier tier,
     /// or in the same one and ahead of it in the tier order while comparable
-    /// with it. Within a tier, an arity mismatch decides only when exactly
-    /// one of the two is slurpy (the non-slurpy one is narrower); otherwise
-    /// the pair keeps the rank order, which is all a caller that ranks only
-    /// the candidates that bound (multi methods) can go by.
+    /// with it. Within a tier, an arity mismatch makes the non-slurpy one of
+    /// a slurpy/non-slurpy pair narrower and leaves any other pair
+    /// incomparable — except between untiered ranks, which keep the rank
+    /// order.
     // Cost: O(r), r = the cost of one `related` call.
     pub(crate) fn is_narrower(
         &self,
@@ -237,8 +241,17 @@ impl MultiRank {
         if self.tier != other.tier {
             return self.tier < other.tier;
         }
-        if self.arity_mismatch(other) && self.non_slurpy != other.non_slurpy {
-            return self.non_slurpy;
+        if self.arity_mismatch(other) {
+            if self.non_slurpy != other.non_slurpy {
+                return self.non_slurpy;
+            }
+            // Rakudo's incomparable pair. Only a tiered rank can afford it:
+            // the tiers already ordered the pair through any third candidate
+            // between them, while an untiered caller (multi methods) has
+            // nothing but the rank order to go by.
+            if self.tiered && other.tiered {
+                return false;
+            }
         }
         self.rank_cmp(other) == Ordering::Less && !self.incomparable(other, related)
     }
@@ -274,7 +287,9 @@ pub(crate) fn assign_tiers<T>(
     let n = items.len();
     if n < 2 {
         for item in items.iter_mut() {
-            rank(item).tier = 0;
+            let rank = rank(item);
+            rank.tier = 0;
+            rank.tiered = true;
         }
         return;
     }
@@ -308,7 +323,9 @@ pub(crate) fn assign_tiers<T>(
         tier += 1;
     }
     for (item, tier) in items.iter_mut().zip(tier_of) {
-        rank(item).tier = tier.unwrap_or(0);
+        let rank = rank(item);
+        rank.tier = tier.unwrap_or(0);
+        rank.tiered = true;
     }
 }
 
@@ -316,20 +333,25 @@ pub(crate) fn assign_tiers<T>(
 /// split by incomparable candidates, keep only the first declared of them. A
 /// pure tie (every survivor tier-equal) is returned whole, in the input
 /// order, so the caller's ambiguity logic still sees it.
+///
+/// The flag is set when the survivors are an arity-incomparable split that
+/// no bind-time check can settle (see [`arity_ambiguous`]): rakudo raises
+/// `X::Multi::Ambiguous` there, so they are all returned for the caller to
+/// report.
 // Cost: O(m^2 * r), m = matches, r = the cost of one `related` call.
 pub(crate) fn prune_to_maximal<T>(
     matches: Vec<(MultiRank, T)>,
     related: &dyn Fn(Symbol, Symbol) -> bool,
-) -> Vec<(MultiRank, T)> {
+) -> (Vec<(MultiRank, T)>, bool) {
     if matches.len() < 2 {
-        return matches;
+        return (matches, false);
     }
     let ranks: Vec<MultiRank> = matches.iter().map(|(r, _)| *r).collect();
     let dominated = |k: &MultiRank| ranks.iter().any(|o| o.is_narrower(k, related));
     if ranks.iter().all(dominated) {
         // The arity-mismatch rule makes the relation non-transitive, so a
         // cycle can dominate every match; leave the choice to the tier order.
-        return matches;
+        return (matches, false);
     }
     let mut maximal: Vec<(MultiRank, T)> =
         matches.into_iter().filter(|(k, _)| !dominated(k)).collect();
@@ -338,7 +360,11 @@ pub(crate) fn prune_to_maximal<T>(
         .iter()
         .all(|(k, _)| k.tier_cmp(&first) == Ordering::Equal)
     {
-        return maximal;
+        return (maximal, false);
+    }
+    let survivors: Vec<MultiRank> = maximal.iter().map(|(k, _)| *k).collect();
+    if arity_ambiguous(&survivors) {
+        return (maximal, true);
     }
     // Incomparable survivors: declaration order decides.
     let keep = maximal
@@ -347,7 +373,29 @@ pub(crate) fn prune_to_maximal<T>(
         .min_by_key(|(_, (k, _))| k.decl_order)
         .map(|(i, _)| i)
         .unwrap_or(0);
-    vec![maximal.swap_remove(keep)]
+    (vec![maximal.swap_remove(keep)], false)
+}
+
+/// Whether incomparable `survivors` are split by an arity mismatch alone,
+/// with no bind-time check among them: no `where`, `subset` or literal
+/// refinement and no named parameter. Rakudo trial-binds such a check in
+/// declaration order, so the first declared that binds wins
+/// (`multi b(Int $g where * > 0, Int $e, $d = '')` over
+/// `multi b(Any $g, Any $e, Any $t, $d = '')` for `b(5, 6, 1)`); without one,
+/// two binding candidates in one tier are ambiguous
+/// (`multi a(Int $g, Int $e, $d = '')` / `multi a(Any $g, Any $e, Any $t,
+/// $d = '')` for `a(5, 6, 1)`).
+// Cost: O(s^2), s = survivors.
+fn arity_ambiguous(survivors: &[MultiRank]) -> bool {
+    survivors.len() > 1
+        && survivors
+            .iter()
+            .all(|k| k.tiered && !k.bind_check && !k.profile.refined && k.refinement[0] == 0)
+        && survivors.iter().enumerate().all(|(i, a)| {
+            survivors[i + 1..]
+                .iter()
+                .all(|b| a.arity_mismatch(b) && a.non_slurpy == b.non_slurpy)
+        })
 }
 
 /// Whether the candidate declares at least one *explicit* named parameter
