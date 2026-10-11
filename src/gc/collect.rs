@@ -651,7 +651,10 @@ mod tests {
         let _g = lock();
         drain_candidates();
         let before = DROPS.load(Ordering::Relaxed);
-        const LEN: usize = 200_000;
+        // Miri interprets every step; it checks the traversal's soundness, so a
+        // short cycle is enough there (the 200k one does not finish in its CI
+        // job's budget).
+        const LEN: usize = if cfg!(miri) { 1_000 } else { 200_000 };
         let head = TestNode::new();
         let mut tail = head.clone();
         for _ in 1..LEN {
