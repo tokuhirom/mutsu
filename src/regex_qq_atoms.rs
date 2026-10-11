@@ -84,7 +84,9 @@ pub(crate) fn dq_atom_close(chars: &[char], open: usize) -> Option<usize> {
             '}' if brace_depth > 0 => brace_depth -= 1,
             '(' if call_depth > 0 || is_method_call_paren(chars, open, i) => call_depth += 1,
             ')' if call_depth > 0 => call_depth -= 1,
-            '"' | '\u{201D}' if brace_depth == 0 && call_depth == 0 => return Some(i),
+            ch if brace_depth == 0 && call_depth == 0 && quote_closes(chars[open], ch) => {
+                return Some(i);
+            }
             _ => {}
         }
         i += 1;
