@@ -870,6 +870,7 @@ impl Interpreter {
             // gets that hook run when the class composes, as in Rakudo -- once,
             // at the real declaration, not for a throwaway hoisted shell.
             if !is_hoisted_shell {
+                self.drive_role_how_specialize(&storage_name)?;
                 self.queue_trait_how_compose(&storage_name, how_hook_before);
             }
 

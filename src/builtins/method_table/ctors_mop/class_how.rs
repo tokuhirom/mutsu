@@ -444,6 +444,13 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!(
         "Metamodel::ClassHOW",
+        "multi_methods_to_incorporate",
+        1,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_multi_methods_to_incorporate(args.to_vec()))
+    ),
+    row!(
+        "Metamodel::ClassHOW",
         "submethod_table",
         1,
         true,

@@ -2238,6 +2238,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Metamodel::ClassHOW", "mixin_base", 8, 57),
     ("Metamodel::ClassHOW", "mro", 8, 57),
     ("Metamodel::ClassHOW", "mro_unhidden", 8, 57),
+    ("Metamodel::ClassHOW", "multi_methods_to_incorporate", 8, 57),
     ("Metamodel::ClassHOW", "name", 8, 57),
     ("Metamodel::ClassHOW", "parents", 8, 57),
     ("Metamodel::ClassHOW", "private_method_table", 8, 57),

@@ -493,7 +493,19 @@ impl Interpreter {
             parent_op_idx: 0,
             compiled_fns,
         };
-        self.walk_role_body(body_plan, &mut cx)?;
+        let previously_declaring = self
+            .registry_mut()
+            .declaring_role_ids
+            .insert(name.to_string(), role_id);
+        let walked = self.walk_role_body(body_plan, &mut cx);
+        {
+            let mut reg = self.registry_mut();
+            match previously_declaring {
+                Some(prev) => reg.declaring_role_ids.insert(name.to_string(), prev),
+                None => reg.declaring_role_ids.remove(name),
+            };
+        }
+        walked?;
         self.finish_role_registration(
             name,
             type_params,

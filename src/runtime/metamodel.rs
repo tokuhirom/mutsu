@@ -350,6 +350,32 @@ impl Interpreter {
             .is_some_and(|how| self.mixin_has_compose_hook(how))
     }
 
+    /// Run the user `specialize` override of every composed role's HOW for
+    /// `class_name` (queued by `queue_role_how_specialize`): rakudo calls
+    /// `$role.HOW.specialize($role, $class)` while composing, so a hook mixed
+    /// into a role's HOW can add methods to the composing class.
+    // Cost: O(r), r = roles the class composed whose HOW overrides `specialize`.
+    pub(crate) fn drive_role_how_specialize(
+        &mut self,
+        class_name: &str,
+    ) -> Result<(), RuntimeError> {
+        let (mine, rest): (Vec<_>, Vec<_>) = std::mem::take(
+            &mut self.registry_mut().pending_role_specialize,
+        )
+        .into_iter()
+        .partition(|(class, _, _)| class == class_name);
+        self.registry_mut().pending_role_specialize = rest;
+        for (_, key, role_name) in mine {
+            let how = self.registry().class_how_values.get(&key).cloned();
+            if let Some(how) = how {
+                let role_obj = Value::package(Symbol::intern(&role_name));
+                let class_obj = Value::package(Symbol::intern(class_name));
+                self.call_method_with_values(how, "specialize", vec![role_obj, class_obj])?;
+            }
+        }
+        Ok(())
+    }
+
     /// Queue `class_name` for a post-trait `compose` call when its custom `is`
     /// traits mixed a role with a `compose` hook into its HOW
     /// (`had_hook_before` is [`Interpreter::class_how_compose_hook`] from

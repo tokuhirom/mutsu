@@ -240,6 +240,18 @@ impl Interpreter {
         Ok(Value::array(Vec::new()))
     }
 
+    /// The multis a type's `specialize` still has to incorporate into a
+    /// composing class. A role's multi candidates are always part of its
+    /// `RoleDef` here, so `^add_method` of a multi family already carries every
+    /// candidate: nothing is ever pending.
+    // Cost: O(1).
+    pub(crate) fn mop_multi_methods_to_incorporate(
+        &mut self,
+        _args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        Ok(Value::array(Vec::new()))
+    }
+
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_submethod_table(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
             // ADR-0019 F4c-1: enumerate via the canonical reverse index

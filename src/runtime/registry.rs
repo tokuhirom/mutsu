@@ -385,6 +385,15 @@ pub(crate) struct Registry {
     /// run (so `@!aspects` populated by the trait is visible to `compose`), which
     /// wraps the class's methods (`advent2011-day14` AOP).
     pub(crate) pending_class_compose: Vec<String>,
+    /// Roles whose body is being registered right now (group name -> `role_id`).
+    /// The role is not in `roles` yet, but its method traits already see it as
+    /// `$*PACKAGE` -- the individual parametric role (`ParametricRoleHOW`).
+    pub(crate) declaring_role_ids: HashMap<String, u64>,
+    /// `(class, role_how_key, role_name)` for every role a class composed whose
+    /// HOW carries a user `specialize` override (`$role.HOW does R` from a
+    /// trait). Drained by the class-decl VM op once the class is registered,
+    /// where rakudo's `ParametricRoleHOW.specialize` would have run.
+    pub(crate) pending_role_specialize: Vec<(String, String, String)>,
     /// True once any user class inheriting a builtin metamodel class
     /// (Metamodel::ClassHOW / Metamodel::GrammarHOW) has been declared. Cheap
     /// gate for the per-dispatch `is_metamodel_how_class` check.

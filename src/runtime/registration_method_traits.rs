@@ -40,8 +40,16 @@ impl Interpreter {
             return Ok(());
         }
         let saved_package_var = self.env.get("*PACKAGE").cloned();
-        self.env
-            .insert("*PACKAGE".to_string(), Value::package(Symbol::intern(pkg)));
+        // In a role body `$*PACKAGE` is the individual parametric role (its
+        // `.HOW` is a `ParametricRoleHOW`), not the role group.
+        let package_name = match self.registry().declaring_role_ids.get(pkg) {
+            Some(role_id) => crate::runtime::types::role_candidate_type_name(pkg, *role_id),
+            None => pkg.to_string(),
+        };
+        self.env.insert(
+            "*PACKAGE".to_string(),
+            Value::package(Symbol::intern(&package_name)),
+        );
         let result = self.apply_method_is_traits_inner(
             pkg,
             method_name,
