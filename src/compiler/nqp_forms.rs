@@ -467,8 +467,19 @@ impl Compiler {
         if matches!(op, "usecapture" | "savecapture") {
             self.code.uses_capture = true;
         }
-        for arg in args {
+        for (i, arg) in args.iter().enumerate() {
             self.compile_expr(arg);
+            // `nqp::bindpos($list, $i, $var)` binds the variable's container
+            // itself, so a later assignment to `$var` shows in the slot
+            // (#12786): hand the op the shared cell, not the decontainerized
+            // value.
+            if op == "bindpos"
+                && i == 2
+                && let Some(cell) = self.return_rw_container_name(arg)
+            {
+                self.emit_wrap_var_ref(&cell);
+                self.code.emit(OpCode::CaptureVarCell);
+            }
         }
         self.code.emit(OpCode::NqpOp {
             id,

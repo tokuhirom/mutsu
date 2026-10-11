@@ -189,7 +189,7 @@ impl Compiler {
     /// their own machinery, and boxing them into a scalar cell here would leak a
     /// `ContainerRef` past the consumers that only decontainerize at the scalar
     /// chokepoints.
-    fn return_rw_container_name(&self, arg: &Expr) -> Option<String> {
+    pub(super) fn return_rw_container_name(&self, arg: &Expr) -> Option<String> {
         if let Some(name) = Self::scalar_container_alias_name(arg)
             && (Self::is_plain_lexical_name(name) || Self::is_minted_anon_state_name(name))
         {

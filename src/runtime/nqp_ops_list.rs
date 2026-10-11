@@ -210,7 +210,13 @@ impl Interpreter {
     /// the O(1) read behind `nqp::atpos_i`, for the same reason as
     /// [`Interpreter::nqp_elems_len_of`].
     pub(crate) fn nqp_elem_at(target: &Value, idx: usize) -> Option<Value> {
+        // A slot of an Array's `$!reified` storage that was never assigned is
+        // null there (#12786).
+        let view = target.is_iteration_buffer_view();
         if let Some(elem) = with_nqp_backing_array(target, |array| match array.view() {
+            ValueView::Array(items, _) if view && idx < items.len() && items.hole_at(idx) => {
+                Some(Value::NIL)
+            }
             ValueView::Array(items, _) => items.get(idx).cloned(),
             _ => None,
         }) {

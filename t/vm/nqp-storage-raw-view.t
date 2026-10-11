@@ -6,7 +6,7 @@ use nqp;
 # `%!hash` are raw VMArray / VMHash objects sharing the collection's storage,
 # and `p6bindattrinvres` installs a raw one by sharing it (ADR-12666 §3.6,
 # #12669). Every expected answer was checked against Rakudo 2026.09.
-plan 27;
+plan 33;
 
 {
     my @a = 1, 2;
@@ -99,4 +99,27 @@ plan 27;
     my $l := (1, 2);
     is nqp::iscont(nqp::atpos(nqp::getattr($l, List, '$!reified'), 0)), 0,
         'a List slot is a bare value';
+}
+
+{
+    # bindpos installs the variable's container itself; an unassigned slot is
+    # null (#12786). Checked against Rakudo.
+    my @a = 1, 2;
+    my $r := nqp::getattr(@a, List, '$!reified');
+    my $s = 9;
+    nqp::bindpos($r, 1, $s);
+    $s = 10;
+    is-deeply @a.List, (1, 10), 'bindpos of a variable shares its container with the Array';
+    is nqp::iscont(nqp::atpos($r, 1)), 1, '... the slot is that container';
+    my @b;
+    @b[3] = 1;
+    my $rb := nqp::getattr(@b, List, '$!reified');
+    is nqp::isnull(nqp::atpos($rb, 0)), 1, 'an unassigned slot is null';
+    is nqp::isnull(nqp::atpos($rb, 2)), 1, '... including the last gap';
+    is nqp::isnull(nqp::atpos($rb, 3)), 0, '... but an assigned one is not';
+    my $l := nqp::list;
+    my $t = 1;
+    nqp::bindpos($l, 0, $t);
+    $t = 2;
+    is nqp::atpos($l, 0), 2, 'bindpos of a variable into a raw list shares it too';
 }
