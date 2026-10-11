@@ -69,7 +69,6 @@ plan 21;
         $t ~~ Failure ?? do { $t.so; 'not visible' } !! $t.^name
     }
     sub h() { my class SecretType { }; g() }
-    todo 'ADR-12529 phases 1 and 3: a `my class` is not a name a callee can see';
     is h(), 'not visible', 'a symbolic lookup in a callee does not find the caller\'s `my class`';
 }
 

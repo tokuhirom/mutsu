@@ -13,8 +13,9 @@
 //! needs_reflective_capture`), its frame root carries [`StaticLink::UnitOuter`]:
 //! a *plain user lexical* (`Symbol::is_plain_user_lexical`) that misses the
 //! frame's own tiers continues at the program scope's tiers, past every caller
-//! frame in between. Every other name -- dynamics, `self`, the topic, `__mutsu_*`
-//! metadata -- walks the whole chain as before.
+//! frame in between, and so does a bare type-shaped name (`SecretType`, which a
+//! caller's `my class` binds in its frame). Every other name -- dynamics,
+//! `self`, the topic, `__mutsu_*` metadata -- walks the whole chain as before.
 //!
 //! `EVAL $code, context => $ctx` asks for the scope `$ctx` names instead of
 //! the running one. mutsu does not carry a frame's lexical scope in a
@@ -72,6 +73,22 @@ pub(crate) fn with_static_links_suppressed<R>(f: impl FnOnce() -> R) -> R {
     SUPPRESSED.with(|c| c.set(c.get() + 1));
     let _guard = Guard;
     f()
+}
+
+/// Whether a static link skips the caller frames for `key`: a plain user
+/// lexical, or a bare type-shaped name (an unqualified identifier starting with
+/// an uppercase letter). A caller frame binds the latter only for a type it
+/// declared lexically (`my class`); a package-scoped type is found through the
+/// symbol table, not the frame.
+// Cost: O(1) for a plain user lexical (memoized flags); O(|key|) otherwise.
+fn lexically_scoped(key: Symbol) -> bool {
+    key.is_plain_user_lexical()
+        || key.with_str(|s| {
+            s.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+                && !s.contains("::")
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        })
 }
 
 impl Env {
@@ -152,18 +169,9 @@ impl Env {
                 target = None;
             }
             if target.is_some() {
-                hidden.extend(
-                    cur.inner
-                        .keys()
-                        .copied()
-                        .filter(|k| k.is_plain_user_lexical()),
-                );
+                hidden.extend(cur.inner.keys().copied().filter(|k| lexically_scoped(*k)));
                 if let Some(fb) = &cur.fallback {
-                    hidden.extend(
-                        fb.iter()
-                            .map(|(k, _)| *k)
-                            .filter(|k| k.is_plain_user_lexical()),
-                    );
+                    hidden.extend(fb.iter().map(|(k, _)| *k).filter(|k| lexically_scoped(*k)));
                 }
             } else if let Some(link) = cur.inner.static_link() {
                 let StaticLink::UnitOuter { target: seg, .. } = link;
@@ -219,7 +227,7 @@ impl Env {
     #[inline]
     pub(super) fn static_skip(&self, key: Symbol) -> Option<&Env> {
         let link = self.inner.static_link()?;
-        if !key.is_plain_user_lexical() || suppressed() {
+        if !lexically_scoped(key) || suppressed() {
             return None;
         }
         let StaticLink::UnitOuter { target, .. } = link;
@@ -238,7 +246,7 @@ impl Env {
         else {
             return None;
         };
-        if !key.is_plain_user_lexical() || suppressed() {
+        if !lexically_scoped(key) || suppressed() {
             return None;
         }
         self.fallback.as_deref()?.get(&key)
