@@ -4,7 +4,53 @@ use crate::value::AttrMap;
 use crate::value::raku_repr::raku_value;
 
 /// Produce Raku-compatible `.raku` representation for a Match object.
+// Cost: O(s), s = the length of the rendered text (every node carries the whole
+// `orig`), written once into one buffer rather than re-copied at each nesting
+// level.
 pub(crate) fn match_raku_repr(attributes: &AttrMap) -> String {
+    let mut out = String::new();
+    write_match_raku(attributes, &mut out, &mut EscapedOrig::default());
+    out
+}
+
+/// The escaped form of the last `orig` rendered: every node of one match shares
+/// the same subject, so it is escaped once and copied after that.
+#[derive(Default)]
+struct EscapedOrig {
+    raw: String,
+    escaped: String,
+}
+
+impl EscapedOrig {
+    // Cost: O(n) to compare, plus O(n) to escape when the subject changed.
+    fn push(&mut self, orig: &str, out: &mut String) {
+        if self.raw != orig {
+            self.raw.clear();
+            self.raw.push_str(orig);
+            self.escaped.clear();
+            push_escaped_orig(orig, &mut self.escaped);
+        }
+        out.push_str(&self.escaped);
+    }
+}
+
+/// Append `orig` to `out` escaped as a double-quoted Raku string body.
+fn push_escaped_orig(orig: &str, out: &mut String) {
+    for c in orig.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            '\0' => out.push_str("\\0"),
+            c => out.push(c),
+        }
+    }
+}
+
+fn write_match_raku(attributes: &AttrMap, out: &mut String, esc: &mut EscapedOrig) {
+    use std::fmt::Write;
     let orig = attributes
         .get("orig")
         .map(|v| v.to_string_value())
@@ -23,64 +69,91 @@ pub(crate) fn match_raku_repr(attributes: &AttrMap) -> String {
         _ => 0,
     };
 
-    let escaped_orig = orig
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\t', "\\t")
-        .replace('\r', "\\r")
-        .replace('\0', "\\0");
-
-    let mut parts = vec![
-        format!(":orig(\"{}\")", escaped_orig),
-        format!(":from({})", from),
-        format!(":pos({})", pos),
-    ];
+    out.push_str("Match.new(:orig(\"");
+    esc.push(&orig, out);
+    let _ = write!(out, "\"), :from({from}), :pos({pos})");
 
     // Positional captures (:list)
     if let Some(ValueView::Array(items, ..)) = attributes.get("list").map(Value::view)
         && !items.is_empty()
     {
-        // An unbound interior slot iterates as `Mu` (`match_list_view`).
-        let items_raku: Vec<String> = items
-            .iter()
-            .map(|v| value_raku_repr(&v.clone().unbound_capture_as_mu()))
-            .collect();
-        let trailing = if items.len() == 1 { "," } else { "" };
         // `:list(( ... ))`: an outer paren for the `:list(...)` adverb plus an
         // inner paren for the captured List literal — both must be closed.
-        parts.push(format!(":list(({}{}))", items_raku.join(", "), trailing));
+        out.push_str(", :list((");
+        for (i, v) in items.iter().enumerate() {
+            if i > 0 {
+                out.push_str(", ");
+            }
+            // An unbound interior slot iterates as `Mu` (`match_list_view`).
+            write_value_raku(&v.clone().unbound_capture_as_mu(), out, esc);
+        }
+        if items.len() == 1 {
+            out.push(',');
+        }
+        out.push_str("))");
     }
 
     // Named captures (:hash)
     if let Some(ValueView::Hash(map)) = attributes.get("named").map(Value::view)
         && !map.is_empty()
     {
-        let mut pairs: Vec<String> = map
-            .iter()
-            .map(|(k, v)| format!("(:{}({}))", k, value_raku_repr(v)))
-            .collect();
-        pairs.sort(); // Deterministic output
-        parts.push(format!(":hash(Map.new({}))", pairs.join(", ")));
+        // Deterministic output: the rendered pairs sorted as text. The text of a
+        // pair starts `(:key(`, so the order is the keys' unless a key holds a
+        // `(`; only then is the text itself compared.
+        let mut entries: Vec<_> = map.iter().collect();
+        if entries.iter().any(|(k, _)| k.contains('(')) {
+            let mut pairs: Vec<String> = entries
+                .iter()
+                .map(|(k, v)| {
+                    let mut pair = format!("(:{k}(");
+                    write_value_raku(v, &mut pair, esc);
+                    pair.push_str("))");
+                    pair
+                })
+                .collect();
+            pairs.sort();
+            let _ = write!(out, ", :hash(Map.new({}))", pairs.join(", "));
+        } else {
+            entries.sort_by(|a, b| {
+                a.0.bytes()
+                    .chain(Some(b'('))
+                    .cmp(b.0.bytes().chain(Some(b'(')))
+            });
+            out.push_str(", :hash(Map.new(");
+            for (i, (k, v)) in entries.into_iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                let _ = write!(out, "(:{k}(");
+                write_value_raku(v, out, esc);
+                out.push_str("))");
+            }
+            out.push_str("))");
+        }
     }
 
-    format!("Match.new({})", parts.join(", "))
+    out.push(')');
 }
 
-/// Produce `.raku` representation for a value, recursing into Match objects.
-fn value_raku_repr(val: &Value) -> String {
+/// Append the `.raku` representation of a value to `out`, recursing into Match
+/// objects.
+fn write_value_raku(val: &Value, out: &mut String, esc: &mut EscapedOrig) {
     match val.view() {
         ValueView::Instance { attributes, .. } if val.is_match_instance() => {
-            match_raku_repr(&(attributes).as_map())
+            write_match_raku(&(attributes).as_map(), out, esc);
         }
         ValueView::Array(items, ..) => {
-            let items_raku: Vec<String> = items.iter().map(value_raku_repr).collect();
-            format!("[{}]", items_raku.join(", "))
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(", ");
+                }
+                write_value_raku(item, out, esc);
+            }
+            out.push(']');
         }
-        _ => {
-            // Use the existing raku_value helper for non-Match values
-            raku_value(val)
-        }
+        // Use the existing raku_value helper for non-Match values
+        _ => out.push_str(&raku_value(val)),
     }
 }
 
