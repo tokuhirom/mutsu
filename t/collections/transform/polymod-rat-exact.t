@@ -12,7 +12,7 @@ is (⅔).polymod(⅓).gist,        '(0 2)',      'unicode fraction literals';
 # The results are genuine Rats / Ints, not Nums with float tails
 is 5.Rat.polymod(.3, .2)[0], 0.2, 'first remainder equals 1/5 exactly';
 ok 5.Rat.polymod(.3, .2)[0] == 1/5, 'remainder compares equal to 1/5';
-is 5.Rat.polymod(.3, .2)[2].WHAT.gist, '(Int)', 'final quotient is an Int';
+is 5.Rat.polymod(.3, .2)[2].WHAT.gist, '(Rat)', 'final quotient of a Rat invocant is a Rat';
 
 # Integer polymod is unchanged (still exact, matches the docs)
 is 120.polymod(10).gist,    '(0 12)',  '120.polymod(10)';

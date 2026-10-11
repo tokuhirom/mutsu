@@ -270,7 +270,9 @@ impl Interpreter {
             match v.view() {
                 ValueView::Int(n) => n as f64,
                 ValueView::Num(n) => n,
-                ValueView::Rat(n, d) if d != 0 => crate::value::rat_to_f64(n, d),
+                ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => {
+                    crate::value::rat_to_f64(n, d)
+                }
                 ValueView::Bool(b) => {
                     if b {
                         1.0
@@ -364,7 +366,7 @@ impl Interpreter {
         if let Some(exact) = polymod_exact_int(target, &divisors, has_infinite) {
             return Ok(Value::seq(exact));
         }
-        if !has_infinite && let Some(exact) = polymod_exact(target, &divisors) {
+        if let Some(exact) = polymod_exact(target, &divisors, has_infinite) {
             return Ok(Value::seq(exact));
         }
         let mut result = Vec::new();
@@ -538,7 +540,9 @@ fn polymod_exact_int(target: &Value, divisors: &[Value], has_infinite: bool) -> 
 fn polymod_rat(v: &Value) -> Option<(i128, i128)> {
     match v.view() {
         ValueView::Int(n) if n >= 0 => Some((n as i128, 1)),
-        ValueView::Rat(n, d) if n >= 0 && d > 0 => Some((n as i128, d as i128)),
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if n >= 0 && d > 0 => {
+            Some((n as i128, d as i128))
+        }
         ValueView::Bool(b) => Some((if b { 1 } else { 0 }, 1)),
         _ => None,
     }
@@ -548,19 +552,36 @@ fn polymod_rat(v: &Value) -> Option<(i128, i128)> {
 /// preferring `Int` when the denominator is 1. Returns `None` if the reduced
 /// numerator/denominator do not fit `i64` (mutsu's `Rat` payload width), so the
 /// caller can fall back to the float path rather than truncating.
-fn polymod_rat_value(num: i128, den: i128) -> Option<Value> {
+///
+/// `kind` is the invocant's type: Rakudo keeps a `Rat`/`FatRat` invocant's
+/// non-zero elements rational even when whole (`5.Rat.polymod(.3, .2)` ends in
+/// `80.0`), while a zero element is always an `Int`.
+fn polymod_rat_value(num: i128, den: i128, kind: PolymodKind) -> Option<Value> {
     debug_assert!(den > 0);
     let g = gcd_i128(num.abs(), den);
     let g = if g == 0 { 1 } else { g };
     let n = num / g;
     let d = den / g;
-    if d == 1 {
-        i64::try_from(n).ok().map(Value::int)
-    } else {
-        let n = i64::try_from(n).ok()?;
-        let d = i64::try_from(d).ok()?;
-        Some(crate::value::make_rat(n, d))
+    let n = i64::try_from(n).ok()?;
+    let d = i64::try_from(d).ok()?;
+    if n == 0 {
+        return Some(Value::int(0));
     }
+    match kind {
+        PolymodKind::FatRat => Some(Value::fat_rat_raw(n, d)),
+        PolymodKind::Rat => Some(Value::rat_raw(n, d)),
+        PolymodKind::Int if d == 1 => Some(Value::int(n)),
+        PolymodKind::Int => Some(crate::value::make_rat(n, d)),
+    }
+}
+
+/// The numeric type of a `polymod` invocant, which decides the type of the
+/// whole-number elements of the exact rational path.
+#[derive(Clone, Copy)]
+enum PolymodKind {
+    Int,
+    Rat,
+    FatRat,
 }
 
 fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
@@ -570,18 +591,36 @@ fn gcd_i128(mut a: i128, mut b: i128) -> i128 {
     a.abs()
 }
 
+/// `has_infinite` marks a divisor list continuing past the reified elements.
+///
 /// Exact rational `polymod`: `n.polymod(d1, d2, ...)` yields
 /// `(n mod d1, (n div d1) mod d2, ..., final quotient)`, all computed without
 /// floating point. Returns `None` (bail to float) when any operand is out of
 /// the non-negative Int/Rat domain, a divisor is zero, or an intermediate
 /// value overflows `i128` / does not fit back into a `Rat`.
-fn polymod_exact(target: &Value, divisors: &[Value]) -> Option<Vec<Value>> {
+fn polymod_exact(target: &Value, divisors: &[Value], has_infinite: bool) -> Option<Vec<Value>> {
     let (mut nn, mut nd) = polymod_rat(target)?;
+    let kind = match target.view() {
+        ValueView::Rat(..) => PolymodKind::Rat,
+        ValueView::FatRat(..) => PolymodKind::FatRat,
+        _ => PolymodKind::Int,
+    };
     let mut result = Vec::with_capacity(divisors.len() + 1);
     for d in divisors {
         let (dn, dd) = polymod_rat(d)?;
         if dn == 0 {
             return None; // zero divisor: leave to the float path's own handling
+        }
+        if has_infinite {
+            // As in `polymod_exact_int`: an exhausted invocant ends a lazy
+            // divisor list, and a divisor of one would never terminate.
+            if nn == 0 {
+                return Some(result);
+            }
+            if dn == dd {
+                result.push(polymod_rat_value(nn, nd, kind)?);
+                return Some(result);
+            }
         }
         // q = floor( (nn/nd) / (dn/dd) ) = floor( (nn*dd) / (nd*dn) ); all terms
         // are non-negative here, so truncating division already floors.
@@ -593,12 +632,12 @@ fn polymod_exact(target: &Value, divisors: &[Value]) -> Option<Vec<Value>> {
             .checked_mul(dd)?
             .checked_sub(q.checked_mul(dn)?.checked_mul(nd)?)?;
         let r_den = nd.checked_mul(dd)?;
-        result.push(polymod_rat_value(r_num, r_den)?);
+        result.push(polymod_rat_value(r_num, r_den, kind)?);
         // The carried quotient is always an integer.
         nn = q;
         nd = 1;
     }
-    result.push(polymod_rat_value(nn, nd)?);
+    result.push(polymod_rat_value(nn, nd, kind)?);
     Some(result)
 }
 
