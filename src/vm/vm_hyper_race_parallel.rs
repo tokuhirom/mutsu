@@ -262,27 +262,16 @@ impl Interpreter {
                     match call_result {
                         Ok(val) => {
                             if is_map_flag {
-                                // A callback returning a finite lazy `.map`/
-                                // `.grep` pipe must reify here — the wrapped
-                                // HyperSeq's downstream `.flat`/`for` use static
-                                // readers that cannot force a nested pipe. Same
-                                // for a callback returning a deferred `.map`
-                                // Seq (ADR-0058's `SeqSource::MapGrep`): the
-                                // HyperSeq is eager by construction and this is
-                                // the last place with a VM to run it in.
-                                if let Err(e) = vm.reify_map_grep_seq(&val) {
-                                    error = Some(e);
-                                    break;
-                                }
-                                match vm.reify_finite_pipe_value(val) {
-                                    Ok(val) => {
-                                        if let ValueView::Slip(s) = val.view() {
-                                            results.extend(s.iter().cloned());
-                                        } else {
-                                            results.push(val);
-                                        }
-                                    }
-                                    Err(e) => error = Some(e),
+                                // Result Seqs are reified after the join (see
+                                // `reify_hyper_map_result`): a sibling item may
+                                // still be reading a Seq this block returned
+                                // (`$s .= grep(...)` hands back the Seq it
+                                // stored in `$s`), and reifying it here would
+                                // race that read.
+                                if let ValueView::Slip(s) = val.view() {
+                                    results.extend(s.iter().cloned());
+                                } else {
+                                    results.push(val);
                                 }
                             } else if val.truthy() {
                                 results.push(item.clone());
@@ -338,6 +327,14 @@ impl Interpreter {
         crate::vm::vm_poll::poll(crate::gc::SafepointKind::ThreadJoin, 0);
         // Sync any shared variable updates from threads back to our env
         self.sync_shared_vars_to_env();
+        if is_map && first_error.is_none() {
+            for val in &mut all_results {
+                if let Err(e) = self.reify_hyper_map_result(val) {
+                    first_error = Some(e);
+                    break;
+                }
+            }
+        }
         // Roll back this op's ephemeral env->shared migrations (see
         // `pre_shared_keys`). Dirty mutations were just synced to env, so
         // dropping their shared entries is safe; pre-existing shared vars — and
@@ -349,6 +346,25 @@ impl Interpreter {
             return Err(e);
         }
         Ok(all_results)
+    }
+
+    /// Reify one `.hyper.map` callback result on the joining thread. A
+    /// callback returning a finite lazy `.map`/`.grep` pipe must reify — the
+    /// wrapped HyperSeq's downstream `.flat`/`for` use static readers that
+    /// cannot force a nested pipe. Same for a callback returning a deferred
+    /// `.map` Seq (ADR-0058's `SeqSource::MapGrep`): the HyperSeq is eager by
+    /// construction and this is the last place with a VM to run it in. A Seq
+    /// another consumer already took is left as it is: rakudo does not touch
+    /// a map callback's result Seq either.
+    // Cost: O(n) for the n elements the result pipe produces, O(1) otherwise.
+    fn reify_hyper_map_result(&mut self, val: &mut Value) -> Result<(), RuntimeError> {
+        if let Err(e) = self.reify_map_grep_seq(val)
+            && !matches!(val.view(), ValueView::Seq(b) if b.is_consumed())
+        {
+            return Err(e);
+        }
+        *val = self.reify_finite_pipe_value(val.clone())?;
+        Ok(())
     }
 
     /// Sequential grep using smartmatch for non-callable matchers.

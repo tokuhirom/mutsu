@@ -174,6 +174,7 @@ fn is_emoji_all(ch: char) -> bool {
 /// Main entry point: look up a Unicode property value for a character.
 /// Returns a Value (Bool for binary props, Str for string/enum props, etc.)
 pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
+    let prop = &*super::prop_names::canonical_property_name(prop);
     // Check binary properties first
     if let Some(b) = super::binary_props::try_binary_property(ch, prop) {
         return Value::truth(b);
@@ -187,7 +188,7 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
         // Script
         "Script" | "sc" => Value::str_from(crate::builtins::unicode::unicode_script_name(ch)),
         // Age
-        "Age" => Value::str_from("1.1"), // Simplified; proper impl would need full data
+        "Age" => Value::str_from(super::age_table::unicode_age(ch as u32)),
         // Block
         "Block" | "blk" => Value::str(super::char_props::unicode_block(ch)),
         // Name
@@ -242,7 +243,9 @@ pub(crate) fn unicode_property_value(ch: char, prop: &str) -> Value {
             Value::str(super::char_props::unicode_decomposition_type(ch))
         }
         // East Asian Width
-        "East_Asian_Width" | "ea" => Value::str(super::char_props::unicode_east_asian_width(ch)),
+        "East_Asian_Width" | "ea" => Value::str_from(east_asian_width_short(
+            &super::char_props::unicode_east_asian_width(ch),
+        )),
         // Hangul
         "Hangul_Syllable_Type" | "hst" => {
             Value::str(super::char_props::unicode_hangul_syllable_type(ch))
@@ -413,16 +416,22 @@ fn unimatch_general_category(ch: char, cat: &str) -> bool {
 /// short property-value aliases (W, Na, F, H, A, N), so normalise our long-form
 /// value to the short alias and compare against the target as given.
 fn east_asian_width_matches(actual: &str, target: &str) -> bool {
-    let short = match actual.to_ascii_uppercase().as_str() {
+    let short = east_asian_width_short(actual);
+    !short.is_empty() && short.eq_ignore_ascii_case(target.trim())
+}
+
+/// The short property-value alias (`W`, `Na`, ...) of an East_Asian_Width
+/// value, or `""` for an unknown one.
+fn east_asian_width_short(value: &str) -> &'static str {
+    match value.to_ascii_uppercase().as_str() {
         "N" | "NEUTRAL" => "N",
         "NA" | "NARROW" => "Na",
         "W" | "WIDE" => "W",
         "F" | "FULLWIDTH" => "F",
         "H" | "HALFWIDTH" => "H",
         "A" | "AMBIGUOUS" => "A",
-        _ => return false,
-    };
-    short.eq_ignore_ascii_case(target.trim())
+        _ => "",
+    }
 }
 
 /// Check if a block name matches, normalizing case, underscores, spaces, and hyphens.

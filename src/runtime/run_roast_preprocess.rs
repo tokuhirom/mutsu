@@ -313,7 +313,14 @@ impl Interpreter {
                 && !trimmed.contains(".js")
                 && trimmed.contains("todo")
             {
-                let after = trimmed.trim_start_matches("#?rakudo").trim_start();
+                let after = trimmed.trim_start_matches("#?rakudo");
+                // A backend qualifier (`#?rakudo.moar 2 todo`) precedes the count.
+                let after = if after.starts_with('.') {
+                    after.trim_start_matches(|c: char| !c.is_whitespace())
+                } else {
+                    after
+                }
+                .trim_start();
                 // Check for count: #?rakudo N todo "reason"
                 let (count, explicit_count, after_count) = if let Some(first_char) =
                     after.chars().next()
