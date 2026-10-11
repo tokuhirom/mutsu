@@ -975,6 +975,9 @@ impl Interpreter {
             // hole as its default (or `Any`), never as an absence.
             new_data.settle_for_list_assignment();
             new_data.default = old_gc.default.clone();
+            // The descriptor belongs to the destination container, not to the
+            // source whose node was cloned: `@e = @a; @e.name` is `@e`.
+            new_data.descriptor_name = old_gc.descriptor_name.clone();
         }
         let mut seen = Vec::new();
         for item in new_data.live_mut().iter_mut() {
@@ -1244,6 +1247,9 @@ impl Interpreter {
             new_data.descriptor_name = new_data
                 .descriptor_name
                 .or_else(|| old_gc.descriptor_name.clone());
+        } else {
+            // As for arrays: the destination keeps its own descriptor.
+            new_data.descriptor_name = old_gc.descriptor_name.clone();
         }
         for v in new_data.map.values_mut() {
             if let ValueView::Hash(inner) = v.view()
