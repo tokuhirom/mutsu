@@ -9,8 +9,29 @@ use crate::value::raku_repr::raku_value;
 // level.
 pub(crate) fn match_raku_repr(attributes: &AttrMap) -> String {
     let mut out = String::new();
-    write_match_raku(attributes, &mut out);
+    write_match_raku(attributes, &mut out, &mut EscapedOrig::default());
     out
+}
+
+/// The escaped form of the last `orig` rendered: every node of one match shares
+/// the same subject, so it is escaped once and copied after that.
+#[derive(Default)]
+struct EscapedOrig {
+    raw: String,
+    escaped: String,
+}
+
+impl EscapedOrig {
+    // Cost: O(n) to compare, plus O(n) to escape when the subject changed.
+    fn push(&mut self, orig: &str, out: &mut String) {
+        if self.raw != orig {
+            self.raw.clear();
+            self.raw.push_str(orig);
+            self.escaped.clear();
+            push_escaped_orig(orig, &mut self.escaped);
+        }
+        out.push_str(&self.escaped);
+    }
 }
 
 /// Append `orig` to `out` escaped as a double-quoted Raku string body.
@@ -28,7 +49,7 @@ fn push_escaped_orig(orig: &str, out: &mut String) {
     }
 }
 
-fn write_match_raku(attributes: &AttrMap, out: &mut String) {
+fn write_match_raku(attributes: &AttrMap, out: &mut String, esc: &mut EscapedOrig) {
     use std::fmt::Write;
     let orig = attributes
         .get("orig")
@@ -49,7 +70,7 @@ fn write_match_raku(attributes: &AttrMap, out: &mut String) {
     };
 
     out.push_str("Match.new(:orig(\"");
-    push_escaped_orig(&orig, out);
+    esc.push(&orig, out);
     let _ = write!(out, "\"), :from({from}), :pos({pos})");
 
     // Positional captures (:list)
@@ -64,7 +85,7 @@ fn write_match_raku(attributes: &AttrMap, out: &mut String) {
                 out.push_str(", ");
             }
             // An unbound interior slot iterates as `Mu` (`match_list_view`).
-            write_value_raku(&v.clone().unbound_capture_as_mu(), out);
+            write_value_raku(&v.clone().unbound_capture_as_mu(), out, esc);
         }
         if items.len() == 1 {
             out.push(',');
@@ -85,7 +106,7 @@ fn write_match_raku(attributes: &AttrMap, out: &mut String) {
                 .iter()
                 .map(|(k, v)| {
                     let mut pair = format!("(:{k}(");
-                    write_value_raku(v, &mut pair);
+                    write_value_raku(v, &mut pair, esc);
                     pair.push_str("))");
                     pair
                 })
@@ -104,7 +125,7 @@ fn write_match_raku(attributes: &AttrMap, out: &mut String) {
                     out.push_str(", ");
                 }
                 let _ = write!(out, "(:{k}(");
-                write_value_raku(v, out);
+                write_value_raku(v, out, esc);
                 out.push_str("))");
             }
             out.push_str("))");
@@ -116,10 +137,10 @@ fn write_match_raku(attributes: &AttrMap, out: &mut String) {
 
 /// Append the `.raku` representation of a value to `out`, recursing into Match
 /// objects.
-fn write_value_raku(val: &Value, out: &mut String) {
+fn write_value_raku(val: &Value, out: &mut String, esc: &mut EscapedOrig) {
     match val.view() {
         ValueView::Instance { attributes, .. } if val.is_match_instance() => {
-            write_match_raku(&(attributes).as_map(), out);
+            write_match_raku(&(attributes).as_map(), out, esc);
         }
         ValueView::Array(items, ..) => {
             out.push('[');
@@ -127,7 +148,7 @@ fn write_value_raku(val: &Value, out: &mut String) {
                 if i > 0 {
                     out.push_str(", ");
                 }
-                write_value_raku(item, out);
+                write_value_raku(item, out, esc);
             }
             out.push(']');
         }
