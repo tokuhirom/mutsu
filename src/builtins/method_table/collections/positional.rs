@@ -31,10 +31,25 @@ pub(super) static ROWS: &[MethodRow] = &[
         named: &[],
     },
     // The positional subscript protocol of the list-likes.
-    // `List.AT-POS` and `Array.AT-POS` have no row: `builtin_at_pos` answers them
-    // with the subscript opcode itself (`@a.AT-POS(-1)` is an `X::OutOfRange`
-    // failure, a typed array past its end is its type), before the native
-    // cascade this handler restates. They are an interpreter row's to be.
+    // `List.AT-POS` and `Array.AT-POS` are interpreter rows: `builtin_at_pos` answers
+    // them with the subscript opcode itself (`@a.AT-POS(-1)` is an `X::OutOfRange`
+    // failure, a typed array past its end is its type).
+    MethodRow {
+        owner: "List",
+        name: "AT-POS",
+        arity: 1,
+        handler: Handler::Interp(at_pos_interp),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Array",
+        name: "AT-POS",
+        arity: 1,
+        handler: Handler::Interp(at_pos_interp),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
     MethodRow {
         owner: "Range",
         name: "AT-POS",
@@ -218,6 +233,20 @@ pub(crate) fn at_pos_of(target: &Value, idx: usize) -> Option<Result<Value, Runt
     target
         .as_list_items()
         .map(|items| Ok(items.get(idx).cloned().unwrap_or(Value::NIL)))
+}
+
+/// `.AT-POS($pos)` of a `List` or an `Array`: the subscript opcode's answer.
+// Cost: see `Interpreter::builtin_at_pos`.
+fn at_pos_interp(
+    interp: &mut crate::runtime::Interpreter,
+    target: &Value,
+    args: &[Value],
+    _named: crate::builtins::method_table::Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if !matches!(target.view(), ValueView::Array(..)) {
+        return None;
+    }
+    interp.builtin_at_pos(target, args)
 }
 
 /// `.AT-POS($pos)` of a list or a Range.

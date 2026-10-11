@@ -186,9 +186,12 @@ pub(crate) fn invoke_mut(
     if !super::table::names_a_mut_row(method, arity) {
         return None;
     }
-    let owners = mutating::owners_of(place.value(), place.name().is_some())?;
+    // `Any` ends every owner chain: the proto a kind with no mutator of its
+    // own falls back to (`Any.splice`).
+    let owners = mutating::owners_of(place.value(), place.name().is_some()).unwrap_or(&[]);
     let id = owners
         .iter()
+        .chain(&["Any"])
         .find_map(|owner| super::owner_row(Symbol::intern(owner), method, arity))?;
     let row = row(id);
     let Handler::Mut(handler) = row.handler else {

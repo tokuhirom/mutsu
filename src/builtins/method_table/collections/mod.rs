@@ -13,6 +13,7 @@ pub(crate) mod any_list_hash;
 pub(crate) mod any_misc;
 pub(crate) mod capture;
 pub(crate) mod clone;
+mod descriptor;
 mod fmt;
 pub(crate) mod join;
 pub(crate) mod lazy;
@@ -26,6 +27,7 @@ pub(crate) mod quanthash;
 pub(crate) mod range;
 pub(crate) mod render;
 pub(crate) mod render_names;
+pub(crate) mod rotate;
 mod sampling;
 pub(crate) mod seq;
 pub(crate) mod subscript;
@@ -48,6 +50,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     capture::ROWS,
     join::ROWS,
     clone::ROWS,
+    descriptor::ROWS,
     any_interp::ROWS,
     any_list_hash::ROWS,
     any_misc::ROWS,
@@ -61,6 +64,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     list_transform::FLAT_ROWS,
     map::ROWS,
     positional::ROWS,
+    rotate::ROWS,
     pair::ROWS,
     quanthash::ROWS,
     subscript::ROWS,

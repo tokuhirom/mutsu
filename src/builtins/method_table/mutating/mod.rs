@@ -13,6 +13,7 @@
 use super::MethodRow;
 use crate::value::{DispatchShape, Value, ValueView};
 
+pub(crate) mod any;
 pub(crate) mod array;
 pub(crate) mod baghash;
 pub(crate) mod buf;
@@ -25,6 +26,7 @@ pub(crate) mod text;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
+    any::ROWS,
     array::ROWS,
     baghash::ROWS,
     buf::ROWS,

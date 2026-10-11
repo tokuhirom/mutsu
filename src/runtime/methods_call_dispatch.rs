@@ -4,7 +4,7 @@ use super::methods::{
     multidim_exists_pos, shaped_multidim_exists_pos,
 };
 use super::methods_signature_errors::{
-    make_method_not_found_error, make_multi_no_match_error, make_no_candidates_error,
+    make_method_not_found_error, make_multi_no_match_error,
     make_x_immutable_error,
 };
 use super::*;
@@ -1972,7 +1972,8 @@ impl Interpreter {
         // receiver's shared node, which every holder of the container sees.
         // Probed by receiver kind first, so a call on any other receiver
         // pays one tag probe and no interning.
-        if crate::builtins::method_table::mut_owners_of(&target, false).is_some() {
+        // `splice` is also a row of `Any`, so any receiver may have one.
+        if method == "splice" || crate::builtins::method_table::mut_owners_of(&target, false).is_some() {
             let mut detached = target.clone();
             let mut place = crate::builtins::method_table::ReceiverPlace::detached(&mut detached);
             if let Some(result) = crate::builtins::method_table::invoke_mut(
@@ -1993,7 +1994,7 @@ impl Interpreter {
         // `List` rows of the method table above.)
         if matches!(
             method,
-            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" 
         ) && matches!(
             target.view(),
             ValueView::Range(..)
@@ -2002,9 +2003,6 @@ impl Interpreter {
                 | ValueView::RangeExclBoth(..)
                 | ValueView::GenericRange { .. }
         ) {
-            if method == "splice" {
-                return Err(make_no_candidates_error(method, &target, &args));
-            }
             return Err(make_x_immutable_error(method, "Range"));
         }
         // Any:U autovivification: calling push/append/unshift/prepend on an
@@ -2026,7 +2024,7 @@ impl Interpreter {
         // such proto and throw X::Method::NotFound.
         if matches!(
             method,
-            "push" | "pop" | "shift" | "unshift" | "append" | "prepend" | "splice"
+            "push" | "pop" | "shift" | "unshift" | "append" | "prepend"
         ) && matches!(
             target.view(),
             ValueView::Int(_)

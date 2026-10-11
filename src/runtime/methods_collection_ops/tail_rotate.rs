@@ -230,61 +230,12 @@ impl Interpreter {
         (s.to_string(), None)
     }
 
-    /// Cost: O(e), e = elements of the invocant (copied, then placed at their
-    /// rotated index).
+    /// Cost: see [`rotate_value`](crate::builtins::method_table::collection_rotate::rotate_value).
     pub(in crate::runtime) fn dispatch_rotate(
         &self,
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        // Multi-dim shaped arrays cannot be rotated
-        if let ValueView::Array(_, kind) = target.view()
-            && kind == crate::value::ArrayKind::Shaped
-            && let Some(shape) = crate::runtime::utils::shaped_array_shape(&target)
-            && shape.len() > 1
-        {
-            return Err(RuntimeError::illegal_on_fixed_dimension_array("rotate"));
-        }
-        let items = if let Some(list_items) = target.as_list_items() {
-            list_items.to_vec()
-        } else {
-            match target.view() {
-                ValueView::Capture { positional, .. } => positional.clone(),
-                ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
-                // Unlike `.reverse`, `.rotate` is NOT defined on `Any` in Rakudo
-                // (only on List/Array/Buf), so a non-Iterable invocant is a
-                // method-not-found error, not a silent `Nil`.
-                _ => {
-                    return Err(crate::runtime::did_you_mean::method_not_found(
-                        "rotate",
-                        &crate::value::types::what_type_name(&target),
-                    ));
-                }
-            }
-        };
-        if items.is_empty() {
-            return Ok(Value::seq(Vec::new()));
-        }
-        let len = items.len() as i64;
-        let by = match args.first() {
-            Some(v) => match v.view() {
-                ValueView::Int(i) => i,
-                ValueView::Num(n) => n as i64,
-                ValueView::Rat(n, d) if d != 0 => n / d,
-                ValueView::BigRat(n, d) if d != &num_bigint::BigInt::from(0) => {
-                    use num_traits::ToPrimitive;
-                    (n / d).to_i64().unwrap_or(1)
-                }
-                _ => v.to_string_value().parse::<i64>().unwrap_or(1),
-            },
-            None => 1,
-        };
-        let shift = ((by % len) + len) % len;
-        let mut out = vec![Value::NIL; items.len()];
-        for (i, item) in items.into_iter().enumerate() {
-            let dst = ((i as i64 + len - shift) % len) as usize;
-            out[dst] = item;
-        }
-        Ok(Value::seq(out))
+        crate::builtins::method_table::collection_rotate::rotate_value(&target, args)
     }
 }

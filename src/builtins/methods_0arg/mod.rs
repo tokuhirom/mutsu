@@ -334,48 +334,6 @@ pub(crate) fn native_method_0arg_cascade(
         return native_method_0arg(&inner, method_sym);
     }
 
-    // `.dynamic` on a container VALUE — a literal `[1,2,3]`/`{a=>1}`, or an
-    // Array/Hash flowing as a value — is always False: only a dynamic *variable*
-    // (`@*a`/`%*h`) is dynamic, and that case is rewritten to `.VAR.dynamic` at
-    // compile time (`compile_expr_method_on_var`). Array and Hash carry a
-    // container descriptor and so define `.dynamic`; List/Int/Str/... do not
-    // (raku throws "No such method" there), so restrict this to real Array kinds
-    // (not `List`) and Hash and let everything else fall through.
-    if method == "dynamic" {
-        match target.view() {
-            ValueView::Array(_, kind) if !matches!(kind, crate::value::ArrayKind::List) => {
-                return Some(Ok(Value::FALSE));
-            }
-            ValueView::Hash(_) => return Some(Ok(Value::FALSE)),
-            _ => {}
-        }
-    }
-
-    // `.name` on an Array/Hash VALUE reads its container descriptor: the
-    // declaring variable (`my %h` names its container "%h", and the name
-    // travels through every pass-by-binding chain -- a `\m` param, `self` in
-    // a mixed-in role), or rakudo's "element" for a container no declaration
-    // named (`Hash.new`, `[1, 2]`, an unsupplied `@`-param). List has no
-    // descriptor and no `.name` (raku: "No such method").
-    // Cost: O(1).
-    if method == "name" {
-        let name = match target.view() {
-            ValueView::Array(data, kind)
-                if !matches!(
-                    kind,
-                    crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
-                ) =>
-            {
-                Some(data.descriptor_name.as_deref().map(str::to_string))
-            }
-            ValueView::Hash(data) => Some(data.descriptor_name.as_deref().map(str::to_string)),
-            _ => None,
-        };
-        if let Some(name) = name {
-            return Some(Ok(Value::str(name.unwrap_or_else(|| "element".into()))));
-        }
-    }
-
     // Seq consumed/cached state checks.
     // Only handle operations that are fully dispatched here in native_method_0arg.
     // Do NOT pre-check methods that fall through to the runtime (like "iterator"),
