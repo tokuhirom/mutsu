@@ -47,7 +47,8 @@ impl Compiler {
         if name.is_empty()
             || !name.starts_with(|c: char| c.is_alphabetic() || c == '_')
             || crate::qualified::is_qualified(Symbol::intern(name))
-            || self.shadowed_sigilless_terms.contains(name)
+            || (self.shadowed_sigilless_terms.contains(name)
+                && !self.sigilless_locals.contains(name))
         {
             return;
         }
@@ -87,7 +88,9 @@ impl Compiler {
     /// `name` is not such a name.
     // Cost: O(1) expected.
     pub(super) fn emit_shadowed_sigilless_read(&mut self, name: &str) -> bool {
-        if !self.shadowed_sigilless_terms.contains(name) {
+        // A sigilless binding declared after the shadow (a `\r` parameter of a
+        // nested routine, a later `my \r`) owns the bare name again (#12637).
+        if !self.shadowed_sigilless_terms.contains(name) || self.sigilless_locals.contains(name) {
             return false;
         }
         let key = crate::runtime::term_names::term_key(name);
