@@ -315,6 +315,14 @@ impl Interpreter {
                 registry.classes.insert(cx.name.to_string(), shell.into());
                 unpublished = true;
             }
+        } else if !self.registry().classes.contains_key(cx.name) {
+            // No `has` declarations to show, but the body still sees the class
+            // with its parents (`::?CLASS.^mro`, `.^find_method`), as Rakudo
+            // specializes a role after the class's `is Parent` traits apply.
+            self.registry_mut()
+                .classes
+                .insert(cx.name.to_string(), cx.class_def.clone().into());
+            unpublished = true;
         }
         // Custom attribute traits (`is hidden-from-ValueType`) have already run
         // by the time Rakudo composes; run them on the published stand-ins so

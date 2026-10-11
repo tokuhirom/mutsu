@@ -474,6 +474,11 @@ impl Interpreter {
         for (attr, s) in role_attr_smileys {
             cx.class_def.attribute_smileys.entry(attr).or_insert(s);
         }
+        // Rakudo specializes the role (running its body) before composing its
+        // methods into the class, so the body's `::?CLASS.^find_method` sees
+        // the class's parents but not the role's own methods (#11628). The
+        // rows are collected here and pushed after the body has run.
+        let mut pending_method_pushes: Vec<(Symbol, Vec<MethodDef>)> = Vec::new();
         for (mname, overloads) in &role.methods {
             // Skip methods declared with `my` scope -- they are role-private
             // and should not be composed into consuming classes.
@@ -563,12 +568,7 @@ impl Interpreter {
                     })
                     .collect()
             };
-            let owner = Symbol::intern(cx.name);
-            let method_sym = Symbol::intern(mname);
-            let mut registry = self.registry_mut();
-            for def in composed {
-                registry.push_user_method(owner, method_sym, def);
-            }
+            pending_method_pushes.push((Symbol::intern(mname), composed));
         }
         // Transfer wildcard handles from role to class
         for wh in &role.wildcard_handles {
@@ -693,15 +693,25 @@ impl Interpreter {
                         .remove(&compose_key);
                 }
                 run?;
-            } else {
-                // Composed before (a shell, or an earlier pass of a loop
-                // redeclaring the class): the body does not run again, but
-                // the rebuilt methods still close over its one run.
-                self.reapply_composed_nested_method_captures(base_role_name, cx.name);
-                for ancestor in self.role_ancestor_names(base_role_name) {
-                    self.reapply_composed_nested_method_captures(&ancestor, cx.name);
+            }
+        }
+        {
+            let owner = Symbol::intern(cx.name);
+            let mut registry = self.registry_mut();
+            for (method_sym, composed) in pending_method_pushes {
+                for def in composed {
+                    registry.push_user_method(owner, method_sym, def);
                 }
             }
+        }
+        // The methods now exist, so give them the captures the role body
+        // filed. On a first run `apply_nested_method_captures` stored them;
+        // when the composition was done before (a shell, or an earlier pass
+        // of a loop redeclaring the class) the body does not run again, but
+        // the rebuilt methods still close over its one run.
+        self.reapply_composed_nested_method_captures(base_role_name, cx.name);
+        for ancestor in self.role_ancestor_names(base_role_name) {
+            self.reapply_composed_nested_method_captures(&ancestor, cx.name);
         }
         // #8083: re-validate every param-type check deferred at role
         // registration because the role body's `use` had not loaded yet.
