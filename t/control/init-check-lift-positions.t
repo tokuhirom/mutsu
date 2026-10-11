@@ -5,7 +5,7 @@ use Test;
 # through the exhaustive mutable visitor (ADR-10499); each expectation was
 # checked against rakudo.
 
-plan 19;
+plan 27;
 
 my @log;
 @log.push('main');
@@ -59,3 +59,21 @@ is @log.grep('regex-lex').elems, 1, '... once, however often it matches';
 
 sub rx-check { 'a' ~~ / a { CHECK @log.push('regex-check') } / }
 ok before-main('regex-check'), 'CHECK in a regex code block runs before the mainline';
+
+grammar G12748 {
+    token TOP { a { INIT @log.push('token-init') } <rest> }
+    rule rest { b { $lex; CHECK @log.push('rule-check') } c { @log.push('rule-match') } }
+}
+# TODO: rakudo runs both before the mainline; mutsu runs them when the
+# grammar body runs (#10552), as for a method body above.
+ok @log.first('token-init'), 'INIT in a token body runs without the token being matched';
+ok @log.first('rule-check'), 'CHECK in a rule body runs without the rule being matched';
+ok G12748.parse('ab c'), '... and the grammar still matches';
+G12748.parse('ab c');
+is @log.grep('token-init').elems, 1, '... the token phaser ran once, however often it matches';
+is @log.grep('rule-check').elems, 1, '... and so did the rule phaser';
+is @log.grep('rule-match').elems, 2, '... while the plain code block ran per match';
+
+my token lexical-tok { x { INIT @log.push('my-token-init') } }
+ok before-main('my-token-init') && ('x' ~~ &lexical-tok), 'INIT in a lexical token';
+is @log.grep('my-token-init').elems, 1, '... once';
