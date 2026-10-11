@@ -1,3 +1,4 @@
+use super::multi_rank::{MultiRank, PROFILE_LEN, RankProfile, prune_to_maximal};
 use super::*;
 use crate::runtime::types::{is_coercion_constraint, parse_coercion_type};
 use crate::value::ValueView;
@@ -14,123 +15,6 @@ pub(super) const UNRELATED_DISTANCE: usize = 500;
 /// carries no ancestor Rakudo denies (`Pair` is not `Cool`).
 fn builtin_type_mro(type_name: &str) -> &'static [&'static str] {
     crate::builtin_types::ancestry::builtin_type_narrowness_chain(type_name).unwrap_or(&[])
-}
-
-/// The narrowness key a multi candidate is ranked by (see
-/// [`Interpreter::candidate_rank_key`]), in two tiers plus tie-breaks:
-///
-/// 0. the NOMINAL tier — literal-value count, then meaningfully-typed
-///    positional count (higher is narrower);
-/// 1. the type-hierarchy distance of those nominal types (lower is narrower);
-/// 2. the REFINEMENT tier — constrained-parameter count (a `where` clause
-///    or a `subset` type: rakudo draws no line between the two), sub-signature
-///    count, `rw`/`raw` count (higher is narrower);
-///
-/// then whether it declares no slurpy positional (rakudo's `is_narrower`
-/// consults slurpiness only once every shared positional type is tied, and a
-/// non-slurpy candidate wins there), whether it needs a named bind check (an
-/// explicit named parameter, or a `where` on a slurpy), optional-positional
-/// count, and declaration order.
-///
-/// The tier split is rakudo's rule, not a mutsu invention: its `is_narrower`
-/// compares the candidates' nominal parameter types first and only consults a
-/// parameter's constraint (`where`, and the equality check a literal or a
-/// `subset` compiles to) when the two candidates are TIED on every nominal
-/// type. So `multi f($x where ...)` must lose to `multi f(Int $x)` for
-/// `f(42)`, while `multi f(Int $x where ...)` still beats `multi f(Int $x)`
-/// ([#8958](https://github.com/tokuhirom/mutsu/issues/8958)).
-pub(crate) type CandidateRankKey = (
-    (usize, usize),
-    usize,
-    (usize, usize, usize),
-    (usize, usize),
-    usize,
-    u64,
-    RankProfile,
-);
-
-/// How many leading positional parameters a [`RankProfile`] records.
-const PROFILE_LEN: usize = 6;
-
-/// A candidate's per-positional-parameter narrowness, for the one question the
-/// scalar [`CandidateRankKey`] cannot answer: are two candidates *comparable*?
-///
-/// Rakudo orders candidates parameter-wise: one is narrower only when it is at
-/// least as narrow on every positional parameter and strictly narrower on one,
-/// where a `where`/`subset`/literal refinement counts as narrower than the same
-/// type without it. When each candidate wins a different parameter (one by a
-/// refinement, the other by a nominal type) they are incomparable, and a
-/// refinement means a bind-time check, so the first candidate DECLARED that
-/// binds wins instead of the summed key picking one
-/// ([#11943](https://github.com/tokuhirom/mutsu/issues/11943)).
-///
-/// `scores[i]` is `2 * distance + (1 if unrefined)`, lower being narrower, and
-/// `u16::MAX` for a parameter the candidate does not have.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct RankProfile {
-    scores: [u16; PROFILE_LEN],
-    /// Each parameter's nominal type (`None`: not recorded), so a score
-    /// difference is only read as "narrower" between related types.
-    nominal: [Option<Symbol>; PROFILE_LEN],
-    refined: bool,
-}
-
-impl RankProfile {
-    pub(super) const EMPTY: RankProfile = RankProfile {
-        scores: [u16::MAX; PROFILE_LEN],
-        nominal: [None; PROFILE_LEN],
-        refined: false,
-    };
-
-    /// Record positional parameter `slot`: its type-hierarchy distance from the
-    /// argument, whether it carries a refinement (`where`, literal, subset) and
-    /// its nominal type. Shared by the sub and method rankers so both feed the
-    /// one [`Self::incomparable`] relation.
-    // Cost: O(1).
-    pub(super) fn record(
-        &mut self,
-        slot: usize,
-        delta: usize,
-        refined: bool,
-        nominal: Option<Symbol>,
-    ) {
-        if slot < PROFILE_LEN {
-            let d = delta.min(20_000) as u16;
-            self.scores[slot] = d * 2 + u16::from(!refined);
-            self.nominal[slot] = nominal;
-            self.refined |= refined;
-        }
-    }
-
-    /// Whether neither candidate is narrower than the other because of a
-    /// refinement: each wins at least one shared parameter, and at least one of
-    /// the two carries a refinement (a purely nominal split stays the
-    /// ambiguity the summed key reports).
-    // Cost: O(1), the profile length is a constant.
-    pub(super) fn incomparable(&self, other: &RankProfile, related: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
-        if !(self.refined || other.refined) {
-            return false;
-        }
-        let (mut self_wins, mut other_wins) = (false, false);
-        for i in 0..PROFILE_LEN {
-            let (a, b) = (self.scores[i], other.scores[i]);
-            if a == u16::MAX || b == u16::MAX {
-                continue;
-            }
-            // Unrelated nominal types (`Node` refined by a subset vs an
-            // unrelated role) are tied in rakudo's per-parameter comparison;
-            // their distances and the refinement bit say nothing.
-            if let (Some(na), Some(nb)) = (self.nominal[i], other.nominal[i])
-                && na != nb
-                && !related(na, nb)
-            {
-                continue;
-            }
-            self_wins |= a < b;
-            other_wins |= b < a;
-        }
-        self_wins && other_wins
-    }
 }
 
 /// The type a coercion parameter accepts, i.e. the type it is as *wide* as.
@@ -189,44 +73,36 @@ impl Interpreter {
         err
     }
 
-    /// The narrowness key a multi candidate is ranked by, in
-    /// `candidate_rank_cmp` order: the nominal tier, the type-hierarchy
-    /// distance, the refinement tier, whether it needs a named bind check,
-    /// optional-positional count, declaration order.
-    /// See [`CandidateRankKey`] for why nominal narrowness outranks a
-    /// refinement rather than the other way round.
+    /// The [`MultiRank`] a multi candidate is ranked by for `args`: the
+    /// nominal tier, the type-hierarchy distance, the refinement tier,
+    /// slurpiness, whether it needs a named bind check, optional-positional
+    /// count, declaration order. See [`MultiRank`] for why nominal narrowness
+    /// outranks a refinement rather than the other way round.
     ///
     /// There is deliberately no required-named step: rakudo leaves
     /// `multi f(:$x!)` and `multi f(:$x)` (or `multi f(*%m where ...)`) tied
     /// and declaration order decides. The one case where a required named
     /// wins — `multi j(*%m)` vs `multi j(:$x!)` — is already decided by the
     /// bind-check step.
+    // Cost: O(p) plus one hierarchy walk per typed parameter, p = parameters.
     pub(super) fn candidate_rank_key(
         &mut self,
         def: &Arc<FunctionDef>,
         args: &[Value],
-    ) -> CandidateRankKey {
+    ) -> MultiRank {
         let (literal, typed, constrained, subsig, writable) =
             self.candidate_specificity_rank_for_args(def, args);
-        let (dist, profile) = self.candidate_type_distance_profile(args, def);
-        let non_slurpy = usize::from(!Self::candidate_has_slurpy_positional(def));
-        let bind_check = usize::from(Self::candidate_needs_named_bind_check(def));
-        let opt = Self::candidate_optional_positional_count(def);
-        (
-            (literal, typed),
-            dist,
-            (constrained, subsig, writable),
-            (non_slurpy, bind_check),
-            opt,
-            def.decl_order,
+        let (distance, profile) = self.candidate_type_distance_profile(args, def);
+        MultiRank {
+            nominal: (literal, typed),
+            distance,
+            refinement: [constrained, subsig, writable, 0],
+            non_slurpy: !Self::candidate_has_slurpy_positional(def),
+            bind_check: Self::candidate_needs_named_bind_check(def),
+            optional: Self::candidate_optional_positional_count(def),
+            decl_order: def.decl_order,
             profile,
-        )
-    }
-
-    /// Whether `a` and `b` are incomparable in rakudo's parameter-wise
-    /// narrowness order (see [`RankProfile`]).
-    pub(super) fn rank_keys_incomparable(&self, a: &CandidateRankKey, b: &CandidateRankKey) -> bool {
-        a.6.incomparable(&b.6, &|x, y| self.nominal_types_related(x, y))
+        }
     }
 
     /// Whether one of the two named types is the other or conforms to it.
@@ -246,77 +122,18 @@ impl Interpreter {
         conforms(a, b) || conforms(b, a)
     }
 
-    /// Drop the matches another match out-narrows and, when what is left is
-    /// split by incomparable candidates, keep only the first declared of them.
-    /// `matches` is in narrowest-first scan order, each with its key; a pure
-    /// tie (no incomparability) is returned unchanged so the ambiguity logic in
-    /// [`Self::settle_ranked_matches`] still sees it.
-    // Cost: O(m^2), m = candidates that bound.
+    /// [`prune_to_maximal`] over the candidates of one sub dispatch that
+    /// bound, in narrowest-first scan order; a pure tie is returned unchanged
+    /// so the ambiguity logic in [`Self::settle_ranked_matches`] still sees it.
+    // Cost: O(m^2 * h), m = candidates that bound, h = one `nominal_types_related` walk.
     pub(super) fn prune_incomparable_matches(
         &self,
-        matches: Vec<(CandidateRankKey, Arc<FunctionDef>)>,
+        matches: Vec<(MultiRank, Arc<FunctionDef>)>,
     ) -> Vec<Arc<FunctionDef>> {
-        let best = matches.first().map(|(k, _)| *k);
-        let Some(best) = best else { return Vec::new() };
-        let same_rank = |k: &CandidateRankKey| {
-            Self::candidate_rank_cmp(
-                Self::rank_key_ignoring_decl_order(*k),
-                Self::rank_key_ignoring_decl_order(best),
-            ) == std::cmp::Ordering::Equal
-        };
-        if matches.iter().all(|(k, _)| same_rank(k)) {
-            return matches.into_iter().map(|(_, d)| d).collect();
-        }
-        let keys: Vec<CandidateRankKey> = matches.iter().map(|(k, _)| *k).collect();
-        let dominated = |k: &CandidateRankKey| {
-            keys.iter().any(|o| {
-                !self.rank_keys_incomparable(o, k)
-                    && Self::candidate_rank_cmp(
-                        Self::rank_key_ignoring_decl_order(*o),
-                        Self::rank_key_ignoring_decl_order(*k),
-                    ) == std::cmp::Ordering::Less
-            })
-        };
-        let mut maximal: Vec<(CandidateRankKey, Arc<FunctionDef>)> =
-            matches.into_iter().filter(|(k, _)| !dominated(k)).collect();
-        if maximal.iter().all(|(k, _)| same_rank(k)) {
-            return maximal.into_iter().map(|(_, d)| d).collect();
-        }
-        // Incomparable survivors: declaration order decides.
-        maximal.sort_by_key(|(k, _)| k.5);
-        maximal.truncate(1);
-        maximal.into_iter().map(|(_, d)| d).collect()
-    }
-
-    /// Order two [`Self::candidate_rank_key`]s narrowest-first: higher nominal
-    /// tier first, then lower type distance, then higher refinement tier, then
-    /// a candidate without a slurpy positional over one with, then
-    /// a candidate that needs a named bind check over one that does not, then
-    /// fewer optional positionals (a required param is narrower than an
-    /// optional one), and finally — for candidates tied on all of that — the
-    /// one declared first, which is what Rakudo runs.
-    pub(super) fn candidate_rank_cmp(
-        a: CandidateRankKey,
-        b: CandidateRankKey,
-    ) -> std::cmp::Ordering {
-        b.0.cmp(&a.0)
-            .then(a.1.cmp(&b.1))
-            .then(b.2.cmp(&a.2))
-            .then(b.3.cmp(&a.3))
-            .then(a.4.cmp(&b.4))
-            .then(a.5.cmp(&b.5))
-    }
-
-    /// `key` with its declaration-order component cleared, so two candidates
-    /// that are equally narrow compare `Equal` instead of by declaration
-    /// stamp. This is the comparison that decides *ties* — which candidates
-    /// join the `X::Multi::Ambiguous` set, and where the narrowest-first scan
-    /// in [`Interpreter::choose_best_matching_candidate`] may stop — as
-    /// opposed to `candidate_rank_cmp` on the full key, which is the total
-    /// order the winner is picked by.
-    pub(super) fn rank_key_ignoring_decl_order(mut key: CandidateRankKey) -> CandidateRankKey {
-        key.5 = 0;
-        key
+        prune_to_maximal(matches, &|x, y| self.nominal_types_related(x, y))
+            .into_iter()
+            .map(|(_, d)| d)
+            .collect()
     }
 
     pub(super) fn choose_best_matching_candidate(
@@ -402,13 +219,12 @@ impl Interpreter {
             });
         }
 
-        let mut ranked: Vec<(CandidateRankKey, Arc<FunctionDef>)> =
-            Vec::with_capacity(candidates.len());
+        let mut ranked: Vec<(MultiRank, Arc<FunctionDef>)> = Vec::with_capacity(candidates.len());
         for (_, def) in candidates {
             let key = self.candidate_rank_key(&def, args);
             ranked.push((key, def));
         }
-        ranked.sort_by(|a, b| Self::candidate_rank_cmp(a.0, b.0));
+        ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.bind_ranked_candidates(name, args, ranked, rejected)
     }
 
@@ -420,7 +236,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         args: &[Value],
-        ranked: Vec<(CandidateRankKey, Arc<FunctionDef>)>,
+        ranked: Vec<(MultiRank, Arc<FunctionDef>)>,
         mut rejected: Option<&mut std::collections::HashSet<u64>>,
     ) -> Resolved {
         // The duplicate-registry-key dedup that used to sit here now runs
@@ -429,10 +245,10 @@ impl Interpreter {
         // be registered under (`multi f(Int:D $x where {...})` evaluated its
         // constraint 3x per resolution before the dedup existed), and now also
         // stops it being RANKED that many times.
-        let mut matches: Vec<(CandidateRankKey, Arc<FunctionDef>)> = Vec::new();
-        // The rank key of `matches[0]`, i.e. of the narrowest candidate that
+        let mut matches: Vec<(MultiRank, Arc<FunctionDef>)> = Vec::new();
+        // The rank of `matches[0]`, i.e. of the narrowest candidate that
         // actually bound. `None` until the first match.
-        let mut best_key: Option<CandidateRankKey> = None;
+        let mut best_key: Option<MultiRank> = None;
         // The first candidate whose `where` constraint THREW, together with
         // the exception. Raku walks the candidates narrowest-first and stops at
         // the first that binds, so such an exception escapes only when that
@@ -450,16 +266,9 @@ impl Interpreter {
             // Not for one that is incomparable with it (#11943): that one may
             // still win by declaration order, so it is tried and the scan goes on.
             if let Some(best) = best_key
-                && Self::candidate_rank_cmp(
-                    Self::rank_key_ignoring_decl_order(key),
-                    Self::rank_key_ignoring_decl_order(best),
-                ) == std::cmp::Ordering::Greater
+                && key.scan_may_skip(&best, &|x, y| self.nominal_types_related(x, y))
             {
-                if self.rank_keys_incomparable(&key, &best) {
-                    // fall through to the bind attempt
-                } else {
-                    continue;
-                }
+                continue;
             }
             // For auto-param subs ($^a, $^b) with empty param_defs but
             // non-empty params, check arity against params.len() since
@@ -537,9 +346,9 @@ impl Interpreter {
                     // it cannot out-narrow.
                     let mut a = self.candidate_rank_key(&thrower, args);
                     let mut b = self.candidate_rank_key(best, args);
-                    a.2.0 = 0;
-                    b.2.0 = 0;
-                    Self::candidate_rank_cmp(a, b) != std::cmp::Ordering::Greater
+                    a.refinement[0] = 0;
+                    b.refinement[0] = 0;
+                    a.total_cmp(&b) != std::cmp::Ordering::Greater
                 }
             };
             if reached {
@@ -804,7 +613,7 @@ impl Interpreter {
             typed_param_count,
             // REFINEMENT tier — consulted only once two candidates are tied on
             // the nominal tier AND on type-hierarchy distance. See
-            // [`CandidateRankKey`].
+            // [`MultiRank`].
             constrained_count,
             subsig_count,
             // `rw`/`raw` are dispatch-visible because they require a writable
@@ -970,16 +779,12 @@ impl Interpreter {
     ) -> (usize, RankProfile) {
         let mut total = 0usize;
         let mut profile = RankProfile::EMPTY;
-        let mut refined_slot = [false; PROFILE_LEN];
+        // The refinement bit and nominal type of the positional slot being
+        // walked; recorded once the next slot (or the end) fixes its distance.
+        let mut slot_refined = false;
+        let mut slot_nominal: Option<Symbol> = None;
         let mut prev_total = 0usize;
         let mut slot = 0usize;
-        let record = |profile: &mut RankProfile, slot: usize, delta: usize, refined: bool| {
-            if slot < PROFILE_LEN {
-                let d = delta.min(20_000) as u16;
-                profile.scores[slot] = d * 2 + u16::from(!refined);
-                profile.refined |= refined;
-            }
-        };
         let params: Vec<&ParamDef> = Self::dispatch_visible_params(def);
         let mut pos_idx = 0usize;
         for pd in params.iter() {
@@ -1003,11 +808,12 @@ impl Interpreter {
                 continue;
             }
             if slot > 0 {
-                record(&mut profile, slot - 1, total - prev_total, refined_slot[(slot - 1).min(PROFILE_LEN - 1)]);
+                profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal);
             }
             prev_total = total;
+            slot_nominal = None;
             if slot < PROFILE_LEN {
-                refined_slot[slot] = (pd.where_constraint.is_some() && !pd.is_variadic())
+                slot_refined = (pd.where_constraint.is_some() && !pd.is_variadic())
                     || pd.literal_value.is_some()
                     || pd
                         .type_constraint
@@ -1068,8 +874,8 @@ impl Interpreter {
                     } else {
                         base
                     };
-                    if slot > 0 && slot <= PROFILE_LEN {
-                        profile.nominal[slot - 1] = Some(Symbol::intern(base));
+                    if slot <= PROFILE_LEN {
+                        slot_nominal = Some(Symbol::intern(base));
                     }
                     if pd.name.starts_with('&')
                         && let Some(return_type) = self.callable_return_type(&arg)
@@ -1209,7 +1015,7 @@ impl Interpreter {
                 // compared at all. Rakudo's `is_narrower` checks only the
                 // positional parameters both candidates declare, and consults
                 // slurpiness only once those are tied (the slurpy step of
-                // [`CandidateRankKey`]). Charging it the flat 1000 here made
+                // [`MultiRank`]). Charging it the flat 1000 here made
                 // `multi a(Str:D $n, *@p)` lose `a('c')` to
                 // `multi a(Any:D $r)` (#11045). A slurpy that does swallow an
                 // argument keeps the charge: that is rakudo's arity-mismatch
@@ -1231,7 +1037,7 @@ impl Interpreter {
             }
         }
         if slot > 0 {
-            record(&mut profile, slot - 1, total - prev_total, refined_slot[(slot - 1).min(PROFILE_LEN - 1)]);
+            profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal);
         }
         (total, profile)
     }

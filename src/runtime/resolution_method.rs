@@ -1,5 +1,5 @@
 use super::*;
-use super::dispatch_candidates::RankProfile;
+use super::multi_rank::RankProfile;
 
 impl Interpreter {
     pub(super) fn resolve_method(

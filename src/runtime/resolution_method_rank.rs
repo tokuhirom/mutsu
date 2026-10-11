@@ -1,5 +1,5 @@
 use super::*;
-use super::dispatch_candidates::RankProfile;
+use super::multi_rank::RankProfile;
 
 /// (literals, distance, narrowness, profile) of one matched method candidate.
 type MethodRank = (usize, usize, (usize, usize, usize, usize), RankProfile);
