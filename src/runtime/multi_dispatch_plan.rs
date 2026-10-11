@@ -315,6 +315,14 @@ impl Interpreter {
         // though its registration arity is four, and must compete with the
         // exact-arity `(Numeric, Numeric, $desc = '')` candidate rather than
         // being considered only after that wider candidate has already won.
+        //
+        // Slurpy candidates compete in this stage too: an exact-arity
+        // candidate with an optional positional is no narrower than a slurpy
+        // one by arity alone. Rakudo compares the two on their shared
+        // positions when their minimum arities agree, so `multi s(Int $x,
+        // *@r)` beats `multi s(Any $x, Any $y?)` for `s(1, 2)` (#12791);
+        // only when both arities differ does the non-slurpy one win outright,
+        // which `MultiRank::is_narrower` decides.
         let optional_prefixes: Vec<String> = search_pkgs
             .iter()
             .map(|pkg| format!("{}::{}/", pkg, name))
@@ -328,10 +336,10 @@ impl Interpreter {
                 optional_prefixes
                     .iter()
                     .any(|prefix| ks.starts_with(prefix))
-                    && def
-                        .param_defs
-                        .iter()
-                        .any(|p| !p.named && (p.optional_marker || p.default.is_some()))
+                    && def.param_defs.iter().any(|p| {
+                        (!p.named && (p.optional_marker || p.default.is_some()))
+                            || p.is_variadic()
+                    })
             })
             .map(|(k, def)| (k.resolve(), def.clone()))
             .collect();

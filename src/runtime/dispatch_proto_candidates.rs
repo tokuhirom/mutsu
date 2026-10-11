@@ -6,6 +6,63 @@ use super::dispatch_key;
 use super::*;
 
 impl Interpreter {
+    /// Multi candidates are registered under `Pkg::name/<arity>…` keys built
+    /// from the *declared* parameter count, so a call that omits a defaulted
+    /// trailing parameter never matches the exact-arity keys. The bare-name
+    /// path has long had this fallback; the qualified path did not, so
+    /// `NativeLibs::cannon-name('foo')` could not reach
+    /// `multi cannon-name(Str $l, Version $v = Version)` even though the
+    /// identical bare call resolved fine.
+    pub(super) fn qualified_flexible_arity_candidates(
+        &mut self,
+        name: &str,
+    ) -> Vec<(String, Arc<FunctionDef>)> {
+        let prefix = format!("{}/", name);
+        let base_keys = self.fn_keys_for_base(name);
+        let registry = self.registry();
+        let mut candidates: Vec<(String, Arc<FunctionDef>)> = base_keys
+            .iter()
+            .filter_map(|k| registry.functions.get(k).map(|def| (k.as_str(), def)))
+            .filter(|(ks, def)| {
+                ks.starts_with(&prefix)
+                    && def.param_defs.iter().any(|p| {
+                        !p.named && (p.optional_marker || p.default.is_some() || p.is_variadic())
+                    })
+            })
+            .map(|(ks, def)| (ks.to_string(), def.clone()))
+            .collect();
+        drop(registry);
+        self.sort_candidates_by_specificity(&mut candidates);
+        candidates
+    }
+
+    /// Add the flexible-arity candidates of the qualified `name` to its
+    /// exact-arity `candidates` when one of those consumes an optional
+    /// positional or is slurpy: such a candidate is no narrower than a
+    /// flexible-arity one by arity alone, so the two are ranked together, as
+    /// the bare-name plan does (#12791). Rakudo answers `multi s(Int $x,
+    /// *@r)` over `multi s(Any $x, Any $y?)` for `M::s(1, 2)`.
+    // Cost: O(k), k = registry keys sharing the base name.
+    pub(super) fn merge_flexible_arity_candidates(
+        &mut self,
+        name: &str,
+        candidates: &mut Vec<(String, Arc<FunctionDef>)>,
+    ) {
+        let consumes_optional = candidates.iter().any(|(_, def)| {
+            def.param_defs.iter().any(|p| {
+                !p.named && (p.optional_marker || p.default.is_some() || p.is_variadic())
+            })
+        });
+        if !consumes_optional {
+            return;
+        }
+        for flexible in self.qualified_flexible_arity_candidates(name) {
+            if !candidates.iter().any(|(key, _)| *key == flexible.0) {
+                candidates.push(flexible);
+            }
+        }
+    }
+
     /// Collect ALL multi dispatch candidates for a function name, regardless of
     /// arity or type matching.  Used to build the full candidate list for
     /// callwith(), which may re-dispatch with different arguments.
