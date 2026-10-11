@@ -79,7 +79,7 @@ ok before-main('my-token-init') && ('x' ~~ &lexical-tok), 'INIT in a lexical tok
 is @log.grep('my-token-init').elems, 1, '... once';
 
 grammar G12812 {
-    token TOP { a { if 1 { INIT @log.push('nested-init') } for 1 { CHECK @log.push('nested-check'); } } b }
+    token TOP { a { if 1 { INIT @log.push('nested-init') }; for 1 { CHECK @log.push('nested-check'); } } b }
 }
 ok @log.first('nested-init') && @log.first('nested-check'), 'INIT/CHECK nested in a token code block run without a match';
 G12812.parse('ab'); G12812.parse('ab');
