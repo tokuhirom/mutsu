@@ -55,7 +55,7 @@ pub(crate) fn rotate_value(target: &Value, args: &[Value]) -> Result<Value, Runt
             _ => {
                 return Err(crate::runtime::did_you_mean::method_not_found(
                     "rotate",
-                    &crate::value::types::what_type_name(&target),
+                    &crate::value::types::what_type_name(target),
                 ));
             }
         }
