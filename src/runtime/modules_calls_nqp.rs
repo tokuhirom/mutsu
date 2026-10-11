@@ -17,6 +17,7 @@ pub(crate) use carray_view::CArrayView;
 mod carray_repr;
 mod box_native;
 mod boot_scalar;
+pub(crate) mod boot_collection;
 mod box_target;
 mod cstr_repr;
 mod compunit_scope;

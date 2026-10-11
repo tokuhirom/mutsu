@@ -58,7 +58,19 @@ impl Interpreter {
             self.stack.push(cell);
             return Ok(());
         }
-        self.exec_index_op_with_positional(is_positional)
+        self.exec_index_op_with_positional(is_positional)?;
+        self.hllize_vm_collection_on_top();
+        Ok(())
+    }
+
+    /// A raw `VMArray`/`VMHash` element read through a Raku subscript comes
+    /// back hllized, as Rakudo's `AT-POS`/`AT-KEY` hand it over (ADR-12666).
+    // Cost: O(1) (one tag probe).
+    #[inline]
+    pub(crate) fn hllize_vm_collection_on_top(&mut self) {
+        if let Some(raw) = self.stack.pop_if(|top| top.is_vm_collection()) {
+            self.stack.push(raw.hllize_vm_collection());
+        }
     }
 
     /// `Index` in ARGUMENT position ([`OpCode::IndexArgRef`]). Produces the
@@ -97,6 +109,7 @@ impl Interpreter {
     /// opcodes (`IndexVarRef`, `IndexArgRef` toward a binding callee, ...).
     // Cost: O(1) (one tag probe; one element decode for a reference).
     pub(crate) fn decont_native_pos_ref_on_top(&mut self) -> Result<(), RuntimeError> {
+        self.hllize_vm_collection_on_top();
         if let Some(reference) = self
             .stack
             .pop_if(|top| crate::runtime::native_pos_ref::is_native_pos_ref(top))

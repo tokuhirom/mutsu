@@ -227,15 +227,12 @@ impl Interpreter {
             "hllboxtype_i" => Ok(Value::package(Symbol::intern("Int"))),
             "hllboxtype_n" => Ok(Value::package(Symbol::intern("Num"))),
             "hllboxtype_s" => Ok(Value::package(Symbol::intern("Str"))),
-            // The HLL's list and hash types: the type of what `nqp::list` /
-            // `nqp::hash` build. Rakudo answers its `BOOTArray` / `BOOTHash`
-            // VM types; mutsu has no separate VM representations, and
-            // `nqp::list()` / `nqp::hash()` build a `List` / `Hash`, so those
-            // are the types answered here (see #11553 for the representation
-            // decision that would change both).
+            // The HLL's list and hash types: the `BOOTArray` / `BOOTHash` VM
+            // types `nqp::list` / `nqp::hash` build (ADR-12666), as Rakudo
+            // answers them.
             // Cost: O(1).
-            "hlllist" => Ok(Value::package(Symbol::intern("List"))),
-            "hllhash" => Ok(Value::package(Symbol::intern("Hash"))),
+            "hlllist" => Ok(Value::package(Symbol::intern("BOOTArray"))),
+            "hllhash" => Ok(Value::package(Symbol::intern("BOOTHash"))),
             // nqp::sethllconfig($hll, $config): configure an HLL's boxing and
             // error-reporting hooks. mutsu's boxing is fixed (the types above),
             // so the configuration has nothing to change; answers null, as

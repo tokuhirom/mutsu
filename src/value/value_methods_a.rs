@@ -609,11 +609,12 @@ impl Value {
         Value::Array(crate::gc::Gc::new(ArrayData::new(items)), ArrayKind::Array)
     }
     /// An nqp VMArray of element kind `kind` (`nqp::list_i` and its twins,
-    /// #9235): an ordinary list that remembers what its growth slots hold.
+    /// #9235): a raw VMArray (ADR-12666) that remembers what its growth slots
+    /// hold.
     pub(crate) fn nqp_typed_list(items: Vec<Value>, kind: NqpElemKind) -> Self {
         let mut data = ArrayData::new(items);
         data.nqp_elem = kind;
-        Value::Array(crate::gc::Gc::new(data), ArrayKind::List)
+        Value::vm_array_from_gc(crate::gc::Gc::new(data))
     }
     /// Fresh empty Array tagged with the "element" container-descriptor name —
     /// what an unsupplied `@`-param binds (rakudo: `@kh.VAR.name` is
@@ -831,6 +832,9 @@ impl Value {
     pub fn item(self) -> Self {
         match self.into_repr() {
             ValueRepr::Array(items, kind) => Value::Array(items, kind.itemize()),
+            // A raw VM collection has no itemized form: Rakudo keeps the same
+            // raw object in a `$` container (ADR-12666).
+            raw @ (ValueRepr::VmArray(_) | ValueRepr::VmHash(_)) => Value::from_repr(raw),
             // Itemization is a Value-level flag now, so `.item` keeps the SAME
             // `HashData` `Gc` (no copy-on-write, so `.WHICH` identity and
             // `=`-shared mutation are preserved).

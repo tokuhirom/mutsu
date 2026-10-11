@@ -126,6 +126,18 @@ impl Interpreter {
     /// constant are gone, #9462), which is why the per-position flattening
     /// below has exactly one call site and is inlined rather than factored
     /// into a separate `append_flattened_call_arg` helper.
+    /// Binding a Raku parameter hllizes a raw `VMArray`/`VMHash` argument into
+    /// the `List`/`Hash` over the same storage (ADR-12666). For the method-call
+    /// opcodes, whose callees bind through several tiers.
+    // Cost: O(a), a = arguments (one tag probe each); O(a) moves when one is raw.
+    pub(super) fn hllize_call_args(args: Vec<Value>) -> Vec<Value> {
+        if args.iter().any(Value::is_vm_collection) {
+            args.into_iter().map(Value::hllize_vm_collection).collect()
+        } else {
+            args
+        }
+    }
+
     pub(super) fn spread_call_args_by_syntax(
         code: &CompiledCode,
         raw_args: Vec<Value>,

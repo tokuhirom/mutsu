@@ -118,6 +118,10 @@ impl Interpreter {
         {
             return Err(err);
         }
+        // A `BOOT*` collection type (or a raw collection): an empty raw one.
+        if let Some(raw) = Self::create_boot_collection(&ty) {
+            return Ok(raw);
+        }
         // A mixin type object keeps its roles (#11209).
         if let Some(result) = self.nqp_create_mixin(&ty) {
             return result;

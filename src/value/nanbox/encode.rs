@@ -66,6 +66,8 @@ impl NanBox {
                 },
                 data,
             ),
+            ValueRepr::VmArray(data) => pack_gc(Kind::VmArray, data),
+            ValueRepr::VmHash(data) => pack_gc(Kind::VmHash, data),
             ValueRepr::BufStorage(data) => pack_gc(Kind::BufStorage, data),
             ValueRepr::Hash(data, itemized) => pack_gc(
                 if itemized {
