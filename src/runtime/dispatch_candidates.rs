@@ -1,4 +1,6 @@
-use super::multi_rank::{MultiRank, PROFILE_LEN, RankProfile, prune_to_maximal};
+use super::multi_rank::{
+    self, MultiRank, OptionalRule, PROFILE_LEN, RankProfile, prune_to_maximal,
+};
 use super::*;
 use crate::runtime::types::{is_coercion_constraint, parse_coercion_type};
 use crate::value::ValueView;
@@ -93,13 +95,14 @@ impl Interpreter {
         let (literal, typed, constrained, subsig, writable) =
             self.candidate_specificity_rank_for_args(def, args);
         let (distance, profile) = self.candidate_type_distance_profile(args, def);
+        let params = Self::dispatch_visible_params(def);
         MultiRank {
             nominal: (literal, typed),
             distance,
             refinement: [constrained, subsig, writable, 0],
-            non_slurpy: !Self::candidate_has_slurpy_positional(def),
-            bind_check: Self::candidate_needs_named_bind_check(def),
-            optional: Self::candidate_optional_positional_count(def),
+            non_slurpy: !multi_rank::has_slurpy_positional(&params),
+            bind_check: multi_rank::needs_named_bind_check(&params),
+            optional: multi_rank::optional_positional_count(&params, OptionalRule::Sub),
             decl_order: def.decl_order,
             profile,
         }
@@ -415,7 +418,7 @@ impl Interpreter {
             // Two purely *positional* ties stay ambiguous —
             // `roast/integration/advent2011-day24.t` pins two verbatim
             // duplicate `multi sub Slurp($filename) {...}` with no named param.
-            if Self::candidate_needs_named_bind_check(&matches[0]) {
+            if multi_rank::needs_named_bind_check(&Self::dispatch_visible_params(&matches[0])) {
                 return Ok(Some(matches.remove(0)));
             }
             return Err(self.ambiguous_multi_dispatch_error(name, args, &tied));
@@ -565,7 +568,7 @@ impl Interpreter {
             .filter(|(p, tc)| {
                 // A `where` on a slurpy refines nothing positional; it ranks
                 // in the named bind-check step instead (see
-                // `candidate_needs_named_bind_check`).
+                // `multi_rank::needs_named_bind_check`).
                 (p.where_constraint.is_some() && !p.is_variadic())
                     || tc
                         .map(Self::constraint_base_name)
@@ -681,83 +684,6 @@ impl Interpreter {
             }
         }
         out
-    }
-
-    /// Whether the candidate declares at least one *explicit* named parameter
-    /// (a slurpy `*%rest` does not count — it accepts nameds without declaring
-    /// any).
-    ///
-    /// Rakudo treats this as a boolean narrowness step, not a count: a
-    /// candidate that declares nameds is narrower than one that declares none
-    /// (`multi b(:$x)` beats `multi b()` for `b()`, in either declaration
-    /// order), but between two candidates that both declare nameds, *how many*
-    /// they declare is irrelevant and declaration order decides
-    /// (`multi K($i, :$a, :$b)` vs `multi K($i, :$a, :$b, :$c)` for
-    /// `K(1, :a, :b)`). Both verified against rakudo via `&f.cando`.
-    ///
-    /// It ranks BELOW positional type narrowness and type distance — rakudo
-    /// picks `multi q(Int $a)` over `multi q(Cool $a, :$x)` for `q(1)` — and
-    /// ABOVE the optional-positional count, so `multi r($a?, :$x)` beats
-    /// `multi r($a)` for `r(1)`.
-    fn candidate_declares_named(def: &FunctionDef) -> bool {
-        Self::dispatch_visible_params(def)
-            .iter()
-            .any(|p| p.named && !p.slurpy && !p.double_slurpy)
-    }
-
-    /// Whether the candidate declares a slurpy *positional* parameter
-    /// (`*@a`, `**@a`, `+@a`) — rakudo's `max_arity == SLURPY_ARITY`. A slurpy
-    /// hash takes only nameds and does not count.
-    fn candidate_has_slurpy_positional(def: &FunctionDef) -> bool {
-        Self::dispatch_visible_params(def)
-            .iter()
-            .any(|p| !p.named && p.is_variadic() && !p.name.starts_with('%'))
-    }
-
-    /// Whether binding the candidate needs a check on the *named* side: it
-    /// declares an explicit named parameter (see
-    /// [`Self::candidate_declares_named`]) or puts a `where` clause on a
-    /// slurpy. This is rakudo's `bind_check` flag for the named half of a
-    /// signature, a boolean narrowness step below every positional one.
-    ///
-    /// A `where` on a slurpy is not a positional refinement (it is excluded
-    /// from the refinement tier's constrained count): rakudo ties
-    /// `multi f(*%m where .elems == 1)` with `multi f(:x($y)!)` and runs the
-    /// one declared first, while either beats a bare `multi f(*%m)`
-    /// (CSS::Properties' `measure` multis,
-    /// [#10519](https://github.com/tokuhirom/mutsu/issues/10519)).
-    fn candidate_needs_named_bind_check(def: &FunctionDef) -> bool {
-        Self::candidate_declares_named(def)
-            || Self::dispatch_visible_params(def)
-                .iter()
-                .any(|p| p.is_variadic() && p.where_constraint.is_some())
-    }
-
-    /// Count *optional* positional parameters — an optional, defaulted, or
-    /// slurpy positional param is one the caller may omit, which makes the
-    /// candidate accept more calls and therefore LESS specific.  Raku ranks a
-    /// candidate with a required parameter as narrower than one where that
-    /// parameter is optional (`multi f(Int:D)` beats `multi f(Int $z?)` for
-    /// `f(42)`; `f(Int $a)` beats `f(*@a)` and `f($a, $b?)`).  Fewer optionals
-    /// wins.  Used as a tiebreaker AFTER type distance (a narrower type still
-    /// wins even when it is the optional one — `f(Int $y?)` beats `f(Cool $x)`
-    /// for `f(42)`), and as the last step before declaration order.  Once both candidates
-    /// declare named parameters, however, an omitted optional positional does
-    /// not make one candidate narrower: `multi f($x = 1, :$a)` and
-    /// `multi f(:$b)` tie and declaration order decides.  The positional
-    /// optionality step only applies to candidates without named parameters;
-    /// the named-parameter step already decides a mixed pair.
-    fn candidate_optional_positional_count(def: &FunctionDef) -> usize {
-        if Self::candidate_declares_named(def) {
-            return 0;
-        }
-        // A slurpy hash (`*%m`) is not a positional at all: rakudo finds
-        // `multi f(*%m)` and `multi f()` ambiguous for `f()`.
-        Self::dispatch_visible_params(def)
-            .iter()
-            .filter(|p| !p.named && !(p.slurpy && p.name.starts_with('%')))
-            .filter(|p| p.is_variadic() || p.optional_marker || p.default.is_some())
-            .count()
     }
 
     /// Compute the total type hierarchy distance between a candidate's type

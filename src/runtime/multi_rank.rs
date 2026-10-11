@@ -8,6 +8,7 @@
 //! method resolver all compare, scan and prune through this one type, so the
 //! rules cannot drift between them (#12468).
 
+use crate::ast::ParamDef;
 use crate::symbol::Symbol;
 use std::cmp::Ordering;
 
@@ -233,4 +234,116 @@ pub(crate) fn prune_to_maximal<T>(
         .map(|(i, _)| i)
         .unwrap_or(0);
     vec![maximal.swap_remove(keep)]
+}
+
+/// Whether the candidate declares at least one *explicit* named parameter
+/// (a slurpy `*%rest` does not count — it accepts nameds without declaring
+/// any). `params` are the candidate's dispatch-visible parameters, the
+/// invocant excluded.
+///
+/// Rakudo treats this as a boolean narrowness step, not a count: a
+/// candidate that declares nameds is narrower than one that declares none
+/// (`multi b(:$x)` beats `multi b()` for `b()`, in either declaration
+/// order), but between two candidates that both declare nameds, *how many*
+/// they declare is irrelevant and declaration order decides
+/// (`multi K($i, :$a, :$b)` vs `multi K($i, :$a, :$b, :$c)` for
+/// `K(1, :a, :b)`). Both verified against rakudo via `&f.cando`.
+///
+/// It ranks BELOW positional type narrowness and type distance — rakudo
+/// picks `multi q(Int $a)` over `multi q(Cool $a, :$x)` for `q(1)` — and
+/// ABOVE the optional-positional count, so `multi r($a?, :$x)` beats
+/// `multi r($a)` for `r(1)`.
+// Cost: O(p), p = parameters.
+pub(crate) fn declares_named(params: &[&ParamDef]) -> bool {
+    params
+        .iter()
+        .any(|p| p.named && !p.slurpy && !p.double_slurpy)
+}
+
+/// Whether the candidate declares a slurpy *positional* parameter
+/// (`*@a`, `**@a`, `+@a`) — rakudo's `max_arity == SLURPY_ARITY`. A slurpy
+/// hash takes only nameds and does not count.
+// Cost: O(p), p = parameters.
+pub(crate) fn has_slurpy_positional(params: &[&ParamDef]) -> bool {
+    params
+        .iter()
+        .any(|p| !p.named && p.is_variadic() && !p.name.starts_with('%'))
+}
+
+/// Whether binding the candidate needs a check on the *named* side: it
+/// declares an explicit named parameter (see [`declares_named`]) or puts a
+/// `where` clause on a slurpy. This is rakudo's `bind_check` flag for the
+/// named half of a signature, a boolean narrowness step below every
+/// positional one.
+///
+/// A `where` on a slurpy is not a positional refinement (it is excluded
+/// from the refinement tier's constrained count): rakudo ties
+/// `multi f(*%m where .elems == 1)` with `multi f(:x($y)!)` and runs the
+/// one declared first, while either beats a bare `multi f(*%m)`
+/// (CSS::Properties' `measure` multis,
+/// [#10519](https://github.com/tokuhirom/mutsu/issues/10519)).
+// Cost: O(p), p = parameters.
+pub(crate) fn needs_named_bind_check(params: &[&ParamDef]) -> bool {
+    declares_named(params)
+        || params
+            .iter()
+            .any(|p| p.is_variadic() && p.where_constraint.is_some())
+}
+
+/// Which candidates [`optional_positional_count`] counts nothing for, and
+/// whether a slurpy positional counts as an optional one.
+// TODO: unify on `Method`. It is the rule rakudo follows (`multi
+// j($a?, $c?, *%h where .elems == 0)` and `multi j($b?, :$x)` tie for
+// `j(1)` and the first declared wins), while `Sub` picks the named one; the
+// two only differ there, and the sub side is kept as is until that is fixed
+// with its own regression test.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OptionalRule {
+    /// Zero for a candidate that [`declares_named`]; a slurpy positional
+    /// counts as optional.
+    Sub,
+    /// Zero for a candidate that [`needs_named_bind_check`]; slurpies are
+    /// not counted.
+    Method,
+}
+
+/// Count *optional* positional parameters — an optional or defaulted (and
+/// under [`OptionalRule::Sub`], slurpy) positional param is one the caller
+/// may omit, which makes the candidate accept more calls and therefore LESS
+/// specific. Raku ranks a candidate with a required parameter as narrower
+/// than one where that parameter is optional (`multi f(Int:D)` beats
+/// `multi f(Int $z?)` for `f(42)`; `f(Int $a)` beats `f(*@a)` and
+/// `f($a, $b?)`). Fewer optionals wins. Used as a tiebreaker AFTER type
+/// distance (a narrower type still wins even when it is the optional one —
+/// `f(Int $y?)` beats `f(Cool $x)` for `f(42)`), and as the last step before
+/// declaration order. Once both candidates declare named parameters,
+/// however, an omitted optional positional does not make one candidate
+/// narrower: `multi f($x = 1, :$a)` and `multi f(:$b)` tie and declaration
+/// order decides; the named-parameter step already decides a mixed pair.
+// Cost: O(p), p = parameters.
+pub(crate) fn optional_positional_count(params: &[&ParamDef], rule: OptionalRule) -> usize {
+    match rule {
+        OptionalRule::Sub => {
+            if declares_named(params) {
+                return 0;
+            }
+            // A slurpy hash (`*%m`) is not a positional at all: rakudo finds
+            // `multi f(*%m)` and `multi f()` ambiguous for `f()`.
+            params
+                .iter()
+                .filter(|p| !p.named && !(p.slurpy && p.name.starts_with('%')))
+                .filter(|p| p.is_variadic() || p.optional_marker || p.default.is_some())
+                .count()
+        }
+        OptionalRule::Method => {
+            if needs_named_bind_check(params) {
+                return 0;
+            }
+            params
+                .iter()
+                .filter(|p| !p.named && !p.slurpy && !p.double_slurpy)
+                .filter(|p| p.optional_marker || p.default.is_some())
+                .count()
+        }
+    }
 }

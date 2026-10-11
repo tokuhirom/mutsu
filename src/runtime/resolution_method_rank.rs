@@ -1,10 +1,17 @@
-use super::*;
 use super::multi_rank::RankProfile;
+use super::*;
 
 /// (literals, distance, narrowness, profile) of one matched method candidate.
 type MethodRank = (usize, usize, (usize, usize, usize, usize), RankProfile);
 
 impl Interpreter {
+    /// The parameters a method candidate is ranked on: every one but the
+    /// invocant, for the shared helpers in `multi_rank`.
+    // Cost: O(p), p = parameters.
+    pub(super) fn method_rank_params(def: &MethodDef) -> Vec<&ParamDef> {
+        def.param_defs.iter().filter(|p| !p.is_invocant).collect()
+    }
+
     /// Number of positional parameters that participate in method specificity.
     /// Named and variadic parameters bind differently from ordinary positions.
     pub(super) fn method_specificity_positions(def: &MethodDef) -> usize {

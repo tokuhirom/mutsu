@@ -1,5 +1,5 @@
+use super::multi_rank::{self, RankProfile};
 use super::*;
-use super::multi_rank::RankProfile;
 
 impl Interpreter {
     pub(super) fn resolve_method(
@@ -508,11 +508,8 @@ impl Interpreter {
             // types tie, a candidate without a slurpy positional is narrower
             // than one with — `(Int $a)` beats `(Int $a, *@r)` for `f(1)` —
             // and this is consulted BEFORE the named bind check.
-            let has_slurpy_positional = |def: &MethodDef| -> bool {
-                def.param_defs.iter().any(|p| {
-                    !p.is_invocant && !p.named && p.is_variadic() && !p.name.starts_with('%')
-                })
-            };
+            let has_slurpy_positional =
+                |def: &MethodDef| multi_rank::has_slurpy_positional(&Self::method_rank_params(def));
             if narrowed
                 .iter()
                 .any(|&i| !has_slurpy_positional(&all_matches[i].1))
@@ -529,12 +526,9 @@ impl Interpreter {
             // beats `(Int $a)` for `f(1)` regardless of declaration order,
             // while `(:x($y)!)` and `(*%m where .elems == 1)` tie and the
             // first declared wins (#10519). Mirrors the sub dispatch's
-            // `candidate_needs_named_bind_check`.
-            let has_explicit_named = |def: &MethodDef| -> bool {
-                def.param_defs.iter().any(|p| {
-                    (p.named && !p.slurpy && !p.double_slurpy)
-                        || (!p.is_invocant && p.is_variadic() && p.where_constraint.is_some())
-                })
+            // `multi_rank::needs_named_bind_check`.
+            let has_explicit_named = |def: &MethodDef| {
+                multi_rank::needs_named_bind_check(&Self::method_rank_params(def))
             };
             if narrowed
                 .iter()
@@ -552,17 +546,13 @@ impl Interpreter {
             // whose positionals are all required is narrower than one that can
             // omit some (`(Str:D $a)` beats `(Str:D $a, Int $b = 5)` for
             // `m("x")`). Mirrors the sub dispatch's
-            // `candidate_optional_positional_count`, which likewise skips
+            // `multi_rank::optional_positional_count`, which likewise skips
             // candidates that declare named parameters.
-            let optional_positionals = |def: &MethodDef| -> usize {
-                if has_explicit_named(def) {
-                    return 0;
-                }
-                def.param_defs
-                    .iter()
-                    .filter(|p| !p.is_invocant && !p.named && !p.slurpy && !p.double_slurpy)
-                    .filter(|p| p.optional_marker || p.default.is_some())
-                    .count()
+            let optional_positionals = |def: &MethodDef| {
+                multi_rank::optional_positional_count(
+                    &Self::method_rank_params(def),
+                    multi_rank::OptionalRule::Method,
+                )
             };
             if let Some(min_opt) = narrowed
                 .iter()
@@ -609,7 +599,10 @@ impl Interpreter {
             // `multi method new(A:U: :$raw-error)` beats the role's
             // `new(::?CLASS: :$raw-error = False, *%in)`), whatever order the
             // registry happened to push them in.
-            if mro_narrowed.iter().any(|&i| all_matches[i].1.role_origin.is_none()) {
+            if mro_narrowed
+                .iter()
+                .any(|&i| all_matches[i].1.role_origin.is_none())
+            {
                 mro_narrowed.retain(|&i| all_matches[i].1.role_origin.is_none());
             }
             if let Some(&i) = mro_narrowed.first() {
