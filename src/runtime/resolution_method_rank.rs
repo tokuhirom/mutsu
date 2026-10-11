@@ -108,6 +108,7 @@ impl Interpreter {
             decl_order,
             profile,
             tier: 0,
+            tiered: false,
         }
     }
 
@@ -169,7 +170,8 @@ impl Interpreter {
         }
         // Across owners too: an ancestor's candidate and a subclass's that
         // are incomparable resolve by declaration order (`method_decl_order`).
-        let mut ranked = prune_to_maximal(
+        // Method ranks are untiered, so the arity-ambiguity flag never sets.
+        let (mut ranked, _) = prune_to_maximal(
             ranks
                 .into_iter()
                 .zip(0..)

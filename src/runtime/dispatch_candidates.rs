@@ -106,6 +106,7 @@ impl Interpreter {
             decl_order: def.decl_order,
             profile,
             tier: 0,
+            tiered: false,
         }
     }
 
@@ -130,14 +131,23 @@ impl Interpreter {
     /// bound, in narrowest-first scan order; a pure tie is returned unchanged
     /// so the ambiguity logic in [`Self::settle_ranked_matches`] still sees it.
     // Cost: O(m^2 * h), m = candidates that bound, h = one `nominal_types_related` walk.
+    ///
+    /// An arity-incomparable split that rakudo reports as ambiguous (see
+    /// `multi_rank::prune_to_maximal`) is raised here as
+    /// `X::Multi::Ambiguous`.
     pub(super) fn prune_incomparable_matches(
         &self,
+        name: &str,
+        args: &[Value],
         matches: Vec<(MultiRank, Arc<FunctionDef>)>,
-    ) -> Vec<Arc<FunctionDef>> {
-        prune_to_maximal(matches, &|x, y| self.nominal_types_related(x, y))
-            .into_iter()
-            .map(|(_, d)| d)
-            .collect()
+    ) -> Result<Vec<Arc<FunctionDef>>, RuntimeError> {
+        let (matches, ambiguous) =
+            prune_to_maximal(matches, &|x, y| self.nominal_types_related(x, y));
+        let defs: Vec<Arc<FunctionDef>> = matches.into_iter().map(|(_, d)| d).collect();
+        if ambiguous {
+            return Err(self.ambiguous_multi_dispatch_error(name, args, &defs));
+        }
+        Ok(defs)
     }
 
     pub(super) fn choose_best_matching_candidate(
@@ -313,7 +323,13 @@ impl Interpreter {
                 matches.push((key, def));
             }
         }
-        let matches = self.prune_incomparable_matches(matches);
+        let matches = match self.prune_incomparable_matches(name, args, matches) {
+            Ok(matches) => matches,
+            Err(err) => {
+                self.pending_where_exception = outer_where_exception;
+                return Err(err);
+            }
+        };
         self.settle_ranked_matches(name, args, matches, threw, outer_where_exception)
     }
 
