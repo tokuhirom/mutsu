@@ -30,7 +30,7 @@ nothing. The settled defaults:
 | Question you might be tempted to ask | The standing answer |
 | --- | --- |
 | One PR per issue, or one for the batch? | **One issue, one PR.** Never bundle. |
-| Which issues are in scope? | The filter the user named, oldest-first, skipping `working` / live claims. No `tier:*` is a workable state, not a blocker. |
+| Which issues are in scope? | The filter the user named, in `scripts/next-issue` order ([docs/lanes.md](../../../docs/lanes.md); oldest-first within equal rank), skipping `working` / live claims. No `tier:*` is a workable state, not a blocker. |
 | Should I claim it? | Yes — the comment protocol below, every time. The `working` label is derived from it; never set it by hand. |
 | Add a test? Write `news/`? `Closes #NNNN`? | Yes to all three, on every code fix. |
 | May I open the PR / enable auto-merge? | Yes. The request already said so; use the merge method, then watch CI and fix forward. |
@@ -354,7 +354,8 @@ accomplishment up as
 prune-and-reset loop above before starting the next ticket.
 
 Then choose the next actionable open issue **from the slice the user named** (the whole
-`todo:ticket` queue, or the `tier:N` / no-tier subset they asked for) — oldest first, **skipping
+`todo:ticket` queue, or the `tier:N` / no-tier subset they asked for) — in `scripts/next-issue`
+order (oldest first within equal rank), **skipping
 every issue labelled `working`** or carrying a live claim, plus deliberate non-divergence records,
 blocked tickets, and items whose
 current evidence makes them deep (relabel the latter through this workflow). Never start a dependent

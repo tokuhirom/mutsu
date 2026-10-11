@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""scripts/next-issue — which issue each lane works next (docs/lanes.md).
+
+    scripts/next-issue                    every lane in rank order: busy/free, next issue
+    scripts/next-issue --free             only the lanes with a free slot
+    scripts/next-issue --lane env         one lane's whole ordered queue
+    scripts/next-issue --input FILE       read the open issues from FILE instead of `gh`
+    scripts/next-issue --self-test        check the ordering rules on fixed data
+
+The lane order (rank, kind, carrier, slots) is parsed from the "Lane order" table in
+docs/lanes.md, so re-prioritising lanes is an edit to that table, not to this script.
+
+--input takes a JSON array (or several concatenated arrays, e.g. one saved page per
+`list_issues` call) of issue objects with `number`, `title`, `labels` (names or
+{"name": ...} objects) and `created_at`/`createdAt`; an optional `parent` (a number, or
+{"number", "state"}) enables sub-issue skipping. Without `--input`, `gh api graphql`
+fetches all of that, parents included.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+REPO_OWNER, REPO_NAME = "tokuhirom", "mutsu"
+LANES_DOC = Path(__file__).resolve().parent.parent / "docs" / "lanes.md"
+TIER_RANK = {"tier:S": 0, "tier:B": 1, "tier:N": 2}
+ROW_RE = re.compile(
+    r"^\|\s*(?P<rank>\d+|—|-)\s*\|\s*`(?P<lane>lane:[a-z0-9-]+)`\s*\|\s*(?P<kind>campaign|queue|perf)\s*\|"
+    r"\s*(?:#(?P<carrier>\d+))?\s*\|\s*(?P<slots>\d+)\s*\|"
+)
+
+
+@dataclass
+class Lane:
+    name: str
+    rank: int
+    kind: str
+    carrier: int | None
+    slots: int
+
+
+@dataclass
+class Issue:
+    number: int
+    title: str
+    labels: set[str]
+    created: str
+    parent: int | None = None  # number of an OPEN parent, else None
+    open_children: int = 0
+    lane: str | None = field(default=None)
+
+
+def load_lanes(text: str) -> list[Lane]:
+    """The rows of the "Lane order" table, in rank order (perf, ranked "—", last)."""
+    section = text.split("## Lane order", 1)[1].split("\n## ", 1)[0]
+    lanes = []
+    for line in section.splitlines():
+        m = ROW_RE.match(line)
+        if m:
+            rank = int(m["rank"]) if m["rank"].isdigit() else 10_000
+            carrier = int(m["carrier"]) if m["carrier"] else None
+            lanes.append(Lane(m["lane"], rank, m["kind"], carrier, int(m["slots"])))
+    if not lanes:
+        sys.exit(f"next-issue: no lane rows found in {LANES_DOC}")
+    return sorted(lanes, key=lambda lane: lane.rank)
+
+
+def label_names(raw) -> set[str]:
+    return {lab["name"] if isinstance(lab, dict) else str(lab) for lab in raw or []}
+
+
+def parse_issue(obj: dict) -> Issue:
+    parent = obj.get("parent")
+    if isinstance(parent, dict):
+        parent = parent.get("number") if parent.get("state", "OPEN").upper() == "OPEN" else None
+    return Issue(
+        number=int(obj["number"]),
+        title=obj.get("title", ""),
+        labels=label_names(obj.get("labels")),
+        created=obj.get("created_at") or obj.get("createdAt") or "",
+        parent=int(parent) if parent else None,
+    )
+
+
+def load_input(path: str) -> list[dict]:
+    text = sys.stdin.read() if path == "-" else open(path, encoding="utf-8").read()
+    return issues_from_text(text)
+
+
+def issues_from_text(text: str) -> list[dict]:
+    """Issue objects from concatenated JSON arrays, objects or raw list_issues pages."""
+    out = []
+    for value in load_input_text(text):
+        if isinstance(value, dict) and "issues" in value:  # a raw list_issues page
+            value = value["issues"]
+        out.extend(value if isinstance(value, list) else [value])
+    return out
+
+
+GQL = """
+query($owner: String!, $name: String!, $endCursor: String) {
+  repository(owner: $owner, name: $name) {
+    issues(states: OPEN, first: 100, after: $endCursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { number title createdAt labels(first: 30) { nodes { name } }
+              parent { number state } }
+    }
+  }
+}
+"""
+
+
+def load_gh() -> list[dict]:
+    try:
+        out = subprocess.run(
+            ["gh", "api", "graphql", "--paginate", "-f", f"query={GQL}",
+             "-F", f"owner={REPO_OWNER}", "-F", f"name={REPO_NAME}"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+    except FileNotFoundError:
+        sys.exit("next-issue: no `gh` here; save the open issues with the GitHub MCP "
+                 "list_issues tool and pass them with --input (docs/lanes.md)")
+    issues = []
+    for page in load_input_text(out):
+        for node in page["data"]["repository"]["issues"]["nodes"]:
+            node["labels"] = node["labels"]["nodes"]
+            issues.append(node)
+    return issues
+
+
+def load_input_text(text: str) -> list[dict]:
+    decoder, pos, out = json.JSONDecoder(), 0, []
+    while pos < len(text):
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+        if pos >= len(text):
+            break
+        value, pos = decoder.raw_decode(text, pos)
+        out.append(value)
+    return out
+
+
+def sort_key(issue: Issue):
+    tier = next((TIER_RANK[t] for t in TIER_RANK if t in issue.labels), 3)
+    return (
+        "priority" not in issue.labels,
+        issue.open_children == 0,
+        tier,
+        "todo:perf" in issue.labels,
+        "ecosystem" not in issue.labels,
+        issue.created,
+        issue.number,
+    )
+
+
+def is_candidate(issue: Issue) -> bool:
+    return (
+        "tier:icebox" not in issue.labels
+        and "working" not in issue.labels
+        and issue.parent is None
+    )
+
+
+def assign(issues: list[Issue], lanes: list[Lane]) -> tuple[dict[str, list[Issue]], list[Issue]]:
+    """Group issues by lane; return (by_lane, unlaned todo issues)."""
+    known = {lane.name for lane in lanes}
+    by_number = {i.number: i for i in issues}
+    for issue in issues:
+        if issue.parent in by_number:
+            by_number[issue.parent].open_children += 1
+        else:
+            issue.parent = None  # parent is closed or not in the open set
+    by_lane: dict[str, list[Issue]] = {lane.name: [] for lane in lanes}
+    unlaned = []
+    for issue in issues:
+        names = sorted(lab for lab in issue.labels if lab.startswith("lane:"))
+        lane = next((n for n in names if n in known), None)
+        issue.lane = lane
+        if lane:
+            by_lane[lane].append(issue)
+        elif any(lab.startswith("todo:") for lab in issue.labels):
+            unlaned.append(issue)
+    return by_lane, unlaned
+
+
+def describe(issue: Issue) -> str:
+    return f"#{issue.number} {issue.title}"
+
+
+def report(lanes, by_lane, unlaned, only_free: bool, one_lane: str | None) -> list[str]:
+    lines = []
+    for lane in lanes:
+        if one_lane and lane.name != f"lane:{one_lane}" and lane.name != one_lane:
+            continue
+        members = by_lane[lane.name]
+        busy = [i for i in members if "working" in i.labels]
+        free = lane.slots - len(busy)
+        if only_free and free <= 0:
+            continue
+        queue = sorted((i for i in members if is_candidate(i)), key=sort_key)
+        state = f"{len(busy)}/{lane.slots} busy" + (
+            f" ({', '.join('#' + str(i.number) for i in busy)})" if busy else "")
+        rank = str(lane.rank) if lane.rank < 10_000 else "—"
+        lines.append(f"[{rank}] {lane.name} ({lane.kind}, {len(members)} open, {state})")
+        if lane.kind == "campaign" and lane.carrier:
+            lines.append(f"    next: the next slice named by the carrier #{lane.carrier} "
+                         f"(campaign lanes follow their plan, docs/lanes.md)")
+            if one_lane:
+                lines.extend(f"    - {describe(i)}" for i in queue)
+        elif not queue:
+            lines.append("    next: (nothing workable)")
+        elif one_lane:
+            lines.extend(f"    {n}. {describe(i)}" for n, i in enumerate(queue, 1))
+        else:
+            lines.append(f"    next: {describe(queue[0])}")
+    if unlaned and not one_lane:
+        lines.append(f"unlaned todo issues ({len(unlaned)}) — give each a lane:* label:")
+        lines.extend(f"    {describe(i)}" for i in sorted(unlaned, key=lambda i: i.number))
+    return lines
+
+
+def self_test() -> int:
+    doc = """## Lane order
+
+| Rank | Lane | Kind | Carrier | Slots | What |
+| ---: | --- | --- | --- | ---: | --- |
+| 1 | `lane:a` | campaign | #10 | 1 | x |
+| 2 | `lane:b` | queue | | 2 | y |
+| — | `lane:perf` | perf | | 1 | z |
+
+## Next
+"""
+    lanes = load_lanes(doc)
+    assert [lane.name for lane in lanes] == ["lane:a", "lane:b", "lane:perf"], lanes
+    assert lanes[0].carrier == 10 and lanes[1].slots == 2
+    raw = [
+        {"number": 1, "title": "old narrow", "labels": ["todo:deep", "tier:N", "lane:b"], "created_at": "2026-01-01"},
+        {"number": 2, "title": "broad", "labels": ["todo:deep", "tier:B", "lane:b"], "created_at": "2026-02-01"},
+        {"number": 3, "title": "slow broad", "labels": ["todo:perf", "tier:B", "lane:b"], "created_at": "2026-01-01"},
+        {"number": 4, "title": "eco broad", "labels": ["todo:deep", "tier:B", "ecosystem", "lane:b"], "created_at": "2026-03-01"},
+        {"number": 5, "title": "root", "labels": ["todo:deep", "lane:b"], "created_at": "2026-04-01"},
+        {"number": 6, "title": "child", "labels": ["todo:deep", "tier:S", "lane:b"], "created_at": "2026-01-01", "parent": 5},
+        {"number": 7, "title": "iced", "labels": ["todo:deep", "tier:icebox", "lane:b"], "created_at": "2026-01-01"},
+        {"number": 8, "title": "taken", "labels": ["todo:deep", "working", "lane:b"], "created_at": "2026-01-01"},
+        {"number": 9, "title": "no lane", "labels": ["todo:ticket"], "created_at": "2026-01-01"},
+        {"number": 11, "title": "orphan child", "labels": ["todo:deep", "tier:S", "lane:b"], "created_at": "2026-05-01",
+         "parent": {"number": 99, "state": "CLOSED"}},
+        {"number": 12, "title": "urgent", "labels": ["todo:ticket", "priority", "lane:b"], "created_at": "2026-06-01"},
+    ]
+    issues = [parse_issue(o) for o in raw]
+    by_lane, unlaned = assign(issues, lanes)
+    order = [i.number for i in sorted((i for i in by_lane["lane:b"] if is_candidate(i)), key=sort_key)]
+    # priority, then the root with an open child, then tier S (orphan child's parent is
+    # closed), then tier B wrong answers (eco first), then the slow one, then tier N.
+    assert order == [12, 5, 11, 4, 2, 3, 1], order
+    assert [i.number for i in unlaned] == [9], unlaned
+    lines = report(lanes, by_lane, unlaned, only_free=False, one_lane=None)
+    assert "1/2 busy (#8)" in lines[2], lines
+    assert lines[1].startswith("    next: the next slice named by the carrier #10"), lines
+    # A real list_issues page (MCP) parses too.
+    page = json.dumps({"issues": [{"number": 1, "labels": ["lane:b"], "created_at": "x"}]})
+    two_pages = page + "\n" + json.dumps([{"number": 2, "labels": [], "created_at": "y"}])
+    assert [o["number"] for o in issues_from_text(two_pages)] == [1, 2]
+    # The real table parses, and every lane it names is distinct.
+    real = load_lanes(LANES_DOC.read_text(encoding="utf-8"))
+    names = [lane.name for lane in real]
+    assert len(names) == len(set(names)), names
+    assert "lane:perf" in names and len(real) >= 5, names
+    print("next-issue self-test: ok")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--input", help="JSON file of open issues (- for stdin) instead of gh")
+    ap.add_argument("--free", action="store_true", help="only lanes with a free slot")
+    ap.add_argument("--lane", help="show one lane's whole ordered queue (e.g. env or lane:env)")
+    ap.add_argument("--self-test", action="store_true")
+    args = ap.parse_args()
+    if args.self_test:
+        return self_test()
+    lanes = load_lanes(LANES_DOC.read_text(encoding="utf-8"))
+    raw = load_input(args.input) if args.input else load_gh()
+    issues = [parse_issue(o) for o in raw if "ecosystem:lock" not in label_names(o.get("labels"))]
+    by_lane, unlaned = assign(issues, lanes)
+    print("\n".join(report(lanes, by_lane, unlaned, args.free, args.lane)))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
