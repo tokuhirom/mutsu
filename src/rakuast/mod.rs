@@ -20,6 +20,7 @@ mod capture_term;
 mod chain;
 mod compound_stmt;
 mod contextualizer;
+mod control_signature;
 mod convert;
 mod core_term_names;
 mod core_type_names;
@@ -1739,6 +1740,11 @@ pub fn construct(
     method: &str,
     args: &[Value],
 ) -> Result<Option<Value>, RuntimeError> {
+    if method == "new"
+        && let Some(result) = control_signature::construct(class_name, args)
+    {
+        return result.map(Some);
+    }
     if method == "new"
         && let Some(node) = subscript_adverb::construct(class_name, args)
     {
@@ -3674,6 +3680,9 @@ fn class_from_name(class_name: &str) -> Option<RakuAstClass> {
 }
 
 fn constructor_is_supported(class: RakuAstClass) -> bool {
+    if control_signature::constructor_schema(class.printed_name()).is_some() {
+        return true;
+    }
     matches!(
         class,
         RakuAstClass::CompUnit

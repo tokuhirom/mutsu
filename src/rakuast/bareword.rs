@@ -326,7 +326,8 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                             ..
                         } => self.visit_param(param_def),
                         // `if X -> \y { y }` likewise.
-                        crate::ast::SourceForm::IfPointy { param_defs, .. } => {
+                        crate::ast::SourceForm::IfPointy { param_defs, .. }
+                        | crate::ast::SourceForm::ControlPointy { param_defs, .. } => {
                             param_defs.iter().for_each(|p| self.visit_param(p))
                         }
                         // `my (\a, \b) := …` declares each sigilless element as a term.

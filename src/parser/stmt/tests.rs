@@ -233,7 +233,7 @@ fn parse_if_else_with_binding_var_desugars_to_var_decl() {
             let source = binding_var.as_ref().expect("generated if binding var");
             assert!(source.starts_with("$__mutsu_if_bind_"));
             assert!(matches!(
-                else_branch.first(),
+                else_branch.get(1),
                 Some(Stmt::VarDecl { name, expr, .. })
                     if name == "c"
                         && matches!(
@@ -241,6 +241,8 @@ fn parse_if_else_with_binding_var_desugars_to_var_decl() {
                             Expr::Var(var) if var == source.trim_start_matches('$')
                         )
             ));
+            assert!(matches!(else_branch.first(), Some(Stmt::SourceForm(form))
+                if matches!(form.as_ref(), crate::ast::SourceForm::IfPointy { .. })));
         }
         _ => panic!("Expected If statement"),
     }

@@ -39,13 +39,13 @@ nok Q[with 1 { say $_ }].AST.gist.contains('__with_tmp'),
 
 # A pointy `with` renders its parameter as raku's `PointyBlock` (the parser
 # records the written parameter), not as an implicit-topic block that has
-# swallowed the binding. The pointy `else` is still a boundary.
+# swallowed the binding. The pointy `else` retains the same source record.
 ok Q[with 1 -> $a { say $a }].AST.gist.contains('RakuAST::PointyBlock.new('),
     '`with` with an explicit signature renders a PointyBlock';
 nok Q[with 1 -> $a { say $a }].AST.gist.contains('__with_tmp'),
     '... without its __with_tmp_N temporary';
-throws-like { Q[with 1 { say 2 } else -> $p { say $p }].AST }, Exception,
-    'a pointy `else` on a with chain is an explicit boundary too';
+isa-ok Q[with 1 { say 2 } else -> $p { say $p }].AST.statements[0].else,
+    RakuAST::PointyBlock, 'a pointy else on a with chain retains its signature';
 
 # --- constructs that are NOT desugared still render -------------------------
 ok Q[say 42].AST.gist.contains('RakuAST::Call::Name::WithoutParentheses.new('),

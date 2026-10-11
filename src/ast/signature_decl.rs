@@ -16,6 +16,14 @@ use super::{Expr, Stmt};
 /// expansion. The compiler skips it.
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub(crate) enum SourceForm {
+    /// A control pointy block before its shared executable expansion.
+    ControlPointy {
+        kind: ControlPointyKind,
+        label: Option<String>,
+        condition: Expr,
+        param_defs: Vec<super::ParamDef>,
+        body: Vec<Stmt>,
+    },
     /// Traits written on a routine, in source order; opens its body.
     RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
     SignatureDecl(SignatureDecl),
@@ -58,6 +66,13 @@ pub(crate) enum SourceForm {
     /// opens a one-statement expansion whose second statement is the phaser;
     /// only a spelling-keeping parse builds it.
     BarePhaser,
+}
+
+#[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ControlPointyKind {
+    While,
+    Until,
+    Unless,
 }
 
 /// `my|our|state [TYPE] (VARS) [is default(EXPR)] [= RHS | := RHS]`.
