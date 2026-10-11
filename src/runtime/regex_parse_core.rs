@@ -798,6 +798,7 @@ impl Interpreter {
             .get(env_key)
             .cloned()
             .or_else(|| self.regex_package_chain_var_fallback(env_key))
+            .or_else(|| self.get_env_with_main_alias(env_key))
             .unwrap_or(Value::NIL)
             .deref_container();
         let elements = match value.view() {
