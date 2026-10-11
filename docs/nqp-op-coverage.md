@@ -55,7 +55,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | NativeCall | 6 / 7 | 1 | #11504 |
 | Numeric | 17 / 17 | 0 | #11490 |
 | Objects | 29 / 31 | 2 | #11499 |
-| Parametric Extensions | 0 / 5 | 5 | #11499 |
+| Parametric Extensions | 5 / 5 | 0 |  |
 | Profiling | 1 / 3 | 2 | #11504 |
 | Serialization context | 15 / 16 | 1 | #11504 |
 | Stream Decoding | 10 / 10 | 0 | #11503 |
@@ -68,7 +68,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 4 / 4 | 0 | #11499 |
 | Rakudo p6* (HLL) | 17 / 26 | 9 | #11505 |
-| **Total** | **543 / 575** | **32** | |
+| **Total** | **548 / 575** | **27** | |
 
 ## Missing ops by category
 
@@ -76,7 +76,6 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Context Introspection** (#11498): `ctxouter`
 - **NativeCall** (#11504): `nativecallinvoke`
 - **Objects** (#11499): `rebless`, `setwho`
-- **Parametric Extensions** (#11499): `setparameterizer`, `parameterizetype`, `typeparameterat`, `typeparameterized`, `typeparameters`
 - **Profiling** (#11504): `mvmendprofile`, `mvmstartprofile`
 - **Serialization context** (#11504): `forceouterctx`
 - **Rakudo p6* (HLL)** (#11505): `p6argvmarray`, `p6bindsig`, `p6clearpre`, `p6setfirstflag`, `p6setpre`, `p6stateinit`, `p6staticouter`, `p6takefirstflag`, `p6trybindsig`

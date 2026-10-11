@@ -2454,6 +2454,27 @@ pub(crate) struct CustomTypeData {
     pub(crate) parameterizer: Option<Value>,
     /// Parameterizations produced so far, keyed by the arguments' WHICH keys.
     pub(crate) parameterizations: Vec<(String, Value)>,
+    /// When this type is itself a parameterization: the root it was made from
+    /// and the (raw) argument list, as `nqp::typeparameterized` /
+    /// `typeparameters` / `typeparameterat` answer.
+    pub(crate) parameterized_from: Option<(Value, Value)>,
+}
+
+impl CustomTypeData {
+    /// A type with nothing installed yet.
+    pub(crate) fn new() -> Self {
+        CustomTypeData {
+            type_check_cache: None,
+            authoritative: false,
+            call_accepts: false,
+            composed: false,
+            method_cache: None,
+            method_cache_authoritative: true,
+            parameterizer: None,
+            parameterizations: Vec::new(),
+            parameterized_from: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

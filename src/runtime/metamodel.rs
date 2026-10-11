@@ -45,16 +45,7 @@ impl Interpreter {
         let id = next_instance_id();
         self.types.custom_type_data.insert(
             id,
-            CustomTypeData {
-                type_check_cache: None,
-                authoritative: false,
-                call_accepts: false,
-                composed: false,
-                method_cache: None,
-                method_cache_authoritative: true,
-                parameterizer: None,
-                parameterizations: Vec::new(),
-            },
+            CustomTypeData::new(),
         );
 
         Ok(Value::custom_type(
@@ -188,16 +179,7 @@ impl Interpreter {
             _ => package_cache_id(&args[0]),
         };
         let entry = self.types.custom_type_data.entry(id).or_insert_with(|| {
-            CustomTypeData {
-                type_check_cache: None,
-                authoritative: false,
-                call_accepts: false,
-                composed: false,
-                method_cache: None,
-                method_cache_authoritative: true,
-                parameterizer: None,
-                parameterizations: Vec::new(),
-            }
+            CustomTypeData::new()
         });
         entry.parameterizer = Some(args[1].clone());
         entry.parameterizations.clear();
@@ -241,11 +223,39 @@ impl Interpreter {
                 "parameterize_type: no parameterizer was set for this type",
             ));
         };
-        let result = self.call_sub_value(parameterizer, vec![root, list], false)?;
+        let result = self.call_sub_value(parameterizer, vec![root.clone(), list.clone()], false)?;
         if let Some(data) = self.types.custom_type_data.get_mut(&id) {
             data.parameterizations.push((key, result.clone()));
         }
+        // Remember where a type-object result came from, for
+        // `nqp::typeparameterized` and friends.
+        if let Some(result_id) = type_cache_id(&result) {
+            self.types
+                .custom_type_data
+                .entry(result_id)
+                .or_insert_with(CustomTypeData::new)
+                .parameterized_from = Some((root, list));
+        }
         Ok(result)
+    }
+
+    /// `nqp::setparameterizer($type, $code)`.
+    // Cost: O(1).
+    pub(crate) fn nqp_set_parameterizer(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        self.mp_set_parameterizer(args)
+    }
+
+    /// `nqp::parameterizetype($type, $params)`.
+    // Cost: O(p * a) per lookup, as `Metamodel::Primitives.parameterize_type`.
+    pub(crate) fn nqp_parameterize_type(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        self.mp_parameterize_type(args)
+    }
+
+    /// The `(root, params)` a parameterization was made from, if it is one.
+    // Cost: O(1).
+    pub(crate) fn type_parameterization(&self, ty: &Value) -> Option<(Value, Value)> {
+        let id = type_cache_id(ty)?;
+        self.types.custom_type_data.get(&id)?.parameterized_from.clone()
     }
 
     /// The method-cache entry for `name` on a custom type object: `Some(Ok(v))`
@@ -662,6 +672,16 @@ impl Interpreter {
             }
         }
         Ok(())
+    }
+}
+
+/// The identity key of a type object (custom type or package), `None` for
+/// any other value.
+fn type_cache_id(ty: &Value) -> Option<u64> {
+    match ty.view() {
+        ValueView::CustomType(c) => Some(c.id),
+        ValueView::Package(_) => Some(package_cache_id(ty)),
+        _ => None,
     }
 }
 

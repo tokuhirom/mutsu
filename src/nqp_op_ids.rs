@@ -102,7 +102,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 509] = [
+static NQP_OPS: [(&str, NqpOpTable); 514] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -492,6 +492,7 @@ static NQP_OPS: [(&str, NqpOpTable); 509] = [
     ("p6setautothreader", NqpOpTable::P6),
     ("p6trialbind", NqpOpTable::P6),
     ("p6typecheckrv", NqpOpTable::P6),
+    ("parameterizetype", NqpOpTable::Process),
     ("pop", NqpOpTable::List),
     ("pop_i", NqpOpTable::List),
     ("pop_n", NqpOpTable::List),
@@ -541,6 +542,7 @@ static NQP_OPS: [(&str, NqpOpTable); 509] = [
     ("sethllconfig", NqpOpTable::Builtin),
     ("setmessage", NqpOpTable::Builtin),
     ("setobjsc", NqpOpTable::Sc),
+    ("setparameterizer", NqpOpTable::Process),
     ("setpayload", NqpOpTable::Builtin),
     ("sha1", NqpOpTable::Builtin),
     ("shift", NqpOpTable::List),
@@ -588,6 +590,9 @@ static NQP_OPS: [(&str, NqpOpTable); 509] = [
     ("tostr_I", NqpOpTable::Native),
     ("totalmem", NqpOpTable::Sys),
     ("tryfindmethod", NqpOpTable::Process),
+    ("typeparameterat", NqpOpTable::Process),
+    ("typeparameterized", NqpOpTable::Process),
+    ("typeparameters", NqpOpTable::Process),
     ("uc", NqpOpTable::Str),
     ("uname", NqpOpTable::Sys),
     ("unbox_i", NqpOpTable::Builtin),
