@@ -16,7 +16,7 @@ $src.child("lib").mkdir;
 $src.child("lib/Greet.rakumod").spurt("unit module Greet;\nsub hi() is export { 'hi' }\n");
 
 # A distribution exposing ONLY the content API — no `prefix` attribute.
-class ContentOnlyDist {
+class ContentOnlyDist does Distribution {
     has $.path;
     has $.IO;
     has %.meta;
