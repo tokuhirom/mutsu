@@ -77,4 +77,10 @@ same Q[~('a"b' ~~ /„a"b”/)], 'a"b', 'ASCII double quote is data inside low s
 dies-ok { Q[rx/"%b\x[QQ]"/].AST }, 'malformed escapes cannot become a partial quoted literal';
 same Q[~('%h.keys' ~~ /“%h.keys”/)], '%h.keys',
     'a hash-looking method without parentheses remains literal qq text';
+same Q[~('@bar' ~~ /"@bar"/)], '@bar', 'bare array names remain literal qq text';
+same Q[~('a@b.com' ~~ /"a@b.com"/)], 'a@b.com', 'email-looking qq text remains literal';
+same Q[my @a = <p q>; ~('p q' ~~ /"@a[]"/)], 'p q',
+    'array zen slices use the shared qq interpolation parser';
+dies-ok { Q[rx/"@bar\x[QQ]"/].AST },
+    'literal array-looking text cannot hide malformed numeric escapes';
 done-testing;

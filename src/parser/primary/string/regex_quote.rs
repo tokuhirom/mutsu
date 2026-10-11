@@ -21,10 +21,19 @@ pub(crate) fn decode_qq_regex_quote(body: &str) -> Option<String> {
                     .ok()??
                     .0;
             }
-            '$' | '@' | '{' => return None,
-            // A bare `%name` is literal qq text; a postcircumfix interpolates.
-            '%' if hash_access(&rest[1..]) => return None,
-            '&' if calls_a_routine(&rest[1..]) => return None,
+            '$' | '{' => return None,
+            // Bare aggregate names are literal qq text. Use the shared qq
+            // parser to recognize their postcircumfixes and double sigils.
+            '@' | '%' | '&'
+                if super::interp_var::try_interpolate_var(
+                    rest,
+                    &mut Vec::new(),
+                    &mut String::new(),
+                )
+                .is_some() =>
+            {
+                return None;
+            }
             _ => {
                 text.push(ch);
                 rest = &rest[ch.len_utf8()..];
@@ -32,27 +41,6 @@ pub(crate) fn decode_qq_regex_quote(body: &str) -> Option<String> {
         }
     }
     Some(text)
-}
-
-/// Whether a hash name is followed by an interpolation postcircumfix.
-// Cost: O(k), k = length of the name.
-fn hash_access(rest: &str) -> bool {
-    let name_len = rest
-        .find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '\'')))
-        .unwrap_or(rest.len());
-    let tail = &rest[name_len..];
-    name_len > 0
-        && (tail.starts_with(['<', '{', '['])
-            || tail.strip_prefix('.').is_some_and(calls_a_routine))
-}
-
-/// Whether `rest`, right after a `&`, is a routine name followed by `(`.
-// Cost: O(k), k = length of the name.
-fn calls_a_routine(rest: &str) -> bool {
-    let name_len = rest
-        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-' || c == '\''))
-        .unwrap_or(rest.len());
-    name_len > 0 && rest[name_len..].starts_with('(')
 }
 
 /// The decoded text of the body of a `'...'` (or `‘...’`) regex term whose
@@ -89,5 +77,12 @@ mod tests {
         assert!(decode_qq_regex_quote("%b\\x[QQ]").is_none());
         assert!(decode_qq_regex_quote("%h<a>").is_none());
         assert!(decode_qq_regex_quote("%h.keys()").is_none());
+        assert_eq!(decode_qq_regex_quote("@bar"), Some("@bar".to_string()));
+        assert_eq!(
+            decode_qq_regex_quote("a@b.com"),
+            Some("a@b.com".to_string())
+        );
+        assert!(decode_qq_regex_quote("@bar[]").is_none());
+        assert!(decode_qq_regex_quote("@bar\\x[QQ]").is_none());
     }
 }
