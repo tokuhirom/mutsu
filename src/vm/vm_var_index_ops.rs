@@ -814,6 +814,8 @@ impl Interpreter {
         if matches!(index.view(), ValueView::ContainerRef(_)) {
             index = index.deref_container();
         }
+        // A bound `Proxy` index is read by value (#12782).
+        index = self.fetch_proxy_operand(index)?;
         // A Failure used as the index (`@a[1 div 0]`) sinks here like any
         // other read of it, propagating the exception it wraps instead of
         // silently subscripting with it.
