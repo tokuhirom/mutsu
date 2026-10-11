@@ -3,7 +3,7 @@ use Test;
 # `Any.splice` is a proto with no candidates, so an instance of a class that
 # does not declare its own `splice` and is not an `Array` gets
 # X::Multi::NoMatch, not "No such method" (ADR-11276 §9.68, #12647).
-plan 14;
+plan 21;
 
 class Foo {}
 class WithSplice { method splice(|) { 'mine' } }
@@ -39,3 +39,20 @@ is-deeply $b.splice(1, 1), Buf.new(2), 'Buf.splice unchanged';
 throws-like { OnlyMu.new.splice(1) }, X::Method::NotFound, 'a class rooted at Mu has no splice';
 
 throws-like { 5.splice(1) }, X::Multi::NoMatch, 'an Int still gets NoMatch';
+
+# Wrappers around the receiver are seen through (#12653).
+role Tag { }
+
+throws-like { (5 but Tag).splice(1) }, X::Multi::NoMatch,
+    message => /'splice(Int+{Tag}:D, Int:D)'/, 'a mixin names its type with the role';
+throws-like { ("s" but Tag).splice(1, 1) }, X::Multi::NoMatch, 'a mixin around a Str';
+
+my $v = 5;
+throws-like { $v.splice(1) }, X::Multi::NoMatch, 'a scalar variable holding an Int';
+sub rw-splice($x is rw) { $x.splice(1) }
+throws-like { rw-splice($v) }, X::Multi::NoMatch, 'an is rw parameter';
+my $arr = [1, 2, 3];
+is-deeply $arr.splice(1, 1).List, (2,), 'a scalar variable holding an Array still splices';
+is-deeply $arr.List, (1, 3), '... and mutates it';
+my %h = a => 1;
+throws-like { %h<a>.splice(1) }, X::Multi::NoMatch, 'a hash element holding an Int';
