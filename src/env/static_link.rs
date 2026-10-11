@@ -85,7 +85,6 @@ fn lexically_scoped(key: Symbol) -> bool {
     key.is_plain_user_lexical()
         || key.with_str(|s| {
             s.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
-                && !s.contains("::")
                 && s.bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         })
