@@ -12,13 +12,22 @@ impl Compiler {
     /// variable declared `str`.
     // Cost: O(1) at compile time (two declared-type lookups).
     pub(super) fn native_str_to_int_coercion(&self, target: &str, value: &Expr) -> bool {
-        let Expr::Var(source) = value else {
-            return false;
+        let source_is_native_str = match value {
+            Expr::Var(source) => self.local_types.get(source).map(String::as_str) == Some("str"),
+            // `my int $h = my str $ = $line.substr(1,2)`: the inner declaration
+            // is itself a native `str` (the "fast Str to int conversion" idiom
+            // of IRC::Log::Colabti).
+            Expr::DoStmt(stmt) => matches!(
+                &**stmt,
+                Stmt::VarDecl { type_constraint: Some(tc), .. } if tc == "str"
+            ),
+            _ => false,
         };
-        self.local_types
-            .get(target)
-            .is_some_and(|tc| crate::runtime::native_types::is_native_int_type(tc))
-            && self.local_types.get(source).map(String::as_str) == Some("str")
+        source_is_native_str
+            && self
+                .local_types
+                .get(target)
+                .is_some_and(|tc| crate::runtime::native_types::is_native_int_type(tc))
     }
 
     /// Emit the `nqp::coerce_si` of the str on the stack.
