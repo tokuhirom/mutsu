@@ -1,6 +1,6 @@
 # ADR-12523: `Code`'s methods need a dispatch shape
 
-- **Status**: Proposed
+- **Status**: Accepted (2026-10-11; the shape decision withdrawn, see section 7)
 - **Date**: 2026-10-10
 - **Deciders**: tokuhirom, Claude
 - **Issue**: [#12523](https://github.com/tokuhirom/mutsu/issues/12523)
@@ -125,4 +125,21 @@ regex (`regex_str_coercion`, which `code_str` calls for one); a `Sub`, a `Block`
 zero-argument cascade's `Str` arm declines a code object instead of answering `to_string_value` without the warning. The `Str` branches of the two
 arms in `methods_sub.rs` call the same routine. Left: prefix `~`, interpolation and a `.^lookup` `Method` object still stringify without the warning
 (#12762). `Bool`, `gist` and `raku` stay in the cascades for the reasons above.
+
+## 7. Outcome (2026-10-11)
+
+Slice 7 settled the last open item and the ADR is Accepted with this outcome:
+
+- **No `DispatchShape::Code`.** Every declared `Code` row (`of`, `returns`, `arity`, `count`, `signature`, `line`, `file`, `name`, `Str`,
+  `Capture`, `clone`) is an ordinary row reached through its owner (`method_table::code::answer` / `pure_answer`); `method-rows-report.py
+  --inventory objects` lists no declared `Code` row as unregistered. Section 2's decision 1 is withdrawn, as section 6 recorded.
+- **`gist` and `raku` are not `Code` rows.** Section 1 assumed Rakudo declares them on `Code`; it declares `gist` and `raku` on `Routine` and
+  `raku` on `Block` (`Code.^method_table` has `Str` only), and the recognition table folds `Routine`, `Block`, `Sub` and `Method` into `Code`
+  (`canonical_builtin_owner`), so a row for them would claim a declaration Rakudo does not make. They stay in the by-name arms, which now call one
+  routine each: `Interpreter::routine_handle_render` (a `&name` handle) and `sub_render` (a `Sub`), moved out of `methods_sub.rs` into
+  `methods_code_render.rs` with no change in behaviour. `Bool` stays in the cascades too (Rakudo declares it on `Mu` and, for a regex, `Regex`).
+- **Open question 1** (a `multi`'s `arity`/`count`) was answered by slice 2: one handler, `code_arity_count`, keeps the candidate logic. **Open
+  question 2** (a mixin around a `Sub`): no shape, so a mixin reaches the rows the way any other `Code` value does, through the callable dispatch.
+  **Open question 3**: answered above.
+- The issue's repros (`/a/.of.raku`, `&say.of.raku`) answer `Mu` since slice 1.
 

@@ -28,6 +28,7 @@ mod methods_string_subst_repl;
 mod methods_string_substr;
 mod methods_string_wordcase;
 pub(crate) mod methods_sub;
+mod methods_code_render;
 mod methods_sub_prec;
 mod methods_sub_rw_proxy;
 mod methods_subscript_protocol;
