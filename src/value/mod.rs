@@ -645,6 +645,7 @@ mod value_instance;
 mod value_lazy;
 mod value_lazy_ctors;
 pub(crate) mod version_cmp;
+mod vm_collection;
 pub(crate) use str_iter::{
     StrIterMode, StrIterSpec, parse_limit as str_iter_limit, str_iter_count, str_iter_seq,
 };
@@ -2433,6 +2434,12 @@ pub(in crate::value) enum ValueRepr {
     /// value on its own: it lives in the buffer instance's attribute cell and
     /// only [`crate::value::value_buf`] constructs or reads it.
     BufStorage(crate::gc::Gc<BufData>),
+    /// A raw nqp `VMArray` (ADR-12666): the element storage an `Array`/`List`
+    /// would hold, held by the raw VM object instead of a high-level wrapper.
+    /// Views as `ValueView::Array(_, ArrayKind::List)`.
+    VmArray(crate::gc::Gc<ArrayData>),
+    /// A raw nqp `VMHash` (ADR-12666). Views as `ValueView::Hash`.
+    VmHash(Gc<HashData>),
     /// The `bool` is the per-holder itemization flag (`true` when this hash sits
     /// in a `$` scalar container: `$(%h)` / `.item` / `my $h = %x`). It mirrors
     /// `ArrayKind::ItemArray` for arrays — a Value-level marker that shares the

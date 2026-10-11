@@ -1021,6 +1021,15 @@ impl Interpreter {
         // must match to legitimately describe THIS call. See its validation
         // where the pending sources are consumed, a few lines down.
         let raw_args_len = args.len();
+        // Binding a Raku parameter hllizes a raw `VMArray`/`VMHash` argument
+        // into the `List`/`Hash` over the same storage (ADR-12666).
+        let hllized: Vec<Value>;
+        let args = if args.iter().any(Value::is_vm_collection) {
+            hllized = args.iter().cloned().map(Value::hllize_vm_collection).collect();
+            hllized.as_slice()
+        } else {
+            args
+        };
         // #8697: taken (cleared) immediately, so it describes only THIS bind
         // call -- a nested call made while evaluating a default expression or
         // running the routine's own body sees the flag already back at

@@ -235,38 +235,26 @@ impl Interpreter {
                 Ok(Value::int(i64::from(!self.eval_truthy(&v))))
             }
 
-            // nqp::islist($v) — int 0/1: is this a raw nqp-level list (the
-            // `list` op above builds one), as opposed to a boxed Raku Array
-            // or other object. AttrX::Mooish::ClassHOW walks its own
-            // BUILDPLAN-like task list this way to tell a sub-list task apart
-            // from a Code task.
-            //
-            // Real nqp draws a REPR-level distinction here: a bare
-            // `nqp::list()` answers true, a boxed `Array` answers false, even
-            // though `nqp::list()` and a boxed `Array` are otherwise
-            // interchangeable through `elems`/`atpos`/etc. mutsu represents
-            // both the same way (`ValueView::Array`, matching `"list" =>
-            // Value::array(...)` above), so this can't draw that line and
-            // instead answers true for both. That over-answers for a real
-            // Array passed to `nqp::islist` directly (rare — the op exists to
-            // inspect nqp-level bookkeeping structures like BUILDPLAN, not
-            // ordinary Raku data), so it stays a loud gap rather than a
-            // silent one: TODO: track the raw-list/boxed-Array distinction
-            // at the representation level rather than approximating it here.
+            // nqp::islist($v) — int 0/1: is this object of the `VMArray` REPR
+            // (a raw `nqp::list`, a native array, a Buf), as opposed to a
+            // P6opaque Raku `List`/`Array` (ADR-12666). AttrX::Mooish and
+            // GTK::Simple branch on it to tell a raw task list from a callable.
             // Cost: O(1).
-            "islist" => Ok(Value::int(i64::from(matches!(
-                args.first().map(|v| v.view()),
-                Some(ValueView::Array(..) | ValueView::Slip(_))
-            )))),
+            "islist" => Ok(Value::int(i64::from(
+                super::boot_collection::repr_is_vm_array(args.first().unwrap_or(&Value::NIL)),
+            ))),
 
-            // nqp::hllize($v) — the HLL (Raku-level) box of an nqp-level
-            // value. mutsu has no separate nqp/HLL value representation (see
-            // `p6box_*`/`unbox_*` above), so every value here is already its
-            // own HLL box and this is the identity function.
+            // nqp::hllize($v) — the HLL (Raku-level) object for an nqp-level
+            // one: a raw `VMArray`/`VMHash` becomes the `List`/`Hash` over the
+            // same storage (ADR-12666), a BOOT scalar box its `Int`/`Num`/
+            // `Str`; anything already high-level is returned unchanged.
             // Cost: O(1).
             "hllize" => {
                 let v = args.first().cloned().unwrap_or(Value::NIL);
-                Ok(Self::unbox_boot_scalar(&v).unwrap_or(v))
+                Ok(match Self::unbox_boot_scalar(&v) {
+                    Some(unboxed) => unboxed,
+                    None => v.hllize_vm_collection(),
+                })
             }
 
             // nqp::what($v) — the type object of $v, i.e. `$v.WHAT` at the
@@ -275,6 +263,9 @@ impl Interpreter {
             // Cost: O(1) plus a slow-path method dispatch.
             "what" => {
                 let v = args.first().cloned().unwrap_or(Value::NIL);
+                if let Some(name) = v.vm_boot_type_name() {
+                    return Some(Ok(Value::package(crate::symbol::Symbol::intern(name))));
+                }
                 self.call_method_with_values(v, "WHAT", Vec::new())
             }
 
@@ -295,10 +286,10 @@ impl Interpreter {
                 self.call_method_with_values(lock, "unlock", Vec::new())
             }
 
-            // nqp::list(...) — an untyped VM list; mutsu represents one as an
-            // ordinary array, same as the typed `list_s`/`list_i`/`list_n`.
+            // nqp::list(...) — an untyped raw `VMArray` (ADR-12666), the same
+            // storage an Array holds under a raw-object tag.
             // Cost: O(k), k = arguments copied into a fresh Vec.
-            "list" => Ok(Value::array(args.to_vec())),
+            "list" => Ok(Value::vm_array(args.to_vec())),
 
             // nqp::unshift(@l, $v) and its typed twins — the positional peers
             // of `push_s`/`push_i`/`push_n` (nqp_ops_text.rs): insert at the

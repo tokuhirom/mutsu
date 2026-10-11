@@ -161,6 +161,17 @@ impl Interpreter {
                 {
                     return Some(r);
                 }
+                // A raw VMArray/VMHash copies into a fresh raw object of the
+                // same kind (ADR-12666).
+                if v.is_vm_collection() {
+                    return Some(Ok(match v.view() {
+                        ValueView::Array(items, _) => {
+                            Value::vm_array_from_gc(crate::gc::Gc::new((**items).clone()))
+                        }
+                        ValueView::Hash(map) => Value::vm_hash((**map).clone()),
+                        _ => v.clone(),
+                    }));
+                }
                 // A VMArray (native `array[int]` included) stays one: the copy
                 // keeps the container metadata the positional ops look at.
                 if let ValueView::Array(items, kind) = v.view() {

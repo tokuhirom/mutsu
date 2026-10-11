@@ -2,10 +2,9 @@ use Test;
 use nqp;
 
 # The HLL-Specific nqp:: ops, nqp::force_gc and the code-object
-# serialization-context ops freshcoderef / markcodestatic (#11504). Expected answers are Rakudo 2026.09's
-# except `hlllist` / `hllhash`: Rakudo answers its BOOTArray / BOOTHash VM
-# types, mutsu the type of what its own `nqp::list` / `nqp::hash` build (see
-# #11553 for the representation decision).
+# serialization-context ops freshcoderef / markcodestatic (#11504). Expected answers are Rakudo 2026.09's;
+# `hlllist` / `hllhash` are the BOOTArray / BOOTHash VM types `nqp::list` /
+# `nqp::hash` build (ADR-12666).
 
 plan 17;
 
@@ -20,8 +19,8 @@ is nqp::gethllsym('Raku', 'nqp-hll-ops-foo'), 42, 'the current HLL is Raku';
 nqp::bindhllsym('Raku', 'nqp-hll-ops-bar', 7);
 is nqp::getcurhllsym('nqp-hll-ops-bar'), 7, 'and getcurhllsym sees bindhllsym("Raku", ...)';
 
-is nqp::hlllist().^name, nqp::list().^name, 'hlllist is the type nqp::list builds';
-is nqp::hllhash().^name, nqp::hash().^name, 'hllhash is the type nqp::hash builds';
+is nqp::hlllist().^name, 'BOOTArray', 'hlllist is the type nqp::list builds';
+is nqp::hllhash().^name, 'BOOTHash', 'hllhash is the type nqp::hash builds';
 
 {
     my $destroyed = 0;

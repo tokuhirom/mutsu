@@ -454,7 +454,7 @@ impl Interpreter {
                     let val = pair.get(1).cloned().unwrap_or(Value::NIL);
                     map.insert(key, val);
                 }
-                Ok(Value::hash_with_data(Value::hash_arc(map)))
+                Ok(Value::vm_hash(map))
             }
             // nqp::p6scalarwithvalue($descriptor, $value): rakudo wraps a
             // value in a fresh `Scalar` carrying a container descriptor, which

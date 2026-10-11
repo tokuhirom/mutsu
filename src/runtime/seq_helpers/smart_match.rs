@@ -322,6 +322,15 @@ impl Interpreter {
         // Handle type smileys (:U, :D, :_)
         let type_name_resolved = type_name.resolve();
         let (base_type, smiley) = super::super::types::strip_type_smiley(&type_name_resolved);
+        // A raw `VMArray`/`VMHash` (or a `BOOT*` collection type object) has a
+        // `KnowHOW` outside `Mu`: it is of its own `BOOT*` type and no other
+        // (ADR-12666).
+        if crate::runtime::boot_collection::is_boot_collection_invocant(left) {
+            let own = left.vm_boot_type_name().map(crate::symbol::Symbol::intern).or_else(|| {
+                crate::runtime::boot_collection::boot_type_object_name(left)
+            });
+            return own.is_some_and(|own| own.as_str() == base_type);
+        }
 
         // Every enum type object and every enum value does the
         // `Enumeration` role (`E ~~ Enumeration`, `E.pick ~~ Enumeration`).

@@ -253,6 +253,8 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
                 _ => ArrayKind::Lazy,
             },
         ),
+        Kind::VmArray => ValueRepr::VmArray(unsafe { take_gc::<ArrayData>(bits) }),
+        Kind::VmHash => ValueRepr::VmHash(unsafe { take_gc::<HashData>(bits) }),
         Kind::BufStorage => ValueRepr::BufStorage(unsafe { take_gc::<BufData>(bits) }),
         Kind::HashPlain => ValueRepr::Hash(unsafe { take_gc::<HashData>(bits) }, false),
         Kind::HashItemized => ValueRepr::Hash(unsafe { take_gc::<HashData>(bits) }, true),

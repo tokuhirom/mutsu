@@ -19,6 +19,11 @@ use crate::value::{Value, ValueView};
 /// integers do.
 // Cost: O(1).
 pub(crate) fn values_same_object(left: &Value, right: &Value) -> bool {
+    // A raw `VMArray`/`VMHash` and the `List`/`Hash` `nqp::hllize` made from
+    // it share their storage node but are different objects (ADR-12666).
+    if let Some(same) = left.same_collection_object(right) {
+        return same;
+    }
     match (left.view(), right.view()) {
         (ValueView::Instance { id: a, .. }, ValueView::Instance { id: b, .. }) => a == b,
         (ValueView::Instance { .. }, _) | (_, ValueView::Instance { .. }) => false,

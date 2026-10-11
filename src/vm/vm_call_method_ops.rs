@@ -786,6 +786,7 @@ impl Interpreter {
         // a Slip (`.method(@a.Slip)` stays one argument).
         let (args, arg_sources) =
             Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
+        let args = Self::hllize_call_args(args);
         let bind_source = arg_sources
             .as_ref()
             .and_then(|sources| sources.get(1))
@@ -805,6 +806,13 @@ impl Interpreter {
             None => target,
         };
         let target = self.reify_or_consume_seq_target(target, method)?;
+        // A raw `VMArray`/`VMHash` has no methods (ADR-12666).
+        if crate::runtime::boot_collection::is_boot_collection_invocant(&target)
+            && let Some(result) = Interpreter::vm_collection_method(&target, method)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // A `does Sequence` class with its own `iterator`: see
         // `vm_sequence_role_delegate.rs`.
         if let Some(result) = self.try_sequence_role_delegate(&target, method_sym, &args) {

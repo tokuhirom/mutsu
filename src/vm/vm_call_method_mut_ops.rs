@@ -199,6 +199,22 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let quoted = name.quoted;
+        // A raw `VMArray`/`VMHash` receiver has no methods (ADR-12666).
+        if let Some(target_idx) = self.stack.len().checked_sub(arity as usize + 1)
+            && crate::runtime::boot_collection::is_boot_collection_invocant(&self.stack[target_idx])
+        {
+            let method = Self::rewrite_method_name_cow(
+                name.raw,
+                modifier_idx.map(|idx| Self::const_str(code, idx)),
+            );
+            if let Some(result) =
+                Interpreter::vm_collection_method(&self.stack[target_idx], &method)
+            {
+                self.stack.truncate(target_idx);
+                self.stack.push(result?);
+                return Ok(());
+            }
+        }
         // Whether the receiver is `Nil`, read before the impl consumes the
         // operands (the stack is `[.., target, args...]` here, so the target is
         // `arity` slots below the top). Used for the Nil-absorb fallback below.
@@ -455,6 +471,7 @@ impl Interpreter {
         // a Slip (`.method(@a.Slip)` stays one argument).
         let (args, arg_sources) =
             Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
+        let args = Self::hllize_call_args(args);
         self.set_pending_call_arg_sources(arg_sources.clone());
         // Elements appended to a NATIVE integer array store through the native
         // slot, so each one wraps to the element width exactly as an assignment

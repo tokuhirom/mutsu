@@ -343,7 +343,9 @@ impl Interpreter {
                         return None;
                     }
                 }
-                self.trir.ol[frame.obase as usize + p.slot as usize] = val.clone();
+                // Binding hllizes a raw `VMArray`/`VMHash` (ADR-12666).
+                self.trir.ol[frame.obase as usize + p.slot as usize] =
+                    val.clone().hllize_vm_collection();
             }
         }
         Some(())

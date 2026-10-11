@@ -115,7 +115,8 @@ only in that tag. A raw VM collection is one more view of the same kind:
   `Gc<ArrayData>` / `Gc<HashData>`. No new allocation, no shell node, no new field on
   `ArrayData`/`HashData` (the native element kind of `list_i/n/s` is already
   `ArrayData::nqp_elem`).
-- They surface as **new `ValueView` variants** (`VmArray`, `VmHash`), not as an `ArrayKind`
+- *(Amended by §7: they view as `List` / `Hash`, and only the Rakudo-visible differences
+  read the tag.)* They surface as **new `ValueView` variants** (`VmArray`, `VmHash`), not as an `ArrayKind`
   variant. The ~1600 `ValueView::Array` and ~900 `ValueView::Hash` match sites then do not
   match a raw value, which is exactly Rakudo's behaviour: a raw collection supports the REPR
   (`nqp::`) ops and nothing else. The nqp positional/associative ops reach the storage through
@@ -279,3 +280,45 @@ tier, assignment keeping raw, method calls dying, BOOT type objects and `create`
    `isrwcont` per ADR-11553 §3.2 — the last four Type / Conversion ops.
 
 No op is marked implemented before its slice delivers the Rakudo answers.
+
+## 7. Amendment (2026-10-11, maintainer-approved): the raw tag is read, not matched
+
+Implementing §3.1 showed that its second bullet does not fit mutsu. Rakudo's raw collections
+reach `say`, `postcircumfix:<[ ]>`, `prefix:<+>`, `infix:<,>` and the other core routines
+*through a parameter binder*, which hllizes them (§2.2). mutsu implements those routines
+natively — opcodes and Rust builtins that take a `Value` — so there is no binder to do it. A
+separate `ValueView` variant would have to be accepted at every one of the ~2500
+`ValueView::Array`/`ValueView::Hash` consumers, and each one missed would answer wrongly for a
+raw operand that Rakudo handles (`raw[1]`, `say raw`, `+raw`).
+
+So the two kinds stay (§3.1's first bullet), but **a raw value views as the high-level `List` /
+`Hash` over the same node**: every native builtin sees it exactly as Rakudo's binder would hand
+it over. The places where Rakudo tells raw and high-level apart read the tag instead
+(`Value::is_vm_array` / `is_vm_hash`):
+
+- the REPR classifier (`islist`, `ishash`) and the type questions — `.^name`, `.WHAT`,
+  `.REPR`, `.HOW`, `nqp::what`, `nqp::istype` and `~~` against a type (`runtime::boot_collection`);
+- method dispatch, at the `CallMethod` / `CallMethodMut` opcodes: a raw invocant dies with
+  `X::Method::NotFound` naming its `BOOT*` type;
+- `nqp::eqaddr` (raw vs. high-level over one node is 0);
+- the hllization points of §3.3: the signature binder, the positional-light call path, the
+  TRIR entry and the method-call argument list, and the element a Raku subscript reads;
+- `nqp::hllize`, `nqp::clone`, `nqp::create` and `.item` (a raw value has no itemized form).
+
+This is not §5's rejected `ArrayKind::Vm`: no `ArrayKind` gains a variant, and the
+wildcard arms that §5 worried about now give the hllized answer *on purpose*. The cost of the
+trade is the other direction: an operation Rakudo implements as a method call on the raw
+object, and so rejects, can succeed in mutsu when a native builtin performs it — `for raw {}`
+and `"$raw"` iterate and stringify instead of dying. That is lenient, never a wrong answer
+for a program Rakudo runs, and is tracked with the other leniencies in
+[#12689](https://github.com/tokuhirom/mutsu/issues/12689).
+
+## 8. Implementation status
+
+- **#12668 (slice 1) — delivered.** `Kind::VmArray` / `Kind::VmHash` and
+  `ValueRepr::VmArray` / `VmHash` (`src/value/vm_collection.rs`); `nqp::list`, `list_i/n/s`,
+  `hash`, `create` and `clone` build raw values; the five `boot*` collection ops, `ishash` and
+  an exact `islist` are registered (`src/runtime/boot_collection.rs`); `hlllist` / `hllhash`
+  answer `BOOTArray` / `BOOTHash`. `t/vm/nqp-vm-collection-repr.t` pins the §2.2 matrix
+  (it passes unchanged under Rakudo 2026.09).
+

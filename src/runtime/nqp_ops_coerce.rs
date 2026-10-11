@@ -283,6 +283,14 @@ impl Interpreter {
             // The BOOT scalar REPRs (`runtime::boot_scalar`).
             // Cost: O(1).
             "bootint" | "bootnum" | "bootstr" => self.boot_scalar_type(op)?,
+            // The raw VM collection REPRs (`runtime::boot_collection`,
+            // ADR-12666).
+            // Cost: O(1).
+            "bootarray" | "boothash" | "bootintarray" | "bootnumarray" | "bootstrarray" => {
+                super::boot_collection::boot_collection_type(op)?
+            }
+            // Cost: O(1).
+            "ishash" => flag(super::boot_collection::repr_is_vm_hash(&operand(args, 0))),
             // Cost: O(1).
             "isint" | "isnum" | "isstr" => {
                 flag(Self::boot_scalar_test(op, &operand(args, 0)).unwrap_or(false))

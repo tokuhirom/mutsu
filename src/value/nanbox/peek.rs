@@ -196,6 +196,18 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::HashItemized))
     }
 
+    /// Whether this word is a raw nqp `VMArray` (ADR-12666).
+    #[inline]
+    pub(in crate::value) fn is_vm_array(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::VmArray))
+    }
+
+    /// Whether this word is a raw nqp `VMHash` (ADR-12666).
+    #[inline]
+    pub(in crate::value) fn is_vm_hash(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::VmHash))
+    }
+
     /// Whether this word is an itemized `Slip` (the `slip_is_itemized` probe).
     #[inline]
     pub(in crate::value) fn is_slip_itemized(&self) -> bool {
@@ -217,7 +229,8 @@ impl NanBox {
             | Kind::ArrayItemList
             | Kind::ArrayItemArray
             | Kind::ArrayShaped
-            | Kind::ArrayLazy => Some(unsafe { peek_gc::<ArrayData>(bits) }.live_slice_raw()),
+            | Kind::ArrayLazy
+            | Kind::VmArray => Some(unsafe { peek_gc::<ArrayData>(bits) }.live_slice_raw()),
             Kind::Slip | Kind::SlipItemized => Some(&unsafe { peek_arc::<Vec<Value>>(bits) }[..]),
             Kind::Seq => Some(&unsafe { peek_arc::<crate::value::SeqBody>(bits) }[..]),
             Kind::HyperSeq | Kind::RaceSeq if with_hyper => {
@@ -893,6 +906,7 @@ impl NanBox {
                     | Kind::ArrayItemArray
                     | Kind::ArrayShaped
                     | Kind::ArrayLazy
+                    | Kind::VmArray
                     | Kind::Slip
                     | Kind::SlipItemized
                     | Kind::Seq
@@ -967,8 +981,9 @@ impl NanBox {
                 | Kind::ArrayItemList
                 | Kind::ArrayItemArray
                 | Kind::ArrayShaped
-                | Kind::ArrayLazy => VARIANT_ARRAY,
-                Kind::HashPlain | Kind::HashItemized => VARIANT_HASH,
+                | Kind::ArrayLazy
+                | Kind::VmArray => VARIANT_ARRAY,
+                Kind::HashPlain | Kind::HashItemized | Kind::VmHash => VARIANT_HASH,
                 // Both Slip tags view as `ValueView::Slip`, so a variant
                 // comparison must not split them (as it must not split the
                 // two Hash tags).
@@ -1208,6 +1223,12 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
             Kind::ArrayItemArray => ValueView::Array(gc_guard(bits), ArrayKind::ItemArray),
             Kind::ArrayShaped => ValueView::Array(gc_guard(bits), ArrayKind::Shaped),
             Kind::ArrayLazy => ValueView::Array(gc_guard(bits), ArrayKind::Lazy),
+            // ADR-12666: a raw VM collection views as the high-level `List` /
+            // `Hash` over the same node, so every native builtin sees it the
+            // way Rakudo's argument binder would hand it over (hllized). The
+            // raw identity is read through `Value::is_vm_array`/`is_vm_hash`.
+            Kind::VmArray => ValueView::Array(gc_guard(bits), ArrayKind::List),
+            Kind::VmHash => ValueView::Hash(gc_guard(bits)),
             Kind::BufStorage => ValueView::BufStorage(gc_guard(bits)),
             Kind::HashPlain | Kind::HashItemized => ValueView::Hash(gc_guard(bits)),
             Kind::SetImm => ValueView::Set(gc_guard(bits), false),

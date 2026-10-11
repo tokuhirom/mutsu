@@ -184,6 +184,13 @@ pub(in crate::value) enum Kind {
     MixMut,
     /// A lazily materialized regex `Match` (ADR-0016 P5): `Gc<MatchNode>`.
     Match,
+    /// A raw nqp `VMArray` (`nqp::list`, ADR-12666): the same `Gc<ArrayData>`
+    /// payload an `Array`/`List` carries, viewed as a `List`; only the tag says
+    /// the holder is the raw VM object rather than its high-level wrapper.
+    VmArray,
+    /// A raw nqp `VMHash` (`nqp::hash`, ADR-12666): a `Gc<HashData>`, viewed
+    /// as a `Hash`.
+    VmHash,
     // -- inline kinds (payload in bits 8..40) --
     Nil,
     Whatever,
@@ -478,9 +485,10 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             | Kind::ArrayItemList
             | Kind::ArrayItemArray
             | Kind::ArrayShaped
-            | Kind::ArrayLazy => gc_op::<ArrayData>(bits, op),
+            | Kind::ArrayLazy
+            | Kind::VmArray => gc_op::<ArrayData>(bits, op),
             Kind::BufStorage => gc_op::<BufData>(bits, op),
-            Kind::HashPlain | Kind::HashItemized => gc_op::<HashData>(bits, op),
+            Kind::HashPlain | Kind::HashItemized | Kind::VmHash => gc_op::<HashData>(bits, op),
             Kind::SetImm | Kind::SetMut => gc_op::<SetData>(bits, op),
             Kind::BagImm | Kind::BagMut => gc_op::<BagData>(bits, op),
             Kind::MixImm | Kind::MixMut => gc_op::<MixData>(bits, op),
