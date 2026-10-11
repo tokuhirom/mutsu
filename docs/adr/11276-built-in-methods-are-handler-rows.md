@@ -2442,12 +2442,15 @@ hash and a lazy list. No behaviour change, pinned in `t/oo/method/any-list-hash-
   `dispatch_rotate` calls it. A second count now raises Rakudo's `Too many positionals passed; expected 1 or 2 arguments but got N`, which the
   cascade used to ignore.
 - **`Any.splice` is a `Handler::Mut` row that is the end of every owner chain.** Rakudo declares `splice` on `Any` as a proto with no candidates,
-  so every receiver that is neither an `Array` nor a `Buf` (an `Int`, a `Hash`, a `Seq`, a type object, a `Blob`) gets `X::Multi::NoMatch`
+  so every receiver that is neither an `Array` nor a `Buf` (an `Int`, a `Hash`, a `Seq`, a type object) gets `X::Multi::NoMatch`
   ("Cannot resolve caller splice(Int:D, Int:D, Int:D); ..."). `invoke_mut` appends `Any` to the owner chain of every receiver (and gives a
   receiver `owners_of` has no kind for the chain `[Any]`); the by-value entry probes `splice` regardless of kind. The handler declines a
-  receiver whose user class declares `splice` (`native_lever_a_user_override_sym` sees an instance as `Any`, so the row asks `has_user_method`
-  itself). Behaviour change toward Rakudo: `Hash`/`Seq`/`Set`/`Pair`/instances raised `X::Method::NotFound`, a `Blob` an `X::AdHoc`, `Nil.splice`
-  answered `Nil`; the `Int`-family message and the type-object names were also off. `make_no_candidates_error` names a type object or an instance
+  receiver that other entries resolve further and leaves it to them: a cell or variable reference around the value, any `Instance` (an `is Array` /
+  `is Hash` / `is Bag` subclass reaches its native storage's row through the `builtins_dispatch_next` bridges, which this row must not pre-empt; a
+  user class may declare `splice`) and a `Mixin`; a type object of a user class that declares `splice` also answers itself. Behaviour change toward
+  Rakudo: `Hash`/`Seq`/`Set`/`Pair` raised `X::Method::NotFound`, `Nil.splice` answered `Nil`; the `Int`-family message and the type-object names were
+  also off. A plain user-class instance and a `Blob` keep their old answers (`X::Method::NotFound`, `X::AdHoc`) until slice 5 resolves the instance
+  bridges in the resolver. `make_no_candidates_error` names a type object or an instance
   by its user-facing name. The cascade's two `splice` branches (a `Range`, a definite scalar) are gone.
 - **`name` / `dynamic` need no binding name.** Rakudo keeps the descriptor on the `Array`/`Hash` object, so `my $r = @a; $r.name` is `@a` and a
   container no declaration named is `element`; mutsu stamps the same name on `ArrayData`/`HashData::descriptor_name`. The rows (`collections::descriptor`)

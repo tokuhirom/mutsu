@@ -1,7 +1,7 @@
 //! `Any.splice` (ADR-11276 §9.67): the proto Rakudo declares on `Any` with no
 //! candidate of its own. `Array` and `Buf` declare the real `splice`, so a
 //! receiver of any other kind (`5`, `"s"`, a `Range`, a `Hash`, a `Seq`, a
-//! type object, an `Instance` that is no `Buf`) lands here and gets
+//! type object) lands here and gets
 //! `X::Multi::NoMatch`.
 //!
 //! A `Mut` row because that is how the owner chain is walked
@@ -32,18 +32,23 @@ fn splice_row(
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     let target = place.value().descalarize();
-    // A cell or a variable reference around the receiver is not the value's
-    // own kind (it may well hold an `Array`): the other entries unwrap it.
+    // Not the value's own kind, or a receiver other entries resolve further:
+    // a cell or variable reference around the receiver (it may well hold an
+    // `Array`), an instance (an `is Array` / `is Hash` / `is Bag` subclass
+    // reaches the row of its native storage through the bridges of
+    // `builtins_dispatch_next`; a user class may declare `splice` or
+    // `FALLBACK`) and a mixin around a native value. They keep their paths.
     if matches!(
         target.view(),
-        ValueView::ContainerRef(_) | ValueView::VarRef { .. }
+        ValueView::ContainerRef(_)
+            | ValueView::VarRef { .. }
+            | ValueView::Instance { .. }
+            | ValueView::Mixin(..)
     ) {
         return None;
     }
-    // A user class (or a type object of one) that declares `splice` answers
-    // the call itself; `native_lever_a_user_override_sym` cannot see it, an
-    // instance's type name there being `Any`.
-    if let ValueView::Instance { class_name, .. } | ValueView::Package(class_name) = target.view()
+    // A type object of a user class that declares `splice` answers itself.
+    if let ValueView::Package(class_name) = target.view()
         && interp.has_user_method(&class_name.resolve(), "splice")
     {
         return None;
