@@ -192,7 +192,7 @@ fn fold(name: &str) -> String {
 
 /// The spelling of `prop` the lookup tables know. Rakudo matches property
 /// names without regard to case or underscores (`uniprop($c, "white_space")`),
-/// so an unknown spelling is folded and compared to every known one; a name
+/// so an unknown spelling is folded and compared to every known long name; a name
 /// that is already exact, or matches nothing, is returned unchanged.
 // Cost: O(1) for an exact name, O(P) otherwise, P = known property names.
 pub(super) fn canonical_property_name(prop: &str) -> std::borrow::Cow<'_, str> {
@@ -200,7 +200,12 @@ pub(super) fn canonical_property_name(prop: &str) -> std::borrow::Cow<'_, str> {
         return std::borrow::Cow::Borrowed(prop);
     }
     let folded = fold(prop);
-    match PROPERTY_NAMES.iter().find(|n| fold(n) == folded) {
+    // Only long names are matched loosely: rakudo rejects a short alias in the
+    // wrong case (`Nv`, `Nt`; `t/regex/regex-property-abbrev-value-arg.t`).
+    match PROPERTY_NAMES
+        .iter()
+        .find(|n| n.len() >= 6 && fold(n) == folded)
+    {
         Some(n) => std::borrow::Cow::Borrowed(n),
         None => std::borrow::Cow::Borrowed(prop),
     }
