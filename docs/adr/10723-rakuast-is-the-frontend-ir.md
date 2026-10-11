@@ -471,7 +471,10 @@ The source-copy visitor counts declaration records, their original declarations
 and conditions before copying them, with the same node and depth budgets as
 control signatures. Signature expansion also validates the parameter and
 expression budget before materializing its result; parser and lowering paths
-propagate the resource error without replacing the expansion. The compiler discards net-value statements inside a
+propagate the resource error without replacing the expansion. Source-record
+and signature traversal belongs to the exhaustive typed AST visitor. Its
+source-record hook defaults to skipping compiler-inert duplicates, while the
+copy budget opts into walking them. The compiler discards net-value statements inside a
 statement-position synthetic block, as it does in other discarded statement
 sequences; an initializer's topicalizer can no longer leave a value underneath
 the enclosing unit's real result. Expression and tail-position synthetic blocks

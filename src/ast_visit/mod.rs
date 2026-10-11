@@ -26,7 +26,9 @@ mod walk_expr;
 mod walk_mut_decl;
 mod walk_mut_expr;
 mod walk_mut_stmt;
+mod walk_source;
 mod walk_stmt;
+pub(crate) use walk_source::{walk_signature_decl, walk_signature_var, walk_source_form};
 
 pub(crate) use legacy_args::{legacy_arg_reads, legacy_arg_uses, legacy_arg_writes};
 pub(crate) use visit_mut::{VisitMut, walk_param_mut, walk_regex_node_mut};
@@ -140,6 +142,18 @@ pub(crate) trait Visit<'ast> {
 
     fn visit_param(&mut self, param: &'ast ParamDef) {
         walk_param(self, param);
+    }
+
+    /// Source records are compiler-inert duplicates. Ordinary analyses skip
+    /// them; copy/resource analyses opt in with `walk_source_form`.
+    fn visit_source_form(&mut self, _form: &'ast crate::ast::SourceForm) {}
+
+    fn visit_signature_decl(&mut self, declaration: &'ast crate::ast::SignatureDecl) {
+        walk_signature_decl(self, declaration);
+    }
+
+    fn visit_signature_var(&mut self, variable: &'ast crate::ast::SignatureVar) {
+        walk_signature_var(self, variable);
     }
 
     fn visit_regex_node(&mut self, node: &'ast RegexNode) {
