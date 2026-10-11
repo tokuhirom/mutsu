@@ -1560,6 +1560,8 @@ reassignment at match time.
 Numeric aliases use `Regex::NamedCapture(name => "N", regex => ...)`, as
 Rakudo does. Rendering them as `$N=` preserves the static positional numbering
 pass in the existing matcher. They never become associative `$<N>` captures.
+Aggregate aliases over subrules also retain their source tree: the existing
+subrule execution boundary already preserves per-iteration list semantics.
 Repeated assertion prefixes retain nested `Assertion::Lookahead` nodes rather
 than collapsing their observable source structure.
 

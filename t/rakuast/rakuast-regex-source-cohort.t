@@ -64,4 +64,12 @@ isa-ok $alias.regex.atom, RakuAST::Regex::WithWhitespace,
     'pre-quantifier whitespace belongs to each aliased atom';
 isa-ok $alias.regex.separator, RakuAST::Regex::WithWhitespace,
     'trailing separator whitespace stays on the separator';
+my $aggregate = body(Q[rx/@<x>=<digit>+/]);
+ok $aggregate.array, 'aggregate subrule alias retains its sigil';
+isa-ok $aggregate.regex, RakuAST::Regex::QuantifiedAtom,
+    'aggregate alias retains its quantified subrule';
+same Q[my $m = '12' ~~ /@<x>=<digit>+/; $m<x>.map(~*).join(',')], '1,2',
+    'aggregate subrule alias retains per-iteration captures';
+same Q[my $m = '12' ~~ /$<x>=<.digit>+/; $m<x>.map(~*).join(',')], '1,2',
+    'dot-suppressed subrule alias retains per-iteration captures';
 done-testing;

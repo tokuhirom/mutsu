@@ -68,12 +68,9 @@ impl Parser {
             quantifier.separator = Some(Box::new(separator));
             spaced_separator = whitespace_before;
         }
-        // Aggregate aliases have their own list-context semantics in the
-        // legacy matcher. Keep subrule-containing forms there until the
-        // shared tree has a representation for that combination.
-        if array && contains_subrule(&regex) {
-            return None;
-        }
+        // Subrule aliases retain their source tree for either sigil. Their
+        // execution lowerer already declines Subrule nodes, so the established
+        // matcher continues to own per-iteration capture/list semantics.
         if let RegexNode::Literal(text) = &mut regex
             && text.chars().count() > 1
         {

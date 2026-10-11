@@ -3263,52 +3263,6 @@ fn split_top_level_arguments(source: &str) -> Vec<&str> {
     parts
 }
 
-fn contains_subrule(node: &RegexNode) -> bool {
-    match node {
-        RegexNode::Subrule { .. } | RegexNode::SubruleAlias { .. } => true,
-        RegexNode::Sequence(nodes)
-        | RegexNode::Alternation(nodes)
-        | RegexNode::SequentialAlternation(nodes) => nodes.iter().any(contains_subrule),
-        RegexNode::Quantified { atom, quantifier } => {
-            contains_subrule(atom)
-                || quantifier
-                    .separator
-                    .as_ref()
-                    .is_some_and(|separator| contains_subrule(&separator.node))
-        }
-        RegexNode::Group(child)
-        | RegexNode::CapturingGroup(child)
-        | RegexNode::WithWhitespace(child) => contains_subrule(child),
-        RegexNode::NamedCapture { regex, .. } => contains_subrule(regex),
-        RegexNode::Extension(extension) => extension.children().into_iter().any(contains_subrule),
-        RegexNode::Lookaround { assertion, .. } => contains_subrule(assertion),
-        RegexNode::NamedLookaround { assertion, .. } => contains_subrule(assertion),
-        RegexNode::Literal(_)
-        | RegexNode::Quote(_)
-        | RegexNode::Interpolation { .. }
-        | RegexNode::RegexValueInterpolation { .. }
-        | RegexNode::ArrayInterpolation { .. }
-        | RegexNode::ArrayLookaround { .. }
-        | RegexNode::Callable { .. }
-        | RegexNode::CodeAssertion { .. }
-        | RegexNode::CodeBlock { .. }
-        | RegexNode::InterpolatedBlock { .. }
-        | RegexNode::AnchorBeginningOfString
-        | RegexNode::AnchorBeginningOfLine
-        | RegexNode::AnchorEndOfString
-        | RegexNode::AnchorEndOfLine
-        | RegexNode::AnchorLeftWordBoundary
-        | RegexNode::AnchorRightWordBoundary
-        | RegexNode::MatchFrom
-        | RegexNode::MatchTo
-        | RegexNode::AssertionPass
-        | RegexNode::AssertionFail
-        | RegexNode::CharClass(_)
-        | RegexNode::CharClassAssertion(_)
-        | RegexNode::InternalModifier { .. } => false,
-    }
-}
-
 /// Whether `node` can be the body of a lookaround in the source tree. A
 /// superset of [`is_executable_lookaround_body`]: the captures and anchors
 /// below exist only for the RakuAST boundary, execution keeps the runtime

@@ -1,8 +1,8 @@
 # RakuAST retains numeric regex aliases and quoted assertion atoms
 
-The regex source tree now preserves numbered capture aliases, nested assertion
-prefixes such as `<?!alpha>`, low Unicode quote pairs, and smart double-quoted
-interpolation. Quote boundaries share the existing interpolation-aware scanner,
+The regex source tree now preserves numbered and aggregate subrule capture
+aliases, nested assertion prefixes such as `<?!alpha>`, low Unicode quote pairs,
+and smart double-quoted interpolation. Quote boundaries share the existing interpolation-aware scanner,
 so quotes inside a method argument do not terminate the containing regex atom.
 
 Separated quantifiers preserve the whitespace on their atom and separator when
