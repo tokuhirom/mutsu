@@ -9,21 +9,6 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
-        // Cost: O(n), n = bytes of the invocant.
-        "naive-word-wrapper" => {
-            Some(crate::builtins::naive_word_wrapper::native_naive_word_wrapper(target, &[]))
-        }
-        // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`).
-        // `Cool.words` and its siblings below: the `Str`/`Cool` rows'
-        // handlers (ADR-11276, `method_table::str_iter`).
-        "words" => Some(Some(crate::builtins::method_table::str_iter::words(
-            target,
-            &[],
-        ))),
-        // `Cool.codes` and the other `Cool` text methods below: the `Str`
-        // rows' handlers (ADR-11276), on the receiver's string form.
-        // Cost: O(n), n = chars of the invocant's string form.
-        "codes" => Some(Some(crate::builtins::method_table::str::codes(target, &[]))),
         // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`).
         "lines" => {
             // Skip for Supply instances -- handled by native Supply.lines
@@ -40,33 +25,6 @@ pub(super) fn dispatch(
                 &[],
             )))
         }
-        // `Str.Date` / `Str.DateTime` coerce an ISO-formatted string to a
-        // Date / DateTime (documented on Str). Str-only — `Int.Date` etc. are
-        // method-not-found in raku. Invalid/out-of-range strings surface the
-        // same X::Temporal::InvalidFormat / X::OutOfRange the constructors throw.
-        // Cost: O(n), n = chars of the invocant.
-        // The `Str` rows' handlers (`method_table::str_args`).
-        "Date" if matches!(target.view(), ValueView::Str(_)) => {
-            Some(crate::builtins::method_table::str_args::date(target, &[]))
-        }
-        // Cost: O(n), n = chars of the invocant.
-        "DateTime" if matches!(target.view(), ValueView::Str(_)) => Some(
-            crate::builtins::method_table::str_args::date_time(target, &[]),
-        ),
-        // Cost: O(n), n = chars of the invocant's string form.
-        "trim" => Some(Some(crate::builtins::method_table::str::trim(target, &[]))),
-        // Cost: O(n), n = chars of the invocant's string form.
-        "trim-leading" => Some(Some(crate::builtins::method_table::str::trim_leading(
-            target,
-            &[],
-        ))),
-        // Cost: O(n), n = chars of the invocant's string form.
-        "trim-trailing" => Some(Some(crate::builtins::method_table::str::trim_trailing(
-            target,
-            &[],
-        ))),
-        // Cost: O(n), n = chars of the invocant's string form.
-        "flip" => Some(Some(crate::builtins::method_table::str::flip(target, &[]))),
         "so" => {
             // Calling .so on a Failure marks it as handled
             if let ValueView::Instance { class_name, .. } = target.view()
@@ -194,15 +152,6 @@ pub(super) fn dispatch(
             }
             Some(Some(crate::builtins::method_table::str::chop(target, &[])))
         }
-        // Cost: O(n), n = chars of the invocant (one Str per grapheme; eager, so
-        // `.comb.head(k)` still pays O(n)).
-        // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`).
-        "comb" => Some(Some(crate::builtins::method_table::str_iter::comb(
-            target,
-            &[],
-        ))),
-        // The `fmt` rows' implementation (`method_table::collections::fmt`).
-        "fmt" => Some(crate::builtins::fmt_native(target, &[])),
         // The `Any.join` row's implementation (`method_table::collections::join`).
         "join" => {
             use crate::builtins::method_table::collection_join::{Joined, join_core};
