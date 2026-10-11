@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 11,
-        "secs": 82.6,
+        "secs": 163.97,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -55,11 +55,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "Cannot resolve caller xpath(CSS::Selector::To::XPath:D: Array:D); none of these signatures matches:",
+        "first_failure": "Could not find symbol '&Properties()' in 'GLOBAL::CSS'",
         "nok": 0,
         "ok": 0,
         "plan": 8,
-        "secs": 4.47,
+        "secs": 5.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -69,7 +69,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.69,
+        "secs": 3.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -83,30 +83,30 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 2.89,
+        "secs": 4.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "not ok 8 -",
-        "nok": 9,
-        "ok": 13,
+        "first_failure": "No such method 'query' for invocant of type 'Hash'",
+        "nok": 0,
+        "ok": 8,
         "plan": 22,
-        "secs": 7.37,
+        "secs": 2.52,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/media-basic.t",
       "raku": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 2.49,
+        "secs": 3.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -119,7 +119,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 4.72,
+        "secs": 6.16,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -129,30 +129,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.9,
+        "secs": 4.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "specificity of: * (0.0.0)",
-        "nok": 9,
-        "ok": 0,
+        "nok": 0,
+        "ok": 9,
         "plan": 9,
-        "secs": 1.83,
+        "secs": 2.24,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/selector-specificity.t",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.67,
+        "secs": 2.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -165,7 +164,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 8,
-        "secs": 7.0,
+        "secs": 8.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -175,53 +174,51 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 3.72,
+        "secs": 5.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$_'; expected UInt but got Any (NativeCall::Types::C...)",
         "nok": 0,
-        "ok": 0,
+        "ok": 1,
         "plan": 1,
-        "secs": 5.09,
+        "secs": 6.12,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/stylesheet-create.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.42,
+        "secs": 3.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'children' for invocant of type 'NativeCall::Types::CArray'",
         "nok": 0,
-        "ok": 1,
+        "ok": 4,
         "plan": 4,
-        "secs": 4.59,
+        "secs": 7.66,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/stylesheet-media-query.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.39,
+        "secs": 4.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -238,10 +235,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-10",
+    "date": "2026-10-11",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "95dd5f6b",
+    "mutsu_commit": "406be350",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -252,13 +249,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/C/SS/CSS_STYLESHEET/d8748e8af89b419fc6af376ff4088458089fa149.tar.gz"
   },
-  "status": "red",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 53,
     "baseline_files": 7,
-    "mutsu_assertions": 15,
-    "parity_files": 0,
-    "regressed_files": 7
+    "mutsu_assertions": 23,
+    "parity_files": 3,
+    "regressed_files": 4
   },
   "version": "0.1.5"
 }

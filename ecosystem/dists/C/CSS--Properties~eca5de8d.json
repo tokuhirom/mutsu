@@ -22,10 +22,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "code sample",
-        "nok": 7,
-        "ok": 5,
+        "nok": 3,
+        "ok": 9,
         "plan": 12,
-        "secs": 11.71,
+        "secs": 20.66,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -35,99 +35,96 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 59.86,
+        "secs": 127.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "partial",
+      "cmp": "regression",
       "mutsu": {
-        "first_failure": "declared property",
-        "nok": 1,
-        "ok": 12,
+        "first_failure": "Unexpected named argument 'ref' passed",
+        "nok": 0,
+        "ok": 16,
         "plan": 21,
-        "secs": 3.5,
+        "secs": 7.03,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "die"
       },
       "path": "t/01-property-basic.t",
       "raku": {
         "nok": 0,
         "ok": 21,
         "plan": 21,
-        "secs": 8.62,
+        "secs": 11.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'children' for invocant of type 'NativeCall::Types::CArray'",
         "nok": 0,
-        "ok": 12,
+        "ok": 15,
         "plan": 15,
-        "secs": 4.19,
+        "secs": 6.38,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/02-style-basic.t",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 2.22,
+        "secs": 3.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$_'; expected UInt but got Any (NativeCall::Types::C...)",
         "nok": 0,
-        "ok": 2,
+        "ok": 4,
         "plan": 4,
-        "secs": 4.06,
+        "secs": 5.22,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/ast.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.57,
+        "secs": 2.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'children' for invocant of type 'NativeCall::Types::CArray'",
         "nok": 0,
-        "ok": 7,
+        "ok": 30,
         "plan": 30,
-        "secs": 3.07,
+        "secs": 5.56,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/at-font-face.t",
       "raku": {
         "nok": 0,
         "ok": 30,
         "plan": 30,
-        "secs": 2.36,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -140,7 +137,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 3.66,
+        "secs": 4.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -150,7 +147,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.58,
+        "secs": 6.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -163,7 +160,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 19,
-        "secs": 4.08,
+        "secs": 3.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -173,7 +170,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 7.15,
+        "secs": 9.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -182,11 +179,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'box'; expected CSS::Box::BoundingBox\u000013537728258220490754, got Any",
+        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'box'; expected CSS::Box::BoundingBox\u000013011159471873851394, got Any",
         "nok": 0,
         "ok": 0,
         "plan": 20,
-        "secs": 3.58,
+        "secs": 4.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -196,7 +193,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 20,
-        "secs": 2.73,
+        "secs": 4.18,
         "skip": 0,
         "todo": 1,
         "verdict": "pass"
@@ -219,53 +216,51 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.79,
+        "secs": 4.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$_'; expected UInt but got Any (NativeCall::Types::C...)",
         "nok": 0,
-        "ok": 2,
+        "ok": 33,
         "plan": 33,
-        "secs": 3.35,
+        "secs": 8.06,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/colors.t",
       "raku": {
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 2.81,
+        "secs": 4.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'children' for invocant of type 'NativeCall::Types::CArray'",
         "nok": 0,
-        "ok": 1,
+        "ok": 4,
         "plan": 4,
-        "secs": 3.84,
+        "secs": 29.89,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/css-fonts.t",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.02,
+        "secs": 6.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -275,10 +270,10 @@
       "cmp": "partial",
       "mutsu": {
         "first_failure": "edges property",
-        "nok": 1,
-        "ok": 11,
+        "nok": 3,
+        "ok": 12,
         "plan": 47,
-        "secs": 4.17,
+        "secs": 5.41,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -288,76 +283,73 @@
         "nok": 0,
         "ok": 47,
         "plan": 47,
-        "secs": 3.29,
+        "secs": 4.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'children' for invocant of type 'NativeCall::Types::CArray'",
         "nok": 0,
-        "ok": 0,
+        "ok": 6,
         "plan": 6,
-        "secs": 2.77,
+        "secs": 4.13,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/errors.t",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.8,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'prop-val--my-align' for invocant of type 'CSS::Module::CSS3'",
         "nok": 0,
-        "ok": 0,
+        "ok": 22,
         "plan": 22,
-        "secs": 2.7,
+        "secs": 6.42,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/extend.t",
       "raku": {
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 2.3,
+        "secs": 3.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed for object hash key; expected Int but got Any (NativeCall::Types::CArray<4147>)",
         "nok": 0,
-        "ok": 4,
+        "ok": 14,
         "plan": 14,
-        "secs": 3.16,
+        "secs": 5.43,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/important.t",
       "raku": {
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.29,
+        "secs": 2.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -366,11 +358,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "unknown property: magenta",
+        "first_failure": "unknown property: deepskyblue",
         "nok": 0,
         "ok": 1,
         "plan": 23,
-        "secs": 3.57,
+        "secs": 4.14,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -380,7 +372,7 @@
         "nok": 0,
         "ok": 23,
         "plan": 23,
-        "secs": 2.91,
+        "secs": 5.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -393,7 +385,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 34,
-        "secs": 3.26,
+        "secs": 3.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -403,7 +395,7 @@
         "nok": 0,
         "ok": 34,
         "plan": 34,
-        "secs": 3.16,
+        "secs": 3.99,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -415,7 +407,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 4.46,
+        "secs": 5.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -425,30 +417,29 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.0,
+        "secs": 2.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$_'; expected UInt but got Any (NativeCall::Types::C...)",
         "nok": 0,
-        "ok": 0,
+        "ok": 16,
         "plan": 16,
-        "secs": 3.54,
+        "secs": 13.98,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/optimize.t",
       "raku": {
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 2.81,
+        "secs": 3.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -457,11 +448,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'box'; expected CSS::Box::BoundingBox\u000013537728258220490754, got Any",
+        "first_failure": "X::Parameter::Default::TypeCheck: Type check failed for default value of parameter 'box'; expected CSS::Box::BoundingBox\u000013011159471873851394, got Any",
         "nok": 0,
         "ok": 0,
         "plan": 19,
-        "secs": 3.33,
+        "secs": 3.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -471,30 +462,29 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 6.65,
+        "secs": 9.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "No such method 'children' for invocant of type 'NativeCall::Types::CArray'",
         "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 3.34,
+        "ok": 58,
+        "plan": 58,
+        "secs": 23.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "pass"
       },
       "path": "t/svg-properties.t",
       "raku": {
         "nok": 0,
         "ok": 58,
         "plan": 58,
-        "secs": 3.4,
+        "secs": 4.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -507,7 +497,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 240.02,
+        "secs": 240.1,
         "skip": 0,
         "todo": 0,
         "verdict": "timeout"
@@ -517,7 +507,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 20.03,
+        "secs": 29.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -530,7 +520,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 0.3,
+        "secs": 0.27,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -540,7 +530,7 @@
         "nok": 0,
         "ok": 22,
         "plan": 22,
-        "secs": 1.69,
+        "secs": 2.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -549,11 +539,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "No such method 'children' for invocant of type 'NativeCall::Types::CArray'",
+        "first_failure": "Cannot modify an immutable value",
         "nok": 0,
-        "ok": 1,
+        "ok": 4,
         "plan": 6,
-        "secs": 3.19,
+        "secs": 3.98,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -563,30 +553,30 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.23,
+        "secs": 3.22,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "regression",
+      "cmp": "partial",
       "mutsu": {
-        "first_failure": "Type check failed in binding to parameter '$_'; expected UInt but got Any (NativeCall::Types::C...)",
-        "nok": 0,
-        "ok": 1,
+        "first_failure": "not ok 18 -",
+        "nok": 1,
+        "ok": 24,
         "plan": 25,
-        "secs": 3.44,
+        "secs": 23.79,
         "skip": 0,
         "todo": 0,
-        "verdict": "die"
+        "verdict": "fail"
       },
       "path": "t/write.t",
       "raku": {
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 3.4,
+        "secs": 3.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -609,10 +599,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-10",
+    "date": "2026-10-11",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "95dd5f6b",
+    "mutsu_commit": "406be350",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
@@ -627,9 +617,9 @@
   "totals": {
     "baseline_assertions": 467,
     "baseline_files": 25,
-    "mutsu_assertions": 65,
-    "parity_files": 1,
-    "regressed_files": 24
+    "mutsu_assertions": 274,
+    "parity_files": 11,
+    "regressed_files": 14
   },
   "version": "0.10.10"
 }

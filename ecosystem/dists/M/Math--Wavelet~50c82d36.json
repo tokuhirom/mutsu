@@ -1,0 +1,203 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Math::Wavelet",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1144,
+        "plan": 1144,
+        "secs": 7.27,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-dwt.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1144,
+        "plan": 1144,
+        "secs": 15.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 534,
+        "plan": 534,
+        "secs": 2.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/02-multilevel.t",
+      "raku": {
+        "nok": 0,
+        "ok": 534,
+        "plan": 534,
+        "secs": 2.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 136,
+        "plan": 136,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/03-swt.t",
+      "raku": {
+        "nok": 0,
+        "ok": 136,
+        "plan": 136,
+        "secs": 1.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "partial",
+      "mutsu": {
+        "first_failure": "dwt2 haar symmetric, 6×9 — shape [[[.,.,.,.,.],[.,.,.,.,.],[.,.,.,.,.]],[[[.,.,.,.,.],[.,.,.,, expected [[[.,.,.,.,.],[.,.,.,.,.],[.,.,.,.,.]],[[.,.,.,.,.],[.,.,.,.",
+        "nok": 24,
+        "ok": 50,
+        "plan": 74,
+        "secs": 2.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      },
+      "path": "t/04-dwt2.t",
+      "raku": {
+        "nok": 0,
+        "ok": 74,
+        "plan": 74,
+        "secs": 1.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 41,
+        "plan": 41,
+        "secs": 0.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/05-threshold.t",
+      "raku": {
+        "nok": 0,
+        "ok": 41,
+        "plan": 41,
+        "secs": 0.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 228,
+        "plan": 228,
+        "secs": 4.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/06-wavelets.t",
+      "raku": {
+        "nok": 0,
+        "ok": 228,
+        "plan": 228,
+        "secs": 1.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 569,
+        "plan": 569,
+        "secs": 65.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/07-cwt.t",
+      "raku": {
+        "nok": 0,
+        "ok": 569,
+        "plan": 569,
+        "secs": 16.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "Math::Wavelet": "ok",
+    "Math::Wavelet::CWT": "ok",
+    "Math::Wavelet::Continuous": "ok",
+    "Math::Wavelet::DWT": "ok",
+    "Math::Wavelet::DWT2": "ok",
+    "Math::Wavelet::Filter": "ok",
+    "Math::Wavelet::SWT": "ok",
+    "Math::Wavelet::Table": "ok",
+    "Math::Wavelet::Threshold": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-11",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "406be350",
+    "mutsu_version": "0.25.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/M/AT/MATH_WAVELET/2db753cb75a55e7849e06fb7b1aefaf8b478c633.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 2726,
+    "baseline_files": 7,
+    "mutsu_assertions": 2702,
+    "parity_files": 6,
+    "regressed_files": 1
+  },
+  "version": "0.0.3"
+}

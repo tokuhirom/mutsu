@@ -1,0 +1,104 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [],
+    "unresolved": []
+  },
+  "dist": "Webraku",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-html.t",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 2.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Runtime error: Unmatched ( in regex",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/02-server.t",
+      "raku": {
+        "nok": 0,
+        "ok": 36,
+        "plan": 36,
+        "secs": 5.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-bundle.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/webraku-bundle-t-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
+  "load": {
+    "Webraku": "ok",
+    "Webraku::Bundle": "ok",
+    "Webraku::HTML": "ok",
+    "Webraku::JSON": "ok",
+    "Webraku::Route": "ok",
+    "Webraku::Server": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-10-11",
+    "harness": 2,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "406be350",
+    "mutsu_version": "0.25.0",
+    "raku_backend": "moar 2026.09",
+    "raku_version": "2026.09",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/W/EB/WEBRAKU/a627965bf9e32d87f5b42bad646df963fb478787.tar.gz"
+  },
+  "status": "partial",
+  "totals": {
+    "baseline_assertions": 69,
+    "baseline_files": 2,
+    "mutsu_assertions": 33,
+    "parity_files": 1,
+    "regressed_files": 1
+  },
+  "version": "0.0.1"
+}

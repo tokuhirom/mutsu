@@ -15,11 +15,11 @@
       "cmp": "no_baseline",
       "path": "t/00-basic.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lpk/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lp",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuisw/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuis",
         "nok": 1,
         "ok": 43,
         "plan": null,
-        "secs": 26.75,
+        "secs": 31.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -28,11 +28,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "FreeType Error: invalid library handle",
+        "first_failure": "FreeType Error loading file 't/fonts/DejaVuSerif.ttf': invalid library handle",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.84,
+        "secs": 2.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -42,7 +42,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 0.95,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,11 +52,11 @@
       "cmp": "no_baseline",
       "path": "t/10metrics_5x7bdf.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lpk/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lp",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuisw/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuis",
         "nok": 0,
         "ok": 22,
         "plan": 1897,
-        "secs": 1.57,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -65,11 +65,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "FreeType Error: invalid library handle",
+        "first_failure": "FreeType Error loading file 't/fonts/EBGaramond12.otc': invalid library handle",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 1.72,
+        "secs": 2.2,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -79,7 +79,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 2.11,
+        "secs": 2.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -88,11 +88,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "FreeType Error: invalid library handle",
+        "first_failure": "FreeType Error loading file 't/fonts/OldStandard-Bold.otf': invalid library handle",
         "nok": 0,
         "ok": 0,
         "plan": 27,
-        "secs": 1.59,
+        "secs": 2.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 27,
         "plan": 27,
-        "secs": 1.26,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,11 +112,11 @@
       "cmp": "no_baseline",
       "path": "t/10metrics_postscript.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lpk/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lp",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuisw/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuis",
         "nok": 0,
         "ok": 0,
         "plan": 5,
-        "secs": 1.86,
+        "secs": 2.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -126,11 +126,11 @@
       "cmp": "no_baseline",
       "path": "t/10metrics_verasans.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lpk/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lp",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuisw/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuis",
         "nok": 0,
         "ok": 1057,
         "plan": 2717,
-        "secs": 2.04,
+        "secs": 2.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -140,11 +140,11 @@
       "cmp": "no_baseline",
       "path": "t/20bitmap.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lpk/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lp",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuisw/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuis",
         "nok": 0,
         "ok": 0,
         "plan": 28,
-        "secs": 1.55,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -154,11 +154,11 @@
       "cmp": "no_baseline",
       "path": "t/30render.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lpk/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lp",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuisw/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuis",
         "nok": 0,
         "ok": 1,
         "plan": 41,
-        "secs": 1.43,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -167,11 +167,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "FreeType Error: invalid library handle",
+        "first_failure": "FreeType Error loading file 't/fonts/NimbusRoman-Regular.cff': invalid library handle",
         "nok": 0,
         "ok": 0,
         "plan": 2,
-        "secs": 1.63,
+        "secs": 2.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -181,7 +181,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.75,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -191,11 +191,11 @@
       "cmp": "no_baseline",
       "path": "t/load-flags.t",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lpk/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-yafj_lp",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuisw/dist/Font-FreeType-0.5.16/resources/libraries/ft6.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-w_wmuis",
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.4,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -209,7 +209,7 @@
         "nok": 1,
         "ok": 2,
         "plan": 3,
-        "secs": 1.07,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -218,11 +218,11 @@
     {
       "cmp": "regression",
       "mutsu": {
-        "first_failure": "FreeType Error: invalid library handle",
+        "first_failure": "FreeType Error loading file 't/fonts/DejaVuSans.ttf': invalid library handle",
         "nok": 0,
         "ok": 0,
         "plan": 7,
-        "secs": 1.58,
+        "secs": 2.31,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -232,7 +232,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.2,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -260,10 +260,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-10-10",
+    "date": "2026-10-11",
     "harness": 2,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "95dd5f6b",
+    "mutsu_commit": "406be350",
     "mutsu_version": "0.25.0",
     "raku_backend": "moar 2026.09",
     "raku_version": "2026.09",
