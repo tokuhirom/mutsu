@@ -1,7 +1,8 @@
 # ADR-11505: Rakudo's frame-state `p6*` nqp ops
 
-- **Status**: Accepted (2026-10-11). §2.1–§2.4 are implemented. §2.5 and §2.6 are decided
-  but not yet implemented.
+- **Status**: Proposed (2026-10-11), awaiting the maintainer's acceptance. §2.1–§2.4 are
+  implemented in [#12842](https://github.com/tokuhirom/mutsu/pull/12842); §2.5 and §2.6 are
+  not yet implemented.
 - **Date**: 2026-10-11
 - **Issue**: [#11505](https://github.com/tokuhirom/mutsu/issues/11505) (campaign
   [#11488](https://github.com/tokuhirom/mutsu/issues/11488))
