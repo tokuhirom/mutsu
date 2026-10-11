@@ -24,6 +24,7 @@ use narrow_row;
 
 pub(crate) mod backtrace;
 pub(crate) mod code;
+pub(crate) mod compunit_handle;
 pub(crate) mod date;
 pub(crate) mod dateish;
 pub(crate) mod dateish_io;
@@ -60,6 +61,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     signature::ROWS,
     supply::ROWS,
     rakuast_node::ROWS,
+    compunit_handle::ROWS,
     temporal_shift::ROWS,
     temporal_edit::ROWS,
 ];

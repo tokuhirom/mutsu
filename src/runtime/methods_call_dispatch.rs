@@ -2104,6 +2104,7 @@ impl Interpreter {
         // `RakuAST::Node.visit-children` and the `RakuAST::Origin` rows are rows
         // of the method table, found by their owner: none has a dispatch shape.
         if let Some(owners) = crate::builtins::method_table::rakuast_owners_of(&target)
+            .or_else(|| crate::builtins::method_table::compunit_handle_owners_of(&target))
             && let Some(result) = crate::builtins::method_table::invoke_owner(
                 self,
                 owners,
