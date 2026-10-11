@@ -440,10 +440,12 @@ impl Interpreter {
         // via set_env(saved_env) and the merge path's `merge_method_env` iterates
         // it overlay-only (the method's own writes). No closure/thread body runs
         // under the overlay.
-        // A method declared at program scope links its frame past its callers
-        // (ADR-12529): it needs a root of its own even when it creates closures.
+        // A method declared at program scope links the root it gets past its
+        // callers (ADR-12529). One that creates closures runs in its caller's
+        // env, unlinked: a root of its own would cost a flatten per method
+        // call in its body.
         let links_frame = cc.links_frame_to_unit();
-        if cc.closure_compiled_codes.is_empty() || links_frame {
+        if cc.closure_compiled_codes.is_empty() {
             let parent = self.env().clone();
             self.set_env(crate::env::Env::scoped_child(parent));
         }
@@ -1947,10 +1949,12 @@ impl Interpreter {
         // own writes, which is exactly what the merge needs). Gated to methods
         // with no inner closures so no closure/thread/gather body captures or
         // iterates the scoped env for a full lexical view.
-        // A method declared at program scope links its frame past its callers
-        // (ADR-12529): it needs a root of its own even when it creates closures.
+        // A method declared at program scope links the root it gets past its
+        // callers (ADR-12529). One that creates closures runs in its caller's
+        // env, unlinked: a root of its own would cost a flatten per method
+        // call in its body.
         let links_frame = cc.links_frame_to_unit();
-        let use_scoped = cc.closure_compiled_codes.is_empty() || links_frame;
+        let use_scoped = cc.closure_compiled_codes.is_empty();
         if use_scoped {
             let parent = self.env().clone();
             let scoped = crate::env::Env::scoped_child(parent);
