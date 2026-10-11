@@ -9,6 +9,7 @@
 //! interpreter's to invoke, so the handler declines it.
 
 use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::NarrowFn;
 use crate::builtins::sampling;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -51,11 +52,7 @@ pub(super) static BOOL_ROWS: &[MethodRow] = &[
     bool_row("roll", 1, bool_roll),
 ];
 
-const fn bool_row(
-    name: &'static str,
-    arity: u8,
-    handler: fn(&Value, &[Value]) -> Option<Result<Value, RuntimeError>>,
-) -> MethodRow {
+const fn bool_row(name: &'static str, arity: u8, handler: NarrowFn) -> MethodRow {
     MethodRow {
         owner: "Bool",
         name,
