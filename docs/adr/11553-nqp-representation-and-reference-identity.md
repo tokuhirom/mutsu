@@ -1,6 +1,6 @@
 # ADR-11553: Keep NQP representation and reference identity across value operations
 
-- **Status**: Accepted (2026-10-04; maintainer merged the proposal and requested implementation)
+- **Status**: Accepted (2026-10-04; maintainer merged the proposal and requested implementation); §3.1 amended for collections by [ADR-12666](12666-raw-vm-collections-are-a-view-of-shared-storage.md) (2026-10-11)
 - **Date**: 2026-10-04
 - **Issue**: [#11553](https://github.com/tokuhirom/mutsu/issues/11553)
 - **Related**: [ADR-0005](0005-nanbox-representation-encoding.md) (value tags),

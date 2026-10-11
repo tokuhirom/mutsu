@@ -1,6 +1,6 @@
 # ADR-12666: Raw VM collections are a distinct view of shared storage
 
-- **Status**: Proposed (2026-10-11)
+- **Status**: Accepted (2026-10-11; maintainer accepted the proposal)
 - **Date**: 2026-10-11
 - **Issue**: [#12666](https://github.com/tokuhirom/mutsu/issues/12666)
 - **Amends**: [ADR-11553](11553-nqp-representation-and-reference-identity.md) §3.1
