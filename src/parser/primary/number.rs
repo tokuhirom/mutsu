@@ -3,6 +3,9 @@ use super::super::parse_result::{PError, PResult, parse_char, parse_tag};
 use crate::ast::Expr;
 use crate::value::{Value, ValueView};
 
+mod literal_value;
+pub(crate) use literal_value::{decimal_literal_value, numeric_literal_value};
+
 fn decimal_digit_value(c: char) -> Option<u32> {
     crate::ucd::numeric::unicode_decimal_digit_value(c)
 }
@@ -795,23 +798,4 @@ pub(super) fn unicode_numeric_literal(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, Expr::Literal(Value::int(n))));
     }
     Err(PError::expected("unicode numeric literal"))
-}
-
-/// The Rat value of a plain decimal literal spelling (`3.5`), or `None` for any
-/// other text. RakuAST renders an imaginary literal's part through it.
-// Cost: O(n), n = length of `text`.
-pub(crate) fn decimal_literal_value(text: &str) -> Option<Value> {
-    match decimal(text) {
-        Ok(("", Expr::Literal(value))) => Some(value),
-        _ => None,
-    }
-}
-
-/// Parse a complete numeric literal without running expressions or warnings.
-// Cost: O(n), n = literal length.
-pub(crate) fn numeric_literal_value(text: &str) -> Option<Value> {
-    match decimal(text).or_else(|_| integer_no_warn(text)) {
-        Ok(("", Expr::Literal(value))) => Some(value),
-        _ => None,
-    }
 }
