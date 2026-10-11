@@ -1228,6 +1228,8 @@ impl Interpreter {
             // so its scalars need no cells.
             if at_program_scope {
                 flat.mark_program_scope_capture();
+            } else if self.env().runs_in_activation_frame() {
+                flat.mark_activation_capture();
             }
             return flat;
         }
@@ -1265,6 +1267,11 @@ impl Interpreter {
         self.finish_closure_capture(code, cc, &mut env);
         if cc.static_name_lookup && !self.env().chain_has_frame_root() {
             env.mark_program_scope_capture();
+        } else if self.env().runs_in_activation_frame() {
+            // Created in a sub frame linked to its declaring activation
+            // (#12692): the closure's outer is that frame, whose capture it
+            // carries, so it links the same way.
+            env.mark_activation_capture();
         }
         env
     }
@@ -1355,6 +1362,10 @@ impl Interpreter {
             return;
         };
         for sym in &cc.free_var_syms {
+            // The running sub's declaring activation binds it (#12692).
+            if self.env().frame_capture_holds(*sym) {
+                continue;
+            }
             if let Some(cell) = sym.with_str(|s| mainline.get(s).cloned()) {
                 env.insert_sym(*sym, cell);
             }

@@ -23,6 +23,8 @@ pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
 mod rebind;
 pub(crate) mod static_link;
+mod activation_capture;
+mod outer_scope;
 pub(crate) use static_link::{OuterScope, with_static_links_suppressed};
 pub(crate) mod stats;
 

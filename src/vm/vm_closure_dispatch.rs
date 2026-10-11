@@ -508,9 +508,14 @@ impl Interpreter {
         // (ADR-12529 phase 3, `env::static_link`). Created at program scope,
         // the live program scope is its outer; created in a call frame, its
         // capture (that frame's scope) answers first.
-        if cc.static_name_lookup {
-            let capture_first = !data.env.is_program_scope_capture();
-            self.env_mut().link_static_outer_to_unit(capture_first);
+        // A named sub's code object taken in its declaring activation
+        // (#12692) links the same way, its capture (that activation's cells)
+        // first wherever it was taken.
+        let activation_capture = data.env.is_activation_capture();
+        if cc.static_name_lookup || activation_capture {
+            let capture_first = activation_capture || !data.env.is_program_scope_capture();
+            self.env_mut()
+                .link_static_outer_to_unit(capture_first, activation_capture);
         }
         // EXCEPTION: a `ContainerRef` captured value is a *shared container cell*
         // (box-on-capture, lever C Slice 2). It is the single source of truth for

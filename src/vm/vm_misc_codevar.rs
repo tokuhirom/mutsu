@@ -146,6 +146,8 @@ impl Interpreter {
             && let own = self.resolve_code_var_unshadowed(name)
             && !own.is_nil()
         {
+            // The code object closes over this activation (#12692).
+            let own = self.capture_lexsub_activation(code, own);
             self.stack.push(own);
             return Ok(());
         }

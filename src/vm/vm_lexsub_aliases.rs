@@ -440,6 +440,9 @@ impl Interpreter {
             return;
         }
         for sym in &cc.free_var_syms {
+            if self.env().frame_capture_holds(*sym) {
+                continue;
+            }
             if let Some(cell) = sym.with_str(|s| self.lexsub_alias_slot(s).cloned()) {
                 env.insert_sym(*sym, cell);
             }

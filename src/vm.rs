@@ -142,6 +142,7 @@ mod vm_exception_failure;
 mod vm_frame_lexical;
 mod vm_lexical_role;
 mod vm_lexsub_aliases;
+mod vm_lexsub_capture;
 mod vm_sequence_role_delegate;
 use vm_frame_lexical::FrameLexicalCallSite;
 pub(crate) use vm_frame_lexical::{FrameLexicalClosureBodies, FrameLexicalTarget};
