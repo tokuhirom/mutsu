@@ -216,6 +216,43 @@ fn is_pure_declaration(decl: &Stmt) -> bool {
     }
 }
 
+/// What the prologue repeats for `decl`: the declaration itself when running
+/// it once more is unobservable, otherwise (a class whose body runs code) its
+/// declaration-only shell. The shell registers the same lexical type as the
+/// in-place declaration (they share a `decl_id`, hence a storage name), which
+/// later runs the body for real (#10471). `None` when neither is possible.
+// Cost: O(n), n = size of the declaration's body.
+fn declaration_copy(decl: &Stmt) -> Option<Stmt> {
+    if is_pure_declaration(decl) {
+        return Some(decl.clone());
+    }
+    let Stmt::ClassDecl {
+        body,
+        custom_traits,
+        ..
+    } = decl
+    else {
+        return None;
+    };
+    if has_user_trait(custom_traits) {
+        return None;
+    }
+    let mut members = Vec::with_capacity(body.len());
+    for member in body {
+        if is_pure_member(member) {
+            members.push(member.clone());
+        } else if declared_names(member).is_some() {
+            // A nested type that runs code too has to be a shell itself.
+            members.push(declaration_copy(member)?);
+        }
+    }
+    let mut shell = decl.clone();
+    if let Stmt::ClassDecl { body, .. } = &mut shell {
+        *body = members;
+    }
+    Some(shell)
+}
+
 /// A trait a user declared (`is foo`), which runs a `trait_mod` when the
 /// declaration is composed. The parser's own markers start with `__`.
 fn has_user_trait(traits: &[(String, Option<Expr>)]) -> bool {
@@ -312,8 +349,9 @@ impl Walker<'_> {
                 .any(|b| mentions.names(b.name.trim_start_matches(['$', '@', '%', '&'])))
                 || f.routines.iter().any(|r| mentions.names(&r.name))
         });
-        let copy = (is_pure_declaration(decl) && !mentions.has_begin && !reads_inner_scope)
-            .then(|| decl.clone());
+        let copy = (!mentions.has_begin && !reads_inner_scope)
+            .then(|| declaration_copy(decl))
+            .flatten();
         let frame = self.frames.last_mut().expect("checked above");
         frame.types.push(TypeDecl { names, copy });
     }
