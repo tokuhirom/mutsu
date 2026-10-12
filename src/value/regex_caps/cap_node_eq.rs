@@ -41,11 +41,12 @@ fn children_alike(a: &CapChildren, b: &CapChildren) -> bool {
             .zip(&b.positional)
             .all(|(x, y)| pos_slots_alike(x, y))
         && a.named.len() == b.named.len()
-        && a.named.iter().zip(b.named.iter()).all(|((ka, sa), (kb, sb))| {
-            ka == kb
-                && sa.quantified == sb.quantified
-                && same_nodes(&sa.nodes, &sb.nodes)
-        })
+        && a.named
+            .iter()
+            .zip(b.named.iter())
+            .all(|((ka, sa), (kb, sb))| {
+                ka == kb && sa.quantified == sb.quantified && same_nodes(&sa.nodes, &sb.nodes)
+            })
 }
 
 fn pos_slots_alike(a: &PosSlot, b: &PosSlot) -> bool {
