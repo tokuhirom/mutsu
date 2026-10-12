@@ -2689,8 +2689,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     }
 
     // Method-like: .new, .elems etc. is handled at expression level
+    let is_imported_function = crate::parser::is_imported_function(&name);
     let expr = Expr::BareWord(name);
-    let expr = if crate::parser::term_keywords_shadowable() {
+    let expr = if crate::parser::term_keywords_shadowable() || is_imported_function {
         Expr::spelled(expr, || Spelling::ImportedTerm)
     } else {
         expr
