@@ -406,6 +406,10 @@ impl Interpreter {
     // Cost: O(c) for a later chunk of a prefix-pulled map, c = elements of
     // the chunk; O(e) otherwise, e = elements of the source container.
     fn publish_rw_map_writeback(&mut self, source: &Value, items: Vec<Value>, start: usize) {
+        // The source is the LIVE container even once a second mutator thread
+        // exists (#12484, ADR-0068 §16.1), so the in-place store takes its
+        // stripe. Nothing below runs user code.
+        let _guard = crate::value::container_lock::ContainerStructGuard::acquire_for(None, source);
         // A later chunk of a prefix-pulled map (a `for` loop pulls one
         // element per iteration, #9936): write just those slots. Rebuilding
         // the whole container per chunk made the loop quadratic.

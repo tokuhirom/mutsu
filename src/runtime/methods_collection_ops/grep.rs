@@ -422,16 +422,31 @@ impl Interpreter {
         max_matches: Option<usize>,
         plan: &mut crate::runtime::map_grep_plan::MapGrepPlanSlot,
     ) -> Result<(Value, usize), RuntimeError> {
-        let start = range.start.min(items.len());
+        // `items` is the LIVE Array's node even once a second mutator thread
+        // exists (#12484, ADR-0068 §16.1): every read and the promotion below
+        // take its container stripe, and the callback runs with nothing held.
+        let stripe = || crate::gc::Gc::as_ptr(&items) as usize;
+        let lock = || crate::value::container_lock::ContainerStructGuard::acquire(stripe());
+        let start = {
+            let _guard = lock();
+            range.start.min(items.len())
+        };
         let (filtered, mutated_items, matched_indices) = match max_matches {
             Some(max_matches) => {
-                let fetch = |i: usize| items.get(start + i).cloned();
+                let fetch = |i: usize| {
+                    let _guard = lock();
+                    items.get(start + i).cloned()
+                };
                 let feed = crate::runtime::resolution_grep_loop::GrepFeed::new(&fetch, max_matches);
                 self.eval_grep_over_feed_planned(func, feed, plan)?
             }
             None => {
-                let end = range.end.min(items.len()).max(start);
-                self.eval_grep_over_items_planned(func, items[start..end].to_vec(), plan)?
+                let slice = {
+                    let _guard = lock();
+                    let end = range.end.min(items.len()).max(start);
+                    items[start..end].to_vec()
+                };
+                self.eval_grep_over_items_planned(func, slice, plan)?
             }
         };
         let end = start + mutated_items.len();
@@ -459,6 +474,9 @@ impl Interpreter {
         // cells, so the named copy owns its values and never writes back.
         let mut promoted = mutated_items;
         let mut shared_cells: Vec<Value> = Vec::with_capacity(indices.len());
+        // Held from the hole check through the in-place store: no user code
+        // runs in between, so §7.4's "never across user code" holds.
+        let promotion_guard = lock();
         for &i in &indices {
             // A `:delete`d (or never-assigned) slot has no element
             // container to alias, and promoting it would *create* one:
@@ -500,6 +518,9 @@ impl Interpreter {
         // step 3b needs, since a deferred grep promotes at PULL time,
         // in a frame where the source's names are long gone.
         {
+            // SAFETY: no other borrow of the node's contents is live here (the
+            // matched elements were cloned out before the callback ran), and
+            // `promotion_guard` excludes another thread's structural write.
             let data = unsafe { crate::value::gc_contents_mut(&items) };
             let slots = data.items_mut();
             for (i, v) in promoted.into_iter().enumerate() {
@@ -508,6 +529,7 @@ impl Interpreter {
                 }
             }
         }
+        drop(promotion_guard);
         // Build the result array from the shared cells (default `:v`
         // adverb). The `:k`/`:kv`/`:p` adverbs rebuild a fresh array in
         // `transform_result` from `indices`, which drops the aliasing (a

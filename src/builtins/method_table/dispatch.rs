@@ -41,13 +41,7 @@ fn call(
         None
     };
     // #12456: user code runs over the elements, so run on a snapshot instead.
-    let snapshot = if crate::value::container_lock::multi_mutator_threads_live()
-        && crate::value::container_lock::is_snapshot_read(row.name)
-    {
-        crate::value::container_lock::shared_snapshot(target)
-    } else {
-        None
-    };
+    let snapshot = crate::value::container_lock::snapshot_read_receiver(row.name, target);
     let target = snapshot.as_ref().unwrap_or(target);
     let answer = match row.handler {
         Handler::Pure(f) => Some((f(target, positional), rerunnable)),
