@@ -207,8 +207,10 @@ pub(crate) struct LexicalState {
     /// Keyed by `(base key symbol, closure scope id)` instead of a formatted
     /// `String` — see `scoped_state_key`/`state_key_display`. The `Option<u64>`
     /// distinguishes an un-scoped (named-sub/module-level) `state` var from one
-    /// scoped to a specific closure clone.
-    pub(crate) state_vars: HashMap<(Symbol, Option<u64>), Value>,
+    /// scoped to a specific closure clone. `FxHashMap`, not the SipHash
+    /// default: every `state` read/write on a call hashes this tuple, and the
+    /// key is two small integers (no DoS surface).
+    pub(crate) state_vars: rustc_hash::FxHashMap<(Symbol, Option<u64>), Value>,
     /// Keys inserted into `state_vars` since the last `start` spawn migrated
     /// them into the cross-thread store (see `seed_unmigrated_state_vars`).
     /// Every key whose entry existed at an earlier spawn was already seeded
@@ -395,7 +397,7 @@ impl LexicalState {
             escaping_our_env_param_names: Default::default(),
             escaped_our_sub_names: Default::default(),
             our_scalar_cell_names: Default::default(),
-            state_vars: HashMap::new(),
+            state_vars: rustc_hash::FxHashMap::default(),
             state_vars_unmigrated: Vec::new(),
             hoist_pending_cells: Vec::new(),
             param_bound_aggregates: Default::default(),
@@ -453,7 +455,7 @@ impl LexicalState {
             escaping_our_env_param_names: self.escaping_our_env_param_names.clone(),
             escaped_our_sub_names: self.escaped_our_sub_names.clone(),
             our_scalar_cell_names: self.our_scalar_cell_names.clone(),
-            state_vars: HashMap::new(),
+            state_vars: rustc_hash::FxHashMap::default(),
             state_vars_unmigrated: Vec::new(),
             // Pending hoist cells belong to the parent's frames.
             hoist_pending_cells: Vec::new(),
