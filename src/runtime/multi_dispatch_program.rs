@@ -188,7 +188,7 @@ impl Interpreter {
             if let Some(best) = best_key
                 && step
                     .key
-                    .scan_may_skip(&best, &|x, y| self.nominal_types_related(x, y))
+                    .scan_may_skip(&best, &|x, y| self.nominal_type_conforms(x, y))
             {
                 continue;
             }

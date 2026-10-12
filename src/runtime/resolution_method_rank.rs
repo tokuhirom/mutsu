@@ -104,7 +104,7 @@ impl Interpreter {
             non_slurpy: !multi_rank::has_slurpy_positional(&params),
             arity: multi_rank::positional_arity(&params),
             bind_check: multi_rank::needs_named_bind_check(&params),
-            optional: multi_rank::optional_positional_count(&params),
+            optional: multi_rank::has_optional_positional(&params),
             decl_order,
             profile,
             tier: 0,
@@ -184,7 +184,7 @@ impl Interpreter {
             self.method_rank_key(arg_values, def, usize::MAX, order)
         }));
         multi_rank::assign_tiers(&mut tiered, |rank| rank, &|x, y| {
-            self.nominal_types_related(x, y)
+            self.nominal_type_conforms(x, y)
         });
         for (rank, tiered) in ranks.iter_mut().zip(&tiered) {
             rank.tier = tiered.tier;
@@ -197,7 +197,7 @@ impl Interpreter {
                 .into_iter()
                 .zip(0..)
                 .collect::<Vec<(MultiRank, usize)>>(),
-            &|x, y| self.nominal_types_related(x, y),
+            &|x, y| self.nominal_type_conforms(x, y),
         );
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         // An arity-incomparable split in one tier with no bind-time check:
