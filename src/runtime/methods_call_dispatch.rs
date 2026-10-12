@@ -2375,13 +2375,11 @@ impl Interpreter {
         {
             return result;
         }
-        // Match.make
+        // Match.make writes the Match's `.made` in place (#12954).
         if method == "make"
-            && let Some(updated) =
-                target.match_with_ast_keeping_id(args.first().cloned().unwrap_or(Value::NIL))
+            && target.set_match_ast_in_place(args.first().cloned().unwrap_or(Value::NIL))
         {
             let value = args.first().cloned().unwrap_or(Value::NIL);
-            self.env.assign_match_var(updated);
             self.env.insert("made".to_string(), value.clone());
             self.regex_state.action_made = Some(value.clone());
             return Ok(value);

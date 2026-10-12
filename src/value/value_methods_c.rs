@@ -83,7 +83,7 @@ impl Value {
             to: to.max(0) as usize,
             sym: None,
             action_name: None,
-            ast: None,
+            made: Default::default(),
             children,
             match_memo: Default::default(),
         };

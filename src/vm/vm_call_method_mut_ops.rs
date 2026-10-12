@@ -1771,13 +1771,12 @@ impl Interpreter {
         {
             self.dispatch.skip_pseudo_method_native = Some(method.to_string());
         }
-        // Handle Match.make — must mutate the Match instance's `ast` attribute
-        // and write the modified Match back to the variable.
+        // Handle Match.make — writes the Match's `.made` in place, so every
+        // holder of the Match sees it (#12954).
         if method == "make" && target.is_match_instance() {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "match-make");
             let value = args.into_iter().next().unwrap_or(Value::NIL);
-            if let Some(updated) = target.match_with_ast_keeping_id(value.clone()) {
-                self.env_mut().insert(target_name.to_string(), updated);
+            if target.set_match_ast_in_place(value.clone()) {
                 self.env_mut().insert("made".to_string(), value.clone());
                 self.regex_state.action_made = Some(value.clone());
             }

@@ -11,15 +11,15 @@ impl CapNode {
     /// result filed as the caller's `$<rule>`, as rakudo files it).
     ///
     /// Children compare by `Arc` identity, never by content; a node carrying
-    /// reduce-time state (`ast`, `:my $*x` values, a cursor) is never alike.
+    /// reduce-time state (`.made`, `:my $*x` values, a cursor) is never alike.
     // Cost: O(c), c = the child slots of the two nodes.
     pub(crate) fn presents_like(&self, other: &CapNode) -> bool {
         self.from == other.from
             && self.to == other.to
             && self.sym == other.sym
             && self.action_name == other.action_name
-            && self.ast.is_none()
-            && other.ast.is_none()
+            && self.made.is_none()
+            && other.made.is_none()
             && match (self.children.as_deref(), other.children.as_deref()) {
                 (None, None) => true,
                 (Some(a), Some(b)) => children_alike(a, b),

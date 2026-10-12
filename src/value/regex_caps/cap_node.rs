@@ -198,8 +198,9 @@ pub(crate) const SILENT_ACTION_MARKER_PREFIX: &str = "\u{1}silent\u{1}";
 /// matched character in a quantified `<str=space>` run) collapses every child
 /// collection into a single `None`.
 ///
-/// The rare post-store mutation (the reduce walk writing `ast`/`regex_vars`)
-/// still goes through `Arc::make_mut`, same as before the split.
+/// The rare post-store mutation (the reduce walk writing `regex_vars`) still
+/// goes through `Arc::make_mut`, same as before the split. `.made` is the
+/// exception: it is shared, in-place state of the node ([`MadeCell`]).
 #[derive(Clone, Default)]
 pub(crate) struct CapNode {
     pub(crate) from: usize,
@@ -208,9 +209,12 @@ pub(crate) struct CapNode {
     pub(crate) sym: Option<Symbol>,
     /// The original rule name when this capture was stored under an alias.
     pub(crate) action_name: Option<Symbol>,
-    /// The AST value produced by this node's inline `{ make … }` code block(s),
-    /// computed at reduce time. `None` when the rule ran no `make`.
-    pub(crate) ast: Option<Value>,
+    /// This node's `.made`: seeded at reduce time by the rule's inline
+    /// `{ make … }` code block(s), and written in place afterwards by a
+    /// grammar action's `make` (#12954). Shared state of the node, so every
+    /// `Match` presenting it — a code block's kept `$<num>`, a wrapper's
+    /// `callsame` result, the finished tree's slot — reads the same value.
+    pub(crate) made: MadeCell,
     /// Child captures + per-node reduce state. `None` for a leaf with no
     /// captures, no code blocks, and no metadata — the size win of the split.
     pub(crate) children: Option<Box<CapChildren>>,
@@ -268,6 +272,47 @@ impl MatchMemo {
         let made = make();
         *slot = Some(crate::gc::Gc::downgrade(&made));
         made
+    }
+}
+
+/// The `.made` slot of a [`CapNode`] (#12954). In rakudo `make` writes the
+/// `.made` attribute of the one cursor object, so it is mutable state of the
+/// node rather than part of its value: a `Match` kept before the action ran
+/// observes the later `make`. A cloned node starts with the value the
+/// original holds at the time of the clone.
+///
+/// The value is not traced by the cycle collector, the same conservative
+/// treatment as the rest of the capture tree (see `Trace for MatchNode`).
+#[derive(Default)]
+pub(crate) struct MadeCell(std::sync::Mutex<Option<Value>>);
+
+impl Clone for MadeCell {
+    fn clone(&self) -> Self {
+        Self::new(self.get())
+    }
+}
+
+impl MadeCell {
+    // Cost: O(1).
+    pub(crate) fn new(value: Option<Value>) -> Self {
+        Self(std::sync::Mutex::new(value))
+    }
+
+    /// The current `.made`, `None` when nothing was made.
+    // Cost: O(1).
+    pub(crate) fn get(&self) -> Option<Value> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    // Cost: O(1).
+    pub(crate) fn is_none(&self) -> bool {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).is_none()
+    }
+
+    /// Store `value` as the `.made` (`make`).
+    // Cost: O(1).
+    pub(crate) fn set(&self, value: Value) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(value);
     }
 }
 
@@ -407,7 +452,7 @@ impl RegexCaptures {
             to: self.to,
             sym,
             action_name,
-            ast: self.ast,
+            made: MadeCell::new(self.ast),
             children,
             match_memo: MatchMemo::default(),
         }
