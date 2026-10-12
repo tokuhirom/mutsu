@@ -33,8 +33,14 @@ pub(crate) const PROFILE_LEN: usize = 6;
 pub(crate) struct RankProfile {
     scores: [u16; PROFILE_LEN],
     /// Each parameter's nominal type (`None`: not recorded), so a score
-    /// difference is only read as "narrower" between related types.
+    /// difference is only read as "narrower" between related types. For an
+    /// unreached slot (see `unreached`) it is the declared type.
     nominal: [Option<Symbol>; PROFILE_LEN],
+    /// Bit `i` set: slot `i` is an optional positional the call supplies no
+    /// argument for. Its score says nothing (there is no argument to measure
+    /// a distance from), so such a slot is compared by its declared type in
+    /// [`Self::unreached_wins`] instead.
+    unreached: u8,
     refined: bool,
     /// Some positional argument is unrelated to its parameter's type: the
     /// candidate cannot bind these arguments, and its distances say nothing
@@ -46,6 +52,7 @@ impl RankProfile {
     pub(crate) const EMPTY: RankProfile = RankProfile {
         scores: [u16::MAX; PROFILE_LEN],
         nominal: [None; PROFILE_LEN],
+        unreached: 0,
         refined: false,
         unrelated: false,
     };
@@ -70,6 +77,17 @@ impl RankProfile {
         }
     }
 
+    /// Mark slot `slot` as an optional positional the call does not reach,
+    /// declared with the nominal type `declared` (see [`Self::unreached_wins`]).
+    /// Called after the slot's [`Self::record`].
+    // Cost: O(1).
+    pub(crate) fn mark_unreached(&mut self, slot: usize, declared: Symbol) {
+        if slot < PROFILE_LEN {
+            self.unreached |= 1 << slot;
+            self.nominal[slot] = Some(declared);
+        }
+    }
+
     /// Record that some positional argument is unrelated to its parameter's
     /// type (the type-distance walk scored the "unrelated" distance).
     // Cost: O(1).
@@ -85,7 +103,7 @@ impl RankProfile {
     pub(crate) fn incomparable(
         &self,
         other: &RankProfile,
-        related: &dyn Fn(Symbol, Symbol) -> bool,
+        conforms: &dyn Fn(Symbol, Symbol) -> bool,
     ) -> bool {
         if !(self.refined || other.refined) {
             return false;
@@ -93,7 +111,7 @@ impl RankProfile {
         let (mut self_wins, mut other_wins) = (false, false);
         for i in 0..PROFILE_LEN {
             let (a, b) = (self.scores[i], other.scores[i]);
-            if a == u16::MAX || b == u16::MAX {
+            if a == u16::MAX || b == u16::MAX || (self.unreached | other.unreached) & (1 << i) != 0 {
                 continue;
             }
             // Unrelated nominal types (`Node` refined by a subset vs an
@@ -101,7 +119,8 @@ impl RankProfile {
             // their distances and the refinement bit say nothing.
             if let (Some(na), Some(nb)) = (self.nominal[i], other.nominal[i])
                 && na != nb
-                && !related(na, nb)
+                && !conforms(na, nb)
+                && !conforms(nb, na)
             {
                 continue;
             }
@@ -109,6 +128,45 @@ impl RankProfile {
             other_wins |= b < a;
         }
         self_wins && other_wins
+    }
+
+    /// Rakudo's per-parameter comparison over the optional positionals the
+    /// call reaches in neither candidate: `(self wins one, other wins one)`.
+    /// Rakudo's tiers are built from the DECLARED types, so such a parameter
+    /// still orders the pair: `multi g(Int $a?)` is narrower than
+    /// `multi g($a?)` for `g()`. A type that conforms to the other's wins; the
+    /// same type wins by a refinement; unrelated types (`Int` / `Str`) tie,
+    /// which leaves the two candidates in one tier — `X::Multi::Ambiguous`
+    /// when both bind (#12852).
+    // Cost: O(r), r = the cost of one `conforms` call; the profile length is a constant.
+    pub(crate) fn unreached_wins(
+        &self,
+        other: &RankProfile,
+        conforms: &dyn Fn(Symbol, Symbol) -> bool,
+    ) -> (bool, bool) {
+        let shared = self.unreached & other.unreached;
+        let (mut self_wins, mut other_wins) = (false, false);
+        if shared == 0 {
+            return (false, false);
+        }
+        for i in 0..PROFILE_LEN {
+            if shared & (1 << i) == 0 {
+                continue;
+            }
+            let (Some(na), Some(nb)) = (self.nominal[i], other.nominal[i]) else {
+                continue;
+            };
+            if na == nb {
+                // The low score bit is "unrefined".
+                self_wins |= self.scores[i] < other.scores[i];
+                other_wins |= other.scores[i] < self.scores[i];
+            } else if conforms(na, nb) {
+                self_wins = true;
+            } else if conforms(nb, na) {
+                other_wins = true;
+            }
+        }
+        (self_wins, other_wins)
     }
 }
 
@@ -129,7 +187,8 @@ impl RankProfile {
 ///    consults slurpiness only once every shared positional type is tied, and
 ///    a non-slurpy candidate wins there), then whether it needs a named bind
 ///    check (an explicit named parameter, or a `where` on a slurpy);
-/// 4. optional-positional count (fewer is narrower).
+/// 4. whether it declares an optional positional (one that does not is
+///    narrower).
 ///
 /// [`Self::total_cmp`] then breaks a tier tie by declaration order.
 ///
@@ -151,7 +210,9 @@ pub(crate) struct MultiRank {
     /// [`Self::is_narrower`].
     pub(crate) arity: (usize, usize),
     pub(crate) bind_check: bool,
-    pub(crate) optional: usize,
+    /// Whether the candidate declares an optional positional
+    /// ([`has_optional_positional`]).
+    pub(crate) optional: bool,
     /// Declaration order: a sub's `decl_order` stamp, a method's index in
     /// its MRO-ordered match list.
     pub(crate) decl_order: u64,
@@ -203,13 +264,33 @@ impl MultiRank {
 
     /// Whether `self` and `other` are incomparable in rakudo's parameter-wise
     /// narrowness order (see [`RankProfile`]).
-    // Cost: O(r), r = the cost of one `related` call.
+    // Cost: O(r), r = the cost of one `conforms` call.
     pub(crate) fn incomparable(
         &self,
         other: &MultiRank,
-        related: &dyn Fn(Symbol, Symbol) -> bool,
+        conforms: &dyn Fn(Symbol, Symbol) -> bool,
     ) -> bool {
-        self.profile.incomparable(&other.profile, related)
+        self.profile.incomparable(&other.profile, conforms)
+    }
+
+    /// Whether `self` is narrower than `other` with the tier and the arity
+    /// rule set aside: ahead in the rank order and comparable with it, or tied
+    /// there and narrower on an optional positional the call reaches in
+    /// neither (see [`RankProfile::unreached_wins`]). An unreached parameter
+    /// on which `other` is narrower makes the pair incomparable however the
+    /// rank order reads (`multi f(Int $a, $b?)` / `multi f($a, Int $b?)` for
+    /// `f(1)` is ambiguous in rakudo).
+    // Cost: O(r), r = the cost of one `conforms` call.
+    fn narrower_by_rank(&self, other: &MultiRank, conforms: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
+        let (self_wins, other_wins) = self.profile.unreached_wins(&other.profile, conforms);
+        if other_wins {
+            return false;
+        }
+        match self.rank_cmp(other) {
+            Ordering::Less => !self.incomparable(other, conforms),
+            Ordering::Equal => self_wins && !self.incomparable(other, conforms),
+            Ordering::Greater => false,
+        }
     }
 
     /// Whether `self` and `other` differ in both positional count and
@@ -230,12 +311,12 @@ impl MultiRank {
     /// `multi a(Numeric $g, Numeric $e, Numeric $t, $d = '')` are
     /// incomparable, so which one Test's `is-approx(5, 6, 1)` reaches is
     /// decided by the required-named candidates that sit between them.
-    // Cost: O(r), r = the cost of one `related` call.
-    fn rakudo_narrower(&self, other: &MultiRank, related: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
+    // Cost: O(r), r = the cost of one `conforms` call.
+    fn rakudo_narrower(&self, other: &MultiRank, conforms: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
         if self.arity_mismatch(other) {
             return self.non_slurpy && !other.non_slurpy;
         }
-        self.rank_cmp(other) == Ordering::Less && !self.incomparable(other, related)
+        self.narrower_by_rank(other, conforms)
     }
 
     /// Whether `self` is strictly narrower than `other`: in an earlier tier,
@@ -244,11 +325,11 @@ impl MultiRank {
     /// a slurpy/non-slurpy pair narrower and leaves any other pair
     /// incomparable — except between untiered ranks, which keep the rank
     /// order.
-    // Cost: O(r), r = the cost of one `related` call.
+    // Cost: O(r), r = the cost of one `conforms` call.
     pub(crate) fn is_narrower(
         &self,
         other: &MultiRank,
-        related: &dyn Fn(Symbol, Symbol) -> bool,
+        conforms: &dyn Fn(Symbol, Symbol) -> bool,
     ) -> bool {
         if self.tier != other.tier {
             return self.tier < other.tier;
@@ -265,20 +346,20 @@ impl MultiRank {
                 return false;
             }
         }
-        self.rank_cmp(other) == Ordering::Less && !self.incomparable(other, related)
+        self.narrower_by_rank(other, conforms)
     }
 
     /// Whether a narrowest-first scan that already bound a candidate ranked
     /// `best` may skip `self` without trying it: `self` is strictly wider and
     /// comparable with `best`. One that is incomparable with it may still win
     /// by declaration order (#11943), so it is tried.
-    // Cost: O(r), r = the cost of one `related` call.
+    // Cost: O(r), r = the cost of one `conforms` call.
     pub(crate) fn scan_may_skip(
         &self,
         best: &MultiRank,
-        related: &dyn Fn(Symbol, Symbol) -> bool,
+        conforms: &dyn Fn(Symbol, Symbol) -> bool,
     ) -> bool {
-        best.is_narrower(self, related)
+        best.is_narrower(self, conforms)
     }
 }
 
@@ -290,11 +371,11 @@ impl MultiRank {
 /// tiers because of a third candidate between them (#12795). A cycle, which
 /// the relation can form across an arity mismatch, closes the remaining
 /// candidates into one tier.
-// Cost: O(n^2 * r), n = candidates, r = the cost of one `related` call.
+// Cost: O(n^2 * r), n = candidates, r = the cost of one `conforms` call.
 pub(crate) fn assign_tiers<T>(
     items: &mut [T],
     rank: impl Fn(&mut T) -> &mut MultiRank,
-    related: &dyn Fn(Symbol, Symbol) -> bool,
+    conforms: &dyn Fn(Symbol, Symbol) -> bool,
 ) {
     let n = items.len();
     if n < 2 {
@@ -320,7 +401,7 @@ pub(crate) fn assign_tiers<T>(
                     i != j
                         && !ranks[i].profile.unrelated
                         && !ranks[j].profile.unrelated
-                        && ranks[i].rakudo_narrower(&ranks[j], related)
+                        && ranks[i].rakudo_narrower(&ranks[j], conforms)
                 })
                 .collect()
         })
@@ -358,20 +439,20 @@ pub(crate) fn assign_tiers<T>(
 /// pure tie (every survivor tier-equal) is returned whole, in the input
 /// order, so the caller's ambiguity logic still sees it.
 ///
-/// The flag is set when the survivors are an arity-incomparable split that
-/// no bind-time check can settle (see [`arity_ambiguous`]): rakudo raises
+/// The flag is set when the survivors are an incomparable split that no
+/// bind-time check can settle (see [`split_ambiguous`]): rakudo raises
 /// `X::Multi::Ambiguous` there, so they are all returned for the caller to
 /// report.
-// Cost: O(m^2 * r), m = matches, r = the cost of one `related` call.
+// Cost: O(m^2 * r), m = matches, r = the cost of one `conforms` call.
 pub(crate) fn prune_to_maximal<T>(
     matches: Vec<(MultiRank, T)>,
-    related: &dyn Fn(Symbol, Symbol) -> bool,
+    conforms: &dyn Fn(Symbol, Symbol) -> bool,
 ) -> (Vec<(MultiRank, T)>, bool) {
     if matches.len() < 2 {
         return (matches, false);
     }
     let ranks: Vec<MultiRank> = matches.iter().map(|(r, _)| *r).collect();
-    let dominated = |k: &MultiRank| ranks.iter().any(|o| o.is_narrower(k, related));
+    let dominated = |k: &MultiRank| ranks.iter().any(|o| o.is_narrower(k, conforms));
     if ranks.iter().all(dominated) {
         // The arity-mismatch rule makes the relation non-transitive, so a
         // cycle can dominate every match; leave the choice to the tier order.
@@ -387,7 +468,7 @@ pub(crate) fn prune_to_maximal<T>(
         return (maximal, false);
     }
     let survivors: Vec<MultiRank> = maximal.iter().map(|(k, _)| *k).collect();
-    if arity_ambiguous(&survivors) {
+    if split_ambiguous(&survivors, conforms) {
         return (maximal, true);
     }
     // Incomparable survivors: declaration order decides.
@@ -400,17 +481,20 @@ pub(crate) fn prune_to_maximal<T>(
     (vec![maximal.swap_remove(keep)], false)
 }
 
-/// Whether incomparable `survivors` are split by an arity mismatch alone,
-/// with no bind-time check among them: no `where`, `subset` or literal
-/// refinement and no named parameter. Rakudo trial-binds such a check in
+/// Whether incomparable `survivors` are split by an arity mismatch or by an
+/// optional positional the call does not reach (one candidate is narrower
+/// there, the other elsewhere, see [`RankProfile::unreached_wins`]), with no
+/// bind-time check among them: no `where`, `subset` or literal refinement
+/// and no named parameter. Rakudo trial-binds such a check in
 /// declaration order, so the first declared that binds wins
 /// (`multi b(Int $g where * > 0, Int $e, $d = '')` over
 /// `multi b(Any $g, Any $e, Any $t, $d = '')` for `b(5, 6, 1)`); without one,
 /// two binding candidates in one tier are ambiguous
 /// (`multi a(Int $g, Int $e, $d = '')` / `multi a(Any $g, Any $e, Any $t,
-/// $d = '')` for `a(5, 6, 1)`).
-// Cost: O(s^2), s = survivors.
-fn arity_ambiguous(survivors: &[MultiRank]) -> bool {
+/// $d = '')` for `a(5, 6, 1)`; `multi f(Int $a, $b?)` / `multi f($a, Int $b?)`
+/// for `f(1)`).
+// Cost: O(s^2 * r), s = survivors, r = the cost of one `conforms` call.
+fn split_ambiguous(survivors: &[MultiRank], conforms: &dyn Fn(Symbol, Symbol) -> bool) -> bool {
     survivors.len() > 1
         && survivors
             .iter()
@@ -418,7 +502,10 @@ fn arity_ambiguous(survivors: &[MultiRank]) -> bool {
         && survivors.iter().enumerate().all(|(i, a)| {
             survivors[i + 1..]
                 .iter()
-                .all(|b| a.arity_mismatch(b) && a.non_slurpy == b.non_slurpy)
+                .all(|b| {
+                    (a.arity_mismatch(b) && a.non_slurpy == b.non_slurpy)
+                        || a.profile.unreached_wins(&b.profile, conforms) != (false, false)
+                })
         })
 }
 
@@ -488,12 +575,15 @@ pub(crate) fn positional_arity(params: &[&ParamDef]) -> (usize, usize) {
     (positional.count(), required)
 }
 
-/// Count *optional* positional parameters — an optional or defaulted
-/// positional param is one the caller may omit, which makes the candidate accept more calls and therefore LESS
-/// specific. Raku ranks a candidate with a required parameter as narrower
-/// than one where that parameter is optional (`multi f(Int:D)` beats
-/// `multi f(Int $z?)` for `f(42)`; `f(Int $a)` beats `f(*@a)` and
-/// `f($a, $b?)`). Fewer optionals wins. Used as a tiebreaker AFTER type
+/// Whether the candidate declares an *optional* positional parameter — an
+/// optional or defaulted positional the caller may omit, which makes the
+/// candidate accept more calls and therefore LESS specific. Raku ranks a
+/// candidate without one as narrower (`multi f(Int:D)` beats
+/// `multi f(Int $z?)` for `f(42)`; `multi m(Int $x)` beats
+/// `multi m(Int $x, Int $y?)` for `m(1)`). It is a boolean step, not a count:
+/// between two candidates that both declare optionals, how many they declare
+/// is irrelevant, and rakudo reports `multi m($x?)` / `multi m($x?, $y?)` for
+/// `m()` (and `m(1)`) as ambiguous (#12852). Used as a tiebreaker AFTER type
 /// distance (a narrower type still wins even when it is the optional one —
 /// `f(Int $y?)` beats `f(Cool $x)` for `f(42)`), and as the last step before
 /// declaration order. Once both candidates declare named parameters,
@@ -501,19 +591,16 @@ pub(crate) fn positional_arity(params: &[&ParamDef]) -> (usize, usize) {
 /// narrower: `multi f($x = 1, :$a)` and `multi f(:$b)` tie and declaration
 /// order decides; the named-parameter step already decides a mixed pair.
 ///
-/// A slurpy is not counted (the non-slurpy tier ranks it first), and a
-/// candidate that needs a named bind check (an explicit named parameter, or a
-/// `where` on a slurpy) counts nothing: rakudo ties `multi j($a?, $c?, *%h
-/// where .elems == 0)` with `multi j($b?, :$x)` for `j(1)`, and the first
+/// A slurpy does not count (the non-slurpy tier ranks it first), and neither
+/// does anything in a candidate that needs a named bind check (an explicit
+/// named parameter, or a `where` on a slurpy): rakudo ties `multi j($a?, $c?,
+/// *%h where .elems == 0)` with `multi j($b?, :$x)` for `j(1)`, and the first
 /// declared wins (#12774).
 // Cost: O(p), p = parameters.
-pub(crate) fn optional_positional_count(params: &[&ParamDef]) -> usize {
-    if needs_named_bind_check(params) {
-        return 0;
-    }
-    params
-        .iter()
-        .filter(|p| !p.named && !p.slurpy && !p.double_slurpy)
-        .filter(|p| p.optional_marker || p.default.is_some())
-        .count()
+pub(crate) fn has_optional_positional(params: &[&ParamDef]) -> bool {
+    !needs_named_bind_check(params)
+        && params
+            .iter()
+            .filter(|p| !p.named && !p.slurpy && !p.double_slurpy)
+            .any(|p| p.optional_marker || p.default.is_some())
 }

@@ -101,13 +101,32 @@ impl Interpreter {
         })
     }
 
-    pub(super) fn candidate_dispatch_shape(&self, def: &FunctionDef) -> Vec<DispatchShape> {
+    /// The shape `def` dispatches a call with `positional_args` positional
+    /// arguments by. An optional positional the call does not reach is left
+    /// out: the ranking already compared it by its declared type
+    /// (`RankProfile::unreached_wins`), so two candidates still tied here
+    /// are tied on it too (`multi g(Int $a?)` / `multi g(Str $a?)` for `g()`
+    /// is ambiguous, #12852).
+    // Cost: O(p), p = parameters.
+    pub(super) fn candidate_dispatch_shape(
+        &self,
+        def: &FunctionDef,
+        positional_args: usize,
+    ) -> Vec<DispatchShape> {
+        let mut positional = 0usize;
         Self::dispatch_visible_params(def)
             .into_iter()
             // A slurpy hash (`*%m`) never takes a positional, so it does not
             // change the candidate's dispatch shape: `multi f(*%m)` and
             // `multi f()` tie for `f()` and are reported ambiguous.
             .filter(|p| !(p.slurpy && p.name.starts_with('%')))
+            .filter(|p| {
+                if p.named || p.slurpy || p.double_slurpy {
+                    return true;
+                }
+                positional += 1;
+                positional <= positional_args || !(p.optional_marker || p.default.is_some())
+            })
             .map(|p| {
                 // Include sigil-based implicit type constraint in the shape
                 // so that @-param and $-param are distinguishable.

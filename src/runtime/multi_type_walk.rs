@@ -167,6 +167,9 @@ impl Interpreter {
         // walked; recorded once the next slot (or the end) fixes its distance.
         let mut slot_refined = false;
         let mut slot_nominal: Option<Symbol> = None;
+        // The slot is an optional positional this call does not reach; its
+        // `slot_nominal` is then the declared type.
+        let mut slot_unreached = false;
         let mut prev_total = 0usize;
         let mut slot = 0usize;
         let mut pos_idx = 0usize;
@@ -201,9 +204,13 @@ impl Interpreter {
             }
             if slot > 0 {
                 profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal);
+                if slot_unreached && let Some(declared) = slot_nominal {
+                    profile.mark_unreached(slot - 1, declared);
+                }
             }
             prev_total = total;
             slot_nominal = None;
+            slot_unreached = false;
             if slot < PROFILE_LEN {
                 slot_refined = (pd.where_constraint.is_some() && !pd.is_variadic())
                     || pd.literal_value.is_some()
@@ -242,7 +249,14 @@ impl Interpreter {
                 // signature/optional-param-where-runs-when-omitted.t`). A
                 // required parameter with no argument costs 1000: that
                 // candidate cannot bind the call at all.
-                if !(pd.optional_marker || pd.default.is_some() || pd.name.starts_with('&')) {
+                if pd.optional_marker || pd.default.is_some() {
+                    // Rakudo still orders the candidates by this parameter's
+                    // DECLARED type (`multi g(Int $a?)` is narrower than
+                    // `multi g($a?)` for `g()`), so record it for
+                    // `RankProfile::unreached_wins`.
+                    slot_unreached = true;
+                    slot_nominal = Some(self.declared_positional_nominal(pd, owner.package));
+                } else if !pd.name.starts_with('&') {
                     total += 1000;
                 }
                 continue;
@@ -313,8 +327,31 @@ impl Interpreter {
         }
         if slot > 0 {
             profile.record(slot - 1, total - prev_total, slot_refined, slot_nominal);
+            if slot_unreached && let Some(declared) = slot_nominal {
+                profile.mark_unreached(slot - 1, declared);
+            }
         }
         (total, profile)
+    }
+
+    /// The nominal type a positional parameter declares, with no argument to
+    /// measure it against: its type constraint (a coercion by the type it
+    /// accepts, a `subset` by its base type), else the type its sigil
+    /// implies — `Positional` for `@`, `Associative` for `%`, `Callable` for
+    /// `&` and `Any` for `$`.
+    // Cost: O(1) for a known type; one registry probe otherwise.
+    fn declared_positional_nominal(&self, pd: &ParamDef, package: Symbol) -> Symbol {
+        if let Some(constraint) = &pd.type_constraint {
+            let effective = self.effective_dispatch_constraint(constraint, None);
+            let nominal = self.dispatch_nominal_base(Self::constraint_base_name(effective));
+            return Symbol::intern(&self.resolve_signature_type_name(nominal.as_ref(), package));
+        }
+        Symbol::intern(match pd.name.as_bytes().first() {
+            Some(b'@') => "Positional",
+            Some(b'%') => "Associative",
+            Some(b'&') => "Callable",
+            _ => "Any",
+        })
     }
 
     /// A bare user type name in a candidate's signature names the type

@@ -249,7 +249,7 @@ impl Interpreter {
             })
             .collect();
         multi_rank::assign_tiers(&mut entries, |entry| &mut entry.key, &|x, y| {
-            self.nominal_types_related(x, y)
+            self.nominal_type_conforms(x, y)
         });
         entries
     }
@@ -310,7 +310,7 @@ impl Interpreter {
         // A key re-ranked against this call's values needs its tier again.
         if stage.iter().any(|entry| entry.reads_value) {
             multi_rank::assign_tiers(&mut ranked, |(key, _)| key, &|x, y| {
-                self.nominal_types_related(x, y)
+                self.nominal_type_conforms(x, y)
             });
         }
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));

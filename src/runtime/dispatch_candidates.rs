@@ -112,7 +112,7 @@ impl Interpreter {
                 multi_rank::positional_arity(&params)
             },
             bind_check: capture || multi_rank::needs_named_bind_check(&params),
-            optional: multi_rank::optional_positional_count(&params),
+            optional: multi_rank::has_optional_positional(&params),
             decl_order: def.decl_order,
             profile,
             tier: 0,
@@ -120,27 +120,30 @@ impl Interpreter {
         }
     }
 
-    /// Whether one of the two named types is the other or conforms to it.
+    /// Whether the named type `sub` is `sup` or conforms to it: the
+    /// directional relation [`MultiRank`] compares declared nominal types by.
     // Cost: O(h), h = the hierarchy walk of `type_hierarchy_distance`.
-    pub(super) fn nominal_types_related(&self, a: Symbol, b: Symbol) -> bool {
-        // `Any` and `Mu` are ancestors of every type, including the ones the
-        // hierarchy walk below cannot place from a type object.
-        let is_top = |s: Symbol| s.with_str(|n| matches!(n, "Any" | "Mu"));
-        if is_top(a) || is_top(b) {
+    pub(super) fn nominal_type_conforms(&self, sub: Symbol, sup: Symbol) -> bool {
+        if sub == sup {
             return true;
         }
-        let conforms = |sub: Symbol, sup: Symbol| {
-            sup.with_str(|sup| {
-                self.type_hierarchy_distance(sup, &Value::package(sub)) < UNRELATED_DISTANCE
-            })
-        };
-        conforms(a, b) || conforms(b, a)
+        // `Any` and `Mu` are ancestors of every type, including the ones the
+        // hierarchy walk below cannot place from a type object.
+        if sup.with_str(|n| n == "Mu") || (sup.with_str(|n| n == "Any") && !sub.with_str(|n| n == "Mu")) {
+            return true;
+        }
+        if sub.with_str(|n| matches!(n, "Any" | "Mu")) {
+            return false;
+        }
+        sup.with_str(|sup| {
+            self.type_hierarchy_distance(sup, &Value::package(sub)) < UNRELATED_DISTANCE
+        })
     }
 
     /// [`prune_to_maximal`] over the candidates of one sub dispatch that
     /// bound, in narrowest-first scan order; a pure tie is returned unchanged
     /// so the ambiguity logic in [`Self::settle_ranked_matches`] still sees it.
-    // Cost: O(m^2 * h), m = candidates that bound, h = one `nominal_types_related` walk.
+    // Cost: O(m^2 * h), m = candidates that bound, h = one `nominal_type_conforms` walk.
     ///
     /// An arity-incomparable split that rakudo reports as ambiguous (see
     /// `multi_rank::prune_to_maximal`) is raised here as
@@ -152,7 +155,7 @@ impl Interpreter {
         matches: Vec<(MultiRank, Arc<FunctionDef>)>,
     ) -> Result<Vec<Arc<FunctionDef>>, RuntimeError> {
         let (matches, ambiguous) =
-            prune_to_maximal(matches, &|x, y| self.nominal_types_related(x, y));
+            prune_to_maximal(matches, &|x, y| self.nominal_type_conforms(x, y));
         let defs: Vec<Arc<FunctionDef>> = matches.into_iter().map(|(_, d)| d).collect();
         if ambiguous {
             return Err(self.ambiguous_multi_dispatch_error(name, args, &defs));
@@ -249,7 +252,7 @@ impl Interpreter {
             ranked.push((key, def));
         }
         multi_rank::assign_tiers(&mut ranked, |(key, _)| key, &|x, y| {
-            self.nominal_types_related(x, y)
+            self.nominal_type_conforms(x, y)
         });
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.bind_ranked_candidates(name, args, ranked, rejected)
@@ -293,7 +296,7 @@ impl Interpreter {
             // Not for one that is incomparable with it (#11943): that one may
             // still win by declaration order, so it is tried and the scan goes on.
             if let Some(best) = best_key
-                && key.scan_may_skip(&best, &|x, y| self.nominal_types_related(x, y))
+                && key.scan_may_skip(&best, &|x, y| self.nominal_type_conforms(x, y))
             {
                 continue;
             }
@@ -406,7 +409,11 @@ impl Interpreter {
         // `tied` re-filter this used to do — both of which recomputed
         // `candidate_specificity_rank_for_args` and `candidate_type_distance`
         // per match — are therefore redundant.
-        let best_shape = self.candidate_dispatch_shape(&matches[0]);
+        let positional_args = args
+            .iter()
+            .filter(|arg| !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            .count();
+        let best_shape = self.candidate_dispatch_shape(&matches[0], positional_args);
         let tied: Vec<Arc<FunctionDef>> = matches.clone();
         // Compare dispatch shapes as sorted multisets so that candidates with
         // the same set of typed parameters in a different order are still
@@ -419,7 +426,7 @@ impl Interpreter {
                 .iter()
                 .all(|def| !self.candidate_uses_order_sensitive_dispatch(def))
             && tied.iter().all(|def| {
-                let mut shape = self.candidate_dispatch_shape(def);
+                let mut shape = self.candidate_dispatch_shape(def, positional_args);
                 shape.sort();
                 shape == best_shape_sorted
             })
