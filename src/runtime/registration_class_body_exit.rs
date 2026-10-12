@@ -69,12 +69,22 @@ impl Interpreter {
             .iter()
             .map(|sym| sym.resolve())
             .collect();
+        let nested_cells = self
+            .lexicals
+            .nested_capture_cell_names
+            .remove(&crate::symbol::Symbol::intern(name))
+            .unwrap_or_default();
         let mut body_lexicals: Vec<(String, Value)> = self
             .env
             .iter()
             .filter_map(|(k, v)| {
                 let bare = k.resolve();
                 if saved_env.contains_key_sym(*k) && !declared_statics.contains(bare.as_str()) {
+                    return None;
+                }
+                // A nested block's scalar its methods share as a cell (#13044):
+                // what is left in the env is the block's stale plain copy.
+                if nested_cells.contains(k) && !declared_statics.contains(bare.as_str()) {
                     return None;
                 }
                 if crate::qualified::is_qualified_str(&bare)
