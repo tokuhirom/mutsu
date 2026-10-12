@@ -529,6 +529,12 @@ impl Interpreter {
             // attribute, a `CStr` REPR's C string) unboxes that
             // (`runtime::box_native`); a NULL `CStr` is the null str, `Nil`.
             "unbox_s" => {
+                if let Some(e) = args.first().and_then(|v| {
+                    let v = crate::runtime::types::unwrap_varref_value(v.clone()).deref_container();
+                    crate::runtime::box_native::unbox_type_object_error(&v, "a str")
+                }) {
+                    return Some(Err(e));
+                }
                 let inner = args.first().and_then(|v| self.unbox_native_through(v));
                 Ok(match inner {
                     Some(inner) if inner.is_nil() => inner,

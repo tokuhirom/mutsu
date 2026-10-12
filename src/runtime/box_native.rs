@@ -19,6 +19,20 @@
 use super::*;
 use crate::value::numeric_payload::{INT_PAYLOAD, NUM_PAYLOAD, STR_PAYLOAD, numeric_payload_of};
 
+/// The `nqp::unbox_s` / `unbox_i` / `unbox_n` refusal of a type object, which
+/// boxes no value: `Cannot unbox a type object (T) to <what>.`, `what` being
+/// `a str`, `an int` or `a num`. `None` for any other value (#12911).
+// Cost: O(1).
+pub(crate) fn unbox_type_object_error(v: &Value, what: &str) -> Option<RuntimeError> {
+    let ValueView::Package(name) = v.view() else {
+        return None;
+    };
+    Some(RuntimeError::new(format!(
+        "Cannot unbox a type object ({}) to {what}.",
+        crate::value::user_facing_type_name(name.as_str())
+    )))
+}
+
 impl Interpreter {
     /// `nqp::box_{i,n,s,u}($value, $type)` when `$type` is a class that boxes
     /// into its own storage. `None` leaves the op to its plain-value answer.

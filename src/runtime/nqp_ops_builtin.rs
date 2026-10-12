@@ -362,7 +362,11 @@ impl Interpreter {
             "unbox_i" => {
                 let v = crate::runtime::types::unwrap_varref_value(
                     args.first().cloned().unwrap_or(Value::NIL),
-                );
+                )
+                .deref_container();
+                if let Some(e) = crate::runtime::box_native::unbox_type_object_error(&v, "an int") {
+                    return Some(Err(e));
+                }
                 // An object that boxes its value in an `is box_target`
                 // attribute unboxes that attribute.
                 // So does a boxed `is Int` subclass instance, its payload.
