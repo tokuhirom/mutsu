@@ -903,6 +903,24 @@ impl Interpreter {
         Ok(v.clone())
     }
 
+    /// `:(Int $a) := \(...)`: check the value bound to a typed `$` parameter of
+    /// a signature literal and pass it through. A mismatch is
+    /// `X::TypeCheck::Binding::Parameter`, as the signature binder raises it.
+    /// A missing argument (`Nil`) is left for the binding itself.
+    // Cost: O(1) for a built-in type; one type check (an MRO walk) for an object.
+    pub(super) fn builtin_sig_bind_check(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let [value, ty, param] = args else {
+            return Err(RuntimeError::new(
+                "__mutsu_sig_bind_check expects value, type and parameter name",
+            ));
+        };
+        let (ty, param) = (ty.to_string_value(), param.to_string_value());
+        if !value.is_nil() && !self.type_matches_value(&ty, value) {
+            return Err(self.typecheck_binding_parameter_failure(&param, &ty, value));
+        }
+        Ok(value.clone())
+    }
+
     pub(super) fn builtin_star_lvalue_rhs(
         &mut self,
         args: &[Value],
