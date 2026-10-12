@@ -72,12 +72,12 @@ impl Interpreter {
             }
             // A cell can close a cycle through a Pair value (`$a = 1 => $a`),
             // so it is visited once like the other containers.
-            ValueView::ContainerRef(cell) => {
-                if seen.insert((4, crate::gc::Gc::as_ptr(&cell) as *const () as usize)) {
-                    let inner = cell.lock().ok().map(|held| held.clone());
-                    if let Some(inner) = inner {
-                        self.reify_nested_map_grep_for_read_inner(&inner, nested, seen)?;
-                    }
+            ValueView::ContainerRef(cell)
+                if seen.insert((4, crate::gc::Gc::as_ptr(&cell) as *const () as usize)) =>
+            {
+                let inner = cell.lock().ok().map(|held| held.clone());
+                if let Some(inner) = inner {
+                    self.reify_nested_map_grep_for_read_inner(&inner, nested, seen)?;
                 }
             }
             _ => {}
