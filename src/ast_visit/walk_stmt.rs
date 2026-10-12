@@ -440,6 +440,7 @@ pub(crate) fn walk_stmt<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, s: &'ast Stmt)
             method_name,
             method_args,
             value,
+            is_attribute: _,
         } => {
             v.visit_name(var_name, NameKind::TempTarget);
             v.visit_name(method_name, NameKind::Method);

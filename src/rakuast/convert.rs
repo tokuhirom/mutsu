@@ -532,6 +532,21 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(node) => Ok(Some(statement_expression(node?))),
             None => Err(unsupported("`temp`/`let` of this form")),
         },
+        Stmt::TempMethodAssign {
+            var_name,
+            method_name,
+            method_args,
+            value,
+            is_attribute,
+        } => Ok(Some(statement_expression(
+            super::temporize::convert_method_assign(
+                var_name,
+                method_name,
+                method_args,
+                value,
+                *is_attribute,
+            )?,
+        ))),
         Stmt::SyntheticBlock(_) if crate::ast::temporize::recognize(stmt).is_some() => {
             let node = super::temporize::convert(stmt).expect("just checked")?;
             Ok(Some(statement_expression(node)))

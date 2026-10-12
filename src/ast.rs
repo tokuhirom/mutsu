@@ -2786,6 +2786,10 @@ pub(crate) enum Stmt {
         method_name: String,
         method_args: Vec<Expr>,
         value: Expr,
+        /// The source was an attribute access (`$.x`) rather than a method
+        /// call (`self.x`). Both save the same `self` slot at runtime.
+        #[serde(default)]
+        is_attribute: bool,
     },
     /// The source form of the parser expansion this statement opens (see
     /// `ast::signature_decl`): a record for the RakuAST layer, not code. It

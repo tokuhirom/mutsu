@@ -367,6 +367,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     method_name: method_name.to_string(),
                     method_args: method_args.clone(),
                     value: args[3].clone(),
+                    is_attribute: matches!(&args[0], Expr::Var(name) if name == "__ANON_STATE__"),
                 },
             );
         }
@@ -396,6 +397,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     method_name: method_name.resolve(),
                     method_args: method_args.clone(),
                     value: args[3].clone(),
+                    is_attribute: matches!(invocant.as_ref(), Expr::Var(name) if name == "__ANON_STATE__"),
                 },
             );
         }
@@ -422,6 +424,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     method_name: method_name.to_string(),
                     method_args: Vec::new(),
                     value: (**value).clone(),
+                    is_attribute: true,
                 },
             );
         }
@@ -444,6 +447,7 @@ pub(crate) fn temp_stmt(input: &str) -> PResult<'_, Stmt> {
                     method_name: name.resolve(),
                     method_args: args,
                     value: rhs_expr,
+                    is_attribute: false,
                 },
             );
         }

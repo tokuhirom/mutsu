@@ -316,6 +316,7 @@ t/collections/lazy-seq/lazy-grep-infinite-exclusive-range.t
 t/collections/lazy-seq/lazy-infinite-sequence-strict-force.t
 t/collections/lazy-seq/lazy-list-adaptors-stream.t
 t/collections/lazy-seq/lazy-list-eqv-and-list-view.t
+t/collections/lazy-seq/lazy-list-extrema-cannot-lazy.t
 t/collections/lazy-seq/lazy-list-gist-context.t
 t/collections/lazy-seq/lazy-list-join.t
 t/collections/lazy-seq/lazy-list-say-display.t
@@ -1125,6 +1126,7 @@ t/concurrency/supply/supply-tap-close-interval.t
 t/concurrency/supply/supply-tap-close-nested-whenever.t
 t/concurrency/supply/supply-tap-close-per-subscriber.t
 t/concurrency/supply/supply-tap-closure-caller-same-name-array.t
+t/concurrency/supply/supply-tap-idle-holds-no-worker.t
 t/concurrency/supply/supply-typeobject-concreteness.t
 t/concurrency/supply/supply-unique-tap-ok-expires.t
 t/concurrency/supply/supply-unique.t
@@ -3256,6 +3258,7 @@ t/oo/attribute/instance-eqv-private-attribute-and-user-raku.t
 t/oo/attribute/instance-eqv-qualified-attributes.t
 t/oo/attribute/interp-attribute-array-hash-method.t
 t/oo/attribute/interp-self-accessor-call.t
+t/oo/attribute/let-temp-attribute-and-term-forms.t
 t/oo/attribute/lvalue-invocant-attribute-accessor-container.t
 t/oo/attribute/method-accessor-element-bind.t
 t/oo/attribute/method-table-reports-rw-accessor.t
@@ -3435,6 +3438,7 @@ t/oo/construct/control-constructs-in-expression-position.t
 t/oo/construct/cpp-constructor-syntax.t
 t/oo/construct/ctor-istype-shaped-attrs.t
 t/oo/construct/ctor-lane-user-new-declines.t
+t/oo/construct/ctor-plan-cached-class-shape.t
 t/oo/construct/ctor-self-identity.t
 t/oo/construct/datetime-constructor-container-arg.t
 t/oo/construct/hash-subclass-positional-construction.t
@@ -3604,6 +3608,7 @@ t/oo/method/list-map-search-method-warnings.t
 t/oo/method/list-reverse-method-row.t
 t/oo/method/list-view-method-rows.t
 t/oo/method/lvalue-invocant-user-raw-method.t
+t/oo/method/lvalue-method-rw.t
 t/oo/method/lvalue-method-writeback-coherence.t
 t/oo/method/map-block-method-local-shadows-class-my.t
 t/oo/method/map-view-method-rows.t
@@ -3818,6 +3823,7 @@ t/oo/method/submethod-defer.t
 t/oo/method/submethod-wrap.t
 t/oo/method/succ-pred-method-rows.t
 t/oo/method/superscript-method-power.t
+t/oo/method/temp-method-lvalue-compound.t
 t/oo/method/temporal-shift-edit-method-rows.t
 t/oo/method/topic-dynamic-method-call.t
 t/oo/method/topic-method-colon-args-trailing-comma-modifier.t
@@ -4533,6 +4539,7 @@ t/rakuast/rakuast-substitution.t
 t/rakuast/rakuast-supply-block.t
 t/rakuast/rakuast-supply-done-round-trip.t
 t/rakuast/rakuast-temp-and-let.t
+t/rakuast/rakuast-temp-method-assign.t
 t/rakuast/rakuast-term-name-math-constants.t
 t/rakuast/rakuast-ternary.t
 t/rakuast/rakuast-topic-call.t
@@ -5980,12 +5987,14 @@ t/tooling/testing-is-approx.t
 t/tooling/vendored-real-test-module.t
 t/types/angle-list-numeric-words.t
 t/types/any-are.t
+t/types/any-first-min-max-rows.t
 t/types/any-head-tail-rows.t
 t/types/any-list-derived-methods-use-user-list.t
 t/types/any-reverse-rotate.t
 t/types/any-sampling-minmax-rows.t
 t/types/any-serial.t
 t/types/any-splice-instance-receivers.t
+t/types/any-type-object-sampling.t
 t/types/base64-battery.t
 t/types/blob-buf-concat-result-type.t
 t/types/blob-bytes-type-object.t
@@ -6246,10 +6255,12 @@ t/types/numeric/float-num.t
 t/types/numeric/floor-ceiling-num-boxing.t
 t/types/numeric/floor-ceiling-round-bignum.t
 t/types/numeric/geometric-sequence-bigint-overflow.t
+t/types/numeric/int-add-sub-mul-operator-forms.t
 t/types/numeric/int-bigint-div-subnormal-num.t
 t/types/numeric/int-bit-methods.t
 t/types/numeric/int-bitop-object-numeric.t
 t/types/numeric/int-eq-fast-path.t
+t/types/numeric/int-modulo-operator-forms.t
 t/types/numeric/int-num-coerce-bad-string.t
 t/types/numeric/int-operator-forms-parity.t
 t/types/numeric/int-subclass-arithmetic.t
@@ -6277,6 +6288,7 @@ t/types/numeric/radix-literals.t
 t/types/numeric/rat-complex-stringify-regressions.t
 t/types/numeric/rat-div-bigint.t
 t/types/numeric/rat-fatrat-epsilon-real-check.t
+t/types/numeric/rat-mul-operator-forms.t
 t/types/numeric/rat-num-correct-rounding.t
 t/types/numeric/rat-numerator-denominator-nude.t
 t/types/numeric/rat-numerator-uint-refinement-forwarding.t
