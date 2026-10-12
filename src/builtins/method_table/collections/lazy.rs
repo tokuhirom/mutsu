@@ -8,12 +8,15 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 macro_rules! row {
     ($owner:literal, $name:literal, $handler:ident) => {
+        row!($owner, $name, $handler, RowFlags::NONE)
+    };
+    ($owner:literal, $name:literal, $handler:ident, $flags:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
             arity: 0,
             handler: Handler::Narrow($handler),
-            flags: RowFlags::NONE,
+            flags: $flags,
             named: &[],
         }
     };
@@ -26,8 +29,10 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("List", "race", race),
     row!("Map", "race", race),
     row!("Range", "race", race),
-    row!("List", "lazy", lazy),
-    row!("Map", "lazy", lazy),
+    // A `List`/`Array`/`Hash` type object lists as itself: `Array.lazy` is
+    // `(Array).lazy.Seq`.
+    row!("List", "lazy", lazy, RowFlags::TYPE_OBJECT_OK),
+    row!("Map", "lazy", lazy, RowFlags::TYPE_OBJECT_OK),
     row!("Range", "lazy", lazy),
     row!("Map", "item", item),
     row!("Range", "item", item),
@@ -53,11 +58,12 @@ pub(crate) fn race(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
 }
 
 /// `.lazy`: an already-lazy value stays itself (an unbounded range becomes a
-/// lazy `Seq`, `(1..*).lazy.raku` is `(1, 2, ...).lazy.Seq`); an eager list
+/// lazy `Seq`, `(1..*).lazy.raku` is `(1, 2, ...).lazy.Seq`; a lazy
+/// `LazyList` is re-tagged to stay lazy when assigned); an eager list
 /// or finite range becomes a lazy list over its elements, marked so that
 /// assigning it to an array keeps it lazy; `lazy { ... }` is a thunk that
 /// runs its block on first access. A `Hash` or `Map` becomes a lazy `Seq` of
-/// its pairs. A `LazyList` is the interpreter's.
+/// its pairs. A `LazyList` that is not lazy is the interpreter's.
 // Cost: O(e) for an eager list, a finite range or a hash (its elements are
 // copied once), e = elements; O(1) otherwise.
 pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
@@ -72,9 +78,14 @@ pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
                 ),
             ))));
         }
+        if let ValueView::LazyList(list) = target.view() {
+            return Some(Ok(retag_lazy_list(&list)));
+        }
         return Some(Ok(target.clone()));
     }
-    let items = if let Some(items) = target.as_list_items() {
+    let items = if matches!(target.view(), ValueView::Package(_)) {
+        vec![target.clone()]
+    } else if let Some(items) = target.as_list_items() {
         items.to_vec()
     } else if target.is_range() || matches!(target.view(), ValueView::Hash(_)) {
         // A Hash (`Map`'s `list`) is its pairs.
@@ -118,6 +129,57 @@ pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
             itemized: false,
         },
     ))))
+}
+
+/// A lazy `LazyList` re-tagged so that assigning it to an array keeps it
+/// lazy: the same list (its body, cache and producer state), marked with
+/// `__mutsu_preserve_lazy_on_array_assign`.
+// Cost: O(c), c = elements already cached (the cache is copied).
+fn retag_lazy_list(list: &crate::value::LazyList) -> Value {
+    let mut env = list.env.clone();
+    env.insert(
+        "__mutsu_preserve_lazy_on_array_assign".to_string(),
+        Value::TRUE,
+    );
+    let cache = list.cache.lock().unwrap().clone();
+    Value::lazy_list(crate::gc::Gc::new(crate::value::LazyList {
+        body: list.body.clone(),
+        env,
+        cache: std::sync::Mutex::new(cache),
+        generation_state: std::sync::Mutex::new(None),
+        compiled_code: list.compiled_code.clone(),
+        compiled_fns: list.compiled_fns.clone(),
+        elems_count: list.elems_count.clone(),
+        scan_spec: list
+            .scan_spec
+            .as_ref()
+            .map(|s| std::sync::Mutex::new(s.lock().unwrap().clone())),
+        sequence_spec: list.sequence_spec.clone(),
+        coroutine: list
+            .coroutine
+            .as_ref()
+            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+        lazy_pipe: list
+            .lazy_pipe
+            .as_ref()
+            .map(|p| std::sync::Mutex::new(p.lock().unwrap().clone())),
+        closure_seq: list
+            .closure_seq
+            .as_ref()
+            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+        walk_pending: list
+            .walk_pending
+            .as_ref()
+            .map(|w| std::sync::Mutex::new(w.lock().unwrap().clone())),
+        cat_pull: list
+            .cat_pull
+            .as_ref()
+            .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+        array_context: list.array_context,
+        list_context: list.list_context,
+        cached_no_sink: list.cached_no_sink,
+        itemized: list.itemized,
+    }))
 }
 
 /// `.item`: the value as one item. `Value::item` is the one place that

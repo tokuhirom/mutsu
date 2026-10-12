@@ -17,20 +17,20 @@ const fn any_join_row(arity: u8) -> MethodRow {
         name: "join",
         arity,
         handler: Handler::Narrow(any_join),
-        flags: RowFlags::NONE,
+        flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     }
 }
 
 /// What [`join_core`] decided about a receiver.
-pub(crate) enum Joined {
+enum Joined {
     /// The answer (or the error) of the join.
     Done(Result<Value, RuntimeError>),
     /// An element needs the interpreter to stringify it (or the receiver must
     /// be forced first).
     NeedsInterpreter,
-    /// A receiver this routine does not read as a list: an instance, a
-    /// `Nil`, a type object, a thread. The cascade keeps its own answer.
+    /// A `Thread`, whose `.join` is the thread-join primitive, or a mixin,
+    /// which joins its inner value: not a join this routine does.
     NotCovered,
 }
 
@@ -47,7 +47,7 @@ fn any_join(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError
 /// Join the elements `target` reads as with `sep`.
 // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
 // (each element stringified once, one `join` into a single buffer).
-pub(crate) fn join_core(target: &Value, sep: &str) -> Joined {
+fn join_core(target: &Value, sep: &str) -> Joined {
     if crate::builtins::is_join_lazy(target) {
         return Joined::Done(Ok(Value::str("...".to_string())));
     }
@@ -107,6 +107,16 @@ pub(crate) fn join_core(target: &Value, sep: &str) -> Joined {
                 .join(sep);
             Joined::Done(Ok(Value::str(joined)))
         }
+        // A `Blob`/`Buf` lists as its elements: `Blob.new(1, 2).join(",")` is
+        // "1,2" (its own `Str` would throw `X::Buf::AsStr`).
+        ValueView::Instance { attributes, .. }
+            if matches!(
+                target.dispatch_shape(),
+                Some(DispatchShape::Blob | DispatchShape::Buf)
+            ) =>
+        {
+            from_items(&crate::value::value_buf::buf_elems_or_empty(&attributes))
+        }
         // A Pair is a one-element list, so the separator never appears: the
         // result is the Pair's own `.Str`, `key\tvalue`.
         ValueView::Pair(..) | ValueView::ValuePair(..) => {
@@ -151,6 +161,23 @@ pub(crate) fn join_core(target: &Value, sep: &str) -> Joined {
         {
             Joined::Done(Ok(Value::str(target.to_string_value())))
         }
-        _ => Joined::NotCovered,
+        // Any other built-in class with a shape (never a user subclass, whose
+        // `Str` may be its own: `IO::Path`, `IO::Handle`, `Version`, ...) is a
+        // one-element list of its `.Str`.
+        _ if target.dispatch_shape().is_some() => {
+            Joined::Done(Ok(Value::str(target.to_string_value())))
+        }
+        // `.join` on a Thread is the thread-join primitive (block until the
+        // thread finishes), which the runtime's `native_thread` routes.
+        ValueView::Instance { class_name, .. } if class_name == "Thread" => Joined::NotCovered,
+        ValueView::Package(name) if name == "Thread" => Joined::NotCovered,
+        // A mixin joins what its inner value lists as (`(1, 2) but R`), which
+        // the runtime's mixin delegation reads.
+        ValueView::Mixin(..) => Joined::NotCovered,
+        // Anything else is a one-element list (`self.list`): an instance, a
+        // type object, `Nil`, a code object. Its element is stringified with
+        // its own `Str`, which may be a user method or warn (`Int.join` is ""
+        // with a warning), so most need the interpreter.
+        _ => from_items(std::slice::from_ref(target)),
     }
 }

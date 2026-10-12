@@ -295,15 +295,15 @@ impl DispatchShape {
             DispatchShape::Range | DispatchShape::Seq | DispatchShape::IoPath
         ) && const_str_eq(owner, "Cool"))
             || (self.reaches_audited_any() && const_str_eq(owner, "Any"))
+            || (!self.inherits() && const_str_eq(owner, "Mu"))
     }
 
     /// Whether this closed shape reaches some of `Any`'s list rows
     /// ([`ANY_LIST_FOR_CLOSED_SHAPES`]; [`Self::reaches_audited_any_method`]
-    /// says which). A `Match` reaches none: it answers them on its matched
-    /// string (`methods_0arg`'s `Match` delegation).
+    /// says which).
     // Cost: O(1).
     const fn reaches_audited_any(self) -> bool {
-        !self.inherits() && self.has_instances() && !matches!(self, DispatchShape::Match)
+        !self.inherits() && self.has_instances()
     }
 
     /// Whether `Any`'s list row `method` reaches this closed shape. None
@@ -320,6 +320,9 @@ impl DispatchShape {
             return false;
         }
         match self {
+            // A `Match` answers the others on its matched string (`methods_0arg`'s
+            // `Match` delegation), but joins its positional captures.
+            DispatchShape::Match => const_str_eq(method, "join"),
             _ if const_str_eq(method, "sort") => false,
             DispatchShape::Pair => true,
             _ if const_str_eq(method, "reverse") => false,
@@ -354,6 +357,9 @@ impl DispatchShape {
         }
         if const_str_eq(owner, "Any") {
             return self.reaches_audited_any_method(method);
+        }
+        if const_str_eq(owner, "Mu") {
+            return const_list_contains(&MU_FOR_CLOSED_SHAPES, method);
         }
         const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
             || (!matches!(self, DispatchShape::IoPath)
@@ -456,9 +462,19 @@ pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
 /// `self.list.METHOD`, and their handlers read any receiver as its list (a
 /// `Pair` or a `Set` as one element or its pairs, a `Blob` as its bytes).
 /// A shape whose own type declares one of them (`Seq.reverse`, `Range.flat`)
+/// answers its own row first. `join` (`self.list.join`) reads a `Pair` as its
+/// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
+/// (`method_table::collections::join`).
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 7] = [
+    "flat", "sort", "unique", "repeated", "reverse", "end", "join",
+];
+
+/// The `Mu` methods every closed shape reaches ([`DispatchShape::reaches_audited`])
+/// and every receiver with no shape (`method_table::answer_shapeless`): their
+/// handlers read only the receiver's truth or its lazy flag, which every value
+/// has. A shape whose own type declares one (`Match.not`, `Range.is-lazy`)
 /// answers its own row first.
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 6] =
-    ["flat", "sort", "unique", "repeated", "reverse", "end"];
+pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 3] = ["so", "not", "is-lazy"];
 
 /// Whether `list` contains `name`, for a `const fn`.
 // Cost: O(n), n = entries of `list`.

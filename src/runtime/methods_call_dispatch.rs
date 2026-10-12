@@ -3200,7 +3200,16 @@ impl Interpreter {
                             &[],
                         )
                     }),
-                    [a] => crate::builtins::native_method_1arg(&target, method_sym, a),
+                    [a] => crate::builtins::native_method_1arg(&target, method_sym, a).or_else(
+                        || {
+                            crate::builtins::method_table::answer_shapeless(
+                                Some(self),
+                                &target,
+                                method_sym,
+                                std::slice::from_ref(a),
+                            )
+                        },
+                    ),
                     [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b),
                     _ => None,
                 }

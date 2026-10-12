@@ -62,8 +62,8 @@ mod table_const;
 // (`method_table::str::tclc`), whichever group directory holds them.
 pub(crate) use collections::{
     any_collection, any_list_hash as collection_any_list_hash, any_misc as collection_any_misc,
-    capture, clone as collection_clone, join as collection_join, lazy, list, list_aggregate,
-    list_transform, map, pair, positional, quanthash, range, render as collection_render,
+    capture, clone as collection_clone, lazy, list, list_aggregate, list_transform, map, pair,
+    positional, quanthash, range, render as collection_render,
     render_names as collection_render_names, rotate as collection_rotate, seq, subscript,
 };
 pub(crate) use instances::compunit_handle::owners_of as compunit_handle_owners_of;
@@ -81,12 +81,12 @@ pub(crate) use scalars::{
 };
 
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
-#[cfg(test)]
-pub(crate) use dispatch::try_dispatch;
 pub(crate) use dispatch::{
     admits, answer, answer_shapeless, invoke, invoke_base, invoke_in, invoke_mut, invoke_owner,
     invoke_owner_raw, try_dispatch_in,
 };
+#[cfg(test)]
+pub(crate) use dispatch::{shapeless_row, try_dispatch};
 pub(crate) use mutating::buf::by_value as buf_by_value;
 pub(crate) use mutating::owners_of as mut_owners_of;
 pub(crate) use place::ReceiverPlace;
