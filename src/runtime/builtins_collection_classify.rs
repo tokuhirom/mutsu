@@ -345,6 +345,7 @@ impl Interpreter {
             // (`roast/S32-list/categorize.t`'s multi-level row). The sibling
             // `LazyList` force above is the same guard for the older deferral.
             self.reify_map_grep_seq(&mapped)?;
+            self.reify_gather_seq(&mapped)?;
 
             let mapped_item = if let Some(as_fn) = &as_mapper {
                 self.call_classify_callable(as_fn.clone(), callable_item(item))?

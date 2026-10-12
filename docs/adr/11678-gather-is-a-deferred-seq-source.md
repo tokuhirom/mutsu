@@ -1,6 +1,6 @@
 # ADR-11678: A gather is a deferred `SeqSource`
 
-- **Status**: Accepted — design (implementation pending; §7 is the evidence that marks it implemented)
+- **Status**: Accepted — steps 0-3 implemented (2026-10-12, see §8); step 4 and the later slices of step 5 remain
 - **Date**: 2026-10-07
 - **Deciders**: tokuhirom, Claude
 - **Amended**: 2026-10-12 (see "Amendment" below)
@@ -348,3 +348,66 @@ Before this ADR is marked implemented:
 
 The implementation uses compiler/VM execution paths only: no collection-specific rendering
 hacks and no eager forcing.
+
+## 8. Implementation record (2026-10-12)
+
+Steps 0-3 shipped: step 0 as its own PR (#13005), steps 1-3 together. What the
+code does where §2 left a choice, and where it deviates:
+
+- **The adapter** is `SeqSource::Gather(Value)` (`src/value/seq_body.rs`, the
+  gather-specific `SeqBody` methods in `src/value/seq_body/gather_source.rs`,
+  the interpreter half in `src/vm/vm_gather_seq.rs`). `MakeGather` carries a
+  `GatherMode` operand: `Seq` for `Expr::Gather`, `LazyList` for `lazy for`.
+- **Prefix pulls cache the Seq.** Rakudo's `[i]` and `Bool` cache a Seq (`$g[0];
+  $g.List; $g.List` and `?$g; $g.List; $g.List` both answer twice), so
+  `SeqBody::extend_gather_prefix` sets `cache_requested`. Because the inner
+  list keeps its own cache of every element taken, a prefix pull stores the
+  whole prefix the driver returns rather than appending.
+- **`.List` / `.list`** on an uncached gather steal the inner list into a fresh
+  cached body and return its List view (`take_gather_as_list`), so `for
+  $g.list` still interleaves with the body and `(gather { loop {...} }).list[2]`
+  answers. On a cached gather they return a List view over the same core.
+- **Steals.** `.lazy`, `.map`, `.grep`, `.first` and `.iterator` hand the inner
+  list on, consuming the Seq (§2.3). On a cached gather `.map`, `.grep`,
+  `.first` and `.iterator` share the inner list instead, which is how a body
+  that names its own gather (`my \S := gather { ... S.iterator ... }`, read by
+  `S[^3]`) gets an iterator mid-pull (invariant 3).
+- **Deviation from invariant 1: operand and argument boundaries.** The zip and
+  cross metaoperators and reductions take a gather operand as its inner list
+  (consuming the Seq, as Rakudo's iterating operators do). Built-in routines
+  (`call_function_arms`, `try_native_function`), methods of built-in receivers
+  (`call_method_with_values_unviewed`, skipped for a method the program
+  declared) and `.AT-POS` / `.EXISTS-POS` receive the inner list *without*
+  consuming the Seq. Those consumers already stream a `LazyList`, and rewriting
+  each of them to pull a `SeqBody` is the reader migration this slice did not
+  attempt; the cost is leniency (an iterating builtin does not consume the
+  gather) and a second identity reachable inside those builtins. Retiring the
+  boundaries one consumer at a time is follow-up work.
+- **Pure renderers.** `say`/`put`/`print`/`note`, a `--> Array(...)`-style
+  return coercion, slurpy binding and `.flatmap`'s flattening run a gather
+  whole first (`reify_gather_seq`), as Rakudo's do; nested gathers are run by
+  `reify_nested_map_grep_for_read` for the `.raku`/`.gist`/`.Str`/`.flat`
+  readers. A List literal no longer reifies a gather element at construction.
+- **#13003 fixed on the way.** The gather body is recompiled for forcing; the
+  recompile now keeps the definition site's `lexically_in_routine`
+  (ADR-0050), so a `return` in the body reaches the still-running routine.
+- **Step 4 not done.** The #12366 `LazyList` arms (`needs_raku_dispatch`,
+  `reify_nested_map_grep_for_read`) are still reached by `lazy gather`, `lazy
+  for` and the stolen inner lists, so they stay until step 5.
+
+### 8.1 Evidence (§7)
+
+1. `t/collections/lazy-seq/gather-seq-body-oracle.t`: 60 tests, no `todo`,
+   rows 1-17 included; `raku` passes the same file.
+2. Construction of a List, Pair and Hash holding an infinite gather runs the
+   body 0 times; `.head(3)` runs it 3 times, two `.iterator.pull-one` twice
+   (asserted in the oracle).
+3. Rows 15-17 answer the full sequence after a prefix read.
+4. GC: 399 of 400 unforced self-referencing gathers are reclaimed, the step-0
+   baseline (asserted in the oracle).
+5. Local tests changed to Rakudo's behaviour, each checked against `raku`:
+   `finite-gather-pipe-reify.t` (`.grep` twice on one gather throws),
+   `gather-lazy.t` (a Seq does not bind to `@`), `gather-seq-slip.t` (`.Slip`
+   twice throws), `take-rw-shared-cell.t` (`my @g = gather ... take-rw` copies
+   the values), `gather-infinite-coroutine.t` (`.head`/`.first` consume).
+

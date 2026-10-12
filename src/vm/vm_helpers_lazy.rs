@@ -799,7 +799,8 @@ impl Interpreter {
             body.extend_gather_prefix(1, |list, n| self.pull_gather_prefix(list, n))?;
             return Ok(target);
         }
-        if method == "List" {
+        // Rakudo's `Seq.values` is `.list`.
+        if matches!(method, "List" | "values") {
             if let Some(view) = body.take_gather_as_list() {
                 return Ok(Value::seq_body(view));
             }
