@@ -201,6 +201,13 @@ pub(crate) fn keys(target: &Value, _args: &[Value]) -> Result<Value, RuntimeErro
 
 // Cost: O(1); O(1) per value pulled.
 pub(crate) fn values(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    // A List over a gather that is still being pulled (ADR-11678) is its own
+    // `.values`: it reifies from the coroutine as it is read.
+    if let ValueView::Seq(body) = target.view()
+        && body.is_gather_source()
+    {
+        return Ok(target.clone());
+    }
     Ok(Value::seq_list_gen(
         crate::value::ListGen::positional(
             target.clone(),

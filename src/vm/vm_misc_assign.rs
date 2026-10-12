@@ -277,6 +277,7 @@ impl Interpreter {
             && let Some(top) = self.stack.last().cloned()
         {
             self.reify_map_grep_seq(&top)?;
+            self.reify_gather_seq(&top)?;
         }
         // ADR-0042 slice 1: read the target hash's own embedded metadata via
         // `element_constraint_for` instead of the scope-blind name-keyed map.

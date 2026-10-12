@@ -33,6 +33,13 @@ impl Interpreter {
     pub(super) fn exec_meta_op(&mut self, meta: MetaKind, op: Symbol) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
+        // A plain gather operand is streamed through its coroutine list
+        // (ADR-11678), so `(gather { loop { ... } }) Z (1..3)` stays lazy.
+        let (left, right) = if matches!(meta, MetaKind::Zip | MetaKind::Cross) {
+            (self.gather_operand(left), self.gather_operand(right))
+        } else {
+            (left, right)
+        };
         // ADR-0058: the meta-ops below read their operands' elements through
         // pure helpers (`value_to_list`), so a
         // still-deferred `.map` operand has to run its callback first.

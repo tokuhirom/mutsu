@@ -320,6 +320,8 @@ impl Interpreter {
         // numified to 0 and made every comparison against it wrong
         // (`(1 => $x).value <= 1` was True for `$x = 5e0`).
         let value = value.into_deref();
+        // A plain gather numifies to its element count (ADR-11678).
+        self.reify_gather_seq(&value)?;
         // Slice F (compiled-method redispatch coherence): a user `Numeric`/`Bridge`
         // method run by this internal coercion can mutate a captured-outer caller
         // lexical (`my $c; method Numeric { $c++; ... }`). `call_compiled_method`

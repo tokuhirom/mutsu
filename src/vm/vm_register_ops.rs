@@ -200,6 +200,7 @@ impl Interpreter {
         code: &CompiledCode,
         idx: u32,
         cc_idx: Option<u32>,
+        mode: crate::opcode::GatherMode,
     ) -> Result<(), RuntimeError> {
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
@@ -314,7 +315,15 @@ impl Interpreter {
                 cached_no_sink: false,
                 itemized: false,
             };
-            let val = Value::lazy_list(crate::gc::Gc::new(list));
+            let list = Value::lazy_list(crate::gc::Gc::new(list));
+            let val = match mode {
+                // A plain gather is a `Seq` whose body pulls from the
+                // coroutine list (ADR-11678 §2.1); the list stays private to it.
+                crate::opcode::GatherMode::Seq => {
+                    Value::seq_deferred(crate::value::SeqSource::Gather(list))
+                }
+                crate::opcode::GatherMode::LazyList => list,
+            };
             self.stack.push(val);
             Ok(())
         } else {

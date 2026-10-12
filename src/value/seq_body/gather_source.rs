@@ -1,0 +1,149 @@
+//! A plain `gather` as a `Seq` (docs/adr/11678-gather-is-a-deferred-seq-source.md).
+//!
+//! [`SeqSource::Gather`] is an adapter: it holds the gather's existing
+//! `Gc<LazyList>` coroutine as one `Value` edge, and the coroutine, its GC
+//! tracing and its resume machinery stay in `LazyList`. The body owns what Raku
+//! attaches to a `Seq` — identity, aliasing, consumption, `.cache` and `$`
+//! itemization — while the interpreter's gather drivers (`force_lazy_list_vm`,
+//! `force_lazy_list_vm_n`) produce the elements.
+//!
+//! The inner list keeps its own cache of everything the coroutine has taken so
+//! far, so a prefix pull never has to append: it asks the driver for the first
+//! `needed` elements and stores that prefix as the body's new generation, and a
+//! full pull stores the whole cache. The source stays in place across a
+//! non-consuming pull (ADR-11678 §2.2 invariant 3): a body that names its own
+//! gather (`my \S := gather { ... S.iterator ... }`) re-enters it mid-pull.
+
+use super::{SeqBody, SeqSource};
+use crate::value::{RuntimeError, Value};
+
+impl SeqBody {
+    /// The inner gather list while this body's source is still a
+    /// [`SeqSource::Gather`]; `None` once it is reified, taken, or any other
+    /// source. Does not change anything.
+    // Cost: O(1), one lock read.
+    pub(crate) fn gather_source(&self) -> Option<Value> {
+        match &self.lock_state().source {
+            SeqSource::Gather(list) => Some(list.clone()),
+            _ => None,
+        }
+    }
+
+    /// Whether this body is a not-yet-finished gather.
+    // Cost: O(1), one lock read.
+    pub(crate) fn is_gather_source(&self) -> bool {
+        matches!(self.lock_state().source, SeqSource::Gather(_))
+    }
+
+    /// Steal the inner gather list for a method that Raku also lets consume
+    /// the Seq and that streams the coroutine itself: `.lazy`, `.map`,
+    /// `.grep`, `.iterator` (ADR-11678 §2.3). Leaves the body `Taken`. `None`
+    /// (and nothing changes) for every other source, and once `.cache` was
+    /// requested or a reifying touch retained the body — those serve the
+    /// stored elements instead. A prefix an earlier subscript stored is not
+    /// lost: the inner list's own cache holds it too.
+    // Cost: O(1).
+    pub(crate) fn take_gather_source(&self) -> Option<Value> {
+        let mut state = self.lock_state();
+        if state.cache_requested || state.retained || !matches!(state.source, SeqSource::Gather(_))
+        {
+            return None;
+        }
+        match std::mem::replace(&mut state.source, SeqSource::Taken) {
+            SeqSource::Gather(list) => Some(list),
+            other => {
+                state.source = other;
+                None
+            }
+        }
+    }
+
+    /// `.List` / `.list` on an uncached gather: Rakudo's `Seq.List` consumes
+    /// the Seq and returns a List that reifies from its iterator lazily, so a
+    /// `for` over it still interleaves with the gather body and `[2]` on an
+    /// infinite gather answers. Steals the inner list into a fresh cached body
+    /// and returns that body's List view. `None` for every other source and
+    /// for a cached body, which serves its elements as usual.
+    // Cost: O(1).
+    pub(crate) fn take_gather_as_list(&self) -> Option<std::sync::Arc<SeqBody>> {
+        let list = self.take_gather_source()?;
+        let fresh = SeqBody::deferred(SeqSource::Gather(list));
+        fresh.mark_cache_requested();
+        Some(fresh.as_list_view())
+    }
+
+    /// The inner gather list for `.iterator`, `.map` or `.grep` on a gather
+    /// whose body was cached (`.cache`, or a subscript or `?` read, which
+    /// cache a Seq in Rakudo): such a Seq is re-readable, so the new iterator
+    /// or pipe shares the coroutine list without consuming the body. A body
+    /// that names its own gather mid-pull (`my \S := gather { ... S.iterator
+    /// ... }`, read by `S[^3]`) gets its iterator this way. `None` for an
+    /// uncached body ([`SeqBody::take_gather_source`] steals that) and for
+    /// every other source.
+    // Cost: O(1), one lock read.
+    pub(crate) fn shared_gather_source(&self) -> Option<Value> {
+        let state = self.lock_state();
+        match &state.source {
+            SeqSource::Gather(list) if state.cache_requested => Some(list.clone()),
+            _ => None,
+        }
+    }
+
+    /// A non-consuming prefix pull of a not-yet-finished gather (`$g[i]`,
+    /// `?$g`): `pull` drives the coroutine until it has taken `needed`
+    /// elements (or finished) and answers the first `needed` of everything it
+    /// has taken. That prefix becomes the body's live generation; the source
+    /// stays in place unless the coroutine ran out, and the body is cached
+    /// (Rakudo's `[i]` and `Bool` cache a Seq). A no-op for every other
+    /// source or when the body already holds `needed` elements.
+    ///
+    /// The state lock is not held across `pull`, which runs the gather body
+    /// (invariant 3).
+    // Cost: `pull`'s cost, plus a copy of the prefix.
+    pub(crate) fn extend_gather_prefix(
+        &self,
+        needed: usize,
+        pull: impl FnOnce(&Value, usize) -> Result<Vec<Value>, RuntimeError>,
+    ) -> Result<(), RuntimeError> {
+        if self.live_generation().len() >= needed {
+            return Ok(());
+        }
+        let list = {
+            let mut state = self.lock_state();
+            let SeqSource::Gather(list) = &state.source else {
+                return Ok(());
+            };
+            let list = list.clone();
+            // Rakudo's positional read and `Bool` cache the Seq: it stays
+            // re-readable, and a later `.List` or `.iterator` serves the
+            // cached elements instead of consuming it.
+            state.cache_requested = true;
+            list
+        };
+        let prefix = pull(&list, needed)?;
+        let exhausted = prefix.len() < needed;
+        // A re-entrant pull may have finished (or stolen) the source while
+        // `pull` ran; only a body still on this gather takes the prefix.
+        let mut state = self.lock_state();
+        if !matches!(&state.source, SeqSource::Gather(current) if same_list(current, &list)) {
+            return Ok(());
+        }
+        if prefix.len() > self.live_generation().len() {
+            self.core.gens.publish(prefix);
+        }
+        if exhausted {
+            state.source = SeqSource::Reified;
+        }
+        Ok(())
+    }
+}
+
+/// Whether two gather source edges are the same coroutine node.
+// Cost: O(1).
+fn same_list(a: &Value, b: &Value) -> bool {
+    use crate::value::ValueView;
+    match (a.view(), b.view()) {
+        (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(&a, &b),
+        _ => false,
+    }
+}

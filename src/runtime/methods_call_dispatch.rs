@@ -257,6 +257,25 @@ impl Interpreter {
         // The RECEIVER is handled separately, by
         // `reify_or_consume_seq_target`.
         self.reify_map_grep_seq_args(&args)?;
+        // A plain gather argument of a built-in type's method reaches it as
+        // the gather's coroutine list, which the built-in methods already
+        // stream (`600.polymod(gather {...})`, ADR-11678). A user object's
+        // method keeps receiving the Seq itself.
+        let args = if args.iter().any(Self::is_gather_arg)
+            && match target.view() {
+                ValueView::Instance { .. } | ValueView::Mixin(..) => false,
+                // A type object whose method is a built-in one
+                // (`Supply.from-list(gather {...})`); a method the program
+                // declared keeps the Seq.
+                ValueView::Package(name) => {
+                    !self.has_user_method_including_role(&name.resolve(), method)
+                }
+                _ => true,
+            } {
+            self.shared_gather_args(&args).into_owned()
+        } else {
+            args
+        };
         // A user `IO::Handle` subclass that overrides `WRITE`/`READ`/`EOF` gets
         // the high-level text methods for free by routing them through those
         // overrides (`try_user_io_handle_method`). That hook was wired into the

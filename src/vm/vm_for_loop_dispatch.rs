@@ -244,6 +244,26 @@ impl Interpreter {
         {
             iterable = only.clone();
         }
+        // A plain gather (a `Seq` over `SeqSource::Gather`, ADR-11678 §2.4):
+        // pull one iteration's `take`s at a time through its coroutine, so the
+        // body and the loop interleave and `last` stops the gather. The loop
+        // does not consume the Seq; once the coroutine has finished, its
+        // elements are stored in the body as a reifying touch would.
+        if let ValueView::Seq(body) = iterable.view()
+            && let Some(list) = body.gather_source()
+            && let ValueView::LazyList(ll) = list.view()
+        {
+            body.claim_single_use_once()?;
+            let body = std::sync::Arc::clone(&body);
+            let body_start = *ip + 1;
+            let loop_end = spec.body_end as usize;
+            self.exec_for_loop_lazy_gather(code, spec, &ll, body_start, loop_end, compiled_fns)?;
+            if ll.gather_finished() {
+                self.reify_seq_body(&body)?;
+            }
+            *ip = loop_end;
+            return Ok(());
+        }
         // For gather-based, sequence-spec, or lazy map/grep pipeline LazyList
         // iterables, iterate lazily by pulling items one at a time. This avoids
         // materializing infinite sequences.

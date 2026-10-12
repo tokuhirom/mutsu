@@ -332,6 +332,13 @@ impl Interpreter {
                     self.touch_flat_operand(item)?;
                 }
             }
+            // A plain gather argument arrives as its coroutine list (ADR-11678):
+            // run it, and touch the gathers it took.
+            ValueView::LazyList(list) if list.is_gather_coroutine() && !list.is_genuinely_lazy() => {
+                for item in &self.force_lazy_list_vm(&list)? {
+                    self.touch_flat_operand(item)?;
+                }
+            }
             _ => {}
         }
         Ok(())

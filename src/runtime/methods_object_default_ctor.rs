@@ -278,7 +278,10 @@ impl Interpreter {
                         &attrs,
                         crate::runtime::attr_build_defaults::AttrDeclScope::of(attr),
                     );
-                    let val = match result {
+                    let val = match result.and_then(|val| {
+                        self.reify_list_attr_value(&val, *sigil)?;
+                        Ok(val)
+                    }) {
                         Ok(val) => val,
                         Err(e) => {
                             eval_error = Some(e);

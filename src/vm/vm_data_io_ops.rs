@@ -311,6 +311,9 @@ impl Interpreter {
         // still-deferred `.map` Seq must run its callback first.
         self.reify_map_grep_seq_args(&values)?;
         for value in &values {
+            self.reify_gather_seq(value)?;
+        }
+        for value in &values {
             self.reify_nested_map_grep_for_read(value)?;
         }
         // A lone Junction argument to `put` autothreads: each eigenstate is

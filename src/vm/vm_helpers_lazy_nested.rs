@@ -23,6 +23,13 @@ impl Interpreter {
         self.reify_map_grep_seq(value)?;
         match value.view() {
             ValueView::Seq(body) => {
+                // A plain gather nested in a collection (ADR-11678): run it so
+                // pure readers see its elements, as the `LazyList` arm below
+                // does. The value itself is left to its reader (`nested`).
+                if nested && body.is_gather_source() {
+                    let body = std::sync::Arc::clone(&body);
+                    self.reify_seq_body(&body)?;
+                }
                 if seen.insert((0, body.identity())) {
                     for item in body.iter() {
                         self.reify_nested_map_grep_for_read_inner(item, true, seen)?;

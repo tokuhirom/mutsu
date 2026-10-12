@@ -618,6 +618,7 @@ impl Interpreter {
                     &attributes,
                     crate::runtime::attr_build_defaults::AttrDeclScope::of(attr),
                 )?;
+                self.reify_list_attr_value(&val, *sigil)?;
                 let val = Self::coerce_attr_value_by_sigil(val, *sigil);
                 if *sigil == '$' && val.is_nil() {
                     self.attr_store_nil_default(cn_resolved, attr_name, '$', val)

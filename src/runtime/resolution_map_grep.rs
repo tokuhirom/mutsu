@@ -451,6 +451,12 @@ impl Interpreter {
         // visible to closures nested in the gather body (#12384).
         if let Some(origin) = analysis_cc.as_deref() {
             compiler.seed_outer_code_var_names(origin.outer_code_var_names.iter().cloned());
+            // A `return` in the body targets the routine the gather was
+            // written in, so the recompile keeps the definition site's
+            // classification (ADR-0050) instead of compiling it as a
+            // routine-less unit, where `return` dies "outside of any
+            // Routine" (#13003).
+            compiler.lexically_in_routine = origin.lexically_in_routine;
         }
         let scoped_body: Vec<crate::ast::Stmt>;
         let compile_target: &[crate::ast::Stmt] =

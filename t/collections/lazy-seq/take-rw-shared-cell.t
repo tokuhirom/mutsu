@@ -60,10 +60,13 @@ plan 13;
     for aliases(@a) { $_ = $_ * 10 }
     is-deeply @a, [10, 20, 30], 'take-rw of the for topic retains each element cell';
 
+    # Assigning to an `@` variable copies the values into fresh element
+    # containers (Rakudo prints `[1 2 3]`), so a later store into `@g` does
+    # not reach `@b`.
     my @b = 1, 2, 3;
     my @g = gather for @b { take-rw $_ };
     @g[0] = 99;
-    is-deeply @b, [99, 2, 3], 'a stored take-rw topic alias writes through after gather';
+    is-deeply @b, [1, 2, 3], 'assigning a take-rw gather to an array copies its values';
 }
 
 # https://github.com/Raku/old-issue-tracker/issues/4668 / mutsu #8521: an

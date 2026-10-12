@@ -34,6 +34,11 @@ impl Interpreter {
             // Cost: the callback runs over the source elements from `pos` on
             // (see `pull_map_grep_rest`).
             SeqSource::MapGrep { .. } => self.pull_map_grep_rest(source),
+            // Cost: runs the gather body to completion (ADR-11678).
+            SeqSource::Gather(list) => match list.view() {
+                ValueView::LazyList(ll) => self.force_lazy_list_vm(&ll),
+                _ => Ok(Vec::new()),
+            },
         }
     }
 
@@ -220,6 +225,9 @@ impl Interpreter {
         // no finalizer to close it when the Seq is dropped.
         // TODO: close the handle when its Seq is dropped, then pull a
         // bounded prefix here too.
+        if body.is_gather_source() {
+            return body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n));
+        }
         let private_io = body
             .peek_io_lines_parts()
             .is_some_and(|(handle, _, _)| self.is_seq_private_handle(&handle));
@@ -274,6 +282,13 @@ impl Interpreter {
             }
             _ => return Ok(()),
         };
+        // A plain gather becomes a List that keeps pulling its coroutine.
+        if let Some(view) = body.take_gather_as_list() {
+            if let Some(top) = self.stack.last_mut() {
+                *top = Value::seq_body(view);
+            }
+            return Ok(());
+        }
         let (items, outcome) = self.take_seq_body(&body)?;
         if matches!(outcome, SeqTaken::Taken) {
             *self.stack.last_mut().expect("checked above") = Value::seq(items);
@@ -342,6 +357,12 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if !value.is_seq_value() {
             return Ok(());
+        }
+        if let ValueView::Seq(body) = value.view()
+            && body.is_gather_source()
+        {
+            let body = Arc::clone(&body);
+            return body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n));
         }
         if let ValueView::Seq(body) = value.view()
             && body.is_map_grep_source()
@@ -415,6 +436,9 @@ impl Interpreter {
                 ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => {
                     let v = v.clone();
                     self.reify_map_grep_seq(&v)?;
+                    // A named argument's gather fills what it is bound to
+                    // (`C.new(c => gather {...})`, ADR-11678).
+                    self.reify_gather_seq(&v)?;
                     self.reify_closure_seq_endpoint(&v)?;
                 }
                 _ => {}
@@ -538,6 +562,21 @@ impl Interpreter {
             fresh.mark_lazy();
             return Ok(Value::seq_body(fresh));
         }
+        // `.lazy`, `.map`, `.grep` and `.first` on a plain gather consume the
+        // Seq, as Rakudo's do, and stream its coroutine: hand the inner gather list on
+        // to the `LazyList` paths that drive it (ADR-11678 §2.3).
+        if matches!(method, "lazy" | "map" | "grep" | "first")
+            && let Some(list) = body.take_gather_source()
+        {
+            return Ok(list);
+        }
+        // ... and on a cached one they pipe over the shared coroutine list,
+        // leaving the Seq readable.
+        if matches!(method, "map" | "grep" | "first")
+            && let Some(list) = body.shared_gather_source()
+        {
+            return Ok(list);
+        }
         // `.map`/`.grep` on a not-yet-run `.map`/`.grep` Seq chains onto its
         // source (`MapGrepItems::Chain`, #11176) instead of running the
         // upstream callback over everything first: `dispatch_map_method` /
@@ -639,6 +678,11 @@ impl Interpreter {
             // `Reified`, which `@$s` must keep re-reading
             // (`t/seq-array-context-reiterate.t`). A bare `@$s` on a deferred
             // source is thus over-strict relative to raku (unpinned).
+            // A gather stays a lazily pulled list: `for $g.list` interleaves
+            // with its body, and `(gather { loop {...} }).list[2]` answers.
+            if body.is_gather_source() && body.is_cached() {
+                return Ok(target);
+            }
             if body.has_deferred_source() {
                 let (items, outcome) = self.take_seq_body(&body)?;
                 return Ok(if matches!(outcome, SeqTaken::Taken) {
@@ -666,6 +710,14 @@ impl Interpreter {
         if method == "iterator" {
             if let Some(iterator) = body.take_iterator_source()? {
                 return Ok(iterator);
+            }
+            // A plain gather: the iterator resumes the coroutine per
+            // `pull-one` (ADR-11678 §2.4).
+            if let Some(list) = body
+                .take_gather_source()
+                .or_else(|| body.shared_gather_source())
+            {
+                return self.dispatch_iterator_method(list);
             }
             // A not-yet-finished `.map`/`.grep`: the iterator streams the
             // source, running the callback once per element it hands out
@@ -734,6 +786,39 @@ impl Interpreter {
             // body back through `Deref` — see `SeqBody::store_taken_elements`.
             body.store_taken_elements(items);
             return self.dispatch_iterator_method(target);
+        }
+        // `.List` on a plain gather: a List that keeps pulling its coroutine
+        // (ADR-11678 §2.4).
+        // `.AT-POS` / `.EXISTS-POS` on a gather pull only the prefix the index
+        // needs, as `[i]` does: they answer from the shared coroutine list,
+        // whose `LazyList` arm forces just that far. Non-consuming.
+        if matches!(method, "AT-POS" | "EXISTS-POS")
+            && let Some(list) = body.gather_source()
+        {
+            return Ok(list);
+        }
+        // `.Bool` / `.so` / `.not` on a gather run its body to the first `take`
+        // only, as Rakudo's do (and as `?$g` does).
+        if matches!(method, "Bool" | "so" | "not") && body.is_gather_source() {
+            let body = Arc::clone(&body);
+            body.extend_gather_prefix(1, |list, n| self.pull_gather_prefix(list, n))?;
+            return Ok(target);
+        }
+        // Rakudo's `Seq.values` is `.list`.
+        if matches!(method, "List" | "values") {
+            if let Some(view) = body.take_gather_as_list() {
+                return Ok(Value::seq_body(view));
+            }
+            // A cached gather (`.cache`, a subscript, `?`) stays readable: its
+            // List is a List view over the same core, which keeps pulling as
+            // it is read. A List view is already that List (an outer dispatch
+            // layer converted it).
+            if body.is_gather_source() && body.is_cached() {
+                return Ok(match body.view() {
+                    crate::value::SeqView::List | crate::value::SeqView::ItemList => target,
+                    _ => Value::seq_body(body.as_list_view()),
+                });
+            }
         }
         if crate::value::seq_method_consumes(method) {
             let (items, outcome) = self.take_seq_body(&body)?;
@@ -1050,6 +1135,8 @@ impl Interpreter {
                 items.truncate(n);
                 items
             }
+            // A plain gather runs its body only to the `n`-th `take`.
+            Some(crate::value::PrefixSource::Gather(list)) => self.pull_gather_prefix(&list, n)?,
             None => return Ok(None),
         };
         Ok(Some(Value::seq(items)))

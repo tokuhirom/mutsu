@@ -714,6 +714,15 @@ impl Interpreter {
         // reachable from this infallible signature uses.
         let _ = self.reify_map_grep_seq(left);
         let _ = self.reify_map_grep_seq(right);
+        // A plain gather matched against a list is read whole (ADR-11678); a
+        // type or a code matcher does not need its elements.
+        if Self::is_gather_seq(left)
+            && matches!(right.view(), ValueView::Array(..) | ValueView::Seq(..))
+            && let Err(e) = self.reify_gather_seq(left)
+        {
+            *err = Some(e);
+            return false;
+        }
         // Force finite lazy operands first so list matching sees their
         // elements (see reify_finite_lazy_for_match).
         if let Some(forced) = self.reify_finite_lazy_for_match(left, err) {

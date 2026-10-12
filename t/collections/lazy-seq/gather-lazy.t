@@ -5,9 +5,11 @@ plan 8;
 # Basic laziness: gather body only runs when elements are accessed
 {
     my $ran = False;
-    my @list := gather { $ran = True; take 1; take 2; take 3 };
+    # A Seq does not bind to an `@` variable (Rakudo: "expected Positional
+    # but got Seq"), so the gather is bound sigilless.
+    my \list := gather { $ran = True; take 1; take 2; take 3 };
     ok !$ran, "gather body has not run before access";
-    is @list[0], 1, "first element is correct after lazy access";
+    is list[0], 1, "first element is correct after lazy access";
 }
 
 # Coroutine-style laziness: side effects happen incrementally

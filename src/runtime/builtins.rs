@@ -658,6 +658,13 @@ impl Interpreter {
         mut args: Vec<Value>,
         fallback: bool,
     ) -> Result<Value, RuntimeError> {
+        // A plain gather argument reaches a builtin as its coroutine list,
+        // which the builtins already stream (`first`, `zip`, ...), so an
+        // infinite one is pulled only as far as they read (ADR-11678). `list
+        // $g` hands its Seq argument back as is.
+        if name != "list" && args.iter().any(Self::is_gather_arg) {
+            args = self.shared_gather_args(&args).into_owned();
+        }
         match name {
             // Error / control flow
             "die" => self.builtin_die(&args),

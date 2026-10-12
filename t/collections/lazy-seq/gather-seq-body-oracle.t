@@ -2,49 +2,42 @@ use v6;
 use Test;
 
 # ADR-11678 §5 step 0: Rakudo's behaviour for a plain `gather`, pinned before
-# the gather becomes a `SeqSource::Gather` adapter over its `LazyList`. Every
-# expectation below is Rakudo v2026.09's output. Rows 1-17 of the ADR's §1.2
-# table are `todo` until the adapter lands (§7 item 1 removes the markers);
-# the rest already match and must stay so.
+# the gather became a `SeqSource::Gather` adapter over its `LazyList`. Every
+# expectation below is Rakudo v2026.09's output: rows 1-17 of the ADR's §1.2
+# table (fixed by the adapter), and the behaviours that already matched before
+# it and must stay so.
 
-plan 57;
+plan 60;
 
 # --- Itemization (§1.2 rows 1-7) ---------------------------------------------
 
 {
     my $g = gather { take 2 };
-    todo 'ADR-11678 row 1: a $-held gather in a list is itemized';
     is ("a", $g).raku, '("a", $((2,).Seq))', 'row 1: ("a", $g).raku';
 }
 {
     my $g = gather { take 2 };
-    todo 'ADR-11678 row 2: a $-held gather is itemized';
     is $g.raku, '$((2,).Seq)', 'row 2: $g.raku';
 }
 {
     my %h = a => (gather { take 5 });
-    todo 'ADR-11678 row 3: a hash value gather is itemized';
     is (%h<a>:kv).raku, '("a", $((5,).Seq))', 'row 3: (%h<a>:kv).raku';
 }
 {
     my $g = gather { take 1 };
-    todo 'ADR-11678 row 4: a $-held gather as a Pair value is itemized';
     is (:k($g)).raku, ':k($((1,).Seq))', 'row 4: (:k($g)).raku';
 }
 {
     my $g = gather { take 1 };
-    todo 'ADR-11678 row 5: [$g] holds one itemized Seq';
     is [$g].raku, '[(1,).Seq,]', 'row 5: [$g].raku';
 }
 {
     my $g = gather { take 1; take 2 };
-    todo 'ADR-11678 row 6: .flat does not descend into a $-held gather';
     is ($g, 2).flat.elems, 2, 'row 6: ($g, 2).flat.elems';
 }
 {
     my $g = gather { take 1; take 2 };
     my @a = $g;
-    todo 'ADR-11678 row 7: assigning a $-held gather to @ stores one element';
     is @a.elems, 1, 'row 7: my @a = $g';
 }
 
@@ -52,23 +45,19 @@ plan 57;
 
 {
     my $g = gather { take 1; take 2 };
-    todo 'ADR-11678 row 8: a gather is identical to itself';
     ok $g === $g, 'row 8: $g === $g';
 }
 {
     my $g := gather { take 1; take 2 };
-    todo 'ADR-11678 row 8: a bound gather is identical to itself';
     ok $g === $g, 'row 8: $g === $g (bound)';
 }
 {
     my $g = gather { take 1; take 2 };
     my $h = $g;
-    todo 'ADR-11678 row 9: an alias is the same gather';
     ok $g === $h, 'row 9: my $h = $g; $g === $h';
 }
 {
     my $g = gather { take 1; take 2 };
-    todo 'ADR-11678 row 10: .WHICH is stable';
     ok $g.WHICH eq $g.WHICH, 'row 10: $g.WHICH eq $g.WHICH';
 }
 
@@ -77,27 +66,23 @@ plan 57;
 {
     my $g = gather { take 1; take 2 };
     $g.head(1);
-    todo 'ADR-11678 row 11: .head consumes the gather';
     throws-like { $g.List }, X::Seq::Consumed, 'row 11: .head(1) then .List';
 }
 {
     my $g = gather { take 1; take 2 };
     $g.List;
-    todo 'ADR-11678 row 12: .List consumes the gather';
     throws-like { $g.List }, X::Seq::Consumed, 'row 12: .List twice';
 }
 {
     my $g = gather { take 1; take 2 };
     my $i = $g.iterator;
     $i.pull-one;
-    todo 'ADR-11678 row 13: .iterator consumes the gather';
     throws-like { $g.List }, X::Seq::Consumed, 'row 13: .iterator then .List';
 }
 {
     my $g = gather { take 1; take 2 };
     my $h = $g;
     $h.List;
-    todo 'ADR-11678 row 14: consuming an alias consumes the gather';
     throws-like { $g.List }, X::Seq::Consumed, 'row 14: alias .List then .List';
 }
 
@@ -112,13 +97,10 @@ sub out-of(Str $code) {
     $out.lines.join(' ')
 }
 
-todo 'ADR-11678 row 15: [0] does not truncate the gather';
 is out-of('my $g = gather { take 1; take 2 }; my $f = $g[0]; say $g.List'),
     '(1 2)', 'row 15: $g[0]; $g.List';
-todo 'ADR-11678 row 16: ?$g does not truncate the gather';
 is out-of('my $g = gather { take 1; take 2 }; my $b = ?$g; say $g.List'),
     '(1 2)', 'row 16: ?$g; $g.List';
-todo 'ADR-11678 row 17: an alias resumes the same coroutine';
 is out-of('my $g = gather { for 1..3 { say "t$_"; take $_ } }; say $g[0]; my $h = $g; say $h.List; say $g.List'),
     't1 1 t2 t3 (1 2 3) (1 2 3)', 'row 17: an alias resumes the coroutine once';
 
@@ -226,9 +208,16 @@ is out-of('my $g = gather { for 1..3 { say "t$_"; take $_ } }; say $g[0]; my $h 
     is @l[1].List, (2, 3), 'the nested gather yields its elements';
 }
 {
+    # #13003: a `return` in the body returns from the routine that wrote the
+    # gather while that routine is still running, whatever forces the gather.
     sub f { my $g = gather { take 1; return 42; take 2 }; $g.eager; 99 }
-    todo 'return in a gather body forced inside its routine dies (#13003)';
     is (try f()), 42, 'return in the body returns from the routine that wrote it';
+    sub f2 { my $g = gather { take 1; return 42; take 2 }; my $s = ~$g; 99 }
+    is (try f2()), 42, '... when the gather is stringified';
+    sub f3 { my @g = gather { take 1; return 42; take 2 }; 99 }
+    is (try f3()), 42, '... when the gather is assigned to an array';
+    sub f4 { (gather { take 1; return 42; take 2 }).eager; 99 }
+    is (try f4()), 42, '... when an unstored gather is forced';
 }
 {
     my $g = gather { for 1..5 { next if $_ == 2; last if $_ == 4; take $_ } };

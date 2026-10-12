@@ -1687,6 +1687,8 @@ impl Interpreter {
                     // empty seed and answered `()`. Tag-probed, so this is one
                     // relaxed check for every other argument shape.
                     self.reify_map_grep_seq(&single)?;
+                    // A plain gather is read whole here too (ADR-11678).
+                    self.reify_gather_seq(&single)?;
                     // The `gather` / sequence-operator twin of the `.map`/`.grep`
                     // reification above: a finite LazyList is an iterable single
                     // argument, so it becomes the argument LIST rather than one
@@ -2109,6 +2111,7 @@ impl Interpreter {
                     // branch above binds it lazily and `continue`s.
                     for arg in &args[positional_idx..] {
                         self.reify_map_grep_seq(arg)?;
+                        self.reify_gather_seq(arg)?;
                     }
                     while positional_idx < args.len() {
                         let raw_arg = args[positional_idx].clone();
@@ -2205,6 +2208,7 @@ impl Interpreter {
                             }
                         {
                             self.reify_map_grep_seq(&arg)?;
+                            self.reify_gather_seq(&arg)?;
                             items.push(arg);
                             positional_idx += 1;
                             continue;

@@ -1381,6 +1381,8 @@ impl Interpreter {
                     && let Some(top) = self.stack.last().cloned()
                 {
                     self.reify_map_grep_seq(&top)?;
+                    // A plain gather too (ADR-11678): `@!crange = gather {...}`.
+                    self.reify_gather_seq(&top)?;
                 }
                 // `@GLOBAL::u = 1, 2` on a slot no `our` declared is an item
                 // assignment into rakudo's auto-created Scalar (#11000).
@@ -7159,9 +7161,9 @@ impl Interpreter {
 
             // -- Closures and registration --
             // Cost: O(f * d + n + l), the closure-capture cost (see capture_closure_env), f = free vars, d = creating chain depth, n = entries of its narrow (< 32) top tiers, l = shared layers.
-            OpCode::MakeGather(idx, cc_idx) => {
+            OpCode::MakeGather(idx, cc_idx, mode) => {
                 self.sync_source_line(code, *ip);
-                self.exec_make_gather_op(code, *idx, *cc_idx)?;
+                self.exec_make_gather_op(code, *idx, *cc_idx, *mode)?;
                 *ip += 1;
             }
             // Cost: O(k + g) on a lazy list, k = elements produced, g = slots a `gather` body of this chunk names (reconciled after the force); O(k) otherwise.

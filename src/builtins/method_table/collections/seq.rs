@@ -117,7 +117,25 @@ pub(crate) fn list_type(target: &Value, args: &[Value]) -> Option<Result<Value, 
     if !args.is_empty() {
         return None;
     }
+    if let Some(view) = lazy_gather_list_view(target) {
+        return Some(Ok(view));
+    }
     cached_items(target).map(|items| items.map(Value::array))
+}
+
+/// A List view over a gather that is still being pulled (ADR-11678 §2.4) is
+/// already the List `.list` / `.List` answer: it reifies from the coroutine as
+/// it is read, so copying its (partial) elements would truncate it.
+// Cost: O(1).
+fn lazy_gather_list_view(target: &Value) -> Option<Value> {
+    use crate::value::SeqView;
+    let ValueView::Seq(body) = target.view() else {
+        return None;
+    };
+    if !matches!(body.view(), SeqView::List | SeqView::ItemList) || !body.is_gather_source() {
+        return None;
+    }
+    Some(Value::seq_body(body.as_list_view()))
 }
 
 /// `Seq.list`/`Seq.Array`: `.Array` builds a real Array, whose elements are
@@ -125,6 +143,9 @@ pub(crate) fn list_type(target: &Value, args: &[Value]) -> Option<Result<Value, 
 /// (`((1,2),(3,4)).Seq.Array[0].raku` is `$(1, 2)`); `.list` builds a List.
 // Cost: O(e), e = elements.
 pub(crate) fn listify(target: &Value, want_array: bool) -> Option<Result<Value, RuntimeError>> {
+    if !want_array && let Some(view) = lazy_gather_list_view(target) {
+        return Some(Ok(view));
+    }
     cached_items(target).map(|items| {
         items.map(|items| {
             if want_array {
