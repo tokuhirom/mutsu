@@ -196,7 +196,11 @@ impl Interpreter {
                 if declared_statics.contains(bare.as_str()) {
                     static_names.push(bare.clone());
                 }
-                let v = share_body_static_scalar(&bare, v);
+                let v = if declared_statics.contains(bare.as_str()) {
+                    share_body_static_scalar(&bare, v)
+                } else {
+                    v
+                };
                 store.insert(bare, v);
             }
             // The class body is these names' whole scope. Leaving the bare
@@ -478,7 +482,12 @@ fn is_match_state_name(name: &str) -> bool {
 /// go through a cell entry. `@`/`%`/`&` statics are their own containers.
 // Cost: O(1), one cell allocation for an unboxed scalar.
 pub(crate) fn share_body_static_scalar(bare: &str, value: Value) -> Value {
-    if bare.starts_with(['@', '%', '&']) || value.is_container_ref() {
+    // A sigilless `my \x` / `my constant X` (stored under its term key) is a
+    // binding, not a container.
+    if bare.starts_with(['@', '%', '&'])
+        || bare.starts_with(crate::term_names::TERM_PREFIX)
+        || value.is_container_ref()
+    {
         return value;
     }
     Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(value)))
