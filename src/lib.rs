@@ -37,6 +37,7 @@ mod parser;
 mod placeholder_order;
 pub(crate) mod precomp;
 pub(crate) mod precomp_codec;
+pub(crate) mod predicate_shape;
 pub(crate) mod profile;
 pub(crate) mod qualified;
 pub(crate) mod qualified_tail_index;

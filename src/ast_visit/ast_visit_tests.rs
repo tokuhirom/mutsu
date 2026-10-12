@@ -112,6 +112,7 @@ fn walk_param_mut_resets_param_code() {
     old.fill(|| crate::ast::ParamChunks {
         where_chunk: None,
         where_inline_predicate: false,
+        where_int_compare: None,
         default_chunk: None,
         shape_chunks: Vec::new(),
     });

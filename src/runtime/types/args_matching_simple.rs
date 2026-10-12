@@ -109,6 +109,13 @@ impl Interpreter {
     /// `value`, with `$_` bound to it for the duration. An inline predicate
     /// answers `Ok(Bool)`, and a throw inside it already came back as `False`.
     pub(crate) fn simple_where_holds(&mut self, pd: &ParamDef, value: Value) -> bool {
+        // `where * < 10_000`: one comparison against a literal, answered
+        // without binding `$_` or running the chunk (`crate::predicate_shape`).
+        if let Some(cmp) = pd.code.get().and_then(|chunks| chunks.where_int_compare)
+            && let Some(verdict) = self.topic_int_compare_holds(cmp, &value)
+        {
+            return verdict;
+        }
         let topic = crate::symbol::wk::topic();
         let saved_topic = self.env.get_sym(topic).cloned();
         self.env.insert_sym(topic, value);

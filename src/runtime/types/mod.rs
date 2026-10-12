@@ -22,6 +22,7 @@ mod role_mixin_class;
 mod roles;
 mod signature;
 mod subset_predicate_call;
+mod topic_compare;
 mod type_matching;
 mod type_matching_static;
 mod type_registry;
