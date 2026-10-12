@@ -610,7 +610,7 @@ impl Value {
         )
     }
 
-    /// [`Self::make_sub_for_routine`] plus [`Self::make_sub_owning`]'s vouch:
+    /// [`Self::make_sub_for_routine`] plus a vouch (`authoritative_captures`):
     /// the named lexicals are installed from the captured env with OVERWRITE at
     /// call time instead of losing to a same-named lexical in the calling
     /// frame. Used when a named `sub` escapes its declaring routine as that
