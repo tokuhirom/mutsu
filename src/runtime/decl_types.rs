@@ -58,7 +58,10 @@ pub(crate) struct RoleDef {
     pub(crate) is_stub_role: bool,
     pub(crate) is_hidden: bool,
     /// Captured environment for evaluating attribute defaults in closures.
-    pub(crate) captured_env: Option<ValueMap>,
+    /// Shared, not owned: the role's own copy and every attribute default
+    /// it hands to a composing class point at the one flattened scope, so
+    /// cloning a `RoleDef` or an attribute list never copies the map.
+    pub(crate) captured_env: Option<std::sync::Arc<ValueMap>>,
     /// Attribute var names (e.g. "!foo") that have `handles *` wildcard delegation.
     pub(crate) wildcard_handles: Vec<String>,
     /// Unique identifier for this role definition instance, used to distinguish
