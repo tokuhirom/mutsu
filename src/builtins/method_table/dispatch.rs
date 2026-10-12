@@ -330,7 +330,7 @@ fn dispatch(
 /// the built-in class it is a form of ([`answer_shapeless`]): Rakudo declares
 /// them on `List`, `Seq` and `Map`, not on `Any` (`5.lazy` is
 /// `X::Method::NotFound`).
-const ITERABLE_FOR_SHAPELESS: [&str; 1] = ["lazy"];
+const ITERABLE_FOR_SHAPELESS: [&str; 3] = ["lazy", "race", "hyper"];
 
 /// Answer a call the cascades declined from the row `Mu`, `Cool`, `Any`,
 /// `List` or `Seq` declares, for a receiver with no shape (ADR-11276 §9.79,

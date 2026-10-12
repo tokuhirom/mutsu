@@ -1472,20 +1472,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 // `Str.clone` falling through to the slow path.)
                 return Some(Ok(target.clone()));
             }
-            // `Mu.so` / `Mu.not` are `.Bool` and its negation: a successful
-            // Match is true even when it matched the empty string. Delegating
-            // them to the matched Str (below) answered from `""` instead, so a
-            // zero-width match (`/<?before x>/`) was `.so` False (#9180).
-            // Cost: O(1).
-            "so" => return Some(Ok(Value::truth(target.truthy()))),
-            // Cost: O(1).
-            "not" => return Some(Ok(Value::truth(!target.truthy()))),
             // A Match has reference identity (`ObjAt.new("Match|<id>")`), not
             // the value identity of its matched string — the Str delegation
             // below would land on `ValueObjAt.new("Str|...")`. Fall through to
-            // the generic Instance arm in `dispatch_core_coerce`. `join` is
-            // `Any.join`'s row: a Match joins its positional captures.
-            "WHICH" | "join" => {}
+            // the generic Instance arm in `dispatch_core_coerce`.
+            "WHICH" => {}
+            // A row of `Mu` or `Any` a Match reaches answers on the Match, not
+            // on its matched string: `.so` of a zero-width match is True
+            // (#9180), `.join` joins its positional captures, `.item` is the
+            // Match itself.
+            _ if crate::value::DispatchShape::Match.reaches_audited_ancestor(method) => {}
             _ => {
                 let str_val = Value::str(target.to_string_value());
                 return native_method_0arg(&str_val, Symbol::intern(method));

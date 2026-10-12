@@ -298,6 +298,13 @@ impl DispatchShape {
             || (!self.inherits() && const_str_eq(owner, "Mu"))
     }
 
+    /// Whether `Mu`'s or `Any`'s row `method` reaches this shape through the
+    /// per-method audit of a closed shape.
+    // Cost: O(m), m = audited names.
+    pub(crate) const fn reaches_audited_ancestor(self, method: &str) -> bool {
+        self.reaches_audited("Mu", method) || self.reaches_audited("Any", method)
+    }
+
     /// Whether this closed shape reaches some of `Any`'s list rows
     /// ([`ANY_LIST_FOR_CLOSED_SHAPES`]; [`Self::reaches_audited_any_method`]
     /// says which).
@@ -471,10 +478,10 @@ pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 7] = [
 
 /// The `Mu` methods every closed shape reaches ([`DispatchShape::reaches_audited`])
 /// and every receiver with no shape (`method_table::answer_shapeless`): their
-/// handlers read only the receiver's truth or its lazy flag, which every value
-/// has. A shape whose own type declares one (`Match.not`, `Range.is-lazy`)
+/// handlers read only the receiver's truth or its lazy flag, wrap it in an item
+/// container, or sink it, which every value supports. A shape whose own type declares one (`Match.not`, `Range.is-lazy`)
 /// answers its own row first.
-pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 3] = ["so", "not", "is-lazy"];
+pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 5] = ["so", "not", "is-lazy", "item", "sink"];
 
 /// Whether `list` contains `name`, for a `const fn`.
 // Cost: O(n), n = entries of `list`.

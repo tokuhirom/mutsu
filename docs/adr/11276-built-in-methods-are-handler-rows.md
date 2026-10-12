@@ -1800,6 +1800,35 @@ objects are `X::Method::NotFound` (were the type object; Rakudo raises `X::Param
   `.is-lazy` `False` where Rakudo throws `X::Seq::Consumed` (before and after: the arm's check is reached only for a list not yet
   marked consumed).
 
+### 9.82 Slice 5: `Mu`'s `item`/`sink`, `Iterable`'s `race`/`hyper` and the `succ`/`pred` rows; the `dispatch_core_math` delegating arms go (2026-10-12)
+
+`refactor/11276-mu-item-sink-iterable`. The arms of `methods_0arg/dispatch_core_math.rs` that answered every receiver by name (`item`,
+`sink`, `race`, `hyper`, `succ`, `pred`) and the `so`/`not` arms of the `Match` block of `methods_0arg` are deleted, by the same three
+ways as §9.81:
+
+1. **`Mu.item` and `Mu.sink`** are arity-0 rows of `ctors_mop/mu_answers.rs` (`TYPE_OBJECT_OK`; `item` is the shared `lazy::item`
+   handler, `sink` carries the arm's body: a plain array answers `Nil`, an unhandled `Failure` throws, a settled `Seq` marks itself
+   consumed, a `Seq` with a deferred source or a `LazyList` declines to the interpreter, which pulls it). `MU_FOR_CLOSED_SHAPES` gains
+   both, and the recognition table gains `Mu.item` and `Mu.sink` (Rakudo declares them on `Mu`).
+2. **The `Match` block** of `methods_0arg` delegates a method to the matched string unless a `Mu` or `Any` row reaches the `Match`
+   shape (`DispatchShape::reaches_audited_ancestor`), which replaces its `so`/`not` arms and the `join` exclusion of §9.81: `Match.item`
+   is the `Match` (it was the matched string).
+3. **`race` and `hyper`** join `lazy` in `ITERABLE_FOR_SHAPELESS`: a shapeless `LazyList`/`Seq` reaches `Seq`'s rows and a lazy or shaped
+   array or a `Slip` `List`'s; any other receiver is `X::Method::NotFound`, as in Rakudo.
+4. **`succ`/`pred`**: every receiver the arm answered has its own row (`Str`, `Int`, `Num`, `Rat`, `FatRat`, `Complex`, `Bool`, the
+   temporal classes, `IO::Path`); the arm only reached type objects. `Bool.succ`/`Bool.pred` are `TYPE_OBJECT_OK` (`Bool.succ` is
+   `True`, as in Rakudo); the `Int`/`Str`/`Num`/`Rat`/`Complex` recognition rows lose `TYPE_OBJECT_OK`, which only the arm backed.
+   `$x++` on an undefined `Int` is unchanged (the increment operator does not call `.succ` on the type object).
+
+`method-rows-report.py --arms`: the pure arity cascades go from 324 arms to 316. A probe of the six names over ~45 receiver kinds against
+the pre-change binary found these answers changed, each toward Rakudo and pinned in `t/oo/method/shapeless-mu-item-sink-method-rows.t`:
+`Match.item` is the `Match`; `Bool.succ`/`Bool.pred` on the type object are `True`/`False` (were `Bool`); `Int.succ`, `Str.succ` and
+their `pred` are `X::Method::NotFound` (were the type object; Rakudo raises `X::Numeric::Uninitialized` /
+`X::Parameter::InvalidConcreteness`); `Range.race`/`Range.hyper` on the type object are `X::Method::NotFound` (were `(Range,)`; Rakudo
+raises `X::AdHoc`). Sinking a `gather`, a `map`, a handled and an unhandled `Failure` answers as before.
+
+- **Left in the arity-0 cascade's delegating arms**: `pick`, `roll`, `pickpairs` and `minmax` of `dispatch_core_range.rs`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
