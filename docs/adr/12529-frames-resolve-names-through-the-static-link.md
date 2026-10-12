@@ -624,6 +624,9 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    shape: a `&g` taken from a closure nested in the declaring block is not
    an activation capture (#12851), and a closure that calls `g()` by name
    after the block exited finds no registry entry (#12850).
+   Release-build Ir against the merge base: `bench-fib` -0.00%,
+   `bench-tak` -0.00%, `method-call` -0.09%, `poly-call` -0.03%,
+   `bench-ctor` +0.03%, `bench-multi-dispatch` -0.32%.
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
