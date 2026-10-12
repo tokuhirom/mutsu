@@ -5,9 +5,9 @@
 //!
 //! - The **pump registry** (`ThreadPoolScheduler` fork, ADR §2) maps a
 //!   `pump_id` to the sender half of a `supply_event_channel()`. The tap-time
-//!   emit/done/quit shims look up the sender and forward events into it; a
-//!   pooled drain worker (`run_supply_act_loop`) owns the receiver half and
-//!   invokes the real callbacks.
+//!   emit/done/quit shims look up the sender and forward events into it; an
+//!   event-driven act loop (`native_methods::act_loop`) owns the receiver half
+//!   and invokes the real callbacks.
 //! - The **cue-thunk registry** (any-other-Scheduler fork, ADR §3) stashes a
 //!   `(kind, real_cb, payload)` triple under a fresh id so a zero-arg
 //!   synthesized thunk handed to the scheduler's own `.cue` can look it back

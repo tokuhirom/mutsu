@@ -256,7 +256,7 @@ impl Interpreter {
                     && let Some(sid) = Self::resolve_tap_channel_supply_id(&attrs)
                     && let Some(rx) = take_supply_channel(sid)
                 {
-                    let mut thread_interp = self.clone_for_thread();
+                    let thread_interp = self.clone_for_thread();
                     let cb = tap_cb.clone();
                     let delay = delay_seconds;
                     let done = done_cb.clone();
@@ -280,26 +280,22 @@ impl Interpreter {
                     // source feeding it) ran until process exit.
                     let close_flag = rx.close_flag();
                     let close_id = register_act_loop_close(close_flag.clone());
-                    // Pooled (ADR-0020 slice 3): supply-lifetime act driver.
                     // Held while the declaration the callback captures from
                     // its own initializer is in flight (`decl_gate`).
-                    crate::runtime::decl_gate::submit_after_declaration(&tap_cb, move || {
-                        Self::run_supply_act_loop(
-                            &mut thread_interp,
-                            &rx,
-                            &cb,
-                            delay,
-                            done,
-                            quit,
-                            Some((close_id, close_flag)),
-                            is_lines,
-                            line_chomp,
-                            head_limit,
-                            // Consumer-side tap callback: raku does not route
-                            // its failure to its own quit handler.
-                            None,
-                        );
-                    });
+                    // Event-driven (#12892): holds no worker while idle.
+                    // Consumer-side tap callback: raku does not route its
+                    // failure to its own quit handler, so no producer id.
+                    crate::runtime::native_methods::ActLoop {
+                        delay_seconds: delay,
+                        done_cb: done,
+                        quit_cb: quit,
+                        close: Some((close_id, close_flag)),
+                        is_lines,
+                        line_chomp,
+                        head_limit,
+                        ..crate::runtime::native_methods::ActLoop::new(thread_interp, cb)
+                    }
+                    .start(rx, Some(&tap_cb));
                     let mut tap_handle_attrs = HashMap::new();
                     tap_handle_attrs.insert(
                         "act_loop_close_ids".to_string(),
@@ -873,7 +869,7 @@ impl Interpreter {
                                     1 => done_chain.pop(),
                                     _ => Some(Self::make_supply_done_chain(done_chain)),
                                 };
-                                let mut driver = self.clone_for_thread();
+                                let driver = self.clone_for_thread();
                                 let body_cb = body_cb.clone();
                                 let close_flag = rx.close_flag();
                                 let close_id = register_act_loop_close(close_flag.clone());
@@ -887,33 +883,24 @@ impl Interpreter {
                                     .get("line_chomp")
                                     .map(Value::truthy)
                                     .unwrap_or(true);
-                                // Pooled (ADR-0020 slice 3): whenever-source
-                                // reader, lives until the channel closes (or
-                                // the Tap is closed via the flag). Held while
-                                // a declaration the tap callback captures is
-                                // in flight (`decl_gate`).
-                                crate::runtime::decl_gate::submit_after_declaration(
-                                    &tap_cb,
-                                    move || {
-                                        Self::run_supply_act_loop(
-                                            &mut driver,
-                                            &rx,
-                                            &body_cb,
-                                            0.0,
-                                            chain_done_cb,
-                                            None,
-                                            Some((close_id, close_flag)),
-                                            is_lines,
-                                            line_chomp,
-                                            None,
-                                            // `body_cb` is the enclosing `supply { }`
-                                            // block's own `whenever` body: producer
-                                            // code, so a failure in it quits this
-                                            // supply through its emitter (#8185).
-                                            Some(emitter_supplier_id),
-                                        );
-                                    },
-                                );
+                                // Event-driven whenever-source reader (#12892):
+                                // lives until the channel closes (or the Tap is
+                                // closed via the flag). Held while a declaration
+                                // the tap callback captures is in flight
+                                // (`decl_gate`).
+                                crate::runtime::native_methods::ActLoop {
+                                    done_cb: chain_done_cb,
+                                    close: Some((close_id, close_flag)),
+                                    is_lines,
+                                    line_chomp,
+                                    // `body_cb` is the enclosing `supply { }`
+                                    // block's own `whenever` body: producer
+                                    // code, so a failure in it quits this
+                                    // supply through its emitter (#8185).
+                                    producer_supplier_id: Some(emitter_supplier_id),
+                                    ..crate::runtime::native_methods::ActLoop::new(driver, body_cb)
+                                }
+                                .start(rx, Some(&tap_cb));
                             } else if let ValueView::Instance {
                                 attributes: inner_attrs,
                                 ..
@@ -1662,10 +1649,10 @@ impl Interpreter {
                     // the emitting thread is exactly the deadlock class this
                     // defers away.
                     delay_seconds = 0.0;
-                    let mut thread_interp = self.clone_for_thread();
+                    let thread_interp = self.clone_for_thread();
                     // No close flag: `Tap.close` drops the pump's sender
-                    // (`drop_scheduled_pump`), so the blocking recv observes
-                    // the disconnect and this drain worker exits.
+                    // (`drop_scheduled_pump`), so the act loop observes the
+                    // disconnect and retires.
                     //
                     // `is_lines: false` — values reaching the pump are
                     // whatever the substituted shim callback forwarded, which
@@ -1674,22 +1661,13 @@ impl Interpreter {
                     // calling the shim); re-splitting here would be wrong.
                     // Held while a declaration the tap callback captures is
                     // in flight (`decl_gate`).
-                    crate::runtime::decl_gate::submit_after_declaration(&tap_cb_gate, move || {
-                        Self::run_supply_act_loop(
-                            &mut thread_interp,
-                            &rx,
-                            &real_tap,
-                            real_delay,
-                            real_done,
-                            real_quit,
-                            None,
-                            false,
-                            true,
-                            None,
-                            // Consumer-side tap callback (scheduler drain shim).
-                            None,
-                        );
-                    });
+                    crate::runtime::native_methods::ActLoop {
+                        delay_seconds: real_delay,
+                        done_cb: real_done,
+                        quit_cb: real_quit,
+                        ..crate::runtime::native_methods::ActLoop::new(thread_interp, real_tap)
+                    }
+                    .start(rx, Some(&tap_cb_gate));
                     scheduled_pump_id = Some(pump_id);
                 }
                 // Any other Scheduler (FakeScheduler, a user-written one):

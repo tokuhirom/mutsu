@@ -1,4 +1,5 @@
 // Native method dispatch submodules, split from the original native_methods.rs
+mod act_loop;
 pub(in crate::runtime) mod attr_publish;
 mod channel_supply;
 mod compiler_config;
@@ -43,6 +44,7 @@ pub(crate) use state::{
 };
 pub(crate) use state_lock::{acquire_lock, current_thread_id, lock_runtime_by_id, release_lock};
 
+pub(in crate::runtime) use act_loop::ActLoop;
 pub(in crate::runtime) use attr_publish::AttrPublisher;
 pub(in crate::runtime) use native_shim::native_method_shim;
 

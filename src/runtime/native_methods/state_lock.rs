@@ -95,40 +95,62 @@ pub(super) fn drop_cancellation_busy(id: u64) {
 
 // --- Channel-backed act-loop close registry ---
 //
-// A `.tap` on a live channel-backed supply source submits a pool worker
-// (`run_supply_act_loop`) that owns the channel receiver; `Tap.close` has no
-// other handle on that worker. Each such submit registers the channel's
-// shared close flag here under a fresh id recorded on the Tap handle
-// (`act_loop_close_ids`). `close_act_loop` sets the flag: the worker's
-// bounded wait re-checks it (≤250 ms late at worst) and exits, and the
-// flagged sender refuses further sends so an interval-timer heap entry
-// holding the sender retires on its next tick.
+// A `.tap` on a live channel-backed supply source starts an act loop
+// (`native_methods::act_loop`) that owns the channel receiver; `Tap.close` has
+// no other handle on it. Each one registers its tap's close flag here under a
+// fresh id recorded on the Tap handle (`act_loop_close_ids`), plus the kick
+// that schedules its next drain. `close_act_loop` sets the flag and kicks: the
+// drain sees the flag and retires the loop, and the flagged sender refuses
+// further sends so an interval-timer heap entry holding the sender retires on
+// its next tick.
 
-type ActLoopCloseMap = std::sync::Mutex<HashMap<u64, Arc<AtomicBool>>>;
+struct ActLoopClose {
+    flag: Arc<AtomicBool>,
+    kick: Option<super::supply_channel::DrainHook>,
+}
+
+type ActLoopCloseMap = std::sync::Mutex<HashMap<u64, ActLoopClose>>;
 
 fn act_loop_close_map() -> &'static ActLoopCloseMap {
     static MAP: OnceLock<ActLoopCloseMap> = OnceLock::new();
     MAP.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
+// Cost: O(1) amortized.
 pub(in crate::runtime) fn register_act_loop_close(flag: Arc<AtomicBool>) -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     if let Ok(mut map) = act_loop_close_map().lock() {
-        map.insert(id, flag);
+        map.insert(id, ActLoopClose { flag, kick: None });
     }
     id
 }
 
-/// Set the close flag for the given act loop and drop the registry entry.
-/// No-op on a missing id (close racing the worker's own exit).
+/// Attach the act loop's drain kick to its close entry, so `close_act_loop`
+/// retires an idle loop at once instead of on its next event.
+#[cfg(not(target_arch = "wasm32"))]
+// Cost: O(1).
+pub(in crate::runtime) fn attach_act_loop_kick(id: u64, kick: super::supply_channel::DrainHook) {
+    if let Ok(mut map) = act_loop_close_map().lock()
+        && let Some(entry) = map.get_mut(&id)
+    {
+        entry.kick = Some(kick);
+    }
+}
+
+/// Set the close flag for the given act loop, kick it, and drop the registry
+/// entry. No-op on a missing id (close racing the loop's own exit).
+// Cost: O(1) plus the signal-watcher sweep.
 pub(in crate::runtime) fn close_act_loop(id: u64) {
-    let flag = act_loop_close_map()
+    let entry = act_loop_close_map()
         .lock()
         .ok()
         .and_then(|mut map| map.remove(&id));
-    if let Some(flag) = flag {
-        flag.store(true, Ordering::Release);
+    if let Some(entry) = entry {
+        entry.flag.store(true, Ordering::Release);
+        if let Some(kick) = entry.kick {
+            kick();
+        }
     }
     // Closing the tap is the one supply teardown mutsu observes synchronously,
     // so a `signal()` supply that has just lost its last tap gives the signal
@@ -139,8 +161,9 @@ pub(in crate::runtime) fn close_act_loop(id: u64) {
     crate::runtime::signal_watcher::sweep_retired_registrations();
 }
 
-/// Registry-hygiene removal called by the worker on every exit path, so the
+/// Registry-hygiene removal called by the act loop on every exit path, so the
 /// map cannot grow for act loops that end on their own.
+// Cost: O(1).
 pub(in crate::runtime) fn unregister_act_loop_close(id: u64) {
     if let Ok(mut map) = act_loop_close_map().lock() {
         map.remove(&id);

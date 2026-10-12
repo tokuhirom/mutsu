@@ -698,28 +698,20 @@ impl Interpreter {
                         mark_supply_live_tapped(sid);
                         let quit_cb = quit_cbs.next();
                         let done_cb = done_cbs.next().filter(|d| !d.is_nil());
-                        let mut thread_interp = self.clone_for_thread();
+                        let thread_interp = self.clone_for_thread();
                         let close_flag = rx.close_flag();
                         let close_id = register_act_loop_close(close_flag.clone());
-                        live_tap_handles.push(crate::runtime::worker_pool::submit_joinable(
-                            move || {
-                                Self::run_supply_act_loop(
-                                    &mut thread_interp,
-                                    &rx,
-                                    &cb,
-                                    0.0,
-                                    done_cb,
-                                    quit_cb,
-                                    Some((close_id, close_flag)),
-                                    false,
-                                    true,
-                                    None,
-                                    // Consumer-side tap callback: raku does not
-                                    // route its failure to its own quit handler.
-                                    None,
-                                );
-                            },
-                        ));
+                        // Consumer-side tap callback: raku does not route its
+                        // failure to its own quit handler, so no producer id.
+                        live_tap_handles.push(
+                            crate::runtime::native_methods::ActLoop {
+                                done_cb,
+                                quit_cb,
+                                close: Some((close_id, close_flag)),
+                                ..crate::runtime::native_methods::ActLoop::new(thread_interp, cb)
+                            }
+                            .start(rx, None),
+                        );
                     }
                 }
 
@@ -893,7 +885,7 @@ impl Interpreter {
                         // a live-tapped stream's last chunk (and `done =>`) was
                         // actually delivered to its callback yet.
                         for handle in live_tap_handles {
-                            let _ = crate::gc::block_quiescent(|| handle.join());
+                            handle.wait();
                         }
 
                         // Clean up stdin registry

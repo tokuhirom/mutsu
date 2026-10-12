@@ -278,26 +278,12 @@ impl Interpreter {
                         last.push(sub);
                     }
                 } else if !matches!(callback.view(), ValueView::Nil) {
-                    let cb = callback;
-                    let mut driver = self.clone_for_thread();
-                    // Pooled (ADR-0020 slice 3): per-listener accept driver —
-                    // warm reuse across short-lived listeners (Cro-style
-                    // per-connection churn).
-                    crate::runtime::worker_pool::submit(move || {
-                        let Some(rx) = take_supply_channel(supply_id) else {
-                            return;
-                        };
-                        while let Ok(event) = rx.recv() {
-                            match event {
-                                SupplyEvent::Emit(conn) => {
-                                    let _ = crate::vm::guard_worker_panic(|| {
-                                        driver.call_sub_value(cb.clone(), vec![conn], true)
-                                    });
-                                }
-                                SupplyEvent::Done | SupplyEvent::Quit(_) => break,
-                            }
-                        }
-                    });
+                    // Per-listener accept driver: the same event-driven act
+                    // loop as any channel-backed tap (#12892), so an idle
+                    // listener holds no worker.
+                    if let Some(rx) = take_supply_channel(supply_id) {
+                        super::ActLoop::new(self.clone_for_thread(), callback).start(rx, None);
+                    }
                 }
 
                 let socket_port = SharedPromise::new();

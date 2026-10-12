@@ -26,6 +26,7 @@ pub(crate) use promise_source::promise_source_events;
 
 use super::SupplyEvent;
 use crate::value::waker::ReactWaker;
+pub(crate) use broadcast::DrainHook;
 use broadcast::{Broadcast, Signal, SubQueue, WakerSet, notify_all};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
@@ -83,7 +84,7 @@ impl SupplySender {
             .send((next_send_seq(), event))
             .map_err(|mpsc::SendError((_, event))| mpsc::SendError(event))?;
         if let Some(broadcast) = broadcast {
-            notify_all(&self.wakers, &broadcast.signal);
+            notify_all(&self.wakers, &broadcast);
         }
         Ok(())
     }
@@ -124,7 +125,7 @@ impl Drop for SupplySender {
         // they observe the hangup without waiting out their idle cap. Bare
         // pokes from non-final clones are harmless.
         if let Some(broadcast) = self.broadcast.upgrade() {
-            notify_all(&self.wakers, &broadcast.signal);
+            notify_all(&self.wakers, &broadcast);
         }
     }
 }
@@ -249,36 +250,51 @@ impl SupplyReceiver {
         }
     }
 
-    /// Bounded blocking receive, for consumer threads that must observe an
-    /// external close flag (the act-loop teardown re-checks its flag between
-    /// waits — see `run_supply_act_loop`).
+    /// [`Self::try_recv`] for an event-driven consumer that is woken by a
+    /// [`DrainHook`] and goes idle on `Empty`. It waits for a concurrent
+    /// pumper instead of skipping: an event that pumper has already taken
+    /// upstream but not yet queued here would otherwise read as `Empty`, and
+    /// its send's hook has already fired, so nothing would wake the consumer
+    /// for it again.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn recv_timeout(
-        &self,
-        timeout: std::time::Duration,
-    ) -> Result<SupplyEvent, mpsc::RecvTimeoutError> {
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            let seen = self.broadcast.signal.generation();
-            match self.try_recv() {
-                Ok(event) => return Ok(event),
-                Err(mpsc::TryRecvError::Disconnected) => {
-                    return Err(mpsc::RecvTimeoutError::Disconnected);
-                }
-                Err(mpsc::TryRecvError::Empty) => {}
+    // Cost: O(k), k = events pending upstream (distributed into every tap).
+    pub(crate) fn try_recv_settled(&self) -> Result<SupplyEvent, mpsc::TryRecvError> {
+        self.own_queue();
+        self.broadcast.pump_blocking();
+        if let Some((_, event)) = self.pop() {
+            return Ok(event);
+        }
+        if self.broadcast.upstream_done.load(Ordering::Acquire) {
+            if let Some((_, event)) = self.pop() {
+                return Ok(event);
             }
-            let now = std::time::Instant::now();
-            if now >= deadline {
-                return Err(mpsc::RecvTimeoutError::Timeout);
-            }
-            let nap = Self::NAP.min(deadline - now);
-            crate::gc::block_quiescent(|| self.broadcast.signal.wait(seen, nap));
+            return Err(mpsc::TryRecvError::Disconnected);
+        }
+        Err(mpsc::TryRecvError::Empty)
+    }
+
+    /// Run `hook` on every future send and on sender drop (see
+    /// [`DrainHook`]). `id` names it for [`Self::unregister_drain_hook`].
+    #[cfg(not(target_arch = "wasm32"))]
+    // Cost: O(h), h = hooks already registered on this broadcast.
+    pub(crate) fn register_drain_hook(&self, id: u64, hook: DrainHook) {
+        if let Ok(mut hs) = self.broadcast.drain_hooks.0.lock() {
+            hs.retain(|(i, _)| *i != id);
+            hs.push((id, hook));
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    // Cost: O(h), h = hooks registered on this broadcast.
+    pub(crate) fn unregister_drain_hook(&self, id: u64) {
+        if let Ok(mut hs) = self.broadcast.drain_hooks.0.lock() {
+            hs.retain(|(i, _)| *i != id);
         }
     }
 
     /// Handle on *this tap's* close flag, kept by the tap site after the
-    /// receiver moves into its worker. Setting it stops distribution to this
-    /// tap and lets the worker's bounded wait notice the close; the producer
+    /// receiver moves into its act loop. Setting it stops distribution to this
+    /// tap and makes the act loop's next drain exit; the producer
     /// retires (`send` fails) only once every tap is closed or dropped.
     /// Other taps of the same Supply keep receiving (issue #9899).
     pub(crate) fn close_flag(&self) -> Arc<AtomicBool> {
@@ -317,6 +333,7 @@ pub(crate) fn supply_event_channel() -> (SupplySender, SupplyReceiver) {
         exclusive: AtomicBool::new(false),
         wakers: Arc::clone(&wakers),
         signal: Signal::default(),
+        drain_hooks: Default::default(),
     });
     (
         SupplySender {
@@ -537,6 +554,35 @@ mod tests {
         assert!(b1 < a2);
         assert_eq!(drain(&a), vec![3]);
         assert_eq!(a.peek_seq(), None);
+    }
+
+    #[test]
+    fn a_drain_hook_runs_on_every_send_and_on_hangup_until_unregistered() {
+        // The event-driven act loop (#12892) is woken only by this hook.
+        let (tx, template) = supply_event_channel();
+        let sub = template.subscribe();
+        let hits = Arc::new(AtomicU64::new(0));
+        let counter = Arc::clone(&hits);
+        sub.register_drain_hook(1, Arc::new(move || {
+            counter.fetch_add(1, Ordering::SeqCst);
+        }));
+        emit(&tx, 1);
+        emit(&tx, 2);
+        assert_eq!(hits.load(Ordering::SeqCst), 2);
+        assert!(matches!(sub.try_recv_settled(), Ok(SupplyEvent::Emit(_))));
+        let tx2 = tx.clone();
+        drop(tx2);
+        assert_eq!(hits.load(Ordering::SeqCst), 3);
+        sub.unregister_drain_hook(1);
+        emit(&tx, 3);
+        assert_eq!(hits.load(Ordering::SeqCst), 3);
+        drop(tx);
+        assert!(matches!(sub.try_recv_settled(), Ok(SupplyEvent::Emit(_))));
+        assert!(matches!(sub.try_recv_settled(), Ok(SupplyEvent::Emit(_))));
+        assert!(matches!(
+            sub.try_recv_settled(),
+            Err(mpsc::TryRecvError::Disconnected)
+        ));
     }
 
     #[test]
