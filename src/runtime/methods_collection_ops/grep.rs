@@ -140,20 +140,24 @@ impl Interpreter {
                         }
                     })
                     .unwrap_or_default();
-                let filtered = self.eval_grep_over_items(args.first().cloned(), source_values)?;
-                let filtered_values = Self::value_to_list(&filtered);
-                let mut attrs = HashMap::new();
-                attrs.insert("values".to_string(), Value::array(filtered_values));
-                attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                attrs.insert(
-                    "live".to_string(),
-                    attributes
-                        .as_map()
-                        .get("live")
-                        .cloned()
-                        .unwrap_or(Value::FALSE),
-                );
-                Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
+                // One value at a time, so a matcher that dies still lets the
+                // values before it through, then quits the supply (#12986).
+                let mut filtered_values = Vec::new();
+                let mut quit = None;
+                for value in source_values {
+                    match self.eval_grep_over_items(args.first().cloned(), vec![value]) {
+                        Ok(kept) => filtered_values.extend(Self::value_to_list(&kept)),
+                        Err(e) => {
+                            quit = Some(Self::supply_stage_quit_reason(e)?);
+                            break;
+                        }
+                    }
+                }
+                Ok(Self::static_supply_from_stage(
+                    filtered_values,
+                    &attributes.as_map(),
+                    quit,
+                ))
             }
             // A multi-dimensional shaped array is grepped over its leaves, as
             // `map`, `sort` and iteration see it -- not over its rows, and
