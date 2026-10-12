@@ -161,17 +161,24 @@ impl Interpreter {
         };
         let generation = self.caches.fn_resolve_gen;
         let key = (pkg_sym, name_sym, keys);
-        if self.caches.multi_light_cache.get(generation, &key).is_some() {
+        if self
+            .caches
+            .multi_light_cache
+            .get(generation, &key)
+            .is_some()
+        {
             return;
         }
         let entry = compiled_fns
             .iter()
             .find(|(_, f)| std::ptr::eq(Arc::as_ptr(f), cf))
-            .map(|(k, _)| crate::runtime::resolution_caches::MultiLightWinner {
-                def: Arc::clone(def),
-                key: *k,
-                fingerprint: cf.fingerprint,
-            });
+            .map(
+                |(k, _)| crate::runtime::resolution_caches::MultiLightWinner {
+                    def: Arc::clone(def),
+                    key: *k,
+                    fingerprint: cf.fingerprint,
+                },
+            );
         self.caches.multi_light_cache.insert(generation, key, entry);
     }
 }
