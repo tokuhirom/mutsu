@@ -2914,6 +2914,48 @@ pub fn construct(
             }],
         }))));
     }
+    // `HashComposer.new($expression?, :object-hash)` has one optional
+    // positional expression and an optional boolean spelling flag.
+    if class_name == "RakuAST::Circumfix::HashComposer" && method == "new" {
+        let positional: Vec<_> = args
+            .iter()
+            .filter(|arg| !matches!(arg.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            .collect();
+        if positional.len() > 1 {
+            return Err(RuntimeError::new(
+                "RakuAST::Circumfix::HashComposer.new accepts at most one expression",
+            ));
+        }
+        let mut fields = Vec::with_capacity(2);
+        if let Some(expression) = positional.first() {
+            require_any_rakuast(
+                expression,
+                "RakuAST::Circumfix::HashComposer.new",
+                "expression",
+            )?;
+            fields.push(RakuAstField {
+                name: None,
+                value: RakuAstFieldValue::Node((*expression).clone()),
+            });
+        }
+        if let Some(object_hash) = named_arg(args, "object-hash") {
+            let ValueView::Bool(enabled) = object_hash.view() else {
+                return Err(RuntimeError::new(
+                    "RakuAST::Circumfix::HashComposer.new expects `object-hash` to be Bool",
+                ));
+            };
+            if enabled {
+                fields.push(RakuAstField {
+                    name: Some("object-hash"),
+                    value: RakuAstFieldValue::Node(Value::truth(true)),
+                });
+            }
+        }
+        return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
+            class: RakuAstClass::CircumfixHashComposer,
+            fields,
+        }))));
+    }
     // `Statement::Use` / `Statement::Require`: a required `module-name` plus
     // optional named fields, kept in the order rakudo declares them.
     if method == "new"

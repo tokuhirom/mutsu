@@ -91,15 +91,47 @@ fn contents_node(pairs: &[(String, Option<Expr>)]) -> Result<Option<RakuAstNode>
     }))
 }
 
-/// `Circumfix::HashComposer` -> a composer-spelled [`Expr::Hash`].
+/// `Circumfix::HashComposer` -> a composer-spelled [`Expr::Hash`] or an
+/// object-hash constructor call.
 // Cost: O(p), p = pairs of the composer (plus lowering their values).
 pub(super) fn lower_composer(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
+    if super::lower::bool_field(node, "object-hash")? {
+        let args = match node.fields.iter().find(|field| field.name.is_none()) {
+            None => Vec::new(),
+            Some(field) => {
+                let expression = match &field.value {
+                    RakuAstFieldValue::Node(value) => match value.view() {
+                        ValueView::RakuAst(child) => lower_expr(child)?,
+                        _ => return Err(unsupported(node)),
+                    },
+                    _ => return Err(unsupported(node)),
+                };
+                match expression {
+                    Expr::ArrayLiteral(items) if node_expression_is_comma_list(field) => items,
+                    other => vec![other],
+                }
+            }
+        };
+        return Ok(Expr::Call {
+            name: crate::symbol::Symbol::intern("__object_hash"),
+            args,
+            listop: false,
+        });
+    }
     let pairs = match node.fields.as_slice() {
         [] => Vec::new(),
         [_] => lower_pairs(node, named_child_or_positional(node)?)?,
         _ => return Err(unsupported(node)),
     };
     Ok(Expr::Hash(pairs, HashSpelling::Composer))
+}
+
+/// Whether a HashComposer's expression child is a comma-list node.
+// Cost: O(1), one field lookup and node-kind check.
+fn node_expression_is_comma_list(field: &RakuAstField) -> bool {
+    matches!(&field.value, RakuAstFieldValue::Node(value)
+        if matches!(value.view(), ValueView::RakuAst(child)
+            if child.class == RakuAstClass::ApplyListInfix))
 }
 
 /// `Contextualizer::Hash` -> a contextualizer-spelled [`Expr::Hash`].
