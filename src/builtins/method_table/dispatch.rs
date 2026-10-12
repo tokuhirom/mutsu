@@ -333,8 +333,9 @@ fn dispatch(
 ///   answer a shapeless `Cool`: an enum value, a `Seq` or `Slip` the table has
 ///   no settled shape for, or an instance whose MRO reaches `Cool`.
 /// - `Any`'s list methods ([`crate::value::ANY_LIST_FOR_CLOSED_SHAPES`]) answer
-///   those and every other shapeless `Any`: a code object, a regex, a promise,
-///   a channel, a RakuAST node, a type object with no shape, an instance.
+///   those and every other receiver the cascades declined: a code object, a
+///   regex, a promise, a RakuAST node, a type object with no shape, a shaped
+///   or lazy array, an instance.
 ///
 /// An instance walks its class's MRO and declines when a built-in class ahead
 /// of `Cool`/`Any` declares the method (`class MyPath is IO::Path` reads its
@@ -376,19 +377,6 @@ pub(crate) fn answer_shapeless(
                 any
             }
         }
-        ValueView::Sub(_)
-        | ValueView::WeakSub(_)
-        | ValueView::Routine { .. }
-        | ValueView::Regex(_)
-        | ValueView::RegexWithAdverbs(_)
-        | ValueView::Promise(_)
-        | ValueView::Channel(_)
-        | ValueView::RakuAst(_)
-        | ValueView::Package(_)
-            if list =>
-        {
-            any
-        }
         ValueView::Instance { class_name, .. } if class_name != "Failure" => {
             let mut owner = None;
             for &class in interp?.class_mro(class_name.as_str()).iter() {
@@ -402,6 +390,11 @@ pub(crate) fn answer_shapeless(
             }
             owner?
         }
+        ValueView::Instance { .. } => return None,
+        // Every other receiver the cascades declined (a code object, a regex,
+        // a promise, a RakuAST node, a type object with no shape, a shaped or
+        // lazy array) lists as itself or its elements.
+        _ if list => any,
         _ => return None,
     };
     let id = super::owner_row(owner, method, 0)?;
