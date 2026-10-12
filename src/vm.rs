@@ -130,6 +130,7 @@ mod vm_bitwise_ops;
 mod vm_call_atomic;
 mod vm_call_autothread;
 mod vm_call_dispatch;
+mod vm_call_dispatcher_builtin;
 mod vm_call_eligibility;
 mod vm_call_exec_ops;
 mod vm_call_fast;

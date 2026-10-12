@@ -553,6 +553,15 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // An argument-less `callsame` / `nextsame` that nothing shadows goes
+        // straight to the builtin (see `vm_call_dispatcher_builtin`). With no
+        // real arguments there are no argument sources to honour.
+        if arity <= 1
+            && let Some(done) =
+                self.try_dispatcher_builtin_call(code, code.const_sym(name_idx), arity)
+        {
+            return done;
+        }
         // An `nqp::` op is a compiler-known primitive in a reserved namespace:
         // nothing below can answer it differently than the op table, so it
         // goes there directly (see `exec_nqp_call_op`). One memoized flag

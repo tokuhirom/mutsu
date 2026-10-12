@@ -665,6 +665,13 @@ pub(crate) mod wk {
     well_known! {
         /// The topic `$_`. Env keys are stored sigil-less, so this is `"_"`.
         topic => "_";
+        /// The dispatcher builtins `callsame` / `nextsame` and the `&`-sigiled
+        /// env keys a lexical override of them binds under
+        /// (`vm_call_dispatcher_builtin`).
+        callsame => "callsame";
+        nextsame => "nextsame";
+        amp_callsame => "&callsame";
+        amp_nextsame => "&nextsame";
         /// The `$self` lexical a `self`-declaring invocant parameter binds
         /// (`crate::env::LEX_SELF`).
         lex_self => "$self";
