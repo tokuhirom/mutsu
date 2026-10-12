@@ -327,48 +327,11 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
     ) -> Result<Option<FunctionDef>, RuntimeError> {
-        let arity = arg_values
-            .iter()
-            .filter(|value| !value.is_string_pair_value())
-            .count();
         if crate::qualified::is_qualified_str(name) {
-            let prefix = format!("{}/{arity}:", name);
-            let untyped_key = format!("{}/{}", name, arity);
-            let untyped_key_sym = Symbol::intern(&untyped_key);
-            let untyped_m_prefix = format!("{}__m", untyped_key);
-            let mut candidates: Vec<(String, Arc<FunctionDef>)> = self
-                .registry()
-                .functions
-                .iter()
-                .filter(|(key, _)| {
-                    let ks = key.resolve();
-                    ks.starts_with(&prefix)
-                        || **key == untyped_key_sym
-                        || ks.starts_with(&untyped_m_prefix)
-                })
-                .map(|(key, def)| (key.resolve(), def.clone()))
-                .collect();
-            candidates.sort_by(|a, b| {
-                let a_has_where = a.1.param_defs.iter().any(|p| p.where_constraint.is_some());
-                let b_has_where = b.1.param_defs.iter().any(|p| p.where_constraint.is_some());
-                b_has_where.cmp(&a_has_where).then(a.0.cmp(&b.0))
-            });
-            self.merge_flexible_arity_candidates(name, &mut candidates);
-            if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates)? {
-                return Ok(Some((*def).clone()));
-            }
-            // Same flexible-arity fallback the qualified branch of
-            // `resolve_function_with_types` uses: a candidate with an
-            // optional/defaulted/slurpy positional is registered under its
-            // declared arity, not the call's.
-            let flexible = self.qualified_flexible_arity_candidates(name);
-            if !flexible.is_empty()
-                && let Some(def) =
-                    self.choose_best_matching_candidate(name, arg_values, flexible)?
-            {
-                return Ok(Some((*def).clone()));
-            }
-            return Ok(None);
+            let candidates = self.qualified_multi_candidates(name);
+            return Ok(self
+                .choose_best_matching_candidate(name, arg_values, candidates)?
+                .map(|def| (*def).clone()));
         }
         Ok(self
             .resolve_function_with_types(name, arg_values)?
