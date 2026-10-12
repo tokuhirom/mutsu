@@ -68,6 +68,13 @@ my $aggregate = body(Q[rx/@<x>=<digit>+/]);
 ok $aggregate.array, 'aggregate subrule alias retains its sigil';
 isa-ok $aggregate.regex, RakuAST::Regex::QuantifiedAtom,
     'aggregate alias retains its quantified subrule';
+my $triple-bar = body(Q[rx/a|||b/]);
+isa-ok $triple-bar, RakuAST::Regex::SequentialAlternation,
+    'a triple-bar operator retains its sequential-alternation node';
+ok $triple-bar.gist.contains('RakuAST::Regex::Literal.new("a")')
+    && $triple-bar.gist.contains('RakuAST::Regex::Literal.new("b")'),
+    'triple-bar branches retain their literal operands';
+same Q[~('b' ~~ /a|||b/)], 'b', 'triple-bar sequential alternation survives the round trip';
 same Q[my $m = '12' ~~ /@<x>=<digit>+/; $m<x>.map(~*).join(',')], '1,2',
     'aggregate subrule alias retains per-iteration captures';
 same Q[my $m = '12' ~~ /$<x>=<.digit>+/; $m<x>.map(~*).join(',')], '1,2',

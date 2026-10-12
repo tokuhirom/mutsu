@@ -18,7 +18,8 @@
   variable-colonpair, expression-only block-valued-colonpair, hash-composer
   block-valued-colonpair, array-slurpy-placeholder, and hash-slurpy-placeholder
   dynamic-argument, and typed-scalar, defaulted-scalar, typed-defaulted-scalar,
-  named-scalar, and named-defaulted-scalar explicit-signature slices implemented
+  named-scalar, named-defaulted-scalar, and triple-pipe sequential-alternation
+  slices implemented
   2026-09-12 through
   2026-09-19; word-only literals, character-class, codepoint-escape,
   enumerated-class, quantifier-range, backtracking-modifier, separator,
@@ -1587,3 +1588,14 @@ cannot leave a partial literal. Internal underscore separators are accepted,
 and an underscore outside an unbracketed numeral remains ordinary text.
 Surrogate codepoints require a different Str representation; that gap is
 tracked separately in [#12640](https://github.com/tokuhirom/mutsu/issues/12640).
+
+## 65. Triple-pipe sequential alternation (2026-10-12)
+
+The regex source tree parser consumes a contiguous run of two or three pipes as
+one sequential-alternation operator. A third pipe is part of the `|||`
+operator, rather than an empty ordinary-alternation branch. Runs longer than
+three remain unsupported and are refused. The tree retains the same
+`Regex::SequentialAlternation` shape Rakudo exposes for `||`; the matcher
+continues to execute the original pattern text. The focused regression in
+`t/rakuast/rakuast-regex-source-cohort.t` pins the tree and round-trip match,
+and `t/regex/null-regex.t` covers source execution in the frontend mode.

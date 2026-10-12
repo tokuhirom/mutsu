@@ -1726,20 +1726,34 @@ struct Parser {
 
 impl Parser {
     fn parse_alternation(&mut self, stops: &[char]) -> Option<RegexNode> {
-        // A leading `|` / `||` (`[ | a | b ]`, a grammar's one-alternative-
+        // A leading `|` / `||` / `|||` (`[ | a | b ]`, a grammar's one-alternative-
         // per-line layout) opens no empty branch; rakudo drops it.
         let before_leading = self.pos;
         self.skip_whitespace();
         let leading_sequential = if self.consume_if('|') {
-            Some(self.consume_if('|'))
+            let mut count = 1;
+            while self.consume_if('|') {
+                count += 1;
+            }
+            if count > 3 {
+                return None;
+            }
+            Some(count > 1)
         } else {
             self.pos = before_leading;
             None
         };
         let mut branches = vec![self.parse_conjunction(stops, leading_sequential == Some(true))?];
         let mut sequential_operators = Vec::new();
-        while self.consume_if('|') {
-            let sequential = self.consume_if('|');
+        while self.chars.get(self.pos) == Some(&'|') {
+            let mut count = 0;
+            while self.consume_if('|') {
+                count += 1;
+            }
+            if count > 3 {
+                return None;
+            }
+            let sequential = count > 1;
             sequential_operators.push(sequential);
             branches.push(self.parse_conjunction(stops, sequential)?);
         }
