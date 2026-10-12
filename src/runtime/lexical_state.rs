@@ -29,6 +29,12 @@ pub(crate) struct LexicalState {
     /// captures back. See `apply_nested_method_captures`.
     pub(crate) composed_nested_method_captures:
         HashMap<(Symbol, Symbol), rustc_hash::FxHashMap<u32, crate::env::Env>>,
+    /// The scalars a package body's nested blocks shared with their methods
+    /// as cells (#13044), by owner. The block's own binding of such a name
+    /// can outlive the block in the body's env, and the class body's exit
+    /// must not record that stale plain copy as a body static, which method
+    /// code would read ahead of the cell. See `vm_nested_method_capture`.
+    pub(crate) nested_capture_cell_names: HashMap<Symbol, rustc_hash::FxHashSet<Symbol>>,
     /// Persistent store for `our`-scoped variables.  Values are saved here
     /// by `SetGlobal` so they survive block-scope restoration (which only
     /// preserves env keys that existed before the block).
@@ -380,6 +386,7 @@ impl LexicalState {
             nested_capture_owners: Vec::new(),
             nested_method_captures: Default::default(),
             composed_nested_method_captures: Default::default(),
+            nested_capture_cell_names: Default::default(),
             our_vars: rustc_hash::FxHashMap::default(),
             our_var_unqualified: rustc_hash::FxHashSet::default(),
             our_term_keys: rustc_hash::FxHashSet::default(),
@@ -437,6 +444,7 @@ impl LexicalState {
             nested_capture_owners: Vec::new(),
             nested_method_captures: Default::default(),
             composed_nested_method_captures: self.composed_nested_method_captures.clone(),
+            nested_capture_cell_names: self.nested_capture_cell_names.clone(),
             our_vars: rustc_hash::FxHashMap::default(),
             our_var_unqualified: rustc_hash::FxHashSet::default(),
             our_term_keys: rustc_hash::FxHashSet::default(),

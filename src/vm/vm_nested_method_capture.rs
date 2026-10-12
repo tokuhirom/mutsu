@@ -50,7 +50,9 @@ impl Interpreter {
                 && env.get_sym(group_key).is_some_and(|g| *g == group)
             {
                 for (sym, v) in &writes {
-                    if env.contains_key_sym(*sym) {
+                    // A scalar shared as a cell (#13044) was written through
+                    // the cell; the entry must stay the cell.
+                    if env.get_sym(*sym).is_some_and(|old| !old.is_container_ref()) {
                         env.insert_sym(*sym, v.clone());
                     }
                 }
@@ -100,6 +102,48 @@ impl Interpreter {
                         }))
             });
         }
+        // The block's scalars become shared containers (#13044): every method
+        // hoisted from the block, and every thread's copy of the method
+        // table, reads and writes the same `$n`. A thread clone snapshots the
+        // registry, so a value written back into this thread's `MethodDef`s
+        // (`persist_nested_capture_writes`) never reached the others. The
+        // group's first method creates the cells; the rest of the group take
+        // them from its capture.
+        let owner = self.lexicals.nested_capture_owners.last().copied();
+        let group_cells = self.nested_capture_group_cells(owner, spec);
+        // Scalars are keyed by their bare name; `@`/`%`/`&` values are their
+        // own containers, and a sigilless term is a binding.
+        let scalars: Vec<Symbol> = env
+            .iter()
+            .filter(|(sym, v)| {
+                !v.is_container_ref()
+                    && sym.with_str(|name| {
+                        crate::env::is_plain_user_lexical(name)
+                            && !name.starts_with(['@', '%', '&'])
+                            && !name.starts_with(crate::term_names::TERM_PREFIX)
+                    })
+            })
+            .map(|(sym, _)| *sym)
+            .collect();
+        for sym in scalars {
+            let cell = group_cells
+                .as_ref()
+                .and_then(|cells| cells.get_sym(sym))
+                .filter(|v| v.is_container_ref())
+                .cloned();
+            let value = env.get_sym(sym).cloned().unwrap_or(Value::NIL);
+            let cell = cell.unwrap_or_else(|| {
+                Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(value)))
+            });
+            if let Some(owner) = owner {
+                self.lexicals
+                    .nested_capture_cell_names
+                    .entry(owner)
+                    .or_default()
+                    .insert(sym);
+            }
+            env.insert_sym(sym, cell);
+        }
         // The block's `sub`s and `proto`s are captured too, as the `&name`
         // lexicals they are. They live in the routine registry rather than in
         // the closure env, and block exit restores the registry, so resolve
@@ -122,7 +166,7 @@ impl Interpreter {
             Symbol::intern("__mutsu_nested_capture_group"),
             Value::int(i64::from(spec.group)),
         );
-        let Some(owner) = self.lexicals.nested_capture_owners.last().copied() else {
+        let Some(owner) = owner else {
             // Not a package-body walk: the marker sits in the body of a
             // routine of the package (`method ^find_method { multi method
             // handler { ... $name ... } }`), and this is one of its calls.
@@ -140,6 +184,38 @@ impl Interpreter {
         self.lexicals
             .nested_method_captures
             .insert((owner, spec.index), env);
+    }
+
+    /// The capture the first method of `spec`'s group got from this run of
+    /// the block, whose scalar cells the rest of the group shares: still
+    /// pending in `nested_method_captures` during a package-body walk, or
+    /// already installed on the group's method when the marker runs in a
+    /// routine body.
+    // Cost: O(1) during a package-body walk; O(m) otherwise, m = the
+    // package's methods.
+    fn nested_capture_group_cells(
+        &mut self,
+        owner: Option<Symbol>,
+        spec: &NestedMethodCaptureSpec,
+    ) -> Option<crate::env::Env> {
+        if spec.group == spec.index {
+            return None;
+        }
+        if let Some(owner) = owner {
+            return self
+                .lexicals
+                .nested_method_captures
+                .get(&(owner, spec.group))
+                .cloned();
+        }
+        let owner = self.lexical_closure_package_sym();
+        let mut found = None;
+        self.registry_mut().map_user_methods_in_place(owner, |def| {
+            if found.is_none() && def.nested_capture_index == Some(spec.group) {
+                found = def.captured_env.clone();
+            }
+        });
+        found
     }
 
     /// Give the captures a role body's nested blocks just filed (under
