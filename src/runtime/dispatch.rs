@@ -243,8 +243,13 @@ impl Interpreter {
                 return Ok(None);
             }
         };
+        // A lone candidate of a rule with no proto is called whatever its
+        // measurement says (see the end of this function), so measuring it
+        // would only copy the subject and run its NFA for nothing -- once per
+        // level of a recursion through a wrapped token (#11404).
+        let lone = defs.len() == 1 && !self.has_proto_token(name);
         let subject = match self.env.get("_").map(Value::view) {
-            Some(ValueView::Str(s)) => Some(s.to_string()),
+            Some(ValueView::Str(s)) if !lone => Some(s.to_string()),
             _ => None,
         }
         .map(|s| {

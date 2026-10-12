@@ -142,8 +142,9 @@ impl Interpreter {
         // used for wrapped subs, with a synthetic callable whose terminal
         // invokes this token at the current cursor.
         if let Some(chain) = self.token_method_wrap_chain(pkg.as_str(), name) {
+            let target = MatchTarget::new(text);
             let result =
-                self.call_wrapped_token_method(pkg, name, extra_args, text, pos, &chain)?;
+                self.call_wrapped_token_method(pkg, name, extra_args, target, pos, &chain)?;
             return Ok(Self::failed_cursor_as_nil(result));
         }
 
@@ -186,11 +187,11 @@ impl Interpreter {
         pkg: Symbol,
         name: &str,
         extra_args: &[Value],
-        text: &str,
+        target: MatchTarget,
         pos: usize,
         chain: &[(u64, Value)],
     ) -> Result<Value, RuntimeError> {
-        let mut call_args = vec![Self::token_wrap_cursor(text, pos)];
+        let mut call_args = vec![Self::token_wrap_cursor_on(target, pos)];
         call_args.extend(extra_args.iter().cloned());
         self.call_wrapped_token_method_with_terminal(pkg, name, call_args, chain, None)
     }
@@ -230,13 +231,24 @@ impl Interpreter {
 
     /// The cursor a token's wrapper receives: a Match anchored at `pos`.
     pub(crate) fn token_wrap_cursor(text: &str, pos: usize) -> Value {
-        Value::make_match_object_full(
-            pos as i64,
-            pos as i64,
-            &[],
-            &Default::default(),
-            MatchTarget::new(text),
-        )
+        Self::token_wrap_cursor_on(MatchTarget::new(text), pos)
+    }
+
+    /// [`Self::token_wrap_cursor`] on the subject the caller already holds,
+    /// so the token body the wrapper's `callsame` reaches runs against it too.
+    // Cost: O(1).
+    fn token_wrap_cursor_on(target: MatchTarget, pos: usize) -> Value {
+        Value::make_match_object_full(pos as i64, pos as i64, &[], &Default::default(), target)
+    }
+
+    /// The engine run's own subject when `chars` is it, so a wrapped subrule
+    /// call shares the caller's target instead of copying the subject per
+    /// call (#11404); a subject that is not the published one is copied.
+    // Cost: O(1) when `chars` is the published subject; else O(n), n = chars.
+    fn wrapped_call_target(chars: &[char]) -> MatchTarget {
+        super::regex_helpers::current_match_target()
+            .filter(|target| std::ptr::eq(target.chars(), chars))
+            .unwrap_or_else(|| MatchTarget::from_chars(chars))
     }
 
     /// Dispatch a token's `.wrap` chain with `call_args` (a cursor, then the
@@ -323,7 +335,21 @@ impl Interpreter {
         text: &str,
         pos: usize,
     ) -> Result<Value, RuntimeError> {
-        let tail: String = text.chars().skip(pos).collect();
+        self.run_token_method_on_target(pkg, name, extra_args, MatchTarget::new(text), pos)
+    }
+
+    /// [`Self::run_token_method_at_unwrapped`] against a subject the caller
+    /// already holds (a wrapper's cursor), so every level of a wrapped
+    /// recursion matches against one target and its Matches share it.
+    pub(crate) fn run_token_method_on_target(
+        &mut self,
+        pkg: Symbol,
+        name: &str,
+        extra_args: &[Value],
+        target: MatchTarget,
+        pos: usize,
+    ) -> Result<Value, RuntimeError> {
+        let tail = target.span_str(pos, target.chars().len());
         let saved_pkg = self.current_package();
         let saved_topic = self.env.get("_").cloned();
         self.set_current_package(pkg.to_string());
@@ -346,7 +372,6 @@ impl Interpreter {
         };
         // Matched against the whole subject from `pos` (ADR-0016 P1), so the
         // captures this publishes are already in absolute coordinates.
-        let target = MatchTarget::new(text);
         let _target_scope = super::regex_helpers::MatchTargetScope::enter(target.clone());
         // A token/rule is a named grammar routine for backtrace purposes even
         // though its body is evaluated through the regex engine rather than
@@ -404,9 +429,9 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> Option<Option<(usize, RegexCaptures)>> {
         let chain = self.token_method_wrap_chain(pkg.as_str(), name)?;
-        let text: String = chars.iter().collect();
+        let target = Self::wrapped_call_target(chars);
         LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
-        let result = match self.call_wrapped_token_method(pkg, name, arg_values, &text, pos, &chain)
+        let result = match self.call_wrapped_token_method(pkg, name, arg_values, target, pos, &chain)
         {
             Ok(result) => result,
             Err(error) => {
@@ -534,9 +559,9 @@ impl Interpreter {
         name: &str,
     ) -> Option<Option<usize>> {
         let chain = self.token_method_wrap_chain(pkg.as_str(), name)?;
-        let text: String = chars.iter().collect();
+        let target = Self::wrapped_call_target(chars);
         LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
-        let result = match self.call_wrapped_token_method(pkg, name, &[], &text, pos, &chain) {
+        let result = match self.call_wrapped_token_method(pkg, name, &[], target, pos, &chain) {
             Ok(result) => result,
             Err(error) => {
                 crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|slot| {

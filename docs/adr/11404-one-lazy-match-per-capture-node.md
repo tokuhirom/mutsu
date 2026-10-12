@@ -1,0 +1,76 @@
+# ADR-11404: One lazy Match per capture node
+
+- **Status**: Proposed (2026-10-12). Implemented in the PR that references #11404.
+
+## Context
+
+A regex or grammar match is a lazy value (ADR-0016 P5): `ValueRepr::Match(Gc<MatchNode>)`
+holding the stored capture node (`Arc<CapNode>`) and the shared subject (`MatchTarget`). A
+`MatchNode` memoizes its Instance-shaped attribute map on first `view()`, one level deep: each
+child capture becomes a lazy `Match` of its own.
+
+That memo was per `MatchNode`, but `MatchNode`s were not per capture node. Every
+materialization minted fresh child `MatchNode`s (new instance id, empty memo) from the same
+`Arc<CapNode>`s, and only a per-materialization table kept two slots of *one* parent (an alias
+`<val=word>`) on the same child (GH #8167). Two parents that hold the same node therefore
+presented two different Matches, and each forced the shared subtree again.
+
+A `.wrap`ped self-recursive token hits this at every level (#11404). Level *k*'s wrapper
+receives its `callsame` result, a Match over the token's own captures, whose children are the
+very `Arc<CapNode>`s the level above files under `$<TOP>`. Grammar::Extractor keeps each
+level's result and renders it (`.raku`), so level *k* forced its whole subtree afresh: *N*²/2
+materialized nodes for a recursion *N* deep, quadratic peak RSS (528 MB at depth 750), and
+Grammar::Extractor's `t/01-basic` at 7.5x rakudo's wall time. In rakudo there is one Match
+object per node, so `$parent<TOP>` *is* the Match the level below handed back.
+
+A second per-level cost had the same shape: each wrapped call collected the engine's subject
+into a fresh `String` and built a fresh `MatchTarget` (an `Arc<[char]>` copy) for the wrapper's
+cursor, again for the token body, and once more to LTM-rank the rule's lone candidate.
+
+## Decision
+
+1. **A capture node has one canonical lazy Match per engine run.** `CapNode` carries a
+   `MatchMemo`, a weak back edge (`WeakGc<MatchNode>`) to the Match presenting it.
+   `Value::lazy_match(cap, target)` returns the memoized Match when it is still alive and was
+   built against the same run (`MatchTarget::same_run`: the same subject buffer and the same
+   cursor-class cell), and otherwise builds one and records it. Every slot and every parent
+   that exposes the node, through any materialization, now hands out the same Match: the same
+   instance id (`===`, `.WHICH`) and one memoized materialization. The per-materialization
+   alias table is subsumed and removed.
+2. **The back edge is weak.** A `MatchNode` holds its `CapNode` strongly; a strong edge back
+   would be an `Arc` cycle the cycle collector does not see. A Match nobody holds is freed as
+   before, and the next request builds a new one (with a new id, which nothing can observe
+   because the old one is unreachable).
+3. **A cloned node is a new node.** `MatchMemo::clone` is empty: the clone paths
+   (`match_with_ast_lazy`, `with_match_cursor_pos`, `Arc::make_mut` in the reduce walk) clone
+   precisely to present something different.
+4. **A wrapped subrule call matches against the caller's subject.** The wrapper's cursor is
+   built on the engine run's published `MatchTarget` (when the subrule's `chars` is it), and
+   the terminal that `callsame` reaches runs the token body on the cursor's own target instead
+   of re-collecting `.orig`. Every level of a wrapped recursion then shares one target, which
+   is also what makes rule 1 apply across levels. A lone candidate of a rule with no proto is
+   no longer LTM-measured before it is called (the measurement could not change the outcome).
+
+## Rejected alternatives
+
+- **A table owned by the `MatchTarget`, keyed by the `Arc<CapNode>` address.** It needs its
+  own pruning (entries outlive the Matches they name) and a freed address can be reused by a
+  new node unless the key also holds a `Weak<CapNode>`; the per-node weak edge has neither
+  problem and dies with the node.
+- **A strong memo on the node.** The `Arc` cycle above.
+- **Rendering `.raku` straight from the capture node.** It would make a second
+  implementation of the Match shape next to `materialize_map` (one primitive, one
+  implementation), and it leaves the identity divergence in place.
+
+## Consequences
+
+- A node reached through two parents is materialized once while either parent's Match is
+  alive. Grammar::Extractor's per-level results now share their subtrees: materializations are
+  linear in the depth instead of quadratic.
+- When no one keeps the per-level results, a wrapper that renders the whole subtree at every
+  level still does quadratic work. That is inherent to the output (rakudo prints the same
+  quadratic volume); only the constant factor differs.
+- Not covered: rakudo files the wrapper's *returned* Match itself as `$<TOP>` (`$m<TOP> ===
+  $callsame-result`). mutsu files a capture node rebuilt from the token's captures, so the two
+  are distinct Matches that share every child. That is a filing change in the subrule-call
+  path, tracked as #12918.

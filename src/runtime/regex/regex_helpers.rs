@@ -394,6 +394,7 @@ mod reduced_subrule_log_tests {
                 action_name: None,
                 ast: None,
                 children: None,
+                match_memo: Default::default(),
             })
         };
         let log = ReducedSubruleLog {
