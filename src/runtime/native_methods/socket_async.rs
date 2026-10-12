@@ -106,72 +106,26 @@ impl Interpreter {
                     return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
                 }
 
-                // Bind a real TCP listener (retry briefly if port is still held
-                // by a recently-closed listener thread)
-                let bind_spec = format!("{}:{}", host, port);
-                // Resolve to ONE address and bind exactly that. `TcpListener::bind`
-                // on a `&str` walks every address the host resolves to and takes
-                // the first that succeeds — and `localhost` resolves to both
-                // `[::1]` and `127.0.0.1`. So re-listening on a port whose
-                // previous listener was still bound to the first address quietly
-                // bound the *other* one instead of reporting the conflict: two
-                // listeners for one `localhost:port` coexisted, a client reached
-                // whichever its own resolution picked (so a *stopped* server kept
-                // answering), and a third round finally failed with EADDRINUSE
-                // once both stacks were taken. Binding a single resolved address
-                // makes a genuinely-busy port a real error the retry loop below
-                // waits out. (`todo/tickets/async-listener-not-freed-when-
-                // relistening-in-a-loop.md`)
-                use std::net::ToSocketAddrs;
-                let bind_addr = match bind_spec.to_socket_addrs().ok().and_then(|mut a| a.next()) {
-                    Some(addr) => addr,
-                    None => {
-                        if let Some(q) = quit_cb.clone() {
+                // Bind a real TCP listener (`runtime::tcp_core`, shared with
+                // `nqp::asynclisten`).
+                let tcp_listener = match crate::runtime::tcp_core::bind_tcp_listener(&host, port) {
+                    Ok(l) => l,
+                    Err(err) => {
+                        if let Some(q) = quit_cb {
+                            let message = match err {
+                                crate::runtime::tcp_core::TcpBindError::Resolve => {
+                                    format!("Failed to resolve '{}'", host)
+                                }
+                                crate::runtime::tcp_core::TcpBindError::Io(e) => {
+                                    format!("Failed to bind: {}", e)
+                                }
+                            };
                             let mut attrs = HashMap::new();
-                            attrs.insert(
-                                "message".to_string(),
-                                Value::str(format!("Failed to resolve '{}'", host)),
-                            );
+                            attrs.insert("message".to_string(), Value::str(message));
                             let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
                             let _ = self.call_sub_value(q, vec![ex], true);
                         }
                         return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
-                    }
-                };
-                let tcp_listener = {
-                    let mut last_err = None;
-                    let mut bound = None;
-                    for attempt in 0..10 {
-                        match std::net::TcpListener::bind(bind_addr) {
-                            Ok(l) => {
-                                bound = Some(l);
-                                break;
-                            }
-                            Err(e) if e.kind() == std::io::ErrorKind::AddrInUse && attempt < 9 => {
-                                std::thread::sleep(std::time::Duration::from_millis(20));
-                                last_err = Some(e);
-                            }
-                            Err(e) => {
-                                last_err = Some(e);
-                                break;
-                            }
-                        }
-                    }
-                    match bound {
-                        Some(l) => l,
-                        None => {
-                            let e = last_err.unwrap();
-                            if let Some(q) = quit_cb {
-                                let mut attrs = HashMap::new();
-                                attrs.insert(
-                                    "message".to_string(),
-                                    Value::str(format!("Failed to bind: {}", e)),
-                                );
-                                let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
-                                let _ = self.call_sub_value(q, vec![ex], true);
-                            }
-                            return Ok(Value::make_instance(Symbol::intern("Tap"), HashMap::new()));
-                        }
                     }
                 };
                 // Get the actual bound port (in case port was 0)
@@ -213,76 +167,48 @@ impl Interpreter {
                 let spawned = crate::runtime::builtins_system::try_spawn_gc_helper_thread(
                     "sock-async",
                     move || {
-                        // Use a short timeout on accept so we can check the closed flag
-                        // TcpListener doesn't have set_timeout, so we use non-blocking + sleep
-                        let _ = tcp_listener.set_nonblocking(true);
-                        // Set once the close flag is seen: the backlog is drained
-                        // one last time before the thread stops. The OS completes
-                        // the TCP handshake without this thread's help, so a peer
-                        // whose `connect` has already returned is an ESTABLISHED
-                        // connection sitting in the backlog -- dropping it because
-                        // `Tap.close` won the 10ms poll race would lose a
-                        // connection the client believes it made.
-                        let mut draining = false;
-                        loop {
-                            if !draining && closed_flag.load(Ordering::SeqCst) {
-                                draining = true;
-                            }
-                            match tcp_listener.accept() {
-                                Ok((stream, peer_addr)) => {
-                                    let conn_id = next_async_socket_id();
-                                    // Store the TcpStream globally
-                                    if let Ok(cloned) = stream.try_clone() {
-                                        register_tcp_stream(conn_id, cloned);
-                                    }
+                        let end = crate::runtime::tcp_core::accept_loop(
+                            &tcp_listener,
+                            &closed_flag,
+                            |stream, peer_addr| {
+                                let conn_id = next_async_socket_id();
+                                // Store the TcpStream globally
+                                if let Ok(cloned) = stream.try_clone() {
+                                    register_tcp_stream(conn_id, cloned);
+                                }
 
-                                    let mut conn_attrs = HashMap::new();
-                                    conn_attrs
-                                        .insert("conn-id".to_string(), Value::int(conn_id as i64));
-                                    conn_attrs.insert("tcp-real".to_string(), Value::TRUE);
-                                    conn_attrs.insert(
-                                        "socket-host".to_string(),
-                                        Value::str(accept_host.clone()),
-                                    );
-                                    conn_attrs.insert(
-                                        "socket-port".to_string(),
-                                        Value::int(actual_port as i64),
-                                    );
-                                    conn_attrs.insert(
-                                        "peer-host".to_string(),
-                                        Value::str(peer_addr.ip().to_string()),
-                                    );
-                                    conn_attrs.insert(
-                                        "peer-port".to_string(),
-                                        Value::int(peer_addr.port() as i64),
-                                    );
-                                    conn_attrs
-                                        .insert("enc".to_string(), Value::str(accept_enc.clone()));
-                                    let conn_val = Value::make_instance(
-                                        Symbol::intern("IO::Socket::Async"),
-                                        conn_attrs,
-                                    );
-                                    if tx.send(SupplyEvent::Emit(conn_val)).is_err() {
-                                        break;
-                                    }
-                                }
-                                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                                    if draining {
-                                        // Backlog empty and the tap is closed.
-                                        let _ = tx.send(SupplyEvent::Done);
-                                        break;
-                                    }
-                                    // No pending connection, sleep briefly
-                                    crate::gc::block_quiescent(|| {
-                                        std::thread::sleep(std::time::Duration::from_millis(10))
-                                    });
-                                }
-                                Err(_) => {
-                                    // Fatal accept error, stop
-                                    let _ = tx.send(SupplyEvent::Done);
-                                    break;
-                                }
-                            }
+                                let mut conn_attrs = HashMap::new();
+                                conn_attrs.insert("conn-id".to_string(), Value::int(conn_id as i64));
+                                conn_attrs.insert("tcp-real".to_string(), Value::TRUE);
+                                conn_attrs.insert(
+                                    "socket-host".to_string(),
+                                    Value::str(accept_host.clone()),
+                                );
+                                conn_attrs.insert(
+                                    "socket-port".to_string(),
+                                    Value::int(actual_port as i64),
+                                );
+                                conn_attrs.insert(
+                                    "peer-host".to_string(),
+                                    Value::str(peer_addr.ip().to_string()),
+                                );
+                                conn_attrs.insert(
+                                    "peer-port".to_string(),
+                                    Value::int(peer_addr.port() as i64),
+                                );
+                                conn_attrs.insert("enc".to_string(), Value::str(accept_enc.clone()));
+                                let conn_val = Value::make_instance(
+                                    Symbol::intern("IO::Socket::Async"),
+                                    conn_attrs,
+                                );
+                                tx.send(SupplyEvent::Emit(conn_val)).is_ok()
+                            },
+                        );
+                        // The backlog is drained after a close, or the accept
+                        // failed: the Supply ends. A dropped receiver needs no
+                        // `Done`.
+                        if !matches!(end, crate::runtime::tcp_core::AcceptEnd::Stopped) {
+                            let _ = tx.send(SupplyEvent::Done);
                         }
                         // Free the port *before* acknowledging, so a `Tap.close`
                         // that waits on this flag can rely on the listener being

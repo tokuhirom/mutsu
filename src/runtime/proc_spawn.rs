@@ -69,11 +69,14 @@ impl ProcSpawn {
 }
 
 /// Read `reader` to its end, handing each chunk to `on_chunk`; the blocking
-/// read is GC-quiescent. Stops early when `on_chunk` answers `false`. Answers
-/// the read error that ended the stream, if any.
+/// read is GC-quiescent. Stops early when `on_chunk` answers `false`, or when
+/// a read times out (a socket with a read timeout) and `stop` answers `true`.
+/// Answers the read error that ended the stream, if any. Shared by the
+/// process pipes and the `nqp::asyncreadbytes` socket reader.
 // Cost: O(n), n = bytes read.
 pub(crate) fn pump_pipe<R: Read>(
     mut reader: R,
+    stop: impl Fn() -> bool,
     mut on_chunk: impl FnMut(&[u8]) -> bool,
 ) -> Option<std::io::Error> {
     let mut buf = [0u8; 4096];
@@ -86,6 +89,16 @@ pub(crate) fn pump_pipe<R: Read>(
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                if stop() {
+                    return None;
+                }
+            }
             Err(e) => return Some(e),
         }
     }

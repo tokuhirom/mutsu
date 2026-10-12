@@ -36,7 +36,7 @@ const QUEUE_ATTR: &str = "queue";
 const TASK_ATTR: &str = "task";
 
 /// An operand with any argument wrapper and container stripped.
-fn operand(v: &Value) -> Value {
+pub(crate) fn operand(v: &Value) -> Value {
     crate::runtime::types::unwrap_varref_value(v.clone()).deref_container()
 }
 
@@ -82,6 +82,21 @@ pub(crate) struct QueueSink {
 }
 
 impl QueueSink {
+    // Cost: O(1).
+    pub(crate) fn new(queue: SharedChannel, schedulee: Value, cancelled: Arc<AtomicBool>) -> Self {
+        QueueSink {
+            queue,
+            schedulee,
+            cancelled,
+        }
+    }
+
+    /// The task's cancellation flag, for a source loop that polls it.
+    // Cost: O(1).
+    pub(crate) fn cancelled_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.cancelled)
+    }
+
     /// Whether the task was cancelled (`nqp::cancel`): the source drops the
     /// sink at its next sweep.
     // Cost: O(1).
@@ -105,7 +120,7 @@ impl QueueSink {
 /// The handle class of an async op's last operand, checked to be of REPR
 /// `AsyncTask` (`<op> result type must have REPR AsyncTask` otherwise).
 // Cost: O(1).
-fn handle_class(interp: &Interpreter, op: &str, ty: &Value) -> Result<Symbol, RuntimeError> {
+pub(crate) fn handle_class(interp: &Interpreter, op: &str, ty: &Value) -> Result<Symbol, RuntimeError> {
     match operand(ty).view() {
         ValueView::Package(name) if interp.declared_class_repr(name.as_str()) == Some("AsyncTask") => {
             Ok(name)
@@ -127,7 +142,7 @@ pub(crate) fn queue_operand(op: &str, what: &str, v: &Value) -> Result<SharedCha
 
 /// Rakudo checks an async op's operand count at compile time.
 // Cost: O(1).
-fn check_arity(op: &str, args: &[Value], want: usize) -> Result<(), RuntimeError> {
+pub(crate) fn check_arity(op: &str, args: &[Value], want: usize) -> Result<(), RuntimeError> {
     if args.len() == want {
         return Ok(());
     }
@@ -239,7 +254,7 @@ impl Interpreter {
 
     /// A new handle of `class` with its cancellation flag.
     // Cost: O(1).
-    fn new_task(&mut self, class: Symbol) -> Result<(Value, Arc<AtomicBool>), RuntimeError> {
+    pub(crate) fn new_task(&mut self, class: Symbol) -> Result<(Value, Arc<AtomicBool>), RuntimeError> {
         let handle = self.create_async_repr_instance(class, "AsyncTask");
         let flag = task_id_of(&handle)
             .and_then(cancellation_state)

@@ -2,8 +2,8 @@
 
 - **Status**: Accepted (user decision 2026-10-12; Proposed the same day). §2.1–§2.3 are implemented in the PR that adds
   `runtime/nqp_ops_async.rs`. Of §2.4, `signal` (§2.4.1), `watchfile` (§2.4.2) and
-  the process ops `spawnprocasync`, `permit` and `killprocasync` (§2.4.3) are
-  implemented; the socket ops are not yet.
+  the process ops `spawnprocasync`, `permit` and `killprocasync` (§2.4.3) and the
+  socket ops (§2.4.4) are implemented: every op of §1 is.
 - **Date**: 2026-10-12
 - **Issue**: [#11502](https://github.com/tokuhirom/mutsu/issues/11502) (campaign
   [#11488](https://github.com/tokuhirom/mutsu/issues/11488))
@@ -168,6 +168,54 @@ queue. Not modelled yet, and refused with an error that names the option: `merge
 `stdout_fd`, `stderr_fd`). The write side (`write`, then `asyncwritebytes` on the handle)
 belongs with the socket ops.
 
+#### 2.4.4 The socket ops (implemented)
+
+Each takes a queue, a schedulee and an `AsyncTask` handle type, and answers a handle of
+that type. A connection is a `BOOTIO`. In the shapes below, a bare `BOOTStr` / `BOOTInt` /
+`BOOTIO` is that type object, MoarVM's null. Observed on Rakudo 2026.09:
+
+- `nqp::asynclisten($q, $s, $host, $port, $backlog, $type)`:
+  - once listening, it pushes `[$s, BOOTIO, BOOTStr, BOOTStr, BOOTInt, server, host,
+    port]`, with the connection slots null and the port the one the OS picked for 0;
+  - per accepted connection, it pushes `[$s, conn, BOOTStr, peer-host, peer-port, server,
+    host, port]`;
+  - `nqp::cancel` stops accepting.
+- `nqp::asyncconnect($q, $s, $host, $port, $type)` pushes `[$s, conn, BOOTStr, peer-host,
+  peer-port, host, port]`. A failure pushes `[$s, BOOTIO, "connection refused", BOOTStr,
+  BOOTInt, BOOTStr, BOOTInt]`.
+- Both resolve the host before going asynchronous. An unresolvable one dies at the call
+  with `Failed to resolve host name 'H' with family 0.` and `Error: <gai text>`.
+- `nqp::asyncreadbytes($h, $q, $s, $buf_type, $type)`:
+  - per chunk, it pushes `[$s, seq, Buf, BOOTStr]`;
+  - at the end, `[$s, seq, BOOTStr, BOOTStr]`, with a read error in the last slot;
+  - the socket is closed after the end, so a later write reports `Cannot write to a
+    closed socket`.
+- `nqp::asyncwritebytes($h, $q, $s, $buf, $type)` pushes `[$s, bytes written, BOOTStr]`,
+  or `[$s, BOOTInt, error]`. On a process handle (§2.4.3, spawned with `write`) it writes
+  the child's stdin.
+- `nqp::closefh` of a socket shuts it down. Of a process handle, it closes the child's
+  stdin. It answers the handle.
+- Errors:
+  - `<op> target queue must have ConcBlockingQueue REPR`;
+  - `<op> result type must have REPR AsyncTask`;
+  - `read bytes asynchronously` / `write buffer asynchronously requires an object with
+    REPR MVMOSHandle (got T with REPR R)`.
+
+mutsu shares these with `IO::Socket::Async` (`runtime/tcp_core.rs`): the bind (one
+resolved address, retried while a closed listener still holds the port), the accept loop,
+and the connect. A connection lives in the stream registry `IO::Socket::Async`
+connections use. The read loop is the process pipes' `pump_pipe`, with a 50ms read
+timeout so a cancelled read stops between chunks.
+
+Two differences from MoarVM:
+
+- A write completes before the op answers, so its event follows the order the writes
+  were made. MoarVM's write queue keeps that order too, but the writing thread waits.
+- A cancelled listener still accepts the connections already in its backlog. Its accept
+  loop polls every 10ms and drains the backlog before it stops, as `IO::Socket::Async`'s
+  does. MoarVM closes the socket at the cancel, so a connect made right after it is
+  refused.
+
 ### 2.5 Not provided: `$*SCHEDULER.queue`
 
 `ThreadPoolScheduler.queue` is an undocumented Rakudo internal. A program that wants these
@@ -182,4 +230,4 @@ family.
   `nqp::shift` to wait on events.
 - The timer adds no thread: it shares the heap `Supply.interval` and `Promise.in` use.
 - `docs/nqp-op-coverage.md`: Asynchronous goes from 0 / 11 to 2 / 11 (§2.1–§2.3), then
-  to 3 / 11 (`signal`), then to 4 / 11 (`watchfile`), then to 7 / 11 (the process ops).
+  to 3 / 11 (`signal`), then to 4 / 11 (`watchfile`), then to 7 / 11 (the process ops), then to 11 / 11 (the socket ops).

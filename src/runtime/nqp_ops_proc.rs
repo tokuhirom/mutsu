@@ -21,6 +21,7 @@
 //! The spawn and the read loop are `Proc::Async.start`'s
 //! (`runtime::proc_spawn`); only what is done with a chunk differs.
 
+use crate::runtime::nqp_proc_gate::StreamGate;
 use crate::runtime::proc_spawn::{ProcSpawn, ProcStdin, pump_pipe};
 use crate::runtime::{Interpreter, RuntimeError};
 use crate::symbol::Symbol;
@@ -28,83 +29,12 @@ use crate::value::{NqpElemKind, SharedChannel, Value, ValueView};
 use std::collections::HashMap;
 use std::io::Read;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, LazyLock, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, PoisonError};
 
-/// The handle class `nqp::spawnprocasync` answers, as in MoarVM.
-pub(crate) const PROC_HANDLE_CLASS: &str = "BOOTIO";
+/// The handle class of an OS handle (a process, a socket), as in MoarVM.
+pub(crate) const OS_HANDLE_CLASS: &str = "BOOTIO";
 /// The attribute of a handle holding its process task id.
 const PROC_ATTR: &str = "proc";
-
-/// The reader side of one output stream.
-#[derive(Default)]
-struct StreamState {
-    /// How many more chunks the stream may read: -1 for any number.
-    permits: i64,
-    /// The reader waits for a permit.
-    parked: bool,
-    /// The reader reached the end of the stream.
-    finished: bool,
-}
-
-/// A stream's [`StreamState`] and the condition its changes signal.
-#[derive(Default)]
-struct StreamGate {
-    state: Mutex<StreamState>,
-    changed: Condvar,
-}
-
-impl StreamGate {
-    /// Wait until a chunk may be read, and take one permit.
-    // Cost: O(1), plus the wait.
-    fn take(&self) {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        while state.permits == 0 {
-            state.parked = true;
-            self.changed.notify_all();
-            state = crate::gc::block_quiescent(|| {
-                self.changed
-                    .wait(state)
-                    .unwrap_or_else(PoisonError::into_inner)
-            });
-        }
-        state.parked = false;
-        if state.permits > 0 {
-            state.permits -= 1;
-        }
-    }
-
-    // Cost: O(1).
-    fn set_permits(&self, n: i64) {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .permits = n;
-        self.changed.notify_all();
-    }
-
-    // Cost: O(1).
-    fn finish(&self) {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .finished = true;
-        self.changed.notify_all();
-    }
-
-    /// Wait until the reader has nothing more to push for now: it reached
-    /// the end of the stream, or it waits for a permit.
-    // Cost: O(1), plus the wait.
-    fn settle(&self) {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        while !state.finished && !state.parked {
-            state = crate::gc::block_quiescent(|| {
-                self.changed
-                    .wait(state)
-                    .unwrap_or_else(PoisonError::into_inner)
-            });
-        }
-    }
-}
 
 /// One output stream of a spawned child: its pipe until a reader takes it.
 struct ProcStream {
@@ -123,9 +53,8 @@ struct ProcTask {
     streams: [Option<ProcStream>; 2],
     /// Which readers were started; written under the stream's pipe lock.
     started: [AtomicBool; 2],
-    /// The child's stdin pipe (`write`), held open for the child.
-    // TODO: read by `nqp::asyncwritebytes` once the write ops land (#11502).
-    #[allow(dead_code)]
+    /// The child's stdin pipe (`write`): `nqp::asyncwritebytes` writes it,
+    /// `nqp::closefh` closes it.
     stdin: Mutex<Option<std::process::ChildStdin>>,
 }
 
@@ -148,7 +77,7 @@ fn task_of(handle: &Value, refusal: &'static str) -> Result<Option<Arc<ProcTask>
             class_name,
             attributes,
             ..
-        } if class_name.as_str() == PROC_HANDLE_CLASS => attributes
+        } if class_name.as_str() == OS_HANDLE_CLASS => attributes
             .as_map()
             .get(PROC_ATTR)
             .and_then(Value::as_int),
@@ -229,7 +158,7 @@ impl ProcTask {
             };
             let mut seq = 0i64;
             stream.gate.take();
-            let error = pump_pipe(pipe, |chunk| {
+            let error = pump_pipe(pipe, || false, |chunk| {
                 let buf = crate::value::value_buf::make_buf_from_bytes(task.buf_class, chunk);
                 task.push(
                     &stream.callback,
@@ -342,7 +271,7 @@ impl Interpreter {
         let id = NEXT_TASK.fetch_add(1, Ordering::Relaxed);
         let mut attrs = HashMap::new();
         attrs.insert(PROC_ATTR.to_string(), Value::int(id as i64));
-        let handle = Value::make_instance(Symbol::intern(PROC_HANDLE_CLASS), attrs);
+        let handle = Value::make_instance(Symbol::intern(OS_HANDLE_CLASS), attrs);
         let mut child = match spawn.spawn() {
             Ok(child) => child,
             Err(e) => {
@@ -488,4 +417,38 @@ fn nqp_killprocasync(args: &[Value]) -> Result<Value, RuntimeError> {
         Interpreter::send_signal(i64::from(task.pid), signal);
     }
     Ok(Value::int(0))
+}
+
+/// The task of a process handle, or `None` for any other value.
+// Cost: O(1).
+fn proc_task(handle: &Value) -> Option<Arc<ProcTask>> {
+    task_of(handle, "").ok().flatten()
+}
+
+/// Write `bytes` to a process handle's stdin: `None` when `handle` is not a
+/// process handle.
+// Cost: O(n), n = bytes.
+pub(crate) fn write_proc_stdin(handle: &Value, bytes: &[u8]) -> Option<std::io::Result<usize>> {
+    use std::io::Write;
+    let task = proc_task(handle)?;
+    let mut stdin = task.stdin.lock().unwrap_or_else(PoisonError::into_inner);
+    Some(match stdin.as_mut() {
+        Some(pipe) => crate::gc::block_quiescent(|| pipe.write_all(bytes).and_then(|()| pipe.flush()))
+            .map(|()| bytes.len()),
+        None => Err(std::io::Error::new(
+            std::io::ErrorKind::BrokenPipe,
+            "Cannot write to a closed process stdin",
+        )),
+    })
+}
+
+/// Close a process handle's stdin, so the child reads the end of its input:
+/// `false` when `handle` is not a process handle.
+// Cost: O(1).
+pub(crate) fn close_proc_stdin(handle: &Value) -> bool {
+    let Some(task) = proc_task(handle) else {
+        return false;
+    };
+    task.stdin.lock().unwrap_or_else(PoisonError::into_inner).take();
+    true
 }

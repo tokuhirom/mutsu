@@ -51,6 +51,7 @@ pub(in crate::runtime) use native_shim::native_method_shim;
 // (`crate::vm::vm_react_loop`): the supplier registry accessors it polls.
 pub(in crate::runtime) use state::{
     UdpBoundSocketState, discard_supply_channel, get_supply_collected_output, get_supply_enc,
+    get_tcp_stream, register_tcp_stream, remove_tcp_stream,
     get_supply_done_taps, get_supply_quit_taps, get_supply_taps, is_supply_live_tapped,
     mark_proc_async_merged_supply_started, mark_supply_live_tapped, mark_supply_replayed,
     next_async_socket_id, next_supply_id, proc_async_merged_supply_started, proc_stdin_map,

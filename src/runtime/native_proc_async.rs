@@ -771,7 +771,7 @@ impl Interpreter {
                                     let mut raw: Vec<u8> = Vec::new();
                                     let mut text = ProcTextStream::new(true);
                                     let mut quit = false;
-                                    crate::runtime::proc_spawn::pump_pipe(stdout, |chunk| {
+                                    crate::runtime::proc_spawn::pump_pipe(stdout, || false, |chunk| {
                                         raw.extend_from_slice(chunk);
                                         if bin_mode {
                                             if !sinks.is_empty() {
@@ -824,7 +824,7 @@ impl Interpreter {
                                     let mut raw: Vec<u8> = Vec::new();
                                     let mut text = ProcTextStream::new(false);
                                     let mut quit = false;
-                                    crate::runtime::proc_spawn::pump_pipe(stderr, |chunk| {
+                                    crate::runtime::proc_spawn::pump_pipe(stderr, || false, |chunk| {
                                         raw.extend_from_slice(chunk);
                                         if bin_mode {
                                             if !sinks.is_empty() {

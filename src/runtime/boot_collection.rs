@@ -51,7 +51,7 @@ fn is_boot_type_name(name: &str) -> bool {
 // Cost: O(1).
 fn is_boot_object_class(name: &str) -> bool {
     super::boot_scalar::boot_scalar_kind(name).is_some()
-        || name == super::nqp_ops_proc::PROC_HANDLE_CLASS
+        || name == super::nqp_ops_proc::OS_HANDLE_CLASS
 }
 
 /// The `BOOT*` type a type object names, if any.
