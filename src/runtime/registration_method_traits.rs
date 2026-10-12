@@ -222,7 +222,13 @@ impl Interpreter {
                 };
                 args.push(named_val);
             }
-            let _ = self.call_function("trait_mod:<is>", args);
+            // An exception the handler itself raises (`die` in a trait that
+            // refuses its target) fails the declaration. Only "no candidate
+            // matches" stays silent, as before.
+            match self.call_function("trait_mod:<is>", args) {
+                Err(e) if !e.is_multi_no_match() => return Err(e),
+                _ => {}
+            }
         }
         Ok(())
     }
