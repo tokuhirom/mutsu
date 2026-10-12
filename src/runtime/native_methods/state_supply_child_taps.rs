@@ -148,4 +148,21 @@ impl Interpreter {
         }
         Ok(())
     }
+
+    /// End the supply block whose emitter is `emitter_supplier_id`: its nested
+    /// `whenever` taps close first, then its CLOSE phasers (and its sources'
+    /// on-close callbacks) run. Taking the callbacks makes this run-once
+    /// against an explicit `Tap.close` of the same block.
+    // Cost: O(c + k), c = live child taps, k = close callbacks (each runs its
+    // block).
+    pub(crate) fn run_supply_close_callbacks(
+        &mut self,
+        emitter_supplier_id: u64,
+    ) -> Result<(), RuntimeError> {
+        self.close_supply_child_taps(emitter_supplier_id)?;
+        for cb in super::take_supplier_close_callbacks(emitter_supplier_id) {
+            self.call_sub_value(cb, vec![], true)?;
+        }
+        Ok(())
+    }
 }
