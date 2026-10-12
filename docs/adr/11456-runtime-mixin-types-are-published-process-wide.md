@@ -60,3 +60,15 @@ declarations yields the same type.
   re-running the body.
 - Only `does` on an `Instance` creates shared retagged objects today; parameterised and
   non-instance mixins keep the per-value wrapper, which carries its roles with the value.
+
+## 5. Amendment (2026-10-12, #12825): adoption binds the creator's role-body lexicals
+
+The first consequence in §4 is retired. A class or role body's scalar `my` lexical is now
+stored in `package_lexicals` as a `ContainerRef` cell (`share_body_static_scalar`), so every
+thread's copy of the table shares one container, as Rakudo's single closure does. A
+`MixinRecipe` also carries the composed type's `package_lexicals` entry as the creating
+thread left it (`body_lexicals`). An adopting thread marks the recipe's `class:<type>:<role>`
+compositions done before it composes the type, so the role bodies do not run again, and then
+installs those entries. The cells are the creator's, so both threads read and write the same
+`$n`. `@`/`%` statics are recorded as they are, without a new cell. Their node is shared, but
+a write that copies an aliased node is not covered by this amendment.

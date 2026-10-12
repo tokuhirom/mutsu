@@ -27,6 +27,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub(crate) struct MixinRecipe {
     pub(crate) base: String,
     pub(crate) roles: Vec<String>,
+    /// The composed type's role-body lexicals (its `package_lexicals`
+    /// entry) as the creating thread left them. A scalar is a shared cell
+    /// (`share_body_static_scalar`), so an adopting thread binds the same
+    /// containers instead of running the role bodies a second time (#12825).
+    pub(crate) body_lexicals: Vec<(String, crate::value::Value)>,
 }
 
 /// The recipes of every mixin type created in this process, keyed by the

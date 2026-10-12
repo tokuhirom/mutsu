@@ -80,6 +80,7 @@ impl Interpreter {
             .entry(owner.to_string())
             .or_default();
         for (bare, v) in new_lexicals {
+            let v = super::registration_class_body_exit::share_body_static_scalar(&bare, v);
             store.insert(bare, v);
         }
     }
