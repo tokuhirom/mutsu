@@ -13773,10 +13773,12 @@ impl CompiledCode {
                 self.constants.get(*name_idx as usize).map(Value::view),
                 Some(ValueView::Str(name)) if matches!(name.as_str(), "EVAL" | "EVALFILE")
             ),
-            OpCode::CallMethod { name_idx, .. } | OpCode::CallMethodMut { name_idx, .. } => matches!(
-                self.constants.get(*name_idx as usize).map(Value::view),
-                Some(ValueView::Str(name)) if name.as_str() == "EVAL"
-            ),
+            OpCode::CallMethod { name_idx, .. } | OpCode::CallMethodMut { name_idx, .. } => {
+                matches!(
+                    self.constants.get(*name_idx as usize).map(Value::view),
+                    Some(ValueView::Str(name)) if name.as_str() == "EVAL"
+                )
+            }
             _ => false,
         }) || self
             .closure_compiled_codes
