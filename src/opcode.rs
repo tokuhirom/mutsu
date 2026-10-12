@@ -10445,15 +10445,12 @@ impl CompiledCode {
                 free_writes.insert(*sym);
             }
         }
-        // `nqp::bindlex*` (or a write through a `getlexref_*` reference)
-        // writes a lexical of this frame by a runtime name, so no name-write
-        // op shows which one: every plain scalar this frame
-        // declares may change, and a closure capturing one must share its cell.
-        let binds_lexical_by_name = self
-            .ops
-            .iter()
-            .any(|op| matches!(op, OpCode::NqpOp { id, .. } if nqp_op_names_lexical(*id, true)));
-        if binds_lexical_by_name {
+        // A by-name writer -- `nqp::bindlex*` (or a write through a
+        // `getlexref_*` reference), `EVAL`, a symbolic store -- writes a
+        // lexical of this frame by a runtime name, so no name-write op shows
+        // which one: every plain scalar this frame declares may change, and a
+        // closure capturing one must share its cell (#12753).
+        if self.writes_lexical_by_name() {
             for name in &self.locals {
                 if crate::env::is_plain_user_lexical(name)
                     && !name.starts_with(['@', '%', '&', '$'])
@@ -13755,6 +13752,41 @@ mod compiled_fns_identity {
 /// just the ops that can write one: the `bindlex*` writers and the
 /// `getlexref_*` references, which are written through later).
 // Cost: O(1).
+impl CompiledCode {
+    /// Whether this code, or a closure nested in it, can write a lexical of
+    /// this frame by a runtime name: `nqp::bindlex*` (or a `getlexref_*`
+    /// reference), `EVAL`/`EVALFILE` (whose code may assign any visible
+    /// name) or a symbolic store (`::('$x') = ...`). One rule for every such
+    /// writer, rather than a list of ops per call site (#12753).
+    // Cost: O(o), o = ops of this code and its nested closures.
+    fn writes_lexical_by_name(&self) -> bool {
+        self.ops.iter().any(|op| match op {
+            OpCode::NqpOp { id, .. } => nqp_op_names_lexical(*id, true),
+            OpCode::SymbolicDerefStore(_) | OpCode::IndirectTypeLookupStore => true,
+            // `MY::<$x> = v` / `MY::{$k} = v` (`PROCESS::` writes a dynamic).
+            OpCode::IndexAssignPseudoStashNamed { stash_name_idx, .. }
+            | OpCode::IndexAssignPseudoStashKeyed { stash_name_idx } => matches!(
+                self.constants.get(*stash_name_idx as usize).map(Value::view),
+                Some(ValueView::Str(stash)) if stash.trim_end_matches(':') == "MY"
+            ),
+            OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncNamed { name_idx, .. } => matches!(
+                self.constants.get(*name_idx as usize).map(Value::view),
+                Some(ValueView::Str(name)) if matches!(name.as_str(), "EVAL" | "EVALFILE")
+            ),
+            OpCode::CallMethod { name_idx, .. } | OpCode::CallMethodMut { name_idx, .. } => {
+                matches!(
+                    self.constants.get(*name_idx as usize).map(Value::view),
+                    Some(ValueView::Str(name)) if name.as_str() == "EVAL"
+                )
+            }
+            _ => false,
+        }) || self
+            .closure_compiled_codes
+            .iter()
+            .any(|c| c.writes_lexical_by_name())
+    }
+}
+
 fn nqp_op_names_lexical(id: u16, binds_only: bool) -> bool {
     let name = crate::nqp_op_ids::nqp_op_name(id);
     matches!(
