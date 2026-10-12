@@ -190,6 +190,10 @@ impl Env {
             };
             match self.get_match_state_sym(key) {
                 Some(live) if live.same_binding(held) => {}
+                // Unset and `Nil` read the same, and leaving the entry keeps
+                // a flattening that shares its map (an empty frame over a
+                // flat caller) from copying it.
+                None if held.is_nil() => {}
                 live => fixes.push((key, live.cloned())),
             }
         };
