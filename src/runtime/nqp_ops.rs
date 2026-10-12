@@ -950,6 +950,8 @@ impl Interpreter {
             }
             // nqp::closefh($fh) — close and return the handle.
             // Cost: O(1) + syscall.
+            // An OS handle (a socket, a process): runtime/nqp_ops_socket.rs.
+            "closefh" if let Some(result) = self.call_nqp_op_socket(op, args) => result,
             "closefh" => {
                 let fh = args.first().cloned().unwrap_or(Value::NIL);
                 match self.close_handle_value(&fh) {

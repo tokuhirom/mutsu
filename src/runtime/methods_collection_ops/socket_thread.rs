@@ -298,24 +298,10 @@ impl Interpreter {
         }
     }
 
-    /// Open a real outbound TCP connection for `IO::Socket::Async.connect`.
-    /// Every resolved address is tried in turn, so a host that resolves to both
-    /// IPv6 and IPv4 (`localhost` on a dual-stack box) still connects when only
-    /// one family has a listener.
+    /// Open a real outbound TCP connection for `IO::Socket::Async.connect`
+    /// (`runtime::tcp_core::connect_tcp`, shared with `nqp::asyncconnect`).
     fn connect_real_tcp(host: &str, port: u16) -> std::io::Result<std::net::TcpStream> {
-        let addr = format!("{}:{}", host, port);
-        let addrs: Vec<_> = addr.to_socket_addrs()?.collect();
-        let mut last_err = std::io::Error::new(
-            std::io::ErrorKind::AddrNotAvailable,
-            format!("no addresses found for '{}'", addr),
-        );
-        for sock_addr in addrs {
-            match std::net::TcpStream::connect_timeout(&sock_addr, Duration::from_secs(10)) {
-                Ok(s) => return Ok(s),
-                Err(e) => last_err = e,
-            }
-        }
-        Err(last_err)
+        crate::runtime::tcp_core::connect_tcp(host, port)
     }
 
     /// IO::Socket::Async.bind-udp($host, $port)
