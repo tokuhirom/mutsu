@@ -469,12 +469,19 @@ impl Interpreter {
             })
             .filter(|gid| crate::runtime::native_methods::whenever_done_group_increment(*gid))
             .map(Self::make_whenever_done_group_marker);
+        // The enclosing block records the subscription as its child, so
+        // closing (or completing) the block closes it too (#12864).
+        let parent_emitter_id = own_emitter.as_ref().and_then(Self::emitter_supplier_id_of);
         if let ValueView::Instance { class_name, .. } = supply_val.view()
             && class_name == "Supply"
         {
             let mut tap_args = vec![callback];
             let mut done_chain: Vec<Value> = last_callbacks.first().cloned().into_iter().collect();
             done_chain.extend(group_marker.clone());
+            done_chain.extend(
+                parent_emitter_id
+                    .map(|sid| Self::make_supply_child_tap_done_marker(sid, whenever_id)),
+            );
             match done_chain.len() {
                 0 => {}
                 1 => tap_args.push(Value::pair("done".to_string(), done_chain.pop().unwrap())),
@@ -487,11 +494,25 @@ impl Interpreter {
                 tap_args.push(Value::pair("quit".to_string(), quit_cb));
             }
             let updated = self.call_method_with_values(supply_val.clone(), "tap", tap_args)?;
+            if let Some(sid) = parent_emitter_id {
+                crate::runtime::native_methods::register_supply_child_tap(
+                    sid,
+                    whenever_id,
+                    updated.clone(),
+                );
+            }
             return Ok(result_tap(updated));
         } else if let ValueView::Instance { class_name, .. } = supply_val.view()
             && class_name == "IO::Socket::Async::Listener"
         {
             let tap = self.call_method_with_values(supply_val.clone(), "act", vec![callback])?;
+            if let Some(sid) = parent_emitter_id {
+                crate::runtime::native_methods::register_supply_child_tap(
+                    sid,
+                    whenever_id,
+                    tap.clone(),
+                );
+            }
             return Ok(result_tap(tap));
         } else if let ValueView::Promise(shared) = supply_val.view() {
             // A promise source is a one-shot supply: run the body once with the
@@ -521,7 +542,7 @@ impl Interpreter {
             // whenever's own LAST phaser must NOT also run — check that
             // explicitly rather than trusting `ran.is_ok()`, since a
             // converted die returns `Ok` too (the conversion absorbs it).
-            let emitter_supplier_id = own_emitter.as_ref().and_then(Self::emitter_supplier_id_of);
+            let emitter_supplier_id = parent_emitter_id;
             // The enclosing supply block's emitter id is also its serialize
             // group, so handing it to `on_resolve` makes the thread that
             // resolves the promise reserve this body's place in the block
