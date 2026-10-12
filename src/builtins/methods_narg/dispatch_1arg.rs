@@ -344,27 +344,6 @@ fn native_method_1arg_cascade(
         "uniprops" => {
             crate::builtins::method_table::unicode::uniprops_of(target, std::slice::from_ref(arg))
         }
-        // Cost: O(p + m), p = match position, m = chars of the needle (the
-        // invocant is borrowed).
-        "contains" => {
-            if let ValueView::Package(type_name) = arg.view() {
-                return Some(Err(RuntimeError::new(format!(
-                    "Cannot resolve caller contains({}:U)",
-                    type_name,
-                ))));
-            }
-            // A Regex needle needs the regex engine (&mut self); fall through to
-            // the slow path (dispatch_contains) instead of matching its gist.
-            if let ValueView::Regex(..) = arg.view() {
-                return None;
-            }
-            // The shared `Str`/`Cool`/`Map` row handler (ADR-11276); it also
-            // covers a Junction needle, which the table itself never hands it.
-            Some(crate::builtins::method_table::str_search::contains(
-                target,
-                std::slice::from_ref(arg),
-            ))
-        }
         // starts-with / ends-with: the plain `.starts-with($needle)` form (a
         // single positional argument) is a pure prefix/suffix check on a Str
         // receiver, so handle it natively here. The case-/mark-insensitive forms
@@ -461,26 +440,6 @@ fn native_method_1arg_cascade(
                 }
             }
         }
-        // Cost: O(p + m) amortized, p = match position, m = chars of the needle;
-        // the byte offset is converted through the cached grapheme index.
-        "index" => {
-            // Fall through to runtime dispatch for type objects, named args (Pairs),
-            // array of needles, and multi-arg calls handled by dispatch_index
-            if matches!(
-                arg.view(),
-                ValueView::Package(_) | ValueView::Pair(..) | ValueView::Array(..)
-            ) {
-                return None;
-            }
-            // The shared `Str`/`Cool`/`Map` row handler (ADR-11276).
-            Some(crate::builtins::method_table::str_search::index(
-                target,
-                std::slice::from_ref(arg),
-            ))
-        }
-        // Cost: O(k), k = chars returned, once the invocant's grapheme index is
-        // cached (see `native_substr_slice`).
-        "substr" => crate::builtins::substr::native_substr_slice(target, arg, None),
         // Cost: O(n + L * s), n = chars of the invocant, L = lines, s = |steps|.
         "indent" => Some(crate::builtins::method_table::str_args::indent(
             target,
@@ -638,46 +597,6 @@ fn native_method_1arg_cascade(
         "in-range" => {
             crate::builtins::method_table::range::in_range_value(target, std::slice::from_ref(arg))
         }
-        // Cost: see `native_split_method`.
-        "split" => {
-            if let ValueView::Instance { class_name, .. } = target.view()
-                && (class_name == "Supply"
-                    || class_name == "IO::Handle"
-                    || class_name == "IO::Pipe"
-                    || class_name == "IO::CatHandle")
-            {
-                return None;
-            }
-            // An `IO::Path` splits its file's contents (the `IO::Path.split` row).
-            if let ValueView::Instance { class_name, .. } = target.view()
-                && crate::value::DispatchShape::from_instance_class(class_name)
-                    == Some(crate::value::DispatchShape::IoPath)
-            {
-                return None;
-            }
-            // IO::Spec::* has its own split method
-            if let ValueView::Package(name) = target.view()
-                && name.as_str().starts_with("IO::Spec")
-            {
-                return None;
-            }
-            crate::builtins::split::native_split_method(target, std::slice::from_ref(arg))
-        }
-        "comb" => {
-            // Supply/IO targets have their own comb semantics in the interpreter.
-            if let ValueView::Instance { class_name, .. } = target.view()
-                && (class_name == "Supply"
-                    || class_name == "IO::Handle"
-                    || class_name == "IO::Path"
-                    || class_name == "IO::Pipe"
-                    || class_name == "IO::CatHandle")
-            {
-                return None;
-            }
-            // Pure Int-chunk / Str-fixed split (shared with the interpreter via
-            // builtins::comb); Regex/Sub/bare matchers return None -> interpreter.
-            crate::builtins::comb::native_comb_method(target, std::slice::from_ref(arg))
-        }
         // Cost: O(1) for the Seq forms, a lazy Seq over the invocant
         // (`crate::value::StrIterSpec`) that `$limit` caps; `:count` is O(n),
         // n = bytes of the invocant, and builds no line.
@@ -749,67 +668,6 @@ fn native_method_1arg_cascade(
             target,
             std::slice::from_ref(arg),
         ),
-        // Cost: O(n - p + m) amortized, p = match position, m = chars of the
-        // needle; the byte offset is converted through the cached grapheme index.
-        "rindex" => {
-            // Fall through to runtime dispatch for arrays (list of needles)
-            // and type objects
-            if matches!(
-                arg.view(),
-                ValueView::Array(..) | ValueView::Package(_) | ValueView::Pair(..)
-            ) {
-                return None;
-            }
-            // The `Str`/`Cool` row's handler (ADR-11276).
-            Some(crate::builtins::method_table::str_search::rindex(
-                target,
-                std::slice::from_ref(arg),
-            ))
-        }
-        // The `fmt` rows' implementation (`method_table::collections::fmt`).
-        "fmt" => super::fmt_contains::fmt_native(target, std::slice::from_ref(arg)),
-        // Cost: O(f + n), f = chars of the format (the invocant), n = rendered length.
-        "sprintf" => {
-            // Method form: '%f'.sprintf(value) — target is the format string.
-            // The `*@args` slurpy spreads a single positional container across the
-            // directives (`"%s-%s".sprintf([1,2])` is `1-2`, not `1 2-`; likewise a
-            // Range: `"%d %d".sprintf(1..2)` is `1 2`), so any list-like arg must
-            // defer to the slow-path `sprintf` arm, which routes through
-            // `builtin_sprintf` (the same slurpy flattening the sub form gets). A
-            // bare type object likewise needs the interpreter-aware warning path
-            // (`%s` warns and stringifies to "").
-            // An Instance/Package/mixin arg needs `.Str`/`.Int`/`.Numeric`
-            // coercion the pure formatter can't dispatch (`fmt_value_needs_coercion`);
-            // defer to the slow-path `sprintf` arm below.
-            if matches!(arg.view(), ValueView::Package(_))
-                || arg.as_list_items().is_some()
-                || fmt_value_needs_coercion(arg)
-                || matches!(
-                    arg.view(),
-                    ValueView::Range(..)
-                        | ValueView::RangeExcl(..)
-                        | ValueView::RangeExclStart(..)
-                        | ValueView::RangeExclBoth(..)
-                        | ValueView::GenericRange { .. }
-                        | ValueView::Seq(..)
-                        | ValueView::Slip(..)
-                )
-            {
-                return None;
-            }
-            let fmt = target.to_string_value();
-            // The single scalar arg feeds exactly one directive. Any other
-            // directive count is an arg-count mismatch (`"%s and %s".sprintf("a")`
-            // wants two args), which `format_sprintf` would silently paper over by
-            // rendering the missing directives as empty/0. Defer to the slow-path
-            // arm so `builtin_sprintf` raises the same `X::Str::Sprintf::Directives::Count`
-            // the sub form does.
-            if runtime::sprintf_directive_count(&fmt) != 1 {
-                return None;
-            }
-            let rendered = runtime::format_sprintf(&fmt, Some(arg));
-            Some(Ok(Value::str(rendered)))
-        }
         "zprintf" => {
             // Method form: '%f'.zprintf(value) — like sprintf but with zprintf
             // semantics. Mirrors the "sprintf" arm above: an Instance/Package/
@@ -840,20 +698,6 @@ fn native_method_1arg_cascade(
             ) =>
         {
             crate::builtins::method_table::numeric_base::base_of(target, arg, None)
-        }
-        // An instance carrying a `value` (a `Duration`, an `Instant`) is read
-        // through that attribute.
-        "base" => match target.view() {
-            ValueView::Instance { attributes, .. } => {
-                let value = attributes.as_map().get("value").cloned()?;
-                crate::builtins::method_table::numeric_base::base_of(&value, arg, None)
-            }
-            _ => None,
-        },
-        // The `Rat.base-repeating` row's implementation
-        // (`method_table::numeric_base`).
-        "base-repeating" => {
-            crate::builtins::method_table::numeric_base::base_repeating_of(target, arg)
         }
         // `round($scale)` is the `Cool.round` row's handler; this arm keeps the
         // receivers the table has no shape for (an allomorph: `<1.5>.round(0.5)`).
@@ -940,10 +784,6 @@ fn native_method_1arg_cascade(
             }
             _ => None,
         },
-        // The `Blob`/`Buf` rows' implementation (`method_table::blob_read`).
-        "subbuf" => {
-            crate::builtins::method_table::blob_read::subbuf(target, std::slice::from_ref(arg))
-        }
         "isa" => {
             // Instance, Mixin(Instance), and Package values need interpreter
             // access for user-defined class hierarchies, role checks, and
