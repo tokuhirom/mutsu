@@ -7350,7 +7350,8 @@ pub(crate) struct CompiledCode {
     /// store keys on (see `once_scope_key`).
     pub(crate) has_once: bool,
     /// True if this code observes its caller frame: a `callframe`/`callframes`
-    /// call, or a `CALLER::` pseudo-package read/write op. Set during `emit()`.
+    /// call, a `CALLER::` pseudo-package read/write op, or a read of `&?BLOCK` /
+    /// `&?ROUTINE`. Set during `emit()`.
     /// Such a body must be invoked through a frame-pushing call path
     /// (`push_caller_env`), so the fast/light frameless paths exclude it —
     /// otherwise `callframe(1)`/`CALLER::` resolve against the *grand*-caller.
@@ -11264,6 +11265,16 @@ impl CompiledCode {
                     if let Some(v) = self.constants.get(*name_idx as usize)
                         && let ValueView::Str(s) = v.view()
                         && matches!(s.as_str(), "callframe" | "callframes")
+                    {
+                        self.uses_callframe = true;
+                    }
+                }
+                // `&?BLOCK` / `&?ROUTINE` read the frame's own code object off
+                // the block stack, which only the frame-pushing paths keep.
+                OpCode::GetCodeVar(name_idx) | OpCode::GetCodeVarLocal { name_idx, .. } => {
+                    if let Some(v) = self.constants.get(*name_idx as usize)
+                        && let ValueView::Str(s) = v.view()
+                        && matches!(s.as_str(), "?BLOCK" | "?ROUTINE")
                     {
                         self.uses_callframe = true;
                     }
