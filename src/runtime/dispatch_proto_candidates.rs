@@ -50,7 +50,7 @@ impl Interpreter {
     ) {
         // A capture with a sub-signature (`|c($x)`) is ranked by its
         // flattened sub-signature, which hides that rakudo treats it as
-        // slurpy; it keeps its later fallback (see `build_bare_multi_plan`).
+        // slurpy; it keeps its later fallback.
         let flexible_arity = |def: &FunctionDef| {
             def.param_defs.iter().any(|p| {
                 !p.named

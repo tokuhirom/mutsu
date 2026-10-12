@@ -91,7 +91,7 @@ impl Interpreter {
             // declare, so `multi m(Int $x)` ties `multi m(Int $x, Int $y?)`
             // for `m(1)` and the optional-count step picks the former.
             .filter(|((p, _), arg)| {
-                arg.is_some() || args.is_empty() || !(p.optional_marker || p.default.is_some())
+                arg.is_some() || !(p.optional_marker || p.default.is_some())
             })
             .map(|(pt, _)| pt)
             .filter(|(p, tc)| {

@@ -15,9 +15,10 @@
 //! list and its narrowness order are a property of the *types* at the call, so
 //! they are computed once per type tuple, and only the bind-time checks that
 //! can run user code — `where` clauses and subset predicates — run per call.
-//! A [`BareMultiPlan`] is that type-keyed half: every gather pass the resolver
-//! would try, in order, each already ranked. [`Interpreter::run_bare_multi_plan`]
-//! is the per-call half.
+//! A [`BareMultiPlan`] is that type-keyed half: every candidate of the name,
+//! in every arity, ranked and sorted into rakudo's topological tiers over the
+//! whole set (#12795). [`Interpreter::run_bare_multi_plan`] is the per-call
+//! half.
 //!
 //! Everything a plan holds is computed from `(name, current package,
 //! innermost lexical package, proto generation, registered subsets, argument
@@ -30,7 +31,7 @@
 use super::multi_rank::{self, MultiRank};
 use super::*;
 
-/// One candidate of a cached dispatch-plan stage
+/// One candidate of a cached dispatch plan
 /// ([`crate::runtime::multi_dispatch_plan`]).
 pub(crate) struct PlanEntry {
     /// The rank key against the argument types the plan was built for.
@@ -41,19 +42,18 @@ pub(crate) struct PlanEntry {
     pub(super) def: Arc<FunctionDef>,
 }
 
-/// One gather pass of the bare-name resolver, ranked against the call's
-/// argument types, in gather order (duplicates included).
+/// Every candidate of a bare-name multi, ranked and tiered against the
+/// call's argument types, unique by fingerprint, in gather order.
 pub(crate) type PlanStage = Vec<PlanEntry>;
 
 /// The type-keyed half of a bare-name multi resolution. See the module docs.
 pub(crate) struct BareMultiPlan {
-    /// The passes to try, in order; the first that yields a winner decides.
-    stages: Vec<PlanStage>,
-    /// Each stage's dispatch program (`multi_dispatch_program.rs`), built
-    /// from the first call that runs the stage; `None` inside when the stage
-    /// needs the general walk.
-    programs: Vec<std::sync::OnceLock<Option<super::multi_dispatch_program::StageProgram>>>,
-    /// Whether any pass gathered a candidate — decides whether the resolver
+    stage: PlanStage,
+    /// The stage's dispatch program (`multi_dispatch_program.rs`), built from
+    /// the first call that runs it; `None` inside when the stage needs the
+    /// general walk.
+    program: std::sync::OnceLock<Option<super::multi_dispatch_program::StageProgram>>,
+    /// Whether the gather found a candidate — decides whether the resolver
     /// may fall back to the arity-only lookup when nothing binds.
     found_multi_candidates: bool,
     /// Whether the plan was built for a cacheable argument-type key.
@@ -90,34 +90,23 @@ impl Interpreter {
         search_pkgs: &[String],
         arity: usize,
     ) -> Resolved {
-        let plan = self.bare_multi_plan(name, arg_values, search_pkgs, arity);
-        // Fingerprints of candidates an earlier pass already tried and that
-        // did not bind; each wider pass re-gathers them, so skip them there.
-        let mut rejected = std::collections::HashSet::new();
-        for (stage, program) in plan.stages.iter().zip(&plan.programs) {
-            // A program is specific to the argument-type key, so only a plan
-            // the cache keyed may build one (an unkeyed plan is per call).
-            let program = if plan.keyed {
-                program
-                    .get_or_init(|| self.build_stage_program(arg_values, stage))
-                    .as_ref()
-            } else {
-                None
-            };
-            // A stage that ended in `X::Multi::Ambiguous` (or a `where` that
-            // died) has decided the call: a wider pass must not pick a
-            // candidate out of the tie. `multi f(*%m)` and `multi f()` tie
-            // in the exact-arity stage for `f()`; the slurpy stage, which
-            // holds only `(*%m)`, would otherwise run it.
-            let winner = match program {
-                Some(program) => {
-                    self.run_stage_program(name, arg_values, program, &mut rejected)?
-                }
-                None => self.choose_from_plan_stage(name, arg_values, stage, &mut rejected)?,
-            };
-            if let Some(def) = winner {
-                return Ok(Some(def));
-            }
+        let plan = self.bare_multi_plan(name, arg_values, search_pkgs);
+        // A program is specific to the argument-type key, so only a plan the
+        // cache keyed may build one (an unkeyed plan is per call).
+        let program = if plan.keyed && !plan.stage.is_empty() {
+            plan.program
+                .get_or_init(|| self.build_stage_program(arg_values, &plan.stage))
+                .as_ref()
+        } else {
+            None
+        };
+        let winner = match program {
+            Some(program) => self.run_stage_program(name, arg_values, program)?,
+            None if plan.stage.is_empty() => None,
+            None => self.choose_from_plan_stage(name, arg_values, &plan.stage)?,
+        };
+        if winner.is_some() {
+            return Ok(winner);
         }
         // Fall back to arity-only if no proto declared and no multi candidates were found.
         // When multi candidates exist but none matched (e.g., sub-signature arity mismatch),
@@ -137,7 +126,6 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
         search_pkgs: &[String],
-        arity: usize,
     ) -> Arc<BareMultiPlan> {
         let key = self.bare_multi_plan_key(name, arg_values);
         let generation = self.caches.fn_resolve_gen;
@@ -146,7 +134,7 @@ impl Interpreter {
         {
             return plan.clone();
         }
-        let mut plan = self.build_bare_multi_plan(name, arg_values, search_pkgs, arity);
+        let mut plan = self.build_bare_multi_plan(name, arg_values, search_pkgs);
         plan.keyed = key.is_some();
         let plan = Arc::new(plan);
         if let Some(key) = key {
@@ -191,25 +179,27 @@ impl Interpreter {
         })
     }
 
-    /// Gather and rank every pass the bare-name resolver tries, without
-    /// binding anything.
+    /// Gather every candidate of the name, in every arity, and rank them
+    /// together, without binding anything.
+    ///
+    /// Rakudo sorts a multi's whole candidate list into topological tiers
+    /// once and then walks it tier by tier, skipping the candidates the call
+    /// cannot bind (#12795). The plan does the same: one list, deduplicated
+    /// by fingerprint (one declaration is registered under several keys) and
+    /// tiered over all of it, so a candidate of another arity still sits
+    /// between two others whenever rakudo puts it there.
+    // Cost: O(k + c^2), k = registry keys sharing the base name,
+    // c = candidates.
     fn build_bare_multi_plan(
         &mut self,
         name: &str,
         arg_values: &[Value],
         search_pkgs: &[String],
-        arity: usize,
     ) -> BareMultiPlan {
-        let mut stages: Vec<PlanStage> = Vec::new();
-        let typed_prefixes: Vec<String> = search_pkgs
+        let prefixes: Vec<String> = search_pkgs
             .iter()
-            .map(|pkg| format!("{}::{}/{}:", pkg, name, arity))
+            .map(|pkg| format!("{}::{}/", pkg, name))
             .collect();
-        let generic_keys: Vec<String> = search_pkgs
-            .iter()
-            .map(|pkg| format!("{}::{}/{}", pkg, name, arity))
-            .collect();
-        let mut found_multi_candidates = false;
         let base_keys = self.fn_keys_for_base(name);
         let mut candidates: Vec<(String, Arc<FunctionDef>)> = {
             let registry = self.registry();
@@ -218,187 +208,18 @@ impl Interpreter {
                 .filter_map(|key| registry.functions.get(key).map(|def| (key, def)))
                 .filter(|(key, _)| {
                     let ks = key.as_str();
-                    typed_prefixes.iter().any(|p| ks.starts_with(p))
+                    prefixes.iter().any(|p| ks.starts_with(p))
                 })
                 .map(|(key, def)| (key.resolve(), def.clone()))
                 .collect()
         };
-        for key in &generic_keys {
-            let key_sym = Symbol::intern(key);
-            let m_prefix = format!("{}__m", key);
-            let more: Vec<(String, Arc<FunctionDef>)> = {
-                let registry = self.registry();
-                base_keys
-                    .iter()
-                    .filter_map(|k| registry.functions.get(k).map(|def| (k, def)))
-                    .filter(|(k, _)| **k == key_sym || k.as_str().starts_with(&m_prefix))
-                    .map(|(k, def)| (k.resolve(), def.clone()))
-                    .collect()
-            };
-            if !more.is_empty() {
-                found_multi_candidates = true;
-            }
-            candidates.extend(more);
-        }
+        let found_multi_candidates = !candidates.is_empty();
         self.sort_candidates_by_specificity(&mut candidates);
-        let exact_candidate_consumes_optional = candidates.iter().any(|(_, def)| {
-            def.param_defs
-                .iter()
-                .any(|p| !p.named && (p.optional_marker || p.default.is_some()))
-        });
-        // An exact-arity candidate with no positional type constraint at all
-        // (a bare `($x)`/`($unknown-type)` catch-all) is the WIDEST possible
-        // signature, not a narrow one — it must still compete with a
-        // different-arity candidate whose optional/default trailing
-        // parameter lets it apply to this call too (`multi f($x) {...}` vs
-        // `multi f(Int $x, Int $y = 10) {...}` called as `f(1)`: real Raku
-        // picks the typed candidate). Without this check the fast path below
-        // returned the catch-all unconditionally whenever it happened to be
-        // the only candidate registered at the call's exact arity, silently
-        // preferring it over a strictly narrower flexible-arity candidate
-        // (found while making ASN::BER's enum/Int `serialize` dispatch pick
-        // its catch-all `NYI` candidate over the real `Int`/enum ones).
-        //
-        // Only a candidate that actually HAS a non-named positional parameter
-        // can be "untyped" this way — a zero-arity candidate (`multi f() {}`)
-        // has no such parameter at all and is already the narrowest possible
-        // match for a zero-argument call, not a catch-all competing with
-        // wider optional-arity siblings (`multi f(Int $a?) {}`): flagging it
-        // here regressed `roast/S06-multi/syntax.t`'s "exact arity match wins
-        // over candidates with optionals" (`multi rt74900() {}` losing to
-        // `multi rt74900(Int $a?) {}` for `rt74900()`).
-        let exact_candidate_untyped = candidates.iter().any(|(_, def)| {
-            def.param_defs
-                .iter()
-                .any(|p| !p.named && !p.slurpy && !p.double_slurpy)
-                && self.candidate_specificity_rank_for_args(def, arg_values).1 == 0
-        });
-        // An exact-arity group made only of named parameters must compete with
-        // flexible candidates that also carry a named parameter.  Rakudo
-        // treats `multi f($x = 1, :$a)` and `multi f(:$b)` as an equal-
-        // narrowness tie for `f()`, so declaration order decides. Returning
-        // the exact named-only candidate here would skip that comparison and
-        // make the later flexible candidate unreachable. A zero-arity
-        // positional candidate (`multi f()`) still gets the fast path: unlike
-        // the named-only case, it is the exact-arity winner over an optional
-        // positional candidate.
-        let exact_candidate_has_unnamed = candidates.iter().any(|(_, def)| {
-            !def.param_defs
-                .iter()
-                .any(|p| p.named && !p.slurpy && !p.double_slurpy)
-        });
-        // An exact-arity candidate with no optional positional parameter is
-        // already narrower than every default-arity fallback. Preserve that
-        // fast path; otherwise `multi f(Int $x)` would lose to
-        // `multi f(Int $x, Int $y = 7)` for `f(1)`. When an exact candidate
-        // does consume an optional argument, however, it must compete with
-        // longer signatures whose required parameters may describe the call
-        // more precisely (the `is-approx` tolerance overloads).
-        //
-        // A slurpy exact-arity candidate is no such fast-path winner: a
-        // sibling with an optional positional (`multi g($x?)`, registered under
-        // a different arity) ties it on `min_arity` and ranks narrower because
-        // it is not slurpy, so the two must be ranked together (#11173).
-        let exact_candidate_slurpy = candidates
-            .iter()
-            .any(|(_, def)| def.param_defs.iter().any(|p| p.is_variadic()));
-        if !exact_candidate_consumes_optional
-            && !exact_candidate_untyped
-            && !exact_candidate_slurpy
-            && exact_candidate_has_unnamed
-        {
-            stages.push(self.rank_candidates_for_plan(name, arg_values, candidates.clone()));
-        }
-        // Include optional/default candidates with different registered arities
-        // before choosing a winner. A candidate such as `(Numeric, Numeric,
-        // Numeric, $desc = '')` is applicable to a three-argument call even
-        // though its registration arity is four, and must compete with the
-        // exact-arity `(Numeric, Numeric, $desc = '')` candidate rather than
-        // being considered only after that wider candidate has already won.
-        //
-        // Slurpy candidates compete in this stage too: an exact-arity
-        // candidate with an optional positional is no narrower than a slurpy
-        // one by arity alone. Rakudo compares the two on their shared
-        // positions when their minimum arities agree, so `multi s(Int $x,
-        // *@r)` beats `multi s(Any $x, Any $y?)` for `s(1, 2)` (#12791);
-        // only when both arities differ does the non-slurpy one win outright,
-        // which `MultiRank::is_narrower` decides. A capture with a
-        // sub-signature (`multi f(|c($x))`) stays out: dispatch ranks it by
-        // the flattened sub-signature, which hides that rakudo treats the
-        // capture as slurpy, so here it would tie `multi f($n)` instead of
-        // losing to it (`roast/S06-multi/subsignature.t`).
-        let optional_prefixes: Vec<String> = search_pkgs
-            .iter()
-            .map(|pkg| format!("{}::{}/", pkg, name))
-            .collect();
-        let optional_candidates: Vec<(String, Arc<FunctionDef>)> = self
-            .registry()
-            .functions
-            .iter()
-            .filter(|(k, def)| {
-                let ks = k.resolve();
-                optional_prefixes
-                    .iter()
-                    .any(|prefix| ks.starts_with(prefix))
-                    && def.param_defs.iter().any(|p| {
-                        (!p.named && (p.optional_marker || p.default.is_some()))
-                            || (p.is_variadic() && !p.is_capture_subsignature())
-                    })
-            })
-            .map(|(k, def)| (k.resolve(), def.clone()))
-            .collect();
-        if !optional_candidates.is_empty() {
-            found_multi_candidates = true;
-        }
-        candidates.extend(optional_candidates);
-        self.sort_candidates_by_specificity(&mut candidates);
-        stages.push(self.rank_candidates_for_plan(name, arg_values, candidates));
-        // Try slurpy candidates with different arities (slurpy params accept
-        // variable number of args, so the registered arity may differ from call arity).
-        let mut slurpy_candidates: Vec<(String, Arc<FunctionDef>)> = self
-            .registry()
-            .functions
-            .iter()
-            .filter(|(k, def)| {
-                let ks = k.resolve();
-                optional_prefixes
-                    .iter()
-                    .any(|prefix| ks.starts_with(prefix))
-                    && def
-                        .param_defs
-                        .iter()
-                        .any(|p| p.is_variadic() || p.is_capture_subsignature())
-            })
-            .map(|(k, def)| (k.resolve(), def.clone()))
-            .collect();
-        if !slurpy_candidates.is_empty() {
-            found_multi_candidates = true;
-        }
-        slurpy_candidates.sort_by(|a, b| a.0.cmp(&b.0));
-        stages.push(self.rank_candidates_for_plan(name, arg_values, slurpy_candidates));
-        // Try candidates from other arities (e.g., optional/default positional params).
-        // This allows calls with fewer args to match signatures like `$x = ...`.
-        let mut any_arity_candidates: Vec<(String, Arc<FunctionDef>)> = self
-            .registry()
-            .functions
-            .iter()
-            .filter(|(k, _)| {
-                let ks = k.resolve();
-                optional_prefixes
-                    .iter()
-                    .any(|prefix| ks.starts_with(prefix))
-            })
-            .map(|(k, def)| (k.resolve(), def.clone()))
-            .collect();
-        if !any_arity_candidates.is_empty() {
-            found_multi_candidates = true;
-        }
-        self.sort_candidates_by_specificity(&mut any_arity_candidates);
-        stages.push(self.rank_candidates_for_plan(name, arg_values, any_arity_candidates));
-        stages.retain(|stage| !stage.is_empty());
+        let mut seen = std::collections::HashSet::new();
+        candidates.retain(|(_, def)| seen.insert(def.body_fingerprint()));
         BareMultiPlan {
-            programs: stages.iter().map(|_| std::sync::OnceLock::new()).collect(),
-            stages,
+            stage: self.rank_candidates_for_plan(name, arg_values, candidates),
+            program: std::sync::OnceLock::new(),
             found_multi_candidates,
             keyed: false,
         }
@@ -457,37 +278,25 @@ impl Interpreter {
             })
     }
 
-    /// [`Self::choose_best_matching_candidate_excluding`] over one stage of a
-    /// cached dispatch plan: `stage` is the gathered list, already filtered
-    /// for visibility and ranked by [`Self::rank_candidates_for_plan`]. Only
-    /// the per-call parts run here — the duplicate/`rejected` filter and the
-    /// bind attempts, which are the only place a `where` clause or subset
-    /// predicate is evaluated.
-    ///
-    /// Filtering after ranking selects exactly the list the unplanned path
-    /// ranks: a rank key is computed per candidate, and the sort below is
-    /// stable, so dropping an element before or after ranking leaves the
-    /// others in the same order.
+    /// [`Self::choose_best_matching_candidate_excluding`] over a cached
+    /// dispatch plan: `stage` is the gathered list, already unique by
+    /// fingerprint, filtered for visibility and ranked by
+    /// [`Self::rank_candidates_for_plan`]. Only the per-call parts run here —
+    /// re-ranking a value-reading key and the bind attempts, which are the
+    /// only place a `where` clause or subset predicate is evaluated.
     // Cost: O(c log c) plus the bind attempts, c = candidates in the stage.
     pub(super) fn choose_from_plan_stage(
         &mut self,
         name: &str,
         args: &[Value],
         stage: &[PlanEntry],
-        rejected: &mut std::collections::HashSet<u64>,
     ) -> Resolved {
         let core_outranks = Self::core_io_path_candidate_applies(name, args);
-        let mut seen: Vec<u64> = Vec::with_capacity(stage.len());
         let mut ranked: Vec<(MultiRank, Arc<FunctionDef>)> = Vec::with_capacity(stage.len());
         for entry in stage {
-            let fp = entry.def.body_fingerprint();
             if core_outranks && Self::candidate_is_untyped_where(&entry.def) {
                 continue;
             }
-            if rejected.contains(&fp) || seen.contains(&fp) {
-                continue;
-            }
-            seen.push(fp);
             let key = if entry.reads_value {
                 self.candidate_rank_key(&entry.def, args)
             } else {
@@ -505,6 +314,6 @@ impl Interpreter {
             });
         }
         ranked.sort_by(|a, b| a.0.total_cmp(&b.0));
-        self.bind_ranked_candidates(name, args, ranked, Some(rejected))
+        self.bind_ranked_candidates(name, args, ranked, None)
     }
 }

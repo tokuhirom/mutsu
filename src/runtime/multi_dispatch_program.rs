@@ -18,9 +18,10 @@
 //! uses (`settle_ranked_matches`), so ties, `is default` and ambiguity are
 //! decided exactly as before.
 //!
-//! A stage gets a program only when every candidate in it has a plain
-//! positional signature (`args_match_simple_positional`'s shape) and a rank
-//! that does not read argument values; any other stage keeps the general walk.
+//! A stage gets a program only when every candidate in it that can take the
+//! call's arity has a plain positional signature
+//! (`args_match_simple_positional`'s shape) and a rank that does not read
+//! argument values; any other stage keeps the general walk.
 
 use super::multi_dispatch_plan::PlanEntry;
 use super::multi_rank::MultiRank;
@@ -38,7 +39,6 @@ enum ValueCheck {
 
 struct ProgramStep {
     key: MultiRank,
-    fingerprint: u64,
     def: Arc<FunctionDef>,
     /// Every check that the argument-type key decides, answered once.
     nominal_ok: bool,
@@ -47,7 +47,8 @@ struct ProgramStep {
 
 /// One plan stage, specialized to its argument-type key. See the module docs.
 pub(crate) struct StageProgram {
-    /// Unique by fingerprint, in narrowness order.
+    /// In narrowness order; the candidates that cannot take the call's
+    /// arity are left out.
     steps: Vec<ProgramStep>,
 }
 
@@ -72,11 +73,13 @@ impl Interpreter {
             if entry.reads_value {
                 return None;
             }
-            let fingerprint = entry.def.body_fingerprint();
-            if steps.iter().any(|s| s.fingerprint == fingerprint) {
+            let def = &entry.def;
+            // The stage holds every arity of the name (its tiers are built
+            // over all of them); one that cannot take this many positionals
+            // never binds, so it needs no step.
+            if Self::arity_excludes(def, args.len()) {
                 continue;
             }
-            let def = &entry.def;
             // A placeholder-signature block (`params` of `^a` with no
             // `param_defs`) is matched by arity alone in the general walk.
             if def.param_defs.len() != args.len()
@@ -91,7 +94,6 @@ impl Interpreter {
             })?;
             steps.push(ProgramStep {
                 key: entry.key,
-                fingerprint,
                 def: def.clone(),
                 nominal_ok,
                 checks,
@@ -99,6 +101,28 @@ impl Interpreter {
         }
         steps.sort_by(|a, b| a.key.total_cmp(&b.key));
         Some(StageProgram { steps })
+    }
+
+    /// Whether `def` cannot bind `positionals` positional arguments (and no
+    /// named ones): it requires more, or takes fewer and has no slurpy.
+    // Cost: O(p), p = parameters of `def`.
+    fn arity_excludes(def: &FunctionDef, positionals: usize) -> bool {
+        // A placeholder-signature block is matched on `params` instead.
+        if def.param_defs.is_empty() && !def.params.is_empty() {
+            return false;
+        }
+        let mut count = 0usize;
+        let mut required = 0usize;
+        for p in def.param_defs.iter().filter(|p| !p.named) {
+            if p.slurpy || p.double_slurpy || p.is_variadic() {
+                return required > positionals;
+            }
+            count += 1;
+            if !(p.optional_marker || p.default.is_some()) {
+                required += 1;
+            }
+        }
+        required > positionals || count < positionals
     }
 
     /// Answer every key-decided check of one candidate now, and list the
@@ -153,16 +177,12 @@ impl Interpreter {
         name: &str,
         args: &[Value],
         program: &StageProgram,
-        rejected: &mut std::collections::HashSet<u64>,
     ) -> Resolved {
         let mut matches: Vec<(MultiRank, Arc<FunctionDef>)> = Vec::new();
         let mut best_key: Option<MultiRank> = None;
         let mut threw: Option<(Arc<FunctionDef>, RuntimeError)> = None;
         let outer_where_exception = self.pending_where_exception.take();
         for step in &program.steps {
-            if rejected.contains(&step.fingerprint) {
-                continue;
-            }
             // Strictly wider than the best match and comparable with it; an
             // incomparable one is still a contender (#11943).
             if let Some(best) = best_key
@@ -183,7 +203,6 @@ impl Interpreter {
                 continue;
             }
             if !ok {
-                rejected.insert(step.fingerprint);
                 continue;
             }
             best_key.get_or_insert(step.key);
