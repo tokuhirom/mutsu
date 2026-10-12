@@ -4384,8 +4384,9 @@ impl Interpreter {
         target: &Value,
     ) -> Option<Result<Value, RuntimeError>> {
         match target.view() {
-            ValueView::Channel(_) => Some(
-                self.call_method_with_values(target.clone(), "list", vec![])
+            // The eager drain (`.list` pulls on demand, #12727).
+            ValueView::Channel(ch) => Some(
+                self.dispatch_channel_method(&ch, "List", vec![])
                     .and_then(|list| self.list_to_capture(&list)),
             ),
             ValueView::Instance { class_name, .. } if class_name.resolve() == "Supply" => Some(
@@ -4408,6 +4409,12 @@ impl Interpreter {
             // Exact native IO::Handle instances carry additional native
             // settings outside the declared path attribute; their Capture
             // exposes the stored settings through the pure path.
+            // An on-demand pull list (`Channel.list`, `IO::CatHandle.lines`)
+            // has nothing cached until pulled: drain it first.
+            ValueView::LazyList(ll) if ll.is_cat_pull() => Some(
+                self.force_lazy_list(&ll)
+                    .and_then(|items| self.list_to_capture(&Value::array(items))),
+            ),
             ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => None,
             ValueView::Instance { class_name, .. } => {
                 let cn = class_name.resolve();

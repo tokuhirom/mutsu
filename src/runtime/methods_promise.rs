@@ -468,7 +468,11 @@ impl Interpreter {
                         }
                     }
                 }
-                Ok(Value::array(items))
+                Ok(if method == "Array" {
+                    Value::real_array(items)
+                } else {
+                    Value::array(items)
+                })
             }
             "closed" => Ok(Value::promise(ch.closed_promise())),
             "elems" => Err(RuntimeError::new(

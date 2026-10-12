@@ -4,7 +4,7 @@ use Test;
 # a `for $c.list` consumer runs its body as each item arrives, not only once
 # the channel closes.
 
-plan 9;
+plan 14;
 
 # A request/response handshake over two channels: the worker must answer
 # request 1 before the main thread sends request 2, which deadlocks if the
@@ -74,3 +74,11 @@ plan 9;
     is-deeply @seen, [5], 'items before a failure are delivered';
     is $!.message, 'boom', 'the failure is rethrown from the loop';
 }
+
+# The eager forms, and consumers that drain the on-demand list.
+sub filled { my $c = Channel.new; $c.send($_) for 1..3; $c.close; $c }
+is-deeply filled.List, (1, 2, 3), '.List drains the items';
+is-deeply filled.Array, [1, 2, 3], '.Array drains to a real Array';
+is-deeply filled.Capture, \(1, 2, 3), '.Capture drains the items';
+is-deeply filled.list.Capture, \(1, 2, 3), '.list.Capture pulls every item';
+is-deeply (|filled.list, 9), (1, 2, 3, 9), 'slipping .list pulls every item';

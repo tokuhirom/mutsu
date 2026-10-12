@@ -87,8 +87,10 @@ impl Interpreter {
         // item, which the list constructor (`exec_make_array_op`) turns into a
         // lazy tail. Forcing a prefix here instead reified up to 200,000
         // elements -- a factorial scan ran out of memory (Math::Handy).
+        // An on-demand pull list (`IO::CatHandle.lines`, `Channel.list`) is
+        // finite and has nothing cached until pulled, so it is forced too.
         if let ValueView::LazyList(ll) = val.view()
-            && (ll.is_from_gather() || ll.renders_lazy_placeholder())
+            && (ll.is_from_gather() || ll.renders_lazy_placeholder() || ll.is_cat_pull())
         {
             if ll.renders_lazy_placeholder() {
                 self.stack.push(Value::slip(vec![val.clone()]));

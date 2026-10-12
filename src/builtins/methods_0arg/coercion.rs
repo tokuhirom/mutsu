@@ -343,6 +343,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ))))
             }
             ValueView::LazyList(_) => None, // fall through to runtime to force
+            // A Channel drains to its items in the runtime (blocking receives).
+            ValueView::Channel(_) => None,
             // `.List` on a Hash is its pairs, exactly like `.list`/`.Array`
             // (`%h.List` is `(:a(1),)`, not `({:a(1)},)`). Without this arm the
             // Hash fell through to the scalar catch-all and became a one-element
