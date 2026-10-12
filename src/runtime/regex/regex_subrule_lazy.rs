@@ -112,7 +112,9 @@ fn atom_is_rule_call_free(atom: &RegexAtom) -> bool {
         // re-enters the enclosing rule by construction.
         RegexAtom::Named(_)
         | RegexAtom::WsRule
-        | RegexAtom::ClosureInterpolation { .. } | RegexAtom::CodeInterp { .. }
+        | RegexAtom::ClosureInterpolation { .. }
+        | RegexAtom::CodeInterp { .. }
+        | RegexAtom::VarAssertion(_)
         | RegexAtom::RecurseSelf(_) => false,
     }
 }

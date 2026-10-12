@@ -4058,6 +4058,17 @@ impl Interpreter {
                                         // value is unavailable). Accept it as a syntactically-valid
                                         // assertion; the runtime `Match` path below resolves it.
                                         RegexAtom::Named(name.clone().into())
+                                    } else if let Some(var_name) = trimmed.strip_prefix('$')
+                                        && declared_regex_vars.contains(var_name)
+                                    {
+                                        // <$var> of a lexical this pattern declared (an
+                                        // in-regex `:my`, a hoisted leading `:my`, a
+                                        // rule's runtime parameter): it has no value
+                                        // yet, so it is read when the atom is matched
+                                        // (#13029). Like any `<$var>`, it terminates
+                                        // the declarative prefix.
+                                        runtime_value_atom = true;
+                                        RegexAtom::VarAssertion(var_name.to_string())
                                     } else if let Some(var_name) = trimmed.strip_prefix('$') {
                                         // <$var> — look up scalar variable and compile as regex.
                                         // The `${name}` fallback and `.into_deref()` mirror the

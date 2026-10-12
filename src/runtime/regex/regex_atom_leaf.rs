@@ -58,8 +58,9 @@ impl Interpreter {
             RegexAtom::NamedBackref(name) => {
                 named_backref_end(name, caps, chars, pos).map(|end| (end, RegexCaptures::default()))
             }
-            RegexAtom::VarInterp(name) => {
-                match self.var_interp_target(name, caps, chars, pos, ignore_case) {
+            RegexAtom::VarInterp(name) | RegexAtom::VarAssertion(name) => {
+                let assertion = matches!(atom, RegexAtom::VarAssertion(_));
+                match self.var_interp_target(name, assertion, caps, chars, pos, ignore_case) {
                     VarInterpTarget::End(end) => end,
                     // The walk takes the interpolated pattern's
                     // highest-priority end, as for a `$( … )` atom.
@@ -100,11 +101,18 @@ impl Interpreter {
     /// (the case-folding literal match lives in the engine). An undefined
     /// value (Nil or a bare type object) interpolates as the empty string, a
     /// zero-width match, rather than as its `.gist`.
+    ///
+    /// `assertion` is the `<$name>` form ([`RegexAtom::VarAssertion`]): a
+    /// defined value is always a pattern — a `Str` is parsed as regex source
+    /// under the same interpolation policy as the parse-time `<$var>` arm —
+    /// entered as a capture-isolated group, and an undefined one matches
+    /// nothing.
     // Cost: O(r), r = the value's length; a pattern's parse is cached by its
     // source.
     pub(in crate::runtime) fn var_interp_target(
         &self,
         name: &str,
+        assertion: bool,
         caps: &RegexCaptures,
         chars: &[char],
         pos: usize,
@@ -118,6 +126,9 @@ impl Interpreter {
             .or_else(|| self.env.get(name).cloned())
             .or_else(|| self.env.get(&format!("${name}")).cloned());
         let val = val.map(Value::into_deref);
+        if assertion {
+            return self.var_assertion_target(val, ignore_case);
+        }
         let is_regex = val.as_ref().is_some_and(|v| {
             matches!(v.view(), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_))
         });

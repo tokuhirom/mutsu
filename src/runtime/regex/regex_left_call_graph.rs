@@ -336,6 +336,7 @@ fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut CallSink) -> Opti
             Some(true)
         }
         RegexAtom::ClosureInterpolation { .. }
+        | RegexAtom::VarAssertion(_)
         | RegexAtom::CodeInterp { .. }
         | RegexAtom::RecurseSelf(_) => None,
     }

@@ -76,6 +76,10 @@ pub(crate) struct PatternDerived {
     /// Whether this pattern's subtree contains a code atom at its own capture
     /// level (`atom_contains_code`'s per-pattern memo).
     pub(crate) contains_code: std::sync::OnceLock<bool>,
+    /// This pattern wrapped as one capture-isolated group
+    /// ([`RegexAtom::CaptureIsolatedGroup`]), the form a `<$x>` assertion of a
+    /// declared lexical enters ([`RegexPattern::capture_isolated`]).
+    pub(crate) capture_isolated: std::sync::OnceLock<Arc<RegexPattern>>,
     /// This pattern's own positional-capture-group count (`count_capture_groups`'s
     /// per-pattern memo). Also a pure function of the pattern shape, re-walked
     /// on every group match otherwise — same #8510 backtrack-retry cost shape
@@ -113,6 +117,46 @@ pub(crate) struct PkgPrefilter {
     pub(crate) pkg: crate::symbol::Symbol,
     pub(crate) token_defs_gen: u64,
     pub(crate) prefilter: Arc<crate::runtime::regex::regex_prefilter::Prefilter>,
+}
+
+impl RegexPattern {
+    /// `pattern` as the single capture-isolated group a `<$x>` call matches
+    /// it through: the group's captures stay its own instead of merging into
+    /// the caller's level. Built once per pattern, so a cached parse enters
+    /// the same compiled program on every match.
+    // Cost: O(1) after the first call; the first clones the pattern's tokens.
+    pub(crate) fn capture_isolated(pattern: &Arc<RegexPattern>) -> Arc<RegexPattern> {
+        Arc::clone(pattern.derived.capture_isolated.get_or_init(|| {
+            Arc::new(Self::single_token(RegexAtom::CaptureIsolatedGroup(
+                (**pattern).clone(),
+            )))
+        }))
+    }
+
+    /// A pattern of the one plain (unquantified, uncaptured) token `atom`.
+    // Cost: O(1).
+    pub(crate) fn single_token(atom: RegexAtom) -> RegexPattern {
+        RegexPattern {
+            tokens: vec![RegexToken {
+                atom,
+                quant: RegexQuant::One,
+                named_capture: None,
+                secondary_named_capture: None,
+                hash_capture: None,
+                force_list_capture: false,
+                ratchet: false,
+                frugal: false,
+                separator: None,
+                from_runtime_interpolation: false,
+                subrule_call_capture: false,
+            }],
+            anchor_start: false,
+            anchor_end: false,
+            ignore_case: false,
+            ignore_mark: false,
+            derived: Default::default(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -376,6 +420,13 @@ pub(crate) enum RegexAtom {
     /// a captured indentation string). Distinct from `NamedBackref` (which reads
     /// a capture) and from pre-substituted outer-scope `$var` interpolation.
     VarInterp(String),
+    /// `<$name>` on a name the pattern declared (an in-regex `:my $name`, a
+    /// hoisted leading `:my`, or a rule's runtime parameter): the assertion
+    /// form of [`RegexAtom::VarInterp`]. The value is read when the atom is
+    /// matched, as for `VarInterp`, but interpolated as `<$x>` is: a `Str`
+    /// is parsed as a regex rather than matched literally, a `Regex` is
+    /// entered, and the callee's captures stay its own (#13029).
+    VarAssertion(String),
     /// A `$( code )` / `@( code )` contextualizer interpolation — or a
     /// `"…$x.meth()…"` method-call chain inside a double-quoted atom, which
     /// the interpolation pre-pass rewrites to `$( $x.meth() )` — evaluated

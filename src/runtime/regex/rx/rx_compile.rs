@@ -206,7 +206,8 @@ pub(super) fn pattern_reads_enclosing_state(pattern: &RegexPattern) -> bool {
                 | RegexAtom::VarDecl { .. }
                 | RegexAtom::ClosureInterpolation { .. }
                 | RegexAtom::CodeInterp { .. }
-                | RegexAtom::VarInterp(_) => true,
+                | RegexAtom::VarInterp(_)
+                | RegexAtom::VarAssertion(_) => true,
                 RegexAtom::Group(p) | RegexAtom::CaptureGroup(p) => {
                     pattern_reads_enclosing_state(p)
                 }
@@ -561,13 +562,14 @@ impl Compiler {
                 self.has_code = true;
             }
             RegexAtom::Conjunction(branches) => self.conjunction(token, branches)?,
-            RegexAtom::VarInterp(_) => {
+            RegexAtom::VarInterp(_) | RegexAtom::VarAssertion(_) => {
                 // `$x` of an in-regex `:my` lexical, a rule's runtime parameter
                 // or an outer variable: the value is read when the atom is
                 // matched, and matched as a literal — or, for a `Regex` value,
                 // entered as a frame like a `$( … )` result (so the program
                 // needs the frame-capable run loop); under ratchet the atom
-                // commits to its first end.
+                // commits to its first end. `<$x>` of such a lexical is the
+                // same op, with the value always entered as a pattern.
                 let height = token.ratchet.then(|| self.reg());
                 if let Some(h) = height {
                     self.ops.push(RxOp::Height(h));

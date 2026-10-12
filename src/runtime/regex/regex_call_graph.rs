@@ -451,6 +451,9 @@ fn collect_atom_calls(atom: &RegexAtom, pkg: Symbol, out: &mut DirectCalls) -> b
         }
         // `<{ ... }>` matches whatever regex the code returns; `<~~>` re-enters
         // the enclosing rule by construction.
-        RegexAtom::ClosureInterpolation { .. } | RegexAtom::CodeInterp { .. } | RegexAtom::RecurseSelf(_) => false,
+        RegexAtom::ClosureInterpolation { .. }
+        | RegexAtom::CodeInterp { .. }
+        | RegexAtom::VarAssertion(_)
+        | RegexAtom::RecurseSelf(_) => false,
     }
 }
