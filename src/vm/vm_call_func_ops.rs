@@ -1368,6 +1368,14 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // An unshadowed one-argument `make` goes straight to the builtin
+        // (`try_make_builtin_call`), after the same argument normalization.
+        if name_sym == crate::symbol::wk::make()
+            && let Some(result) = self.try_make_builtin_call(code, name_sym, &args)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // A lexically-bound `&callsame`/`&callwith`/`&nextsame`/`&nextwith`/
         // `&samewith` (`my &callwith := -> ... { ... }`) shadows the built-in
         // dispatcher routine of the same name (roast advent2013-day21.t pointy

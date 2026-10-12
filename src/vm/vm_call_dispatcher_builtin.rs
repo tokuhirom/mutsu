@@ -80,9 +80,10 @@ impl Interpreter {
     }
 
     /// Whether anything the generic call funnel consults before the builtin
-    /// could answer a call of `name` (`callsame` / `nextsame`) instead.
+    /// could answer a call of `name` (`callsame` / `nextsame` / `make`)
+    /// instead.
     // Cost: see `try_dispatcher_builtin_call`.
-    fn dispatcher_builtin_shadowed(
+    pub(super) fn dispatcher_builtin_shadowed(
         &mut self,
         code: &CompiledCode,
         name: &str,

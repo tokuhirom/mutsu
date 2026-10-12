@@ -39,6 +39,7 @@ mod methods_enum_roles;
 mod methods_enumhow;
 mod methods_format;
 mod methods_grammar;
+mod methods_grammar_action_call;
 mod methods_grammar_action_env;
 mod methods_grammar_deferred_repeats;
 mod methods_grammar_method_start;

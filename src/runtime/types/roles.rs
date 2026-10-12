@@ -954,7 +954,7 @@ impl Interpreter {
             let saved_env = if role.captured_env.is_some() || !param_bindings.is_empty() {
                 let saved = self.env.clone();
                 if let Some(captured) = &role.captured_env {
-                    for (k, v) in captured {
+                    for (k, v) in captured.iter() {
                         if !self.env.contains_key(k) {
                             self.env.insert(k.clone(), v.clone());
                         }
@@ -1168,7 +1168,7 @@ impl Interpreter {
         // closure variables from the role definition scope are accessible
         // and modifications propagate back to the original scope.
         if let Some(captured) = &role.captured_env {
-            for (k, v) in captured {
+            for (k, v) in captured.iter() {
                 if !self.env.contains_key(k) {
                     self.env.insert(k.clone(), v.clone());
                 }

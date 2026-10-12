@@ -41,6 +41,55 @@ impl Interpreter {
         Err(err)
     }
 
+    /// Run a one-argument `make EXPR` straight on the builtin when nothing
+    /// shadows the routine, instead of through the generic call funnel.
+    ///
+    /// `make` is called once per action method of a grammar parse, and the
+    /// funnel spent ~15,000 instructions per call proving it is not a user
+    /// routine (the compiled-function and multi lookups, the native-function
+    /// tables, the lexical `&make` probes) before its interpreter terminal
+    /// reached [`Self::builtin_make`]. This lane checks the same shadowing
+    /// sources once, through the generation-cached probes the dispatcher
+    /// builtins use ([`Self::dispatcher_builtin_shadowed`]), then does what
+    /// the terminal does: the `$/` precondition, the builtin, and the `.made`
+    /// write into the frame's `$/`. `args` are already normalized (`VarRef`s
+    /// unwrapped, `Proxy` arguments fetched). Any other call shape — no or
+    /// several positionals, a named argument — is left to the funnel, which
+    /// raises the binding error.
+    ///
+    /// Cost: O(l + d), l = locals declared under `&make` in `code` (normally
+    /// 0), d = the env scope-chain depth of the `&make` lookup; the registry
+    /// probes are generation-cached.
+    pub(super) fn try_make_builtin_call(
+        &mut self,
+        code: &CompiledCode,
+        name_sym: crate::symbol::Symbol,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let [arg] = args else {
+            return None;
+        };
+        if arg.is_string_pair_value()
+            || self.dispatcher_builtin_shadowed(
+                code,
+                name_sym.as_str(),
+                name_sym,
+                crate::symbol::wk::amp_make(),
+            )
+        {
+            return None;
+        }
+        if let Err(err) = self.check_make_match_topic(code) {
+            return Some(Err(err));
+        }
+        let result = match self.builtin_make(args) {
+            Ok(value) => value,
+            Err(err) => return Some(Err(err)),
+        };
+        self.attach_made_to_match_topic(code, result.clone());
+        Some(Ok(result))
+    }
+
     /// Rakudo's `make` sets `$/.made`: store `value` as the `.made` of the
     /// frame's `$/` Match (found as [`Self::frame_match_topic`] finds it).
     /// The write is in place, so every holder of that Match -- the parse

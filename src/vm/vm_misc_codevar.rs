@@ -21,13 +21,7 @@ impl Interpreter {
             && let Some(local) = self.locals_get_by_name(code, "/")
             && local.is_match_instance()
         {
-            let val = self
-                .try_compiled_method_or_interpret(
-                    local,
-                    "AT-KEY",
-                    vec![Value::str(key.to_string())],
-                )
-                .unwrap_or(Value::NIL);
+            let val = self.match_capture_at_key(local, key);
             self.stack.push(val);
             return;
         }
@@ -51,18 +45,34 @@ impl Interpreter {
                 // `$<name>` after a failed match must short-circuit here
                 // rather than round-trip through AT-KEY.
                 ValueView::Nil => Value::NIL,
-                _ => self
-                    .try_compiled_method_or_interpret(
-                        match_val,
-                        "AT-KEY",
-                        vec![Value::str(key.to_string())],
-                    )
-                    .unwrap_or(Value::NIL),
+                _ => self.match_capture_at_key(match_val, key),
             }
         } else {
             Value::NIL
         };
         self.stack.push(val);
+    }
+
+    /// `$<key>` on the frame's `$/`: the named capture, read the way the
+    /// `$/<key>` subscript reads it ([`Value::match_named_capture`]). Only a
+    /// receiver whose class declares its own `AT-KEY` (a `Match` subclass that
+    /// overrides it), or one that is not a Match at all, is asked through the
+    /// method.
+    ///
+    /// Cost: O(1) average for a Match: one `AT-KEY` override probe and one
+    /// named-capture map probe.
+    fn match_capture_at_key(&mut self, topic: Value, key: &str) -> Value {
+        let overridden = match topic.view() {
+            ValueView::Instance { class_name, .. } => {
+                self.has_user_method_including_role(&class_name.resolve(), "AT-KEY")
+            }
+            _ => true,
+        };
+        if !overridden && topic.is_match_instance() {
+            return topic.match_named_capture(key);
+        }
+        self.try_compiled_method_or_interpret(topic, "AT-KEY", vec![Value::str(key.to_string())])
+            .unwrap_or(Value::NIL)
     }
 
     /// The `&name` TERM's value when the executing frame itself binds it: a
