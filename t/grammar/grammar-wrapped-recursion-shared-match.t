@@ -3,10 +3,11 @@
 # its own `callsame` result and as a child of the level above, and those used
 # to be separate Matches, each materializing the whole subtree again -- a
 # wrapper that renders its result (`.raku`) at every level was quadratic in the
-# recursion depth (#11404). Values are rakudo's.
+# recursion depth (#11404). The Match a wrapper returns is the one its caller
+# files (#12918). Values are rakudo's.
 use Test;
 
-plan 7;
+plan 10;
 
 {
     grammar R { token TOP { . <TOP> | \d+ } }
@@ -22,6 +23,19 @@ plan 7;
     ok @seen[*-2]<TOP> === $m<TOP><TOP>,
         'a node reached through two parents is one Match';
     is $m<TOP><TOP><TOP>.Str, '42', 'the innermost level';
+    # rakudo files the Match the wrapper returned as the caller's `$<TOP>`
+    # (#12918).
+    ok $m<TOP> === @seen[*-2], "a wrapper's callsame result is the caller's capture";
+    is $m<TOP>.WHICH, @seen[*-2].WHICH, 'with one identity';
+}
+
+{
+    grammar N { token TOP { <num> ' ' <num> }; token num { \d+ } }
+    my @seen;
+    N.^find_method('num').wrap: sub (|c) { my $r := callsame; @seen.push: $r; $r };
+    my $m = N.parse('12 34');
+    ok $m<num>[0] === @seen[0] && $m<num>[1] === @seen[1],
+        'each call of a wrapped subrule files its own result';
 }
 
 {
