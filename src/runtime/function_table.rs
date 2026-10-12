@@ -101,14 +101,17 @@ fn next_version() -> u64 {
 /// interpreter.
 #[derive(Clone)]
 pub(crate) struct FunctionTable {
-    map: FunctionMap,
+    /// Shared again, inside the table: renewing the version of a table another
+    /// interpreter (a thread clone) still holds copies only this struct, not
+    /// the map -- see [`Self::renew_version`].
+    map: std::sync::Arc<FunctionMap>,
     version: u64,
 }
 
 impl Default for FunctionTable {
     fn default() -> Self {
         Self {
-            map: FunctionMap::default(),
+            map: Default::default(),
             // Even the empty map gets a real stamp: two independently built
             // registries hold different (if equal) maps, and a shared 0 would
             // let one's memos be served under the other's version.
@@ -135,10 +138,12 @@ impl FunctionTable {
     /// memos built under the old one go unused, which costs a rebuild and is
     /// never wrong. Under-stamping is the direction that would be wrong, and it
     /// cannot happen from here.
+    // Cost: O(1), plus O(n) (n = map entries) for the copy when another
+    // table still shares the map.
     #[inline]
     pub(crate) fn map_mut(&mut self) -> &mut FunctionMap {
         self.version = next_version();
-        &mut self.map
+        crate::runtime::cow_table_mut(&mut self.map)
     }
 
     /// Mint a fresh version for content that has not changed.
@@ -147,6 +152,12 @@ impl FunctionTable {
     /// a routine wrapped, an import scope popped — where the change still has
     /// to retire every memo hanging off the version. See
     /// `Interpreter::invalidate_fn_resolution`.
+    ///
+    /// The map itself is untouched, so a caller reaching this table through a
+    /// copy-on-write `Arc` copies only the stamp and the map's `Arc`: a supply
+    /// block body run on a thread clone announces a change on every run, and
+    /// used to deep-copy the whole function map for it (#12981).
+    // Cost: O(1).
     #[inline]
     pub(crate) fn renew_version(&mut self) {
         self.version = next_version();
@@ -365,7 +376,7 @@ impl Deref for FunctionTable {
 impl FromIterator<(Symbol, std::sync::Arc<FunctionDef>)> for FunctionTable {
     fn from_iter<I: IntoIterator<Item = (Symbol, std::sync::Arc<FunctionDef>)>>(iter: I) -> Self {
         Self {
-            map: iter.into_iter().collect(),
+            map: std::sync::Arc::new(iter.into_iter().collect()),
             version: next_version(),
         }
     }
