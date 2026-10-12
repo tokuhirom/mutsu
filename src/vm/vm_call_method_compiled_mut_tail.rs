@@ -175,7 +175,7 @@ impl Interpreter {
         // native forks and the interpreter fallback -- gets the flat env the
         // full path would have handed it. O(1) when the env is already flat,
         // as it is on every non-lane entry.
-        self.flatten_scoped_env();
+        // EXPERIMENT self.flatten_scoped_env();
         // Guard for the whole "lever A" native block below — see
         // `native_lever_a_user_override`'s doc comment (mut path twin of the
         // non-mut guard in `try_compiled_method_or_interpret_inner`).

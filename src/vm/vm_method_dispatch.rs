@@ -456,7 +456,7 @@ impl Interpreter {
         // env, unlinked: a root of its own would cost a flatten per method
         // call in its body.
         let links_frame = cc.links_frame_to_unit();
-        let rooted = cc.closure_compiled_codes.is_empty();
+        let rooted = true;
         if rooted {
             let parent = self.env().clone();
             let mut frame = crate::env::Env::scoped_child(parent);
@@ -1991,7 +1991,7 @@ impl Interpreter {
         // env, unlinked: a root of its own would cost a flatten per method
         // call in its body.
         let links_frame = cc.links_frame_to_unit();
-        let use_scoped = cc.closure_compiled_codes.is_empty();
+        let use_scoped = true;
         if use_scoped {
             let parent = self.env().clone();
             let mut scoped = crate::env::Env::scoped_child(parent);
