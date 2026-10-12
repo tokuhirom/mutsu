@@ -623,6 +623,15 @@ impl Interpreter {
         let outer_prologue_pending =
             std::mem::replace(&mut self.control.begin_prologue_pending, begin_prologue);
         let body_result = self.run_top(&code, &compiled_fns);
+        // A worker's `exit` interrupted the mainline (ADR-11617): the program
+        // ends as if the mainline had called `exit` there. Whatever the
+        // interrupted op left behind (an `await` that gave up on its promise)
+        // is not an error of the program's.
+        let body_result = if self.adopt_pending_worker_exit(false) {
+            body_result.or(Ok(None))
+        } else {
+            body_result
+        };
         let failed_at_begin_time = std::mem::replace(
             &mut self.control.begin_prologue_pending,
             outer_prologue_pending,
@@ -758,7 +767,7 @@ impl Interpreter {
         // `Usage:` and exited 2 where raku exits 0 silently — which also made
         // `use <dist>; exit 0` an unusable probe for the dist-compatibility sweep,
         // since every dist exporting a MAIN dispatched it.
-        if !self.explicit_run_main && !self.control.halted {
+        if !self.explicit_run_main && !self.is_halted() {
             self.dispatch_main(&compiled_fns)?;
         }
         self.finish()?;
@@ -1131,6 +1140,9 @@ impl Interpreter {
         // shared buffer; at program exit it must reach real stdout, matching Raku
         // where completed thread output is not lost.
         self.drain_shared_thread_output();
+        // A worker's `exit` still pending is adopted here at the latest; one
+        // that arrives after this point ends the process directly (ADR-11617).
+        self.adopt_pending_worker_exit(true);
         // LEAVE phasers a top-level `use` attached to the main compunit
         // (`runtime::attach_target`): the mainline is left before END runs.
         // An `exit` leaves no scope in raku, so it skips them.

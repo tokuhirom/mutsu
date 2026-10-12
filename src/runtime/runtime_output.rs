@@ -167,8 +167,15 @@ impl Interpreter {
         }
     }
 
+    /// Whether execution must unwind because the program is exiting: this
+    /// interpreter called `exit`, or (main program only) a worker thread's
+    /// `exit` is waiting to be adopted (ADR-11617).
+    // Cost: O(1), a field load plus, on the main program's interpreter, one
+    // relaxed atomic load.
+    #[inline]
     pub(crate) fn is_halted(&self) -> bool {
         self.control.halted
+            || (self.control.adopts_worker_exits && crate::exit_handover::requested())
     }
 
     /// True when the program asked to `exit` rather than running off its end.
@@ -176,7 +183,37 @@ impl Interpreter {
     /// outstanding non-`app_lifetime` `Thread`s — see
     /// [`Self::join_outstanding_threads`].
     pub fn exit_requested(&self) -> bool {
-        self.control.halted
+        self.is_halted()
+    }
+
+    /// Make this the interpreter that adopts a worker thread's `exit`: it
+    /// unwinds its mainline, runs the END phasers and ends the process with
+    /// the worker's status (ADR-11617). Called once, by `main.rs`, on the
+    /// thread that runs the program.
+    pub fn adopt_worker_exits(&mut self) {
+        self.control.adopts_worker_exits = true;
+        crate::exit_handover::mark_adopter_thread();
+    }
+
+    /// Take over a pending worker `exit` as if this interpreter had called
+    /// `exit` itself, returning whether it did. A status this interpreter
+    /// already latched by its own `exit` wins. With `close`, the handover is
+    /// closed even when nothing is pending: the program is about to run its
+    /// END phasers, and a later worker `exit` must not wait for them to adopt
+    /// it (see `exit_handover::adopt`).
+    // Cost: O(1).
+    pub(crate) fn adopt_pending_worker_exit(&mut self, close: bool) -> bool {
+        if !self.control.adopts_worker_exits || !(close || crate::exit_handover::requested()) {
+            return false;
+        }
+        let Some(code) = crate::exit_handover::adopt(self.control.halted) else {
+            return false;
+        };
+        if !self.control.halted {
+            self.control.halted = true;
+            self.control.exit_code = code;
+        }
+        true
     }
 
     /// Wait for every still-running non-`app_lifetime` `Thread` before the

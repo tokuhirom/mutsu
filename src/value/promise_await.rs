@@ -53,7 +53,16 @@ impl SharedPromise {
         // below mutates Gc refcounts) while a cycle scan is in progress.
         // On wasm this pumps the cooperative scheduler instead of parking —
         // the `start` block we are waiting for only runs because of it.
-        let state = match crate::gc::wait_until(lock, cvar, |s| s.wake_granted > ticket) {
+        // On the main program's thread the wait also gives up when a worker's
+        // `exit` is waiting to be adopted (ADR-11617): the promise may belong
+        // to that very worker and never resolve. The caller sees a Nil result
+        // and the VM unwinds right after the op.
+        let state = match crate::gc::wait_until(lock, cvar, |s| {
+            s.wake_granted > ticket || crate::exit_handover::interrupts_current_thread()
+        }) {
+            Some(state) if state.wake_granted <= ticket => {
+                return (Value::NIL, String::new(), String::new());
+            }
             Some(state) => state,
             None => {
                 // Single-threaded build with nothing left to run: break the
