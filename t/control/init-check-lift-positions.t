@@ -5,7 +5,7 @@ use Test;
 # through the exhaustive mutable visitor (ADR-10499); each expectation was
 # checked against rakudo.
 
-plan 31;
+plan 38;
 
 my @log;
 @log.push('main');
@@ -86,3 +86,18 @@ G12812.parse('ab'); G12812.parse('ab');
 is @log.grep('nested-init').elems, 1, '... the nested INIT ran once, however often it matches';
 is @log.grep('nested-check').elems, 1, '... and so did the nested CHECK';
 ok G12812.parse('ab'), '... and the grammar still matches';
+
+# A BEGIN statement in a declaration's code block runs once, at BEGIN time,
+# and not when the declaration is matched (#12812).
+grammar G12812-begin {
+    token TOP { a { BEGIN @log.push('token-begin') } b { if 1 { BEGIN @log.push('nested-begin') } } <r> }
+    rule r { c { BEGIN @log.push('rule-begin'); @log.push('rule-match-2') } }
+}
+ok before-main('token-begin'), 'BEGIN in a token code block runs before the mainline';
+ok before-main('nested-begin'), 'BEGIN nested in a token code block';
+ok before-main('rule-begin'), 'BEGIN in a rule code block, after an earlier token';
+is @log.grep('token-begin').elems, 1, '... and has run once before any match';
+ok G12812-begin.parse('abc'), '... the grammar still matches';
+G12812-begin.parse('abc');
+is @log.grep('token-begin' | 'nested-begin' | 'rule-begin').elems, 3, '... and the BEGINs did not run again';
+is @log.grep('rule-match-2').elems, 2, '... while the rest of the code block ran per match';

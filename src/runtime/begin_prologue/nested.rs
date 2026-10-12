@@ -63,6 +63,7 @@
 
 mod cell_ast;
 pub(super) use cell_ast::slot_read;
+mod decl_regex;
 mod decls;
 mod phasers;
 mod pragmas;

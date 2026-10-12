@@ -261,7 +261,10 @@ impl Walker<'_> {
         let mut declares_begin = false;
         for (i, member) in body.iter_mut().enumerate() {
             let walked = match member {
-                Stmt::SubDecl { .. } | Stmt::MethodDecl { .. } => true,
+                Stmt::SubDecl { .. }
+                | Stmt::MethodDecl { .. }
+                | Stmt::TokenDecl { .. }
+                | Stmt::RuleDecl { .. } => true,
                 // A class is walked in any body; a package only in a package.
                 Stmt::ClassDecl { .. } => true,
                 Stmt::Package { .. } => in_package,
