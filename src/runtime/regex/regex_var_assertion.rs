@@ -25,7 +25,8 @@ impl Interpreter {
     /// parse-time `<$var>` arm refuses it (a code block without `use
     /// MONKEY-SEE-NO-EVAL`, a longname alias, an undeclared variable), with
     /// the error raised through `PENDING_REGEX_ERROR`. An undefined value
-    /// matches nothing.
+    /// dies as rakudo's dispatch to `INTERPOLATE_ASSERTION` does
+    /// ([`Self::interpolate_assertion_undefined_error`]).
     // Cost: O(r) to render the value, r = its length; the parse is cached by
     // its source, and the isolated wrapper is built once per parse.
     pub(super) fn var_assertion_target(
@@ -33,14 +34,15 @@ impl Interpreter {
         val: Option<Value>,
         ignore_case: bool,
     ) -> VarInterpTarget {
-        let Some(val) = val else {
-            return VarInterpTarget::End(None);
-        };
+        let val = val.unwrap_or(Value::NIL);
         let is_regex = matches!(
             val.view(),
             ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
         );
-        if !is_regex && matches!(val.view(), ValueView::Nil | ValueView::Package(_)) {
+        if !is_regex && let Some(err) = Self::interpolate_assertion_undefined_error(&val) {
+            crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| {
+                *e.borrow_mut() = Some(err);
+            });
             return VarInterpTarget::End(None);
         }
         let text = if is_regex {
@@ -80,5 +82,29 @@ impl Interpreter {
             )),
             None => RegexPattern::capture_isolated(&parsed),
         })
+    }
+
+    /// The error `<$var>` raises when `$var` holds an undefined value (Nil
+    /// or a type object): rakudo has no `INTERPOLATE_ASSERTION` candidate for
+    /// a `:U` argument, so the call dies with `X::Multi::NoMatch` (#13042).
+    /// `None` for a defined value.
+    // Cost: O(1).
+    pub(in crate::runtime) fn interpolate_assertion_undefined_error(
+        val: &Value,
+    ) -> Option<RuntimeError> {
+        let type_name = match val.view() {
+            ValueView::Nil => "Any".to_string(),
+            ValueView::Package(name) => name.resolve().to_string(),
+            _ => return None,
+        };
+        Some(crate::runtime::methods_signature_errors::make_no_match_error_with_message(
+            format!(
+                "Cannot resolve caller INTERPOLATE_ASSERTION(Match:D: {type_name}:U, BOOTInt, \
+                 BOOTInt, BOOTInt, BOOTInt, PseudoStash:D); none of these signatures matches:\n    \
+                 (Match $:: Associative:D, $, $, $, $, $, *%_)\n    \
+                 (Match $:: Iterable:D \\var, int \\im, int \\monkey, int \\s, $, \\context, *%_)\n    \
+                 (Match $:: Mu:D \\var, int \\im, int \\monkey, $, $, \\context, *%_)"
+            ),
+        ))
     }
 }

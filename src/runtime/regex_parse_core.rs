@@ -4111,6 +4111,17 @@ impl Interpreter {
                                                 return None;
                                             }
                                         };
+                                        // An undefined value has no `INTERPOLATE_ASSERTION`
+                                        // candidate in rakudo: the match dies (#13042).
+                                        if let Some(err) =
+                                            Self::interpolate_assertion_undefined_error(&value)
+                                        {
+                                            Self::note_regex_parse_ambient_read();
+                                            PENDING_REGEX_ERROR.with(|e| {
+                                                *e.borrow_mut() = Some(err);
+                                            });
+                                            return None;
+                                        }
                                         // A genuine `Regex`/`RegexWithAdverbs` value can only
                                         // have been built by actual regex literal syntax
                                         // (rx//, m//, token/rule/regex) — its embedded
