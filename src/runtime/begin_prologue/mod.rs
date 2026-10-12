@@ -129,6 +129,15 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
         *stmts = out;
         return Vec::new();
     };
+    // An EVAL'd unit's value is its last statement's. A trailing `constant`
+    // moves into the prologue whole, so the run-time remainder would end on
+    // an earlier statement; it ends on a read of the constant instead.
+    let tail_constant_read = if is_eval {
+        crate::ast::last_value_stmt_index(stmts, crate::ast::TailSkip::Markers)
+            .and_then(|i| constant_read(&stmts[i]))
+    } else {
+        None
+    };
     let mut tail = Vec::new();
     for (stmt, phasers) in stmts
         .split_off(last + 1)
@@ -161,8 +170,30 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
         prologue.extend(late_effects);
     }
     rest.extend(tail);
+    if let Some(read) = tail_constant_read {
+        rest.push(read);
+    }
     *stmts = rest;
     prologue
+}
+
+/// A statement that reads the value of the constant `stmt` declares, or
+/// `None` when `stmt` is not a constant declaration.
+// Cost: O(1).
+fn constant_read(stmt: &Stmt) -> Option<Stmt> {
+    let Stmt::VarDecl { name, custom_traits, .. } = stmt else {
+        return None;
+    };
+    if !custom_traits.iter().any(|(t, _)| t == "__constant") {
+        return None;
+    }
+    let read = match name.as_bytes().first()? {
+        b'@' => Expr::ArrayVar(name[1..].to_string()),
+        b'%' => Expr::HashVar(name[1..].to_string()),
+        b'&' | b'$' => return None,
+        _ => Expr::BareWord(name.clone()),
+    };
+    Some(Stmt::Expr(read))
 }
 
 /// Whether `stmt` is a class declaration that composes a role. Rakudo composes
