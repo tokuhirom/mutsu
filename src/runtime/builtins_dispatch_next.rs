@@ -587,6 +587,19 @@ impl Interpreter {
             }
         }
         let method_sym = Symbol::intern(method_name);
+        // `Array.AT-POS` answers the element's container (rw), so an
+        // overriding `method AT-POS($i) is rw { callsame }` stays assignable.
+        if method_name == "AT-POS"
+            && self.in_lvalue_assignment
+            && let [idx] = args
+            && let ValueView::Int(i) = idx.view()
+            && i >= 0
+            && let Some(slot) = attributes.with_attr_mut("__mutsu_array_storage", |storage| {
+                storage.array_slot_ref(i as usize, true)
+            })?
+        {
+            return Some(Ok(slot));
+        }
         attributes.with_attr_mut("__mutsu_array_storage", |storage| {
             self.try_native_method(storage, method_sym, args)
         })?
@@ -650,6 +663,18 @@ impl Interpreter {
             }
         }
         let method_sym = Symbol::intern(method_name);
+        // `Hash.AT-KEY` answers the element's container (rw), so an overriding
+        // `method AT-KEY($k) is rw { callsame }` stays assignable.
+        if method_name == "AT-KEY"
+            && self.in_lvalue_assignment
+            && let [key] = args
+            && matches!(key.view(), ValueView::Str(_))
+            && let Some(slot) = attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
+                storage.hash_slot_ref(&key.to_string_value(), true)
+            })?
+        {
+            return Some(Ok(slot));
+        }
         attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
             self.try_native_method(storage, method_sym, args)
         })?
