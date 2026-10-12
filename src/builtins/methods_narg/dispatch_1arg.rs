@@ -8,12 +8,34 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::ToPrimitive;
 
-/// A built-in method call with one argument: the cascade, then the row a
-/// receiver with no shape reaches (`method_table::answer_shapeless`; an
-/// instance needs the interpreter's MRO and is answered by the entries that
-/// have one).
-// Cost: the cascade's, plus O(m) to test the name, m = audited names.
+/// A built-in method call with one argument: the row of the built-in method
+/// table (ADR-11276), then the cascade, then the row a receiver with no shape
+/// reaches (`method_table::answer_shapeless`; an instance needs the
+/// interpreter's MRO and is answered by the entries that have one).
+// Cost: O(1) to decline the table (a bit test on the method symbol), otherwise
+// a tag probe and one hash lookup plus the row's handler; then the cascade's,
+// plus O(m) to test the name, m = audited names.
 pub(crate) fn native_method_1arg(
+    target: &Value,
+    method_sym: Symbol,
+    arg: &Value,
+) -> Option<Result<Value, RuntimeError>> {
+    if let Some(result) = crate::builtins::method_table::answer(
+        target.descalarize(),
+        method_sym,
+        std::slice::from_ref(arg),
+    ) {
+        return Some(result);
+    }
+    native_method_1arg_without_table(target, method_sym, arg)
+}
+
+/// [`native_method_1arg`] without the method table: the name-matching
+/// cascade and the shapeless rows, for the two callers that must not take a
+/// table row (the debug cross-check, and the VM entry whose user-override veto
+/// refused the row).
+// Cost: the cascade's, plus O(m) to test the name, m = audited names.
+pub(crate) fn native_method_1arg_without_table(
     target: &Value,
     method_sym: Symbol,
     arg: &Value,
@@ -193,6 +215,17 @@ fn native_method_1arg_cascade(
         if let Some(coerced) = coerced {
             return native_method_1arg(target, method_sym, &coerced);
         }
+    }
+    // A call the method table answers has no arm below this point: the row is
+    // the method's only implementation (ADR-11276 §9.88). `native_method_1arg`
+    // asked the table first, so this declines only for the callers that run
+    // the cascade without it (`native_method_1arg_without_table`).
+    // Cost: O(1) when no row has the name (a bit test); otherwise a tag probe,
+    // one hash lookup and, for a row found, its handler.
+    if crate::builtins::method_table::answer(target, method_sym, std::slice::from_ref(arg))
+        .is_some()
+    {
+        return None;
     }
     match method {
         // ACCEPTS for allomorphic types (IntStr, RatStr, NumStr, ComplexStr)

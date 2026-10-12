@@ -717,35 +717,36 @@ impl Interpreter {
         if args.is_empty() && matches!(method_name, "unique" | "repeated" | "squish") {
             self.warm_which_identity(target);
         }
-        let mut result = if args.len() == 2 {
-            crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
-        } else if args.len() == 1 {
-            crate::builtins::native_method_1arg(target, method_sym, &args[0]).or_else(|| {
-                crate::builtins::method_table::answer_shapeless(
-                    Some(self),
-                    target,
-                    method_sym,
-                    &args[..1],
-                )
-            })
-        } else if args.is_empty() {
-            // The cascade without the method table: `try_native_method` asked
-            // the table for this very receiver and method before calling here,
-            // and a row it would answer from but the lever-A gate above refused
-            // must not answer here either.
-            crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym).or_else(
-                || {
-                    crate::builtins::method_table::answer_shapeless(
-                        Some(self),
-                        target,
-                        method_sym,
-                        &[],
-                    )
-                },
-            )
-        } else {
-            return None;
-        };
+        let mut result =
+            if args.len() == 2 {
+                crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
+            } else if args.len() == 1 {
+                crate::builtins::native_method_1arg_without_table(target, method_sym, &args[0])
+                    .or_else(|| {
+                        crate::builtins::method_table::answer_shapeless(
+                            Some(self),
+                            target,
+                            method_sym,
+                            &args[..1],
+                        )
+                    })
+            } else if args.is_empty() {
+                // The cascade without the method table: `try_native_method` asked
+                // the table for this very receiver and method before calling here,
+                // and a row it would answer from but the lever-A gate above refused
+                // must not answer here either.
+                crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym)
+                    .or_else(|| {
+                        crate::builtins::method_table::answer_shapeless(
+                            Some(self),
+                            target,
+                            method_sym,
+                            &[],
+                        )
+                    })
+            } else {
+                return None;
+            };
         if result.is_some() {
             self.record_native_row_coverage(
                 "vm_native_dispatch::try_native_method_raw",
