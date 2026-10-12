@@ -201,9 +201,7 @@ pub(super) fn roll_n(target: &Value, arg: &Value) -> Option<Result<Value, Runtim
             } => {
                 // Try BigInt-based fast path for integer ranges
                 if let Some(result) =
-                    super::range::generic_range_pick_one(
-                        start, end, excl_start, excl_end,
-                    )
+                    super::range::generic_range_pick_one(start, end, excl_start, excl_end)
                 {
                     return Some(result);
                 }

@@ -82,7 +82,10 @@ const ROLE_PARENTS: [(&str, &[&str]); 4] = [
 /// the name. A user type is not in the catalog and declines.
 // Cost: O(d * (r + k)), d = MRO depth, r = roles per class, k = rows named
 // `method`; a catalog scan for the base name.
-pub(crate) fn type_object_row(target: &Value, method: Symbol) -> Option<crate::builtins::method_table::RowId> {
+pub(crate) fn type_object_row(
+    target: &Value,
+    method: Symbol,
+) -> Option<crate::builtins::method_table::RowId> {
     use crate::builtin_types::catalog::{
         builtin_type_mro_strs, builtin_type_roles_strs, composes_role_at,
     };
@@ -97,11 +100,14 @@ pub(crate) fn type_object_row(target: &Value, method: Symbol) -> Option<crate::b
         ValueView::Package(name) => name,
         ValueView::CustomType(data) => data.name,
         // A shaped or lazy array has no shape and is still an `Array`.
-        ValueView::Array(..) => return crate::builtins::method_table::owner_row(Symbol::intern("Array"), method, 0),
+        ValueView::Array(..) => {
+            return crate::builtins::method_table::owner_row(Symbol::intern("Array"), method, 0);
+        }
         _ => return None,
     };
     let name = name.resolve();
-    let row_of = |owner: &str| crate::builtins::method_table::owner_row(Symbol::intern(owner), method, 0);
+    let row_of =
+        |owner: &str| crate::builtins::method_table::owner_row(Symbol::intern(owner), method, 0);
     if crate::runtime::utils::is_native_elems_class(&name) {
         return row_of("Blob");
     }
@@ -159,7 +165,9 @@ fn parameters(name: &str) -> Option<Vec<String>> {
 /// The `n`th parameter of the type object `target`'s name.
 // Cost: O(n), n = the name's length.
 fn parameter(target: &Value, n: usize) -> Option<String> {
-    parameters(&type_object_name(target)?.resolve())?.into_iter().nth(n)
+    parameters(&type_object_name(target)?.resolve())?
+        .into_iter()
+        .nth(n)
 }
 
 /// The element type an instance's descriptor names, if it names one.
@@ -183,7 +191,11 @@ fn array_of(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
         return value_param_or_mu(target, &[]);
     }
     let info = embedded_container_type_info(target);
-    package(info.as_ref().and_then(descriptor_value_type).unwrap_or("Mu"))
+    package(
+        info.as_ref()
+            .and_then(descriptor_value_type)
+            .unwrap_or("Mu"),
+    )
 }
 
 /// `Hash.of`: the value type the hash was declared with (`my Int %h`,

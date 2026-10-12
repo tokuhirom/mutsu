@@ -11,11 +11,7 @@ pub(super) fn sample_one_from_range(target: &Value) -> Option<Value> {
             if end < start {
                 Some(Value::NIL)
             } else {
-                Some(
-                    range_pick_one_i64(
-                        start, end,
-                    ),
-                )
+                Some(range_pick_one_i64(start, end))
             }
         }
         ValueView::RangeExcl(start, end) => {
@@ -23,11 +19,7 @@ pub(super) fn sample_one_from_range(target: &Value) -> Option<Value> {
             if start > hi {
                 Some(Value::NIL)
             } else {
-                Some(
-                    range_pick_one_i64(
-                        start, hi,
-                    ),
-                )
+                Some(range_pick_one_i64(start, hi))
             }
         }
         ValueView::RangeExclStart(start, end) => {
@@ -35,9 +27,7 @@ pub(super) fn sample_one_from_range(target: &Value) -> Option<Value> {
             if lo > end {
                 Some(Value::NIL)
             } else {
-                Some(
-                    range_pick_one_i64(lo, end),
-                )
+                Some(range_pick_one_i64(lo, end))
             }
         }
         ValueView::RangeExclBoth(start, end) => {
@@ -56,11 +46,7 @@ pub(super) fn sample_one_from_range(target: &Value) -> Option<Value> {
             excl_end,
         } => {
             // Try integer (Int/BigInt) endpoints first
-            if let Some(result) =
-                generic_range_pick_one(
-                    start, end, excl_start, excl_end,
-                )
-            {
+            if let Some(result) = generic_range_pick_one(start, end, excl_start, excl_end) {
                 return Some(result);
             }
             // Non-integer numeric endpoints (Rat/Num/FatRat): enumerate via
