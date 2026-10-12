@@ -29,7 +29,6 @@
 use std::cell::Cell;
 use std::sync::atomic::{AtomicI64, AtomicU8, Ordering};
 use std::sync::{Condvar, Mutex};
-use std::time::Duration;
 
 const IDLE: u8 = 0;
 const REQUESTED: u8 = 1;
@@ -42,7 +41,7 @@ const ABANDONED: u8 = 4;
 /// code, sleeping or awaiting answers within one poll (milliseconds); this only
 /// bounds the case where it is stuck in native code that never polls.
 #[cfg(not(target_arch = "wasm32"))] // the browser build has no worker threads
-pub(crate) const GRACE: Duration = Duration::from_secs(1);
+pub(crate) const GRACE: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Read without the lock on the hot path ([`requested`]); written only under
 /// [`WAKE`]'s mutex.
@@ -141,7 +140,7 @@ pub(crate) fn adopt(main_exiting: bool) -> Option<i64> {
 /// The caller runs this counted GC-quiescent: it touches no `Value`.
 // Cost: O(1) plus the wait.
 #[cfg(not(target_arch = "wasm32"))] // the browser build has no worker threads
-pub(crate) fn await_adoption(grace: Duration) -> bool {
+pub(crate) fn await_adoption(grace: std::time::Duration) -> bool {
     let guard = lock();
     let (_guard, _) = WAKE
         .1
@@ -159,7 +158,7 @@ pub(crate) fn await_adoption(grace: Duration) -> bool {
 /// the whole duration.
 // Cost: O(1) plus the sleep.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn sleep_interruptible(duration: Duration) -> bool {
+pub(crate) fn sleep_interruptible(duration: std::time::Duration) -> bool {
     if !ADOPTER.with(Cell::get) {
         std::thread::sleep(duration);
         return false;
@@ -194,6 +193,7 @@ mod tests {
     // The state machine is process-global, so its transitions are pinned in one
     // test that restores IDLE at the end.
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn a_request_is_adopted_once_and_closes_the_handover() {
