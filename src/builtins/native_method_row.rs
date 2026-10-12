@@ -340,8 +340,8 @@ mod tests {
     use crate::builtins::builtin_type_methods::{builtin_sample_value, native_method_arities};
     use crate::builtins::native_method_row_table::RAW_ROWS;
     use crate::symbol::Symbol;
-    use std::collections::HashMap;
     use crate::value::Value;
+    use std::collections::HashMap;
 
     #[test]
     fn raw_rows_repeated_keys_agree() {
