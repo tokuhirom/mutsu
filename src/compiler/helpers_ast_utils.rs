@@ -919,7 +919,11 @@ impl Compiler {
             } => {
                 let decl_id = *decl_id;
                 *body = Self::type_decl_shell_body(body);
-                custom_traits.retain(|(t, _)| keep_trait(t));
+                // A nested shell is the compile-time declaration: it applies
+                // the user traits, once (#12708).
+                if !nested {
+                    custom_traits.retain(|(t, _)| keep_trait(t));
+                }
                 custom_traits.push(("__hoisted".to_string(), None));
                 if nested {
                     custom_traits.push(("__hoisted_nested".to_string(), None));
