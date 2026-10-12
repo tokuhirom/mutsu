@@ -1155,6 +1155,7 @@ mod subset_decl;
 mod subst_thunk;
 mod term_constants;
 mod trir_call;
+mod whenever_scope;
 
 #[derive(Clone)]
 pub(crate) struct Compiler {

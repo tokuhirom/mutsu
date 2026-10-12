@@ -136,7 +136,6 @@ impl Encode for CompiledCode {
             is_supply_block_body,
             eval_context_target_callable_id,
             supply_emitter_sym,
-            inherited_owned_lexicals,
             upvalue_syms,
             env_only_decls,
             const_syms,
@@ -286,7 +285,6 @@ impl Encode for CompiledCode {
         is_supply_block_body.encode(encoder)?;
         eval_context_target_callable_id.encode(encoder)?;
         supply_emitter_sym.encode(encoder)?;
-        inherited_owned_lexicals.encode(encoder)?;
         upvalue_syms.encode(encoder)?;
         env_only_decls.encode(encoder)?;
         const_syms.encode(encoder)?;
@@ -425,7 +423,6 @@ impl Decode<DecodeCtx> for CompiledCode {
             is_supply_block_body: Decode::decode(decoder)?,
             eval_context_target_callable_id: Decode::decode(decoder)?,
             supply_emitter_sym: Decode::decode(decoder)?,
-            inherited_owned_lexicals: Decode::decode(decoder)?,
             upvalue_syms: Decode::decode(decoder)?,
             env_only_decls: Decode::decode(decoder)?,
             const_syms: Decode::decode(decoder)?,

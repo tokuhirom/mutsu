@@ -25,10 +25,6 @@ pub(crate) struct ResolutionCaches {
     /// `eval_block_value_cached`/`eval_test_block_value`'s `cache_id`
     /// parameter — starts empty per thread (pure recomputable optimization).
     pub(super) carrier_compile_cache: CarrierCompileCache,
-    /// See [`WheneverBodySplit`]: the phaser split of a `whenever` body, reused
-    /// across every registration from one parse site. Pure recomputable
-    /// optimization; starts empty per thread.
-    pub(super) whenever_body_splits: HashMap<WheneverBodyKey, WheneverBodySplit>,
     /// Parsed `s///` / `S///` replacement plans, keyed by the replacement's
     /// source text (see `vm::vm_subst_repl`). The replacement is a `qq` quote,
     /// so it is parsed with the real interpolation grammar; caching keeps a

@@ -136,8 +136,8 @@ pub(super) fn scan_chunk(
             bad.push(sym);
         }
     }
-    // A body stashed as AST and compiled at run time (a `gather` or
-    // `whenever` body) would compile its calls without this chunk's table.
+    // A body stashed as AST and compiled at run time (a `gather` body) would
+    // compile its calls without this chunk's table.
     // A closure literal's pool slot is exempt when every op that creates it
     // carries its compiled chunk: that chunk is what runs, and it is visited
     // (and equipped) as one of `closure_compiled_codes`.
@@ -155,6 +155,13 @@ pub(super) fn scan_chunk(
                 } else {
                     ast_slots.insert(*idx);
                 }
+            }
+            if let OpCode::WheneverScope {
+                body_idx, phasers, ..
+            } = op
+            {
+                compiled_slots.insert(*body_idx);
+                compiled_slots.extend(phasers.iter().map(|phaser| phaser.body_idx));
             }
         }
         for (idx, stmt) in code.stmt_pool.iter().enumerate() {

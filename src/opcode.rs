@@ -772,6 +772,17 @@ pub(crate) enum LoopExitGuardField {
 /// re-bind.
 pub(crate) const NO_PACKAGE_LEXICALS: u32 = u32::MAX;
 
+/// A `LAST` or `QUIT` phaser of a `whenever` body, compiled as its own
+/// closure (`OpCode::WheneverScope`). `body_idx` indexes `stmt_pool` (a
+/// parameterless `Stmt::SubDecl`) and `cc_idx` `closure_compiled_codes`. A
+/// `QUIT` callback receives the exception as its topic.
+#[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
+pub(crate) struct WheneverPhaser {
+    pub(crate) is_quit: bool,
+    pub(crate) body_idx: u32,
+    pub(crate) cc_idx: u32,
+}
+
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 #[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum OpCode {
@@ -4354,18 +4365,19 @@ pub(crate) enum OpCode {
     /// `do`).
     ///
     /// Taps the supply with the body as its callback (the runtime
-    /// `run_whenever_with_value`). `body_idx` indexes `CompiledCode::stmt_pool`
-    /// (an anonymous `Stmt::SubDecl` carrying the pointy block's full
-    /// signature — or the body's first placeholder — and its body; read back
-    /// through `closure_signature`/`closure_body_arc`). Inside a `supply { }`
-    /// block the block's own lexicals are first promoted to shared cells, so
-    /// the callback and the block see one variable.
+    /// `run_whenever_with_value`). The body and each of its `LAST` / `QUIT`
+    /// phasers are ordinary closures compiled at this site (#12872): `body_idx`
+    /// indexes `CompiledCode::stmt_pool` (an anonymous `Stmt::SubDecl` carrying
+    /// the pointy block's full signature — or the body's first placeholder —
+    /// and the body without its `LAST`/`QUIT` phasers) and `body_cc_idx` its
+    /// compiled form in `closure_compiled_codes`. Inside a `supply { }` block
+    /// the block's own lexicals are first promoted to shared cells, so the
+    /// callback and the block see one variable.
     WheneverScope {
         body_idx: u32,
-        /// Analysis-only compiled form of the stmt-pool body. It is never
-        /// executed, but supplies precise free-variable parent slots to
-        /// ADR-0018's env-consumer analysis.
-        analysis_cc_idx: u32,
+        body_cc_idx: u32,
+        /// The body's `LAST` and `QUIT` phasers, each its own closure.
+        phasers: Box<[WheneverPhaser]>,
         /// Whether this statement is the operand of `do` and therefore leaves
         /// the newly-created Tap on the value stack. A statement-form
         /// `whenever` deliberately sinks that value.
@@ -4815,7 +4827,6 @@ mod const_pool_dedup {
         assert!(code.env_consumer_slots.for_loop.is_empty());
         assert!(code.env_consumer_slots.block_scope.is_empty());
         assert!(code.env_consumer_slots.block_local_scope.is_empty());
-        assert!(code.env_consumer_slots.whenever.is_empty());
         assert_eq!(code.needs_env_sync, vec![true, false]);
     }
 
@@ -4859,7 +4870,6 @@ pub(crate) struct EnvConsumerSlots {
     /// the only slots of this chunk a `gather` body can reach by name, so the
     /// only ones an `eager` force has to reconcile afterwards.
     pub(crate) gather_list: Vec<u32>,
-    pub(crate) whenever: Vec<bool>,
     /// Slots read/written (by name or by local index) inside a `package`/
     /// `module`/`class`-via-`Stmt::Package` body (`OpCode::PackageScope`).
     /// `exec_package_scope_op` reconciles its outer scope through `env`
@@ -7449,22 +7459,6 @@ pub(crate) struct CompiledCode {
     /// `exec_whenever_scope_op`. It has no compiled local slot (a `supply` body's
     /// `locals` is empty), so it cannot be recovered from `locals_sym`.
     pub(crate) supply_emitter_sym: Option<Symbol>,
-    /// Lexicals an *enclosing* `whenever` callback already owns, handed down so a
-    /// `whenever` nested inside that callback's body owns them too.
-    ///
-    /// A `whenever` registered at the top level of a `supply { … }` body gets its
-    /// owned set computed from the body's own `CompiledCode`
-    /// (`exec_whenever_scope_op`). A `whenever` registered from *inside* another
-    /// `whenever`'s body cannot: the chunk it runs in is a fresh compile of that
-    /// callback's AST, which knows nothing of the supply body that created it. So
-    /// the callback's `SubData::authoritative_captures` — exactly the set the
-    /// supply body vouched for — rides along here (see
-    /// `Interpreter::pending_whenever_inherited_owned`). Without it the nested
-    /// callback's `emit` re-resolved the shared emitter name against whichever
-    /// sibling instance of the same parse site happened to be dispatching it
-    /// (Cro's `whenever $handler.invoke(…) { emit $response }` ping-ponged with
-    /// the delegated route set forever).
-    pub(crate) inherited_owned_lexicals: Vec<Symbol>,
     /// Ordered list of this closure's read-only plain-lexical free variables that
     /// have been promoted to index-based upvalues. Index `i` in this list is the
     /// operand of the `GetUpvalue(i)` ops that `compute_upvalues` rewrites in
@@ -8066,7 +8060,6 @@ impl CompiledCode {
             is_supply_block_body: false,
             eval_context_target_callable_id: None,
             supply_emitter_sym: None,
-            inherited_owned_lexicals: Vec::new(),
             my_declared_sym: rustc_hash::FxHashSet::default(),
             dynamic_declared_sym: rustc_hash::FxHashSet::default(),
             my_declared_enum_sym: rustc_hash::FxHashSet::default(),
@@ -8943,18 +8936,17 @@ impl CompiledCode {
         // loop-phaser desugaring threads state through by name via `env`, e.g.
         // the `__mutsu_loop_first_`/`__mutsu_loop_ran_` control temps) cannot
         // safely treat any local as slot-only -- a slot value may not survive the
-        // loop's per-iteration env round-trips. The same applies to the two ops
-        // that stash a body in the `stmt_pool` and compile/run it at runtime
+        // loop's per-iteration env round-trips. The same applies to the op that
+        // stashes a body in the `stmt_pool` and compiles/runs it at runtime
         // against the live env by name -- `MakeGather` (a gather block,
-        // vm_register_ops::exec_make_gather_op) and `WheneverScope` (a
-        // `whenever`/`supply` body, exec_whenever_scope_op): the body is not in
+        // vm_register_ops::exec_make_gather_op): the body is not in
         // `closure_compiled_codes`, so the nested-closure free-var scan below
         // cannot see which lexicals it reads. For such a frame `free_var_syms` is
         // incomplete, so this flag drives the whole-env fallback in two places:
         // the dual-store flush blanket here, and the closure upvalue capture
         // (`capture_closure_env`). Computed unconditionally (before the n==0
-        // early return) so zero-local closures wrapping a `whenever`/`gather` are
-        // covered too. Recursion-heavy code without these (e.g. `fib`) is
+        // early return) so zero-local closures wrapping a `gather` are covered
+        // too. Recursion-heavy code without these (e.g. `fib`) is
         // unaffected and still skips the per-call flush for its slot-only params.
         let n = self.locals.len();
         self.needs_env_sync = vec![false; n];
@@ -8963,13 +8955,11 @@ impl CompiledCode {
         let mut has_block_scope = false;
         let mut has_block_local_scope = false;
         let mut has_gather = false;
-        let mut has_whenever = false;
         let mut has_package_scope = false;
         let mut for_loop_slots = vec![false; n];
         let mut block_scope_slots = vec![false; n];
         let mut block_local_scope_slots = vec![false; n];
         let mut gather_slots = vec![false; n];
-        let mut whenever_slots = vec![false; n];
         let mut package_scope_slots = vec![false; n];
         for (op_idx, op) in self.ops.iter().enumerate() {
             match op {
@@ -9018,12 +9008,6 @@ impl CompiledCode {
                     self.mark_closure_parent_slots(*cc_idx, &mut gather_slots);
                 }
                 OpCode::MakeGather(_, None) => has_gather = true,
-                OpCode::WheneverScope {
-                    analysis_cc_idx, ..
-                } => {
-                    has_whenever = true;
-                    self.mark_closure_parent_slots(*analysis_cc_idx, &mut whenever_slots);
-                }
                 OpCode::PackageScope { body_end, .. } => {
                     has_package_scope = true;
                     self.mark_name_access_slots(
@@ -9074,9 +9058,6 @@ impl CompiledCode {
                 .filter_map(|(i, &g)| g.then_some(i as u32))
                 .collect();
             self.env_consumer_slots.gather = gather_slots;
-        }
-        if has_whenever {
-            self.env_consumer_slots.whenever = whenever_slots;
         }
         if has_package_scope {
             self.env_consumer_slots.package_scope = package_scope_slots;
@@ -9376,12 +9357,6 @@ impl CompiledCode {
                     .unwrap_or(false)
                 || self
                     .env_consumer_slots
-                    .whenever
-                    .get(slot)
-                    .copied()
-                    .unwrap_or(false)
-                || self
-                    .env_consumer_slots
                     .package_scope
                     .get(slot)
                     .copied()
@@ -9595,15 +9570,14 @@ impl CompiledCode {
         if self.uses_callframe {
             return true;
         }
-        // `gather`/`whenever` stash their body in `stmt_pool` and run it by
-        // name against the live env, so it is not in `closure_compiled_codes`
-        // and the nested scan below cannot see which lexicals it reads.
-        if self.ops.iter().any(|op| {
-            matches!(
-                op,
-                OpCode::MakeGather(..) | OpCode::WheneverScope { .. } | OpCode::PackageScope { .. }
-            )
-        }) {
+        // `gather` stashes its body in `stmt_pool` and runs it by name against
+        // the live env, so it is not in `closure_compiled_codes` and the nested
+        // scan below cannot see which lexicals it reads.
+        if self
+            .ops
+            .iter()
+            .any(|op| matches!(op, OpCode::MakeGather(..) | OpCode::PackageScope { .. }))
+        {
             return true;
         }
         // Constant-pool scan, the same sound over-approximation `reads_topic`
@@ -10071,17 +10045,27 @@ impl CompiledCode {
         }
     }
 
-    /// The `closure_compiled_codes` index an op embeds, for the ops that create a
-    /// closure value (and so snapshot the creating frame's env at that point).
-    fn op_closure_code_idx(op: &OpCode) -> Option<u32> {
-        match op {
+    /// The `closure_compiled_codes` indices an op embeds, for the ops that
+    /// create closure values (and so snapshot the creating frame's env at that
+    /// point). Every op creates at most one, except `WheneverScope`, which
+    /// creates its body and each `LAST`/`QUIT` phaser.
+    fn op_closure_code_idxs(op: &OpCode) -> impl Iterator<Item = u32> + '_ {
+        let (first, phasers): (Option<u32>, &[WheneverPhaser]) = match op {
             OpCode::MakeAnonSub(_, cc, _)
             | OpCode::MakeAnonSubParams(_, cc, _)
             | OpCode::MakeLambda(_, cc, _)
             | OpCode::MakeBlockClosure(_, cc)
-            | OpCode::MakeGather(_, cc) => *cc,
-            _ => None,
-        }
+            | OpCode::MakeGather(_, cc) => (*cc, &[]),
+            OpCode::WheneverScope {
+                body_cc_idx,
+                phasers,
+                ..
+            } => (Some(*body_cc_idx), phasers),
+            _ => (None, &[]),
+        };
+        first
+            .into_iter()
+            .chain(phasers.iter().map(|phaser| phaser.cc_idx))
     }
 
     /// Names this code declares itself: `my` declarations (`SetVarDynamic`)
@@ -10416,9 +10400,10 @@ impl CompiledCode {
             // analysis then puts it in `needs_cell`, since an assigned closure
             // escapes). The window is deliberately narrow: only closures created
             // by the initializer that this very store completes.
-            if let Some(cc_idx) = Self::op_closure_code_idx(op)
-                && let Some(nested) = self.closure_compiled_codes.get(cc_idx as usize)
-            {
+            for cc_idx in Self::op_closure_code_idxs(op) {
+                let Some(nested) = self.closure_compiled_codes.get(cc_idx as usize) else {
+                    continue;
+                };
                 for sym in &nested.free_var_syms {
                     if sym.with_str(|s| own.contains(s)) {
                         captured_in_decl.insert(*sym);

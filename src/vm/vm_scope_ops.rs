@@ -155,146 +155,178 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         body_idx: u32,
-        analysis_cc_idx: u32,
+        body_cc_idx: u32,
+        phasers: &[crate::opcode::WheneverPhaser],
         yields_value: bool,
     ) -> Result<(), RuntimeError> {
         let supply_val = self.stack.pop().unwrap_or(Value::NIL);
-        let stmt = &code.stmt_pool[body_idx as usize];
-        if let Stmt::SubDecl { .. } = stmt {
-            // Box captured-and-mutated lexicals the whenever body reads into
-            // shared ContainerRef cells BEFORE run_whenever_with_value clones
-            // the env for the callback closures below: those closures are
-            // dispatched later (possibly cross-thread, e.g. a `start` inside
-            // the body), so a by-value copy would miss the parent frame's
-            // later writes and vice versa. Mirrors MakeGather's identical
-            // precondition (`exec_make_gather_op`) for the same reason: the
-            // analysis closure compiled by `surface_stashed_body_free_vars`
-            // (Case B, cross-thread lexicals) names the free vars; the boxing
-            // rules are exactly the closure-capture ones.
-            let analysis_cc = Self::resolve_closure_code(code, Some(analysis_cc_idx));
-            self.box_captured_lexicals(code, &analysis_cc);
-            // Lexicals the enclosing `supply { … }` body declared with `my`. The
-            // `whenever` callbacks built below capture the live env and are
-            // dispatched later from the emitting thread, whose ambient env is
-            // the main script's — these names must resolve to the block's own
-            // binding, not to a caller lexical that happens to share the name.
-            // A name that is also a free var of this frame refers to the OUTER
-            // binding for its pre-declaration uses, so it is not owned here.
-            //
-            // Restricted to a supply body on purpose: a `react { … }` block
-            // compiles inline into the enclosing frame, so `my_declared_sym`
-            // there is the WHOLE frame's declarations — including the lexicals
-            // sibling `whenever`s are supposed to share (t/react-whenever-
-            // shared-lexical.t). See `CompiledCode::is_supply_block_body`.
-            //
-            // A `whenever` registered from inside ANOTHER `whenever`'s body runs
-            // in a chunk re-compiled from that callback's AST, which is not the
-            // supply body and so computes nothing below. The enclosing callback's
-            // own owned set rides in on `inherited_owned_lexicals` and applies to
-            // both shapes.
-            let mut owned_lexicals: Vec<crate::symbol::Symbol> =
-                code.inherited_owned_lexicals.clone();
-            if code.is_supply_block_body {
-                let mut owned: Vec<crate::symbol::Symbol> = code
-                    .my_declared_sym
-                    .iter()
-                    .filter(|sym| !code.free_var_syms.contains(sym))
-                    .copied()
-                    .collect();
-                // The block's own emitter is its PARAMETER, not a `my`, so the
-                // filter above never sees it — yet it is the one name that MUST
-                // resolve to this instance. The generated name is unique per
-                // parse site but shared by every runtime instance of that site,
-                // so a supply chain built by calling the same routine twice
-                // (`$s = xform($s); $s = xform($s)`, exactly what Cro's
-                // middleware pipeline does) has two live instances of one block:
-                // tapping the outer one runs the inner one's body, whose binding
-                // then answered the OUTER body's `emit`, feeding the outer supply
-                // its own output forever.
-                if let Some(sym) = code.supply_emitter_sym
-                    && !owned.contains(&sym)
-                {
-                    owned.push(sym);
-                }
-                // The body's never-written free variables are owned too. A supply
-                // block body is a scope its caller never re-enters, and its
-                // `whenever` callbacks are dispatched much later from an arbitrary
-                // frame — so a lexical it captured must not be re-resolved against
-                // whoever happens to dispatch it. Two live instances of one parse
-                // site make this concrete: with
-                // `Cro::HTTP::Router::RouteSet.transformer`'s
-                // `supply { whenever $requests { … } }` instantiated for both the
-                // outer route set and a delegated inner one, the inner body's
-                // callback saw the OUTER `$requests`.
-                //
-                // Only `authoritative_free_vars` qualify — the captures the
-                // *creating frame* vouched for as never written after the capture.
-                // A capture the supply body writes is shared state whose updates
-                // must reach the declaring frame (`whenever $s.on-close({ $closed
-                // = True })`), and one the declaring frame reassigns after the
-                // block was built must still be read live (`my $gate = 0; my $sup
-                // = supply { … emit $gate … }; $gate = 9`) — freezing either here
-                // would be a by-value snapshot that silently goes stale.
-                for sym in &code.authoritative_free_vars {
-                    if !owned.contains(sym) {
-                        owned.push(*sym);
-                    }
-                }
-                // An enum key's bare spelling lives in its own env namespace
-                // (`enum_bare_key`), so the vouch has to name that key too, or a
-                // same-named key of an enum the dispatching scope sees (TAP's
-                // `supply { enum Mode <Normal …> }` against the file's
-                // `enum Formatter::Volume (:Normal(0))`) wins in the callback.
-                // Inside a package the bareword probe consults the package's
-                // own `Pkg::v` entry first, which the block's registration
-                // rebound as well, so that key is vouched for the same way.
-                let pkg = self.current_package_sym();
-                for sym in &code.my_declared_enum_sym {
-                    let bare = sym.with_str(|s| {
-                        crate::symbol::Symbol::intern(
-                            &crate::runtime::enum_bare_names::enum_bare_key(s),
-                        )
-                    });
-                    let in_pkg = (!self.current_package_is_global())
-                        .then(|| crate::qualified::qualified(pkg, *sym));
-                    for key in std::iter::once(bare).chain(in_pkg) {
-                        if !owned.contains(&key) {
-                            owned.push(key);
-                        }
-                    }
-                }
-                for sym in owned {
-                    if !owned_lexicals.contains(&sym) {
-                        owned_lexicals.push(sym);
-                    }
-                }
-                self.share_supply_block_lexicals(code);
+        // Lexicals the enclosing `supply { … }` body declared with `my`. The
+        // `whenever` callbacks built below capture the live env and are
+        // dispatched later from the emitting thread, whose ambient env is
+        // the main script's — these names must resolve to the block's own
+        // binding, not to a caller lexical that happens to share the name.
+        // A name that is also a free var of this frame refers to the OUTER
+        // binding for its pre-declaration uses, so it is not owned here.
+        //
+        // Restricted to a supply body on purpose: a `react { … }` block
+        // compiles inline into the enclosing frame, so `my_declared_sym`
+        // there is the WHOLE frame's declarations — including the lexicals
+        // sibling `whenever`s are supposed to share (t/react-whenever-
+        // shared-lexical.t). See `CompiledCode::is_supply_block_body`.
+        //
+        // A `whenever` registered from inside ANOTHER `whenever`'s body runs
+        // in that callback's compiled closure, which is not the supply body
+        // and so computes nothing below. The enclosing callback's own owned
+        // set is its `authoritative_captures`, which reach this frame's
+        // `frame_authoritative` and through it every closure built here
+        // (`compute_authoritative_captures`).
+        let mut owned_lexicals: Vec<crate::symbol::Symbol> = Vec::new();
+        if code.is_supply_block_body {
+            let mut owned: Vec<crate::symbol::Symbol> = code
+                .my_declared_sym
+                .iter()
+                .filter(|sym| !code.free_var_syms.contains(sym))
+                .copied()
+                .collect();
+            // The block's own emitter is its PARAMETER, not a `my`, so the
+            // filter above never sees it — yet it is the one name that MUST
+            // resolve to this instance. The generated name is unique per
+            // parse site but shared by every runtime instance of that site,
+            // so a supply chain built by calling the same routine twice
+            // (`$s = xform($s); $s = xform($s)`, exactly what Cro's
+            // middleware pipeline does) has two live instances of one block:
+            // tapping the outer one runs the inner one's body, whose binding
+            // then answered the OUTER body's `emit`, feeding the outer supply
+            // its own output forever.
+            if let Some(sym) = code.supply_emitter_sym
+                && !owned.contains(&sym)
+            {
+                owned.push(sym);
             }
-            // The POOL-OWNED body `Arc`, not the borrowed slice: it is built
-            // once per `stmt_pool` slot, so every registration from this
-            // `whenever` literal shares it. That identity is what lets the
-            // phaser split and the compiled chunk be reused across
-            // registrations instead of rebuilt per value (see
-            // `WheneverBodySplit` and `CarrierCacheKey`).
-            let body_arc = code.closure_body_arc(body_idx as usize);
-            let signature = code.closure_signature(body_idx as usize);
-            let tap = loan_env!(
-                self,
-                run_whenever_with_value(
-                    supply_val,
-                    yields_value,
-                    &signature,
-                    &body_arc,
-                    &owned_lexicals
-                )
-            )?;
-            if yields_value {
-                self.stack.push(tap);
+            // The body's never-written free variables are owned too. A supply
+            // block body is a scope its caller never re-enters, and its
+            // `whenever` callbacks are dispatched much later from an arbitrary
+            // frame — so a lexical it captured must not be re-resolved against
+            // whoever happens to dispatch it. Two live instances of one parse
+            // site make this concrete: with
+            // `Cro::HTTP::Router::RouteSet.transformer`'s
+            // `supply { whenever $requests { … } }` instantiated for both the
+            // outer route set and a delegated inner one, the inner body's
+            // callback saw the OUTER `$requests`.
+            //
+            // Only `authoritative_free_vars` qualify — the captures the
+            // *creating frame* vouched for as never written after the capture.
+            // A capture the supply body writes is shared state whose updates
+            // must reach the declaring frame (`whenever $s.on-close({ $closed
+            // = True })`), and one the declaring frame reassigns after the
+            // block was built must still be read live (`my $gate = 0; my $sup
+            // = supply { … emit $gate … }; $gate = 9`) — freezing either here
+            // would be a by-value snapshot that silently goes stale.
+            for sym in &code.authoritative_free_vars {
+                if !owned.contains(sym) {
+                    owned.push(*sym);
+                }
             }
-            Ok(())
-        } else {
-            Err(RuntimeError::new("WheneverScope expects SubDecl body"))
+            // An enum key's bare spelling lives in its own env namespace
+            // (`enum_bare_key`), so the vouch has to name that key too, or a
+            // same-named key of an enum the dispatching scope sees (TAP's
+            // `supply { enum Mode <Normal …> }` against the file's
+            // `enum Formatter::Volume (:Normal(0))`) wins in the callback.
+            // Inside a package the bareword probe consults the package's
+            // own `Pkg::v` entry first, which the block's registration
+            // rebound as well, so that key is vouched for the same way.
+            let pkg = self.current_package_sym();
+            for sym in &code.my_declared_enum_sym {
+                let bare = sym.with_str(|s| {
+                    crate::symbol::Symbol::intern(&crate::runtime::enum_bare_names::enum_bare_key(
+                        s,
+                    ))
+                });
+                let in_pkg = (!self.current_package_is_global())
+                    .then(|| crate::qualified::qualified(pkg, *sym));
+                for key in std::iter::once(bare).chain(in_pkg) {
+                    if !owned.contains(&key) {
+                        owned.push(key);
+                    }
+                }
+            }
+            owned_lexicals = owned;
+            self.share_supply_block_lexicals(code);
         }
+        // The body and its phasers are closures compiled at this site, built
+        // after the supply block's lexicals were shared so their captures see
+        // the shared cells. Captured-and-mutated lexicals are boxed by the
+        // build itself (`box_captured_lexicals`): the callbacks are dispatched
+        // later, possibly cross-thread, so a by-value copy would miss the
+        // parent frame's later writes.
+        let callback = self.build_whenever_closure(code, body_idx, body_cc_idx, &owned_lexicals);
+        let mut last_callbacks = Vec::new();
+        let mut quit_callbacks = Vec::new();
+        for phaser in phasers {
+            let cb =
+                self.build_whenever_closure(code, phaser.body_idx, phaser.cc_idx, &owned_lexicals);
+            if phaser.is_quit {
+                quit_callbacks.push(cb);
+            } else {
+                last_callbacks.push(cb);
+            }
+        }
+        let tap = loan_env!(
+            self,
+            run_whenever_with_value(
+                supply_val,
+                yields_value,
+                callback,
+                last_callbacks,
+                quit_callbacks
+            )
+        )?;
+        if yields_value {
+            self.stack.push(tap);
+        }
+        Ok(())
+    }
+
+    /// Build one `whenever` callback (the body, or a `LAST`/`QUIT` phaser)
+    /// from its compiled closure. `owned` names the lexicals the enclosing
+    /// supply block owns: they join the closure's authoritative captures, so
+    /// the frame that later dispatches it cannot shadow them.
+    fn build_whenever_closure(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+        cc_idx: u32,
+        owned: &[crate::symbol::Symbol],
+    ) -> Value {
+        let spec = crate::vm::vm_closure_build::ClosureSpec {
+            name: crate::symbol::well_known::anon(),
+            signature: code.closure_signature(idx as usize),
+            // A body without a signature takes the emitted value as its topic,
+            // as a bare block does.
+            empty_sig: false,
+            is_rw: false,
+            is_raw: false,
+            is_bare_block: true,
+            return_type: None,
+            callable_type: None,
+            capture_match_var: false,
+            freeze_readonly_captures: false,
+        };
+        let val = self.build_closure(code, idx, Some(cc_idx), spec);
+        let extra: Vec<crate::symbol::Symbol> = match val.as_sub() {
+            Some(data) => owned
+                .iter()
+                .filter(|sym| !data.authoritative_captures.contains(sym))
+                .copied()
+                .collect(),
+            None => Vec::new(),
+        };
+        if extra.is_empty() {
+            return val;
+        }
+        let mut data = val.as_sub().expect("built closure is a Sub").clone();
+        data.authoritative_captures.extend(extra);
+        Value::from_sub_data(data)
     }
 
     /// Walk the MRO of `class_name` to find a parameterized Array or Hash parent.

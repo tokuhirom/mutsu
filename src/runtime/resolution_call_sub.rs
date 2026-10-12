@@ -1194,12 +1194,6 @@ impl Interpreter {
                 .filter(|cc| cc.is_supply_block_body)
                 .map(|cc| cc.authoritative_free_vars.clone())
                 .unwrap_or_default();
-            // A `whenever` callback carries the supply body's owned set in
-            // `authoritative_captures` and has no `CompiledCode` of its own, so a
-            // `whenever` nested in its body would compute an empty owned set.
-            // Hand the set down to the carrier chunk (see
-            // `CompiledCode::inherited_owned_lexicals`).
-            self.pending_whenever_inherited_owned = data.authoritative_captures.clone();
             // Run the body under this code object's own `state` scope, exactly as
             // the compiled closure dispatch does. Without it the carrier path
             // (`classify`/`categorize` and every other builtin that calls its
@@ -1235,7 +1229,6 @@ impl Interpreter {
             self.pending_supply_block_body = false;
             self.pending_supply_emitter_sym = None;
             self.pending_supply_authoritative_free_vars = Vec::new();
-            self.pending_whenever_inherited_owned = Vec::new();
             // The `my` names the body just declared, published by
             // `eval_block_value_inner`. Taken immediately, before anything below
             // can run another block and overwrite it. This is how a body with no

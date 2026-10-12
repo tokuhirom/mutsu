@@ -164,44 +164,6 @@ impl Interpreter {
 }
 
 impl Interpreter {
-    fn split_whenever_body_phasers(body: &[Stmt]) -> super::WheneverBodySplit {
-        let mut main = Vec::new();
-        let mut last = Vec::new();
-        let mut quit = Vec::new();
-        for stmt in body {
-            if let Stmt::Phaser { kind, body, .. } = stmt {
-                match kind {
-                    PhaserKind::Last => last.push(std::sync::Arc::new(body.clone())),
-                    PhaserKind::Quit => quit.push(std::sync::Arc::new(body.clone())),
-                    _ => main.push(stmt.clone()),
-                }
-            } else {
-                main.push(stmt.clone());
-            }
-        }
-        (std::sync::Arc::new(main), last, quit)
-    }
-
-    /// [`Self::split_whenever_body_phasers`], memoized per parse site.
-    ///
-    /// The split is a pure function of the body, so every registration from one
-    /// `whenever` literal can share one set of `Arc`s -- which is both an
-    /// O(body) AST clone saved per registration and what lets the callback
-    /// `Sub` carry a *stable* body identity, so the carrier compile cache can
-    /// serve it. See [`super::WheneverBodySplit`].
-    fn whenever_body_split(
-        &mut self,
-        body: &std::sync::Arc<Vec<Stmt>>,
-    ) -> super::WheneverBodySplit {
-        let key = super::WheneverBodyKey(std::sync::Arc::clone(body));
-        if let Some(hit) = self.caches.whenever_body_splits.get(&key) {
-            return hit.clone();
-        }
-        let split = Self::split_whenever_body_phasers(body);
-        self.caches.whenever_body_splits.insert(key, split.clone());
-        split
-    }
-
     /// Enter react mode: whenever blocks will register subscriptions
     /// instead of executing immediately.
     pub(crate) fn enter_react(&mut self) {
@@ -216,24 +178,20 @@ impl Interpreter {
         }
     }
 
-    /// Run a `whenever` scope.
+    /// Run a `whenever` scope: subscribe `callback` (the body) with its
+    /// `LAST` and `QUIT` phaser callbacks to `supply_val`.
     ///
-    /// `owned_lexicals` names the lexicals the *enclosing* block (the `supply`
-    /// or `react` body) declared with `my`. The callbacks built here capture the
-    /// live env by value and are later dispatched by whatever thread emits into
-    /// the supply — a thread whose ambient env is the main script's. Without a
-    /// vouch, the call-time merge gives that ambient env priority over the
-    /// capture (see the `merge_all` branch in `call_sub_value`), so a caller
-    /// lexical that merely shares a name with one of the block's own would
-    /// shadow it: lexical scoping degrading into dynamic scoping. Marking them
-    /// authoritative installs the captured binding with overwrite instead.
+    /// The callbacks are closures built at the `whenever` site
+    /// (`exec_whenever_scope_op`); their captures already hold the lexicals
+    /// the enclosing block owns. Here they are stamped with the compunit and
+    /// the `supply` block they belong to, then registered.
     pub(crate) fn run_whenever_with_value(
         &mut self,
         supply_val: Value,
         yields_value: bool,
-        signature: &crate::opcode::ClosureSignature,
-        body: &std::sync::Arc<Vec<Stmt>>,
-        owned_lexicals: &[Symbol],
+        callback: Value,
+        last_callbacks: Vec<Value>,
+        quit_callbacks: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         let whenever_id = crate::runtime::native_methods::next_whenever_id();
         let stamp_tap = |tap: Value| Self::stamp_whenever_tap(tap, whenever_id);
@@ -304,7 +262,6 @@ impl Interpreter {
             supply_val
         };
 
-        let (main_body, last_bodies, quit_bodies) = self.whenever_body_split(body);
         // The `supply` block this `whenever` is written in — its body is what is
         // running right now, so this is unambiguous. Stamped onto every callback
         // below so dispatch can re-establish it as the innermost active emitter
@@ -324,50 +281,9 @@ impl Interpreter {
                 None => cb,
             }
         };
-        // The callback carries the pointy block's own signature (types,
-        // sub-signatures, optional params), so the ordinary call-time binder
-        // treats it exactly like a `.tap(-> ... { })` block — see
-        // news/2026-08/whenever-parameter-type-constraint-enforced.md.
-        let callback = stamp(Value::make_sub_owning(
-            Symbol::intern(&self.current_package()),
-            Symbol::intern(""),
-            std::sync::Arc::clone(&signature.params),
-            std::sync::Arc::clone(&signature.param_defs),
-            main_body,
-            false,
-            self.env.clone(),
-            owned_lexicals.to_vec(),
-        ));
-        let last_callbacks: Vec<Value> = last_bodies
-            .into_iter()
-            .map(|body| {
-                stamp(Value::make_sub_owning(
-                    Symbol::intern(&self.current_package()),
-                    Symbol::intern(""),
-                    Vec::new(),
-                    Vec::new(),
-                    body,
-                    false,
-                    self.env.clone(),
-                    owned_lexicals.to_vec(),
-                ))
-            })
-            .collect();
-        let quit_callbacks: Vec<Value> = quit_bodies
-            .into_iter()
-            .map(|body| {
-                stamp(Value::make_sub_owning(
-                    Symbol::intern(&self.current_package()),
-                    Symbol::intern(""),
-                    vec!["_".to_string()],
-                    Vec::new(),
-                    body,
-                    false,
-                    self.env.clone(),
-                    owned_lexicals.to_vec(),
-                ))
-            })
-            .collect();
+        let callback = stamp(callback);
+        let last_callbacks: Vec<Value> = last_callbacks.into_iter().map(stamp).collect();
+        let quit_callbacks: Vec<Value> = quit_callbacks.into_iter().map(stamp).collect();
 
         // Check if we're in a react block (supply_emit_buffer has an entry), or
         // inside a running react drive loop -- a `whenever` nested in another

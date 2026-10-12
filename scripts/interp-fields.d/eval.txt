@@ -11,5 +11,4 @@ pending_eval_sigilless
 pending_supply_authoritative_free_vars
 pending_supply_block_body
 pending_supply_emitter_sym
-pending_whenever_inherited_owned
 repl_compiler

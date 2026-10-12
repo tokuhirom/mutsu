@@ -8,10 +8,12 @@ impl Interpreter {
     /// callbacks as **compiled bytecode** (Stage 2). The first argument, when
     /// present, is the triggering value.
     ///
-    /// The callbacks `run_whenever_with_value` builds carry only their AST, so
-    /// they are compiled here — as a *block*, which is what a `whenever` body
-    /// and a phaser are in raku. A routine compile would give the body its own
-    /// fresh `$_` (`Any`) instead of the enclosing lexical topic.
+    /// A `whenever` body and its phasers are closures compiled at the
+    /// `whenever` site (#12872) and run as such. A callback built at run time
+    /// from bare AST is still compiled here — as a *block*, which is what a
+    /// `whenever` body and a phaser are in raku. A routine compile would give
+    /// the body its own fresh `$_` (`Any`) instead of the enclosing lexical
+    /// topic.
     ///
     /// How the value reaches the body depends on the signature:
     ///
@@ -57,13 +59,6 @@ impl Interpreter {
             let topic = args.first().cloned();
             return self.vm_call_map_block(cb, args, topic, false);
         };
-        // A callback that already carries bytecode (a user code object handed
-        // to a supply helper) keeps its own compile and the topic path.
-        if data.compiled_code.is_some() || data.compiled_routine.is_some() || data.body.is_empty() {
-            let topic = args.first().cloned();
-            return self.vm_call_map_block(cb, args, topic, false);
-        }
-        let data = data.clone();
         let has_signature = !data.params.is_empty() && data.params.as_slice() != ["_"];
         let (args, topic) = if has_signature {
             let args: Vec<Value> = args.into_iter().map(Self::containerize_pair_item).collect();
@@ -72,9 +67,16 @@ impl Interpreter {
             let topic = args.first().cloned();
             (args, topic)
         };
-        // TODO: compile to bytecode once per `whenever` registration rather than
-        // per dispatch; the body is only split into main/LAST/QUIT at runtime
-        // (`whenever_body_split`), so there is no compile-time code object yet.
+        // A `whenever` body and its phasers are closures compiled at their
+        // definition site (`exec_whenever_scope_op`), as is any user code
+        // object handed to a supply helper.
+        if data.compiled_code.is_some() || data.compiled_routine.is_some() || data.body.is_empty() {
+            return self.vm_call_map_block(cb, args, topic, false);
+        }
+        let data = data.clone();
+        // TODO: compile to bytecode where the callback is built. A code object
+        // made from bare AST at run time has no compile-time code object, so it
+        // is compiled per dispatch here.
         let (cc, fns) = {
             let mut compiler = crate::compiler::Compiler::new();
             // A `return` in the body is a non-local return to the routine that
