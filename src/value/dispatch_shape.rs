@@ -302,7 +302,10 @@ impl DispatchShape {
     pub(crate) const fn may_reach_audited(self, owner: &str) -> bool {
         (matches!(
             self,
-            DispatchShape::Range | DispatchShape::Seq | DispatchShape::IoPath
+            DispatchShape::Range
+                | DispatchShape::Seq
+                | DispatchShape::IoPath
+                | DispatchShape::Match
         ) && const_str_eq(owner, "Cool"))
             || (self.reaches_audited_any() && const_str_eq(owner, "Any"))
             || (!self.inherits() && const_str_eq(owner, "Mu"))
@@ -361,17 +364,20 @@ impl DispatchShape {
         }
     }
 
-    /// Whether `Cool`'s `method` row is one a closed `Range`, `Seq` or
-    /// `IO::Path` shape reaches. A `Range` or `Seq` reaches the numeric methods
+    /// Whether `Cool`'s `method` row is one a closed `Range`, `Seq`, `IO::Path`
+    /// or `Match` shape reaches. A `Range` or `Seq` reaches the numeric methods
     /// whose Rakudo body is `self.Numeric.METHOD` and whose handlers read the
     /// receiver through `numify` (a `Range` or `Seq` numifies to its element
     /// count), and `Version`, which reads its string form (`(1..3).Version` is
     /// `v1.2.3`). All three reach the text methods whose Rakudo body is
     /// `self.Str.METHOD` and whose handlers read the receiver's string form
     /// (`"x ".IO.trim` is `"x"`, `(1..3).flip` is `"3 2 1"`); `IO::Path`'s own
-    /// `lines`, `words` and `comb` come first in its MRO. Audited per method
-    /// (ADR-11276 §9.16, §9.79), not per owner, so the iteration and search rows
-    /// `Cool` also declares stay unreachable.
+    /// `lines`, `words` and `comb` come first in its MRO. A `Match` reaches the
+    /// text methods and, besides them, the search, split and substitution rows
+    /// ([`COOL_TEXT_FOR_MATCH`]), but no numeric one: `Match` declares its own
+    /// `Int`/`Num`/`Numeric`. Audited per method (ADR-11276 §9.16, §9.79,
+    /// §9.89), not per owner, so the rows `Cool` declares beyond these stay
+    /// unreachable.
     // Cost: O(m), m = audited names.
     const fn reaches_audited(self, owner: &str, method: &str) -> bool {
         if !self.may_reach_audited(owner) {
@@ -382,6 +388,10 @@ impl DispatchShape {
         }
         if const_str_eq(owner, "Mu") {
             return const_list_contains(&MU_FOR_CLOSED_SHAPES, method);
+        }
+        if matches!(self, DispatchShape::Match) {
+            return const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
+                || const_list_contains(&COOL_TEXT_FOR_MATCH, method);
         }
         const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
             || (!matches!(self, DispatchShape::IoPath)
@@ -492,6 +502,30 @@ pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
     "uniprops",
     "unival",
     "univals",
+];
+
+/// The `Cool` text methods with arguments a `Match` reaches besides
+/// [`COOL_TEXT_FOR_CLOSED_SHAPES`] ([`DispatchShape::reaches_audited`];
+/// ADR-11276 §9.89). Rakudo's `Match` is `Capture is Cool`, and neither
+/// `Match` nor `Capture` declares these, so each is `Cool`'s candidate, whose
+/// body is `self.Str.METHOD`: the handlers read the receiver's string form,
+/// which for a `Match` is the matched text.
+const COOL_TEXT_FOR_MATCH: [&str; 15] = [
+    "contains",
+    "starts-with",
+    "ends-with",
+    "index",
+    "rindex",
+    "substr",
+    "split",
+    "samecase",
+    "samemark",
+    "indent",
+    "subst",
+    "trans",
+    "indices",
+    "sprintf",
+    "IO",
 ];
 
 /// The `Any` list methods every closed shape with instances reaches

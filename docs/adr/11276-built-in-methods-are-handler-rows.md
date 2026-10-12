@@ -2010,6 +2010,43 @@ the arms the interpreter had been answering identically (the `Match` receiver, `
 `t/oo/method/method-table-cascade-decline.t`. The cost of the step is one more table lookup on a call the table did not answer
 (a bit test when no row has the name); a handler that declines its receiver runs twice on that call (§9.7 waives the measurement).
 
+### 9.89 Slice 5: a `Match` reaches `Cool`'s search and text rows; the 1-arg search, split and format arms go (2026-10-12)
+
+`refactor/11276-match-cool-text-rows`. §9.88 kept the 1-arg `contains`, `index`, `rindex`, `substr`, `split` and `fmt` arms because
+the `Match` shape reached no `Cool` row, so the arm, run on the matched string, was the implementation of the recognition table's
+`Match` rows of those names. Decisions:
+
+1. **The `Match` shape reaches `Cool`'s rows per audited name.** Rakudo's `Match` is `Capture is Cool`, and neither `Match` nor
+   `Capture` declares a text method, so each is `Cool`'s candidate (`self.Str.METHOD`), whose handler here reads the receiver's
+   string form, the matched text. `DispatchShape::may_reach_audited` admits `Cool` for `Match`, and `reaches_audited` lets it
+   through for `COOL_TEXT_FOR_CLOSED_SHAPES` (the 0-arg text methods and `fmt`) and `COOL_TEXT_FOR_MATCH`: `contains`,
+   `starts-with`, `ends-with`, `index`, `rindex`, `substr`, `split`, `samecase`, `samemark`, `indent`, `subst`, `trans`, `indices`,
+   `sprintf` and `IO`. Not the numeric rows: `Match` declares its own `Int`/`Num`/`Numeric`, and a `Cool` numeric handler would read
+   the receiver through `numify`, which has no `Match` branch.
+2. **A match with no shape resolves as a `Match`.** `match_owner_row` (§9.88) asked `owner_row("Match", ..)`, which finds only the
+   rows `Match` declares. It is now `method_table::answer_as(DispatchShape::Match, ..)`: the row a plain match resolves to, its own or
+   an audited ancestor's, with the arguments admitted as the guard step admits them. The 1-arg cascade asks it too, after its decline
+   step, so a grammar cursor or a `Match`-subclass instance reaches the same rows at both arities.
+3. **`comb` with an `Int` or `Str` matcher is a row** on `Str` and `Cool` (`Handler::Narrow(comb::native_comb_method)`, which declines
+   a `Regex`, a code object and a `Pair`), so the arm that was its implementation goes.
+
+Deleted: the 1-arg `contains`, `index`, `rindex`, `substr`, `split`, `fmt`, `comb`, `sprintf` and `starts-with`/`ends-with` arms.
+Each served, besides the receivers a row now answers, the receivers no row reaches (a `Range`, a `Seq`, a `Pair`, a `Capture`, a quant
+hash, an enum, a code object, a `Version`, a `Uni`, a `Cool` subclass instance, `Nil`); deleting the arm hands those to the
+interpreter's `dispatch_contains`/`dispatch_index`/`split`/`fmt`/`sprintf`/`comb`, whose answers were the same on every probe. The one
+difference was a type-object needle of `contains`, which the arm refused and the interpreter searched for; `dispatch_contains` now
+refuses it as `dispatch_index` already did (`X::AdHoc`, where Rakudo raises `X::Multi::NoMatch`). Kept: `uniprop`, `uniprops`,
+`unimatch`, `samemark`, `samecase` and `indent`, whose arms are the only implementation for the receivers with no row (deleting them
+made `(1..3).indent(2)`, an enum's `samecase` and a `Cool` subclass's `uniprop` answer `X::Method::NotFound`).
+
+`method-rows-report.py --arms`: the pure arity cascades go from 189 to 180 arms. A probe of 47 calls (the search, split, format,
+`comb` and text methods with string, numeric, regex, junction, type-object, range and named arguments) over 38 receivers, and of
+`sprintf`/`comb` with 13 argument kinds, gave the same answers before and after apart from hash order and the type-object needle above.
+Pinned in `t/regex/match/match-cool-text-rows.t`. Still differing from Rakudo, out of scope: the non-`Cool` receivers (`Pair`,
+`Capture`, the quant hashes, `Blob`, `Version`, `Uni`, code objects, a plain instance) answer these methods on their string form,
+where Rakudo has no candidate (`X::Method::NotFound`), and a `Cool` subclass instance with its own `Str` is searched by its default
+rendering (#13035).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

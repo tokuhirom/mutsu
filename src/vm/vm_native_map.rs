@@ -84,8 +84,16 @@ impl Interpreter {
             ValueView::Array(items, ArrayKind::Array) => items.clone(),
             _ => return None,
         };
-        let end = range.end.min(source.len());
-        let items: &[Value] = source.get(range.start.min(end)..end)?;
+        // Copied out under the container stripe: the source is the live Array
+        // even on a shared container (#12484, ADR-0068 §16.1), and the callback
+        // below runs user code, which must not see a borrow into the item
+        // vector another thread's `push` can reallocate.
+        let items: Vec<Value> = {
+            let _guard =
+                crate::value::container_lock::ContainerStructGuard::acquire_for(None, target);
+            let end = range.end.min(source.len());
+            source.get(range.start.min(end)..end)?.to_vec()
+        };
         // A `Pair`/`ValuePair` element passed positionally to the block is bound
         // as a *named* argument by the closure-call machinery (and skipped when
         // setting the implicit `$_`), so the block would see no topic. For the

@@ -119,6 +119,16 @@ impl MapGrepChain {
     }
 }
 
+/// The container stripe around a read of a [`MapGrepItems::Live`] Array: a
+/// `.map`/`.grep` on a shared Array reads it live rather than on a snapshot
+/// (#12484, ADR-0068 §16.1), so another thread's `push` must not reallocate the
+/// item vector under the read. A no-op until a second mutator thread exists.
+/// The guarded regions only copy or count elements; no user code runs in them.
+// Cost: O(1).
+fn live_read_guard(array: &Value) -> Option<crate::value::container_lock::ContainerStructGuard> {
+    crate::value::container_lock::ContainerStructGuard::acquire_for(None, array)
+}
+
 impl MapGrepItems {
     /// A live view of `target` when it is a non-shaped, non-itemized Array
     /// (whose list-context elements are exactly its items), else the snapshot
@@ -141,20 +151,27 @@ impl MapGrepItems {
         match self {
             MapGrepItems::Snapshot(items) => items.len(),
             MapGrepItems::Live(array) => match array.view() {
-                crate::value::ValueView::Array(items, _) => items.len(),
+                crate::value::ValueView::Array(items, _) => {
+                    let _guard = live_read_guard(array);
+                    items.len()
+                }
                 _ => 0,
             },
             MapGrepItems::Chain(chain) => chain.lock().produced.len(),
         }
     }
 
-    /// Run `f` over the source elements as they are now.
+    /// Run `f` over the source elements as they are now. A live Array is read
+    /// under its container stripe, so `f` must not run user code.
     // Cost: O(1) plus `f`'s cost.
     pub(crate) fn with_items<R>(&self, f: impl FnOnce(&[Value]) -> R) -> R {
         match self {
             MapGrepItems::Snapshot(items) => f(items),
             MapGrepItems::Live(array) => match array.view() {
-                crate::value::ValueView::Array(items, _) => f(&items),
+                crate::value::ValueView::Array(items, _) => {
+                    let _guard = live_read_guard(array);
+                    f(&items)
+                }
                 _ => f(&[]),
             },
             MapGrepItems::Chain(chain) => f(&chain.lock().produced),
@@ -180,6 +197,7 @@ impl MapGrepItems {
             }
             MapGrepItems::Live(array) => match array.view() {
                 crate::value::ValueView::Array(items, _) => {
+                    let _guard = live_read_guard(array);
                     let end = end.min(items.len());
                     items
                         .get(start..end)

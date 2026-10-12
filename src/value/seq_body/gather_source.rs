@@ -23,7 +23,7 @@ impl SeqBody {
     /// source. Does not change anything.
     // Cost: O(1), one lock read.
     pub(crate) fn gather_source(&self) -> Option<Value> {
-        match &self.state().source {
+        match &self.lock_state().source {
             SeqSource::Gather(list) => Some(list.clone()),
             _ => None,
         }
@@ -32,7 +32,7 @@ impl SeqBody {
     /// Whether this body is a not-yet-finished gather.
     // Cost: O(1), one lock read.
     pub(crate) fn is_gather_source(&self) -> bool {
-        matches!(self.state().source, SeqSource::Gather(_))
+        matches!(self.lock_state().source, SeqSource::Gather(_))
     }
 
     /// Steal the inner gather list for a method that Raku also lets consume
@@ -44,7 +44,7 @@ impl SeqBody {
     /// lost: the inner list's own cache holds it too.
     // Cost: O(1).
     pub(crate) fn take_gather_source(&self) -> Option<Value> {
-        let mut state = self.state();
+        let mut state = self.lock_state();
         if state.cache_requested || state.retained || !matches!(state.source, SeqSource::Gather(_))
         {
             return None;
@@ -82,7 +82,7 @@ impl SeqBody {
     /// every other source.
     // Cost: O(1), one lock read.
     pub(crate) fn shared_gather_source(&self) -> Option<Value> {
-        let state = self.state();
+        let state = self.lock_state();
         match &state.source {
             SeqSource::Gather(list) if state.cache_requested => Some(list.clone()),
             _ => None,
@@ -109,7 +109,7 @@ impl SeqBody {
             return Ok(());
         }
         let list = {
-            let mut state = self.state();
+            let mut state = self.lock_state();
             let SeqSource::Gather(list) = &state.source else {
                 return Ok(());
             };
@@ -124,15 +124,12 @@ impl SeqBody {
         let exhausted = prefix.len() < needed;
         // A re-entrant pull may have finished (or stolen) the source while
         // `pull` ran; only a body still on this gather takes the prefix.
-        let mut state = self.state();
+        let mut state = self.lock_state();
         if !matches!(&state.source, SeqSource::Gather(current) if same_list(current, &list)) {
             return Ok(());
         }
         if prefix.len() > self.live_generation().len() {
-            // SAFETY: same reasoning as `pull_and_store` — no reference into
-            // `gens` is held across this push, and earlier generations are
-            // never rewritten, only superseded by a longer one.
-            unsafe { (*self.core.gens.get()).push(Box::new(prefix)) };
+            self.core.gens.publish(prefix);
         }
         if exhausted {
             state.source = SeqSource::Reified;
@@ -148,17 +145,5 @@ fn same_list(a: &Value, b: &Value) -> bool {
     match (a.view(), b.view()) {
         (ValueView::LazyList(a), ValueView::LazyList(b)) => crate::gc::Gc::ptr_eq(&a, &b),
         _ => false,
-    }
-}
-
-impl SeqBody {
-    /// The state lock, recovered from poisoning: a panic in another holder
-    /// leaves the state itself consistent (every write is a single field store).
-    // Cost: O(1).
-    fn state(&self) -> std::sync::MutexGuard<'_, super::SeqState> {
-        self.core
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }

@@ -401,6 +401,11 @@ impl Interpreter {
             // `for %h` / `for %h -> $p`: bind each pair's value to a live
             // `HashEntryRef` so an in-loop `%h{$p.key} = X` is observable through
             // a later `$p.value` read (raku's live hash-iteration pairs).
+            // The keys are walked under the container stripe: another thread
+            // inserting into a shared `%h` may rehash it mid-walk (#12483).
+            // Building the pairs runs no user code, so holding it is safe.
+            let _stripe =
+                crate::value::container_lock::ContainerStructGuard::acquire_for(None, &iterable);
             Self::hash_live_pairs(&gc, iterable.hash_is_itemized())
         } else if let Some((class, _)) = crate::value::value_buf::buf_target(&iterable)
             && self.is_carray_repr_class(class.as_str())

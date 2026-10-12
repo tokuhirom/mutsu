@@ -241,6 +241,32 @@ pub(crate) fn is_snapshot_read(method: &str) -> bool {
     )
 }
 
+/// The receiver a snapshot-read `method` ([`is_snapshot_read`]) should run on:
+/// a [`shared_snapshot`] of `container`, or `None` to run on `container` itself.
+///
+/// `.map`/`.grep` on a non-shaped Array are exempt (#12484): their callback
+/// rw-binds `$_` to the source element, so they must write back into the LIVE
+/// container, which a snapshot cannot (ADR-0068 §16.1). They never walk the
+/// live node with nothing held instead: `MapGrepItems::Live` reads it under the
+/// stripe, and the pull's element promotion (`grep`) and write-back (`map`)
+/// take the stripe around the in-place store, with no user code inside.
+// Cost: O(1) when no snapshot is taken; `shared_snapshot`'s otherwise.
+pub(crate) fn snapshot_read_receiver(
+    method: &str,
+    container: &crate::value::Value,
+) -> Option<crate::value::Value> {
+    if !multi_mutator_threads_live() || !is_snapshot_read(method) {
+        return None;
+    }
+    if matches!(method, "map" | "grep")
+        && matches!(container.view(), crate::value::ValueView::Array(..))
+        && !crate::value::shaped_array::is_shaped_array(container)
+    {
+        return None;
+    }
+    shared_snapshot(container)
+}
+
 /// A shallow copy of a shared `Hash`/`Array`, taken while holding the stripe,
 /// for a method that must then run user code over it with nothing held
 /// (ADR-0068 §16). `None` -- run on the original -- when no second mutator

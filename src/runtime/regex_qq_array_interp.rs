@@ -118,7 +118,7 @@ impl Interpreter {
         let close = crate::regex_qq_atoms::dq_atom_close(chars, at)?;
         let body: String = chars[at + 1..close].iter().collect();
         if !crate::regex_qq_atoms::body_wants_thunk(&body)
-            || super::regex_parse::is_inside_regex_quote_literal(chars, at)
+            || super::regex_quote_scan::is_inside_regex_quote_literal(chars, at)
         {
             return None;
         }

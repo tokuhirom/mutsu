@@ -537,18 +537,57 @@ impl Interpreter {
         let source_values = self.supply_list_values(attributes, true)?;
 
         let mut mapped_values = Vec::with_capacity(source_values.len());
+        let mut quit = None;
         for value in source_values {
-            mapped_values.push(self.call_supply_callback(mapper.clone(), vec![value], true)?);
+            match self.call_supply_callback(mapper.clone(), vec![value], true) {
+                Ok(mapped) => mapped_values.push(mapped),
+                Err(e) => {
+                    quit = Some(Self::supply_stage_quit_reason(e)?);
+                    break;
+                }
+            }
         }
+        Ok(Self::static_supply_from_stage(
+            mapped_values,
+            attributes,
+            quit,
+        ))
+    }
 
+    /// A transform stage over a materialized Supply died with `err`: what the
+    /// derived supply quits with, after the values the stage produced before
+    /// the failure (#12986). A control signal (`done`, `last`, ...) is not a
+    /// failure and propagates as before.
+    // Cost: O(1).
+    pub(in crate::runtime) fn supply_stage_quit_reason(
+        err: RuntimeError,
+    ) -> Result<Value, RuntimeError> {
+        if Self::is_exceptional_block_exit(&err) {
+            Ok(err.exception_value())
+        } else {
+            Err(err)
+        }
+    }
+
+    /// The materialized Supply a transform stage over a materialized `source`
+    /// produced: `values`, then a quit with `quit` when the stage died.
+    // Cost: O(1).
+    pub(in crate::runtime) fn static_supply_from_stage(
+        values: Vec<Value>,
+        source: &AttrMap,
+        quit: Option<Value>,
+    ) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("values".to_string(), Value::array(mapped_values));
+        attrs.insert("values".to_string(), Value::array(values));
         attrs.insert("taps".to_string(), Value::array(Vec::new()));
         attrs.insert(
             "live".to_string(),
-            attributes.get("live").cloned().unwrap_or(Value::FALSE),
+            source.get("live").cloned().unwrap_or(Value::FALSE),
         );
-        Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
+        if let Some(reason) = quit {
+            attrs.insert("quit_reason".to_string(), reason);
+        }
+        Value::make_instance(Symbol::intern("Supply"), attrs)
     }
 
     /// If `attributes` describes a live (Supplier-backed) supply, register a

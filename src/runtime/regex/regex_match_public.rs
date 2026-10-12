@@ -346,6 +346,19 @@ impl Interpreter {
         }
 
         let (declarators, remaining_pattern) = Self::parse_regex_declarative_prefix(pattern);
+        // The rest of the pattern reads a hoisted `:my`/`:let`/`:our` scalar
+        // at match time (see `add_runtime_names`), as it would had the
+        // declaration stayed in it.
+        let hoisted_scalars: Vec<String> = declarators
+            .iter()
+            .filter(|(decl_name, _)| matches!(decl_name.as_str(), "my" | "let" | "our"))
+            .flat_map(|(_, stmt_src)| {
+                let decl = stmt_src.split_once('=').map_or(stmt_src.as_str(), |(lhs, _)| lhs);
+                super::super::regex_parse_core::scalar_names_in_decl(decl)
+            })
+            .collect();
+        let remaining_pattern =
+            super::regex_rule_params::add_runtime_names(&hoisted_scalars, &remaining_pattern);
         if declarators.is_empty() {
             let result = self.regex_match_with_captures_core(pattern, text);
             if let Some(caps) = &result {

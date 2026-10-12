@@ -302,7 +302,7 @@ impl Interpreter {
             Some(cb) => cb,
             None => {
                 if attrs.contains_key("values") {
-                    return self.replay_static_supply(&attrs, consumer_cb, last_callbacks);
+                    return self.replay_static_supply(&attrs, consumer_cb, last_callbacks, &[]);
                 }
                 // A channel-backed or otherwise live source cannot be replayed here.
                 return Ok(false);
@@ -384,11 +384,17 @@ impl Interpreter {
         Ok(reached)
     }
 
+    /// Replay a materialized Supply's `values` into a `whenever` body, then end
+    /// the subscription: its LAST phasers, or, when the supply ends in a quit
+    /// (`quit_reason`: a `.map`/`.grep` stage over it died, #12986), its QUIT
+    /// phasers, with the react dying of the reason when it has none.
+    // Cost: O(v), v = values replayed.
     pub(super) fn replay_static_supply(
         &mut self,
         attributes: &AttrMap,
         callback: &Value,
         last_callbacks: &[Value],
+        quit_callbacks: &[Value],
     ) -> Result<bool, RuntimeError> {
         // This construct handles `next`/`last`/`redo`, so a loop-control
         // statement raised anywhere in its dynamic extent has somewhere to go
@@ -410,6 +416,22 @@ impl Interpreter {
                     Err(e) => return Err(e),
                 }
             }
+        }
+        if last_topic.is_none()
+            && let Some(reason) = attributes.get("quit_reason")
+        {
+            if quit_callbacks.is_empty() {
+                return Err(RuntimeError::from_exception_value(reason.clone()));
+            }
+            for cb in quit_callbacks {
+                match self.call_supply_quit_handler(cb.clone(), reason.clone()) {
+                    Err(e) if e.is_react_done() => return Ok(true),
+                    other => {
+                        other?;
+                    }
+                }
+            }
+            return Ok(false);
         }
         for cb in last_callbacks {
             let args = match &last_topic {

@@ -41,13 +41,7 @@ fn call(
         None
     };
     // #12456: user code runs over the elements, so run on a snapshot instead.
-    let snapshot = if crate::value::container_lock::multi_mutator_threads_live()
-        && crate::value::container_lock::is_snapshot_read(row.name)
-    {
-        crate::value::container_lock::shared_snapshot(target)
-    } else {
-        None
-    };
+    let snapshot = crate::value::container_lock::snapshot_read_receiver(row.name, target);
     let target = snapshot.as_ref().unwrap_or(target);
     let answer = match row.handler {
         Handler::Pure(f) => Some((f(target, positional), rerunnable)),
@@ -76,6 +70,25 @@ pub(crate) fn invoke(
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
     call(row(id), None, target, args, Named::NONE).map(|(result, _)| result)
+}
+
+/// Answer a call on a value the table has no shape for whose structure is
+/// `shape`'s (a grammar cursor or an instance of a `Match` subclass reads as a
+/// plain `Match`): the row a receiver of `shape` reaches, if it admits `args`.
+/// A row that needs the interpreter declines.
+// Cost: O(1) to find the row (one hash lookup), plus O(a) to admit a
+// arguments, plus the handler's own cost.
+pub(crate) fn answer_as(
+    shape: DispatchShape,
+    target: &Value,
+    method: Symbol,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    let id = super::resolve(Receiver::instance(shape), method, args.len())?;
+    if !admits(id, args) {
+        return None;
+    }
+    invoke(id, target, args)
 }
 
 /// [`invoke`] for a row that may need the interpreter.

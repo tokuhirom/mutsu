@@ -870,3 +870,41 @@ Acceptance (release, three threads inserting for 1.5 s): `.sort`, `.map`, `.gist
 on `%!h` 0 crashes in 4 each (were 2, 2 and 4 of 4). Pinned by
 `t/concurrency/concurrent-attr-hash-iteration-does-not-corrupt.t`.
 Not measured: `for %!h.kv` on a fast path (separate look needed).
+
+Measured on 2026-10-12 (#12483), release build: three threads inserting into
+`has %!h` for 1.5 s while each runs a `for` over it. `for %!h` crashed twice in
+at most 10 runs (SIGSEGV in `HashData::typed_key` under `hash_live_pairs`). The VM's `for`
+dispatch walked the keys of the live map with nothing held. It now walks them
+under the container stripe; building the live pairs runs no user code, so §7.4
+holds. `for %!h.kv`, `.keys`, `.values` and `.pairs` go through the method
+funnel (`is_leaf_structure_read`), and `for @!a` with a concurrent `push` did not
+crash. 0 of 16 runs crash afterwards. Pinned by
+`t/concurrency/concurrent-attr-hash-for-loop-iteration.t`.
+
+### 16.1 `.map`/`.grep` on an Array write back into the live container (2026-10-12, #12484)
+
+Retires the §16 trade-off for Arrays. `shared_snapshot` keyed on
+`multi_mutator_threads_live()`, which is process-wide, so after any `start` a
+`for @a.grep(* > 2) { $_ = 0 }` on an array no other thread had ever seen wrote
+into the snapshot and left `@a` unchanged (Rakudo: `[1 2 0]`).
+
+`.map` and `.grep` on a non-shaped Array no longer take a snapshot
+(`container_lock::snapshot_read_receiver`). They still never walk the live node
+with nothing held:
+
+- `MapGrepItems::Live` reads the item vector (`len`, `get`, `slice`,
+  `with_items`) under the container stripe;
+- `grep_over_array_promoting_range` copies its range under the stripe, runs the
+  callback with nothing held, then takes the stripe again for the hole check
+  and the in-place promotion of matched slots to element cells;
+- `publish_rw_map_writeback` stores the `.map` write-back under the stripe, and
+  the native rw map loop copies its chunk out under it instead of borrowing the
+  live vector across the callback.
+
+None of these guarded regions runs user code, so §7.4 holds. The write-back can
+land on a slot another thread replaced between the read and the store; that is a
+racing iteration with no defined answer, as in §16, but it is a write to the live
+container, never a lost one. Hashes, shaped arrays and the other §16 methods keep
+the snapshot. The stripe is keyed on the node address (`acquire_for(None, ..)`),
+as `shared_snapshot`'s was. Pinned by
+`t/concurrency/concurrent-map-grep-rw-writes-reach-live-container.t`.

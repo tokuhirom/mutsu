@@ -621,6 +621,7 @@ impl Interpreter {
                                 &(attributes).as_map(),
                                 &callback,
                                 &last_cbs,
+                                &quit_callbacks,
                             )? {
                                 return Ok(true);
                             }
