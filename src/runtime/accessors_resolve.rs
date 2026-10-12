@@ -620,7 +620,7 @@ impl Interpreter {
                 }
                 // A named sub's `&?ROUTINE` is the routine `&name` denotes, the
                 // same object (`&?ROUTINE === &f`), not a fresh by-name stub.
-                if !frame.is_method && !name.contains("::") {
+                if !frame.is_method && !crate::qualified::is_qualified(frame.name) {
                     let by_name = self.resolve_code_var_scoped(frame.name.as_str(), true);
                     if matches!(by_name.view(), ValueView::Sub(_)) {
                         return by_name;
