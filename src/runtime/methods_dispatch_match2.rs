@@ -11,6 +11,14 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
+        // `Mu` is no `Any`: of the methods below, the `Mu` type object has
+        // only `iterator` and `take` (`Mu.unique`, `Mu.minmax` and `Mu.List`
+        // are `X::Method::NotFound` in Rakudo).
+        if matches!(target.view(), ValueView::Package(name) if name == "Mu")
+            && !matches!(method, "iterator" | "take")
+        {
+            return None;
+        }
         // A role-punned Iterable keeps its iterator protocol in the composed
         // role, while the collection reduction methods are supplied by the
         // core Iterable surface rather than by the user's role itself. Drive
