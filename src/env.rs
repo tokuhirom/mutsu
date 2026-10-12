@@ -2361,7 +2361,8 @@ impl Env {
         if let Some(v) = self.inner.get(&key) {
             return Some(v);
         }
-        if !crate::symbol::maybe_env_key(key) {
+        let probe = crate::symbol::env_key_probe(key);
+        if probe == crate::symbol::EnvKeyProbe::Absent {
             debug_assert!(
                 self.get_sym_walk(key).is_none(),
                 "`{}` is in an env although nothing latched it as an env key: a \
@@ -2371,7 +2372,7 @@ impl Env {
             );
             return None;
         }
-        if self.takes_match_state_walk(key) {
+        if self.chain_has_match_owner && probe == crate::symbol::EnvKeyProbe::MatchState {
             return self.get_match_state_sym(key);
         }
         // Debug builds only: in a release build a call here, however cold,
@@ -2501,7 +2502,8 @@ impl Env {
         if self.inner.contains_key(&key) {
             return true;
         }
-        if !crate::symbol::maybe_env_key(key) {
+        let probe = crate::symbol::env_key_probe(key);
+        if probe == crate::symbol::EnvKeyProbe::Absent {
             debug_assert!(
                 !self.contains_key_sym_walk(key),
                 "`{}` is in an env although nothing latched it as an env key",
@@ -2509,7 +2511,7 @@ impl Env {
             );
             return false;
         }
-        if self.takes_match_state_walk(key) {
+        if self.chain_has_match_owner && probe == crate::symbol::EnvKeyProbe::MatchState {
             return self.get_match_state_sym(key).is_some();
         }
         // Debug builds only — see `get_sym`.

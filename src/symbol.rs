@@ -549,6 +549,34 @@ pub(crate) fn mark_env_key(sym: Symbol) {
     }
 }
 
+/// [`maybe_env_key`] and [`Symbol::is_match_state`] in one read of the flag
+/// word, for the env lookup's miss path, which asks both.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EnvKeyProbe {
+    /// Never an env key anywhere: a lookup cannot find it.
+    Absent,
+    /// May be an env key; not the match state.
+    Plain,
+    /// May be an env key, and names the match state (`/`, `0`, `<name>`).
+    MatchState,
+}
+
+// Cost: O(1).
+#[inline]
+pub(crate) fn env_key_probe(sym: Symbol) -> EnvKeyProbe {
+    let f = match flag_slot(sym.0 as usize) {
+        Some(slot) => slot.load(Ordering::Relaxed),
+        None => sym.flags() | flags::EVER_ENV_KEY,
+    };
+    if f & flags::EVER_ENV_KEY == 0 {
+        EnvKeyProbe::Absent
+    } else if f & flags::MATCH_STATE != 0 {
+        EnvKeyProbe::MatchState
+    } else {
+        EnvKeyProbe::Plain
+    }
+}
+
 /// Whether `sym` *may* be a key in some env.
 ///
 /// `false` is a proof of absence: no env in the process has ever held this

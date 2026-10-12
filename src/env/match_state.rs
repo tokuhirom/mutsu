@@ -26,8 +26,10 @@
 //! (`Interpreter::capture_block_match_var`), as before.
 //!
 //! The marking costs nothing per lookup on any other chain: the walk is
-//! selected by [`Env::chain_has_match_owner`], a latch like
-//! `chain_has_static_link`, and only for the handful of match-state symbols.
+//! selected by `Env::chain_has_match_owner`, a latch like
+//! `chain_has_static_link`, and only for the handful of match-state symbols,
+//! which the lookup's miss path learns from the same flag read that answers
+//! `maybe_env_key` (`symbol::env_key_probe`).
 
 use super::Env;
 use crate::symbol::Symbol;
@@ -57,13 +59,6 @@ impl Env {
     #[inline]
     pub(crate) fn owns_match_state(&self) -> bool {
         self.owns_match_state
-    }
-
-    /// Whether a lookup of `key` takes [`Self::get_match_state_sym`].
-    // Cost: O(1).
-    #[inline(always)]
-    pub(super) fn takes_match_state_walk(&self, key: Symbol) -> bool {
-        self.chain_has_match_owner && key.is_match_state()
     }
 
     /// Look up a match-state name (`/`, `0`, `<name>`) as the running code
