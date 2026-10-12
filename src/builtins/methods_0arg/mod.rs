@@ -653,6 +653,14 @@ pub(crate) fn native_method_0arg_cascade(
         {
             return None;
         }
+        // A role mixed in may parameterize the element or key type
+        // (`%h but Associative[Int, Int]`) or declare `of` itself: the
+        // interpreter's mixin dispatch reads the composition before it asks
+        // the wrapped container's row (ADR-11276 §9.86).
+        if matches!(method, "of" | "keyof") && mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
+        {
+            return None;
+        }
         // Check for mixin key matching the method name (e.g. "Array", "List", "Int", etc.)
         // This handles `True but [1, 2]` where `.Array` should return the mixed-in array.
         if let Some(mixin_val) = mixins.get(method) {
