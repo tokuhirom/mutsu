@@ -1814,7 +1814,9 @@ ways as §9.81:
    shape (`DispatchShape::reaches_audited_ancestor`), which replaces its `so`/`not` arms and the `join` exclusion of §9.81: `Match.item`
    is the `Match` (it was the matched string).
 3. **`race` and `hyper`** join `lazy` in `ITERABLE_FOR_SHAPELESS`: a shapeless `LazyList`/`Seq` reaches `Seq`'s rows and a lazy or shaped
-   array or a `Slip` `List`'s; any other receiver is `X::Method::NotFound`, as in Rakudo.
+   array or a `Slip` `List`'s, and the `Iterable` role's type object `List`'s (`Iterable.hyper.configuration`, which the `hyperize`
+   dist reads); any other receiver is `X::Method::NotFound`, as in Rakudo. An instance of a user class that `does Iterable` was
+   answered a one-element list by the arm and is `X::Method::NotFound` now; Rakudo reads it through its `iterator` (#12929).
 4. **`succ`/`pred`**: every receiver the arm answered has its own row (`Str`, `Int`, `Num`, `Rat`, `FatRat`, `Complex`, `Bool`, the
    temporal classes, `IO::Path`); the arm only reached type objects. `Bool.succ`/`Bool.pred` are `TYPE_OBJECT_OK` (`Bool.succ` is
    `True`, as in Rakudo); the `Int`/`Str`/`Num`/`Rat`/`Complex` recognition rows lose `TYPE_OBJECT_OK`, which only the arm backed.

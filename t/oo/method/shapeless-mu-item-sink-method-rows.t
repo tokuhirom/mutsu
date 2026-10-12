@@ -41,7 +41,9 @@ subtest 'sink reaches every receiver', {
 }
 
 subtest 'race and hyper reach the Iterable receivers only', {
-    plan 5;
+    plan 7;
+    isa-ok Iterable.hyper, HyperSeq, 'the Iterable type object hypers';
+    isa-ok Iterable.race, RaceSeq, 'and races';
     is-deeply (1, 2, 3).race.map(* * 2).List.sort.List, (2, 4, 6), 'a List races';
     is-deeply (gather { take 1; take 2 }).hyper.List, (1, 2), 'a gather hypers';
     is-deeply (1..3).map(* + 1).race.List.sort.List, (2, 3, 4), 'a map races';

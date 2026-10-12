@@ -407,6 +407,10 @@ pub(crate) fn shapeless_row(
             Symbol::intern("Seq")
         }
         ValueView::Array(..) | ValueView::Slip(_) if iterable => Symbol::intern("List"),
+        // The `Iterable` role's type object lists as itself, as Rakudo's
+        // `Iterable.hyper` does (the `hyperize` dist reads
+        // `Iterable.hyper.configuration`).
+        ValueView::Package(name) if iterable && name == "Iterable" => Symbol::intern("List"),
         _ if iterable => return None,
         // `Mu`'s answers reach a `Failure` too: asking its truth handles it.
         ValueView::Instance { class_name, .. } if mu && class_name == "Failure" => mu_owner,
