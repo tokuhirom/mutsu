@@ -557,17 +557,17 @@ impl Interpreter {
             fresh.mark_lazy();
             return Ok(Value::seq_body(fresh));
         }
-        // `.lazy`, `.map` and `.grep` on a plain gather consume the Seq, as
-        // Rakudo's do, and stream its coroutine: hand the inner gather list on
+        // `.lazy`, `.map`, `.grep` and `.first` on a plain gather consume the
+        // Seq, as Rakudo's do, and stream its coroutine: hand the inner gather list on
         // to the `LazyList` paths that drive it (ADR-11678 §2.3).
-        if matches!(method, "lazy" | "map" | "grep")
+        if matches!(method, "lazy" | "map" | "grep" | "first")
             && let Some(list) = body.take_gather_source()
         {
             return Ok(list);
         }
         // ... and on a cached one they pipe over the shared coroutine list,
         // leaving the Seq readable.
-        if matches!(method, "map" | "grep")
+        if matches!(method, "map" | "grep" | "first")
             && let Some(list) = body.shared_gather_source()
         {
             return Ok(list);

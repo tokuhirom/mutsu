@@ -753,6 +753,11 @@ impl Interpreter {
 
     /// Enforce a coercion return type like Str(Numeric:D) or Foo:D().
     fn enforce_coercion_return(&mut self, spec: &str, value: Value) -> Result<Value, RuntimeError> {
+        // The coercion reads a plain gather's elements through pure code
+        // (ADR-11678).
+        if spec.contains('(') {
+            self.reify_gather_seq(&value)?;
+        }
         // Parse the coercion type: strip smiley from the whole spec first
         let (spec_no_smiley, outer_smiley) = super::types::strip_type_smiley(spec);
         let (full_target, source) = if let Some(open) = spec_no_smiley.find('(')
