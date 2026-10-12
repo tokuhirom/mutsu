@@ -1004,6 +1004,7 @@ t/concurrency/supply/supply-act-serializes.t
 t/concurrency/supply/supply-act.t
 t/concurrency/supply/supply-await-static-whenever.t
 t/concurrency/supply/supply-batch-period.t
+t/concurrency/supply/supply-block-captured-lexical.t
 t/concurrency/supply/supply-block-enum-lexical.t
 t/concurrency/supply/supply-block-enum-shadows-package-enum.t
 t/concurrency/supply/supply-block-foreign-emit.t
@@ -1013,6 +1014,7 @@ t/concurrency/supply/supply-block-lexical-privacy.t
 t/concurrency/supply/supply-block-lexical-survives-rw-accessor-write.t
 t/concurrency/supply/supply-block-lexical-thread-lane.t
 t/concurrency/supply/supply-block-nested-whenever-serialize.t
+t/concurrency/supply/supply-block-reinstantiated.t
 t/concurrency/supply/supply-block-tap-streams-emits.t
 t/concurrency/supply/supply-block-transform.t
 t/concurrency/supply/supply-block-whenever-bare-channel.t
@@ -1036,6 +1038,7 @@ t/concurrency/supply/supply-done-in-method-supply-block.t
 t/concurrency/supply/supply-done-in-tap-callback-is-not-a-failure.t
 t/concurrency/supply/supply-done-in-whenever-stops-later-emits.t
 t/concurrency/supply/supply-elems.t
+t/concurrency/supply/supply-emit-positions-own-emitter.t
 t/concurrency/supply/supply-emit-then-die-tap-writeback.t
 t/concurrency/supply/supply-encode.t
 t/concurrency/supply/supply-error.t
@@ -1064,6 +1067,7 @@ t/concurrency/supply/supply-min.t
 t/concurrency/supply/supply-multi-whenever-done.t
 t/concurrency/supply/supply-nested-on-demand-quit-propagation.t
 t/concurrency/supply/supply-nested-sub-emit-routes-to-own-supply.t
+t/concurrency/supply/supply-nested-whenever-emitter.t
 t/concurrency/supply/supply-nested-whenever-hash-elem-cell.t
 t/concurrency/supply/supply-nested-whenever-promise.t
 t/concurrency/supply/supply-new-dies.t
@@ -1091,6 +1095,7 @@ t/concurrency/supply/supply-share-first-tap-derived.t
 t/concurrency/supply/supply-share.t
 t/concurrency/supply/supply-split.t
 t/concurrency/supply/supply-stable.t
+t/concurrency/supply/supply-statement-prefix.t
 t/concurrency/supply/supply-sync-infinite-emit.t
 t/concurrency/supply/supply-syntax-basic.t
 t/concurrency/supply/supply-tail.t
@@ -1104,6 +1109,7 @@ t/concurrency/supply/supply-unique-tap-ok-expires.t
 t/concurrency/supply/supply-unique.t
 t/concurrency/supply/supply-whenever-body-die-quits-block.t
 t/concurrency/supply/supply-whenever-channel-source-is-live.t
+t/concurrency/supply/supply-whenever-container-parameter-capture.t
 t/concurrency/supply/supply-whenever-done-ends-supply.t
 t/concurrency/supply/supply-whenever-last-done.t
 t/concurrency/supply/supply-whenever-listener-tap.t
@@ -1114,8 +1120,10 @@ t/concurrency/supply/supply-whenever-supplier.t
 t/concurrency/supply/supply-worker-panic-reaches-quit.t
 t/concurrency/supply/whenever-body-closure-cross-thread-cell.t
 t/concurrency/supply/whenever-body-lexical-private.t
+t/concurrency/supply/whenever-broken-promise-quits.t
 t/concurrency/supply/whenever-callback-recompile-semantics.t
 t/concurrency/supply/whenever-cross-thread-lexical.t
+t/concurrency/supply/whenever-in-nested-routine.t
 t/concurrency/supply/whenever-last-phaser-die-converts-to-quit.t
 t/concurrency/supply/whenever-last-phaser.t
 t/concurrency/supply/whenever-nested-promise-emit-order.t
@@ -1123,6 +1131,7 @@ t/concurrency/supply/whenever-next-signal.t
 t/concurrency/supply/whenever-object-supply-method.t
 t/concurrency/supply/whenever-pointy-outer-topic.t
 t/concurrency/supply/whenever-pointy-signature.t
+t/concurrency/supply/whenever-quit-phaser-rethrows-unmatched.t
 t/concurrency/supply/whenever-quit-phaser.t
 t/concurrency/supply/whenever-repeated-instantiation-semantics.t
 t/concurrency/supply/whenever-return-in-supply-block.t
@@ -1500,6 +1509,7 @@ t/exceptions/control-block-unhandled-return.t
 t/exceptions/control-conditional-resume-inline.t
 t/exceptions/control-handler-without-resume-inline.t
 t/exceptions/control-warn-conditional-resume.t
+t/exceptions/control-warn-handler-write-through-aggregate-arg-call.t
 t/exceptions/control-warn-resume-caller-var-name-collision.t
 t/exceptions/control.t
 t/exceptions/did-you-mean.t
@@ -5248,6 +5258,7 @@ t/routines/dispatch/multi-dispatch-positional-pair.t
 t/routines/dispatch/multi-dispatch-profile.t
 t/routines/dispatch/multi-dispatch-program-repeat.t
 t/routines/dispatch/multi-dispatch-resolution-cache.t
+t/routines/dispatch/multi-dispatch-tiers-across-arities.t
 t/routines/dispatch/multi-dispatch-topological-tiers.t
 t/routines/dispatch/multi-dispatch-variadic-vs-optional-arity.t
 t/routines/dispatch/multi-dispatcher-code-value-later-import.t

@@ -574,3 +574,12 @@ expansion. The existing seven first-refusal supply tests pass in RakuAST mode;
 `t/rakuast/rakuast-supply-block.t` pins both node shape and execution. The
 frontend ratchet now passes 6938 of 7259 files, with 6941 entries including
 retained prior results.
+
+### 6.13 S10: unresolved qualified names (2026-10-12)
+
+An unresolved qualified bareword (`A::B`) is a valid `Call::Name`, even when
+it is the operand of a method call. Conversion now preserves that measured
+node shape; lowering routes it through the parser's ordinary named call path,
+so lookup errors remain catchable at evaluation time. The focused round-trip
+test covers both the method-call shape and a `try` around a missing qualified
+type. The frontend ratchet passes 6952 of 7268 files.

@@ -3209,6 +3209,13 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::BareWord(name) if bareword::convert(name).is_some() => {
             Ok(bareword::convert(name).expect("just checked"))
         }
+        // A qualified name that did not resolve in this parse scope is still
+        // a valid Raku name term (`A::B`). Rakudo represents it as an
+        // argument-less Call::Name, including when it is later used as a
+        // method-call operand; the failed lookup remains catchable at runtime.
+        Expr::BareWord(name) if name_parts::is_qualified_identifier(name) => {
+            call_name(name, &[], false)
+        }
         // `my $x = BEGIN { 1 }`: the phaser block as an expression is the same
         // `StatementPrefix::Phaser::*` node a phaser statement wraps.
         Expr::PhaserExpr { kind, body } => {
