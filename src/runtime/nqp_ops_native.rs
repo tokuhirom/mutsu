@@ -60,6 +60,9 @@ impl Interpreter {
             // Cost: O(1).
             "unbox_n" => {
                 let v = operand(args, 0);
+                if let Some(e) = crate::runtime::box_native::unbox_type_object_error(&v, "a num") {
+                    return Some(Err(e));
+                }
                 // An object that boxes a num in an `is box_target` attribute.
                 let v = self.unbox_native_through(&v).unwrap_or(v);
                 match v.view() {
@@ -74,6 +77,13 @@ impl Interpreter {
             // Cost: O(1) for a machine-word Int; O(d), d = digits of a BigInt.
             "unbox_u" => {
                 let v = operand(args, 0);
+                // MoarVM's P6opaque refuses a type object in its own words here.
+                if let ValueView::Package(name) = v.view() {
+                    return Some(Err(RuntimeError::new(format!(
+                        "Cannot unbox a P6opaque ({}) type object",
+                        crate::value::user_facing_type_name(name.as_str())
+                    ))));
+                }
                 // An object that boxes a uint in an `is box_target` attribute.
                 let v = self.unbox_native_through(&v).unwrap_or(v);
                 Ok(uint64_value(&v))
