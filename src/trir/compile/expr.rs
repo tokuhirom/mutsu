@@ -253,10 +253,13 @@ impl TrirCompiler<'_> {
             }
             return Some(kind);
         }
-        // An inlined inner sub's own topic, match and error variables are its
-        // own, not the enclosing routine's; no slot stands in for them.
-        if !self.inline_stack.is_empty() && matches!(name, "_" | "/" | "!" | "¢") {
-            self.note_decline(|| format!("${name} inside an inlined inner sub"));
+        // A routine's topic, match and error variables (and the capture views
+        // of its `$/`) are its own, initially unset -- never a free variable
+        // of its declaring scope, and never its caller's (ADR-12529 phase 3).
+        // No slot stands in for them, and TRIR pushes no frame root that
+        // could own them, so a by-name read would answer with the caller's.
+        if name == "_" || name == "¢" || crate::symbol::is_routine_scoped_implicit_var(name) {
+            self.note_decline(|| format!("the routine-owned ${name}"));
             return None;
         }
         // A dynamic variable (`$*ALLOW-JSONC` arrives as `*ALLOW-JSONC`) is
