@@ -5,7 +5,7 @@ use Test;
 # its lexical-sub alias cell, the push lands in the cross-thread atomic lane.
 # Found in Cro::WebSocket's MessageSerializer (`@order` in a supply block).
 
-plan 6;
+plan 10;
 
 sub outer() {
     my @o; my $n = 0; my %h;
@@ -16,15 +16,31 @@ my &c = outer();
 is (await start { c('a') }), '1 1 1', 'worker: sub sees the closure push';
 is c('b'), '2 2 2', 'main thread afterwards sees both pushes';
 
-# A distinct name: the cross-thread lane is keyed by name (#11306).
+# The same name as `outer`'s array: each routine's `@o` is its own array on a
+# worker thread too, not one name-keyed cross-thread lane (#11306).
 sub outer2() {
-    my @p;
-    my &anon = -> { @p.elems };
-    sub named() { @p.elems }
-    return -> $m { @p.push($m); (anon(), named()) };
+    my @o;
+    my &anon = -> { @o.elems };
+    sub named() { @o.elems }
+    return -> $m { @o.push($m); (anon(), named()) };
 }
 my &c2 = outer2();
 is-deeply (await start { c2(1) }), (1, 1), 'anonymous and named readers agree';
+
+# Sibling routines whose same-named `@o` / `%h` are pushed to from workers.
+sub sib-a() { my @o; return -> $m { @o.push($m); @o.elems } }
+sub sib-b() { my @o; return -> $m { @o.push($m); @o.elems } }
+my &sa = sib-a();
+my &sb = sib-b();
+# One worker at a time: a push and an `.elems` from two threads would race.
+is-deeply (^4).map({ await start { sa($_) } }).List, (1, 2, 3, 4), 'first sibling counts its own pushes';
+is-deeply (^3).map({ await start { sb($_) } }).List, (1, 2, 3), 'second sibling counts only its own';
+sub sib-h() { my %h; return -> $k { %h{$k} = 1; %h.elems } }
+my &ha = sib-h();
+my &hb = sib-h();
+await start { ha('p') };
+is (await start { ha('q') }), 2, 'a hash in one closure clone keeps its keys';
+is (await start { hb('r') }), 1, 'and a second clone starts empty';
 
 my $in = Supplier.new;
 my @seen;
