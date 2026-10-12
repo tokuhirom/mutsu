@@ -20,9 +20,11 @@ use super::*;
 
 impl Interpreter {
     /// Run an argument-less `callsame()` / `nextsame()` straight on the
-    /// builtin when no user binding shadows it. `None` when the call is not
+    /// builtin when no user binding shadows it. `arity` counts the call's
+    /// stack arguments: none, or the one call-site line marker the parser
+    /// stamps on an empty `name()` argument list. `None` when the call is not
     /// one, or something might shadow it; the caller then dispatches the
-    /// call normally.
+    /// call normally with the stack untouched.
     // Cost: O(l + d), l = locals declared under the `&` name in `code`
     // (normally 0), d = the env scope-chain depth of the `&` key lookup; the
     // registry probes are generation-cached. The re-dispatch itself is the
@@ -31,6 +33,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         name_sym: Symbol,
+        arity: u32,
     ) -> Option<Result<(), RuntimeError>> {
         let amp_sym = if name_sym == crate::symbol::wk::callsame() {
             crate::symbol::wk::amp_callsame()
@@ -39,14 +42,28 @@ impl Interpreter {
         } else {
             return None;
         };
+        let callsite_line = match arity {
+            0 => None,
+            1 => {
+                let marker = self.stack.last()?;
+                if !Self::is_callsite_line_marker(marker) {
+                    return None;
+                }
+                Self::peek_callsite_line(std::slice::from_ref(marker))
+            }
+            _ => return None,
+        };
         let name = name_sym.as_str();
         if self.dispatcher_builtin_shadowed(code, name, name_sym, amp_sym) {
             return None;
         }
+        if arity == 1 {
+            self.stack.pop();
+        }
         // The interpreter terminal of `dispatch_func_call_inner`, unchanged:
         // a carrier region around `call_function`, whose by-name env writes
         // are drained into this frame's slots.
-        loan_env!(self, set_pending_callsite_line(None));
+        loan_env!(self, set_pending_callsite_line(callsite_line));
         crate::vm::vm_stats::record_function_carrier(name);
         let reg_gen_before = self.registry_write_generation();
         let carrier_saved = self.begin_carrier();

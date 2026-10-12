@@ -554,11 +554,11 @@ impl Interpreter {
             return Ok(());
         }
         // An argument-less `callsame` / `nextsame` that nothing shadows goes
-        // straight to the builtin (see `vm_call_dispatcher_builtin`).
-        if arity == 0
-            && !call_has_named
-            && arg_sources_idx.is_none()
-            && let Some(done) = self.try_dispatcher_builtin_call(code, code.const_sym(name_idx))
+        // straight to the builtin (see `vm_call_dispatcher_builtin`). With no
+        // real arguments there are no argument sources to honour.
+        if arity <= 1
+            && let Some(done) =
+                self.try_dispatcher_builtin_call(code, code.const_sym(name_idx), arity)
         {
             return done;
         }
