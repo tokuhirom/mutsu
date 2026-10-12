@@ -93,6 +93,15 @@ fn extrema(target: &Value, args: &[Value], want_max: bool) -> Option<Result<Valu
     if !args.is_empty() {
         return None;
     }
+    // A lazy list has no extremum to find (#12971); a `Range` answers its own
+    // bounds through its rows.
+    if !target.is_range() && crate::builtins::methods_0arg::is_value_lazy(target) {
+        return Some(Err(RuntimeError::cannot_lazy(if want_max {
+            "max"
+        } else {
+            "min"
+        })));
+    }
     if let ValueView::Hash(map) = target.view() {
         let mut best: Option<(Value, Value)> = None;
         for (key, value) in map.iter() {
@@ -213,6 +222,9 @@ pub(crate) fn maxpairs(target: &Value, args: &[Value]) -> Option<Result<Value, R
 pub(crate) fn minmax(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     if !args.is_empty() {
         return None;
+    }
+    if !target.is_range() && crate::builtins::methods_0arg::is_value_lazy(target) {
+        return Some(Err(RuntimeError::cannot_lazy("minmax")));
     }
     let list_target = crate::runtime::utils::hashlike_receiver_as_pairs_list(target, "minmax")
         .unwrap_or_else(|| target.clone());
