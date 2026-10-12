@@ -3,7 +3,7 @@ use Test;
 # From the Directory distribution: `@entries.push: $iodir.dir.Slip` where
 # `.dir` returns a not-yet-forced `gather` Seq.
 
-plan 5;
+plan 6;
 
 my $s = gather { take 1; take 2 };
 is-deeply $s.Slip.raku, 'slip(1, 2)', '.Slip on an unforced gather Seq yields its elements';
@@ -15,9 +15,10 @@ is-deeply @a, [1, 2], 'push of a gather Seq .Slip flattens';
 my @b = (gather { take 3; take 4 }).Slip;
 is-deeply @b, [3, 4], 'list assignment from gather .Slip';
 
+# `.Slip` consumes the Seq, as in Rakudo: a second `.Slip` throws.
 my $t = gather { take 5; take 6 };
-$t.Slip;
-is-deeply $t.Slip.elems, 2, '.Slip twice is repeatable';
+is $t.Slip.elems, 2, '.Slip yields the elements';
+throws-like { $t.Slip }, X::Seq::Consumed, '.Slip twice throws X::Seq::Consumed';
 
 is-deeply (gather { }).Slip.elems, 0, 'empty gather slips to nothing';
 

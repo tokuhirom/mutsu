@@ -42,22 +42,6 @@ impl Interpreter {
         }
     }
 
-    /// The first `needed` elements of a gather's inner coroutine list
-    /// (fewer when it finishes first), running the body only as far as
-    /// that takes. The prefix half of [`SeqSource::Gather`]'s pull.
-    // Cost: O(needed) for the copy, plus running the body to its
-    // `needed`-th `take`.
-    pub(crate) fn pull_gather_prefix(
-        &mut self,
-        list: &Value,
-        needed: usize,
-    ) -> Result<Vec<Value>, RuntimeError> {
-        match list.view() {
-            ValueView::LazyList(ll) => self.force_lazy_list_vm_n(&ll, needed),
-            _ => Ok(Vec::new()),
-        }
-    }
-
     /// Drive a user/native `Iterator`'s `pull-one` until `IterationEnd`.
     fn pull_iterator_to_vec(&mut self, iterator: Value) -> Result<Vec<Value>, RuntimeError> {
         self.pull_iterator_prefix_to_vec(&iterator, usize::MAX)
@@ -800,10 +784,22 @@ impl Interpreter {
         }
         // `.List` on a plain gather: a List that keeps pulling its coroutine
         // (ADR-11678 §2.4).
-        if method == "List"
-            && let Some(view) = body.take_gather_as_list()
-        {
-            return Ok(Value::seq_body(view));
+        // `.Bool` / `.so` / `.not` on a gather run its body to the first `take`
+        // only, as Rakudo's do (and as `?$g` does).
+        if matches!(method, "Bool" | "so" | "not") && body.is_gather_source() {
+            let body = Arc::clone(&body);
+            body.extend_gather_prefix(1, |list, n| self.pull_gather_prefix(list, n))?;
+            return Ok(target);
+        }
+        if method == "List" {
+            if let Some(view) = body.take_gather_as_list() {
+                return Ok(Value::seq_body(view));
+            }
+            // Already that List (an outer dispatch layer converted it): it
+            // keeps pulling as it is read.
+            if body.is_gather_source() && body.is_cached() {
+                return Ok(target);
+            }
         }
         if crate::value::seq_method_consumes(method) {
             let (items, outcome) = self.take_seq_body(&body)?;

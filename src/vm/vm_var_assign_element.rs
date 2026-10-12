@@ -441,6 +441,11 @@ impl Interpreter {
         if !body.has_element_containers() && body.has_deferred_source() {
             return None;
         }
+        // A plain gather is decided per element through its coroutine list
+        // (`try_lazylist_element_cell_assign`), pulled only to the index.
+        if body.is_gather_source() {
+            return None;
+        }
         let indices: Vec<usize> = match idx.view() {
             ValueView::Array(items, kind) if !kind.is_itemized() => {
                 items.iter().filter_map(Self::index_to_usize).collect()
@@ -521,7 +526,16 @@ impl Interpreter {
         if !is_positional {
             return Ok(None);
         }
-        let ValueView::LazyList(ll) = target.view() else {
+        // A plain gather `Seq` stores through its inner coroutine list, whose
+        // cache is what the Seq's own reads return (ADR-11678).
+        let list = match target.view() {
+            ValueView::Seq(body) => match body.gather_source() {
+                Some(list) => list,
+                None => return Ok(None),
+            },
+            _ => target.clone(),
+        };
+        let ValueView::LazyList(ll) = list.view() else {
             return Ok(None);
         };
         if ll.in_array_context() {
@@ -1097,7 +1111,9 @@ impl Interpreter {
             // `try_lazylist_element_cell_assign` for why nothing below this
             // point knows how to store into one without silently replacing
             // it.
-            if matches!(target.view(), ValueView::LazyList(ll) if !ll.in_array_context()) {
+            if matches!(target.view(), ValueView::LazyList(ll) if !ll.in_array_context())
+                || matches!(target.view(), ValueView::Seq(body) if body.is_gather_source())
+            {
                 let idx = self.stack.pop().unwrap_or(Value::NIL);
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 if let Some(res) =
