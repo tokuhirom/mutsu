@@ -82,7 +82,7 @@ impl Interpreter {
                     e.backtrace()
                         .map(|bt| Self::backtrace_value_from_string_with_runtime(bt, true))
                 });
-                self.env_mut().insert("!".to_string(), err_val);
+                self.env_mut().assign_error_var(err_val);
                 self.stack.truncate(saved_depth);
                 if explicit_catch || !traps {
                     return Err(e);
@@ -175,13 +175,13 @@ impl Interpreter {
         // `when`/`default`, or `.resume`) leaves `$!` at whatever it held
         // before the `try`. Remember that prior value so the handled paths
         // below can restore it.
-        let prior_bang = self.env().get("!").cloned();
+        let prior_bang = self.env().get("!").map(Value::deref_container);
         // The CATCH block gets its own `$!`, which starts out `Nil`: inside
         // the handler the exception is the *topic* (`$_`), and the enclosing
         // scope's `$!` has not been written yet. It is only updated below,
         // once the handler is done and the exception turns out to be
         // unhandled (an implicit `try` trap swallows it into `$!`).
-        self.env_mut().insert("!".to_string(), Value::NIL);
+        self.env_mut().assign_error_var(Value::NIL);
         self.env_mut().insert("_".to_string(), err_val.clone());
         let saved_when = self.when_matched();
         loan_env!(self, set_when_matched(false));
@@ -220,7 +220,7 @@ impl Interpreter {
                 // pre-`try` value so the resumed body and the code after
                 // the `try` see the prior `$!`, not the handled exception.
                 self.env_mut()
-                    .insert("!".to_string(), prior_bang.unwrap_or(Value::NIL));
+                    .assign_error_var(prior_bang.unwrap_or(Value::NIL));
                 // Resume from the instruction after die
                 if let Some(resume_point) = self.take_resume_ip_for(code) {
                     // Run from the resume point to the end of the try body
@@ -249,13 +249,13 @@ impl Interpreter {
         // `try` trap swallows it with the exception left in `$!`.
         if when_handled {
             self.env_mut()
-                .insert("!".to_string(), prior_bang.unwrap_or(Value::NIL));
+                .assign_error_var(prior_bang.unwrap_or(Value::NIL));
         } else {
             // Nothing matched: the exception is still live, so publish it in
             // the enclosing `$!` now that the handler (which saw `Nil`) is
             // done. An explicit CATCH re-throws just below; an implicit
             // `try` trap swallows it with the exception left in `$!`.
-            self.env_mut().insert("!".to_string(), err_val);
+            self.env_mut().assign_error_var(err_val);
         }
         // Nothing matched, so the exception is still live. Only a
         // genuine `try` without a CATCH swallows it into `$!`: an

@@ -95,10 +95,10 @@ impl Interpreter {
         // Only a body that names lexicals by string needs the root forced: the
         // rest may run in the caller's env as before, unmarked.
         let forced_root = outer_is_unit && cf.code.static_name_lookup;
-        // A body that touches `$/` needs a root to own it (`env::match_state`).
+        // A body that touches `$/` needs a root to own it (`env::routine_owned`).
         let use_scoped = (forced_root
             || has_locals
-            || (cf.code.is_routine && (cf.code.has_env_writes || cf.code.uses_match_state)))
+            || (cf.code.is_routine && (cf.code.has_env_writes || cf.code.uses_routine_state)))
             && !cf.has_inner_subs;
         let caller_env: Option<Env> = if use_scoped {
             // Chain a child over the whole caller env (itself possibly scoped):
@@ -106,7 +106,7 @@ impl Interpreter {
             let parent = self.env().clone();
             let mut scoped = crate::env::Env::scoped_child(parent);
             if cf.code.is_routine {
-                scoped.mark_owns_match_state();
+                scoped.mark_owns_routine_state();
             }
             Some(std::mem::replace(self.env_mut(), scoped))
         } else {

@@ -28,7 +28,7 @@ pub(crate) mod native_types;
 pub(crate) mod nqp_op_ids;
 mod op_prec;
 mod op_scan_index;
-mod op_scan_match_state;
+mod op_scan_routine_state;
 mod opcode;
 mod opcode_param_fills;
 mod param_destructure;

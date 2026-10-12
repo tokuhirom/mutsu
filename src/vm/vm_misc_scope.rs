@@ -677,7 +677,7 @@ impl Interpreter {
             && Self::is_exceptional_block_exit(e)
         {
             let err_val = e.exception_value();
-            self.env_mut().insert("!".to_string(), err_val.clone());
+            self.env_mut().assign_error_var(err_val.clone());
             for (i, name) in code.locals.iter().enumerate() {
                 if name == "!" {
                     self.locals[i] = err_val;
@@ -732,7 +732,7 @@ impl Interpreter {
                 && Self::is_exceptional_block_exit(e)
             {
                 let err_val = e.exception_value();
-                self.env_mut().insert("!".to_string(), err_val.clone());
+                self.env_mut().assign_error_var(err_val.clone());
                 // Also update the local slot for $! if present
                 for (i, name) in code.locals.iter().enumerate() {
                     if name == "!" {

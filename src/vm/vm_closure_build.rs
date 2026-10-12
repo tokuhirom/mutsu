@@ -199,46 +199,58 @@ impl Interpreter {
         }))
     }
 
-    /// A bare block is not a routine boundary: its `$/` belongs to the
-    /// lexical scope where it was written, even when another routine invokes
-    /// the block. A block that touches the match state
-    /// (`CompiledCode::uses_match_state`: a match, `.match` / `.subst`, a read
-    /// of `$/` or a capture view) shares that scope's `$/` through a cell
-    /// boxed here; the closure call installs the cell in its frame, and the
-    /// block's frame root answers a match-state lookup from its capture rather
-    /// than from its caller (`env::match_state`). Only such blocks capture
-    /// it: capturing it for every callback lets an unrelated nested routine's
-    /// match shadow grammar-action `$/` bindings (YAMLish is a representative
-    /// failure).
+    /// A bare block is not a routine boundary: its `$/` and `$!` belong to
+    /// the lexical scope where it was written, even when another routine
+    /// invokes the block. A block that touches them
+    /// (`CompiledCode::uses_routine_state`: a match, `.match` / `.subst`, a
+    /// `try`, a read of `$/`, a capture view or `$!`) shares that scope's
+    /// through cells boxed here; the closure call installs the cells in its
+    /// frame, and the block's frame root answers a lookup from its capture
+    /// rather than from its caller (`env::routine_owned`). Only such blocks
+    /// capture them: capturing `$/` for every callback lets an unrelated
+    /// nested routine's match shadow grammar-action `$/` bindings (YAMLish is
+    /// a representative failure).
     fn capture_block_match_var(
         &mut self,
         code: &CompiledCode,
         compiled_code: &Option<std::sync::Arc<CompiledCode>>,
     ) {
-        // A block that binds its own `$/` (`-> $/ { }`, `my $/`) does not
-        // share its scope's.
-        let block_uses_match = compiled_code.as_ref().is_some_and(|cc| {
-            cc.uses_match_state && !cc.is_routine && !cc.locals.iter().any(|n| n == "/")
-        });
-        if !block_uses_match || self.env().get("/").is_some_and(Value::is_container_ref) {
+        let Some(cc) = compiled_code
+            .as_ref()
+            .filter(|cc| cc.uses_routine_state && !cc.is_routine)
+        else {
+            return;
+        };
+        for name in ["/", "!"] {
+            // A block that binds its own (`-> $/ { }`, `my $/`) does not
+            // share its scope's.
+            if !cc.locals.iter().any(|n| n == name) {
+                self.box_routine_owned_for_block(code, name);
+            }
+        }
+    }
+
+    /// Box the creating frame's `name` (`/` or `!`) into a shared cell, once.
+    // Cost: O(d + L), d = env tiers to the owning frame, L = `code`'s locals.
+    fn box_routine_owned_for_block(&mut self, code: &CompiledCode, name: &str) {
+        if self.env().get(name).is_some_and(Value::is_container_ref) {
             return;
         }
-        // The frame's `$/` is its local slot when it binds one (a
-        // `method m($/)` parameter, `my $/`), as `frame_match_topic` reads it:
-        // a nested `.subst` may have left another value in the env entry.
-        let slash = self
-            .locals_get_by_name(code, "/")
-            .or_else(|| self.env().get("/").cloned())
+        // The frame's own binding is its local slot when it has one (a
+        // `method m($/)` parameter, `my $/`), as `frame_match_topic` reads
+        // it: a nested `.subst` may have left another value in the env entry.
+        let cell = self
+            .locals_get_by_name(code, name)
+            .or_else(|| self.env().get(name).cloned())
             .unwrap_or(Value::NIL)
             .into_container_ref();
-        self.env_mut().insert("/".to_string(), slash.clone());
-        // `$/` can also occupy a local slot in the defining compiled frame.
-        // Keep that slot on the same cell; otherwise a later caller-return
-        // reconciliation would restore its stale Match value over the
+        self.env_mut().insert(name.to_string(), cell.clone());
+        // Keep a local slot of that name on the same cell; otherwise a later
+        // caller-return reconciliation would restore its stale value over the
         // captured binding.
-        for (slot, name) in code.locals.iter().enumerate() {
-            if name == "/" && slot < self.locals.len() {
-                self.locals[slot] = slash.clone();
+        for (slot, local) in code.locals.iter().enumerate() {
+            if local == name && slot < self.locals.len() {
+                self.locals[slot] = cell.clone();
             }
         }
     }

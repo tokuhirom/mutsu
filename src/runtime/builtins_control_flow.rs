@@ -127,7 +127,7 @@ impl Interpreter {
         };
         let err = if has_real_args {
             self.runtime_error_from_die_value(args.first().unwrap(), "Died", false)
-        } else if let Some(current) = self.env.get("!").cloned().filter(|c| !c.is_nil()) {
+        } else if let Some(current) = self.env.get("!").map(Value::deref_container).filter(|c| !c.is_nil()) {
             self.runtime_error_from_die_value(&current, "Died", false)
         } else {
             // die() with no args and $! not set: X::AdHoc with "Died" message
@@ -170,7 +170,7 @@ impl Interpreter {
             }
             return Err(self.runtime_error_from_die_value(&v, "Failed", true));
         }
-        if let Some(current) = self.env.get("!").cloned()
+        if let Some(current) = self.env.get("!").map(Value::deref_container)
             && !current.is_nil()
         {
             return Err(self.runtime_error_from_die_value(&current, "Failed", true));

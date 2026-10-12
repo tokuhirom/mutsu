@@ -639,20 +639,20 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    is inserted per call:
 
    - A routine's frame root is marked as the owner of the match state
-     (`Env::mark_owns_match_state`, set by the named, light, typed-light,
+     (`Env::mark_owns_routine_state`, set by the named, light, typed-light,
      fast, method and closure-dispatch paths for a routine). A lookup of a
-     match-state name (`Symbol::is_match_state`) stops there
-     (`env/match_state.rs`); the walk is selected by a chain latch, like
+     match-state name (`Symbol::is_routine_owned`) stops there
+     (`env/routine_owned.rs`); the walk is selected by a chain latch, like
      `chain_has_static_link`, so every other lookup is unchanged. A block's
      frame root answers `$/` from its capture instead of its caller; its
      capture views go on to the caller, where `.subst` / `.trans` publish
      them per match, and a miss derives them from `$/`.
    - A flattening of a chain with an owner (a method call flattens the
      running frame) is settled to answer each match-state name as the live
-     chain does (`Env::settle_match_state`), so it does not import the
+     chain does (`Env::settle_routine_owned`), so it does not import the
      callers' match.
    - Which code touches the match state is a compile-time fact
-     (`CompiledCode::uses_match_state` / `sets_match_state`). The fast path
+     (`CompiledCode::uses_routine_state` / `sets_routine_state`). The fast path
      gives such a routine a root, the light paths do not reuse a frame that
      does not own one, and a block that touches it shares its scope's `$/`
      through a cell boxed at creation. That used to cover only blocks with a
@@ -678,6 +678,27 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    without a root (slice 8), so it still reads its caller's `$/` until it
    matches (#12882); the capture views stay mirrored env keys rather than views
    derived from `$/`; and `$_` and `$!` are the remaining families.
+   **Slice 11 done** (`fix/12902-routine-owned-error-var`, #12902): the
+   `$!` family, on slice 10's mechanism. The walk now covers every
+   routine-owned implicit (`Symbol::is_routine_owned`, the existing
+   `ROUTINE_SCOPED_IMPLICIT` flag: `$!`, `$/` and its capture views;
+   `env/routine_owned.rs`, renamed from `match_state.rs`). Before it only the
+   named, closure and method paths shadowed `$!` per call, with an env
+   insert, so a sub with parameters (the light paths) read its caller's
+   `$!`; the owning frame root now answers for every path. A block that
+   touches `$!` (a read, a `try` / `CATCH`: `CompiledCode::uses_routine_state`
+   and `sets_routine_state`, renamed from the `match_state` pair) shares its
+   scope's `$!` through a cell, and the `try` / `CATCH` writers store through
+   it (`Env::assign_error_var`), so `t { try { die } }` sets the `$!` of the
+   scope the block is written in. The per-call `$!` resets on the named,
+   closure and method paths are now redundant on a frame with a root and
+   are left for phase 4, which removes the call-setup env work.
+   Release-build Ir against the merge base (interpreter lane / JIT lane):
+   `bench-fib` +0.01% / +0.02%, `bench-tak` +0.01% / +0.02%, `method-call`
+   +0.09% / +0.10%, `poly-call` +0.02% / +0.04%, `bench-ctor` +0.20% /
+   +0.10%, `bench-multi-dispatch` +0.13% / +0.23%, `bench-string` +0.72% /
+   +0.26% (most of it allocator layout and the base binary's directory; the
+   setter itself moved ~70k Ir into its shared helper).
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
@@ -773,6 +794,7 @@ the issue's original local remedy.
 | [#12692](https://github.com/tokuhirom/mutsu/issues/12692) | a named `sub` declared in a loop body or `.map` callback closes over the last iteration's lexicals (the per-name stores are keyed by the sub, not the activation) | 3 (slice 9 closes) |
 | [#12398](https://github.com/tokuhirom/mutsu/issues/12398) | a routine starts with its caller's `$/` (`m:c` continues from the caller's position) | 3 (slice 10 closes) |
 | [#12720](https://github.com/tokuhirom/mutsu/issues/12720) | a `.subst` / `.match` in a block called by another routine does not set the `$/` of the block's scope | 3 (slice 10 closes) |
+| [#12902](https://github.com/tokuhirom/mutsu/issues/12902) | `$!` is not routine-owned on the light call paths; a `try` in a block called by another routine does not set its scope's `$!` | 3 (slice 11 closes) |
 | [#12526](https://github.com/tokuhirom/mutsu/issues/12526) | an `@x` parameter costs ~12x a `$x` one (generic binder + copy-out writeback) | partly 3: the writeback becomes unnecessary (§2.3). The binder half is independent and can land first |
 
 **Out of scope.** [#12204](https://github.com/tokuhirom/mutsu/issues/12204)

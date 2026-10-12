@@ -658,7 +658,7 @@ impl Interpreter {
                 // the *previous* statement had left there; raku says `Any`
                 // (pin: t/implicit-catch-wrapper-does-not-trap.t).
                 self.env_mut()
-                    .insert("!".to_string(), Value::package(crate::symbol::wk::any()));
+                    .assign_error_var(Value::package(crate::symbol::wk::any()));
                 *ip = end;
                 Ok(())
             }

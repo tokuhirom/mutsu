@@ -22,9 +22,9 @@ use crate::value::ValueMap;
 pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
 mod activation_capture;
-mod match_state;
 mod outer_scope;
 mod rebind;
+mod routine_owned;
 pub(crate) mod static_link;
 pub(crate) use static_link::{OuterScope, with_static_links_suppressed};
 pub(crate) mod stats;
@@ -678,16 +678,16 @@ pub struct Env {
     /// link, so marking a frame costs no allocation; the program scope's
     /// position is found when a lookup first needs it.
     outer_is_unit: bool,
-    /// On a frame root: the frame is a routine's, so it owns the match state
-    /// (`$/` and its capture views). A by-name lookup of one stops here
+    /// On a frame root: the frame is a routine's, so it owns its `$/` (with
+    /// the capture views) and `$!`. A by-name lookup of one stops here
     /// instead of continuing into the caller frames (ADR-12529 phase 3,
-    /// [`Self::get_match_state_sym`]).
-    owns_match_state: bool,
+    /// [`Self::get_routine_owned_sym`]).
+    owns_routine_state: bool,
     /// True when this env, or any tier below it, is a frame root marked by
-    /// [`Self::mark_owns_match_state`]; only such a chain takes the
-    /// match-state walk. Inherited like
+    /// [`Self::mark_owns_routine_state`]; only such a chain takes the
+    /// routine-owned walk. Inherited like
     /// [`chain_has_static_link`](Self::chain_has_static_link).
-    chain_has_match_owner: bool,
+    chain_has_routine_owner: bool,
     /// The by-name writes this env's **frame tier** has taken since the frame
     /// opened, recorded only for an env whose tier was collapsed into the flat
     /// map by [`Self::flattened_for_frame`]. `None` everywhere else — a scoped
@@ -870,9 +870,9 @@ impl Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
-            chain_has_match_owner: false,
+            chain_has_routine_owner: false,
             outer_is_unit: false,
-            owns_match_state: false,
+            owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1001,9 +1001,9 @@ impl Env {
                     fallback: None,
                     chain_has_fallback: flat_chf,
                     chain_has_static_link: false,
-                    chain_has_match_owner: false,
+                    chain_has_routine_owner: false,
                     outer_is_unit: false,
-                    owns_match_state: false,
+                    owns_routine_state: false,
                     capture_merged: OnceLock::new(),
                     frame_writes: None,
                     code_entries: None,
@@ -1014,7 +1014,7 @@ impl Env {
                 arc.depth,
                 arc.chain_has_fallback,
                 arc.chain_has_static_link,
-                arc.chain_has_match_owner,
+                arc.chain_has_routine_owner,
             );
             return Self {
                 inner: empty_overlay(),
@@ -1027,9 +1027,9 @@ impl Env {
                 fallback: None,
                 chain_has_fallback: arc_chf,
                 chain_has_static_link: arc_csl,
-                chain_has_match_owner: arc_cmo,
+                chain_has_routine_owner: arc_cmo,
                 outer_is_unit: false,
-                owns_match_state: false,
+                owns_routine_state: false,
                 capture_merged: OnceLock::new(),
                 frame_writes: None,
                 code_entries: None,
@@ -1045,7 +1045,7 @@ impl Env {
             parent.depth,
             parent.chain_has_fallback,
             parent.chain_has_static_link,
-            parent.chain_has_match_owner,
+            parent.chain_has_routine_owner,
         );
         Self {
             inner: empty_overlay(),
@@ -1058,9 +1058,9 @@ impl Env {
             fallback: None,
             chain_has_fallback: parent_chf,
             chain_has_static_link: parent_csl,
-            chain_has_match_owner: parent_cmo,
+            chain_has_routine_owner: parent_cmo,
             outer_is_unit: false,
-            owns_match_state: false,
+            owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1089,7 +1089,7 @@ impl Env {
             parent.depth,
             parent.chain_has_fallback,
             parent.chain_has_static_link,
-            parent.chain_has_match_owner,
+            parent.chain_has_routine_owner,
         );
         let parent = Arc::new(parent);
         let child = Self {
@@ -1103,9 +1103,9 @@ impl Env {
             fallback: None,
             chain_has_fallback: parent_chf,
             chain_has_static_link: parent_csl,
-            chain_has_match_owner: parent_cmo,
+            chain_has_routine_owner: parent_cmo,
             outer_is_unit: false,
-            owns_match_state: false,
+            owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1128,9 +1128,9 @@ impl Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
-            chain_has_match_owner: false,
+            chain_has_routine_owner: false,
             outer_is_unit: false,
-            owns_match_state: false,
+            owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1505,12 +1505,12 @@ impl Env {
     /// consumer is starved of parent lexicals.
     pub(crate) fn flattened(&self) -> Self {
         let mut flat = self.flattened_chain();
-        self.settle_match_state(&mut flat);
+        self.settle_routine_owned(&mut flat);
         flat
     }
 
-    /// [`Self::flattened`] before its match-state fixup
-    /// ([`Self::settle_match_state`]).
+    /// [`Self::flattened`] before its routine-owned fixup
+    /// ([`Self::settle_routine_owned`]).
     fn flattened_chain(&self) -> Self {
         // A capture fallback is a real tier (see the field), so an env that has
         // one is never "already flat" and never collapses to its parent: the
@@ -1611,9 +1611,9 @@ impl Env {
                     fallback: None,
                     chain_has_fallback: false,
                     chain_has_static_link: false,
-                    chain_has_match_owner: false,
+                    chain_has_routine_owner: false,
                     outer_is_unit: false,
-                    owns_match_state: false,
+                    owns_routine_state: false,
                     capture_merged: OnceLock::new(),
                     frame_writes: None,
                     code_entries: None,
@@ -1744,9 +1744,9 @@ impl Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
-            chain_has_match_owner: false,
+            chain_has_routine_owner: false,
             outer_is_unit: false,
-            owns_match_state: false,
+            owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -1919,9 +1919,9 @@ impl Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
-            chain_has_match_owner: false,
+            chain_has_routine_owner: false,
             outer_is_unit: false,
-            owns_match_state: false,
+            owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -2085,9 +2085,9 @@ impl Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
-            chain_has_match_owner: false,
+            chain_has_routine_owner: false,
             outer_is_unit: false,
-            owns_match_state: false,
+            owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -2253,9 +2253,9 @@ impl Env {
             frame_root: false,
             chain_has_fallback: fallback.is_some(),
             chain_has_static_link: false,
-            chain_has_match_owner: false,
+            chain_has_routine_owner: false,
             outer_is_unit: false,
-            owns_match_state: false,
+            owns_routine_state: false,
             capture_merged: OnceLock::new(),
             fallback,
             frame_writes: None,
@@ -2372,8 +2372,8 @@ impl Env {
             );
             return None;
         }
-        if self.chain_has_match_owner && probe == crate::symbol::EnvKeyProbe::MatchState {
-            return self.get_match_state_sym(key);
+        if self.chain_has_routine_owner && probe == crate::symbol::EnvKeyProbe::RoutineOwned {
+            return self.get_routine_owned_sym(key);
         }
         // Debug builds only: in a release build a call here, however cold,
         // cost +0.4% Ir on a closure-heavy parse by changing how this hottest
@@ -2511,8 +2511,8 @@ impl Env {
             );
             return false;
         }
-        if self.chain_has_match_owner && probe == crate::symbol::EnvKeyProbe::MatchState {
-            return self.get_match_state_sym(key).is_some();
+        if self.chain_has_routine_owner && probe == crate::symbol::EnvKeyProbe::RoutineOwned {
+            return self.get_routine_owned_sym(key).is_some();
         }
         // Debug builds only — see `get_sym`.
         #[cfg(debug_assertions)]
@@ -3174,9 +3174,9 @@ impl From<ValueMap> for Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
-            chain_has_match_owner: false,
+            chain_has_routine_owner: false,
             outer_is_unit: false,
-            owns_match_state: false,
+            owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,
@@ -3200,9 +3200,9 @@ impl From<HashMap<Symbol, Value>> for Env {
             fallback: None,
             chain_has_fallback: false,
             chain_has_static_link: false,
-            chain_has_match_owner: false,
+            chain_has_routine_owner: false,
             outer_is_unit: false,
-            owns_match_state: false,
+            owns_routine_state: false,
             capture_merged: OnceLock::new(),
             frame_writes: None,
             code_entries: None,

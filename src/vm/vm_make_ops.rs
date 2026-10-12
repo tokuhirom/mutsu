@@ -14,7 +14,7 @@ impl Interpreter {
         self.locals_get_by_name(code, "/")
             .or_else(|| self.env().get("/").cloned())
             // A `$/` a block shares with its scope is a cell
-            // (`env::match_state`); `make` works on what it holds.
+            // (`env::routine_owned`); `make` works on what it holds.
             .map(|v| v.deref_container())
     }
 

@@ -425,11 +425,11 @@ impl Interpreter {
         // Per Raku semantics the handler sees its own `$!`, starting out `Nil`:
         // inside the handler the exception is the topic, and the enclosing scope's
         // `$!` has not been written yet.
-        let prior_bang = self.env().get("!").cloned();
+        let prior_bang = self.env().get("!").map(Value::deref_container);
         let handler_env = (!same_frame)
             .then(|| self.enter_installing_env(installing_base, installing_call_depth));
         let handler_env = handler_env.flatten();
-        self.env_mut().insert("!".to_string(), Value::NIL);
+        self.env_mut().assign_error_var(Value::NIL);
         self.env_mut().insert("_".to_string(), err_val.clone());
         let saved_when = self.when_matched();
         self.set_when_matched(false);
@@ -459,8 +459,7 @@ impl Interpreter {
 
         // A handled (or resumed) exception leaves `$!` at its pre-throw value.
         let mut restore_bang = || {
-            self.env_mut()
-                .insert("!".to_string(), prior_bang.clone().unwrap_or(Value::NIL));
+            self.env_mut().assign_error_var(prior_bang.clone().unwrap_or(Value::NIL));
         };
         match result {
             // `.resume` — the throw resumes at its own call site.

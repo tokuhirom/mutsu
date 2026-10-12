@@ -249,7 +249,7 @@ impl Interpreter {
         let (topic, context) = Self::subst_match_context(matched_text, captures, orig_text);
         let saved_topic = self.env.get("_").cloned();
         // `$/` goes through the binding the block shares with its scope
-        // (`env::match_state`); the capture views are published by name.
+        // (`env::routine_owned`); the capture views are published by name.
         let mut saved_slash = None;
         let saved_context: Vec<(String, Option<Value>)> = context
             .into_iter()
