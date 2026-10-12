@@ -18,7 +18,7 @@ class MyInt is Int { }
 subtest 'a Str subclass instance answers the Str rows on its payload', {
     # Rakudo boxes some of these answers into MyStr; mutsu answers a Str,
     # so the text, not the type, is compared.
-    plan 9;
+    plan 10;
     my $s = MyStr.new(value => "  ab c\n");
     is $s.flip, "\nc ba  ", 'flip';
     is $s.trim, "ab c", 'trim';
