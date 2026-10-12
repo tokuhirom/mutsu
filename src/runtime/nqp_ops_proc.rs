@@ -173,12 +173,13 @@ fn string_entries(v: &Value) -> Vec<(String, String)> {
     }
 }
 
-/// MoarVM's (libuv's) spelling of an OS error: `no such file or directory`.
+/// MoarVM's (libuv's) spelling of an OS error: `no such file or directory`
+/// (an OS error text is ASCII).
 // Cost: O(m), m = message length.
 fn uv_error_text(e: &std::io::Error) -> String {
     let text = e.to_string();
     let text = text.split(" (os error").next().unwrap_or(&text);
-    text.to_lowercase()
+    text.to_ascii_lowercase()
 }
 
 /// The raw wait status MoarVM reports: `exit << 8`, or the signal number.
