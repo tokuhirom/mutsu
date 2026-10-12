@@ -164,10 +164,32 @@ impl Interpreter {
         call_args.extend(args.iter().cloned());
         let outermost = chain.last().expect("dispatcher wrap chain is non-empty").1.clone();
         self.shift_arg_sources_for_wrap_invocant();
-        let result = self.call_sub_value(outermost, call_args, false);
+        let result = self.call_method_wrapper(outermost, call_args);
         self.pop_method_dispatch();
         self.pop_method_samewith_context();
         result
+    }
+
+    /// Invoke the outermost wrapper of a method wrap chain with
+    /// `[invocant, ...args]`. A wrapper with closure bytecode (`my method
+    /// (|c) { ... }`, the usual shape) runs it through the VM's value call;
+    /// anything else (a `Method` object, a `Routine`) takes the general
+    /// `call_sub_value` entry. The interpreter carrier that entry uses for a
+    /// closure recompiles the body from its AST and costs several times the
+    /// call itself (#12875).
+    // Cost: O(1) besides the wrapper's own body.
+    pub(crate) fn call_method_wrapper(
+        &mut self,
+        wrapper: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let ValueView::Sub(data) = wrapper.view()
+            && data.compiled_code.is_some()
+            && !data.is_decl_expr_thunk
+        {
+            return self.vm_call_on_value(wrapper, args, None);
+        }
+        self.call_sub_value(wrapper, args, false)
     }
 
     /// Push the `MethodDispatchFrame` for a dispatcher wrap: the
