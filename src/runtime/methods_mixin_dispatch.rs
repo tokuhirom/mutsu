@@ -588,30 +588,32 @@ impl Interpreter {
             if let Some(class_type) = class_type {
                 method_role_bindings.push(("?CLASS".to_string(), class_type));
             }
-            let mut def = def;
-            def.role_param_bindings = Some(std::sync::Arc::new(method_role_bindings));
             // Role-body lexicals are persisted with the concrete punned role
             // class during parameterized composition, while the role method's
             // lexical package remains the enclosing declaration package.
-            // Inject both stores before executing a role method so bare role
-            // lexicals such as `my \\value = T` resolve to this composition's
-            // value rather than to a bareword.
-            // The env here is still the caller's: what is injected is
-            // restored after the call with the role parameters, so a static
-            // never leaks into the calling frame (it clobbered a caller
-            // closure's own `c` capture in upstream NativeCall, #11203).
-            self.inject_class_body_statics_saving(
-                def.lexical_package.as_str(),
-                &mut saved_role_params,
-            );
+            // Both stores join the bindings the method installs in its OWN
+            // frame, so bare role lexicals such as `my \\value = T` resolve to
+            // this composition's value rather than to a bareword, and a
+            // closure the method creates captures them. Staged in the caller's
+            // env instead, they sat above the method's frame root, where a
+            // closure's capture never reaches (#12882), and could clobber a
+            // caller closure's own capture (upstream NativeCall, #11203).
+            let mut static_packages = vec![def.lexical_package.resolve()];
             if let Some(ValueView::Array(type_args, _)) = mixins
                 .get(&MetaNs::RoleTypeargs.owned_key_for_str(&role_name))
                 .map(Value::view)
             {
                 let (_, punned_name) =
                     Self::parametric_role_pun_name(&role_name, type_args.as_slice());
-                self.inject_class_body_statics_saving(&punned_name, &mut saved_role_params);
+                static_packages.push(punned_name);
             }
+            for package in &static_packages {
+                if let Some(statics) = self.lexicals.package_lexicals.get(package.as_str()) {
+                    method_role_bindings.extend(statics.iter().map(|(k, v)| (k.clone(), v.clone())));
+                }
+            }
+            let mut def = def;
+            def.role_param_bindings = Some(std::sync::Arc::new(method_role_bindings));
             // Build the attribute set visible to the role method body.
             // Start with the inner instance's own attributes (e.g. class
             // attributes like `@.order`) so that `$.attr` accessors inside
