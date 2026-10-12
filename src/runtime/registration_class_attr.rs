@@ -51,12 +51,38 @@ impl Interpreter {
         err
     }
 
+    /// The metadata map of type `name`, created empty when missing, for a
+    /// write. Each type's map is shared behind its own `Arc`, so a write copies
+    /// the outer table and the one map it touches -- never every type's map,
+    /// which a thread clone still sharing the table used to pay for in full
+    /// (#12981).
+    // Cost: O(1) expected; O(t + m) when the table (t types) or the type's
+    // map (m entries) is still shared with another interpreter.
+    pub(crate) fn type_metadata_mut(&mut self, name: impl Into<String>) -> &mut ValueMap {
+        std::sync::Arc::make_mut(
+            crate::runtime::cow_table_mut(&mut self.types.type_metadata)
+                .entry(name.into())
+                .or_default(),
+        )
+    }
+
     /// Store a specific language version as type metadata for ^language-revision.
     pub(crate) fn store_language_revision_from_version(&mut self, name: &str, version: &str) {
         let revision = language_revision_letter(version);
-        let meta = crate::runtime::cow_table_mut(&mut self.types.type_metadata)
-            .entry(name.to_string())
-            .or_default();
+        // A declaration that runs again (an `enum` in a routine or supply
+        // body, once per run) stores the same revision. Writing it anyway
+        // copied the whole shared `type_metadata` table on every thread clone
+        // that re-ran it, and the clone kept that copy (#12981).
+        if self
+            .types
+            .type_metadata
+            .get(name)
+            .and_then(|meta| meta.get("language-revision"))
+            .is_some_and(|stored| stored.to_string_value() == revision)
+        {
+            return;
+        }
+        let meta = self.type_metadata_mut(name.to_string());
         meta.insert("language-revision".to_string(), Value::str(revision));
     }
 }
