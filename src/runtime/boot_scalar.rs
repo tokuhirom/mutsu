@@ -65,9 +65,14 @@ impl Interpreter {
     /// A `BOOTInt` box holding `i`, as MoarVM boxes the integers an async
     /// event pushes onto its queue (a signal number, a byte count).
     // Cost: O(1).
-    #[cfg_attr(not(unix), allow(dead_code))]
     pub(crate) fn boot_int(i: i64) -> Value {
         boot_box(Symbol::intern("BOOTInt"), Value::int(i))
+    }
+
+    /// A `BOOTStr` box holding `s` (a watched file's name, an error).
+    // Cost: O(len(s)).
+    pub(crate) fn boot_str(s: &str) -> Value {
+        boot_box(Symbol::intern("BOOTStr"), Value::str_from(s))
     }
 
     /// `nqp::create` of a BOOT scalar type: a box holding the type's zero.

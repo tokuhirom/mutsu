@@ -1,8 +1,8 @@
 # ADR-11502: The Asynchronous `nqp::` ops push onto a blocking queue
 
 - **Status**: Proposed (2026-10-12). §2.1–§2.3 are implemented in the PR that adds
-  `runtime/nqp_ops_async.rs`. Of §2.4, `signal` is implemented (§2.4.1); the other
-  ops are not yet.
+  `runtime/nqp_ops_async.rs`. Of §2.4, `signal` (§2.4.1) and `watchfile` (§2.4.2)
+  are implemented; the other ops are not yet.
 - **Date**: 2026-10-12
 - **Issue**: [#11502](https://github.com/tokuhirom/mutsu/issues/11502) (campaign
   [#11488](https://github.com/tokuhirom/mutsu/issues/11488))
@@ -104,6 +104,29 @@ disposition restore. A queue registration retires when its flag is set, and
 `nqp::cancel` runs the watcher's retire sweep at once, so the disposition goes back at
 the cancel, as in MoarVM. The other §2.4 ops are to reuse `QueueSink` the same way.
 
+#### 2.4.2 `nqp::watchfile` (implemented)
+
+`nqp::watchfile($queue, $schedulee, $path, $type)`. Observed on Rakudo 2026.09:
+
+- Each change pushes `[$schedulee, $name, $renamed, $error]`:
+  - `$name` is a `BOOTStr`: the entry name for a watched directory, the basename for a
+    watched file;
+  - `$renamed` is a `BOOTInt`, 1 for an entry appearing or disappearing and 0 for a change;
+  - `$error` is the `BOOTStr` type object.
+- A missing path is not an error at the call. It pushes the `BOOTStr` and `BOOTInt` type
+  objects, then `no such file or directory`.
+- Errors:
+  - `file watch result type must have REPR AsyncTask`;
+  - `file watch target queue must have ConcBlockingQueue REPR`.
+
+mutsu runs the same poller as `IO::Notification.watch-path` (`native_io/io_notification.rs`).
+That poller now reports to a `WatchSink`, which is either the Supply of `watch-path` or a
+`QueueSink`. A Supply sink starts reporting at its first tap, as before. A queue sink
+starts reporting at once, and the poller ends when its task is cancelled. Event kinds come
+from the poller's snapshot diff, so they follow the same mapping as `watch-path`, not
+libuv's inotify mapping. For example, unlinking a watched file is "renamed" in mutsu, but
+"changed" under inotify.
+
 ### 2.5 Not provided: `$*SCHEDULER.queue`
 
 `ThreadPoolScheduler.queue` is an undocumented Rakudo internal. A program that wants these
@@ -118,4 +141,4 @@ family.
   `nqp::shift` to wait on events.
 - The timer adds no thread: it shares the heap `Supply.interval` and `Promise.in` use.
 - `docs/nqp-op-coverage.md`: Asynchronous goes from 0 / 11 to 2 / 11 (§2.1–§2.3), then
-  to 3 / 11 (`signal`).
+  to 3 / 11 (`signal`), then to 4 / 11 (`watchfile`).

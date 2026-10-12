@@ -34,6 +34,7 @@ mod watch_state;
 
 use super::*;
 use crate::runtime::native_methods::SupplyEvent;
+use crate::runtime::nqp_ops_async::QueueSink;
 use crate::value::{AttrMap, EnumValue};
 use std::time::Duration;
 use watch_state::{ChangeKind, WatchState};
@@ -66,13 +67,15 @@ fn file_change_event(kind: ChangeKind) -> Value {
     )
 }
 
-/// The `X::AdHoc` a watch on a missing path quits with (rakudo's libuv
-/// message, verbatim).
+/// libuv's message for a watch on a missing path, as rakudo reports it.
+const MISSING_PATH_MESSAGE: &str = "no such file or directory";
+
+/// The `X::AdHoc` a watch on a missing path quits with.
 fn missing_path_exception() -> Value {
     let mut attrs = HashMap::new();
     attrs.insert(
         "message".to_string(),
-        Value::str_from("no such file or directory"),
+        Value::str_from(MISSING_PATH_MESSAGE),
     );
     Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
 }
@@ -288,44 +291,9 @@ impl Interpreter {
         if let Ok(mut map) = nm::supply_channel_map_pub().lock() {
             map.insert(supply_id, rx);
         }
-        // Registered spawn (emits `Value`s into a supply channel); the poll
-        // sleep is a quiescent safe region — see `try_spawn_gc_helper_thread`.
-        // A refused thread is a catchable X::AdHoc (#9401).
-        let spawned =
-            crate::runtime::builtins_system::try_spawn_gc_helper_thread("io-notification", {
-                move || {
-                    let mut last = WatchState::snapshot(&watched);
-                    if last == WatchState::File(None) {
-                        let _ = tx.send(SupplyEvent::Quit(missing_path_exception()));
-                        return;
-                    }
-                    loop {
-                        crate::gc::block_quiescent(|| std::thread::sleep(POLL_INTERVAL));
-                        if tx.is_retired() {
-                            return;
-                        }
-                        let next = WatchState::snapshot(&watched);
-                        // Rakudo starts watching when the Supply is tapped:
-                        // until then only the baseline moves.
-                        if !tx.ever_subscribed() {
-                            last = next;
-                            continue;
-                        }
-                        for (path, kind) in last.diff(&next, &display) {
-                            if tx
-                                .send(SupplyEvent::Emit(change_value(path, kind)))
-                                .is_err()
-                            {
-                                return;
-                            }
-                        }
-                        last = next;
-                    }
-                }
-            });
-        if let Err(e) = spawned {
+        if let Err(e) = spawn_watcher(watched, display, WatchSink::Supply(tx)) {
             nm::discard_supply_channel(supply_id);
-            return Err(crate::runtime::builtins_system::refused_thread_error(e));
+            return Err(e);
         }
         let mut attrs = HashMap::new();
         attrs.insert("values".to_string(), Value::array(Vec::new()));
@@ -333,4 +301,119 @@ impl Interpreter {
         attrs.insert("supply_id".to_string(), Value::int(supply_id as i64));
         Ok(Value::make_instance(Symbol::intern("Supply"), attrs))
     }
+
+    /// `nqp::watchfile`'s watcher (ADR-11502 §2.4.2): the same poller as
+    /// `watch-path`, pushing `[schedulee, name, renamed, error]` onto the
+    /// op's queue until its task is cancelled.
+    // Cost: O(1) here; the watcher thread pays O(n) per poll, n = entries of
+    // the watched directory (1 for a file).
+    pub(crate) fn watch_path_queue(&self, path: &str, sink: QueueSink) -> Result<(), RuntimeError> {
+        let watched = self.resolve_path(path);
+        spawn_watcher(watched, String::new(), WatchSink::Queue(sink))
+    }
+}
+
+/// Where a watcher reports: the `Supply` of `watch-path`, or the queue of an
+/// `nqp::watchfile` task.
+enum WatchSink {
+    Supply(crate::runtime::native_methods::supply_channel::SupplySender),
+    Queue(QueueSink),
+}
+
+impl WatchSink {
+    /// Whether nothing can receive any more: the watcher thread ends.
+    // Cost: O(1).
+    fn is_retired(&self) -> bool {
+        match self {
+            WatchSink::Supply(tx) => tx.is_retired(),
+            WatchSink::Queue(sink) => sink.is_cancelled(),
+        }
+    }
+
+    /// Whether changes are reported yet. A Supply starts at its first tap,
+    /// as Rakudo's does; an `nqp::watchfile` task at once.
+    // Cost: O(1).
+    fn is_watching(&self) -> bool {
+        match self {
+            WatchSink::Supply(tx) => tx.ever_subscribed(),
+            WatchSink::Queue(_) => true,
+        }
+    }
+
+    /// Report the watched path missing; the watcher then ends.
+    // Cost: O(1).
+    fn missing(&self) {
+        match self {
+            WatchSink::Supply(tx) => {
+                let _ = tx.send(SupplyEvent::Quit(missing_path_exception()));
+            }
+            // MoarVM reports libuv's error as the fourth element, with type
+            // objects for the name and the event kind.
+            WatchSink::Queue(sink) => sink.push(vec![
+                Value::package(Symbol::intern("BOOTStr")),
+                Value::package(Symbol::intern("BOOTInt")),
+                Interpreter::boot_str(MISSING_PATH_MESSAGE),
+            ]),
+        }
+    }
+
+    /// Report one change. `path` is the watched path as displayed, joined
+    /// with the entry name for a directory; `fallback` is the name the queue
+    /// form reports for the watched path itself (its basename, as libuv does).
+    // Cost: O(len(path)).
+    fn report(&self, path: String, kind: ChangeKind, fallback: &str) -> bool {
+        match self {
+            WatchSink::Supply(tx) => tx.send(SupplyEvent::Emit(change_value(path, kind))).is_ok(),
+            WatchSink::Queue(sink) => {
+                let name = if path.is_empty() { fallback.to_string() } else { path };
+                let renamed = matches!(kind, ChangeKind::Renamed) as i64;
+                sink.push(vec![
+                    Interpreter::boot_str(&name),
+                    Interpreter::boot_int(renamed),
+                    Value::package(Symbol::intern("BOOTStr")),
+                ]);
+                true
+            }
+        }
+    }
+}
+
+/// Poll `watched` on a registered helper thread and report its changes to
+/// `sink`, under `display` (empty for the queue form, which reports entry
+/// names).
+fn spawn_watcher(watched: PathBuf, display: String, sink: WatchSink) -> Result<(), RuntimeError> {
+    let basename = watched
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    // Registered spawn (emits `Value`s into a channel); the poll sleep is a
+    // quiescent safe region — see `try_spawn_gc_helper_thread`. A refused
+    // thread is a catchable X::AdHoc (#9401).
+    crate::runtime::builtins_system::try_spawn_gc_helper_thread("io-notification", move || {
+        let mut last = WatchState::snapshot(&watched);
+        if last == WatchState::File(None) {
+            sink.missing();
+            return;
+        }
+        loop {
+            crate::gc::block_quiescent(|| std::thread::sleep(POLL_INTERVAL));
+            if sink.is_retired() {
+                return;
+            }
+            let next = WatchState::snapshot(&watched);
+            // Until the sink is watching, only the baseline moves.
+            if !sink.is_watching() {
+                last = next;
+                continue;
+            }
+            for (path, kind) in last.diff(&next, &display) {
+                if !sink.report(path, kind, &basename) {
+                    return;
+                }
+            }
+            last = next;
+        }
+    })
+    .map(|_| ())
+    .map_err(crate::runtime::builtins_system::refused_thread_error)
 }
