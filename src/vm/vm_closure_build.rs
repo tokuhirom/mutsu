@@ -102,8 +102,17 @@ impl Interpreter {
         let (authoritative_captures, own_cell_captures) =
             self.compute_authoritative_captures(code, &compiled_code);
         let mut upvalues = self.capture_upvalues(code, &compiled_code);
+        let lexsub_bindings = match &compiled_code {
+            Some(cc) if !cc.lexsub_refs.is_empty() => {
+                self.bind_lexsub_upvalues(code, cc, &mut upvalues)
+            }
+            _ => Vec::new(),
+        };
         // Upvalue snapshot (single-store Slice E); see `capture_closure_env`.
         let mut env = self.capture_closure_env(code, &compiled_code);
+        for (sym, val) in lexsub_bindings {
+            env.insert_sym(sym, val);
+        }
         if spec.freeze_readonly_captures {
             self.freeze_readonly_owned_captures(
                 code,

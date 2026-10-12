@@ -375,6 +375,52 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    reaches `resolve_function` when the attribute read misses) answers `None`
    at once, since no routine can be named `!x`. FunctionalParsers probe,
    release build, whole run: 4.03G → 3.87G Ir (−4%).
+
+   **Slice 4 done** (`fix/12850-block-sub-lexical-binding`, #12850, #12851):
+   the first routine-as-binding step. A plain `sub` declared in a block,
+   loop body or closure body is that block's `&name` binding for the
+   closures nested in it, so a closure keeps the routine of the activation
+   it was created in: after the block exited (a bare call used to die with
+   "Unknown function", because an inlined block restores the registry on
+   exit) and while a later activation runs (it used to call the latest
+   activation's routine, through the latest activation's cells).
+
+   - The compiler records the plain routines each block scope declares
+     (`compiler/block_lexsubs.rs`): a single, non-`our`, non-exported `sub`
+     with an identifier name no builtin answers to and no user trait. An
+     inline block, a `for` body and a closure body record them at the hoist;
+     a block that does not hoist (a `while` body) at the declaration. A
+     routine body's own top level does not: ADR-0113 keeps a call-only inner
+     sub frame-lexical there, and a routine activation already binds its
+     nested subs' free variables (ADR-0114).
+   - A closure body inherits the records of the scopes around it (a method
+     or anonymous `sub` body does not), and compiles a bare call `g(...)` to
+     one of them as `&g(...)` (`CallOnCodeVar`), unless it declares a routine
+     or a `&g` of that name itself. It lists the name in
+     `CompiledCode::lexsub_refs`, and so does every enclosing closure that
+     only hands it on. `compute_upvalues` makes `&g` an upvalue, for the
+     calls and, through `code_var_upvalue_reads`, for a `&g` value read.
+   - The frame that creates such a closure fills the upvalue
+     (`bind_lexsub_upvalues`): code that declares `g` with the code object of
+     its own activation (slice 9 of phase 3's `capture_lexsub_activation`),
+     code that hands it on from its own upvalue array. The closure also
+     carries the binding in its captured env, which is what a runtime
+     recompile of its body reads by name (the inline `map` path seeds the
+     names as enclosing routines, `seed_amp_shadowed_calls_from`).
+
+   Left on the registry: a block-declared routine's own body calling a
+   sibling routine of its block by name after the block exited (it is a
+   named routine body, compiled without the block's records; #13037),
+   `multi`/`our`/exported/traited routines, and a routine named like a
+   builtin (`sub dd`).
+
+   Release-build Ir against the merge base: `bench-fib` -0.00%, `bench-tak`
+   +0.00%, `method-call` +0.01%, `poly-call` -0.01%, `bench-ctor` +0.14%,
+   `bench-multi-dispatch` -0.01%, `bench-string` +0.15%. The shape the slice
+   changes costs more: a closure calling a loop body's routine +6.8%, and
+   +30% through the inline `map` path, which has no upvalue array and
+   resolves `&h` by name per call. The call goes through a code object's
+   closure dispatch instead of the named call path; #13049 tracks it.
 3. **The static link.** Frames carry the outer link; the reflective name view
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay
@@ -842,6 +888,8 @@ the issue's original local remedy.
 | [#12398](https://github.com/tokuhirom/mutsu/issues/12398) | a routine starts with its caller's `$/` (`m:c` continues from the caller's position) | 3 (slice 10 closes) |
 | [#12720](https://github.com/tokuhirom/mutsu/issues/12720) | a `.subst` / `.match` in a block called by another routine does not set the `$/` of the block's scope | 3 (slice 10 closes) |
 | [#12902](https://github.com/tokuhirom/mutsu/issues/12902) | `$!` is not routine-owned on the light call paths; a `try` in a block called by another routine does not set its scope's `$!` | 3 (slice 11 closes) |
+| [#12850](https://github.com/tokuhirom/mutsu/issues/12850) | a block-declared sub called by name from a closure that outlives the block dies with "Unknown function" | 2 (slice 4 closes) |
+| [#12851](https://github.com/tokuhirom/mutsu/issues/12851) | `&g` taken in a closure nested in `g`'s declaring block reads the latest activation's lexicals | 2 (slice 4 closes) |
 | [#12526](https://github.com/tokuhirom/mutsu/issues/12526) | an `@x` parameter costs ~12x a `$x` one (generic binder + copy-out writeback) | partly 3: the writeback becomes unnecessary (§2.3). The binder half is independent and can land first |
 
 **Out of scope.** [#12204](https://github.com/tokuhirom/mutsu/issues/12204)
