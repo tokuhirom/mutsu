@@ -1,6 +1,7 @@
 # ADR-11617: A worker's `exit` is handed over to the main thread
 
-- **Status**: Proposed — implemented (2026-10-12, #11617); the gaps in §4 remain
+- **Status**: Accepted (user approval 2026-10-13); implemented (2026-10-12, #11617); the gaps in §4 remain
+  ([#13052](https://github.com/tokuhirom/mutsu/issues/13052))
 - **Date**: 2026-10-12
 - **Deciders**: tokuhirom, Claude
 - **Addresses**: [#11617](https://github.com/tokuhirom/mutsu/issues/11617)
