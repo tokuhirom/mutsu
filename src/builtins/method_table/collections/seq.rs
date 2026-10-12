@@ -65,8 +65,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     narrow!("Slip", slip),
     narrow!("List", list_type),
     narrow!("list", list_value),
-    // Rakudo's `Seq.values` is `Any.values`, which is `self.list`.
-    narrow!("values", list_value),
     narrow!("Array", array_value),
     narrow!("cache", cache),
     narrow!("Capture", capture),
