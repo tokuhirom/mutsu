@@ -1138,6 +1138,15 @@ impl Interpreter {
                                 &attr_name,
                             )));
                         }
+                        // An attribute has no value on a type object.
+                        if let ValueView::Package(name) = obj.view()
+                            && self.registry().classes.contains_key(name.as_str())
+                        {
+                            return Err(RuntimeError::new(format!(
+                                "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
+                                name.resolve()
+                            )));
+                        }
                         return Ok(Value::NIL);
                     }
                     "set_value" => {

@@ -377,7 +377,11 @@ impl Interpreter {
             {
                 let pkg = package.resolve();
                 let method = name.resolve();
-                if self.is_builtin_type_method(&pkg, &method) {
+                // A method of a core type with no catalog row (`Match.pos`,
+                // `.from`, `.orig`) still dispatches on an invocant of that type.
+                if self.is_builtin_type_method(&pkg, &method)
+                    || self.type_matches_value(&pkg, &args[0])
+                {
                     let mut args = args;
                     let invocant = args.remove(0);
                     return match invocant.view() {
