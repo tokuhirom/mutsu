@@ -127,6 +127,10 @@ impl Interpreter {
                 if let ValueView::Package(class_name) = target.view()
                     && class_name == "Supply"
                 {
+                    let producer = args.first().cloned().unwrap_or(Value::NIL);
+                    if let Err(e) = self.bind_callable_param("&producer", &producer) {
+                        return Some(Err(e));
+                    }
                     return Some(self.dispatch_supply_on_demand(&args));
                 }
                 if let ValueView::Instance { class_name, .. } = target.view()

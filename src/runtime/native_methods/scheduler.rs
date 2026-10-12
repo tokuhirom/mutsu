@@ -350,6 +350,11 @@ impl Interpreter {
                     ));
                 }
                 let callback = args.first().cloned().unwrap_or(Value::NIL);
+                // `cue` is a multi over `&code`: a non-Callable (an empty
+                // `{ }` is a Hash, #12801) matches no candidate.
+                if !self.type_matches_value("Callable", &callback) {
+                    return Err(crate::runtime::methods_signature_errors::make_multi_no_match_error("cue"));
+                }
                 let times_explicit = Self::scheduler_times_arg(&args)?;
                 let delay = Self::scheduler_delay(&args)?;
                 let every = Self::scheduler_every(&args)?;
