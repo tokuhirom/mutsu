@@ -15,7 +15,10 @@
 //!   `nqp::cancel` and `Cancellation.cancel` set one kind of flag;
 //! - `nqp::timer` as an entry on the shared interval-timer heap whose action
 //!   only sends the schedulee into the channel (cheap, no VM code on the timer
-//!   thread) and stops once the flag is set.
+//!   thread) and stops once the flag is set;
+//! - an event source that reports with arguments (`nqp::signal`) as a
+//!   [`QueueSink`] registered with the source's native watcher, next to the
+//!   Supply sink that watcher already serves (ADR-11502 §2.4).
 
 use crate::runtime::native_methods::interval_timer;
 use crate::runtime::native_methods::state_lock::{cancellation_state, next_cancellation_id};
@@ -23,7 +26,8 @@ use crate::runtime::{Interpreter, RuntimeError};
 use crate::symbol::Symbol;
 use crate::value::{SharedChannel, Value, ValueView};
 use std::collections::HashMap;
-use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The attribute that holds a `ConcBlockingQueue` instance's channel. A bare
 /// name, like a Buf's `bytes`, so no declared `$!attr` can collide with it.
@@ -65,6 +69,72 @@ fn task_id_of(v: &Value) -> Option<u64> {
         },
         _ => None,
     }
+}
+
+/// The queue end of an async task (ADR-11502 §2.4): where a native event
+/// source pushes `[schedulee, args...]` for an `nqp::` async op, until the
+/// task is cancelled. Built only on the op's own thread; the source's thread
+/// only calls [`QueueSink::push`].
+pub(crate) struct QueueSink {
+    queue: SharedChannel,
+    schedulee: Value,
+    cancelled: Arc<AtomicBool>,
+}
+
+impl QueueSink {
+    /// Whether the task was cancelled (`nqp::cancel`): the source drops the
+    /// sink at its next sweep.
+    // Cost: O(1).
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    /// Push a raw `[schedulee, args...]` array, unless the task is cancelled.
+    // Cost: O(a), a = args.len().
+    pub(crate) fn push(&self, args: Vec<Value>) {
+        if self.is_cancelled() {
+            return;
+        }
+        let mut items = Vec::with_capacity(args.len() + 1);
+        items.push(self.schedulee.clone());
+        items.extend(args);
+        self.queue.send(Value::vm_array(items));
+    }
+}
+
+/// The handle class of an async op's last operand, checked to be of REPR
+/// `AsyncTask` (`<op> result type must have REPR AsyncTask` otherwise).
+// Cost: O(1).
+fn handle_class(interp: &Interpreter, op: &str, ty: &Value) -> Result<Symbol, RuntimeError> {
+    match operand(ty).view() {
+        ValueView::Package(name) if interp.declared_class_repr(name.as_str()) == Some("AsyncTask") => {
+            Ok(name)
+        }
+        _ => Err(RuntimeError::new(format!(
+            "{op} result type must have REPR AsyncTask"
+        ))),
+    }
+}
+
+/// The channel of an async op's queue operand (`<op> <what> must have
+/// ConcBlockingQueue REPR` otherwise).
+// Cost: O(1).
+fn queue_operand(op: &str, what: &str, v: &Value) -> Result<SharedChannel, RuntimeError> {
+    queue_of(v).map(|(_, q)| q).ok_or_else(|| {
+        RuntimeError::new(format!("{op} {what} must have ConcBlockingQueue REPR"))
+    })
+}
+
+/// Rakudo checks an async op's operand count at compile time.
+// Cost: O(1).
+fn check_arity(op: &str, args: &[Value], want: usize) -> Result<(), RuntimeError> {
+    if args.len() == want {
+        return Ok(());
+    }
+    Err(RuntimeError::new(format!(
+        "Arg count {} doesn't equal required operand count {want} for op '{op}'",
+        args.len()
+    )))
 }
 
 impl Interpreter {
@@ -122,7 +192,7 @@ impl Interpreter {
         })
     }
 
-    /// `nqp::timer` / `nqp::cancel`.
+    /// `nqp::timer` / `nqp::cancel` / `nqp::signal`.
     pub(crate) fn call_nqp_op_async(
         &mut self,
         op: &str,
@@ -141,42 +211,69 @@ impl Interpreter {
                 if let Some(flag) = args.first().and_then(task_id_of).and_then(cancellation_state)
                 {
                     flag.store(true, Ordering::Release);
+                    // A cancelled `nqp::signal` gives the signal back to its
+                    // previous disposition now, as MoarVM does, not at the
+                    // next delivery.
+                    crate::runtime::signal_watcher::sweep_retired_registrations();
                 }
                 Ok(args.first().cloned().unwrap_or(Value::NIL))
             }
+            // nqp::signal($setup_queue, $setup_schedulee, $queue, $schedulee,
+            //             $signum, $type):
+            // on each delivery of `$signum`, push `[$schedulee, $signum]` onto
+            // `$queue`; push `[$setup_schedulee]` onto `$setup_queue` once the
+            // handler is installed; answer a new `$type` handle.
+            // Cost: O(w + s), w = live signal watchers (the retired-watcher
+            // sweep), s = signal numbers watched.
+            "signal" => self.nqp_signal(args),
             _ => return None,
         })
     }
 
-    fn nqp_timer(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        if args.len() != 5 {
+    /// A new handle of `class` with its cancellation flag.
+    // Cost: O(1).
+    fn new_task(&mut self, class: Symbol) -> Result<(Value, Arc<AtomicBool>), RuntimeError> {
+        let handle = self.create_async_repr_instance(class, "AsyncTask");
+        let flag = task_id_of(&handle)
+            .and_then(cancellation_state)
+            .ok_or_else(|| RuntimeError::new("async task: no cancellation state"))?;
+        Ok((handle, flag))
+    }
+
+    fn nqp_signal(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        check_arity("signal", args, 6)?;
+        let class = handle_class(self, "signal", &args[5])?;
+        let queue = queue_operand("signal", "target queue", &args[2])?;
+        let setup_queue = queue_operand("signal", "setup notify queue", &args[0])?;
+        let signum = crate::runtime::to_int(&operand(&args[4]));
+        // MoarVM handles the standard signals (its `valid_sigs` mask), not the
+        // real-time ones.
+        if !(1..32).contains(&signum) {
             return Err(RuntimeError::new(format!(
-                "Arg count {} doesn't equal required operand count 5 for op 'timer'",
-                args.len()
+                "Unsupported signal handler {signum}"
             )));
         }
-        let handle_type = operand(&args[4]);
-        let handle_class = match handle_type.view() {
-            ValueView::Package(name)
-                if self.declared_class_repr(name.as_str()) == Some("AsyncTask") =>
-            {
-                name
-            }
-            _ => return Err(RuntimeError::new("timer result type must have REPR AsyncTask")),
+        let (handle, cancelled) = self.new_task(class)?;
+        let sink = QueueSink {
+            queue,
+            schedulee: args[3].clone(),
+            cancelled,
         };
-        let Some((_, queue)) = queue_of(&args[0]) else {
-            return Err(RuntimeError::new(
-                "timer target queue must have ConcBlockingQueue REPR",
-            ));
-        };
+        crate::runtime::signal_watcher::register_signal_queue(signum as i32, sink)
+            .map_err(crate::runtime::builtins_system::refused_thread_error)?;
+        setup_queue.send(Value::vm_array(vec![args[1].clone()]));
+        Ok(handle)
+    }
+
+    fn nqp_timer(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        check_arity("timer", args, 5)?;
+        let handle_class = handle_class(self, "timer", &args[4])?;
+        let queue = queue_operand("timer", "target queue", &args[0])?;
         let ms = |v: &Value| crate::runtime::to_int(&operand(v)).max(0) as f64 / 1000.0;
         let timeout = interval_timer::clamp_delay_secs(ms(&args[2]));
         let repeat = ms(&args[3]);
         let repeat = (repeat > 0.0).then(|| interval_timer::clamp_delay_secs(repeat));
-        let handle = self.create_async_repr_instance(handle_class, "AsyncTask");
-        let flag = task_id_of(&handle)
-            .and_then(cancellation_state)
-            .ok_or_else(|| RuntimeError::new("timer: no cancellation state"))?;
+        let (handle, flag) = self.new_task(handle_class)?;
         let schedulee = args[1].clone();
         interval_timer::register_entry(
             timeout,

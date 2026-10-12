@@ -62,6 +62,13 @@ impl Interpreter {
         Some(boot_box(name, value.clone()))
     }
 
+    /// A `BOOTInt` box holding `i`, as MoarVM boxes the integers an async
+    /// event pushes onto its queue (a signal number, a byte count).
+    // Cost: O(1).
+    pub(crate) fn boot_int(i: i64) -> Value {
+        boot_box(Symbol::intern("BOOTInt"), Value::int(i))
+    }
+
     /// `nqp::create` of a BOOT scalar type: a box holding the type's zero.
     // Cost: O(1).
     pub(crate) fn create_boot_scalar(name: &str) -> Option<Value> {
