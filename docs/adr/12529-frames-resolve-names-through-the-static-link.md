@@ -664,9 +664,19 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      and `.trans` publish and restore the per-match `$/` the same way
      (`publish_match_var` / `restore_match_var`).
 
+   Release-build Ir against the merge base (interpreter lane / JIT lane):
+   `bench-fib` +0.18% / +0.33%, `bench-tak` +0.12% / +0.18%, `method-call`
+   +0.14% / +0.16%, `poly-call` +0.11% / +0.08%, `bench-ctor` +0.11% /
+   +0.11%, `bench-multi-dispatch` +0.35% / +0.34%, `bench-string` +0.92% /
+   +0.54% (about 30 Ir per match for the setter's walk). A first cut cost
+   +1% on `bench-multi-dispatch`: the flattening fixup replaced a caller's
+   `Nil` `$/` and so copied a map the flattening shared, and the lookup's
+   miss path read the symbol's flag word twice. Unset and `Nil` now count as
+   the same, and one read answers both questions (`symbol::env_key_probe`).
+
    Still open: a method that creates closures runs in its caller's env
    without a root (slice 8), so it still reads its caller's `$/` until it
-   matches; the capture views stay mirrored env keys rather than views
+   matches (#12882); the capture views stay mirrored env keys rather than views
    derived from `$/`; and `$_` and `$!` are the remaining families.
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,

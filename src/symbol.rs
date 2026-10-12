@@ -564,10 +564,16 @@ pub(crate) enum EnvKeyProbe {
 // Cost: O(1).
 #[inline]
 pub(crate) fn env_key_probe(sym: Symbol) -> EnvKeyProbe {
-    let f = match flag_slot(sym.0 as usize) {
-        Some(slot) => slot.load(Ordering::Relaxed),
-        None => sym.flags() | flags::EVER_ENV_KEY,
+    let Some(slot) = flag_slot(sym.0 as usize) else {
+        // Beyond the table's reach: may be an env key, as `maybe_env_key`
+        // answers.
+        return if sym.is_match_state() {
+            EnvKeyProbe::MatchState
+        } else {
+            EnvKeyProbe::Plain
+        };
     };
+    let f = slot.load(Ordering::Relaxed);
     if f & flags::EVER_ENV_KEY == 0 {
         EnvKeyProbe::Absent
     } else if f & flags::MATCH_STATE != 0 {
