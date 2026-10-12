@@ -11,18 +11,18 @@
 //!
 //! Reifying a `SeqBody` under a shared `&self` (every alias of a `Value::Seq`
 //! shares one `Arc<SeqBody>`, so there is never an exclusive `&mut` to reify
-//! through) needs the same [`SyncUnsafeCell`] + generation-graveyard technique
-//! `NativeBacking` uses for the native-array decode cache (docs/adr/0030 §2.2,
-//! `src/value/native_backing.rs`) — see that module's docs for why the
-//! graveyard (rather than an audited overwrite) is what makes the write sound.
-//! A `Seq` body reifies **at most once** (seed -> reified), so the graveyard
-//! here never grows past two entries.
+//! through) publishes each pull as a new, never-rewritten generation that
+//! outlives every borrow of the body — the graveyard technique of
+//! docs/adr/0030 §2.2. A full pull publishes once; every prefix pull
+//! (`pull_prefix`, `extend_from_iterator`, `extend_map_grep_prefix`) publishes
+//! another. See [`generations`] for how a reader on one thread stays sound
+//! while another thread publishes, and how concurrent pulls are serialized.
 
-use super::sync_cell::SyncUnsafeCell;
 use super::{RuntimeError, Value};
 use crate::value::{MapGrepItems, PureCursor};
 use std::sync::{Arc, Mutex};
 
+mod generations;
 mod map_grep_stream;
 
 /// Which deferred `.map`/`.grep` shape a [`SeqSource::MapGrep`] body carries.
@@ -179,6 +179,9 @@ struct SeqState {
     /// ;` — `c()`'s discarded return must not force the `$s` the closure
     /// itemized), because it is the same shared `Arc<SeqBody>` throughout.
     itemized: bool,
+    /// The thread running a non-consuming pull of this body right now, if
+    /// any; other threads wait for it ([`generations::lock_state`], #11242).
+    puller: Option<std::thread::ThreadId>,
 }
 
 /// A source [`SeqBody::take_prefix_source`] handed over for a prefix pull.
@@ -243,9 +246,10 @@ struct SeqCore {
     /// allocation address, which two dead temporaries could share. See
     /// [`crate::value::which_id::WhichId`].
     which_id: crate::value::which_id::WhichId,
-    #[allow(clippy::vec_box)]
-    gens: SyncUnsafeCell<Vec<Box<Vec<Value>>>>,
+    gens: generations::Generations,
     state: Mutex<SeqState>,
+    /// Signalled when a pull claimed through `SeqState::puller` ends.
+    pulled: std::sync::Condvar,
     /// The elements are live containers handed out by a mutable Array/Hash
     /// producer, rather than ordinary Seq values. Positional indexing must
     /// preserve those cells instead of passing them through the normal array
@@ -266,9 +270,7 @@ pub(crate) struct SeqBody {
 
 impl std::fmt::Debug for SeqBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // `SyncUnsafeCell` is deliberately not `Debug` (see `native_backing.rs`);
-        // show only what a shared borrow can read safely (the live generation,
-        // via `Deref`).
+        // Show only the live generation (via `Deref`), not the graveyard.
         f.debug_struct("SeqBody")
             .field("elements", &**self)
             .field("view", &self.view)
@@ -314,7 +316,7 @@ impl SeqBody {
         Arc::new(SeqBody {
             core: Arc::new(SeqCore {
                 which_id: crate::value::which_id::WhichId::default(),
-                gens: SyncUnsafeCell::new(vec![Box::new(items)]),
+                gens: generations::Generations::with(items),
                 state: Mutex::new(SeqState {
                     source: SeqSource::Reified,
                     cache_requested: false,
@@ -324,7 +326,9 @@ impl SeqBody {
                     single_use_claimed: false,
                     retained: false,
                     itemized: false,
+                    puller: None,
                 }),
+                pulled: std::sync::Condvar::new(),
                 element_containers,
                 pure_pending: std::sync::atomic::AtomicBool::new(false),
             }),
@@ -349,7 +353,7 @@ impl SeqBody {
         Arc::new(SeqBody {
             core: Arc::new(SeqCore {
                 which_id: crate::value::which_id::WhichId::default(),
-                gens: SyncUnsafeCell::new(Vec::new()),
+                gens: generations::Generations::empty(),
                 state: Mutex::new(SeqState {
                     source,
                     cache_requested: false,
@@ -359,7 +363,9 @@ impl SeqBody {
                     single_use_claimed: false,
                     retained: false,
                     itemized: false,
+                    puller: None,
                 }),
+                pulled: std::sync::Condvar::new(),
                 element_containers,
                 pure_pending: std::sync::atomic::AtomicBool::new(pure),
             }),
@@ -443,16 +449,15 @@ impl SeqBody {
     /// `Arc<SeqBody>` and trips rustc's `invalid_reference_casting` lint
     /// when the result is later cast to a raw pointer for the
     /// retired-generation probe — see that module for the full shape).
+    // Cost: O(1).
     pub(crate) fn live_generation(&self) -> &Vec<Value> {
-        // SAFETY: this only ever reads the graveyard. `pull_and_store` is the
-        // sole writer and never overwrites an existing slot (module docs), so
-        // a reference into any generation — including this one — stays valid
-        // across a later push.
-        static EMPTY: Vec<Value> = Vec::new();
-        unsafe { &*self.core.gens.get() }
-            .last()
-            .map(|b| b.as_ref())
-            .unwrap_or(&EMPTY)
+        self.core.gens.live()
+    }
+
+    /// The state lock, taken once no other thread is pulling this body.
+    // Cost: O(1), plus waiting out another thread's pull.
+    fn lock_state(&self) -> std::sync::MutexGuard<'_, SeqState> {
+        generations::lock_state(&self.core)
     }
 
     /// Pull `source` via `pull` and store the result as a fresh generation.
@@ -464,12 +469,16 @@ impl SeqBody {
         pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
     ) -> Result<(), RuntimeError> {
         self.settle_pure_source();
-        let source = {
-            let mut state = self.core.state.lock().unwrap();
+        let (source, _claim) = {
+            let mut state = self.lock_state();
             if matches!(state.source, SeqSource::Reified) {
                 return Ok(());
             }
-            std::mem::replace(&mut state.source, SeqSource::Taken)
+            let claim = generations::claim_pull(&self.core, &mut state);
+            (
+                std::mem::replace(&mut state.source, SeqSource::Taken),
+                claim,
+            )
         };
         let items = match pull_source(&source, pull) {
             Ok(rest) => self.after_pulled_prefix(&source, rest),
@@ -478,14 +487,8 @@ impl SeqBody {
                 return Err(e);
             }
         };
-        // SAFETY: the shape `SyncUnsafeCell` exists for — a write under the
-        // shared `&self` every alias of this `Arc<SeqBody>` keeps using
-        // afterward. No reference into `gens` is held across this push:
-        // `live_generation` never keeps its `&Vec<Value>` past its own call,
-        // and previously-returned references point at earlier, never-
-        // rewritten slots (module docs).
-        unsafe { (*self.core.gens.get()).push(Box::new(items)) };
-        self.core.state.lock().unwrap().source = SeqSource::Reified;
+        self.core.gens.publish(items);
+        self.lock_state().source = SeqSource::Reified;
         Ok(())
     }
 
@@ -503,8 +506,7 @@ impl SeqBody {
             return;
         }
         let kept = self.after_pulled_prefix(&source, progress.produced);
-        // SAFETY: same reasoning as `pull_and_store`.
-        unsafe { (*self.core.gens.get()).push(Box::new(kept)) };
+        self.core.gens.publish(kept);
         let restored = match source {
             SeqSource::MapGrep {
                 items,
@@ -530,7 +532,7 @@ impl SeqBody {
             }
             other => other,
         };
-        self.core.state.lock().unwrap().source = restored;
+        self.lock_state().source = restored;
     }
 
     /// `rest`, the elements a full pull of `source` produced, behind the
@@ -569,21 +571,22 @@ impl SeqBody {
         &self,
         pull: impl FnOnce(&mut SeqSource) -> Result<(Vec<Value>, bool), RuntimeError>,
     ) -> Result<(), RuntimeError> {
-        let mut source = {
-            let mut state = self.core.state.lock().unwrap();
+        let (mut source, _claim) = {
+            let mut state = self.lock_state();
             if !matches!(state.source, SeqSource::MapGrep { .. }) {
                 return Ok(());
             }
-            std::mem::replace(&mut state.source, SeqSource::Taken)
+            let claim = generations::claim_pull(&self.core, &mut state);
+            (
+                std::mem::replace(&mut state.source, SeqSource::Taken),
+                claim,
+            )
         };
         let (new_items, exhausted) = without_pull_progress(pull(&mut source))?;
         let mut combined = self.live_generation().clone();
         combined.extend(new_items);
-        // SAFETY: same reasoning as `pull_and_store` — no reference into
-        // `gens` is held across this push, and earlier generations are never
-        // rewritten, only superseded by a longer one.
-        unsafe { (*self.core.gens.get()).push(Box::new(combined)) };
-        self.core.state.lock().unwrap().source = if exhausted {
+        self.core.gens.publish(combined);
+        self.lock_state().source = if exhausted {
             SeqSource::Reified
         } else {
             source
@@ -600,21 +603,14 @@ impl SeqBody {
         if !self.core.pure_pending.load(Ordering::Acquire) {
             return;
         }
-        let mut state = self
-            .core
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut state = self.lock_state();
         self.core.pure_pending.store(false, Ordering::Release);
         if let SeqSource::Pure(spec) = &mut state.source {
             // A subscript may already have cut a prefix
             // (`SeqBody::pull_prefix`); the rest goes after it.
             let mut items = self.live_generation().clone();
             spec.push_up_to(&mut items, usize::MAX);
-            // SAFETY: same as `pull_and_store` — no reference into `gens` is
-            // held across this push, and earlier generations are never
-            // rewritten.
-            unsafe { (*self.core.gens.get()).push(Box::new(items)) };
+            self.core.gens.publish(items);
             state.source = SeqSource::Reified;
         }
     }
@@ -632,11 +628,7 @@ impl SeqBody {
     /// the ordinary `take`.
     // Cost: O(1).
     pub(crate) fn take_prefix_source(&self) -> Option<PrefixSource> {
-        let mut state = self
-            .core
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut state = self.lock_state();
         let granular = matches!(
             state.source,
             SeqSource::Pure(_)
@@ -678,7 +670,7 @@ impl SeqBody {
     ) -> Result<&Vec<Value>, RuntimeError> {
         self.settle_pure_source();
         {
-            let mut state = self.core.state.lock().unwrap();
+            let mut state = self.lock_state();
             match &state.source {
                 SeqSource::Reified => {
                     state.retained = true;
@@ -689,7 +681,7 @@ impl SeqBody {
             }
         }
         self.pull_and_store(pull)?;
-        self.core.state.lock().unwrap().retained = true;
+        self.lock_state().retained = true;
         Ok(self.live_generation())
     }
 
@@ -716,7 +708,7 @@ impl SeqBody {
     ) -> Result<(Vec<Value>, SeqTaken), RuntimeError> {
         self.settle_pure_source();
         let (reified, servable) = {
-            let state = self.core.state.lock().unwrap();
+            let state = self.lock_state();
             match &state.source {
                 SeqSource::Reified => (true, state.cache_requested || state.retained),
                 SeqSource::Taken => return Err(super::seq_consumed_error()),
@@ -728,13 +720,13 @@ impl SeqBody {
             return Ok((self.live_generation().clone(), SeqTaken::Served));
         }
         if reified {
-            let mut state = self.core.state.lock().unwrap();
+            let mut state = self.lock_state();
             state.source = SeqSource::Taken;
             drop(state);
             return Ok((self.live_generation().clone(), SeqTaken::Taken));
         }
         let source = {
-            let mut state = self.core.state.lock().unwrap();
+            let mut state = self.lock_state();
             std::mem::replace(&mut state.source, SeqSource::Taken)
         };
         let items =
@@ -748,7 +740,7 @@ impl SeqBody {
     /// deferred sources still use the materialized iterator path, and a
     /// cached/retained body must iterate its retained elements instead.
     pub(crate) fn take_iterator_source(&self) -> Result<Option<Value>, RuntimeError> {
-        let mut state = self.core.state.lock().unwrap();
+        let mut state = self.lock_state();
         if state.cache_requested || state.retained {
             return Ok(None);
         }
@@ -784,10 +776,7 @@ impl SeqBody {
         if self.live_generation().len() == items.len() {
             return;
         }
-        // SAFETY: same reasoning as `pull_and_store` — no reference into
-        // `gens` is held across this push, and earlier generations are never
-        // rewritten, only superseded.
-        unsafe { (*self.core.gens.get()).push(Box::new(items)) };
+        self.core.gens.publish(items);
     }
 
     /// A `for`-loop's own single-use gate (`vm_for_loop_dispatch.rs`):
@@ -803,7 +792,7 @@ impl SeqBody {
     /// `"for"`, which is not in `seq_method_consumes`) and marks the body
     /// `retained` like any other reifying touch.
     pub(crate) fn claim_single_use_once(&self) -> Result<(), RuntimeError> {
-        let mut state = self.core.state.lock().unwrap();
+        let mut state = self.lock_state();
         if state.single_use_claimed && !state.cache_requested {
             return Err(super::seq_consumed_error());
         }
@@ -851,7 +840,7 @@ impl SeqBody {
     ) -> Result<(), RuntimeError> {
         self.settle_pure_source();
         let source = {
-            let mut state = self.core.state.lock().unwrap();
+            let mut state = self.lock_state();
             match &state.source {
                 SeqSource::Taken => return Ok(()),
                 _ if honor_itemized && state.itemized => return Ok(()),
@@ -875,29 +864,29 @@ impl SeqBody {
     /// every future touch. Deliberately does not pull now (see
     /// `cache_requested`'s doc comment).
     pub(crate) fn mark_cache_requested(&self) {
-        self.core.state.lock().unwrap().cache_requested = true;
+        self.lock_state().cache_requested = true;
     }
 
     /// A plain scalar assignment (`$s = SEQ` / `my $s = SEQ`) itemized this
     /// body — see `itemized`'s doc comment for why that permanently exempts
     /// it from `sink`'s forcing.
     pub(crate) fn mark_itemized(&self) {
-        self.core.state.lock().unwrap().itemized = true;
+        self.lock_state().itemized = true;
     }
 
     /// Whether `.cache` was requested, or the body is already reified — the
     /// two conditions under which a later touch is non-destructive.
     pub(crate) fn is_cached(&self) -> bool {
-        let state = self.core.state.lock().unwrap();
+        let state = self.lock_state();
         state.cache_requested || matches!(state.source, SeqSource::Reified)
     }
 
     pub(crate) fn mark_lazy(&self) {
-        self.core.state.lock().unwrap().lazy = true;
+        self.lock_state().lazy = true;
     }
 
     pub(crate) fn is_lazy(&self) -> bool {
-        self.core.state.lock().unwrap().lazy
+        self.lock_state().lazy
     }
 
     /// Whether `.gist` renders this body as Rakudo's `(...)` placeholder: a
@@ -905,7 +894,7 @@ impl SeqBody {
     /// has not been pulled yet, so reifying it to render could run forever.
     // Cost: O(1).
     pub(crate) fn gists_as_lazy_placeholder(&self) -> bool {
-        let state = self.core.state.lock().unwrap();
+        let state = self.lock_state();
         state.lazy && matches!(state.source, SeqSource::Iterator(_))
     }
 
@@ -914,7 +903,7 @@ impl SeqBody {
     /// source. Read to ask the iterator its `is-lazy`.
     // Cost: O(1).
     pub(crate) fn unpulled_iterator(&self) -> Option<Value> {
-        match &self.core.state.lock().unwrap().source {
+        match &self.lock_state().source {
             SeqSource::Iterator(iterator) => Some(iterator.clone()),
             _ => None,
         }
@@ -923,7 +912,7 @@ impl SeqBody {
     /// Whether the source has already been handed away (and never reified in
     /// between) — a later `reify`/`take` on this body will throw.
     pub(crate) fn is_consumed(&self) -> bool {
-        matches!(self.core.state.lock().unwrap().source, SeqSource::Taken)
+        matches!(self.lock_state().source, SeqSource::Taken)
     }
 
     /// Whether this body still has a source to pull from (an unreified
@@ -941,7 +930,7 @@ impl SeqBody {
     /// [`SeqBody::needs_touch`] for "does this need reifying at all".
     pub(crate) fn has_deferred_source(&self) -> bool {
         matches!(
-            self.core.state.lock().unwrap().source,
+            self.lock_state().source,
             SeqSource::Iterator(_) | SeqSource::IoLines { .. }
         )
     }
@@ -951,10 +940,7 @@ impl SeqBody {
     /// VM to pull (`Value::truthy`, `.gist`), which must not mistake an
     /// un-pulled body's empty seed for a genuinely empty sequence.
     pub(crate) fn is_map_grep_source(&self) -> bool {
-        matches!(
-            self.core.state.lock().unwrap().source,
-            SeqSource::MapGrep { .. }
-        )
+        matches!(self.lock_state().source, SeqSource::MapGrep { .. })
     }
 
     /// Non-destructive peek at a not-yet-touched `IoLines` source's parts
@@ -972,7 +958,7 @@ impl SeqBody {
     /// a state-mutating call, and where mutating would be wrong anyway (the
     /// native fast path may be probed more than once for the same call).
     pub(crate) fn peek_io_lines_parts(&self) -> Option<(Value, bool, bool)> {
-        match &self.core.state.lock().unwrap().source {
+        match &self.lock_state().source {
             SeqSource::IoLines { handle, words, kv } => Some((handle.clone(), *words, *kv)),
             _ => None,
         }
@@ -984,10 +970,7 @@ impl SeqBody {
     /// that flavour (formerly `ValueView::LazyIoLines`) and left a plain
     /// `Seq.new($iterator)` alone.
     pub(crate) fn is_io_lines_source(&self) -> bool {
-        matches!(
-            self.core.state.lock().unwrap().source,
-            SeqSource::IoLines { .. }
-        )
+        matches!(self.lock_state().source, SeqSource::IoLines { .. })
     }
 
     /// Whether a dispatch site needs to call `reify`/`take` at all before
@@ -1010,7 +993,7 @@ impl SeqBody {
     // Cost: O(1).
     pub(crate) fn awaits_vm_reify(&self) -> bool {
         matches!(
-            self.core.state.lock().unwrap().source,
+            self.lock_state().source,
             SeqSource::MapGrep { .. } | SeqSource::Iterator(_) | SeqSource::IoLines { .. }
         )
     }
@@ -1026,12 +1009,12 @@ impl SeqBody {
         if !matches!(self.view, SeqView::Seq | SeqView::ItemSeq) || self.core.element_containers {
             return false;
         }
-        let state = self.core.state.lock().unwrap();
+        let state = self.lock_state();
         matches!(state.source, SeqSource::Reified) && !state.lazy
     }
 
     pub(crate) fn needs_touch(&self) -> bool {
-        let state = self.core.state.lock().unwrap();
+        let state = self.lock_state();
         !(matches!(state.source, SeqSource::Reified) && (state.retained || state.cache_requested))
     }
 
@@ -1056,55 +1039,52 @@ impl SeqBody {
         needed: usize,
         pull_n: impl FnOnce(&Value, bool, usize) -> Result<(Vec<Value>, bool), RuntimeError>,
     ) -> Result<(), RuntimeError> {
+        if self.live_generation().len() >= needed {
+            return Ok(());
+        }
+        let mut state = self.lock_state();
+        // Re-read under the lock: a pull this thread waited for may have
+        // produced enough already.
         let have = self.live_generation().len();
         if have >= needed {
             return Ok(());
         }
-        let (new_items, exhausted) = {
-            let mut state = self
-                .core
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            match &mut state.source {
-                SeqSource::Pure(spec) => {
-                    let mut items = Vec::new();
-                    spec.push_up_to(&mut items, needed - have);
-                    let exhausted = items.len() < needed - have;
-                    (items, exhausted)
+        let (handle, words) = match &mut state.source {
+            SeqSource::Pure(spec) => {
+                // Cut and publish under the lock, so two threads' prefixes
+                // cannot be published out of order.
+                let mut items = self.live_generation().clone();
+                spec.push_up_to(&mut items, needed - have);
+                let exhausted = items.len() < needed;
+                if items.len() > have {
+                    self.core.gens.publish(items);
                 }
-                // kv-mode IoLines never occurs at any construction site today
-                // (`Value::lazy_io_lines` is always called with `kv: false`);
-                // skip the bounded path for it rather than getting the
-                // interleaved indices wrong, and let the caller fully reify.
-                SeqSource::IoLines {
-                    handle,
-                    words,
-                    kv: false,
-                } => {
-                    let (handle, words) = (handle.clone(), *words);
-                    drop(state);
-                    pull_n(&handle, words, needed - have)?
+                if exhausted {
+                    state.source = SeqSource::Reified;
                 }
-                _ => return Ok(()),
+                return Ok(());
             }
+            // kv-mode IoLines never occurs at any construction site today
+            // (`Value::lazy_io_lines` is always called with `kv: false`);
+            // skip the bounded path for it rather than getting the
+            // interleaved indices wrong, and let the caller fully reify.
+            SeqSource::IoLines {
+                handle,
+                words,
+                kv: false,
+            } => (handle.clone(), *words),
+            _ => return Ok(()),
         };
-        if new_items.is_empty() && !exhausted {
-            return Ok(());
+        let _claim = generations::claim_pull(&self.core, &mut state);
+        drop(state);
+        let (new_items, exhausted) = pull_n(&handle, words, needed - have)?;
+        if !new_items.is_empty() {
+            let mut combined = self.live_generation().clone();
+            combined.extend(new_items);
+            self.core.gens.publish(combined);
         }
-        let mut combined = self.live_generation().clone();
-        combined.extend(new_items);
-        // SAFETY: same reasoning as `pull_and_store` — no reference into
-        // `gens` is held across this push, and earlier generations (still
-        // reachable through outstanding `&Vec<Value>` borrows) are never
-        // rewritten, only superseded by a longer one.
-        unsafe { (*self.core.gens.get()).push(Box::new(combined)) };
         if exhausted {
-            self.core
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .source = SeqSource::Reified;
+            self.lock_state().source = SeqSource::Reified;
         }
         Ok(())
     }
@@ -1122,36 +1102,31 @@ impl SeqBody {
         needed: usize,
         pull: impl FnOnce(&Value, usize) -> Result<Vec<Value>, RuntimeError>,
     ) -> Result<(), RuntimeError> {
+        if self.live_generation().len() >= needed {
+            return Ok(());
+        }
+        let mut state = self.lock_state();
         let have = self.live_generation().len();
         if have >= needed {
             return Ok(());
         }
-        let iterator = match &self
-            .core
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .source
-        {
-            SeqSource::Iterator(iterator) => iterator.clone(),
-            _ => return Ok(()),
+        let SeqSource::Iterator(iterator) = &state.source else {
+            return Ok(());
         };
+        let iterator = iterator.clone();
+        // The iterator stays in `source` while it is pulled, so the claim is
+        // what keeps a second thread from pulling it at the same time.
+        let _claim = generations::claim_pull(&self.core, &mut state);
+        drop(state);
         let new_items = without_pull_progress(pull(&iterator, needed - have))?;
         let exhausted = new_items.len() < needed - have;
         if !new_items.is_empty() {
             let mut combined = self.live_generation().clone();
             combined.extend(new_items);
-            // SAFETY: same reasoning as `pull_and_store` — no reference into
-            // `gens` is held across this push, and earlier generations are
-            // never rewritten, only superseded by a longer one.
-            unsafe { (*self.core.gens.get()).push(Box::new(combined)) };
+            self.core.gens.publish(combined);
         }
         if exhausted {
-            self.core
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .source = SeqSource::Reified;
+            self.lock_state().source = SeqSource::Reified;
         }
         Ok(())
     }
@@ -1170,13 +1145,7 @@ impl SeqBody {
         {
             return false;
         }
-        match &self
-            .core
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .source
-        {
+        match &self.lock_state().source {
             SeqSource::Pure(cursor) => cursor.never_nilish(),
             _ => false,
         }
@@ -1187,21 +1156,17 @@ impl SeqBody {
     // Cost: O(1).
     pub(crate) fn has_prefix_source(&self) -> bool {
         matches!(
-            self.core
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .source,
+            self.lock_state().source,
             SeqSource::Pure(_) | SeqSource::IoLines { kv: false, .. }
         )
     }
 
     pub(crate) fn set_hyper_config(&self, batch: Option<i64>, degree: Option<i64>) {
-        self.core.state.lock().unwrap().hyper = Some((batch, degree));
+        self.lock_state().hyper = Some((batch, degree));
     }
 
     pub(crate) fn hyper_config(&self) -> Option<(Option<i64>, Option<i64>)> {
-        self.core.state.lock().unwrap().hyper
+        self.lock_state().hyper
     }
 
     /// `for`-loop streaming special case (`vm_for_loop_dispatch.rs`): iterate
@@ -1217,7 +1182,7 @@ impl SeqBody {
     pub(crate) fn claim_io_lines_for_streaming(
         &self,
     ) -> Result<Option<(Value, bool, bool)>, RuntimeError> {
-        let mut state = self.core.state.lock().unwrap();
+        let mut state = self.lock_state();
         match &state.source {
             SeqSource::Taken => Err(super::seq_consumed_error()),
             SeqSource::IoLines { .. } if !state.cache_requested => {
@@ -1235,7 +1200,7 @@ impl SeqBody {
     /// `HyperSeq`/`RaceSeq.iterator` (rakudo #4413): claim the single
     /// allowed iterator, atomically. `Err` if already claimed.
     pub(crate) fn claim_hyper_iterator_once(&self) -> Result<(), RuntimeError> {
-        let mut state = self.core.state.lock().unwrap();
+        let mut state = self.lock_state();
         if state.hyper_iterator_claimed {
             return Err(super::seq_consumed_error());
         }
@@ -1247,16 +1212,15 @@ impl SeqBody {
     /// must never pull (a pull mid-collect would re-enter allocation/the VM
     /// from inside the collector; same reasoning as `NativeBacking::trace_edges`).
     pub(crate) fn trace_edges(&self, visit: &mut dyn FnMut(&crate::gc::ErasedGc)) {
-        // SAFETY: read-only. GC trace runs at a collect safepoint, never
-        // concurrently with a `pull_and_store` on this same body (mirrors
-        // `NativeBacking::trace_edges`'s reasoning).
-        let gens = unsafe { &*self.core.gens.get() };
-        for generation in gens.iter() {
-            for v in generation.iter() {
-                v.gc_trace(visit);
-            }
-        }
-        let state = self.core.state.lock().unwrap();
+        self.core.gens.for_each_value(&mut |v| v.gc_trace(visit));
+        // Never `lock_state`: a collect must not wait for a pull, whose thread
+        // is itself stopped at a safepoint. The moved-out source of an
+        // in-flight pull is rooted by the pulling frame.
+        let state = self
+            .core
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         state.source.trace_edges(visit);
     }
 }

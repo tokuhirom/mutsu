@@ -31,7 +31,7 @@ impl SeqBody {
     /// elements.
     // Cost: O(p), p = elements a prefix pull already produced.
     pub(crate) fn take_map_grep_stream_source(&self) -> Option<(Vec<Value>, SeqSource)> {
-        let mut state = self.core.state.lock().unwrap();
+        let mut state = self.lock_state();
         if state.cache_requested
             || state.retained
             || !matches!(state.source, SeqSource::MapGrep { .. })
@@ -47,7 +47,7 @@ impl SeqBody {
     /// it (`MapGrepItems::Chain`) instead of reifying it first (#11176).
     // Cost: O(1).
     pub(crate) fn has_map_grep_stream_source(&self) -> bool {
-        let state = self.core.state.lock().unwrap();
+        let state = self.lock_state();
         !state.cache_requested
             && !state.retained
             && matches!(state.source, SeqSource::MapGrep { .. })
@@ -66,14 +66,14 @@ impl SeqBody {
         pull: impl FnOnce(&mut SeqSource) -> Result<(Vec<Value>, bool), RuntimeError>,
     ) -> Result<Option<Vec<Value>>, RuntimeError> {
         let mut source = {
-            let mut state = self.core.state.lock().unwrap();
+            let mut state = self.lock_state();
             if !matches!(state.source, SeqSource::MapGrep { .. }) {
                 return Ok(None);
             }
             std::mem::replace(&mut state.source, SeqSource::Taken)
         };
         let (items, exhausted) = pull(&mut source)?;
-        self.core.state.lock().unwrap().source = if exhausted {
+        self.lock_state().source = if exhausted {
             SeqSource::Reified
         } else {
             source
@@ -92,11 +92,7 @@ impl SeqBody {
     /// was requested — the ordinary reify then serves the loop.
     // Cost: O(1), or O(p) for p elements an earlier prefix pull stored.
     pub(crate) fn claim_map_grep_for_streaming(&self) -> Option<(Vec<Value>, SeqSource)> {
-        let mut state = self
-            .core
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut state = self.lock_state();
         if state.cache_requested || !matches!(state.source, SeqSource::MapGrep { .. }) {
             return None;
         }
@@ -113,16 +109,9 @@ impl SeqBody {
     // Cost: O(1).
     pub(crate) fn finish_map_grep_streaming(&self, items: Vec<Value>, source: SeqSource) {
         if items.len() != self.live_generation().len() {
-            // SAFETY: same reasoning as `pull_and_store` — no reference into
-            // `gens` is held across this push, and earlier generations are
-            // never rewritten, only superseded by a longer one.
-            unsafe { (*self.core.gens.get()).push(Box::new(items)) };
+            self.core.gens.publish(items);
         }
-        let mut state = self
-            .core
-            .state
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut state = self.lock_state();
         state.source = source;
         state.retained = true;
     }

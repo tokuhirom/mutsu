@@ -607,3 +607,23 @@ Two things were wrong when a Seq's first non-consuming read (`.raku`, `.gist`, `
    (the `Map`/`MapRw`/`Grep`/`GrepArray` modes and the chain, each with its own loop, plan and
    phaser handling), stored as a generation and the source put back instead of `Taken`. That is
    a change to the map/grep engine, not to this bookkeeping, and is tracked in #12048.
+
+## Amendment (2026-10-12): concurrent pulls and generation publication (#11242)
+
+Two assumptions in §2.2 did not hold once a `.cache`d Seq was read from several threads:
+
+- **"The graveyard never grows past two entries."** Every prefix pull (`pull_prefix`,
+  `extend_from_iterator`, `extend_map_grep_prefix`) publishes a generation, so the graveyard grows
+  without bound, and readers that found the newest one through the end of the graveyard's own
+  `Vec` raced the push that reallocated it. Generations are now `Arc<Vec<Value>>`s that an
+  append-only graveyard keeps until the body is dropped. Readers load the newest one through an
+  `AtomicPtr` and never touch the graveyard's `Vec` (`src/value/seq_body/generations.rs`). The
+  borrowed `Deref`/`live_generation` API is unchanged. Superseded prefixes are still kept for the
+  body's lifetime; freeing them needs an owned read API, tracked in #13023.
+- **A pull moves the source out and runs unlocked.** A second thread arriving meanwhile read the
+  moved-out source as `Taken` and threw `X::Seq::Consumed` although the Seq was cached. A
+  non-consuming pull now records its thread as the body's `puller`. Every other thread that takes
+  the state lock waits on a `Condvar`, through the STW-aware `gc::wait_until`, until the pull is
+  over. The puller itself never waits, so a pull that re-enters the same Seq on its own thread
+  still sees `Taken`, as before. The consumption matrix (§1.4) is unchanged: an uncached Seq is
+  still single-use.
