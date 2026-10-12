@@ -69,6 +69,7 @@ thread_local! {
 /// Note a freshly registered rule's signature, arming [`ANY_DYNAMIC_TOKEN_PARAM`]
 /// when it declares a dynamically-scoped parameter.
 pub(crate) fn note_token_def_params(param_defs: &[ParamDef]) {
+    super::regex_rule_params::note_token_def_positional_params(param_defs);
     if param_defs
         .iter()
         .any(|pd| !pd.named && !pd.slurpy && is_dynamic_var_name(&pd.name))
@@ -268,6 +269,9 @@ impl Interpreter {
         arg_values: &[Value],
         prior: Option<SavedDynParams>,
     ) -> Option<SavedDynParams> {
+        // The rule's runtime parameters (`regex_rule_params`) are bound first:
+        // its `"..."` atoms' qq thunks may read them.
+        let prior = self.install_runtime_rule_params(name, pkg, arg_values, prior);
         // The rule's `"..."` atoms' qq thunks run in the same window, so the
         // pre-pass sees their results while the rule's pattern is parsed.
         let prior = self.install_subrule_qq_thunks(name, pkg, prior);

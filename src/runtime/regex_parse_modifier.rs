@@ -191,6 +191,16 @@ impl Interpreter {
         let is_regex_local = |name: &String, declared: &std::collections::HashSet<String>| {
             declared.contains(name) || super::regex::regex_helpers::is_enclosing_regex_var(name)
         };
+        // A rule body's runtime-parameter declaration block
+        // (`regex_rule_params`): its names are bound when the rule runs, so a
+        // bare `$name` stays in the text, as for a `:my` lexical. The block is
+        // copied through for the structural parser.
+        if let Some((names, rest)) = super::regex::regex_rule_params::split_rule_params(pattern) {
+            declared_my_vars.extend(names.map(str::to_string));
+            let block_len = pattern.len() - rest.len();
+            out.push_str(&pattern[..block_len]);
+            i = pattern[..block_len].chars().count();
+        }
         while i < chars.len() {
             let ch = chars[i];
             // # starts a comment — skip without interpolation.

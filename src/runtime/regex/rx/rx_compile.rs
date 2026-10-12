@@ -562,12 +562,23 @@ impl Compiler {
             }
             RegexAtom::Conjunction(branches) => self.conjunction(token, branches)?,
             RegexAtom::VarInterp(_) => {
-                // `$x` of an in-regex `:my` lexical (or an outer one): the
-                // value is read from the level's lexicals when the atom is
-                // matched, and matched as a literal.
+                // `$x` of an in-regex `:my` lexical, a rule's runtime parameter
+                // or an outer variable: the value is read when the atom is
+                // matched, and matched as a literal — or, for a `Regex` value,
+                // entered as a frame like a `$( … )` result (so the program
+                // needs the frame-capable run loop); under ratchet the atom
+                // commits to its first end.
+                let height = token.ratchet.then(|| self.reg());
+                if let Some(h) = height {
+                    self.ops.push(RxOp::Height(h));
+                }
                 let i = self.push_atom(&token.atom);
-                self.ops.push(RxOp::CapAtom(i));
+                self.ops.push(RxOp::InterpEnds(i));
+                if let Some(h) = height {
+                    self.ops.push(RxOp::Cut(h));
+                }
                 self.has_code = true;
+                self.has_call = true;
             }
             RegexAtom::CodeInterp { .. } => {
                 // `$( … )` / `@( … )`: the code yields a pattern (or a list of
