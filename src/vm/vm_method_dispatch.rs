@@ -444,20 +444,18 @@ impl Interpreter {
         }
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
-        // born-owned overlay over the caller (gated on no inner closures) so the
-        // method's `self`/`?CLASS`/param/attr/local env setup writes land in a
-        // fresh map instead of forking the caller env. `frame.saved_env` holds the
-        // flat caller for restoration; the can_skip_merge path drops the overlay
-        // via set_env(saved_env) and the merge path's `merge_method_env` iterates
-        // it overlay-only (the method's own writes). No closure/thread body runs
-        // under the overlay.
-        // A method declared at program scope links the root it gets past its
-        // callers (ADR-12529). One that creates closures runs in its caller's
-        // env, unlinked: a root of its own would cost a flatten per method
-        // call in its body.
+        // born-owned overlay over the caller, the method's frame root, so its
+        // `self`/`?CLASS`/param/attr/local env setup writes land in a fresh map
+        // instead of forking the caller env. `frame.saved_env` holds the caller
+        // for restoration; the can_skip_merge path drops the overlay via
+        // set_env(saved_env) and the merge path's `merge_method_env` iterates
+        // it overlay-only (the method's own writes). A closure the method
+        // creates captures up to this root (`layered_capture`), never the
+        // caller's env above it (#12882).
+        // A method declared at program scope links the root past its callers
+        // (ADR-12529).
         let links_frame = cc.links_frame_to_unit();
-        let rooted = cc.closure_compiled_codes.is_empty();
-        if rooted {
+        {
             let parent = self.env().clone();
             let mut frame = crate::env::Env::scoped_child(parent);
             // A method owns its `$/` (`env::routine_owned`).
@@ -570,19 +568,7 @@ impl Interpreter {
         // $_ in a method body is Any unless the invocant is explicitly named $_
         // (e.g. `method foo ($_: ) { ... }`). The invocant binding loop below
         // will set $_ back to self if the invocant param is named "_".
-        // A rooted method's frame answers both (`env::routine_owned`); one
-        // that runs in its caller's env (it creates closures) shadows them.
-        // TODO(#12882): give a closure-creating method a root without the
-        // per-call flatten slice 8 measured, and drop these inserts.
-        if !rooted {
-            self.env_mut().insert_sym(
-                crate::symbol::wk::topic(),
-                Value::package(crate::symbol::wk::any()),
-            );
-            // Raku: $! is scoped per routine — fresh Nil on entry
-            self.env_mut()
-                .insert_sym(crate::symbol::wk::error_var(), Value::NIL);
-        }
+        // The method's frame root answers both (`env::routine_owned`).
 
         // Assign a unique callable ID for this method invocation so that
         // non-local returns from blocks defined inside this method can target it.
@@ -1716,17 +1702,6 @@ impl Interpreter {
     /// its own locals/overlay, so legitimate recoveries still see it; a caller
     /// frame's materialized value of the same name (reachable only through the
     /// parent chain) is invisible, matching `reconcile_attrs`' stated contract.
-    ///
-    /// Overlay-only alone is not enough when this method's compiled code
-    /// declares inner closures: the caller then skips installing a fresh
-    /// scoped overlay for the call (docs/vm-dual-store.md Slice 6, gated on
-    /// `closure_compiled_codes.is_empty()`), so this frame's "overlay" is the
-    /// very same map the caller was already writing into -- a caller's
-    /// materialized ContainerRef under this name lands in what overlay_get
-    /// sees as "this frame's own" entries. Guard that case against the
-    /// call's entry snapshot (`call_frames.last().saved_env`): a candidate
-    /// that was already a ContainerRef before this call started predates it
-    /// and must not be adopted, even though it now reads as overlay-owned.
     // Cost: O(l + o + r * l), l = the frame's local slots, o = its env overlay
     // entries (its logged writes, once flattened), r = those slots/entries
     // holding a ContainerRef (almost always 0).
@@ -1758,15 +1733,6 @@ impl Interpreter {
             }
             let name = sym.as_str();
             if code.locals.iter().any(|n| n == name) {
-                continue;
-            }
-            if !code.closure_compiled_codes.is_empty()
-                && let Some(frame) = self.call_frames.last()
-                && matches!(
-                    frame.saved_env.get(name).map(|v| v.view()),
-                    Some(ValueView::ContainerRef(_))
-                )
-            {
                 continue;
             }
             refs.push((name, v.clone()));
@@ -1983,16 +1949,13 @@ impl Interpreter {
         // method-call env deep copy (the bench-class cost). Reads fall through to
         // the parent; on return `set_env(saved_env)` (can_skip_merge) drops the
         // overlay and `merge_method_env` iterates it overlay-only (the method's
-        // own writes, which is exactly what the merge needs). Gated to methods
-        // with no inner closures so no closure/thread/gather body captures or
-        // iterates the scoped env for a full lexical view.
-        // A method declared at program scope links the root it gets past its
-        // callers (ADR-12529). One that creates closures runs in its caller's
-        // env, unlinked: a root of its own would cost a flatten per method
-        // call in its body.
+        // own writes, which is exactly what the merge needs). It is the
+        // method's frame root: a closure the method creates captures up to it
+        // (`layered_capture`), never the caller's env above it (#12882).
+        // A method declared at program scope links the root past its callers
+        // (ADR-12529).
         let links_frame = cc.links_frame_to_unit();
-        let use_scoped = cc.closure_compiled_codes.is_empty();
-        if use_scoped {
+        {
             let parent = self.env().clone();
             let mut scoped = crate::env::Env::scoped_child(parent);
             // A method owns its `$/` (`env::routine_owned`).
@@ -2352,11 +2315,7 @@ impl Interpreter {
             env.insert_sym(crate::symbol::wk::self_(), base.clone());
             env.insert_sym(crate::symbol::wk::anon_state(), base.clone());
             env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
-            // A rooted frame answers `$_` and `$!` (`env::routine_owned`).
-            if !use_scoped {
-                env.insert_sym(crate::symbol::wk::topic(), any_val.clone());
-                env.insert_sym(crate::symbol::wk::error_var(), Value::NIL);
-            }
+            // The rooted frame answers `$_` and `$!` (`env::routine_owned`).
             env.set_callable_id(method_callable_id as i64);
             if let Some(ref role_name) = role_context {
                 env.insert_sym(
