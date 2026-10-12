@@ -595,3 +595,13 @@ constructor and accessor expose the optional flag, whose absent value is
 `False`. `t/rakuast/rakuast-object-hash.t` covers read and constructed trees,
 ordinary-hash distinction, and evaluation. The frontend ratchet passes 6960
 of 7274 files and lists 6973 entries.
+
+### 6.15 S10: bare `done` calls (2026-10-12)
+
+Rakudo renders `done` without parentheses as
+`Call::Name::WithoutParentheses`. Conversion recognizes this core call, and
+lowering restores the parser's `Expr::BareWord("done")` marker so the compiler
+retains its supply/react completion behavior in expression position.
+`t/rakuast/rakuast-bareword-resolution.t` pins the node shape, and
+`t/concurrency/supply/supply-done-expression.t` passes in RakuAST mode. The
+frontend ratchet adds 36 files on the current main tree.

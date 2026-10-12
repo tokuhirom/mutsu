@@ -449,12 +449,11 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
     walk_stmts(&mut Scan(out, Vec::new()), stmts);
 }
 
-/// The redispatch routines a body calls without arguments (`callsame`,
-/// `nextsame`): raku renders each as `Call::Name::WithoutParentheses` with no
-/// `args`, the node an argument-less listop call of a declared sub gets too.
-/// mutsu's parser keeps them as barewords; the call they lower back to
-/// dispatches the same way.
-const REDISPATCH_CALLS: &[&str] = &["callsame", "nextsame", "lastcall", "nextcallee"];
+/// Core routines which are meaningful as bare calls without parentheses.
+/// `done` completes the current supply; the redispatch routines have their
+/// special meaning in a method body. In RakuAST all render as
+/// `Call::Name::WithoutParentheses`.
+const CORE_BARE_CALLS: &[&str] = &["callsame", "nextsame", "lastcall", "nextcallee", "done"];
 
 /// The RakuAST node a bareword renders as, or `None` when nothing resolves the
 /// name (the conversion boundary).
@@ -554,7 +553,7 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
             fields: vec![leaf_field(None, Value::str(op.to_string()))],
         });
     }
-    if REDISPATCH_CALLS.contains(&name) {
+    if CORE_BARE_CALLS.contains(&name) {
         return Some(RakuAstNode {
             class: RakuAstClass::CallNameWithoutParentheses,
             fields: vec![node_field(Some("name"), name_from_identifier(name))],

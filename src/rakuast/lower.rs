@@ -4751,6 +4751,15 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         }),
         // A named call `f(1, 2)` -> Expr::Call (the listop I/O calls are handled
         // as statements in `lower_stmt_inner`; here they are ordinary calls too).
+        // `done` in expression position uses the same compiler special form
+        // as a bareword parsed directly from source. Preserve that marker so
+        // the compiler emits its supply/react completion behavior.
+        RakuAstClass::CallNameWithoutParentheses
+            if call_name_str(node).is_ok_and(|n| n == "done")
+                && !node.fields.iter().any(|f| f.name == Some("args")) =>
+        {
+            Ok(Expr::BareWord("done".to_string()))
+        }
         // An argument-less `Call::Name` of a stash name is how Rakudo renders
         // an unresolved stash lookup `Foo::`; it is the same lookup.
         RakuAstClass::CallName if let Some(stash) = call_name_stash(node) => {

@@ -6,10 +6,10 @@ use Test;
 # name at parse time, so the node says what it is (measured on rakudo 2026.09):
 # a type is a `Type::Simple`, a setting enum value a `Term::Enum`, any other
 # defined term (a setting constant, the unit's enum value, a sigilless
-# parameter) a `Term::Name`, and an argument-less redispatch call a
+# parameter) a `Term::Name`, and a core call without parentheses a
 # `Call::Name::WithoutParentheses`. Each EVALs back to what the name means.
 
-plan 33;
+plan 34;
 
 sub expr(Str $src, Int $i = 0) { $src.AST.statements[$i].expression }
 
@@ -74,3 +74,8 @@ is Q|class A { method m { "A" } }; class B is A { method m { "B" ~ callsame } };
     'BA', 'callsame EVALs as a redispatch';
 is Q|multi f(Int $x) { nextsame }; multi f(Any $x) { "any" }; f(1)|.AST.EVAL, 'any',
     'nextsame EVALs as a redispatch';
+
+# --- the supply completion routine as a bare call ----------------------------
+is expr(Q|sub f { done }|).body.statement-list.statements[0].expression.^name,
+    'RakuAST::Call::Name::WithoutParentheses',
+    'done in expression position is a call without parentheses';
