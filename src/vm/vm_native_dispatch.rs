@@ -714,7 +714,14 @@ impl Interpreter {
         let mut result = if args.len() == 2 {
             crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
         } else if args.len() == 1 {
-            crate::builtins::native_method_1arg(target, method_sym, &args[0])
+            crate::builtins::native_method_1arg(target, method_sym, &args[0]).or_else(|| {
+                crate::builtins::method_table::answer_shapeless(
+                    Some(self),
+                    target,
+                    method_sym,
+                    &args[..1],
+                )
+            })
         } else if args.is_empty() {
             // The cascade without the method table: `try_native_method` asked
             // the table for this very receiver and method before calling here,

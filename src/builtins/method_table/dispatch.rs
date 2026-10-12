@@ -326,8 +326,15 @@ fn dispatch(
     call(row, interp, target, &positional, Named::new(&named))
 }
 
-/// Answer a call the cascades declined from the row `Cool` or `Any`
-/// declares, for a receiver with no shape (ADR-11276 §9.79, §9.80).
+/// `Iterable`'s methods a receiver with no shape reaches through the row of
+/// the built-in class it is a form of ([`answer_shapeless`]): Rakudo declares
+/// them on `List`, `Seq` and `Map`, not on `Any` (`5.lazy` is
+/// `X::Method::NotFound`).
+const ITERABLE_FOR_SHAPELESS: [&str; 1] = ["lazy"];
+
+/// Answer a call the cascades declined from the row `Mu`, `Cool`, `Any`,
+/// `List` or `Seq` declares, for a receiver with no shape (ADR-11276 §9.79,
+/// §9.80, §9.81).
 ///
 /// - `Cool`'s audited text methods ([`crate::value::COOL_TEXT_FOR_CLOSED_SHAPES`])
 ///   answer a shapeless `Cool`: an enum value, a `Seq` or `Slip` the table has
@@ -335,7 +342,14 @@ fn dispatch(
 /// - `Any`'s list methods ([`crate::value::ANY_LIST_FOR_CLOSED_SHAPES`]) answer
 ///   those and every other receiver the cascades declined: a code object, a
 ///   regex, a promise, a RakuAST node, a type object with no shape, a shaped
-///   or lazy array, an instance.
+///   or lazy array, an instance. `join` takes its separator.
+/// - `Mu`'s answers ([`crate::value::MU_FOR_CLOSED_SHAPES`]: `so`, `not`,
+///   `is-lazy`) answer every receiver, a `Failure` included (asking its truth
+///   handles it); an instance answers from the first class in its MRO that
+///   declares the method.
+/// - `Iterable`'s `lazy` ([`ITERABLE_FOR_SHAPELESS`]) answers a `LazyList`
+///   or unsettled `Seq` from `Seq`'s row and a lazy or shaped array or a
+///   `Slip` from `List`'s.
 ///
 /// An instance walks its class's MRO and declines when a built-in class ahead
 /// of `Cool`/`Any` declares the method (`class MyPath is IO::Path` reads its
@@ -355,16 +369,45 @@ pub(crate) fn answer_shapeless(
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
     use crate::value::ValueView;
-    if !args.is_empty() {
+    // `join` alone takes an argument (its separator).
+    if !args.is_empty() && (args.len() > 1 || method.as_str() != "join") {
         return None;
     }
     let text = crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method.as_str());
     let list = crate::value::ANY_LIST_FOR_CLOSED_SHAPES.contains(&method.as_str());
-    if !(text || list) || Receiver::of_settled(target).is_some() {
+    let mu = crate::value::MU_FOR_CLOSED_SHAPES.contains(&method.as_str());
+    let iterable = ITERABLE_FOR_SHAPELESS.contains(&method.as_str());
+    if !(text || list || mu || iterable) || Receiver::of_settled(target).is_some() {
         return None;
     }
     let (cool, any) = (Symbol::intern("Cool"), Symbol::intern("Any"));
+    let mu_owner = Symbol::intern("Mu");
     let owner = match target.view() {
+        // `Iterable`'s methods: a list still being produced is a `Seq`, a
+        // lazy or shaped array a `List`; nothing else declares them.
+        ValueView::LazyList(_)
+        | ValueView::Seq(_)
+        | ValueView::HyperSeq(_)
+        | ValueView::RaceSeq(_)
+            if iterable =>
+        {
+            Symbol::intern("Seq")
+        }
+        ValueView::Array(..) | ValueView::Slip(_) if iterable => Symbol::intern("List"),
+        _ if iterable => return None,
+        // `Mu`'s answers reach a `Failure` too: asking its truth handles it.
+        ValueView::Instance { class_name, .. } if mu && class_name == "Failure" => mu_owner,
+        ValueView::Instance { class_name, .. } if mu => {
+            // The first class in the MRO that declares the method answers it
+            // (`class M is Match` keeps `Match.not`); `Mu` ends every MRO.
+            interp?
+                .class_mro(class_name.as_str())
+                .iter()
+                .copied()
+                .find(|&class| super::owner_row(class, method, 0).is_some())
+                .unwrap_or(mu_owner)
+        }
+        _ if mu => mu_owner,
         ValueView::Enum { .. }
         | ValueView::LazyList(_)
         | ValueView::Seq(_)
@@ -397,7 +440,7 @@ pub(crate) fn answer_shapeless(
         _ if list => any,
         _ => return None,
     };
-    let id = super::owner_row(owner, method, 0)?;
+    let id = super::owner_row(owner, method, args.len())?;
     call(row(id), None, target, args, Named::NONE).map(|(result, _)| result)
 }
 

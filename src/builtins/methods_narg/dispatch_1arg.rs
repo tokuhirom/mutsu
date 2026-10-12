@@ -8,7 +8,27 @@ use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 use num_traits::ToPrimitive;
 
+/// A built-in method call with one argument: the cascade, then the row a
+/// receiver with no shape reaches (`method_table::answer_shapeless`; an
+/// instance needs the interpreter's MRO and is answered by the entries that
+/// have one).
+// Cost: the cascade's, plus O(m) to test the name, m = audited names.
 pub(crate) fn native_method_1arg(
+    target: &Value,
+    method_sym: Symbol,
+    arg: &Value,
+) -> Option<Result<Value, RuntimeError>> {
+    native_method_1arg_cascade(target, method_sym, arg).or_else(|| {
+        crate::builtins::method_table::answer_shapeless(
+            None,
+            target.descalarize(),
+            method_sym,
+            std::slice::from_ref(arg),
+        )
+    })
+}
+
+fn native_method_1arg_cascade(
     target: &Value,
     method_sym: Symbol,
     arg: &Value,
@@ -669,22 +689,6 @@ pub(crate) fn native_method_1arg(
                 crate::value::StrIterMode::Words,
                 limit,
             )))
-        }
-        // Cost: O(e + t), e = elements of the invocant, t = total chars of the result
-        // (each element stringified once, one `join` into a single buffer).
-        // The `Any.join` row's implementation (`method_table::collections::join`).
-        "join" => {
-            use crate::builtins::method_table::collection_join::{Joined, join_core};
-            match join_core(target, &arg.to_string_value()) {
-                Joined::Done(result) => Some(result),
-                Joined::NeedsInterpreter => None,
-                Joined::NotCovered => match target.view() {
-                    ValueView::Instance { .. } | ValueView::Nil => {
-                        Some(Ok(Value::str(target.to_string_value())))
-                    }
-                    _ => None,
-                },
-            }
         }
         "flat" => {
             if is_hammer_pair(arg) {

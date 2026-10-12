@@ -12,7 +12,6 @@ pub(crate) mod dispatch_core_math;
 mod dispatch_core_numeric;
 pub(crate) mod dispatch_core_range;
 mod dispatch_core_repr;
-mod dispatch_core_str;
 mod dispatch_core_unicode;
 pub(crate) mod which;
 pub(crate) use crate::value::match_helpers;
@@ -1484,8 +1483,9 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             // A Match has reference identity (`ObjAt.new("Match|<id>")`), not
             // the value identity of its matched string — the Str delegation
             // below would land on `ValueObjAt.new("Str|...")`. Fall through to
-            // the generic Instance arm in `dispatch_core_coerce`.
-            "WHICH" => {}
+            // the generic Instance arm in `dispatch_core_coerce`. `join` is
+            // `Any.join`'s row: a Match joins its positional captures.
+            "WHICH" | "join" => {}
             _ => {
                 let str_val = Value::str(target.to_string_value());
                 return native_method_0arg(&str_val, Symbol::intern(method));
@@ -1600,7 +1600,6 @@ fn dispatch_core_families(target: &Value, method: &str) -> Option<Result<Value, 
     try_dispatch!(dispatch_core_unicode);
     try_dispatch!(dispatch_core_numeric);
     try_dispatch!(dispatch_core_list);
-    try_dispatch!(dispatch_core_str);
     try_dispatch!(dispatch_core_repr);
     try_dispatch!(dispatch_core_range);
     try_dispatch!(dispatch_core_math);

@@ -640,24 +640,39 @@ impl Interpreter {
         if crate::builtins::is_join_lazy(&target) {
             return Some(Ok(Value::str("...".to_string())));
         }
-        if !matches!(
+        // `Any.join` is `self.list.join`: an instance, a type object or `Nil`
+        // is a one-element list, whose element is stringified below with its
+        // own `Str` (a user method, or the type object's warning). The `Any.join`
+        // row (`method_table::collections::join`) declines these to here.
+        let one_element = matches!(
             target.view(),
-            ValueView::Array(..)
-                | ValueView::Seq(..)
-                | ValueView::Slip(..)
-                | ValueView::Range(..)
-                | ValueView::RangeExcl(..)
-                | ValueView::RangeExclStart(..)
-                | ValueView::RangeExclBoth(..)
-                | ValueView::GenericRange { .. }
-        ) {
+            ValueView::Instance { .. }
+                | ValueView::Mixin(..)
+                | ValueView::Package(_)
+                | ValueView::Nil
+        );
+        if !one_element
+            && !matches!(
+                target.view(),
+                ValueView::Array(..)
+                    | ValueView::Seq(..)
+                    | ValueView::Slip(..)
+                    | ValueView::Range(..)
+                    | ValueView::RangeExcl(..)
+                    | ValueView::RangeExclStart(..)
+                    | ValueView::RangeExclBoth(..)
+                    | ValueView::GenericRange { .. }
+            )
+        {
             return None;
         }
         let sep = args
             .first()
             .map(|v| v.to_string_value())
             .unwrap_or_default();
-        let items = if crate::runtime::utils::is_shaped_array(&target) {
+        let items = if one_element {
+            vec![target.clone()]
+        } else if crate::runtime::utils::is_shaped_array(&target) {
             crate::runtime::utils::shaped_array_leaves(&target)
         } else if let Some(inner) = target.as_list_items() {
             inner.to_vec()
