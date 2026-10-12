@@ -413,6 +413,14 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    named routine body, compiled without the block's records; #13037),
    `multi`/`our`/exported/traited routines, and a routine named like a
    builtin (`sub dd`).
+
+   Release-build Ir against the merge base: `bench-fib` -0.00%, `bench-tak`
+   +0.00%, `method-call` +0.01%, `poly-call` -0.01%, `bench-ctor` +0.14%,
+   `bench-multi-dispatch` -0.01%, `bench-string` +0.15%. The shape the slice
+   changes costs more: a closure calling a loop body's routine +6.8%, and
+   +30% through the inline `map` path, which has no upvalue array and
+   resolves `&h` by name per call. The call goes through a code object's
+   closure dispatch instead of the named call path; #13049 tracks it.
 3. **The static link.** Frames carry the outer link; the reflective name view
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay
