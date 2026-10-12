@@ -111,7 +111,22 @@ impl Interpreter {
             // once a method dispatch has flattened it), so skip it outright.
             && !self.var_dynamic_flags_is_empty()
         {
+            // A key can be dynamic only by the `is dynamic` flag table or the
+            // builtin `$*` list (`is_var_dynamic`). Every builtin and every
+            // twigil name is a `*` key, which the symbol's memoized flags answer
+            // without a string lookup; so unless some flagged name lacks the
+            // twigil (`my $x is dynamic`), every other key is skipped before
+            // the per-key string work. The walk is once per routine return,
+            // over the caller's whole visible env.
+            let plain_dynamic = self
+                .lexicals
+                .var_dynamic_flags
+                .iter()
+                .any(|(name, &dynamic)| dynamic && !name.starts_with('*'));
             for (key, value) in &popped {
+                if !plain_dynamic && !key.is_dynamic_var_env_key() {
+                    continue;
+                }
                 key.with_str(|key_str| {
                     // `$_`, `$/`, `$!` report as dynamic for `.VAR.dynamic` /
                     // CALLER:: purposes, but they are *not* propagated back to the
