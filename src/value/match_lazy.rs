@@ -171,10 +171,7 @@ impl MatchNode {
                 }
                 continue;
             }
-            sub_named.insert(
-                key.resolve(),
-                Value::named_slot_value(slot, &self.target),
-            );
+            sub_named.insert(key.resolve(), Value::named_slot_value(slot, &self.target));
         }
 
         let mut attrs = AttrMap::new();

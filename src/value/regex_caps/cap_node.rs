@@ -229,9 +229,7 @@ pub(crate) struct CapNode {
 /// different node (a `make` or a narrowed `.pos` was written into the copy),
 /// so a clone starts with an empty memo.
 #[derive(Default)]
-pub(crate) struct MatchMemo(
-    std::sync::Mutex<Option<crate::gc::WeakGc<crate::value::MatchNode>>>,
-);
+pub(crate) struct MatchMemo(std::sync::Mutex<Option<crate::gc::WeakGc<crate::value::MatchNode>>>);
 
 impl Clone for MatchMemo {
     fn clone(&self) -> Self {
