@@ -1751,7 +1751,46 @@ pre-change binary found no answer that changed except `MyStr.reverse` (now `("ab
 `t/oo/method/shapeless-any-list-method-rows.t` pins the receiver kinds.
 
 - **Left**: `Capture.reverse` is `X::Method::NotFound` before and after (Rakudo: the positionals reversed); `List.reverse`'s handler does
-  not read a `Capture`. `so`, `not`, `is-lazy`, `lazy` and `join` in `dispatch_core_str.rs` need the same step for `Mu`'s rows.
+  not read a `Capture`. `so`, `not`, `is-lazy`, `lazy` and `join` in `dispatch_core_str.rs` need the same step for `Mu`'s rows (done
+  in §9.81).
+
+### 9.81 Slice 5: `Mu`'s `so`/`not`/`is-lazy`, `Any.join` and `lazy` reach every receiver; `dispatch_core_str` goes (2026-10-12)
+
+`refactor/11276-mu-any-dispatch-core-str`. The last arms of `methods_0arg/dispatch_core_str.rs` (`so`, `not`, `is-lazy`, `lazy`,
+`join`) and the one-argument `join` arm of `methods_narg/dispatch_1arg.rs` are deleted, and the file with them. The receivers reach rows
+the three ways §9.79 and §9.80 opened:
+
+1. **`Mu`'s answers.** `Mu.so`, `Mu.not` and `Mu.is-lazy` are arity-0 rows (`ctors_mop/mu_answers.rs`, `TYPE_OBJECT_OK`) carrying the
+   arms' bodies: `so`/`not` mark a `Failure` handled, `is-lazy` reads an `Iterator`'s stored flag, throws `X::Seq::Consumed` for a
+   consumed `gather` list and asks `is_genuinely_lazy` of any other `LazyList`. They sit beside the arity-1 `OWNER_ONLY |
+   DEFERRAL_BASE` rows of §9.56, which `owner_row` skips. Every closed shape reaches them (`MU_FOR_CLOSED_SHAPES`,
+   `DispatchShape::may_reach_audited`), a shape's own row first (`Match.not`, `Range.is-lazy`). `answer_shapeless` answers them for
+   every receiver without a shape, a `Failure` included; an instance answers from the first class in its MRO with a row for the name.
+   A user `Bool` is still called before the table is asked (`WithBool.new.so` is `False`).
+2. **`Any.join`.** The row is `TYPE_OBJECT_OK` and `join` joins `ANY_LIST_FOR_CLOSED_SHAPES`, which a `Match` now reaches for `join`
+   only (it joins its positional captures; the `Match` block of `methods_0arg` no longer delegates `join` to the matched string).
+   `join_core` reads a `Blob`/`Buf` as its elements and any receiver it does not read as a list as a one-element list (`self.list`).
+   An element that needs its own `Str` (an instance, a type object, `Nil`) declines the row to the interpreter's list join
+   (`dispatch_join_method`), which now takes such a receiver as its one-element list, so a user `Str` is called and a type object
+   warns. A `Thread` still declines to the thread-join primitive. `answer_shapeless` passes `join`'s separator, and the one-argument
+   entries call it after the cascade as the zero-argument ones do.
+3. **`Iterable`'s `lazy`.** Rakudo declares `lazy` on `List`, `Seq` and `Map` only (`5.lazy` is `X::Method::NotFound`, as before).
+   The re-tag of a lazy `LazyList` (kept lazy when assigned to an array) moves into the shared `lazy` handler, and `answer_shapeless`
+   answers a `LazyList` or unsettled `Seq` from `Seq.lazy` and a lazy or shaped array or a `Slip` from `List.lazy`
+   (`ITERABLE_FOR_SHAPELESS`).
+
+`method-rows-report.py --arms`: the pure arity cascades go from 330 arms to 324. A probe of the five names over ~50 receiver kinds (and
+`join` with a separator) against the pre-change binary found these answers changed, each toward Rakudo and pinned in
+`t/oo/method/shapeless-mu-any-method-rows.t`: an instance joins its own `Str` (`MyCool.new.join` is `"mc"`, was `"MyCool<42>"`); a
+type object joins to `""` with the uninitialized-value warning (was `"(Int)"`); `Blob.join` joins its bytes (was its gist); `Match.join`
+is its positional captures at both arities (the zero-argument form answered the matched string); the one-argument `join` of a code
+object, a `Version`, an enum value or a type object answers instead of `X::Method::NotFound`. `Seq.lazy` and `Range.lazy` on the type
+objects are `X::Method::NotFound` (were the type object; Rakudo raises `X::Parameter::InvalidConcreteness`).
+
+- **Left**: `Thread.join`, `Seq.join` and `Mu.join` on the type objects answer `""` with a warning where Rakudo raises; `Regex.join`
+  answers its source where Rakudo warns and answers `""` (both as before for the zero-argument form). A consumed `gather` list answers
+  `.is-lazy` `False` where Rakudo throws `X::Seq::Consumed` (before and after: the arm's check is reached only for a list not yet
+  marked consumed).
 
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
