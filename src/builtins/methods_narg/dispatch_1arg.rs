@@ -78,6 +78,18 @@ fn native_method_1arg_cascade(
     {
         return Some(result);
     }
+    // An allomorph's text methods read its `Str` part, as the 0-arg cascade's
+    // allomorph block does (`<65>.uniprop("Script")` is `Common`, the script
+    // of "6", not of the codepoint 65).
+    // Cost: O(1), a tag probe and one map lookup.
+    if matches!(
+        method,
+        "uniprop" | "uniprops" | "unimatch" | "samemark" | "samecase" | "indent"
+    ) && let ValueView::Mixin(_, mixins) = target.view()
+        && let Some(str_val) = mixins.get("Str")
+    {
+        return native_method_1arg(str_val, method_sym, arg);
+    }
     // Cost: O(n), n = bytes of the invocant.
     if method == "naive-word-wrapper" {
         return crate::builtins::naive_word_wrapper::native_naive_word_wrapper(target, &[arg]);
@@ -351,32 +363,6 @@ fn native_method_1arg_cascade(
             let result: String = s.chars().take(keep).collect();
             Some(Ok(Value::str(result)))
         }
-        // The argument forms of the Unicode methods are rows
-        // (`method_table::unicode`); these arms keep the `Cool` receivers with no
-        // row reaches (a `Range`, a `Seq`, an enum, a `Cool` subclass instance, ...).
-        // Cost: O(1), a table lookup.
-        "uniprop" => {
-            crate::builtins::method_table::unicode::uniprop_of(target, std::slice::from_ref(arg))
-        }
-        // Cost: O(1), a table lookup.
-        "unimatch" => {
-            crate::builtins::method_table::unicode::unimatch(target, std::slice::from_ref(arg))
-        }
-        // Cost: O(n), n = chars of the invocant.
-        "uniprops" => {
-            crate::builtins::method_table::unicode::uniprops_of(target, std::slice::from_ref(arg))
-        }
-        // The `Str`/`Cool` rows' handlers (`method_table::str_args`).
-        // Cost: O(n + m), n = chars of the invocant, m = chars of the mark source.
-        "samemark" => Some(crate::builtins::method_table::str_args::samemark(
-            target,
-            std::slice::from_ref(arg),
-        )),
-        // Cost: O(n + m), n = chars of the invocant, m = chars of the case pattern.
-        "samecase" => Some(crate::builtins::method_table::str_args::samecase(
-            target,
-            std::slice::from_ref(arg),
-        )),
         // An allomorph (`IntStr`/`RatStr`/`NumStr`) answers with its numeric
         // inner value, so the epsilon binds exactly where it does for that type.
         // Cost: O(1) plus the inner value's own `Rat`/`FatRat` cost.
@@ -441,10 +427,6 @@ fn native_method_1arg_cascade(
             }
         }
         // Cost: O(n + L * s), n = chars of the invocant, L = lines, s = |steps|.
-        "indent" => Some(crate::builtins::method_table::str_args::indent(
-            target,
-            std::slice::from_ref(arg),
-        )),
         // A Capture's positional part: the `Capture` row's implementation
         // (`method_table::capture`).
         // A `Uni`'s positional subscript: the `Uni` rows' implementation
