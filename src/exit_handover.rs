@@ -41,6 +41,7 @@ const ABANDONED: u8 = 4;
 /// `exit` before it ends the process itself. A main thread that is running Raku
 /// code, sleeping or awaiting answers within one poll (milliseconds); this only
 /// bounds the case where it is stuck in native code that never polls.
+#[cfg(not(target_arch = "wasm32"))] // the browser build has no worker threads
 pub(crate) const GRACE: Duration = Duration::from_secs(1);
 
 /// Read without the lock on the hot path ([`requested`]); written only under
@@ -77,6 +78,7 @@ pub(crate) fn interrupts_current_thread() -> bool {
 }
 
 /// What [`request`] found.
+#[cfg(not(target_arch = "wasm32"))] // the browser build has no worker threads
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Request {
     /// This call made the request; wait for it with [`await_adoption`].
@@ -92,6 +94,7 @@ pub(crate) enum Request {
 
 /// Ask the main interpreter to end the process with status `code`.
 // Cost: O(1).
+#[cfg(not(target_arch = "wasm32"))] // the browser build has no worker threads
 pub(crate) fn request(code: i64) -> Request {
     let _guard = lock();
     match STATE.load(Ordering::Relaxed) {
@@ -137,6 +140,7 @@ pub(crate) fn adopt(main_exiting: bool) -> Option<i64> {
 ///
 /// The caller runs this counted GC-quiescent: it touches no `Value`.
 // Cost: O(1) plus the wait.
+#[cfg(not(target_arch = "wasm32"))] // the browser build has no worker threads
 pub(crate) fn await_adoption(grace: Duration) -> bool {
     let guard = lock();
     let (_guard, _) = WAKE
@@ -172,6 +176,7 @@ pub(crate) fn sleep_interruptible(duration: Duration) -> bool {
 /// `exit` was adopted, or lost to an earlier one, waits here for the main
 /// thread to end the process.
 // Cost: never returns.
+#[cfg(not(target_arch = "wasm32"))] // the browser build has no worker threads
 pub(crate) fn park_forever() -> ! {
     loop {
         std::thread::park();
