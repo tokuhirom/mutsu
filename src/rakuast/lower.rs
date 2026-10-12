@@ -204,7 +204,33 @@ pub(super) fn lower_stmt(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
             // The condition modifier binds tighter than the loop one: in
             // `X if C for L` the loop runs `X if C`.
             if let Some(modifier) = condition_modifier {
-                statement = lower_condition_modifier(modifier, statement)?;
+                let attribute_kind = match modifier.class {
+                    RakuAstClass::StatementModifierIf => {
+                        Some(crate::ast::decl_modifier::DeclarationModifier::If)
+                    }
+                    RakuAstClass::StatementModifierUnless => {
+                        Some(crate::ast::decl_modifier::DeclarationModifier::Unless)
+                    }
+                    RakuAstClass::StatementModifierWith => {
+                        Some(crate::ast::decl_modifier::DeclarationModifier::With)
+                    }
+                    RakuAstClass::StatementModifierWithout => {
+                        Some(crate::ast::decl_modifier::DeclarationModifier::Without)
+                    }
+                    RakuAstClass::StatementModifierWhen => {
+                        Some(crate::ast::decl_modifier::DeclarationModifier::When)
+                    }
+                    _ => None,
+                };
+                if let (Stmt::HasDecl { .. }, Some(kind)) = (&statement, attribute_kind) {
+                    statement = crate::ast::attribute_modifier::expand(
+                        statement,
+                        lower_expr(named_child_or_positional(modifier)?)?,
+                        kind,
+                    );
+                } else {
+                    statement = lower_condition_modifier(modifier, statement)?;
+                }
             }
             if let Some(modifier) = loop_modifier {
                 if modifier.class == RakuAstClass::StatementModifierGiven {

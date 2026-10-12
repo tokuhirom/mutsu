@@ -17,6 +17,7 @@ pub(super) fn declaration_modifier_node(
                 DeclarationModifier::Unless => RakuAstClass::StatementModifierUnless,
                 DeclarationModifier::With => RakuAstClass::StatementModifierWith,
                 DeclarationModifier::Without => RakuAstClass::StatementModifierWithout,
+                DeclarationModifier::When => RakuAstClass::StatementModifierWhen,
             },
             fields: vec![node_field(None, convert_expr(condition)?)],
         },

@@ -6,4 +6,5 @@ pub(crate) enum DeclarationModifier {
     Unless,
     With,
     Without,
+    When,
 }

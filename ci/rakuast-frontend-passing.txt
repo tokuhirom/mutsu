@@ -262,6 +262,7 @@ t/collections/lazy-seq/gather-map-take-lazy-resume.t
 t/collections/lazy-seq/gather-nested-loop-pull.t
 t/collections/lazy-seq/gather-returns-seq.t
 t/collections/lazy-seq/gather-self-reference-iterator.t
+t/collections/lazy-seq/gather-seq-body-oracle.t
 t/collections/lazy-seq/gather-seq-bool-methods.t
 t/collections/lazy-seq/gather-seq-bool.t
 t/collections/lazy-seq/gather-seq-slip.t
@@ -917,6 +918,7 @@ t/concurrency/io-socket-async-listen.t
 t/concurrency/io-socket-async-loopback-descriptor.t
 t/concurrency/io-socket-async-real-connect.t
 t/concurrency/io-socket-async-relisten-loop.t
+t/concurrency/io-socket-async-tap-shares-fd.t
 t/concurrency/io-socket-async-text-decode.t
 t/concurrency/log-async-battery.t
 t/concurrency/nqp-async-signal.t
@@ -1842,6 +1844,7 @@ t/grammar/regex-charclass-token-fold.t
 t/grammar/regex-classitem-token-fallback.t
 t/grammar/regex-crosspkg-charclass-token.t
 t/grammar/regex-grammar-method-leaf.t
+t/grammar/regex-lookbehind-through-rule-call.t
 t/grammar/regex-negated-token-class-multichar.t
 t/grammar/regex-rule-separated-quantifier-backtrack.t
 t/grammar/role-proto-regex-reinstantiate.t
@@ -6444,6 +6447,7 @@ t/types/temporal/date-datetime-can-dateish-methods.t
 t/types/temporal/date-datetime-raku.t
 t/types/temporal/date-format-methods.t
 t/types/temporal/date-subclass-methods.t
+t/types/temporal/date-subclass-owner-rows.t
 t/types/temporal/date-subclass-qualified-new-and-arith.t
 t/types/temporal/date-whatever-and-daycount.t
 t/types/temporal/dateish-builtin-roles.t
