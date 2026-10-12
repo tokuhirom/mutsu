@@ -950,86 +950,87 @@ impl Interpreter {
             && data.params.iter().all(|p| p.starts_with('$'))
         {
             // Named params with placeholders: handled by bind_function_args_values
-        } else if !uses_positional && !body_uses_positional && !args.is_empty() {
-            if let Some(first) = args
+        } else if !uses_positional
+            && !body_uses_positional
+            && !args.is_empty()
+            && let Some(first) = args
                 .iter()
                 .find(|v| !matches!(v.view(), ValueView::Pair(_, _)))
-            {
-                // raku binds a bare block's implicit `$_` RAW to its argument,
-                // so `my $b = { $_ = 9 }; $b($v)` writes the CALLER's `$v`. The
-                // topic therefore has to be the caller's container, and the
-                // recipe is the one `binding_signature.rs` already uses for an
-                // `is rw` parameter aliasing a plain scalar caller variable:
-                // reuse the caller's live cell when it has one, otherwise box
-                // the value and install the cell under the source name so the
-                // exit writeback (`apply_rw_bindings_to_env`) and the call
-                // site's slot resync hand the caller back the SAME cell.
-                //
-                // An argument that already arrives as a container (an element
-                // cell from `@a.values`, a `:=`-bound alias) needs none of this
-                // — it IS the caller's location — and neither does a topic the
-                // call site proved container-less, which must stay refused.
-                //
-                // A block that never writes `$_` needs none of it either, and
-                // paying it anyway is observable, not merely wasteful: the
-                // recipe installs a cell in the CALLER's env under the
-                // argument's source name and registers an exit writeback, and
-                // `Log::Timeline`'s nested `Task.log: { ... }` blocks (which
-                // never touch `$_`) had an outer task's state re-published over
-                // the inner one's. Hence `cc.writes_topic`.
-                let topic = match topic_alias_source {
-                    Some(ref source)
-                        if cc.writes_topic
-                            && !first.is_container_ref()
-                            && !topic_arg_is_bare
-                            && !cc.immutable_topic =>
-                    {
-                        let cell = match topic_alias_cell.as_ref() {
-                            Some(existing) => existing.clone(),
-                            None => {
-                                let cell = Value::container_ref(crate::gc::Gc::new(
-                                    crate::value::ContainerCell::new(first.clone()),
-                                ));
-                                self.env_mut().insert(source.clone(), cell.clone());
-                                cell
-                            }
-                        };
-                        rw_bindings.push(("_".to_string(), source.clone()));
-                        cell
-                    }
-                    _ => first.clone(),
-                };
-                self.env_mut().insert_sym(crate::symbol::wk::topic(), topic);
-                // raku binds a bare block's implicit `$_` to the argument
-                // itself: `{ $_ = 5 }(7)` is X::AdHoc "Cannot assign to an
-                // immutable value", while `{ $_ = 9 }($v)` / `(@a[0])` write
-                // through the caller's container. `topic_arg_is_bare` is the
-                // call site's own syntactic verdict (see
-                // `Compiler::expr_yields_container_less_value`) and
-                // `cc.immutable_topic` the `.map`/`.grep`-over-a-literal one;
-                // both are conservative, so an unrecognised shape keeps the
-                // topic writable rather than inventing a throw.
-                //
-                // `explicit_topic`/`capture_rw_topic` mean the native `.map`
-                // loop supplied this topic from a real container it will write
-                // back to (`@a.map({ $_ *= 10 })`), which must stay writable —
-                // and `explicit_topic` overwrites the bind above further down,
-                // so it must be excluded here, not merely below.
-                //
-                // Set in BOTH directions: `readonly_vars` is keyed by bare
-                // name, so a writable topic must also CLEAR a mark an
-                // enclosing construct left on `$_` -- `for 1, 2 { @a.map({ $_
-                // = 5 }) }` (whose native rw-map topic IS a writable element)
-                // wrongly threw. `push_call_frame` above journals either way.
-                if (topic_arg_is_bare || cc.immutable_topic)
-                    && !capture_rw_topic
-                    && explicit_topic.is_none()
-                    && !first.is_container_ref()
+        {
+            // raku binds a bare block's implicit `$_` RAW to its argument,
+            // so `my $b = { $_ = 9 }; $b($v)` writes the CALLER's `$v`. The
+            // topic therefore has to be the caller's container, and the
+            // recipe is the one `binding_signature.rs` already uses for an
+            // `is rw` parameter aliasing a plain scalar caller variable:
+            // reuse the caller's live cell when it has one, otherwise box
+            // the value and install the cell under the source name so the
+            // exit writeback (`apply_rw_bindings_to_env`) and the call
+            // site's slot resync hand the caller back the SAME cell.
+            //
+            // An argument that already arrives as a container (an element
+            // cell from `@a.values`, a `:=`-bound alias) needs none of this
+            // — it IS the caller's location — and neither does a topic the
+            // call site proved container-less, which must stay refused.
+            //
+            // A block that never writes `$_` needs none of it either, and
+            // paying it anyway is observable, not merely wasteful: the
+            // recipe installs a cell in the CALLER's env under the
+            // argument's source name and registers an exit writeback, and
+            // `Log::Timeline`'s nested `Task.log: { ... }` blocks (which
+            // never touch `$_`) had an outer task's state re-published over
+            // the inner one's. Hence `cc.writes_topic`.
+            let topic = match topic_alias_source {
+                Some(ref source)
+                    if cc.writes_topic
+                        && !first.is_container_ref()
+                        && !topic_arg_is_bare
+                        && !cc.immutable_topic =>
                 {
-                    self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
-                } else {
-                    self.unmark_readonly_topic();
+                    let cell = match topic_alias_cell.as_ref() {
+                        Some(existing) => existing.clone(),
+                        None => {
+                            let cell = Value::container_ref(crate::gc::Gc::new(
+                                crate::value::ContainerCell::new(first.clone()),
+                            ));
+                            self.env_mut().insert(source.clone(), cell.clone());
+                            cell
+                        }
+                    };
+                    rw_bindings.push(("_".to_string(), source.clone()));
+                    cell
                 }
+                _ => first.clone(),
+            };
+            self.env_mut().insert_sym(crate::symbol::wk::topic(), topic);
+            // raku binds a bare block's implicit `$_` to the argument
+            // itself: `{ $_ = 5 }(7)` is X::AdHoc "Cannot assign to an
+            // immutable value", while `{ $_ = 9 }($v)` / `(@a[0])` write
+            // through the caller's container. `topic_arg_is_bare` is the
+            // call site's own syntactic verdict (see
+            // `Compiler::expr_yields_container_less_value`) and
+            // `cc.immutable_topic` the `.map`/`.grep`-over-a-literal one;
+            // both are conservative, so an unrecognised shape keeps the
+            // topic writable rather than inventing a throw.
+            //
+            // `explicit_topic`/`capture_rw_topic` mean the native `.map`
+            // loop supplied this topic from a real container it will write
+            // back to (`@a.map({ $_ *= 10 })`), which must stay writable —
+            // and `explicit_topic` overwrites the bind above further down,
+            // so it must be excluded here, not merely below.
+            //
+            // Set in BOTH directions: `readonly_vars` is keyed by bare
+            // name, so a writable topic must also CLEAR a mark an
+            // enclosing construct left on `$_` -- `for 1, 2 { @a.map({ $_
+            // = 5 }) }` (whose native rw-map topic IS a writable element)
+            // wrongly threw. `push_call_frame` above journals either way.
+            if (topic_arg_is_bare || cc.immutable_topic)
+                && !capture_rw_topic
+                && explicit_topic.is_none()
+                && !first.is_container_ref()
+            {
+                self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
+            } else {
+                self.unmark_readonly_topic();
             }
         }
         // A block called with no argument reads the `$_` of its creation
