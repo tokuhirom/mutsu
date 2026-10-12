@@ -38,13 +38,13 @@ throws-like 'use nqp; nqp::setwho($_, 1)', X::AdHoc,
 # (`nqp::substr` was the example here until the String::Utils slice implemented
 # it, then `nqp::chr` until the JSON::Fast slice did, then `nqp::sprintf` until
 # the string-op slice (#11495) did, then `nqp::cas` until the atomic-op slice
-# (#11502) did, then `nqp::signal` and `nqp::watchfile` until the async
-# slices (#11502) did. The example must stay a real nqp op that mutsu does NOT
-# provide and whose Raku face would have answered plausibly: `Proc::Async`
-# runs a process, so aliasing `nqp::spawnprocasync` to it would look right and
-# hide the gap.)
-throws-like 'use nqp; nqp::spawnprocasync("x")', X::AdHoc,
-    message => /'nqp::spawnprocasync'/,
+# (#11502) did, then `nqp::signal`, `nqp::watchfile` and
+# `nqp::spawnprocasync` until the async slices (#11502) did. The example must
+# stay a real nqp op that mutsu does NOT provide and whose Raku face would have
+# answered plausibly: `IO::Socket::Async.connect` opens a connection, so
+# aliasing `nqp::asyncconnect` to it would look right and hide the gap.)
+throws-like 'use nqp; nqp::asyncconnect("x")', X::AdHoc,
+    message => /'nqp::asyncconnect'/,
     'including ops whose Raku namesake would have produced a plausible answer';
 
 # Regression guard: this must stay scoped to `nqp::`. An ordinary qualified

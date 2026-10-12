@@ -198,8 +198,6 @@ impl Interpreter {
     ) -> Result<(Value, AttrMap), RuntimeError> {
         match method {
             "start" => {
-                use std::process::{Command, Stdio};
-
                 if attrs.get("started").is_some_and(|v| v.truthy()) {
                     return Err(proc_async_error("X::Proc::Async::AlreadyStarted", &[]));
                 }
@@ -335,39 +333,20 @@ impl Interpreter {
                 let capture_stdout = claimed("stdout_selected", &bound_stdout, stdout_supply_id);
                 let capture_stderr = claimed("stderr_selected", &bound_stderr, stderr_supply_id);
 
-                // Spawn child process synchronously so we get the PID immediately
-                let mut cmd = Command::new(&program);
-                cmd.args(&cmd_args)
-                    .stdout(if capture_stdout {
-                        Stdio::piped()
-                    } else {
-                        Stdio::inherit()
-                    })
-                    .stderr(if capture_stderr {
-                        Stdio::piped()
-                    } else {
-                        Stdio::inherit()
-                    });
-                if w_flag || bound_stdin.is_some() {
-                    cmd.stdin(Stdio::piped());
-                }
-
+                // Spawn child process synchronously so we get the PID immediately.
+                //
                 // Honor `.start(:$cwd, :$ENV)`. zef's tar/git/curl shell-outs run
                 // with `:cwd($archive.parent)` and a *relative* path
                 // (`./foo.tar.gz`), so an ignored `:cwd` made every `zef` extract
                 // (and any relative-path child) run in the wrong directory and
                 // fail. `:ENV` replaces the child's whole environment with the
                 // given hash (Raku semantics), matching Rakudo's `Proc::Async`.
-                let mut env_override = false;
+                let mut cwd = None;
+                let mut env = None;
                 for arg in &args {
                     if let ValueView::Pair(key, val) = arg.view() {
                         match key.as_str() {
-                            "cwd" => {
-                                let dir = val.to_string_value();
-                                if !dir.is_empty() {
-                                    cmd.current_dir(dir);
-                                }
-                            }
+                            "cwd" => cwd = Some(val.to_string_value()),
                             "ENV" => {
                                 // Accepts anything `.hash` would coerce, not
                                 // only a literal Hash -- `:ENV(%*ENV,
@@ -377,11 +356,11 @@ impl Interpreter {
                                 // (issue #9085).
                                 let coerced = crate::runtime::utils::coerce_to_hash(val.clone());
                                 if let ValueView::Hash(map) = coerced.view() {
-                                    cmd.env_clear();
-                                    for (env_key, env_val) in map.iter() {
-                                        cmd.env(env_key, env_val.to_string_value());
-                                    }
-                                    env_override = true;
+                                    env = Some(
+                                        map.iter()
+                                            .map(|(k, v)| (k.to_string(), v.to_string_value()))
+                                            .collect(),
+                                    );
                                 }
                             }
                             _ => {}
@@ -393,17 +372,30 @@ impl Interpreter {
                 // the OS process environment). `%*ENV` is an ordinary hash that
                 // is never mirrored into the process environment (#11241), as
                 // in rakudo, so it is the child's whole environment.
-                if !env_override
+                if env.is_none()
                     && let Some(env_hash) = self.env.get("%*ENV")
                     && let ValueView::Hash(map) = env_hash.view()
                 {
-                    cmd.env_clear();
-                    for (env_key, env_val) in map.iter() {
-                        cmd.env(env_key, env_val.to_string_value());
-                    }
+                    env = Some(
+                        map.iter()
+                            .map(|(k, v)| (k.to_string(), v.to_string_value()))
+                            .collect(),
+                    );
                 }
-
-                let child_result = cmd.spawn();
+                let spawn = crate::runtime::proc_spawn::ProcSpawn {
+                    program: program.clone(),
+                    args: cmd_args.clone(),
+                    cwd,
+                    env,
+                    stdin: if w_flag || bound_stdin.is_some() {
+                        crate::runtime::proc_spawn::ProcStdin::Piped
+                    } else {
+                        crate::runtime::proc_spawn::ProcStdin::Inherit
+                    },
+                    pipe_stdout: capture_stdout,
+                    pipe_stderr: capture_stderr,
+                };
+                let child_result = spawn.spawn();
 
                 // If spawn failed, break all promises with X::OS and return
                 if let Err(e) = child_result {
@@ -775,34 +767,23 @@ impl Interpreter {
                             match crate::runtime::builtins_system::try_spawn_gc_helper_thread(
                                 "proc-out",
                                 move || {
-                                    use std::io::Read;
-                                    let mut stdout = stdout;
                                     let mut collected = String::new();
                                     let mut raw: Vec<u8> = Vec::new();
-                                    let mut buf = [0u8; 4096];
                                     let mut text = ProcTextStream::new(true);
                                     let mut quit = false;
-                                    loop {
-                                        match crate::gc::block_quiescent(|| stdout.read(&mut buf)) {
-                                            Ok(0) => break,
-                                            Ok(n) => {
-                                                raw.extend_from_slice(&buf[..n]);
-                                                if bin_mode {
-                                                    if !sinks.is_empty() {
-                                                        sinks.emit(make_buf_value(&buf[..n]));
-                                                    }
-                                                } else if text.feed(&buf[..n], &sinks, &mut collected) {
-                                                    sinks.quit(
-                                                        malformed_utf8_quit_value(),
-                                                        &merged_quit,
-                                                    );
-                                                    quit = true;
-                                                    break;
-                                                }
+                                    crate::runtime::proc_spawn::pump_pipe(stdout, |chunk| {
+                                        raw.extend_from_slice(chunk);
+                                        if bin_mode {
+                                            if !sinks.is_empty() {
+                                                sinks.emit(make_buf_value(chunk));
                                             }
-                                            Err(_) => break,
+                                        } else if text.feed(chunk, &sinks, &mut collected) {
+                                            sinks.quit(malformed_utf8_quit_value(), &merged_quit);
+                                            quit = true;
+                                            return false;
                                         }
-                                    }
+                                        true
+                                    });
                                     if !quit {
                                         if text.finish(&sinks, &mut collected) {
                                             sinks.quit(malformed_utf8_quit_value(), &merged_quit);
@@ -839,34 +820,23 @@ impl Interpreter {
                             match crate::runtime::builtins_system::try_spawn_gc_helper_thread(
                                 "proc-err",
                                 move || {
-                                    use std::io::Read;
-                                    let mut stderr = stderr;
                                     let mut collected = String::new();
                                     let mut raw: Vec<u8> = Vec::new();
-                                    let mut buf = [0u8; 4096];
                                     let mut text = ProcTextStream::new(false);
                                     let mut quit = false;
-                                    loop {
-                                        match crate::gc::block_quiescent(|| stderr.read(&mut buf)) {
-                                            Ok(0) => break,
-                                            Ok(n) => {
-                                                raw.extend_from_slice(&buf[..n]);
-                                                if bin_mode {
-                                                    if !sinks.is_empty() {
-                                                        sinks.emit(make_buf_value(&buf[..n]));
-                                                    }
-                                                } else if text.feed(&buf[..n], &sinks, &mut collected) {
-                                                    sinks.quit(
-                                                        malformed_utf8_quit_value(),
-                                                        &merged_quit,
-                                                    );
-                                                    quit = true;
-                                                    break;
-                                                }
+                                    crate::runtime::proc_spawn::pump_pipe(stderr, |chunk| {
+                                        raw.extend_from_slice(chunk);
+                                        if bin_mode {
+                                            if !sinks.is_empty() {
+                                                sinks.emit(make_buf_value(chunk));
                                             }
-                                            Err(_) => break,
+                                        } else if text.feed(chunk, &sinks, &mut collected) {
+                                            sinks.quit(malformed_utf8_quit_value(), &merged_quit);
+                                            quit = true;
+                                            return false;
                                         }
-                                    }
+                                        true
+                                    });
                                     if !quit {
                                         if text.finish(&sinks, &mut collected) {
                                             sinks.quit(malformed_utf8_quit_value(), &merged_quit);

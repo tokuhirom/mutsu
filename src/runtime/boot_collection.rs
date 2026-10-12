@@ -37,13 +37,21 @@ fn boot_collection_op_type(op: &str) -> Option<&'static str> {
 }
 
 /// Whether `name` is one of the BOOT types: a collection (`BOOTArray`,
-/// `BOOTHash`, `BOOT*Array`) or a scalar box type (`BOOTInt`, `BOOTNum`,
-/// `BOOTStr`).
+/// `BOOTHash`, `BOOT*Array`), a scalar box type (`BOOTInt`, `BOOTNum`,
+/// `BOOTStr`) or the OS handle type (`BOOTIO`).
 // Cost: O(1).
 fn is_boot_type_name(name: &str) -> bool {
     name == "BOOTHash"
         || boot_array_elem(name).is_some()
-        || super::boot_scalar::boot_scalar_kind(name).is_some()
+        || is_boot_object_class(name)
+}
+
+/// Whether `name` is a BOOT type whose values are objects: a scalar box
+/// (`BOOTInt`, `BOOTNum`, `BOOTStr`) or an OS handle (`BOOTIO`).
+// Cost: O(1).
+fn is_boot_object_class(name: &str) -> bool {
+    super::boot_scalar::boot_scalar_kind(name).is_some()
+        || name == super::nqp_ops_proc::PROC_HANDLE_CLASS
 }
 
 /// The `BOOT*` type a type object names, if any.
@@ -79,6 +87,7 @@ fn boot_repr(name: &str) -> &'static str {
         "BOOTInt" => "P6int",
         "BOOTNum" => "P6num",
         "BOOTStr" => "P6str",
+        "BOOTIO" => "MVMOSHandle",
         _ => "VMArray",
     }
 }
@@ -194,7 +203,7 @@ pub(crate) fn is_boot_collection_invocant(target: &Value) -> bool {
         || target.is_iteration_buffer_view()
         || (target.is_package_value() && boot_type_object_name(target).is_some())
         || matches!(target.view(), ValueView::Instance { class_name, .. }
-            if super::boot_scalar::boot_scalar_kind(class_name.as_str()).is_some())
+            if is_boot_object_class(class_name.as_str()))
 }
 
 impl Interpreter {

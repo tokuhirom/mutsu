@@ -102,7 +102,7 @@ pub(crate) enum NqpOpTable {
 /// SORTED BY NAME — [`nqp_op_id`] binary-searches it, and an id IS an index
 /// into it. Ids are therefore not stable across edits to this list; nothing
 /// persists one (bytecode is compiled per run), but do not write one down.
-static NQP_OPS: [(&str, NqpOpTable); 527] = [
+static NQP_OPS: [(&str, NqpOpTable); 530] = [
     ("abs_I", NqpOpTable::Value),
     ("abs_i", NqpOpTable::Value),
     ("abs_n", NqpOpTable::Value),
@@ -429,6 +429,7 @@ static NQP_OPS: [(&str, NqpOpTable); 527] = [
     ("iterkey_s", NqpOpTable::Text),
     ("iterval", NqpOpTable::Text),
     ("join", NqpOpTable::Process),
+    ("killprocasync", NqpOpTable::Process),
     ("lc", NqpOpTable::Str),
     ("lcm_I", NqpOpTable::Value),
     ("lcm_i", NqpOpTable::Value),
@@ -502,6 +503,7 @@ static NQP_OPS: [(&str, NqpOpTable); 527] = [
     ("p6trybindsig", NqpOpTable::P6),
     ("p6typecheckrv", NqpOpTable::P6),
     ("parameterizetype", NqpOpTable::Process),
+    ("permit", NqpOpTable::Process),
     ("pop", NqpOpTable::List),
     ("pop_i", NqpOpTable::List),
     ("pop_n", NqpOpTable::List),
@@ -564,6 +566,7 @@ static NQP_OPS: [(&str, NqpOpTable); 527] = [
     ("sinh_n", NqpOpTable::Value),
     ("sleep", NqpOpTable::Sys),
     ("slice", NqpOpTable::Value),
+    ("spawnprocasync", NqpOpTable::Process),
     ("splice", NqpOpTable::Value),
     ("split", NqpOpTable::Process),
     ("sprintf", NqpOpTable::Str),
