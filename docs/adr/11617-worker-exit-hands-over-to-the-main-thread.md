@@ -114,5 +114,17 @@ thread as the adopter.
 On the main program's interpreter, `is_halted()` adds one relaxed load of a process-global byte
 to every executed op. The byte is written at most a few times per process, so the load always
 hits a shared cache line. Every other interpreter (thread clones, in-process `is_run`) skips the
-load behind the `adopts_worker_exits` flag. The A/B measurement is recorded in the PR that
-landed this ADR.
+load behind the `adopts_worker_exits` flag.
+
+Measured with callgrind on `--profile profiling` builds, warm, one run after a discarded one
+(2026-10-12). The workload is a 200k-iteration `while` loop that calls a sub on every
+iteration:
+
+| Build | Instructions |
+| --- | --- |
+| `main` @ 90a8c09b | 1,680,920,514 |
+| with the handover | 1,687,918,760 |
+
+The handover adds +0.42%. The cost is accepted for a correctness fix. If it ever matters, the
+check can move from `is_halted()` onto the poll network (back-edges and calls, ADR-0106), which
+gives up the per-op granularity.
