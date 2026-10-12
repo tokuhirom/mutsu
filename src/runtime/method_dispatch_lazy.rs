@@ -144,6 +144,7 @@ impl Interpreter {
                 dispatch_token,
                 arg_sources: None,
                 in_wrapper: false,
+                lazy_tail: None,
             });
         true
     }
@@ -160,7 +161,7 @@ impl Interpreter {
     // Cost: O(1) amortized (memoized per `(class, method)` for one registry
     // write generation); a miss is O(c * p) over the deferral expansion's
     // candidates and their parameters.
-    fn deferral_build_is_context_free(&mut self, receiver_class: &str, method_name: &str) -> bool {
+    pub(super) fn deferral_build_is_context_free(&mut self, receiver_class: &str, method_name: &str) -> bool {
         self.refresh_method_caches_for_generation();
         let key = (Symbol::intern(receiver_class), Symbol::intern(method_name));
         if let Some(&free) = self.caches.deferral_build_context_free.get(&key) {
@@ -204,6 +205,13 @@ impl Interpreter {
     // Cost: O(1) when nothing is pending; otherwise the eager build's cost per
     // pending frame, each frame built at most once.
     pub(super) fn materialize_pending_method_dispatch(&mut self) {
+        self.materialize_pending_method_frames();
+        self.materialize_lazy_deferral_tail();
+    }
+
+    // Cost: O(1) when nothing is pending; otherwise the eager build's cost per
+    // pending frame, each frame built at most once.
+    fn materialize_pending_method_frames(&mut self) {
         if self.dispatch.pending_method_dispatch.is_empty() {
             return;
         }
@@ -497,6 +505,7 @@ impl Interpreter {
                 dispatch_token,
                 arg_sources: None,
                 in_wrapper: false,
+                lazy_tail: None,
             }
         }
     }
@@ -517,6 +526,7 @@ impl Interpreter {
             dispatch_token,
             arg_sources: None,
             in_wrapper: false,
+            lazy_tail: None,
         }
     }
 }

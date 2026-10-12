@@ -556,6 +556,10 @@ pub(crate) struct MethodDispatchFrame {
     /// by `dispatch_next_candidate` immediately before each advance so a
     /// NESTED `callwith` call reads the context it is actually running in.
     pub(crate) in_wrapper: bool,
+    /// The candidates after the winner, still to be built (#12875); see
+    /// `method_dispatch_lazy_tail`. Always `None` once a deferral builtin has
+    /// read this frame as the innermost one.
+    pub(crate) lazy_tail: Option<Box<super::method_dispatch_lazy_tail::LazyDeferralTail>>,
 }
 
 /// Frame for navigating through a SUB wrapper chain during callsame/callwith.

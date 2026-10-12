@@ -1371,9 +1371,24 @@ impl Interpreter {
         {
             return Vec::new();
         }
+        let chosen_fp = self.method_def_fingerprint(chosen_def);
+        self.deferral_tail_entries_after(receiver_class, method_name, args, chosen_fp, invocant)
+    }
+
+    /// [`Self::deferral_tail_entries`] past the winner whose fingerprint is
+    /// `chosen_fp` (what a lazily built tail keeps of the winner).
+    // Cost: O(c), c = candidates in the deferral expansion (each matched
+    // against `args` once).
+    pub(crate) fn deferral_tail_entries_after(
+        &mut self,
+        receiver_class: &str,
+        method_name: &str,
+        args: &[Value],
+        chosen_fp: u64,
+        invocant: &Value,
+    ) -> Vec<super::DeferralEntry> {
         let all_candidates =
             self.matched_deferral_candidates(receiver_class, method_name, args, invocant);
-        let chosen_fp = self.method_def_fingerprint(chosen_def);
         let mut remaining = Vec::new();
         let mut skipped = false;
         for (owner, def) in all_candidates {
@@ -1417,8 +1432,18 @@ impl Interpreter {
         method_def: &super::MethodDef,
         chain: &[(u64, Value)],
     ) {
-        let mro_tail =
-            self.deferral_tail_entries(receiver_class, method_name, args, method_def, &invocant);
+        let (mro_tail, lazy_tail) = match self.plan_deferral_tail(
+            receiver_class,
+            method_name,
+            args,
+            method_def,
+            &invocant,
+            false,
+        ) {
+            super::method_dispatch_lazy_tail::DeferralTail::Empty => (Vec::new(), None),
+            super::method_dispatch_lazy_tail::DeferralTail::Lazy(lazy) => (Vec::new(), Some(lazy)),
+            super::method_dispatch_lazy_tail::DeferralTail::Eager(tail) => (tail, None),
+        };
         let rw_params =
             super::builtins_dispatch_next::rw_scalar_positional_params(&method_def.param_defs);
         let dispatch_token = self.next_dispatch_token();
@@ -1458,6 +1483,7 @@ impl Interpreter {
                 // code (even when `chain.len() == 1` and `remaining` holds no
                 // `Wrapper` entry at all).
                 in_wrapper: true,
+                lazy_tail,
             });
     }
 
@@ -1494,6 +1520,7 @@ impl Interpreter {
                 dispatch_token,
                 arg_sources,
                 in_wrapper: true,
+                lazy_tail: None,
             });
     }
 
