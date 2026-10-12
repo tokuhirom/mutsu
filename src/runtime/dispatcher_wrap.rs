@@ -231,8 +231,14 @@ impl Interpreter {
     /// The callable `nextcallee` answers at the end of a dispatcher wrap
     /// chain: `sub (\obj, |c)` running [`Self::redispatch_after_dispatcher_wrap`]
     /// through the `__mutsu_dispatcher_redispatch` builtin.
-    // Cost: O(n), n = length of `method` (the snippet is parsed per call).
+    // Cost: O(1) amortized; O(n), n = length of `method`, for the parse on
+    // the first call per method name.
     pub(crate) fn dispatcher_redispatch_callee(&mut self, method: &str) -> Option<Value> {
+        // The callable depends on nothing but the method name, so it is built
+        // once per name instead of being parsed and compiled per call (#12875).
+        if let Some(cached) = self.caches.dispatcher_redispatch_callees.get(method) {
+            return Some(cached.clone());
+        }
         let quoted = method.replace('\\', "\\\\").replace('\'', "\\'");
         let src = format!(
             "sub (\\obj, |c) {{ __mutsu_dispatcher_redispatch('{quoted}', obj, |c) }}"
@@ -240,6 +246,9 @@ impl Interpreter {
         let (stmts, _) = crate::runtime::prelude_source::parse_prelude_source(&src).ok()?;
         let value = self.eval_block_value(&stmts).ok()?;
         value.as_sub()?;
+        self.caches
+            .dispatcher_redispatch_callees
+            .insert(method.to_string(), value.clone());
         Some(value)
     }
 }

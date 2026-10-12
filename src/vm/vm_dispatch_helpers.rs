@@ -702,21 +702,12 @@ impl Interpreter {
             );
         }
         // Sub without compiled_code: compile on-the-fly (mirrors vm_call_on_value).
-        let (cc, own_compiled_fns) = {
-            let mut compiler = crate::compiler::Compiler::new();
-            let cc = compiler.compile_routine_closure_body(
-                &data.params,
-                &data.param_defs,
-                &data.body,
-                data.is_rw || data.is_raw,
-            );
-            (cc, compiler.take_compiled_functions())
-        };
+        let (cc, own_compiled_fns) = self.value_call_compiled_body(&data);
         let data = data.clone();
         let fns = if own_compiled_fns.is_empty() {
             &empty_fns
         } else {
-            &own_compiled_fns
+            own_compiled_fns.as_ref()
         };
         self.call_compiled_closure_with_topic(
             &data,
@@ -911,21 +902,12 @@ impl Interpreter {
         if let ValueView::Sub(data) = target.view()
             && !data.body.is_empty()
         {
-            let (cc, own_compiled_fns) = {
-                let mut compiler = crate::compiler::Compiler::new();
-                // Use routine closure body so `return` inside the sub works correctly
-                let cc = compiler.compile_routine_closure_body(
-                    &data.params,
-                    &data.param_defs,
-                    &data.body,
-                    data.is_rw || data.is_raw,
-                );
-                (cc, compiler.take_compiled_functions())
-            };
+            // Compiled once per body and signature, then reused.
+            let (cc, own_compiled_fns) = self.value_call_compiled_body(&data);
             let data = data.clone();
             let empty_fns = CompiledFns::default();
             let fns = if !own_compiled_fns.is_empty() {
-                &own_compiled_fns
+                own_compiled_fns.as_ref()
             } else {
                 compiled_fns.unwrap_or(&empty_fns)
             };
