@@ -483,6 +483,11 @@ impl Interpreter {
         {
             let parent = self.env().clone();
             self.set_env(crate::env::Env::scoped_child(parent));
+            // A routine owns its `$/`; a block reads its lexical scope's
+            // through the capture installed below (`env::match_state`).
+            if cc.is_routine {
+                self.env_mut().mark_owns_match_state();
+            }
         }
 
         // Install the captured env as a TIER below this frame's whole chain
@@ -1665,18 +1670,10 @@ impl Interpreter {
 
         // A matching bare block is lexical, not a routine boundary: publish its
         // final match into the `$/` cell it captured from the scope where it was
-        // written. A block without its own regex must not publish a nested
+        // written. A block without its own match must not publish a nested
         // routine's match into that scope.
         if !cc.is_routine
-            && cc.ops.iter().any(|op| {
-                matches!(
-                    op,
-                    OpCode::SmartMatchExpr {
-                        rhs_pure_regex: true,
-                        ..
-                    }
-                )
-            })
+            && cc.sets_match_state
             && let Some(captured) = data.env.get("/")
             && let ValueView::ContainerRef(cell) = captured.view()
             && let Some(current) = self.env().get("/").cloned()

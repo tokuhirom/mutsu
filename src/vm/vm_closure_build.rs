@@ -199,35 +199,36 @@ impl Interpreter {
         }))
     }
 
-    /// A bare block that performs a regex match is not a routine boundary: its
-    /// `$/` belongs to the lexical scope where it was written, even when
-    /// another routine invokes the block. Only such blocks capture the match
-    /// variable: capturing it for every callback lets an unrelated nested
-    /// routine's match shadow grammar-action `$/` bindings (YAMLish is a
-    /// representative failure).
+    /// A bare block is not a routine boundary: its `$/` belongs to the
+    /// lexical scope where it was written, even when another routine invokes
+    /// the block. A block that touches the match state
+    /// (`CompiledCode::uses_match_state`: a match, `.match` / `.subst`, a read
+    /// of `$/` or a capture view) shares that scope's `$/` through a cell
+    /// boxed here; the closure call installs the cell in its frame, and the
+    /// block's frame root answers a match-state lookup from its capture rather
+    /// than from its caller (`env::match_state`). Only such blocks capture
+    /// it: capturing it for every callback lets an unrelated nested routine's
+    /// match shadow grammar-action `$/` bindings (YAMLish is a representative
+    /// failure).
     fn capture_block_match_var(
         &mut self,
         code: &CompiledCode,
         compiled_code: &Option<std::sync::Arc<CompiledCode>>,
     ) {
-        let block_writes_match = compiled_code.as_ref().is_some_and(|cc| {
-            cc.ops.iter().any(|op| {
-                matches!(
-                    op,
-                    OpCode::SmartMatchExpr {
-                        rhs_pure_regex: true,
-                        ..
-                    }
-                )
-            })
+        // A block that binds its own `$/` (`-> $/ { }`, `my $/`) does not
+        // share its scope's.
+        let block_uses_match = compiled_code.as_ref().is_some_and(|cc| {
+            cc.uses_match_state && !cc.is_routine && !cc.locals.iter().any(|n| n == "/")
         });
-        if !block_writes_match || self.env().get("/").is_some_and(Value::is_container_ref) {
+        if !block_uses_match || self.env().get("/").is_some_and(Value::is_container_ref) {
             return;
         }
+        // The frame's `$/` is its local slot when it binds one (a
+        // `method m($/)` parameter, `my $/`), as `frame_match_topic` reads it:
+        // a nested `.subst` may have left another value in the env entry.
         let slash = self
-            .env()
-            .get("/")
-            .cloned()
+            .locals_get_by_name(code, "/")
+            .or_else(|| self.env().get("/").cloned())
             .unwrap_or(Value::NIL)
             .into_container_ref();
         self.env_mut().insert("/".to_string(), slash.clone());

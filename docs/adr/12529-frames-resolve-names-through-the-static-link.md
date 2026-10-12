@@ -627,6 +627,57 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    Release-build Ir against the merge base: `bench-fib` -0.00%,
    `bench-tak` -0.00%, `method-call` -0.09%, `poly-call` -0.03%,
    `bench-ctor` +0.03%, `bench-multi-dispatch` -0.32%.
+
+   **Slice 10 done** (`fix/12398-routine-match-var-scope`, #12398, #12720):
+   the first of the topic/match/error families (§5, §8), `$/`. A routine
+   owns its `$/` and the capture views that belong to it (`$0`, `$<name>`);
+   a block shares the `$/` of the scope it is written in. mutsu keeps the
+   match state as env names, which a routine's writes already kept out of
+   its caller (the return merge skips them), but a read that missed the
+   routine's frame walked on into the callers: a sub started with its
+   caller's match, and `m:c` continued from the caller's position. Nothing
+   is inserted per call:
+
+   - A routine's frame root is marked as the owner of the match state
+     (`Env::mark_owns_match_state`, set by the named, light, typed-light,
+     fast, method and closure-dispatch paths for a routine). A lookup of a
+     match-state name (`Symbol::is_match_state`) stops there
+     (`env/match_state.rs`); the walk is selected by a chain latch, like
+     `chain_has_static_link`, so every other lookup is unchanged. A block's
+     frame root answers `$/` from its capture instead of its caller; its
+     capture views go on to the caller, where `.subst` / `.trans` publish
+     them per match, and a miss derives them from `$/`.
+   - A flattening of a chain with an owner (a method call flattens the
+     running frame) is settled to answer each match-state name as the live
+     chain does (`Env::settle_match_state`), so it does not import the
+     callers' match.
+   - Which code touches the match state is a compile-time fact
+     (`CompiledCode::uses_match_state` / `sets_match_state`). The fast path
+     gives such a routine a root, the light paths do not reuse a frame that
+     does not own one, and a block that touches it shares its scope's `$/`
+     through a cell boxed at creation. That used to cover only blocks with a
+     regex `~~`; `.match`, `.subst` and plain reads did not reach the scope
+     (#12720).
+   - One setter for a match result (`Env::assign_match_var`): when the
+     visible `$/` is a shared cell it stores through it, so a block made
+     before its scope matched again still reaches the scope's `$/`; `.subst`
+     and `.trans` publish and restore the per-match `$/` the same way
+     (`publish_match_var` / `restore_match_var`).
+
+   Release-build Ir against the merge base (interpreter lane / JIT lane):
+   `bench-fib` +0.18% / +0.33%, `bench-tak` +0.12% / +0.18%, `method-call`
+   +0.14% / +0.16%, `poly-call` +0.11% / +0.08%, `bench-ctor` +0.11% /
+   +0.11%, `bench-multi-dispatch` +0.35% / +0.34%, `bench-string` +0.92% /
+   +0.54% (about 30 Ir per match for the setter's walk). A first cut cost
+   +1% on `bench-multi-dispatch`: the flattening fixup replaced a caller's
+   `Nil` `$/` and so copied a map the flattening shared, and the lookup's
+   miss path read the symbol's flag word twice. Unset and `Nil` now count as
+   the same, and one read answers both questions (`symbol::env_key_probe`).
+
+   Still open: a method that creates closures runs in its caller's env
+   without a root (slice 8), so it still reads its caller's `$/` until it
+   matches (#12882); the capture views stay mirrored env keys rather than views
+   derived from `$/`; and `$_` and `$!` are the remaining families.
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
@@ -720,6 +771,8 @@ the issue's original local remedy.
 | [#9171](https://github.com/tokuhirom/mutsu/issues/9171) | pseudo-stash reads (`GLOBAL::`, `DYNAMIC::`, `PROCESS::`, a whole `P::`) and `PackageScope` still build or diff the whole env | 1 for package stashes (a real symbol table), 3 for `DYNAMIC::` (the call-frame stack) |
 | [#7817](https://github.com/tokuhirom/mutsu/issues/7817) | ADR-0084's tracker | 1 (see phase 1) |
 | [#12692](https://github.com/tokuhirom/mutsu/issues/12692) | a named `sub` declared in a loop body or `.map` callback closes over the last iteration's lexicals (the per-name stores are keyed by the sub, not the activation) | 3 (slice 9 closes) |
+| [#12398](https://github.com/tokuhirom/mutsu/issues/12398) | a routine starts with its caller's `$/` (`m:c` continues from the caller's position) | 3 (slice 10 closes) |
+| [#12720](https://github.com/tokuhirom/mutsu/issues/12720) | a `.subst` / `.match` in a block called by another routine does not set the `$/` of the block's scope | 3 (slice 10 closes) |
 | [#12526](https://github.com/tokuhirom/mutsu/issues/12526) | an `@x` parameter costs ~12x a `$x` one (generic binder + copy-out writeback) | partly 3: the writeback becomes unnecessary (§2.3). The binder half is independent and can land first |
 
 **Out of scope.** [#12204](https://github.com/tokuhirom/mutsu/issues/12204)

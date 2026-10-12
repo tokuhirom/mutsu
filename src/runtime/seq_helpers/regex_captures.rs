@@ -40,8 +40,7 @@ impl Interpreter {
     pub(in crate::runtime) fn clear_match_state(&mut self) {
         // Symbol-keyed: this runs on every *failed* match, so a by-name insert
         // puts an intern of the literal `/` on the per-match path (#8269).
-        self.env
-            .insert_sym(crate::symbol::wk::match_var(), Value::NIL);
+        self.env.assign_match_var(Value::NIL);
         self.reset_capture_env_vars();
     }
 
@@ -52,8 +51,7 @@ impl Interpreter {
     /// what `clear_match_state` does.)
     pub(in crate::runtime) fn clear_multi_match_state(&mut self) {
         self.clear_match_state();
-        self.env.insert_sym(
-            crate::symbol::wk::match_var(),
+        self.env.assign_match_var(
             Value::array_with_kind(
                 crate::gc::Gc::new(crate::value::ArrayData::new(Vec::new())),
                 crate::value::ArrayKind::List,
@@ -126,8 +124,7 @@ impl Interpreter {
         }
         attrs.insert("named".to_string(), Value::hash_bare_values(named));
         let match_obj = Value::make_instance(Symbol::intern("Match"), attrs);
-        self.env
-            .insert_sym(crate::symbol::wk::match_var(), match_obj.clone());
+        self.env.assign_match_var(match_obj.clone());
 
         // Reset stale numeric/named captures before applying new ones.
         self.reset_capture_env_vars();
@@ -472,6 +469,8 @@ impl Interpreter {
     pub(in crate::runtime) fn get_match_to_position(&self) -> usize {
         self.env
             .get("/")
+            .map(Value::deref_container)
+            .as_ref()
             .and_then(Value::match_to)
             .map(|to| to as usize)
             .unwrap_or(0)

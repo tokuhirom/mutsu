@@ -105,6 +105,8 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         succeed_passes_through,
         reads_topic,
         mentions_native_scalar_type_name,
+        uses_match_state,
+        sets_match_state,
         source_line,
         is_pointy_block,
         pointy_alias_param,

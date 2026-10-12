@@ -138,6 +138,20 @@ fn capture_shaped() -> &'static RwLock<(Vec<Symbol>, Vec<Symbol>)> {
 /// caller mutates the env while iterating, and any interning on that path takes
 /// the symbol-table write lock. Cloning two short vectors keeps the lock scope
 /// to this function and the lock order trivially acyclic.
+/// Call `f` on every capture-shaped symbol interned so far, numeric first,
+/// without copying the registry. `f` must not intern a symbol: the registry's
+/// read lock is held while it runs, and interning a capture-shaped name takes
+/// its write lock.
+// Cost: O(c), c = capture-shaped symbols interned so far.
+pub(crate) fn for_each_capture_shaped_symbol(mut f: impl FnMut(Symbol)) {
+    let guard = capture_shaped()
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for &sym in guard.0.iter().chain(guard.1.iter()) {
+        f(sym);
+    }
+}
+
 pub(crate) fn capture_shaped_symbols() -> (Vec<Symbol>, Vec<Symbol>) {
     let guard = capture_shaped().read().unwrap();
     guard.clone()
@@ -209,6 +223,11 @@ pub(crate) mod flags {
     /// never copy back into the caller. Mirrors
     /// `is_routine_scoped_implicit_var`.
     pub(crate) const ROUTINE_SCOPED_IMPLICIT: u16 = 1 << 0;
+    /// The match state: `$/` and the capture views that belong to it (`0`,
+    /// `1`, ..., `<name>`). A by-name lookup of one stops at the frame root of
+    /// the routine that owns it (ADR-12529 phase 3, `env::match_state`); the
+    /// `$!` half of [`ROUTINE_SCOPED_IMPLICIT`] is not included.
+    pub(crate) const MATCH_STATE: u16 = 1 << 1;
     /// A *shadow metadata* key: `__mutsu_type::<name>` (a typed lexical's
     /// constraint) or `__mutsu_var_source_name::<name>` (the caller variable a
     /// `@`/`%`/raw parameter was bound from). Nothing can observe one except
@@ -405,6 +424,9 @@ fn compute_flags(s: &str) -> u16 {
     let mut f = flags::COMPUTED;
     if is_routine_scoped_implicit_var(s) {
         f |= flags::ROUTINE_SCOPED_IMPLICIT | flags::CAPTURE_VOLATILE;
+        if s != "!" {
+            f |= flags::MATCH_STATE;
+        }
     }
     if matches!(s, "_" | "@_" | "%_") {
         f |= flags::CAPTURE_VOLATILE;
@@ -524,6 +546,40 @@ pub(crate) fn mark_env_key(sym: Symbol) {
     // `maybe_env_key` answers `true` for such an id anyway.
     if let Some(slot) = flag_slot(sym.0 as usize) {
         slot.fetch_or(flags::EVER_ENV_KEY, Ordering::Relaxed);
+    }
+}
+
+/// [`maybe_env_key`] and [`Symbol::is_match_state`] in one read of the flag
+/// word, for the env lookup's miss path, which asks both.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EnvKeyProbe {
+    /// Never an env key anywhere: a lookup cannot find it.
+    Absent,
+    /// May be an env key; not the match state.
+    Plain,
+    /// May be an env key, and names the match state (`/`, `0`, `<name>`).
+    MatchState,
+}
+
+// Cost: O(1).
+#[inline]
+pub(crate) fn env_key_probe(sym: Symbol) -> EnvKeyProbe {
+    let Some(slot) = flag_slot(sym.0 as usize) else {
+        // Beyond the table's reach: may be an env key, as `maybe_env_key`
+        // answers.
+        return if sym.is_match_state() {
+            EnvKeyProbe::MatchState
+        } else {
+            EnvKeyProbe::Plain
+        };
+    };
+    let f = slot.load(Ordering::Relaxed);
+    if f & flags::EVER_ENV_KEY == 0 {
+        EnvKeyProbe::Absent
+    } else if f & flags::MATCH_STATE != 0 {
+        EnvKeyProbe::MatchState
+    } else {
+        EnvKeyProbe::Plain
     }
 }
 
@@ -906,6 +962,13 @@ impl Symbol {
         let f = compute_flags(self.as_str());
         store_flags(idx, f);
         f
+    }
+
+    /// Whether this symbol names the match state (`/`, `0`, `<name>`); see
+    /// [`flags::MATCH_STATE`].
+    #[inline]
+    pub(crate) fn is_match_state(self) -> bool {
+        self.flags() & flags::MATCH_STATE != 0
     }
 
     /// Memoized [`crate::env::is_plain_user_lexical`] for this symbol's string.

@@ -313,7 +313,7 @@ impl Interpreter {
                     } else {
                         Value::NIL
                     };
-                    me.env.insert("/".to_string(), v);
+                    me.env.assign_match_var(v);
                 };
 
                 let chars: Vec<char> = text.chars().collect();
@@ -430,7 +430,7 @@ impl Interpreter {
                     let suffix: String = chars[last_end..].iter().collect();
                     result.push_str(&suffix);
                     let match_var = Self::subst_match_var(&selected, &text, result_is_list);
-                    self.env.insert("/".to_string(), match_var.clone());
+                    self.env.assign_match_var(match_var.clone());
                     self.publish_subst_capture_env(&match_var);
                     Ok(Value::str(result))
                 } else if let Some(captures) = { self.regex_match_with_captures(&pat, &text) } {
@@ -443,7 +443,7 @@ impl Interpreter {
                         captures.target_or_new(&text),
                     )
                     .with_match_cursor_pos(captures.narrowed_pos());
-                    self.env.insert("/".to_string(), match_obj.clone());
+                    self.env.assign_match_var(match_obj.clone());
                     let prefix: String = chars[..captures.from].iter().collect();
                     let suffix: String = chars[captures.to..].iter().collect();
                     let matched_text: String = chars[captures.from..captures.to].iter().collect();

@@ -1056,7 +1056,7 @@ impl Interpreter {
                     self.env.insert(format!("<{}>", k), v.clone());
                 }
             }
-            self.env.insert("/".to_string(), match_obj.clone());
+            self.env.assign_match_var(match_obj.clone());
 
             // Invoke action methods if :actions was provided
             let deferred_repeats = if actions_obj.is_some() {
@@ -1108,7 +1108,7 @@ impl Interpreter {
                 match_obj
             };
 
-            self.env.insert("/".to_string(), match_obj.clone());
+            self.env.assign_match_var(match_obj.clone());
             Ok(match_obj)
         })();
         self.arm_start_rule_invocant(outer_invocant);

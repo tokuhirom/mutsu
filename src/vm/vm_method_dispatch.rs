@@ -458,7 +458,10 @@ impl Interpreter {
         let links_frame = cc.links_frame_to_unit();
         if cc.closure_compiled_codes.is_empty() {
             let parent = self.env().clone();
-            self.set_env(crate::env::Env::scoped_child(parent));
+            let mut frame = crate::env::Env::scoped_child(parent);
+            // A method owns its `$/` (`env::match_state`).
+            frame.mark_owns_match_state();
+            self.set_env(frame);
         }
 
         // Clear var_bindings so attribute aliases from outer interpreter-level
@@ -1972,7 +1975,9 @@ impl Interpreter {
         let use_scoped = cc.closure_compiled_codes.is_empty();
         if use_scoped {
             let parent = self.env().clone();
-            let scoped = crate::env::Env::scoped_child(parent);
+            let mut scoped = crate::env::Env::scoped_child(parent);
+            // A method owns its `$/` (`env::match_state`).
+            scoped.mark_owns_match_state();
             self.set_env(scoped);
         }
         let saved_var_bindings = self.take_var_bindings();

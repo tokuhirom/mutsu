@@ -287,7 +287,7 @@ impl Interpreter {
             self.write_subst_topic_checked(code, Value::str(outcome.text))?;
         }
         let slash = outcome.slash.clone();
-        self.env_mut().insert("/".to_string(), slash.clone());
+        self.env_mut().assign_match_var(slash.clone());
         self.publish_subst_capture_env(&slash);
         self.topic_state.substitution_in_smartmatch = self.topic_state.in_smartmatch_rhs;
         // A non-list `s///` that matched nothing is `Nil`, the failed match's
@@ -333,7 +333,7 @@ impl Interpreter {
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
         // S/// sets $/ to the match (without mutating $_) and yields the string.
         let slash = outcome.slash.clone();
-        self.env_mut().insert("/".to_string(), slash.clone());
+        self.env_mut().assign_match_var(slash.clone());
         self.publish_subst_capture_env(&slash);
         self.stack.push(Value::str(outcome.text));
         Ok(())
