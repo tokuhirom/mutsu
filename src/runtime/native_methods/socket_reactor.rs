@@ -12,16 +12,16 @@
 //!
 //! Registration hands a [`SocketReader`] to the reactor through a queue and
 //! writes a byte to a self-pipe so a blocked `poll` picks it up at once. A
-//! reader whose taps have all gone is dropped (closing its socket clone)
-//! without reading: when its socket next becomes readable, or at the next
-//! sweep, which runs every [`SWEEP_INTERVAL_MS`] while any reader is
-//! registered. Reads use `MSG_DONTWAIT` per call instead of switching the
+//! reader whose taps have all gone is dropped (releasing its hold on the
+//! connection's shared stream) without reading: when its socket next becomes
+//! readable, or at the next sweep, which runs every [`SWEEP_INTERVAL_MS`]
+//! while any reader is registered. Reads use `MSG_DONTWAIT` per call instead of switching the
 //! socket to non-blocking mode, because that flag is shared with the
-//! writer's clone of the same socket.
+//! writers of the same socket.
 
 use super::socket_reader::{ReadOutcome, SocketReader};
 use crate::runtime::RuntimeError;
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
 
 /// How often a reactor with registered readers wakes to drop readers whose

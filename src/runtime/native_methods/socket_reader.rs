@@ -39,7 +39,12 @@ pub(super) enum ReadOutcome {
 pub(super) struct SocketReader {
     /// Held so the descriptor stays open while the reactor polls it, even
     /// after `close` has dropped the registry's entry: `close` shuts the
-    /// socket down, which the reactor reads as end of stream.
+    /// socket down, which the reactor reads as end of stream. The reactor
+    /// reads `fd` and never this field, which is the point of holding it.
+    #[cfg_attr(
+        all(unix, feature = "libc"),
+        expect(dead_code, reason = "held only to keep `fd` open")
+    )]
     pub(super) stream: SharedStream,
     /// `stream`'s descriptor, read by the reactor without taking the lock a
     /// writer may hold.
