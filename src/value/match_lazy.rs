@@ -103,6 +103,19 @@ impl MatchNode {
         })
     }
 
+    /// Whether this node can still stand for its capture node: unforced, or
+    /// forced under the cursor class its run reports now. A node forced in
+    /// mid-parse (a code block or a wrapper read it) was materialized as a
+    /// plain `Match` before the parse stamped its grammar class on the run,
+    /// so its memoized map no longer reads as the run's cursors do; the
+    /// finished tree must not reuse it (ADR-11404).
+    // Cost: O(1).
+    fn is_current(&self) -> bool {
+        self.attrs
+            .get()
+            .is_none_or(|attrs| attrs.class_name() == cursor_class_symbol(&self.target))
+    }
+
     /// Sever the memoized `Gc` edge (cycle-collector reclaim).
     pub(in crate::value) fn take_attrs_for_gc(&mut self) {
         let _ = self.attrs.take();
@@ -356,7 +369,7 @@ impl Value {
     // Cost: O(1).
     pub(crate) fn lazy_match(cap: Arc<CapNode>, target: MatchTarget) -> Value {
         let node = cap.match_memo.get_or_make(
-            |live| live.target.same_run(&target),
+            |live| live.target.same_run(&target) && live.is_current(),
             || crate::gc::Gc::new(MatchNode::new(Arc::clone(&cap), target.clone())),
         );
         Value::from_repr(ValueRepr::Match(node))
