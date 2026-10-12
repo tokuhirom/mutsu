@@ -4,6 +4,7 @@
 //! already decontainerized by the time the op sees it, so the name has to come
 //! from the source; see `CompiledCode::numeric_operand_names`.
 use super::*;
+use crate::value::ValueView;
 
 impl Compiler {
     /// The rakudo spelling (`$x`, `$*x`, `$!x`) of a plain scalar variable
@@ -21,6 +22,39 @@ impl Compiler {
             return None;
         }
         Some(Symbol::intern(&format!("${name}")))
+    }
+
+    /// The rakudo spelling of an interpolated part for the "Use of
+    /// uninitialized value ... in string context" warning: `$x` for a scalar
+    /// variable, `%h{'k'}` / `@a[3]` for an element with a literal subscript.
+    pub(super) fn interpolation_part_name(&self, part: &Expr) -> Option<Symbol> {
+        match part {
+            Expr::Var(_) => self.numeric_operand_name(part),
+            Expr::Index {
+                target,
+                index,
+                is_positional,
+                ..
+            } => {
+                let Expr::Literal(key) = index.as_ref() else {
+                    return None;
+                };
+                match (target.as_ref(), *is_positional) {
+                    (Expr::HashVar(name), false) => {
+                        let ValueView::Str(key) = key.view() else {
+                            return None;
+                        };
+                        Some(Symbol::intern(&format!("%{name}{{'{}'}}", **key)))
+                    }
+                    (Expr::ArrayVar(name), true) => {
+                        let i = key.as_int()?;
+                        Some(Symbol::intern(&format!("@{name}[{i}]")))
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
     }
 
     /// Record the operand names of the numeric infix `opcode` about to be

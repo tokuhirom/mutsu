@@ -657,7 +657,11 @@ impl Interpreter {
         RuntimeError::typed("X::OutOfRange", attrs)
     }
 
-    pub(crate) fn exec_string_concat_op(&mut self, n: u32) -> Result<(), RuntimeError> {
+    pub(crate) fn exec_string_concat_op(
+        &mut self,
+        n: u32,
+        part_names: &[Option<crate::symbol::Symbol>],
+    ) -> Result<(), RuntimeError> {
         let n = n as usize;
         // `"$s"` with a plain Str is the Str itself: share it (O(1), as in
         // Rakudo) instead of copying it into a fresh buffer.
@@ -694,7 +698,7 @@ impl Interpreter {
         // plain `Str`/`Int` piece could still reach. Read once per op.
         let plain_pieces_take_fast_path =
             !crate::runtime::find_method_intercept::any_user_find_method();
-        for v in values {
+        for (part_index, v) in values.into_iter().enumerate() {
             // A plain `Str` or `Int` piece (`"key-$_"`): none of the checks
             // below applies to one -- it is not a Proxy, container, Seq,
             // Failure, Rational, Nil, Regex, Buf, mixin, Instance, type object
@@ -855,12 +859,17 @@ impl Interpreter {
                     continue;
                 }
                 // A bare type object interpolated into a string warns and
-                // resumes with "" (Rakudo: `Use of uninitialized value element
-                // of type X in string context.` — note the "element" wording
-                // specific to interpolation). The loop reconciles the caller
+                // resumes with "" (Rakudo: `Use of uninitialized value $x of
+                // type X in string context.`, unnamed for a block part). The loop reconciles the caller
                 // writeback once after it finishes (same as the Nil arm above).
+                // A part the compiler could name (`$x`, `%h{'k'}`) is named like
+                // Rakudo's container descriptor does.
+                let wording = match part_names.get(part_index).copied().flatten() {
+                    Some(name) => format!(" {}", name.as_str()),
+                    None => String::new(),
+                };
                 let msg = format!(
-                    "Use of uninitialized value element of type {cn} in string context.\nMethods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful."
+                    "Use of uninitialized value{wording} of type {cn} in string context.\nMethods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful."
                 );
                 let resumed = self.raise_resumable_warning(&msg, Value::str(String::new()))?;
                 result.push_str(&resumed.to_string_value());

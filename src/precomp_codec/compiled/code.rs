@@ -150,6 +150,7 @@ impl Encode for CompiledCode {
             rebound_free_names,
             outer_captures,
             numeric_operand_names,
+            interp_part_names,
             free_var_rebinds,
             free_var_sym_set: _,
             local_sym_set: _,
@@ -293,6 +294,7 @@ impl Encode for CompiledCode {
         rebound_free_names.encode(encoder)?;
         outer_captures.encode(encoder)?;
         numeric_operand_names.encode(encoder)?;
+        interp_part_names.encode(encoder)?;
         free_var_rebinds.encode(encoder)?;
         Ok(())
     }
@@ -437,6 +439,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             rebound_free_names: Decode::decode(decoder)?,
             outer_captures: Decode::decode(decoder)?,
             numeric_operand_names: Decode::decode(decoder)?,
+            interp_part_names: Decode::decode(decoder)?,
             free_var_rebinds: Decode::decode(decoder)?,
             free_var_sym_set: Default::default(),
             local_sym_set: Default::default(),

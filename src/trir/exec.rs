@@ -354,7 +354,7 @@ impl Interpreter {
                     let base = self.trir.os.len().saturating_sub(*n as usize);
                     let vals: Vec<Value> = self.trir.os.drain(base..).collect();
                     self.stack.extend(vals);
-                    self.exec_string_concat_op(*n as u32)?;
+                    self.exec_string_concat_op(*n as u32, &[])?;
                     let v = self.stack.pop().unwrap_or(Value::NIL);
                     self.trir.os.push(v);
                 }
