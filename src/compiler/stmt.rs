@@ -3381,10 +3381,10 @@ impl Compiler {
                     // phaser reads (`given open $path { LEAVE .close; ... }`).
                     self.compile_phaser_block_scope(body, PhaserBlockResult::Push);
                 } else if Self::has_catch_or_control(body) {
+                    // Like every other `given` body, the implicit try nets the
+                    // body's value (`stmt_nets_a_stack_value`): a non-final
+                    // statement pops it, a final one is the routine's value.
                     self.compile_implicit_try(body);
-                    if !needs_value {
-                        self.code.emit(OpCode::Pop);
-                    }
                 } else {
                     for (i, s) in body.iter().enumerate() {
                         let is_last = i == body.len() - 1;

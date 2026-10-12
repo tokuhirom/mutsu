@@ -1000,9 +1000,16 @@ impl Interpreter {
         if constraint == "Variable" && varref_from_value(value).is_some() {
             return true;
         }
-        if let ValueView::Enum { enum_type, .. } = value.view() {
+        if let ValueView::Enum { enum_type, value: enum_value, .. } = value.view() {
             let enum_name = enum_type.resolve();
             if constraint == enum_name || Self::type_matches(constraint, &enum_name) {
+                return true;
+            }
+            // `my Array enum E (:a[1, 2])`: a value of an enum with a non-Int/Str
+            // base type is also an instance of that base type.
+            if let crate::value::EnumValue::Generic(inner) = enum_value
+                && self.type_matches_value(constraint, inner)
+            {
                 return true;
             }
             // A package-scoped enum lives under its qualified key (`Foo::E`)

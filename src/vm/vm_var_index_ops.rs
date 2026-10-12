@@ -913,6 +913,10 @@ impl Interpreter {
         }
         // A scalar-held Range is a Range receiver for its own positional
         // indexing; only an itemized Range *index* above remains a single index.
+        // A member of a `my Array enum` subscripts as its base value.
+        if is_positional && let Some(base) = Self::enum_aggregate_base(&target, "AT-POS") {
+            target = base;
+        }
         if target.descalarize().is_range() {
             target = target.descalarize().clone();
         }

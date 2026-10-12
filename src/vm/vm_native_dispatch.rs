@@ -29,6 +29,10 @@ impl Interpreter {
         if let Some(path) = self.io_path_subclass_cool_receiver(target, method_sym.as_str()) {
             return self.try_native_method(&path, method_sym, args);
         }
+        // A member of a `my Array enum` answers the base type's collection methods.
+        if let Some(base) = Self::enum_aggregate_base(target, method_sym.as_str()) {
+            return self.try_native_method(&base, method_sym, args);
+        }
         // ADR-0058: a native method reads its ARGUMENTS' elements through pure
         // Rust (the receiver is already handled by
         // `reify_or_consume_seq_target`), so a still-deferred `.map` argument —
