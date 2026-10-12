@@ -447,13 +447,9 @@ impl Interpreter {
         {
             return Some(self.dispatch_first(target, &args));
         }
-        // For non-Array types (e.g., Int, Str), .first returns self
-        // (treating the scalar as a single-element list)
-        if matches!(target.view(), ValueView::Array(..)) {
-            None // fall through to 0-arg builtin
-        } else {
-            Some(Ok(target))
-        }
+        // `.first` with no matcher is the first element of the invocant's
+        // list (`Any.first` smartmatches `True`).
+        Some(Ok(crate::builtins::method_table::terminals::first_one(&target)))
     }
 
     /// Dispatch the zero-argument "eager": the `Any.eager` row's handler and

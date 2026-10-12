@@ -8,64 +8,6 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
-        "first" => Some(match target.view() {
-            ValueView::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::NIL))),
-            _ => None,
-        }),
-        // Cost: O(e) comparisons on an Array, e = elements; O(1) on a Range.
-        "min" => Some(match target.view() {
-            ValueView::Array(items, ..) => Some(Ok(items
-                .iter()
-                .filter(|v| crate::runtime::types::value_is_defined(v))
-                .cloned()
-                .min_by(|a, b| {
-                    let cmp = crate::runtime::compare_values(a, b);
-                    if cmp < 0 {
-                        std::cmp::Ordering::Less
-                    } else if cmp > 0 {
-                        std::cmp::Ordering::Greater
-                    } else {
-                        std::cmp::Ordering::Equal
-                    }
-                })
-                .unwrap_or(Value::num(f64::INFINITY)))),
-            // The `Range.min` row's implementation (`method_table::range`).
-            _ if target.is_range() => crate::builtins::method_table::range::min(target, &[]),
-            ValueView::Hash(_) => None,
-            ValueView::Package(_) | ValueView::Instance { .. } => None,
-            // A Seq/Slip is a materialized list; defer to the interpreter,
-            // which re-dispatches its elements as an Array so min/max compute
-            // over them. (The `_` arm below would return the Seq itself.)
-            ValueView::Seq(..) | ValueView::Slip(..) => None,
-            _ => Some(Ok(target.clone())),
-        }),
-        // Cost: O(e) comparisons on an Array, e = elements; O(1) on a Range.
-        "max" => Some(match target.view() {
-            ValueView::Array(items, ..) => Some(Ok(items
-                .iter()
-                .filter(|v| crate::runtime::types::value_is_defined(v))
-                .cloned()
-                .max_by(|a, b| {
-                    let cmp = crate::runtime::compare_values(a, b);
-                    if cmp < 0 {
-                        std::cmp::Ordering::Less
-                    } else if cmp > 0 {
-                        std::cmp::Ordering::Greater
-                    } else {
-                        std::cmp::Ordering::Equal
-                    }
-                })
-                .unwrap_or(Value::num(f64::NEG_INFINITY)))),
-            // The `Range.max` row's implementation (`method_table::range`).
-            _ if target.is_range() => crate::builtins::method_table::range::max(target, &[]),
-            ValueView::Hash(_) => None,
-            ValueView::Package(_) | ValueView::Instance { .. } => None,
-            // A Seq/Slip is a materialized list; defer to the interpreter,
-            // which re-dispatches its elements as an Array so min/max compute
-            // over them. (The `_` arm below would return the Seq itself.)
-            ValueView::Seq(..) | ValueView::Slip(..) => None,
-            _ => Some(Ok(target.clone())),
-        }),
         // Cost: O(1) (a type-name match; a Buf answers its element type).
         "of" => Some(match target.view() {
             ValueView::Hash(_) | ValueView::Array(..) => None,

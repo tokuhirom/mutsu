@@ -315,8 +315,8 @@ impl DispatchShape {
 
     /// Whether `Any`'s list row `method` reaches this closed shape. None
     /// reaches `sort`, whose handler reads only a list (a closed shape sorts
-    /// through the interpreter), and only a `Pair` reaches `reverse`, whose
-    /// handler reads a scalar, a hash, a list and a pair. A `Capture` flattens to itself
+    /// through the interpreter), and only a `Pair` reaches `reverse`, `min`
+    /// and `max`, whose handlers read a scalar, a hash, a list and a pair. A `Capture` flattens to itself
     /// (`methods_0arg`'s `Capture` block), and the
     /// quant hashes read as their list of pairs for `unique` first
     /// (`hashlike_receiver_as_pairs_list`), then reach the row as a `List`;
@@ -331,6 +331,11 @@ impl DispatchShape {
             // `Match` delegation), but joins its positional captures.
             DispatchShape::Match => const_str_eq(method, "join"),
             _ if const_str_eq(method, "sort") => false,
+            // `min`/`max` read a `Pair` as its one element; the other closed
+            // shapes take the interpreter's extremum walk.
+            _ if const_str_eq(method, "min") || const_str_eq(method, "max") => {
+                matches!(self, DispatchShape::Pair)
+            }
             DispatchShape::Pair => true,
             _ if const_str_eq(method, "reverse") => false,
             DispatchShape::Capture => !const_str_eq(method, "flat"),
@@ -472,9 +477,9 @@ pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
 /// answers its own row first. `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
 /// (`method_table::collections::join`).
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 12] = [
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 14] = [
     "flat", "sort", "unique", "repeated", "reverse", "end", "join", "pick", "roll", "minmax",
-    "head", "tail",
+    "head", "tail", "min", "max",
 ];
 
 /// The `Mu` methods every closed shape reaches ([`DispatchShape::reaches_audited`])

@@ -1878,6 +1878,27 @@ each toward Rakudo: `Mu.head` is `X::Method::NotFound` (was `Mu`); `IO::Path.hea
 
 - **Left in `dispatch_core_range.rs`**: `first`, `min`, `max`, `of`, `keyof` and the `Range` accessors.
 
+### 9.85 Slice 5: `.first` with no matcher, `min` and `max` lose their arms (2026-10-12)
+
+`refactor/11276-first-min-max-rows`. The `first`, `min` and `max` arms of `methods_0arg/dispatch_core_range.rs` are deleted:
+
+1. **`first`**: the arm answered an `Array` only; the `Any.first` row (an interpreter row) answered every other receiver with itself
+   and fell through to the arm for an `Array`. The row's argless branch now answers `method_table::terminals::first_one`, the first
+   element of the invocant's list, for every receiver: a `Range`, a `Hash` or quant hash (a `Pair`), a `Capture`, a `Blob`, a `Seq`,
+   a list mixin (what it wraps). A user-class instance stays its own one-element list. Toward Rakudo except `Range.first`, which
+   Rakudo answers with a binding error (its `Range.first` requires a matcher); mutsu answers the first element.
+2. **`min`/`max`**: the arm's body (an `Array` walk skipping undefined elements, a `Range` delegating to its row, a scalar answering
+   itself) is replaced by the rows already there: `Any.min`/`Any.max` answer plain lists and scalars and now read a `Pair` as its one
+   element (`ANY_LIST_FOR_CLOSED_SHAPES` gains `min`/`max`, reached by the `Pair` shape only); a list holding undefined or non-plain
+   elements declines to the interpreter's walk, as a `Seq` already did.
+
+`method-rows-report.py --arms`: the pure arity cascades go from 303 arms to 300. The probe (the three names, both arities, ~60
+receiver kinds) changed only `first` with no matcher (above) and `(1..3).lazy.min`/`.max`, which answered the `Seq` itself and now
+answer `1`/`3`; Rakudo raises `X::Cannot::Lazy` (#12971). Pinned in `t/types/any-first-min-max-rows.t`.
+
+- **Left in `dispatch_core_range.rs`**: `of`, `keyof` and the `Range` accessors (`excludes-min`, `excludes-max`, `bounds`, `is-int`,
+  `infinite`).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
