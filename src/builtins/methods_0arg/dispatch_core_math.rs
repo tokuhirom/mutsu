@@ -70,14 +70,6 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
-        // `Cool.tclc` / `Cool.wordcase`: the `Str` rows' handlers (ADR-11276).
-        // Cost: O(n), n = chars of the invocant's string form.
-        "tclc" => Some(Some(crate::builtins::method_table::str::tclc(target, &[]))),
-        // Cost: O(n), n = chars of the invocant's string form.
-        "wordcase" => Some(Some(crate::builtins::method_table::str::wordcase(
-            target,
-            &[],
-        ))),
         // Cost: O(1) for a numeric invocant; O(n) for a Str, n = chars (the string
         // is rebuilt around the incremented segment).
         "succ" => Some(match target.view() {
@@ -252,12 +244,6 @@ pub(super) fn dispatch(
             target,
             usize::MAX,
         )))),
-        // Cost: O(n), n = bytes of the invocant.
-        // The `Str`/`Cool` rows' handler (`method_table::str_args`).
-        "encode" => Some(Some(crate::builtins::method_table::str_args::encode(
-            target,
-            &[],
-        ))),
         "sink" => {
             crate::builtins::method_table::list::sink(target, &[])
                 .map(Some)
@@ -305,16 +291,6 @@ pub(super) fn dispatch(
         // The `race`/`hyper` rows' implementation (`method_table::lazy`).
         "race" => Some(crate::builtins::method_table::lazy::race(target, &[])),
         "hyper" => Some(crate::builtins::method_table::lazy::hyper(target, &[])),
-        // The normalization forms are rows (`method_table::unicode`); these arms
-        // keep the `Cool` receivers with no table shape (a `Match`, a `Range`, ...).
-        // Cost: O(n), n = codepoints of the invocant.
-        "NFC" => crate::builtins::method_table::unicode::nfc(target, &[]).map(Some),
-        // Cost: O(n), n = codepoints of the invocant.
-        "NFD" => crate::builtins::method_table::unicode::nfd(target, &[]).map(Some),
-        // Cost: O(n), n = codepoints of the invocant.
-        "NFKC" => crate::builtins::method_table::unicode::nfkc(target, &[]).map(Some),
-        // Cost: O(n), n = codepoints of the invocant.
-        "NFKD" => crate::builtins::method_table::unicode::nfkd(target, &[]).map(Some),
         _ => None,
     }
 }

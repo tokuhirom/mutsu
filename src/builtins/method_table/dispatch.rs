@@ -304,7 +304,7 @@ fn dispatch(
             // produced, an instance of a user class `is Cool`) reaches the
             // rows `Cool` declares, itself as invocant: their handlers read
             // it through `.Str` and `.Numeric` as Rakudo's `Cool` methods do.
-            None if is_shapeless_cool(interp.as_deref_mut(), target) => (
+            None if is_shapeless_cool(interp.as_deref_mut(), target, method, arity) => (
                 target,
                 super::owner_row(Symbol::intern("Cool"), method, arity)?,
             ),
@@ -337,13 +337,20 @@ fn dispatch(
     call(row, interp, target, &positional, Named::new(&named))
 }
 
-/// Whether `target`, a receiver with no shape, is a `Cool`: an enum value, a
-/// `Seq` or `Slip` the table has no settled shape for, or an instance whose
-/// class has `Cool` in its MRO. An instance is asked of the interpreter, so a
-/// pure entry declines it.
+/// Whether `target`, a receiver with no shape, is a `Cool` that reaches
+/// `Cool`'s `method` row: an enum value, a `Seq` or `Slip` the table has no
+/// settled shape for, or an instance whose class has `Cool` in its MRO and no
+/// built-in class ahead of it that declares the method (`class MyPath is
+/// IO::Path` reads its file with `IO::Path.lines`, which its own entry finds by
+/// owner). An instance is asked of the interpreter, so a pure entry declines it.
 // Cost: O(1) for a non-instance; for an instance one memoized MRO read and
-// O(d) compares, d = MRO depth.
-fn is_shapeless_cool(interp: Option<&mut Interpreter>, target: &Value) -> bool {
+// O(d * k) to walk it, d = MRO depth, k = rows named `method`.
+fn is_shapeless_cool(
+    interp: Option<&mut Interpreter>,
+    target: &Value,
+    method: Symbol,
+    arity: usize,
+) -> bool {
     use crate::value::ValueView;
     match target.view() {
         ValueView::Enum { .. }
@@ -353,10 +360,15 @@ fn is_shapeless_cool(interp: Option<&mut Interpreter>, target: &Value) -> bool {
         | ValueView::RaceSeq(_)
         | ValueView::Slip(_) => true,
         ValueView::Instance { class_name, .. } => interp.is_some_and(|interp| {
-            interp
-                .class_mro(class_name.as_str())
-                .iter()
-                .any(|class| class == "Cool")
+            for &class in interp.class_mro(class_name.as_str()).iter() {
+                if class == "Cool" {
+                    return true;
+                }
+                if super::owner_row(class, method, arity).is_some() {
+                    return false;
+                }
+            }
+            false
         }),
         _ => false,
     }

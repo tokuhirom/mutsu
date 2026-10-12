@@ -51,30 +51,6 @@ pub(super) fn dispatch(
                 crate::builtins::str_prim::chars(target) as i64,
             ))))
         }
-        // Cost: O(1) (borrows the payload).
-        "ord" => Some(Some(crate::builtins::method_table::str::ord(target, &[]))),
-        // Cost: O(n), n = chars of the invocant.
-        // The `Str`/`Cool` row's handler (ADR-11276); a Seq, like `.comb`.
-        "ords" => Some(Some(crate::builtins::method_table::str_iter::ords(
-            target,
-            &[],
-        ))),
-        // The Unicode methods of `Cool` are rows (`method_table::unicode`); these
-        // arms keep the `Cool` receivers with no table shape (a `Match`, a
-        // `Range`, a `Seq`, an instance of a `Cool` subclass), which the rows'
-        // handlers answer through the receiver's string form.
-        // Cost: O(1), a table lookup.
-        "uniname" => unicode::uniname(target, &[]).map(Some),
-        // Cost: O(n), n = chars of the invocant.
-        "uninames" => unicode::uninames(target, &[]).map(Some),
-        // Cost: O(1), a table lookup.
-        "uniprop" => unicode::uniprop(target, &[]).map(Some),
-        // Cost: O(n), n = chars of the invocant.
-        "uniprops" => unicode::uniprops(target, &[]).map(Some),
-        // Cost: O(1), a table lookup.
-        "unival" => unicode::unival(target, &[]).map(Some),
-        // Cost: O(n), n = chars of the invocant.
-        "univals" => unicode::univals(target, &[]).map(Some),
         // Cost: O(n), n = chars of the invocant; a name no table knows also walks
         // the CLDR emoji list (O(E) per such name, E = emoji count).
         "uniparse" | "parse-names" => unicode::uniparse(target, &[]).map(Some),
