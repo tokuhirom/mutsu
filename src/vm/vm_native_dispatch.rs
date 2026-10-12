@@ -885,18 +885,20 @@ impl Interpreter {
     pub(super) fn try_native_function(
         &mut self,
         name_sym: crate::symbol::Symbol,
-        args: &[Value],
+        args: &mut Vec<Value>,
     ) -> Option<Result<Value, RuntimeError>> {
-        // A plain gather argument reaches a builtin as its coroutine list,
-        // which the builtins already stream (ADR-11678). `list $g` is the
-        // one builtin that hands its Seq argument back as is.
-        let gather_args;
-        let args: &[Value] = if name_sym.as_str() == "list" {
-            args
-        } else {
-            gather_args = self.shared_gather_args(args);
-            &gather_args
-        };
+        // A plain gather argument is read the way Rakudo's routine reads it:
+        // streamed, consumed or cached (ADR-11678 §8). The read is written
+        // back, so a caller that falls through to another dispatch path after
+        // a `None` passes on the stolen or pulled argument rather than the
+        // consumed Seq.
+        if Self::has_builtin_seq_read(args) {
+            match self.builtin_gather_args(name_sym.as_str(), args) {
+                Ok(read) => *args = read.into_owned(),
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        let args: &[Value] = args;
         // Atomic var/element RMW markers (`__mutsu_atomic_*` / `__mutsu_cas_*`) for the
         // `⚛`-operators. Dispatch them here directly so they don't fall through to the
         // generic `call_function` name-match (§D state ownership). Checked before the
