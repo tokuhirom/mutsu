@@ -3,8 +3,9 @@
 //! streams, the `ThreadPoolScheduler` drain pump).
 //!
 //! The loop is event-driven (issue #12892). It holds no thread while its tap is
-//! idle: a [`DrainHook`] on the channel schedules one pool task when an event
-//! arrives, and that task drains whatever is queued, then returns its worker.
+//! idle: a [`DrainHook`](super::supply_channel::DrainHook) on the channel
+//! schedules one pool task when an event arrives, and that task drains
+//! whatever is queued, then returns its worker.
 //! Rakudo works the same way: it dispatches each emitted value as a scheduler
 //! task, and no thread waits on behalf of an idle tap. The previous design kept
 //! a pool worker blocked on the channel for the whole tap lifetime, waking every
