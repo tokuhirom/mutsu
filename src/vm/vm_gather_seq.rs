@@ -79,9 +79,13 @@ impl Interpreter {
         let read = builtin_gather_read(name);
         let mut out = Vec::with_capacity(args.len());
         for arg in args {
-            // A Seq an earlier read consumed (`sum(s); sum(s)`) cannot be read
-            // again, whatever its source was.
-            if !matches!(read, GatherRead::Pass) && Self::is_consumed_seq(arg) {
+            // A Seq an earlier read consumed (`sum(s); sum(s)`) cannot be
+            // iterated again, whatever its source was. A routine that is not
+            // known to iterate it (`infix:<~~>` against a type) may still take
+            // it.
+            if matches!(read, GatherRead::Stream | GatherRead::Consume)
+                && Self::is_consumed_seq(arg)
+            {
                 return Err(crate::value::seq_consumed_error());
             }
             let arg = match arg.view() {

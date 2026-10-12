@@ -13,4 +13,4 @@ as they need, and they consume it. Iterating ones (`sum`, `max`, `unique`,
 `X::Seq::Consumed`. Every other routine (`elems`, `join`, `sort`, `set`, the
 string coercions) reads the gather through its cache and leaves it readable. A
 Seq that an earlier read consumed now throws `X::Seq::Consumed` when it is
-passed to another builtin, as in Rakudo.
+passed to another streaming or iterating builtin, as in Rakudo.

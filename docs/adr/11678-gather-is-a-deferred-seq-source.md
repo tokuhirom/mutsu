@@ -441,7 +441,10 @@ reads it the way Rakudo's routine does, measured per routine against `raku`:
 - **Pass** (`list`, `item`, `defined`, `push`, `unshift`): the Seq itself.
 
 A Seq an earlier read consumed raises `X::Seq::Consumed` at the same boundary
-(`sum(s); sum(s)`), whatever its source. `try_native_function` writes the read
+when the routine streams or iterates it (`sum(s); sum(s)`), whatever its
+source; a Cache-class routine may still take it, since that class also holds
+routines that never read their argument (`infix:<~~>` against a type, roast
+`S32-list/seq.t`). `try_native_function` writes the read
 back into the caller's argument vector, so a caller that falls through to
 another dispatch path after `None` passes on the read argument rather than the
 now-consumed Seq. Before this, the pure builtins read the shared list's empty
