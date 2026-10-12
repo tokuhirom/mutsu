@@ -87,7 +87,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
-        search_pkgs: &[String],
+        search_pkgs: &[Symbol],
         arity: usize,
     ) -> Resolved {
         let plan = self.bare_multi_plan(name, arg_values, search_pkgs);
@@ -125,7 +125,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
-        search_pkgs: &[String],
+        search_pkgs: &[Symbol],
     ) -> Arc<BareMultiPlan> {
         let key = self.bare_multi_plan_key(name, arg_values);
         let generation = self.caches.fn_resolve_gen;
@@ -194,7 +194,7 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
-        search_pkgs: &[String],
+        search_pkgs: &[Symbol],
     ) -> BareMultiPlan {
         let prefixes: Vec<String> = search_pkgs
             .iter()

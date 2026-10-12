@@ -445,16 +445,19 @@ impl Interpreter {
         // exported overload. A non-matching captured candidate must decline so
         // the ordinary core operator can still handle recursive calls on values
         // such as `Order` made from inside the exported candidate itself.
-        let captured_candidates =
-            self.env()
-                .get(&format!("&{op_name}"))
-                .and_then(|value| match value.view() {
-                    ValueView::Sub(data) => data
-                        .env
-                        .get("__mutsu_multi_dispatch_candidates")
-                        .and_then(|value| value.as_list_items().map(ToOwned::to_owned)),
-                    _ => None,
-                });
+        // `&{op_name}` is looked up through the per-name memo of its interned
+        // code-variable key, not built with a `format!` and interned again on
+        // every operator call (#10111).
+        let captured_candidates = Symbol::lookup(op_name)
+            .map(crate::runtime::dispatch_key::amp_sym)
+            .and_then(|amp| self.env().get_sym(amp))
+            .and_then(|value| match value.view() {
+                ValueView::Sub(data) => data
+                    .env
+                    .get("__mutsu_multi_dispatch_candidates")
+                    .and_then(|value| value.as_list_items().map(ToOwned::to_owned)),
+                _ => None,
+            });
         if let Some(candidates) = captured_candidates {
             for candidate in &candidates {
                 if let ValueView::Sub(candidate_data) = candidate.view() {
