@@ -44,7 +44,7 @@ impl Compiler {
                         let ValueView::Str(key) = key.view() else {
                             return None;
                         };
-                        Some(Symbol::intern(&format!("%{name}{{'{}'}}", &**key)))
+                        Some(Symbol::intern(&format!("%{name}{{'{}'}}", **key)))
                     }
                     (Expr::ArrayVar(name), true) => {
                         let i = key.as_int()?;
