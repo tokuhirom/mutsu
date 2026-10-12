@@ -138,6 +138,18 @@ fn capture_shaped() -> &'static RwLock<(Vec<Symbol>, Vec<Symbol>)> {
 /// caller mutates the env while iterating, and any interning on that path takes
 /// the symbol-table write lock. Cloning two short vectors keeps the lock scope
 /// to this function and the lock order trivially acyclic.
+/// Call `f` on every capture-shaped symbol interned so far, numeric first,
+/// without copying the registry. `f` must not intern a symbol: the registry's
+/// read lock is held while it runs, and interning a capture-shaped name takes
+/// its write lock.
+// Cost: O(c), c = capture-shaped symbols interned so far.
+pub(crate) fn for_each_capture_shaped_symbol(mut f: impl FnMut(Symbol)) {
+    let guard = capture_shaped().read().unwrap();
+    for &sym in guard.0.iter().chain(guard.1.iter()) {
+        f(sym);
+    }
+}
+
 pub(crate) fn capture_shaped_symbols() -> (Vec<Symbol>, Vec<Symbol>) {
     let guard = capture_shaped().read().unwrap();
     guard.clone()
@@ -209,6 +221,11 @@ pub(crate) mod flags {
     /// never copy back into the caller. Mirrors
     /// `is_routine_scoped_implicit_var`.
     pub(crate) const ROUTINE_SCOPED_IMPLICIT: u16 = 1 << 0;
+    /// The match state: `$/` and the capture views that belong to it (`0`,
+    /// `1`, ..., `<name>`). A by-name lookup of one stops at the frame root of
+    /// the routine that owns it (ADR-12529 phase 3, `env::match_state`); the
+    /// `$!` half of [`ROUTINE_SCOPED_IMPLICIT`] is not included.
+    pub(crate) const MATCH_STATE: u16 = 1 << 1;
     /// A *shadow metadata* key: `__mutsu_type::<name>` (a typed lexical's
     /// constraint) or `__mutsu_var_source_name::<name>` (the caller variable a
     /// `@`/`%`/raw parameter was bound from). Nothing can observe one except
@@ -405,6 +422,9 @@ fn compute_flags(s: &str) -> u16 {
     let mut f = flags::COMPUTED;
     if is_routine_scoped_implicit_var(s) {
         f |= flags::ROUTINE_SCOPED_IMPLICIT | flags::CAPTURE_VOLATILE;
+        if s != "!" {
+            f |= flags::MATCH_STATE;
+        }
     }
     if matches!(s, "_" | "@_" | "%_") {
         f |= flags::CAPTURE_VOLATILE;
@@ -906,6 +926,13 @@ impl Symbol {
         let f = compute_flags(self.as_str());
         store_flags(idx, f);
         f
+    }
+
+    /// Whether this symbol names the match state (`/`, `0`, `<name>`); see
+    /// [`flags::MATCH_STATE`].
+    #[inline]
+    pub(crate) fn is_match_state(self) -> bool {
+        self.flags() & flags::MATCH_STATE != 0
     }
 
     /// Memoized [`crate::env::is_plain_user_lexical`] for this symbol's string.

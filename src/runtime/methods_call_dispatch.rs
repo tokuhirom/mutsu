@@ -2381,7 +2381,7 @@ impl Interpreter {
                 target.match_with_ast_keeping_id(args.first().cloned().unwrap_or(Value::NIL))
         {
             let value = args.first().cloned().unwrap_or(Value::NIL);
-            self.env.insert("/".to_string(), updated);
+            self.env.assign_match_var(updated);
             self.env.insert("made".to_string(), value.clone());
             self.regex_state.action_made = Some(value.clone());
             return Ok(value);

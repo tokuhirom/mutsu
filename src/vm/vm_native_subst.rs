@@ -155,7 +155,7 @@ impl Interpreter {
             } else {
                 Value::NIL
             };
-            self.env_mut().insert("/".to_string(), empty);
+            self.env_mut().assign_match_var(empty);
             return Ok(Value::str(text.to_string()));
         }
 
@@ -204,12 +204,12 @@ impl Interpreter {
                 .map(|(start, end, _, caps)| make_match(*start, *end, caps))
                 .collect();
             let slash = Value::array(list).item();
-            self.env_mut().insert("/".to_string(), slash.clone());
+            self.env_mut().assign_match_var(slash.clone());
             self.publish_subst_capture_env(&slash);
         } else {
             let (start, end, _, caps) = &matches[0];
             let slash = make_match(*start, *end, caps);
-            self.env_mut().insert("/".to_string(), slash.clone());
+            self.env_mut().assign_match_var(slash.clone());
             self.publish_subst_capture_env(&slash);
         }
 

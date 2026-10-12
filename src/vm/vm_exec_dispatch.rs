@@ -587,7 +587,7 @@ impl Interpreter {
                         if name.is_empty() || !name.bytes().all(|b| b.is_ascii_digit()) {
                             return None;
                         }
-                        let slash = self.get_env_with_main_alias("/")?;
+                        let slash = self.get_env_with_main_alias("/")?.deref_container();
                         if slash.is_nil() {
                             return None;
                         }

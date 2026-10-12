@@ -712,7 +712,7 @@ impl Interpreter {
                         )
                         .with_match_cursor_pos(captures.narrowed_pos())
                         .with_match_cursor_pos(captures.narrowed_pos());
-                        self.env.insert("/".to_string(), match_obj);
+                        self.env.assign_match_var(match_obj);
                         for (k, v) in &captures.named {
                             if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
                                 continue;
@@ -794,7 +794,7 @@ impl Interpreter {
                         }
                     }
                     let junction = Value::junction(junc_kind, junc_values);
-                    self.env.insert("/".to_string(), junction);
+                    self.env.assign_match_var(junction);
                     // Return value depends on junction kind
                     return match junc_kind {
                         JunctionKind::Any => parts.iter().any(|part| {
@@ -1223,8 +1223,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    self.env
-                        .insert_sym(crate::symbol::wk::match_var(), match_obj);
+                    self.env.assign_match_var(match_obj);
                     return true;
                 }
                 self.clear_match_state();

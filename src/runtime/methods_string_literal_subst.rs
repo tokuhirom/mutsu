@@ -54,7 +54,7 @@ impl Interpreter {
             !single_nth && (global || x_count.is_some() || nth_is_multi);
         let publish_str_matches = |me: &mut Self, captures: &[RegexCaptures]| {
             let match_var = Self::subst_match_var(captures, text, result_is_list);
-            me.env.insert("/".to_string(), match_var.clone());
+            me.env.assign_match_var(match_var.clone());
             me.publish_subst_capture_env(&match_var);
         };
         let has_adverbs = nth.is_some()

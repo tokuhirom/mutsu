@@ -95,8 +95,8 @@ fn subst_mutate(
         // and published them in `$/`. Re-running them through the regex engine
         // could accept a codepoint inside a grapheme. A failed literal `s///`
         // leaves `$/` as `Any`; the method answers `Nil`.
-        match interp.env().get("/") {
-            Some(m) if !m.is_nil() && !matches!(m.view(), ValueView::Package(_)) => m.clone(),
+        match interp.env().get("/").map(Value::deref_container) {
+            Some(m) if !m.is_nil() && !matches!(m.view(), ValueView::Package(_)) => m,
             _ => Value::NIL,
         }
     } else {

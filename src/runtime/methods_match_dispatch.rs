@@ -171,13 +171,13 @@ impl Interpreter {
                     Self::select_matches_by_repeat_bounds(selected, min_required, max_to_return)
                 else {
                     // Rakudo answers an empty list when `:x` is not satisfied.
-                    self.env.insert("/".to_string(), Value::NIL);
+                    self.env.assign_match_var(Value::NIL);
                     return Ok(Value::array(Vec::new()));
                 };
                 selected = restricted;
             }
             if selected.is_empty() {
-                self.env.insert("/".to_string(), Value::NIL);
+                self.env.assign_match_var(Value::NIL);
                 // :nth with a single value returns Nil, not empty array
                 if nth_arg.is_some() && repeat_bounds.is_none() && !global && !overlap {
                     return Ok(Value::NIL);
@@ -204,15 +204,15 @@ impl Interpreter {
             {
                 if matches.len() == 1 {
                     let result = matches.into_iter().next().unwrap();
-                    self.env.insert("/".to_string(), result.clone());
+                    self.env.assign_match_var(result.clone());
                     return Ok(result);
                 } else {
-                    self.env.insert("/".to_string(), Value::NIL);
+                    self.env.assign_match_var(Value::NIL);
                     return Ok(Value::NIL);
                 }
             }
             let result = Value::array(matches);
-            self.env.insert("/".to_string(), result.clone());
+            self.env.assign_match_var(result.clone());
             return Ok(result);
         }
         // Use anchored match if :p(N) or :pos(N) is specified,
@@ -253,7 +253,7 @@ impl Interpreter {
                     self.env.insert(format!("<{}>", k), v.clone());
                 }
             }
-            self.env.insert("/".to_string(), match_obj.clone());
+            self.env.assign_match_var(match_obj.clone());
             Ok(match_obj)
         } else {
             // Propagate any pending quantifier-value error (e.g., from ** {code} quantifiers)

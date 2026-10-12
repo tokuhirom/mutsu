@@ -248,12 +248,19 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let (topic, context) = Self::subst_match_context(matched_text, captures, orig_text);
         let saved_topic = self.env.get("_").cloned();
+        // `$/` goes through the binding the block shares with its scope
+        // (`env::match_state`); the capture views are published by name.
+        let mut saved_slash = None;
         let saved_context: Vec<(String, Option<Value>)> = context
             .into_iter()
-            .map(|(name, value)| {
+            .filter_map(|(name, value)| {
+                if name == "/" {
+                    saved_slash = Some(self.env.publish_match_var(value));
+                    return None;
+                }
                 let old = self.env.get(&name).cloned();
                 self.env.insert(name.clone(), value);
-                (name, old)
+                Some((name, old))
             })
             .collect();
         let takes_arg = !sub_data.empty_sig
@@ -262,6 +269,9 @@ impl Interpreter {
                 || !sub_data.param_defs.is_empty());
         let args = if takes_arg { vec![topic] } else { Vec::new() };
         let result = self.vm_call_on_value(Value::sub_value(sub_data.clone()), args, None);
+        if let Some(saved) = saved_slash {
+            self.env.restore_match_var(saved);
+        }
         for (name, old) in saved_context {
             match old {
                 Some(v) => {

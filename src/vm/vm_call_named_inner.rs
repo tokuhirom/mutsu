@@ -102,6 +102,11 @@ impl Interpreter {
             if cf.code.links_frame_to_unit() {
                 self.env_mut().mark_outer_is_unit();
             }
+            // A routine owns its `$/`: a match-state lookup that misses the
+            // frame does not reach the caller's (ADR-12529, `env::match_state`).
+            if cf.code.is_routine {
+                self.env_mut().mark_owns_match_state();
+            }
         }
 
         // Always push a routine frame so that &?ROUTINE works inside anonymous

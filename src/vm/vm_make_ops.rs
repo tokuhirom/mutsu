@@ -13,6 +13,9 @@ impl Interpreter {
     pub(super) fn frame_match_topic(&self, code: &CompiledCode) -> Option<Value> {
         self.locals_get_by_name(code, "/")
             .or_else(|| self.env().get("/").cloned())
+            // A `$/` a block shares with its scope is a cell
+            // (`env::match_state`); `make` works on what it holds.
+            .map(|v| v.deref_container())
     }
 
     /// Rakudo's precondition of the `make` routine: `$/` must hold a Match,
@@ -53,9 +56,9 @@ impl Interpreter {
         } else if let Some(updated) = self
             .env()
             .get("/")
-            .and_then(|m| m.match_with_ast_keeping_id(value))
+            .and_then(|m| m.deref_container().match_with_ast_keeping_id(value))
         {
-            self.env_mut().insert("/".to_string(), updated);
+            self.env_mut().assign_match_var(updated);
         }
     }
 }

@@ -6691,6 +6691,19 @@ pub(crate) struct CompiledCode {
     /// `reads_topic` one shadow write. Computed once in
     /// `compute_needs_env_sync`.
     pub(crate) mentions_native_scalar_type_name: bool,
+    /// Whether the body touches the match state (`$/`, `$0`, `$<name>`): it
+    /// sets it ([`Self::sets_match_state`]), or its constant pool names one of
+    /// those variables or `make` -- the sound over-approximation
+    /// `reads_topic` uses. A routine that does gets a frame root of its own,
+    /// which owns its `$/` (ADR-12529 phase 3, `env::match_state`); a block
+    /// that does shares its creating scope's `$/` through a cell. Computed
+    /// once in `compute_needs_env_sync`.
+    pub(crate) uses_match_state: bool,
+    /// Whether the body itself runs an op that sets `$/`: a regex smartmatch,
+    /// `s///`, `S///`, or a `.match` / `.subst` / `.subst-mutate` / `.parse` /
+    /// `.subparse` / `.parsefile` call. Computed once in
+    /// `compute_needs_env_sync`.
+    pub(crate) sets_match_state: bool,
     /// Source line number (1-based) where this closure/block was defined.
     pub(crate) source_line: Option<i64>,
     /// Whether this compiled code represents a pointy block (`-> { }` / `<-> { }`).
@@ -8013,6 +8026,8 @@ impl CompiledCode {
             method_fatal_pragma: false,
             succeed_passes_through: false,
             reads_topic: false,
+            uses_match_state: false,
+            sets_match_state: false,
             mentions_native_scalar_type_name: false,
             has_once: false,
             uses_callframe: false,
@@ -8852,6 +8867,7 @@ impl CompiledCode {
             matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num")
                 || crate::native_types::is_native_int_type(s.as_str()))
         });
+        (self.uses_match_state, self.sets_match_state) = self.scan_match_state();
         self.compute_const_syms();
         self.compute_locals_sym();
         self.compute_free_vars();

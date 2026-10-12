@@ -110,13 +110,19 @@ impl Interpreter {
         // that is itself such an empty frame, which sees exactly the same
         // program scope past it.
         let outer_is_unit = cf.code.links_frame_to_unit();
+        // A body that touches `$/` reuses only a frame that owns one, so its
+        // match state is never another frame's (`env::match_state`).
         let caller_env = if self.env().overlay_is_shared_empty()
             && (!outer_is_unit || self.env().is_empty_unit_frame())
+            && (!cf.code.uses_match_state || self.env().owns_match_state())
         {
             None
         } else {
             let parent = self.env().clone();
-            let frame = crate::env::Env::scoped_child(parent);
+            let mut frame = crate::env::Env::scoped_child(parent);
+            if cf.code.is_routine {
+                frame.mark_owns_match_state();
+            }
             Some(std::mem::replace(self.env_mut(), frame))
         };
 
