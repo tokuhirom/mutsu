@@ -382,7 +382,8 @@ code does where §2 left a choice, and where it deviates:
   each of them to pull a `SeqBody` is the reader migration this slice did not
   attempt; the cost is leniency (an iterating builtin does not consume the
   gather) and a second identity reachable inside those builtins. Retiring the
-  boundaries one consumer at a time is follow-up work.
+  boundaries one consumer at a time is follow-up work (#13026).
+- **Builtin routines no longer share the inner list** (#13026 step 1, §8.2).
 - **Pure renderers.** `say`/`put`/`print`/`note`, a `--> Array(...)`-style
   return coercion, slurpy binding and `.flatmap`'s flattening run a gather
   whole first (`reify_gather_seq`), as Rakudo's do; nested gathers are run by
@@ -419,3 +420,33 @@ code does where §2 left a choice, and where it deviates:
    container: 0.355 s at the merge base, 0.329 s with the adapter (ratio 0.93,
    within noise; no regression).
 
+### 8.2 Builtin routine arguments (#13026 step 1)
+
+`call_function_arms` and `try_native_function` no longer hand a gather argument
+over as its shared inner list. `builtin_gather_args` (`src/vm/vm_gather_seq.rs`)
+reads it the way Rakudo's routine does, measured per routine against `raku`:
+
+- **Stream** (`first`, `zip`, `roundrobin`, `flat`, `map`, `grep`): the routine
+  streams its input, so an infinite gather works. The coroutine is stolen and
+  the Seq consumed, the §2.3 steal; a cached gather is shared, as for the
+  methods.
+- **Consume** (`sum`, `min`, `max`, `minmax`, `unique`, `repeated`, `squish`,
+  `pick`, `roll`, `classify`, `categorize`, `produce`, `reduce`, `keys`,
+  `values`, `kv`, `pairs`, `permutations`, `combinations`, `cross`, `append`,
+  `prepend`): pulled whole through `take_seq_body`, which consumes an uncached
+  Seq.
+- **Cache** (every other routine: `elems`, `join`, `sort`, `reverse`, `set`,
+  the `Str`/`Numeric` coercions): pulled whole through `reify_seq_body`; the Seq
+  stays readable.
+- **Pass** (`list`, `item`, `defined`, `push`, `unshift`): the Seq itself.
+
+A Seq an earlier read consumed raises `X::Seq::Consumed` at the same boundary
+(`sum(s); sum(s)`), whatever its source. `try_native_function` writes the read
+back into the caller's argument vector, so a caller that falls through to
+another dispatch path after `None` passes on the read argument rather than the
+now-consumed Seq. Before this, the pure builtins read the shared list's empty
+cache: `sum(gather {...})` answered 0, `max` the whole list, `set` an empty Set,
+`uc` and `chrs` the empty string. `t/collections/lazy-seq/gather-builtin-args.t`
+pins the rows. The remaining hand-offs are the methods of built-in receivers,
+`.AT-POS` / `.EXISTS-POS`, and `gather_operand` for zip/cross metaoperators and
+reductions.

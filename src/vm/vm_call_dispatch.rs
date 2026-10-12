@@ -193,7 +193,7 @@ impl Interpreter {
     pub(super) fn call_function_compiled_first(
         &mut self,
         name: &str,
-        args: Vec<Value>,
+        mut args: Vec<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         let name_sym = crate::symbol::Symbol::intern(name);
@@ -205,7 +205,7 @@ impl Interpreter {
             return self.call_compiled_function_named(cf, args, fns, pkg_sym, name_sym);
         }
         if let Some(native_result) =
-            self.try_native_function(crate::symbol::Symbol::intern(name), &args)
+            self.try_native_function(crate::symbol::Symbol::intern(name), &mut args)
         {
             return native_result;
         }

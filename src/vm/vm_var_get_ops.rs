@@ -776,7 +776,7 @@ impl Interpreter {
                 // compatibility builtin with the same spelling.
                 self.call_routine_def(&def, Vec::new())?
             } else if let Some(native_result) =
-                self.try_native_function(crate::symbol::Symbol::intern(name), &[])
+                self.try_native_function(crate::symbol::Symbol::intern(name), &mut Vec::new())
             {
                 native_result?
             } else {

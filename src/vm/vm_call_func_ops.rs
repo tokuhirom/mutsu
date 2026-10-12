@@ -1766,7 +1766,7 @@ impl Interpreter {
         let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
         let (args, arg_sources) =
             Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
-        let (args, callsite_line) = self.sanitize_call_args_owned(args);
+        let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
         // `sanitize_call_args_owned` may drop a synthetic callsite-line
         // marker pair, shortening `args` by one relative to the just-aligned
         // `arg_sources` -- re-check length here (mirrors the pre-ADR-0054
@@ -1858,7 +1858,7 @@ impl Interpreter {
             self.set_pending_call_arg_sources(None);
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?
-        } else if let Some(native_result) = self.try_native_function(name_sym, &args) {
+        } else if let Some(native_result) = self.try_native_function(name_sym, &mut args) {
             native_result?
         } else if !self.has_proto_cached(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, name_sym, &args)
@@ -1900,7 +1900,7 @@ impl Interpreter {
         code: &CompiledCode,
         name: &str,
         name_sym: Symbol,
-        args: Vec<Value>,
+        mut args: Vec<Value>,
         arg_sources: Option<Vec<Option<String>>>,
         call_has_named: bool,
         call_me_override: Option<Value>,
@@ -2484,7 +2484,7 @@ impl Interpreter {
                     );
                     self.set_pending_call_arg_sources(None);
                     result
-                } else if let Some(native_result) = self.try_native_function(name_sym, &args) {
+                } else if let Some(native_result) = self.try_native_function(name_sym, &mut args) {
                     native_result
                 } else if !self.is_interpreter_handled_function(name)
                 && !self.has_multi_candidates_cached_sym(name_sym)
