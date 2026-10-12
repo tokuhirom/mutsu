@@ -69,6 +69,31 @@ pub(crate) fn mark_rule_params(names: &[String], body: &str) -> String {
     out
 }
 
+/// `text` with `names` added to its leading declaration block, which is
+/// created when the text has none. A regex's leading `:my $x …;` prefix is
+/// evaluated into the env before the rest of the pattern is parsed
+/// (`regex_match_with_captures`), so the rest carries its names the way a
+/// rule body carries its parameters: a later bare `$x` then reads the
+/// variable when the cursor reaches it, after any code block that assigned
+/// it, instead of being spliced with its value at the start of the match.
+// Cost: O(n + b + k·m), n = the names' total length, b = the text's length,
+// k = the new names, m = the names already declared.
+pub(crate) fn add_runtime_names(names: &[String], text: &str) -> String {
+    if names.is_empty() {
+        return text.to_string();
+    }
+    let Some((existing, rest)) = split_rule_params(text) else {
+        return mark_rule_params(names, text);
+    };
+    let mut all: Vec<String> = existing.map(str::to_string).collect();
+    for name in names {
+        if !all.contains(name) {
+            all.push(name.clone());
+        }
+    }
+    mark_rule_params(&all, rest)
+}
+
 /// Split a pattern text into the runtime parameter names its leading
 /// declaration block declares and the text after the block; `None` when it
 /// has no block.

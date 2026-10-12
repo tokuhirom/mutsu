@@ -2051,20 +2051,10 @@ impl Interpreter {
                     }
                     if declared_regex_vars.contains(&var_name) {
                         chars = probe;
-                        tokens.push(RegexToken {
-                            atom: RegexAtom::VarInterp(var_name),
-                            quant: RegexQuant::One,
-                            named_capture: pending_named_capture.take(),
-                            hash_capture: None,
-                            secondary_named_capture: None,
-                            force_list_capture: false,
-                            ratchet,
-                            frugal: false,
-                            separator: None,
-                            from_runtime_interpolation: false,
-                            subrule_call_capture: false,
-                        });
-                        continue 'atoms;
+                        // Through the common atom tail, so a quantifier
+                        // (`$q+`, `$r ** 2`) applies to the interpolation.
+                        backref_atom = Some(RegexAtom::VarInterp(var_name));
+                        break 'pre_atom;
                     }
                 }
                 // `@<name>=(...)` — array capture alias. Behaves like the scalar
