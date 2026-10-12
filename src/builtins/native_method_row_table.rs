@@ -3,7 +3,7 @@
 //! so the ~340 literal rows do not push the logic/tests in
 //! `native_method_row.rs` past the repo's 500-line-per-file guideline.
 
-use std::collections::HashSet;
+use rustc_hash::FxHashSet;
 use std::sync::OnceLock;
 
 pub(super) type RawRow = (&'static str, &'static str, u8, u8);
@@ -24,7 +24,7 @@ pub(super) fn rows() -> &'static [RawRow] {
 /// Keeps the first row of each `(owner, name)` key, in order.
 // Cost: O(r), r = `raw.len()`.
 pub(super) fn fold_repeated_keys(raw: &[RawRow]) -> Vec<RawRow> {
-    let mut seen = HashSet::new();
+    let mut seen = FxHashSet::with_capacity_and_hasher(raw.len(), Default::default());
     raw.iter()
         .filter(|&&(owner, name, _, _)| seen.insert((owner, name)))
         .copied()
