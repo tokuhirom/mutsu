@@ -116,7 +116,10 @@ impl Env {
     // Cost: O(d), d = tiers between the write and the owning frame root.
     pub(crate) fn assign_match_var(&mut self, value: Value) {
         let key = crate::symbol::wk::match_var();
+        // `is_container_ref` first: viewing the previous `$/` would force a
+        // lazy Match the program never looked at.
         if let Some(bound) = self.get_match_state_sym(key)
+            && bound.is_container_ref()
             && let ValueView::ContainerRef(cell) = bound.view()
         {
             Value::store_through_cell(&cell, &value.deref_container());
@@ -132,7 +135,10 @@ impl Env {
     // Cost: O(d), as `assign_match_var`.
     pub(crate) fn publish_match_var(&mut self, value: Value) -> SavedMatchVar {
         let key = crate::symbol::wk::match_var();
+        // `is_container_ref` first: viewing the previous `$/` would force a
+        // lazy Match the program never looked at.
         if let Some(bound) = self.get_match_state_sym(key)
+            && bound.is_container_ref()
             && let ValueView::ContainerRef(cell) = bound.view()
         {
             let old = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
