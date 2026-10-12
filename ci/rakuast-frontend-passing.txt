@@ -451,6 +451,7 @@ t/collections/nth-whatevercode.t
 t/collections/num32-array-element-store.t
 t/collections/ords-returns-seq.t
 t/collections/positional-read-of-a-non-positional.t
+t/collections/range-pair/pair-cyclic-gist.t
 t/collections/range-pair/pair-freeze.t
 t/collections/range-pair/pair-hash-coercion.t
 t/collections/range-pair/pair-improvements.t
@@ -919,6 +920,7 @@ t/concurrency/nqp-async-signal.t
 t/concurrency/nqp-async-socket-ops.t
 t/concurrency/nqp-async-timer-queue.t
 t/concurrency/nqp-async-watchfile.t
+t/concurrency/nqp-spawnprocasync.t
 t/concurrency/proc-async-divergences.t
 t/concurrency/proc-async-slurpy-command.t
 t/concurrency/proc-async.t
@@ -928,6 +930,7 @@ t/concurrency/procasync-stdout-incremental.t
 t/concurrency/promise/await-after-cro-request-keeps-caller-lexicals.t
 t/concurrency/promise/await-after-keep-keeper-order.t
 t/concurrency/promise/await-died-exception.t
+t/concurrency/promise/await-died-role-mixin.t
 t/concurrency/promise/await-keeps-caller-lexical-after-callee-write.t
 t/concurrency/promise/await-module-scope-lexical-container.t
 t/concurrency/promise/await-nested-iterable.t
@@ -938,6 +941,7 @@ t/concurrency/promise/composite-promise-replays-proc-taps.t
 t/concurrency/promise/gc-promise-timer-stress.t
 t/concurrency/promise/promise-anyof-container-elements.t
 t/concurrency/promise/promise-chain-lexical-callable-shadow.t
+t/concurrency/promise/promise-code-param-typecheck.t
 t/concurrency/promise/promise-coercion-call.t
 t/concurrency/promise/promise-combinator.t
 t/concurrency/promise/promise-in-custom-scheduler-delay.t
@@ -1264,6 +1268,7 @@ t/control/bare-block-infix-operand.t
 t/control/begin-compile-time.t
 t/control/begin-forward-call-undeclared.t
 t/control/begin-in-value-position.t
+t/control/begin-lift-names-inner-type-with-body.t
 t/control/begin-nested-block.t
 t/control/begin-phaser-begintime.t
 t/control/begin-prologue-binding-declaration.t
@@ -1694,6 +1699,7 @@ t/grammar/grammar-action-failed-alternative.t
 t/grammar/grammar-action-generic-rule-category.t
 t/grammar/grammar-action-made-in-assertion.t
 t/grammar/grammar-action-math-method.t
+t/grammar/grammar-action-mid-parse-kept-match.t
 t/grammar/grammar-action-sym-with-double-colon.t
 t/grammar/grammar-actions-fallback.t
 t/grammar/grammar-actions-on-failed-parse.t
@@ -2919,6 +2925,7 @@ t/nativecall/mixin-native-deferral.t
 t/nativecall/mixin-native-method-delegation.t
 t/nativecall/multi-trait-mod-in-module-above-nativecall-importer.t
 t/nativecall/native-aggregate-ctor.t
+t/nativecall/native-alias-imported-constant-default.t
 t/nativecall/native-allomorph-objat-ctor.t
 t/nativecall/native-array-backed-instance-methods.t
 t/nativecall/native-array-backed-instance.t
@@ -3000,6 +3007,7 @@ t/nativecall/native-multi-candidates.t
 t/nativecall/native-namespaced-and-exception-ctor.t
 t/nativecall/native-num32-truncation.t
 t/nativecall/native-override-cache-invalidation.t
+t/nativecall/native-pointer-typed-rw-out-param.t
 t/nativecall/native-proc-async-ctor.t
 t/nativecall/native-quanthash-coerce-mut-path.t
 t/nativecall/native-quanthash-coerce.t
@@ -3609,6 +3617,7 @@ t/oo/method/method-captures-sigilless-param.t
 t/oo/method/method-closure-env-write-merge.t
 t/oo/method/method-declared-in-closure-body.t
 t/oo/method/method-declared-in-routine-body.t
+t/oo/method/method-deferral-tail-lazy.t
 t/oo/method/method-definite-return-sinks-map.t
 t/oo/method/method-direct-underscore-rejected.t
 t/oo/method/method-dispatch-colon-question-syntax.t
@@ -3783,6 +3792,7 @@ t/oo/method/set-op-after-method.t
 t/oo/method/shapeless-any-list-method-rows.t
 t/oo/method/shapeless-cool-method-rows.t
 t/oo/method/shapeless-mu-any-method-rows.t
+t/oo/method/shapeless-mu-item-sink-method-rows.t
 t/oo/method/signature-method-rows.t
 t/oo/method/signature-render-method-rows.t
 t/oo/method/sink-method-context.t
@@ -4622,6 +4632,7 @@ t/regex/match/multi-candidate-match-scoped-window.t
 t/regex/match/multi-match-empty-result.t
 t/regex/match/multi-method-where-regex-captures.t
 t/regex/match/multi-no-match-builtins.t
+t/regex/match/multi-sub-where-regex-captures.t
 t/regex/match/named-capture-numbering.t
 t/regex/match/nil-uint-smartmatch.t
 t/regex/match/nomatch-candidate-signature-slurpy-and-smiley.t
@@ -4712,6 +4723,7 @@ t/regex/match/whatever-smart-not-match.t
 t/regex/match/when-only-block-nonmatch-value.t
 t/regex/match/zen-slice-match-var.t
 t/regex/monkey-see-no-eval-regex-code.t
+t/regex/null-regex.t
 t/regex/recursive-frugal-regex-subrule.t
 t/regex/regex-accepts-method.t
 t/regex/regex-adverb-error.t
@@ -5882,6 +5894,7 @@ t/routines/sub-hoisted-free-var-before-declaration.t
 t/routines/sub-rw-writeback-attr-source-no-leak.t
 t/routines/subdata-nested-sub-compiled-fns.t
 t/routines/sum-routine-rat-promotion.t
+t/routines/trir-routine-owned-implicits.t
 t/routines/undeclared-routine-compile-time.t
 t/routines/undeclared-routine-found-in-every-position.t
 t/routines/undeclared-routine-suggests-unit-own-subs.t
@@ -6628,6 +6641,7 @@ t/vm/frames/light-call-definite-return.t
 t/vm/frames/light-call-frame-writes-dedup.t
 t/vm/frames/light-call-state-leak-on-panic-unwind.t
 t/vm/frames/light-call-type-check-tags.t
+t/vm/frames/light-call-uint-constraint.t
 t/vm/frames/locals-frame-stack-gc-roots.t
 t/vm/frames/mark-context-nested-run-isolation.t
 t/vm/frames/mixed-light-call-binding.t

@@ -605,3 +605,12 @@ retains its supply/react completion behavior in expression position.
 `t/rakuast/rakuast-bareword-resolution.t` pins the node shape, and
 `t/concurrency/supply/supply-done-expression.t` passes in RakuAST mode. The
 frontend ratchet adds 36 files on the current main tree.
+
+### 6.16 S10: triple-pipe regex alternation (2026-10-12)
+
+The regex source-tree parser consumes `|||` as one sequential-alternation
+operator, matching Rakudo's `Regex::SequentialAlternation` shape. It rejects
+pipe runs longer than three instead of inventing empty branches. The existing
+matcher still executes the source pattern. `t/rakuast/rakuast-regex-source-
+cohort.t` pins the node and round-trip match; `t/regex/null-regex.t` exercises
+the EVAL path in RakuAST mode.
