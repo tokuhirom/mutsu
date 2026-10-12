@@ -11,7 +11,8 @@
 use super::convert::{convert_expr, leaf_field, node_field};
 use super::lower::{
     infix_is_assignment, infix_is_compound_assignment, lower_compound_assign_expr,
-    lower_dotty_assign, lower_expr, lower_var_decl, named_child, positional_leaf, unsupported,
+    lower_dotty_assign, lower_expr, lower_var_decl, named_child, named_child_or_positional,
+    positional_leaf, unsupported,
 };
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::temporize::{self, Assigned, Target, Temporized};
@@ -62,6 +63,62 @@ fn is_scalar_variable(target: &Target) -> bool {
 pub(super) fn convert(stmt: &Stmt) -> Option<Result<RakuAstNode, RuntimeError>> {
     let temporized = temporize::recognize(stmt)?;
     Some(convert_temporized(&temporized))
+}
+
+/// `temp $obj.method = value` / `temp $.attribute OP= value` as the written
+/// assignment around a `temp` prefix. The parser's statement stores the
+/// already-expanded writeback value for the compiler; its identity marker
+/// preserves the compound operator and original left operand for this model.
+// Cost: O(e), e = size of the assignment value and method arguments.
+pub(super) fn convert_method_assign(
+    var_name: &str,
+    method_name: &str,
+    method_args: &[Expr],
+    value: &Expr,
+    is_attribute: bool,
+) -> Result<RakuAstNode, RuntimeError> {
+    let target = if is_attribute {
+        RakuAstNode {
+            class: RakuAstClass::VarAttributePublic,
+            fields: vec![leaf_field(
+                Some("name"),
+                Value::str(format!("$.{method_name}")),
+            )],
+        }
+    } else {
+        let invocant = if var_name == "self" {
+            Expr::BareWord("self".to_string())
+        } else {
+            Expr::Var(var_name.to_string())
+        };
+        convert_expr(&Expr::MethodCall {
+            target: Box::new(invocant),
+            name: crate::symbol::Symbol::intern(method_name),
+            args: method_args.to_vec(),
+            modifier: None,
+            quoted: false,
+            sugar: false,
+        })?
+    };
+    let left = prefix_node(true, target);
+    if let Expr::Binary {
+        left: marked,
+        op,
+        right,
+        ..
+    } = value
+        && matches!(
+            marked.as_ref(),
+            Expr::Unary {
+                op: crate::token_kind::TokenKind::MetaAssignIdentity(_),
+                ..
+            }
+        )
+    {
+        let operator = crate::compiler::helpers_ops::token_kind_to_op_name(op);
+        return super::convert::compound_assignment_with_left(left, &format!("{operator}="), right);
+    }
+    super::convert::assignment_around(left, is_attribute, value)
 }
 
 fn convert_temporized(t: &Temporized) -> Result<RakuAstNode, RuntimeError> {
@@ -132,6 +189,9 @@ fn with_left(node: &RakuAstNode, left: &RakuAstNode) -> RakuAstNode {
 /// The `temp` / `let` statement the parser builds for `node`.
 // Cost: O(n), n = size of the node.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
+    if let Some(statement) = lower_method_assign(node)? {
+        return Ok(statement);
+    }
     let (prefix, wrapper) = match node.class {
         RakuAstClass::ApplyPrefix => (node, None),
         _ => (named_child(node, "left")?, Some(node)),
@@ -226,6 +286,74 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
         _ => Ok(temporize::save(&name, None, value, is_temp)),
     }
+}
+
+/// A temporary method/attribute lvalue is already represented as the source
+/// prefix plus assignment. Recover its shared save/restore statement directly.
+// Cost: O(e), e = size of the lvalue and assignment expression.
+fn lower_method_assign(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError> {
+    let (prefix, wrapper) = match node.class {
+        RakuAstClass::ApplyPrefix => (node, None),
+        RakuAstClass::ApplyInfix => (named_child(node, "left")?, Some(node)),
+        _ => return Ok(None),
+    };
+    if !temporizer(prefix).unwrap_or(false) {
+        return Ok(None);
+    }
+    let operand = named_child(prefix, "operand")?;
+    let (var_name, method_name, method_args, is_attribute) = if operand.class
+        == RakuAstClass::VarAttributePublic
+        && !operand
+            .fields
+            .iter()
+            .any(|field| field.name == Some("args"))
+    {
+        let spelling = super::lower::leaf_str(operand, "name")?;
+        let Some(method) = spelling.strip_prefix("$.") else {
+            return Err(unsupported(node));
+        };
+        ("self".to_string(), method.to_string(), Vec::new(), true)
+    } else {
+        let Expr::MethodCall {
+            target, name, args, ..
+        } = lower_expr(operand)?
+        else {
+            return Ok(None);
+        };
+        let var_name = match target.as_ref() {
+            Expr::Var(name) if name == "__ANON_STATE__" || name == "self" => "self".to_string(),
+            Expr::Var(name) => name.clone(),
+            Expr::BareWord(name) if name == "self" => "self".to_string(),
+            _ => return Err(unsupported(node)),
+        };
+        (var_name, name.resolve(), args, false)
+    };
+    let value = match wrapper {
+        None => return Ok(None),
+        Some(wrapper) if infix_is_assignment(wrapper) => {
+            lower_expr(named_child(wrapper, "right")?)?
+        }
+        Some(wrapper) if infix_is_compound_assignment(wrapper) => {
+            let left = lower_expr(operand)?;
+            let meta = named_child(wrapper, "infix")?;
+            let base = match positional_leaf(named_child_or_positional(meta)?)?.view() {
+                ValueView::Str(operator) => operator.to_string(),
+                _ => return Err(unsupported(node)),
+            };
+            let compound = crate::parser::compound_assign_op_from_name(&base)
+                .ok_or_else(|| unsupported(node))?;
+            let right = lower_expr(named_child(wrapper, "right")?)?;
+            crate::parser::compound_assigned_value_expr(left, compound, right)
+        }
+        Some(_) => return Ok(None),
+    };
+    Ok(Some(Stmt::TempMethodAssign {
+        var_name,
+        method_name,
+        method_args,
+        value,
+        is_attribute,
+    }))
 }
 
 /// Whether the element is a subscript of a plain variable (`@a[1]`, `%h<k>`).

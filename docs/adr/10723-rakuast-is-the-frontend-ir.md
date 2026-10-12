@@ -626,3 +626,15 @@ and uses the existing attribute composition path. The focused RakuAST test
 covers term structure and evaluation; all five existing first-refusal files
 for handles spelling pass in round-trip mode. After refreshing the ratchet on
 the current main tree, it lists 7,041 files, 18 more than the branch base.
+
+### 6.18 S10: temporary method and attribute lvalues (2026-10-12)
+
+`temp $.attr = value` and `temp $obj.attr OP= value` are rendered as the
+ordinary prefix and assignment nodes. The parser retains whether the original
+invocant was an attribute, since `temp $.attr` and `temp self.attr` have
+different RakuAST operands. Compound assignments recover their operator and
+right-hand side from the parser's assignment identity marker, then lower back
+through the existing temporary save/restore statement. The focused test pins
+public/private attribute and method-call shapes and checks restoration for
+plain and compound assignments; the three first-refusal files pass in RakuAST
+mode. The frontend ratchet adds 12 files, bringing it to 7,053 passing files.

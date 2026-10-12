@@ -4951,6 +4951,7 @@ impl Compiler {
                 method_name,
                 method_args,
                 value,
+                is_attribute: _,
             } => {
                 let slot = self.local_map.get(var_name).copied();
                 let name_idx = self.code.add_constant(Value::str(var_name.clone()));
