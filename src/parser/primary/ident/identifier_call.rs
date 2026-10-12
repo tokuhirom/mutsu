@@ -23,7 +23,7 @@ use crate::parser::primary::ident::predicates::{
     is_zero_arg_callable_builtin, keyword_as_function_error, looks_like_binding, parens_then_block,
     starts_with_term_keyword, try_extend_colon_name,
 };
-use crate::parser::primary::ident::supply::{supply_block, supply_method_call};
+use crate::parser::primary::ident::supply::supply_block;
 use crate::parser::primary::misc::{
     anon_class_expr, anon_grammar_expr, anon_role_expr, mark_anon_package_decl, parse_block_body,
     parse_block_body_routine, parse_tracked_block_body,
@@ -2142,7 +2142,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     if name == "supply"
         && let Ok((r2, whenever)) = crate::parser::stmt::control::whenever_stmt(r)
     {
-        return Ok((r2, supply_method_call(vec![whenever])));
+        return Ok((r2, supply_block(vec![whenever])));
     }
 
     // `supply { ... }` expression: lower to `Supply.on-demand(-> $emitter { ... })`.
@@ -2167,9 +2167,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             body, label: None, ..
         }) = &stmt
         {
-            return Ok((r_after, supply_method_call(body.clone())));
+            return Ok((r_after, supply_block(body.clone())));
         }
-        return Ok((r_after, supply_method_call(vec![stmt])));
+        return Ok((r_after, supply_block(vec![stmt])));
     }
 
     // set/bag/mix followed immediately by < (no whitespace) is a parse error
