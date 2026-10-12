@@ -37,9 +37,10 @@ pub(crate) fn to_seq_structural(target: &Value) -> Option<Value> {
         ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => Some(
             Value::seq(crate::runtime::utils::value_to_list_for_receiver(target)),
         ),
-        // Supply (carrier), LazyList (lazy bridge), and any Instance (Buf/Blob
-        // byte read, or the generic 1-element wrap) are left to the interpreter.
-        ValueView::LazyList(_) | ValueView::Instance { .. } => None,
+        // Supply (carrier), LazyList (lazy bridge), a Channel (its on-demand
+        // receive Seq, #12727), and any Instance (Buf/Blob byte read, or the
+        // generic 1-element wrap) are left to the interpreter.
+        ValueView::LazyList(_) | ValueView::Channel(_) | ValueView::Instance { .. } => None,
         // A bare scalar becomes a one-element Seq (matches the interpreter's
         // `other => Seq([other])` tail).
         _ => Some(Value::seq(vec![target.clone()])),

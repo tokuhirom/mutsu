@@ -3443,7 +3443,8 @@ pub(crate) enum IndexTransform {
     Flat,
 }
 
-/// What a [`CatPullSpec`] lazy list pulls from its backing `IO::CatHandle`.
+/// What a [`CatPullSpec`] lazy list pulls from its backing source (an
+/// `IO::CatHandle`, or a `Channel` for `Channel.list`/`.Seq`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CatPullMode {
     /// `.lines`: each pull reads the next line across all handles (`.get`).
@@ -3451,6 +3452,11 @@ pub(crate) enum CatPullMode {
     /// `.handles`: the first pull yields the currently-active handle, then each
     /// subsequent pull advances to the next handle (`.next-handle`).
     Handles,
+    /// `Channel.list` / `.Seq`: `cat` is the Channel; each pull is one
+    /// blocking `receive`, and the close ends the list. Pulling on demand lets
+    /// `for $c.list { }` run its body as each item arrives (#12727) instead
+    /// of only after the channel closes.
+    ChannelReceive,
 }
 
 /// Lazy `IO::CatHandle.lines` / `.handles` generator. Holds the live cat

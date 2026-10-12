@@ -81,6 +81,8 @@ impl Interpreter {
                 }
                 None
             }
+            // A Channel drains its items (blocking receives), not one-item-wraps.
+            "List" if args.is_empty() && matches!(target.view(), ValueView::Channel(_)) => None,
             "List" if args.is_empty() => Some(self.dispatch_list_coercion(target)),
             "Set" | "SetHash" if args.is_empty() => {
                 let result = match self.dispatch_to_set_with_what(target, method) {
