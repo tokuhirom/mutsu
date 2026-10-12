@@ -1023,7 +1023,7 @@ impl Interpreter {
             let done_before = emitter_sid.map(supplier_done_call_count);
             this.async_state
                 .supply_emit_buffer
-                .push(EmitFrame::default());
+                .push(EmitFrame::capture());
             // The caller below handles `is_react_done()`/`is_last()` from this
             // body's dynamic extent (directly or via a nested sub call) — see
             // `runtime::react_done_handler_depth`.
