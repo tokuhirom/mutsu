@@ -1214,11 +1214,10 @@ impl Interpreter {
             self.drain_and_reconcile_after_cached_call(code);
             return Ok(());
         }
-        // Full method dispatch from here on may capture the env into a Sub /
-        // closure or run an interpreter fallback that iterates it; collapse a
-        // transient scoped overlay env to a flat env first so the full lexical
-        // view is seen.
-        // EXPERIMENT self.flatten_scoped_env();
+        // Full method dispatch runs on the frame's env as it is, scoped or not:
+        // a closure built from it captures up to its frame root
+        // (`layered_capture`), and the callee chains its own frame over it
+        // (#12882).
         // Junction auto-threading: thread method calls over junction values
         if let ValueView::Junction { kind, values } = target.view()
             && !matches!(
