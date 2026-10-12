@@ -288,8 +288,18 @@ fn dispatch(
     if !super::names_a_row(method, arity) {
         return None;
     }
-    let receiver = Receiver::of_settled(target)?;
-    let id = super::resolve(receiver, method, arity)?;
+    let payload;
+    let (target, id) = match Receiver::of_settled(target) {
+        Some(receiver) => (target, super::resolve(receiver, method, arity)?),
+        // The native-base resolution (§9.79): an instance of a user class
+        // deriving from a built-in scalar type has no shape of its own, and is
+        // answered by the rows of its payload's shape, the payload as invocant.
+        None => {
+            payload = crate::builtins::native_base::redirect(target, method.as_str())?;
+            let receiver = Receiver::of_settled(&payload)?;
+            (&payload, super::resolve(receiver, method, arity)?)
+        }
+    };
     let row = row(id);
     // The caller's veto, asked once the row is known and before the handler
     // runs: an interpreter row has effects, so it must not run and then be
@@ -314,6 +324,63 @@ fn dispatch(
         return None;
     }
     call(row, interp, target, &positional, Named::new(&named))
+}
+
+/// Answer a call the cascades declined from the row `Cool` declares, for a
+/// receiver with no shape that is a `Cool` (ADR-11276 §9.79): an enum value, a
+/// `Seq` or `Slip` the table has no settled shape for, or an instance whose
+/// MRO reaches `Cool` before any built-in class that declares the method
+/// (`class MyPath is IO::Path` reads its file with `IO::Path.lines`). Only the
+/// audited text methods ([`crate::value::COOL_TEXT_FOR_CLOSED_SHAPES`]) are
+/// answered: their handlers read the receiver's string form, which is all the
+/// name-matching arms they replace did. It runs after the cascades, so a
+/// receiver-specific answer there (an enum's `sign`, a `Cool` subclass's own
+/// `Numeric`) comes first. An instance is asked of the interpreter's MRO, so
+/// without one it declines; a `Failure` must explode and is never answered.
+// Cost: O(m) to test the name, m = audited names, plus O(k) to find the row,
+// k = rows named `method`; for an instance one memoized MRO read and O(d * k)
+// to walk it, d = MRO depth; plus the handler's own cost.
+pub(crate) fn answer_shapeless(
+    interp: Option<&mut Interpreter>,
+    target: &Value,
+    method: Symbol,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    use crate::value::ValueView;
+    if !args.is_empty() || !crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method.as_str()) {
+        return None;
+    }
+    if Receiver::of_settled(target).is_some() {
+        return None;
+    }
+    let cool = Symbol::intern("Cool");
+    let reaches = match target.view() {
+        ValueView::Enum { .. }
+        | ValueView::LazyList(_)
+        | ValueView::Seq(_)
+        | ValueView::HyperSeq(_)
+        | ValueView::RaceSeq(_)
+        | ValueView::Slip(_) => true,
+        ValueView::Instance { class_name, .. } if class_name != "Failure" => {
+            let mut reaches = false;
+            for &class in interp?.class_mro(class_name.as_str()).iter() {
+                if class == cool {
+                    reaches = true;
+                    break;
+                }
+                if super::owner_row(class, method, 0).is_some() {
+                    break;
+                }
+            }
+            reaches
+        }
+        _ => false,
+    };
+    if !reaches {
+        return None;
+    }
+    let id = super::owner_row(cool, method, 0)?;
+    call(row(id), None, target, args, Named::NONE).map(|(result, _)| result)
 }
 
 /// Whether the named argument `pair` is one `row` binds.

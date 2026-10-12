@@ -574,7 +574,7 @@ impl Interpreter {
             // An `Int` subclass's `.Numeric` is the instance itself, so it
             // takes its `Int` payload instead of re-entering this dispatch.
             let coerced = if let Some(payload) =
-                crate::builtins::numeric_subclass::numeric_subclass_payload(&target)
+                crate::builtins::native_base::numeric_subclass_payload(&target)
             {
                 payload
             } else if let Ok(v) = self.call_method_with_values(target.clone(), "Numeric", vec![]) {

@@ -69,7 +69,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Str", "NFD", 1, 25),
     ("Str", "NFKC", 1, 25),
     ("Str", "NFKD", 1, 25),
-    ("Str", "encode", 1, 25),
+    ("Str", "encode", 1, 24),
     ("Str", "uniparse", 1, 25),
     ("Str", "unimatch", 6, 25),
     ("Str", "uniprops", 3, 25),

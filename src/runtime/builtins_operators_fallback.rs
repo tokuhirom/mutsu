@@ -501,7 +501,7 @@ impl Interpreter {
             let mut all_ok = true;
             for arg in args {
                 if let Some(payload) =
-                    crate::builtins::numeric_subclass::numeric_subclass_payload(arg)
+                    crate::builtins::native_base::numeric_subclass_payload(arg)
                 {
                     // An `Int` subclass's `.Numeric` is the instance itself;
                     // the builtin takes its `Int` payload.

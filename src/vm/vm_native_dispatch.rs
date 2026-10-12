@@ -686,6 +686,20 @@ impl Interpreter {
         // it declares, the cascade is named-blind. See that module for why the
         // declaration is partial and why `None` is the safe default.
         let stripped = crate::builtins::strip_undeclared_nameds(method_name, args);
+        // The table was asked with the named argument it does not declare
+        // (`255.fmt(:zzz)`), so it is asked again without it, behind the same
+        // veto: the method's arm is gone from the cascade.
+        if let Some(stripped) = stripped.as_deref()
+            && let Some(result) = crate::builtins::method_table::try_dispatch_in(
+                self,
+                |vm| !vm.native_lever_a_user_override_sym(target, method_sym),
+                target,
+                method_sym,
+                stripped,
+            )
+        {
+            return Some(result);
+        }
         let args: &[Value] = stripped.as_deref().unwrap_or(args);
         // `$buf.subbuf(*-2)`: the pure cascade cannot call a closure, so a
         // Callable offset is resolved to an Int here (issue #10118).
@@ -706,7 +720,16 @@ impl Interpreter {
             // the table for this very receiver and method before calling here,
             // and a row it would answer from but the lever-A gate above refused
             // must not answer here either.
-            crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym)
+            crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym).or_else(
+                || {
+                    crate::builtins::method_table::answer_shapeless(
+                        Some(self),
+                        target,
+                        method_sym,
+                        &[],
+                    )
+                },
+            )
         } else {
             return None;
         };

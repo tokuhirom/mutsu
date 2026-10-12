@@ -76,16 +76,16 @@ pub(crate) use instances::{
 };
 pub(crate) use scalars::{
     blob, blob_read, coerce, complex, complex_math, cool_real, math, numeric_base, numeric_coerce,
-    numify, real, real_misc, str, str_args, str_iter, str_numeric, str_search, succ_pred, truth,
-    uni, unicode, version,
+    numify, real, real_misc, str, str_args, str_numeric, str_search, succ_pred, truth, uni,
+    unicode, version,
 };
 
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
 #[cfg(test)]
 pub(crate) use dispatch::try_dispatch;
 pub(crate) use dispatch::{
-    admits, answer, invoke, invoke_base, invoke_in, invoke_mut, invoke_owner, invoke_owner_raw,
-    try_dispatch_in,
+    admits, answer, answer_shapeless, invoke, invoke_base, invoke_in, invoke_mut, invoke_owner,
+    invoke_owner_raw, try_dispatch_in,
 };
 pub(crate) use mutating::buf::by_value as buf_by_value;
 pub(crate) use mutating::owners_of as mut_owners_of;

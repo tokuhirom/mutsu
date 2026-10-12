@@ -19,9 +19,9 @@ pub(crate) fn native_method_1arg(
     // Scalar containers are transparent for method dispatch (no .VAR at this arity).
     let target = target.descalarize();
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
-    // payload (`builtins::numeric_subclass`).
+    // payload (`builtins::native_base`).
     if let Some(result) =
-        crate::builtins::numeric_subclass::dispatch(target, method_sym, std::slice::from_ref(arg))
+        crate::builtins::native_base::dispatch(target, method_sym, std::slice::from_ref(arg))
     {
         return Some(result);
     }

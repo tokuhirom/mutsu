@@ -189,16 +189,6 @@ pub(super) fn dispatch(
             ))),
             _ => Some(None),
         },
-        // `Cool`'s case maps: the `Str` rows' handlers (ADR-11276), on the
-        // receiver's string form.
-        // Cost: O(n), n = chars of the invocant's string form.
-        "uc" => Some(Some(crate::builtins::method_table::str::uc(target, &[]))),
-        // Cost: O(n), n = chars of the invocant's string form.
-        "lc" => Some(Some(crate::builtins::method_table::str::lc(target, &[]))),
-        // Cost: O(n), n = chars of the invocant's string form.
-        "fc" => Some(Some(crate::builtins::method_table::str::fc(target, &[]))),
-        // Cost: O(n), n = chars of the invocant's string form.
-        "tc" => Some(Some(crate::builtins::method_table::str::tc(target, &[]))),
         // `sign` of a number is a row; an enum value (no table shape) is the sign
         // of its integer value.
         // Cost: O(1).

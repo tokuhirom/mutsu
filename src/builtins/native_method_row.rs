@@ -638,6 +638,12 @@ mod tests {
             let type_obj = Value::package(Symbol::intern(owner));
             for row in native_method_rows(owner) {
                 if row.flags.contains(NativeRowFlags::TYPE_OBJECT_OK) {
+                    // A `Cool` text method on a `Cool` type object is answered
+                    // by the type-object gate ahead of the table and the
+                    // cascades (ADR-11276 §9.79).
+                    if crate::runtime::admits_cool_type_object(row.name) {
+                        continue;
+                    }
                     let observed = native_method_arities(&type_obj, row.name);
                     assert_ne!(
                         observed, 0,
@@ -1633,9 +1639,15 @@ mod tests {
                 "IO::Path" => &path_sample,
                 "IO::Handle" => {
                     let mut h = crate::runtime::Interpreter::new();
-                    h.run(r#"my $e11-vfh = "tmp/e11_verify_handle.txt".IO.open(:w);"#)
+                    // `tmp/` is not checked in: without it `open` answers a
+                    // `Failure`, which no row backs.
+                    h.run(r#"mkdir "tmp"; my $e11-vfh = "tmp/e11_verify_handle.txt".IO.open(:w);"#)
                         .unwrap();
                     let fh = h.env().get("e11-vfh").cloned().unwrap();
+                    assert!(
+                        matches!(fh.view(), crate::value::ValueView::Instance { class_name, .. } if class_name == "IO::Handle"),
+                        "the IO::Handle sample did not open"
+                    );
                     assert_row_backed(row_owner, name, arity, flags, &fh);
                     continue;
                 }

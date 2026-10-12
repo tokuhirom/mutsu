@@ -909,8 +909,8 @@ impl Interpreter {
         // other failure the method body raised.
         // An `Int` subclass takes `Int`'s own `postfix:<++>` candidate, as in
         // Rakudo: its payload steps, and a user `.succ` on the subclass is not
-        // consulted (`builtins::numeric_subclass`).
-        if let Some(payload) = crate::builtins::numeric_subclass::numeric_subclass_payload(val) {
+        // consulted (`builtins::native_base`).
+        if let Some(payload) = crate::builtins::native_base::numeric_subclass_payload(val) {
             return Ok(Self::increment_value(&payload));
         }
         if matches!(val.view(), ValueView::Instance { .. })
@@ -1036,8 +1036,8 @@ impl Interpreter {
         // tree-walk — one method-dispatch path, not two.
         // An `Int` subclass takes `Int`'s own `postfix:<-->` candidate, as in
         // Rakudo: its payload steps, and a user `.pred` on the subclass is not
-        // consulted (`builtins::numeric_subclass`).
-        if let Some(payload) = crate::builtins::numeric_subclass::numeric_subclass_payload(val) {
+        // consulted (`builtins::native_base`).
+        if let Some(payload) = crate::builtins::native_base::numeric_subclass_payload(val) {
             return Ok(Self::decrement_value(&payload));
         }
         if matches!(val.view(), ValueView::Instance { .. })

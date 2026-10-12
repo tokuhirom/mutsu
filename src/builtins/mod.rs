@@ -25,12 +25,12 @@ pub(crate) mod methods_0arg;
 mod methods_narg;
 pub(crate) mod mix_weight;
 pub(crate) mod naive_word_wrapper;
+pub(crate) mod native_base;
 pub(crate) mod native_method_row;
 #[cfg(test)]
 #[path = "native_method_row_rakudo_oracle.rs"]
 mod native_method_row_rakudo_oracle;
 mod native_method_row_table;
-pub(crate) mod numeric_subclass;
 pub(crate) mod pack;
 pub(crate) mod parse_base;
 pub(crate) mod primality;

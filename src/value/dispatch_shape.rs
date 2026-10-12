@@ -290,29 +290,31 @@ impl DispatchShape {
     /// audit ([`Self::reaches`] decides which).
     // Cost: O(1).
     pub(crate) const fn may_reach_audited_cool(self, owner: &str) -> bool {
-        matches!(self, DispatchShape::Range | DispatchShape::Seq) && const_str_eq(owner, "Cool")
+        matches!(
+            self,
+            DispatchShape::Range | DispatchShape::Seq | DispatchShape::IoPath
+        ) && const_str_eq(owner, "Cool")
     }
 
-    /// Whether `Cool`'s `method` row is one a closed `Range` or `Seq` shape
-    /// reaches: the numeric methods whose Rakudo body is `self.Numeric.METHOD`
-    /// and whose handlers read the receiver through `numify` (a `Range` or `Seq`
-    /// numifies to its element count), and `Version`, which reads its string
-    /// form (`(1..3).Version` is `v1.2.3`). Audited per method (ADR-11276 §9.16), not
-    /// per owner, so the text, iteration and search rows `Cool` also declares
-    /// stay unreachable.
+    /// Whether `Cool`'s `method` row is one a closed `Range`, `Seq` or
+    /// `IO::Path` shape reaches. A `Range` or `Seq` reaches the numeric methods
+    /// whose Rakudo body is `self.Numeric.METHOD` and whose handlers read the
+    /// receiver through `numify` (a `Range` or `Seq` numifies to its element
+    /// count), and `Version`, which reads its string form (`(1..3).Version` is
+    /// `v1.2.3`). All three reach the text methods whose Rakudo body is
+    /// `self.Str.METHOD` and whose handlers read the receiver's string form
+    /// (`"x ".IO.trim` is `"x"`, `(1..3).flip` is `"3 2 1"`); `IO::Path`'s own
+    /// `lines`, `words` and `comb` come first in its MRO. Audited per method
+    /// (ADR-11276 §9.16, §9.79), not per owner, so the iteration and search rows
+    /// `Cool` also declares stay unreachable.
     // Cost: O(m), m = audited names.
     const fn reaches_audited_cool(self, owner: &str, method: &str) -> bool {
         if !self.may_reach_audited_cool(owner) {
             return false;
         }
-        let mut i = 0;
-        while i < COOL_NUMERIC_FOR_COLLECTIONS.len() {
-            if const_str_eq(method, COOL_NUMERIC_FOR_COLLECTIONS[i]) {
-                return true;
-            }
-            i += 1;
-        }
-        false
+        const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
+            || (!matches!(self, DispatchShape::IoPath)
+                && const_list_contains(&COOL_NUMERIC_FOR_COLLECTIONS, method))
     }
 
     /// Whether rows owned by an ancestor of this shape's type reach it. The
@@ -369,6 +371,54 @@ const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 49] = [
     "unpolar", "abs", "sign", "floor", "ceiling", "truncate", "round", "is-prime", "conj", "chr",
     "rand", "int", "uint", "byte", "Complex", "UInt", "Version",
 ];
+
+/// The `Cool` text methods a `Range`, `Seq` or `IO::Path` reaches
+/// ([`DispatchShape::reaches_audited_cool`]).
+pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
+    "words",
+    "codes",
+    "lines",
+    "trim",
+    "trim-leading",
+    "trim-trailing",
+    "flip",
+    "chomp",
+    "chop",
+    "comb",
+    "fmt",
+    "uc",
+    "lc",
+    "fc",
+    "tc",
+    "tclc",
+    "wordcase",
+    "encode",
+    "NFC",
+    "NFD",
+    "NFKC",
+    "NFKD",
+    "ord",
+    "ords",
+    "uniname",
+    "uninames",
+    "uniprop",
+    "uniprops",
+    "unival",
+    "univals",
+];
+
+/// Whether `list` contains `name`, for a `const fn`.
+// Cost: O(n), n = entries of `list`.
+const fn const_list_contains(list: &[&str], name: &str) -> bool {
+    let mut i = 0;
+    while i < list.len() {
+        if const_str_eq(name, list[i]) {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
 
 /// The shapes whose values are `Instance`s of a built-in class, by interned
 /// class name: a compare of two ids, not of two strings.

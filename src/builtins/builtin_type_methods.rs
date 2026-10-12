@@ -81,11 +81,10 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     let sym = Symbol::intern(method_name);
     let mut arities = u8::from(crate::builtins::native_method_0arg(value, sym).is_some());
     // A registered row recognizes its arity for a receiver of its shape
-    // (ADR-11276): the 1- and 2-argument cascades do not consult the table
-    // (only `native_method_0arg` does), so a migrated row has no arm there to
-    // probe.
+    // (ADR-11276), table first: a migrated method has no arm left to probe,
+    // and `native_method_0arg` asks the table only for a call it would admit.
     if let Some(receiver) = crate::builtins::method_table::Receiver::of(value) {
-        for arity in 1..=2u8 {
+        for arity in 0..=2u8 {
             if crate::builtins::method_table::resolve(receiver, sym, usize::from(arity)).is_some() {
                 arities |= 1 << arity;
             }
