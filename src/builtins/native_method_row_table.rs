@@ -2273,6 +2273,8 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Metamodel::ParametricRoleHOW", "parameterize", 8, 57),
     ("Metamodel::ParametricRoleHOW", "pretending_to_be", 8, 57),
     ("Metamodel::ParametricRoleHOW", "pun", 8, 57),
+    ("Metamodel::ClassHOW", "is_pun", 8, 57),
+    ("Metamodel::ClassHOW", "pun_source", 8, 57),
     ("Metamodel::ParametricRoleHOW", "set_body_block", 8, 57),
     ("Metamodel::SubsetHOW", "refinee", 8, 57),
     ("Metamodel::SubsetHOW", "refinement", 8, 57),

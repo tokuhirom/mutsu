@@ -312,6 +312,39 @@ impl Interpreter {
             self.punned_role_type_object(&role_name)
     }
 
+    /// The role a punned object (`R.new`, `R.^pun`) was made from.
+    // Cost: O(k), k = mixin keys of the object.
+    fn pun_source_role(&self, obj: &Value) -> Option<String> {
+        match obj.view() {
+            ValueView::Instance { class_name, .. } => {
+                let name = class_name.resolve();
+                (self.registry().roles.contains_key(&name)
+                    && self.registry().classes.contains_key(&name))
+                .then_some(name)
+            }
+            ValueView::Mixin(_, overrides) => overrides.keys().find_map(|key| {
+                let role = key.strip_prefix("__mutsu_role__")?;
+                self.registry().roles.contains_key(role).then(|| role.to_string())
+            }),
+            _ => None,
+        }
+    }
+
+    // Cost: O(k), k = mixin keys of the object.
+    pub(crate) fn mop_is_pun(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        Ok(Value::int(i64::from(
+            args.first().is_some_and(|a| self.pun_source_role(a).is_some()),
+        )))
+    }
+
+    // Cost: O(k), k = mixin keys of the object.
+    pub(crate) fn mop_pun_source(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
+        Ok(args
+            .first()
+            .and_then(|a| self.pun_source_role(a))
+            .map_or(Value::NIL, |role| Value::package(Symbol::intern(&role))))
+    }
+
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_roles(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
         self.dispatch_classhow_roles(&args)

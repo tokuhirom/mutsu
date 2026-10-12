@@ -365,6 +365,20 @@ pub(super) static ROWS: &[MethodRow] = &[
     ),
     row!(
         "Metamodel::ClassHOW",
+        "is_pun",
+        1,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_is_pun(args.to_vec()))
+    ),
+    row!(
+        "Metamodel::ClassHOW",
+        "pun_source",
+        1,
+        true,
+        |interp, _target, args, _named| Some(interp.mop_pun_source(args.to_vec()))
+    ),
+    row!(
+        "Metamodel::ClassHOW",
         "roles",
         1,
         true,

@@ -1160,6 +1160,8 @@ impl Interpreter {
                         | "concretization"
                         | "curried_role"
                         | "pun"
+                        | "is_pun"
+                        | "pun_source"
                         | "language-revision"
                         | "method_table"
                         | "private_method_table"
