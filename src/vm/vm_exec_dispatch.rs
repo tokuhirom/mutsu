@@ -1381,6 +1381,8 @@ impl Interpreter {
                     && let Some(top) = self.stack.last().cloned()
                 {
                     self.reify_map_grep_seq(&top)?;
+                    // A plain gather too (ADR-11678): `@!crange = gather {...}`.
+                    self.reify_gather_seq(&top)?;
                 }
                 // `@GLOBAL::u = 1, 2` on a slot no `our` declared is an item
                 // assignment into rakudo's auto-created Scalar (#11000).

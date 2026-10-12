@@ -261,7 +261,7 @@ impl Interpreter {
         // the gather's coroutine list, which the built-in methods already
         // stream (`600.polymod(gather {...})`, ADR-11678). A user object's
         // method keeps receiving the Seq itself.
-        let args = if args.iter().any(Self::is_gather_seq)
+        let args = if args.iter().any(Self::is_gather_arg)
             && match target.view() {
                 ValueView::Instance { .. } | ValueView::Mixin(..) => false,
                 // A type object whose method is a built-in one

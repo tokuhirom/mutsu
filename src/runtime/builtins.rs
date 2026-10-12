@@ -662,7 +662,7 @@ impl Interpreter {
         // which the builtins already stream (`first`, `zip`, ...), so an
         // infinite one is pulled only as far as they read (ADR-11678). `list
         // $g` hands its Seq argument back as is.
-        if name != "list" && args.iter().any(Self::is_gather_seq) {
+        if name != "list" && args.iter().any(Self::is_gather_arg) {
             args = self.shared_gather_args(&args).into_owned();
         }
         match name {

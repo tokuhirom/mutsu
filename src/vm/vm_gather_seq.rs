@@ -50,11 +50,13 @@ impl Interpreter {
     /// other value is returned unchanged.
     // Cost: O(1).
     pub(crate) fn shared_gather_list(&self, value: Value) -> Value {
-        if !value.is_seq_value() {
-            return value;
-        }
         match value.view() {
             ValueView::Seq(body) => body.gather_source().unwrap_or(value),
+            // A named argument (`C.new(c => gather {...})`) carries it as the
+            // Pair's value.
+            ValueView::Pair(key, inner) if Self::is_gather_seq(inner) => {
+                Value::pair(key.clone(), self.shared_gather_list(inner.clone()))
+            }
             _ => value,
         }
     }
@@ -66,6 +68,13 @@ impl Interpreter {
             && matches!(value.view(), ValueView::Seq(body) if body.is_gather_source())
     }
 
+    /// [`Self::is_gather_seq`], or a named argument whose value is one.
+    // Cost: O(1).
+    pub(crate) fn is_gather_arg(value: &Value) -> bool {
+        Self::is_gather_seq(value)
+            || matches!(value.view(), ValueView::Pair(_, inner) if Self::is_gather_seq(inner))
+    }
+
     /// [`Self::shared_gather_list`] over a builtin's argument list, borrowing
     /// it unchanged when no argument is a gather (the common case).
     // Cost: O(n), n = arguments.
@@ -73,7 +82,7 @@ impl Interpreter {
         &self,
         args: &'a [Value],
     ) -> std::borrow::Cow<'a, [Value]> {
-        if !args.iter().any(Self::is_gather_seq) {
+        if !args.iter().any(Self::is_gather_arg) {
             return std::borrow::Cow::Borrowed(args);
         }
         std::borrow::Cow::Owned(
@@ -94,6 +103,23 @@ impl Interpreter {
         {
             let body = std::sync::Arc::clone(&body);
             self.reify_seq_body(&body)?;
+        }
+        Ok(())
+    }
+
+    /// An `@`/`%` attribute's initializer owns its elements: a deferred
+    /// `.map`/`.grep` or a plain gather is run before the pure sigil coercion
+    /// reads it (`has @.c = gather {...}`, ADR-11678). A no-op for a `$`
+    /// attribute, which keeps the Seq itself.
+    // Cost: runs a deferred Seq to completion; O(1) otherwise.
+    pub(crate) fn reify_list_attr_value(
+        &mut self,
+        value: &Value,
+        sigil: char,
+    ) -> Result<(), RuntimeError> {
+        if matches!(sigil, '@' | '%') {
+            self.reify_map_grep_seq(value)?;
+            self.reify_gather_seq(value)?;
         }
         Ok(())
     }

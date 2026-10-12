@@ -188,6 +188,7 @@ impl Interpreter {
                             package: d.declaring_package.map(|p| p.as_str()),
                         },
                     )?;
+                    self.reify_list_attr_value(&val, d.sigil)?;
                     Self::coerce_attr_value_by_sigil(val, d.sigil)
                 }
             } else {
