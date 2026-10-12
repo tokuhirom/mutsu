@@ -1,9 +1,9 @@
 //! `DateTime`'s own rows (ADR-11276 §9.18): the time of day, the UTC offset,
 //! the Julian dates, the coercions and the renderings.
 //!
-//! The handlers take the instance's attributes. The cascade's
-//! `datetime_method_0arg` calls the same functions for the receivers the table
-//! has no shape for (an instance of a subclass).
+//! The handlers take the instance's attributes, so an instance of a subclass
+//! (no shape) is answered by the same rows through their owner (ADR-11276
+//! §9.87).
 
 use super::temporal::with_attrs;
 use super::{Handler, MethodRow, RowFlags};

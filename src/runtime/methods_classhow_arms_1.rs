@@ -145,15 +145,11 @@ impl Interpreter {
                     // per-composition anonymous type object to rename
                     // instead, when the caller wants a scoped rename rather
                     // than a global one.
-                    crate::runtime::cow_table_mut(&mut self.types.type_metadata)
-                        .entry(resolved)
-                        .or_default()
+                    self.type_metadata_mut(resolved)
                         .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                 }
                 ValueView::Instance { class_name, .. } => {
-                    crate::runtime::cow_table_mut(&mut self.types.type_metadata)
-                        .entry(class_name.resolve())
-                        .or_default()
+                    self.type_metadata_mut(class_name.resolve())
                         .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                 }
                 _ => {}
@@ -179,9 +175,7 @@ impl Interpreter {
             } else {
                 Value::str(args[1].to_string_value())
             };
-            crate::runtime::cow_table_mut(&mut self.types.type_metadata)
-                .entry(name)
-                .or_default()
+            self.type_metadata_mut(name)
                 .insert(key, stored.clone());
             Ok(stored)
     }
@@ -194,9 +188,7 @@ impl Interpreter {
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_set_rw(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
             let name = self.mop_receiver_owner(&args[0]);
-            crate::runtime::cow_table_mut(&mut self.types.type_metadata)
-                .entry(name)
-                .or_default()
+            self.type_metadata_mut(name)
                 .insert("rw".to_string(), Value::TRUE);
             Ok(Value::int(1))
     }
@@ -230,9 +222,7 @@ impl Interpreter {
     // Cost: O(m), m = the members (methods, attributes, parents) of the type the call reads.
     pub(crate) fn mop_set_why(&mut self, args: Vec<Value>) -> Result<Value, RuntimeError> {
             let name = self.mop_receiver_owner(&args[0]);
-            crate::runtime::cow_table_mut(&mut self.types.type_metadata)
-                .entry(name)
-                .or_default()
+            self.type_metadata_mut(name)
                 .insert("__set_why__".to_string(), args[1].clone());
             Ok(args[1].clone())
     }

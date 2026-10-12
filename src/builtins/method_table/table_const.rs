@@ -370,6 +370,30 @@ macro_rules! for_each_registration {
                             k += 1;
                         }
                     }
+                    // The rows of the roles `mro[m]` composes come after its
+                    // own and before its parent's (§9.86): Rakudo flattens a
+                    // role's methods into the class that does it.
+                    let roles = crate::builtin_types::catalog::builtin_type_roles_strs(mro[m]);
+                    let mut r = 0;
+                    while r < roles.len() {
+                        if $shape.reaches_role(roles[r])
+                            && crate::builtin_types::catalog::composes_role_at(mro, m, roles[r])
+                        {
+                            let (lo, hi) = owner_range(roles[r]);
+                            let mut k = lo;
+                            while k < hi {
+                                let $id = OWNER_ORDER[k];
+                                let $row = ROWS[$id as usize];
+                                if !$row.flags.contains(RowFlags::OWNER_ONLY)
+                                    && !$row.handler.is_mut()
+                                {
+                                    $body
+                                }
+                                k += 1;
+                            }
+                        }
+                        r += 1;
+                    }
                     m += 1;
                 }
             }

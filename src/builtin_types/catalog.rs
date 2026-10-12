@@ -738,6 +738,42 @@ pub(crate) const fn builtin_type_mro_strs(name: &str) -> Option<&'static [&'stat
     None
 }
 
+/// The roles of the catalog type `name`, as the catalog spells them (`Positional[T]`
+/// keeps its parameter), for a `const` evaluation. Empty for a name the catalog
+/// does not list.
+// Cost: O(c), c = catalog rows (a scan; meant for compile-time evaluation).
+pub(crate) const fn builtin_type_roles_strs(name: &str) -> &'static [&'static str] {
+    let mut i = 0;
+    while i < CATALOG.len() {
+        if crate::value::const_str_eq(CATALOG[i].name, name) {
+            return CATALOG[i].roles;
+        }
+        i += 1;
+    }
+    &[]
+}
+
+/// Whether the catalog type `mro[m]` is the class that composes `role`: the
+/// role is among its roles and not among those of its parent `mro[m + 1]`, which
+/// would have composed it first (`List` composes `Positional`, which `Array`
+/// inherits). A role's methods are flattened into the class composing it, so
+/// they come after that class's own and before its parent's.
+// Cost: O(c * r), c = catalog rows, r = roles of the two types (compile-time).
+pub(crate) const fn composes_role_at(mro: &[&str], m: usize, role: &str) -> bool {
+    const fn listed(roles: &[&str], role: &str) -> bool {
+        let mut i = 0;
+        while i < roles.len() {
+            if crate::value::const_str_eq(roles[i], role) {
+                return true;
+            }
+            i += 1;
+        }
+        false
+    }
+    listed(builtin_type_roles_strs(mro[m]), role)
+        && !(m + 1 < mro.len() && listed(builtin_type_roles_strs(mro[m + 1]), role))
+}
+
 /// `builtin_type_info(name).mro`, interned to [`crate::type_id::TypeId`]s once per process.
 ///
 /// Borrowed rather than cloned: the E1 classifier splices chains together, so it

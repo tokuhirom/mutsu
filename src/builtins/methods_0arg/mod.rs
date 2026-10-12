@@ -10,7 +10,6 @@ mod dispatch_core_coerce;
 mod dispatch_core_list;
 pub(crate) mod dispatch_core_math;
 mod dispatch_core_numeric;
-pub(crate) mod dispatch_core_range;
 mod dispatch_core_repr;
 mod dispatch_core_unicode;
 pub(crate) mod which;
@@ -654,6 +653,15 @@ pub(crate) fn native_method_0arg_cascade(
         {
             return None;
         }
+        // A role mixed in may parameterize the element or key type
+        // (`%h but Associative[Int, Int]`) or declare `of` itself: the
+        // interpreter's mixin dispatch reads the composition before it asks
+        // the wrapped container's row (ADR-11276 §9.86).
+        if matches!(method, "of" | "keyof")
+            && mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
+        {
+            return None;
+        }
         // Check for mixin key matching the method name (e.g. "Array", "List", "Int", etc.)
         // This handles `True but [1, 2]` where `.Array` should return the mixed-in array.
         if let Some(mixin_val) = mixins.get(method) {
@@ -980,7 +988,25 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         return Some(answer);
     }
 
-    // Date/DateTime 0-arg methods
+    // Date/DateTime 0-arg methods of a receiver with no shape (an instance of
+    // a subclass): the rows of `Date` / `DateTime` answer it, the instance as
+    // invocant (ADR-11276 §9.87). A plain `Date`/`DateTime` was answered by
+    // its shape before the cascade.
+    // Cost: O(k) to find the row, k = rows named `method`, plus the handler's.
+    fn temporal_owner_row(
+        target: &Value,
+        owner: &str,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        // `Mu.perl` is `.raku`.
+        let method = if method == "perl" { "raku" } else { method };
+        let id = crate::builtins::method_table::owner_row(
+            Symbol::intern(owner),
+            Symbol::intern(method),
+            0,
+        )?;
+        crate::builtins::method_table::invoke(id, target, &[])
+    }
     match target.view() {
         ValueView::Instance {
             class_name,
@@ -993,16 +1019,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             if method == "utc" && class_name != "DateTime" {
                 return None;
             }
-            if let Some(result) =
-                temporal_dispatch::datetime_method_0arg(&(attributes).as_map(), method)
-            {
+            if let Some(result) = temporal_owner_row(target, "DateTime", method) {
                 return Some(result);
             }
         }
         ValueView::Instance { attributes, .. } if has_date_attrs(&attributes) => {
-            if let Some(result) =
-                temporal_dispatch::date_method_0arg(&(attributes).as_map(), method)
-            {
+            if let Some(result) = temporal_owner_row(target, "Date", method) {
                 return Some(result);
             }
         }
@@ -1597,7 +1619,6 @@ fn dispatch_core_families(target: &Value, method: &str) -> Option<Result<Value, 
     try_dispatch!(dispatch_core_numeric);
     try_dispatch!(dispatch_core_list);
     try_dispatch!(dispatch_core_repr);
-    try_dispatch!(dispatch_core_range);
     try_dispatch!(dispatch_core_math);
 
     None

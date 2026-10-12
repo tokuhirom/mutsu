@@ -147,6 +147,14 @@ impl Interpreter {
         (pkg, name_sym): RuleNode,
     ) -> Option<std::sync::Arc<Vec<RuleNode>>> {
         let name = name_sym.as_str();
+        // A rule whose parameters are bound at run time has one body for
+        // every argument list; it is the node's body here.
+        if let Some(body) = self.runtime_param_rule_body(name, pkg) {
+            let (parsed, sub_pkg) = body?;
+            let mut sink = CallSink::default();
+            left_calls_of_pattern(&parsed, sub_pkg, &mut sink)?;
+            return self.left_calls_from_sink(sink);
+        }
         // Resolved exactly as the full call-graph walk resolves a rule.
         let candidates = match self.resolve_parsed_token_candidates_in_pkg(name, name_sym, pkg) {
             Some(candidates) => candidates,
@@ -165,14 +173,37 @@ impl Interpreter {
                 Some(std::sync::Arc::new(Vec::new()))
             };
         }
-        let mut out = Vec::new();
+        let mut sink = CallSink::default();
         for (parsed, sub_pkg, _) in candidates.iter() {
-            left_calls_of_pattern(parsed, *sub_pkg, &mut out)?;
+            left_calls_of_pattern(parsed, *sub_pkg, &mut sink)?;
         }
+        self.left_calls_from_sink(sink)
+    }
+
+    /// The edges `sink` collected. A call with arguments is an edge to the
+    /// callee's body only when that body is the same for every argument list:
+    /// a rule whose parameters are bound at run time (`regex_rule_params`).
+    /// Any other callee's body is built from the values, so its calls are
+    /// unknown here.
+    // Cost: O(e log e), e = the edges; O(1) expected per argument call.
+    fn left_calls_from_sink(&mut self, sink: CallSink) -> Option<LeftCalls> {
+        for &(callee_pkg, callee) in &sink.arg_calls {
+            self.runtime_rule_params(callee.as_str(), callee_pkg)?;
+        }
+        let mut out = sink.calls;
+        out.extend(sink.arg_calls);
         out.sort_by_key(|(pkg, name)| (pkg.id(), name.id()));
         out.dedup();
         Some(std::sync::Arc::new(out))
     }
+}
+
+/// The calls a body makes at its start position, split by whether the call
+/// passes arguments (see `compute_direct_left_calls`).
+#[derive(Default)]
+struct CallSink {
+    calls: Vec<RuleNode>,
+    arg_calls: Vec<RuleNode>,
 }
 
 /// Append the rules `pattern` can call before it has consumed anything.
@@ -181,7 +212,7 @@ impl Interpreter {
 fn left_calls_of_pattern(
     pattern: &RegexPattern,
     pkg: Symbol,
-    out: &mut Vec<RuleNode>,
+    out: &mut CallSink,
 ) -> Option<bool> {
     for token in &pattern.tokens {
         if !left_calls_of_token(token, pkg, out)? {
@@ -193,7 +224,7 @@ fn left_calls_of_pattern(
 
 /// [`left_calls_of_pattern`] for one quantified token: returns whether the
 /// token may match the empty string.
-fn left_calls_of_token(token: &RegexToken, pkg: Symbol, out: &mut Vec<RuleNode>) -> Option<bool> {
+fn left_calls_of_token(token: &RegexToken, pkg: Symbol, out: &mut CallSink) -> Option<bool> {
     let atom_nullable = left_calls_of_atom(&token.atom, pkg, out)?;
     // A separator is matched after one atom, so it is at the start position
     // only when the atom can match empty.
@@ -210,7 +241,7 @@ fn left_calls_of_token(token: &RegexToken, pkg: Symbol, out: &mut Vec<RuleNode>)
 
 /// [`left_calls_of_pattern`] for one atom: returns whether the atom may match
 /// the empty string.
-fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) -> Option<bool> {
+fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut CallSink) -> Option<bool> {
     match atom {
         // Always consume one character (or grapheme) and call nothing.
         RegexAtom::Literal(_)
@@ -281,12 +312,12 @@ fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) ->
         }
         RegexAtom::WsRule => {
             // `<.ws>` dispatches to whatever `ws` the grammar resolves to.
-            out.push((pkg, Symbol::intern("ws")));
+            out.calls.push((pkg, Symbol::intern("ws")));
             Some(true)
         }
         RegexAtom::Named(name) => {
             let spec = name.spec();
-            if spec.lookup_name == "::" || !spec.arg_exprs.is_empty() {
+            if spec.lookup_name == "::" {
                 return None;
             }
             if spec.lookup_name.is_empty()
@@ -297,7 +328,11 @@ fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) ->
             {
                 return None;
             }
-            out.push((pkg, spec.lookup_sym));
+            if spec.arg_exprs.is_empty() {
+                out.calls.push((pkg, spec.lookup_sym));
+            } else {
+                out.arg_calls.push((pkg, spec.lookup_sym));
+            }
             Some(true)
         }
         RegexAtom::ClosureInterpolation { .. }
@@ -310,7 +345,7 @@ fn left_calls_of_atom(atom: &RegexAtom, pkg: Symbol, out: &mut Vec<RuleNode>) ->
 fn all_calls_of_pattern(
     pattern: &RegexPattern,
     pkg: Symbol,
-    out: &mut Vec<RuleNode>,
+    out: &mut CallSink,
 ) -> Option<()> {
     for token in &pattern.tokens {
         left_calls_of_atom_everywhere(&token.atom, pkg, out)?;
@@ -326,7 +361,7 @@ fn all_calls_of_pattern(
 fn left_calls_of_atom_everywhere(
     atom: &RegexAtom,
     pkg: Symbol,
-    out: &mut Vec<RuleNode>,
+    out: &mut CallSink,
 ) -> Option<()> {
     match atom {
         RegexAtom::Group(p)

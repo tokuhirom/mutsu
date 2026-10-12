@@ -72,8 +72,8 @@ pub(crate) use instances::compunit_handle::owners_of as compunit_handle_owners_o
 pub(crate) use instances::instant::sample as instances_sample;
 pub(crate) use instances::rakuast_node::{origin_value, owners_of as rakuast_owners_of};
 pub(crate) use instances::{
-    backtrace, code, date, dateish, datetime, exception, failure, regex_match, signature, supply,
-    temporal, temporal_edit, temporal_shift,
+    backtrace, code, exception, failure, regex_match, signature, supply, temporal_edit,
+    temporal_shift,
 };
 pub(crate) use scalars::{
     blob, blob_read, coerce, complex, complex_math, cool_real, math, numeric_base, numeric_coerce,

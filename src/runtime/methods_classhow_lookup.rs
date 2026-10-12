@@ -662,16 +662,19 @@ impl Interpreter {
 
     /// Check if a method name belongs to a built-in type (Str, Int, etc.)
     /// by checking the builtin method rows of the type and its ancestors.
+    ///
+    /// A name probe per ancestor, never a materialized `Method` object: this
+    /// runs on call paths (invoking a native method object), and building
+    /// every row's `Method` (each with its own `Signature`) per check cost
+    /// ~48 kB per call (#12981).
+    // Cost: O(d * m), d = ancestors, m = MRO length of a catalog ancestor
+    // (`builtin_method_ancestors`); each row probe is O(1).
     pub(crate) fn is_builtin_type_method(&self, type_name: &str, method_name: &str) -> bool {
         let ancestors = self.builtin_method_ancestors(type_name);
-        for tn in &ancestors {
-            let mut methods = Vec::new();
-            self.collect_builtin_type_methods(tn, &mut methods);
-            if methods.iter().any(|m| m.to_string_value() == method_name) {
-                return true;
-            }
-        }
-        false
+        let registry = self.registry();
+        ancestors
+            .iter()
+            .any(|tn| registry.declares_builtin_method(tn, method_name))
     }
 
     /// The ancestors whose builtin method rows `type_name` inherits, in MRO

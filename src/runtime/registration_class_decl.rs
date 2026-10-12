@@ -254,9 +254,7 @@ impl Interpreter {
         // `type_metadata` slot `.^set_rw` writes; a redeclaration without
         // `is rw` clears it (a stub keeps whatever the real body set).
         if class_is_rw {
-            crate::runtime::cow_table_mut(&mut self.types.type_metadata)
-                .entry(name.to_string())
-                .or_default()
+            self.type_metadata_mut(name.to_string())
                 .insert("rw".to_string(), Value::TRUE);
         } else if !is_stub_body
             && self
@@ -267,7 +265,7 @@ impl Interpreter {
         {
             crate::runtime::cow_table_mut(&mut self.types.type_metadata)
                 .get_mut(name)
-                .map(|m| m.remove("rw"));
+                .map(|m| std::sync::Arc::make_mut(m).remove("rw"));
         }
 
         // Track whether this registry entry came from a `my`-scoped

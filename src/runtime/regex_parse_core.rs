@@ -1437,7 +1437,23 @@ impl Interpreter {
         // lookaround bodies, alternation branches) re-enter here and inherit it.
         let _top_level_source =
             crate::runtime::regex_parse::TopLevelSourceScope::enter(interpolated);
-        let mut source = interpolated.trim_start();
+        // A rule body's runtime-parameter declaration block
+        // (`regex_rule_params`), declared below like a `:my` lexical.
+        // They are declared before anything below parses a sub-pattern (the
+        // top-level alternation split comes first), and stay declared for the
+        // whole parse.
+        let (_rule_params_guard, unmarked) =
+            match super::regex::regex_rule_params::split_rule_params(interpolated) {
+                Some((names, rest)) => {
+                    let (guard, _) = super::regex::regex_helpers::EnclosingRegexVarsGuard::enter();
+                    for name in names {
+                        super::regex::regex_helpers::declare_enclosing_regex_var(name);
+                    }
+                    (Some(guard), rest)
+                }
+                None => (None, interpolated),
+            };
+        let mut source = unmarked.trim_start();
         let mut ignore_case = false;
         let mut ignore_mark = false;
         let mut sigspace = false;
@@ -1562,7 +1578,7 @@ impl Interpreter {
             }
             break;
         }
-        let had_modifier = source.len() != interpolated.trim_start().len();
+        let had_modifier = source.len() != unmarked.trim_start().len();
         source = if sigspace {
             source.trim_start()
         } else {

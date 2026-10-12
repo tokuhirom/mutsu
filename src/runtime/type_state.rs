@@ -66,7 +66,7 @@ pub(crate) struct TypeState {
     /// `Interpreter::open_role_application_group`). `None` outside one, so an
     /// ordinary single-role `but`/`does` mints its own group.
     pub(crate) open_role_group: Option<i64>,
-    pub(crate) type_metadata: std::sync::Arc<HashMap<String, ValueMap>>,
+    pub(crate) type_metadata: std::sync::Arc<HashMap<String, std::sync::Arc<ValueMap>>>,
     /// Declaration registry (enums/subsets/... — migrated group-by-group, PLAN.md ②),
     /// shared with the VM behind `Arc<RwLock>`. See [`Registry`] and `src/runtime/registry.rs`.
     /// Lock discipline: never hold a guard across user-code re-entry (deadlock).

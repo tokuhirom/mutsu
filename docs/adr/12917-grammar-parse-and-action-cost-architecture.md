@@ -108,3 +108,55 @@ the goal (6.5x from the original) is out of reach without both.
   slice of its own, verified on roast `S05-*` and the ecosystem grammars, not a perf tweak.
 - Each later slice re-measures the steady state the way this ADR does (four calls minus one)
   and records the result in an Outcome section here.
+
+## Outcome
+
+### Direction 2 (2026-10-12): rule parameters bound per call
+
+Landed for a rule whose body is a regex literal and whose parameters are plain
+positional scalars, the only shape YAMLish uses (`src/runtime/regex/regex_rule_params.rs`).
+The resolver prefixes the body with a parameter declaration block, the pre-pass and the
+structural parser lower `$param` to a match-time `VarInterp`, and the call's binding window
+holds the values. `VarInterp` enters a `Regex` value as a frame and honours `:i`. The
+left-call graph takes such a rule's body as its node and a call with arguments to it as an
+edge. A proto or multi rule with parameters, a defaulted, coerced, `where`-constrained or
+slurpy parameter, and an argument that binding would itemize (an `Array`, a `Hash`, an
+object) keep the spliced-source path.
+
+`regex-eager` went from 190 (all `lr-seed`) to 0 per `load-yaml`. The steady state did
+**not** move: 646M Ir per parse before, 648M after (release build, `MUTSU_JIT=off`, four
+calls minus one, divided by three). The ~326M "eager subrule path" row of the table above
+was inclusive of the callees' own matching, which a lazy frame performs as well; the
+growing-seed bookkeeping itself was small. The ranking of direction 2 was wrong for that
+reason; its value is the architecture (one body per rule, rakudo's interpolation
+semantics), not speed.
+
+The same profile, read by inclusive cost under `rx_run_in` (~341M per parse), shows where
+the regex half goes instead:
+
+| inclusive per parse | what |
+|---:|---|
+| ~275M | look-behinds (`RxOp::Look`, `is_behind`) trying every start from 0: `lookbehind_start_floor` cannot bound a body that calls a rule, so YAMLish's `<!after <.space>>` (in `plain`, once per character) scans the whole document prefix each time — the superlinear term the benchmark header measures |
+| ~51M | `rx_call_resolve` (direction 3) |
+| ~64M | LTM ranking |
+| ~19M | `parse_regex` in the steady state |
+
+So the next slice is a new direction ahead of 3-5: **bound a look-behind through the rules
+it calls** (a static, argument-less rule body has a bounded width just as an inline class
+does). It removes most of the ~275M and the quadratic growth with document size. The
+action walk (~306M, direction 4) is then the largest remaining item.
+
+### Look-behind bound through rule calls (2026-10-12, #13000)
+
+`lookbehind_start_floor_in` (`src/runtime/regex/regex_lookbehind.rs`) now bounds a call to
+an argument-less rule by the longest of its candidates' bodies (up to eight calls deep), and
+a builtin class such as `<.alnum>` by one character. One warm `load-yaml` of the 60-row
+benchmark document went from ~646M to ~294M Ir (-54%; release, `MUTSU_JIT=off`), the section
+time here from ~0.165 s to ~0.108 s, and growth with document size became linear (640 rows:
+6.46 s to 1.45 s).
+
+The re-profile on top of it (the `profiling` cargo profile, whose absolute counts run higher
+than the release figures above) puts the action walk first: inside `Grammar.parse`,
+`invoke_grammar_actions` is ~80% of the inclusive cost and the regex engine's own matching
+(`rx_match_ends`) ~22%, with `.new` of the result objects a large share of the actions.
+Direction 4 (the action walk) is the next slice.

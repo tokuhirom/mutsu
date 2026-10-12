@@ -638,3 +638,16 @@ through the existing temporary save/restore statement. The focused test pins
 public/private attribute and method-call shapes and checks restoration for
 plain and compound assignments; the three first-refusal files pass in RakuAST
 mode. The frontend ratchet adds 12 files, bringing it to 7,053 passing files.
+
+### 6.19 S10: imported bareword calls (2026-10-12)
+
+When the parser has resolved a bare identifier to an imported function, it
+retains that source classification through RakuAST conversion. The converter
+renders it as `Call::Name::WithoutParentheses`, matching Rakudo; lowering
+returns to the existing bare-call path. Unresolved names remain refusals, so
+the conversion does not turn a compile-time undeclared-name error into a
+runtime lookup. The focused test pins the node and EVAL result, and
+`t/collections/subscript/brace-subscript-postfix.t` now passes in round-trip
+mode with the imported call followed by a subscript. The refreshed frontend
+ratchet lists 7,056 files, three more than after #12992 including the current
+main coverage refresh.

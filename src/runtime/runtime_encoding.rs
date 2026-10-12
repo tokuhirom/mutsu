@@ -442,6 +442,11 @@ impl Interpreter {
     }
 
     pub(crate) fn mark_my_scoped_package_item(&mut self, fq_name: String) {
+        // Already marked (a re-run declaration): no write, so no copy of a
+        // table a thread clone still shares.
+        if self.types.my_scoped_package_items.contains(&fq_name) {
+            return;
+        }
         crate::runtime::cow_table_mut(&mut self.types.my_scoped_package_items).insert(fq_name);
     }
 

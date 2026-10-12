@@ -46,7 +46,6 @@ macro_rules! rows {
 pub(super) static ROWS: &[MethodRow] = rows! {
     "elems" => elems,
     "bytes" => bytes,
-    "of" => of,
     "list" => list,
     "contents" => list,
     "reverse" => reverse,
@@ -120,10 +119,36 @@ pub(crate) fn bytes(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
     }
 }
 
+/// `Blob.of` and `Buf.of`, which also answer their type objects: the element
+/// type (`Buf.new(1).of` and `Buf.of` are `(uint8)`, `buf16.of` is `(uint16)`).
+/// A buffer type object with no shape of its own (`buf16`, `Buf[uint32]`)
+/// reaches the row through `answer_shapeless` (ADR-11276 §9.86).
+pub(super) static OF_ROWS: &[MethodRow] = &[
+    MethodRow {
+        owner: "Blob",
+        name: "of",
+        arity: 0,
+        handler: Handler::Narrow(of),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Buf",
+        name: "of",
+        arity: 0,
+        handler: Handler::Narrow(of),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
+];
+
 /// `.of`: the element type object (`Buf.new(1).of` is `(uint8)`).
 // Cost: O(1).
 pub(crate) fn of(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    let class = class_of(target)?;
+    let class = match target.view() {
+        ValueView::Package(name) => name,
+        _ => class_of(target)?,
+    };
     Some(Ok(Value::package(Symbol::intern(&buf_elem_type_name(
         &class.resolve(),
     )))))

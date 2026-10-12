@@ -457,7 +457,7 @@ const CORE_BARE_CALLS: &[&str] = &["callsame", "nextsame", "lastcall", "nextcall
 
 /// The RakuAST node a bareword renders as, or `None` when nothing resolves the
 /// name (the conversion boundary).
-// Cost: O(k), k = length of `name` (a fixed number of hash lookups).
+// Cost: O(k + d), k = length of `name`, d = parser scope depth.
 pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
     // `self` -> `Term::Self`, a node with no fields.
     if name == "self" {
@@ -525,6 +525,12 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
         Some(crate::parser::DeclaredNameKind::Type) => return Some(simple_type_node(name)),
         Some(crate::parser::DeclaredNameKind::Term) => return Some(term_name(name)),
         None => {}
+    }
+    // A bare imported function is an argument-less call in Rakudo's tree, just
+    // like a routine declared in this compilation unit. The parser's module
+    // scan has already resolved this name; do not guess for unresolved names.
+    if !crate::parser::term_keywords_shadowable() && crate::parser::is_imported_function(name) {
+        return Some(call_name(name));
     }
     match core_term_names::kind(name) {
         Some(core_term_names::TermKind::Enum) => {
