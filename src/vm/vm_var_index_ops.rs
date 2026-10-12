@@ -1919,12 +1919,7 @@ impl Interpreter {
                 }
             }
             (ValueView::Instance { .. }, ValueView::Str(key)) if target.is_match_instance() => {
-                let named_v = target.match_named();
-                if let Some(ValueView::Hash(named)) = named_v.as_ref().map(Value::view) {
-                    named.get(key.as_str()).cloned().unwrap_or(Value::NIL)
-                } else {
-                    Value::NIL
-                }
+                target.match_named_capture(key.as_str())
             }
             (ValueView::Instance { .. }, ValueView::Int(i)) if target.is_match_instance() => {
                 let list_v = target.match_list();

@@ -295,6 +295,17 @@ impl Value {
         self.match_attr("named")
     }
 
+    /// The named capture `key` of a Match -- what `$/<key>` and its sugar
+    /// `$<key>` read -- or `Nil` when the match has none of that name.
+    ///
+    /// Cost: O(1) average, one probe of the named-capture map.
+    pub(crate) fn match_named_capture(&self, key: &str) -> Value {
+        match self.match_named().as_ref().map(Value::view) {
+            Some(ValueView::Hash(named)) => named.get(key).cloned().unwrap_or(Value::NIL),
+            _ => Value::NIL,
+        }
+    }
+
     /// The public `.hash`/`%($/)` view of named captures is an immutable Map.
     /// Internally captures use a bare-value Hash so the regex and binding paths
     /// can iterate them without exposing container metadata; tag a cloned
