@@ -1678,6 +1678,19 @@ impl Interpreter {
             Value::store_through_cell(&cell, &current.deref_container());
         }
 
+        // A type capture named by the return type (`sub f(::T \t, $v --> T)`
+        // called through its code object) is bound in this frame's env, so
+        // resolve the spec before the caller's env comes back, as the named
+        // call path does.
+        let effective_return_spec = data
+            .env
+            .get_sym(crate::symbol::well_known::return_type())
+            .and_then(|v| match v.view() {
+                ValueView::Str(s) => Some(s.to_string()),
+                _ => None,
+            })
+            .map(|spec| loan_env!(self, resolved_type_capture_name(&spec)));
+
         // Environment writeback: merge changes back to caller
         let frame = self.pop_call_frame();
         let mut restored_env = frame.saved_env;
@@ -2179,17 +2192,6 @@ impl Interpreter {
             self.update_end_phaser_envs_for_keys(&end_refresh_keys, &current);
             self.set_env(current);
         }
-
-        let return_spec = data
-            .env
-            .get_sym(crate::symbol::well_known::return_type())
-            .and_then(|v| match v.view() {
-                ValueView::Str(s) => Some(s.to_string()),
-                _ => None,
-            });
-        let effective_return_spec = return_spec
-            .as_deref()
-            .map(|spec| loan_env!(self, resolved_type_capture_name(spec)));
 
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),

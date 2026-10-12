@@ -808,16 +808,31 @@ impl Interpreter {
                 param_defs,
                 body,
                 is_rw,
+                return_type,
                 ..
-            }) => Some(Value::make_sub(
-                Symbol::intern(&self.current_package()),
-                *name,
-                params.clone(),
-                param_defs.clone(),
-                body.clone(),
-                *is_rw,
-                self.env.clone(),
-            )),
+            }) => {
+                // The routine's return type is its own, never the running
+                // frame's: an `EVAL` in `sub f(--> Code:D)` called through its
+                // code object runs with f's `__mutsu_return_type` in the env.
+                // Same rule as closure creation (`vm_closure_build`).
+                let mut env = self.env.clone();
+                env.remove_sym(crate::symbol::well_known::return_type());
+                if let Some(rt) = return_type {
+                    env.insert_sym(
+                        crate::symbol::well_known::return_type(),
+                        Value::str_from(rt),
+                    );
+                }
+                Some(Value::make_sub(
+                    Symbol::intern(&self.current_package()),
+                    *name,
+                    params.clone(),
+                    param_defs.clone(),
+                    body.clone(),
+                    *is_rw,
+                    env,
+                ))
+            }
             // A trailing `class`/`role` declaration makes the block's value the
             // type object: `EVAL 'unit class UC0 is export; has $.x = 42;'`
             // answers the class, and `my $c = do { class :: { } }` the anonymous
