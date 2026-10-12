@@ -12860,6 +12860,14 @@ pub(crate) enum FastParamType {
     /// at all -- it leaves the light paths and is enforced by the general
     /// binder, which consults the class MRO (#7573).
     Wild,
+    /// Core's `subset UInt of Int where { not .DEFINITE or $_ >= 0 }`. The
+    /// light paths answer a plain `Int`/`BigInt`/`Bool` value inline (a sign
+    /// test) and hand every other shape -- a type object, an allomorph, an
+    /// enum, an `Int` subclass -- to the full type matcher, so the answer is
+    /// always the general binder's (`Interpreter::light_uint_check`). FiniteField's
+    /// `multi infix:<*>(UInt $a, UInt $b --> UInt)` is the shape this admits
+    /// (#10110).
+    UInt,
 }
 
 impl FastParamType {
@@ -12877,6 +12885,7 @@ impl FastParamType {
             "str" => Self::NativeStr,
             "num" => Self::NativeNum,
             "Any" | "Mu" => Self::Wild,
+            "UInt" => Self::UInt,
             n if crate::native_types::is_native_int_type(n) => Self::NativeIntSized,
             _ => return None,
         })
