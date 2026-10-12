@@ -950,7 +950,10 @@ impl Interpreter {
             }
         };
         self.arm_rw_param_rebinds(cc, &rw_bindings);
-        self.record_call_capture(cc.uses_capture, Some(&base), &args);
+        // A method's capture holds its arguments' values: Rakudo's method
+        // dispatch hands a `$` parameter's argument over decontainerized.
+        self.request_call_capture(cc.uses_capture, Some(&base));
+        self.finish_call_capture(&args);
         // A method parameter is a fresh per-invocation binding, exactly like a
         // sub parameter (see the matching mark in
         // `call_compiled_function_named_inner`): while the cross-thread shared
@@ -1282,6 +1285,16 @@ impl Interpreter {
             let rw_writeback: Vec<(String, Value)> = rw_bindings
                 .iter()
                 .filter_map(|(param_name, source_name)| {
+                    // A `|c` capture element read from a caller scalar
+                    // (`capture_param_containers`) writes back the cell's
+                    // final value.
+                    if let Some((key, elem_idx, None)) =
+                        crate::runtime::types::decode_slurpy_rw_param(param_name)
+                    {
+                        return self
+                            .slurpy_rw_element(key, elem_idx)
+                            .map(|val| (source_name.clone(), val));
+                    }
                     // A param the body rebound (`$p := ...`) writes back its
                     // pre-rebind value (#10361).
                     self.rw_param_detached_by_name(cc, param_name)
@@ -2346,7 +2359,8 @@ impl Interpreter {
             // captured `self` instead of a stale env snapshot.
             Self::insert_fast_param_values(env, &param_values);
         }
-        self.record_call_capture(cc.uses_capture, Some(&base), &args);
+        self.request_call_capture(cc.uses_capture, Some(&base));
+        self.finish_call_capture(&args);
 
         if let Some((name, readonly)) = raw_invocant_readonly {
             let key = crate::runtime::sigilless_readonly_key(name);

@@ -8,13 +8,16 @@
 //! writable container".
 //!
 //! The capture now stores, for each positional argument that names a plain
-//! scalar caller variable, the same shared `ContainerRef` cell an `is rw`
-//! parameter binds (reusing the caller's live cell when it already holds one),
-//! and records a per-element writeback in `rw_bindings` — the `*@v is raw`
-//! slurpy's encoding — so the cell's final value reaches the caller's variable
-//! at return, exactly as for a directly bound `is rw` parameter. A later
-//! forward (`g(|c)`) slips the cells, which the binder already accepts as
-//! writable lvalues.
+//! scalar caller variable, a shared `ContainerRef` cell (the caller's live
+//! cell when it already holds one, else a fresh one), and records a
+//! per-element writeback in `rw_bindings` — the `*@v is raw` slurpy's
+//! encoding — so the cell's final value reaches the caller's variable at
+//! return, exactly as for a directly bound `is rw` parameter. A fresh cell is
+//! never installed in the callee env under the caller's name: that name may
+//! be one of the callee's own parameters (`sub f($y, |c)` called as
+//! `f(1, $y)`). A later forward (`g(|c)`) slips the cells, which the binder
+//! already accepts as writable lvalues. The call capture `nqp::usecapture`
+//! records reuses this routine (`runtime::call_capture`).
 
 use super::*;
 use crate::runtime::types::signature::{encode_slurpy_rw_param, indexed_varref_from_value};
@@ -24,11 +27,11 @@ impl Interpreter {
     /// (already known not to be a named Pair). `source` is the caller's
     /// variable name the argument was read from — the `WrapVarRef` tag's name,
     /// else the call's `arg_sources` entry. When it names a writable plain
-    /// scalar, the argument becomes a shared cell installed under that name and
-    /// a writeback for element `elem_idx` of the capture bound as `capture_key`
-    /// is pushed onto `rw_bindings`; any other argument is stored as its value.
-    // Cost: O(1) per argument (one env probe + one cell allocation).
-    pub(super) fn capture_positional_container(
+    /// scalar, the argument becomes a shared cell and a writeback for element
+    /// `elem_idx` of the capture bound as `capture_key` is pushed onto
+    /// `rw_bindings`; any other argument is stored as its value.
+    // Cost: O(1) (one env probe + one cell allocation).
+    pub(in crate::runtime) fn capture_positional_container(
         &mut self,
         raw_arg: &Value,
         arg_source: Option<&String>,
@@ -83,13 +86,9 @@ impl Interpreter {
         let cell = match self.env.get(&source).cloned() {
             Some(existing) if matches!(existing.view(), ValueView::ContainerRef(_)) => existing,
             Some(existing) if matches!(existing.view(), ValueView::Proxy { .. }) => return value,
-            _ => {
-                let cell = Value::container_ref(crate::gc::Gc::new(
-                    crate::value::ContainerCell::new(value),
-                ));
-                self.env.insert(source.clone(), cell.clone());
-                cell
-            }
+            _ => Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(
+                value,
+            ))),
         };
         crate::value::name_container_cell(&cell, &source);
         rw_bindings.push((encode_slurpy_rw_param(capture_key, elem_idx, None), source));

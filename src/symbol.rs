@@ -390,6 +390,9 @@ pub(crate) const SIGILLESS_ALIAS_KEY_PREFIX: &str = "__mutsu_sigilless_alias::";
 pub(crate) fn is_routine_scoped_implicit_var(name: &str) -> bool {
     match name {
         "!" | "/" => true,
+        // A call's recorded capture (`runtime::call_capture`): the caller's
+        // own record, if it has one, must survive the callee's return.
+        "__mutsu_call_capture" => true,
         // The capture variables are views into `$/` and mutsu stores them in
         // their own env slots (`0`, `1`, ... for `$0`/`$1`, `<name>` for
         // `$<name>`), so they have to be scoped exactly like the `$/` they
@@ -637,6 +640,10 @@ pub(crate) mod wk {
         self_ => "self";
         /// `$.foo` desugaring's alias for the invocant, written next to `self`.
         anon_state => "__ANON_STATE__";
+        /// The capture of a call whose code reads it (`nqp::usecapture`),
+        /// bound in the callee env for the return writeback of its cells
+        /// (`runtime::call_capture`).
+        call_capture => "__mutsu_call_capture";
         /// `::?CLASS`, written on every compiled method entry.
         class_decl => "?CLASS";
         /// `::?ROLE`: written when the method came from a role, removed

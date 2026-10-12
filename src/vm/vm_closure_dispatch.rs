@@ -837,7 +837,11 @@ impl Interpreter {
         // four per-call `Vec`s or its two `@_` arrays. It declines (and the
         // general binder runs, keeping its own diagnostics) for anything else,
         // an arity mismatch included.
-        let light_bound = self.closure_light_bind(data, param_name_syms, &args);
+        self.request_call_capture(cc.uses_capture, None);
+        // A capture-reading body needs the general binder, which records the
+        // call's capture with the caller's containers.
+        let light_bound =
+            !cc.uses_capture && self.closure_light_bind(data, param_name_syms, &args);
         let mut rw_bindings = if light_bound {
             // No rw binding can arise from a plain positional `$` parameter:
             // it is a readonly item binding with no caller container behind it.
@@ -884,7 +888,7 @@ impl Interpreter {
             }
         };
         self.arm_rw_param_rebinds(cc, &rw_bindings);
-        self.record_call_capture(cc.uses_capture, None, &args);
+        self.finish_call_capture(&args);
         // The binding is done: the call site's `static_arg_types` must not
         // reach a call the body makes through a route that publishes none.
         self.static_call_args = false;
