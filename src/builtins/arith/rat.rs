@@ -20,6 +20,22 @@ pub(crate) fn rat_sub_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
     rat_from_i128_or_num(n, d)
 }
 
+/// The `(numerator, denominator)` parts of two operands that are each a plain
+/// `Rat` or `Int`, at least one of them a `Rat`: the pair the general arithmetic
+/// path ends up handing to `rat_*_checked` after its Range, Duration, Complex
+/// and BigRat checks, none of which applies to it.
+// Cost: O(1).
+pub(crate) fn plain_rat_pair(left: &Value, right: &Value) -> Option<(i64, i64, i64, i64)> {
+    let parts = |v: &Value| match v.view() {
+        ValueView::Rat(n, d) => Some((n, d, true)),
+        ValueView::Int(n) => Some((n, 1, false)),
+        _ => None,
+    };
+    let (an, ad, a_rat) = parts(left)?;
+    let (bn, bd, b_rat) = parts(right)?;
+    (a_rat || b_rat).then_some((an, ad, bn, bd))
+}
+
 /// Perform Rat multiplication with overflow detection.
 pub(crate) fn rat_mul_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
     let n = an as i128 * bn as i128;
@@ -46,7 +62,19 @@ pub(crate) fn rat_div_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
 /// this exact distinction for the BigRat-based arithmetic path — this
 /// function previously duplicated (and got wrong) the same GCD+overflow
 /// logic for the plain-Rat i128 fast path.
+// Cost: O(log min(|n|, |d|)) for i64-sized parts; the BigInt path otherwise.
 pub(crate) fn rat_from_i128_or_num(n: i128, d: i128) -> Value {
+    // Parts that fit in i64 reduce to an i64 Rat whatever their gcd, so the
+    // i64 reduction gives the BigInt path's answer without its two heap
+    // integers. `i64::MIN` is left to that path: negating it to make the
+    // denominator positive would overflow.
+    if d != 0
+        && let (Ok(n64), Ok(d64)) = (i64::try_from(n), i64::try_from(d))
+        && n64 != i64::MIN
+        && d64 != i64::MIN
+    {
+        return make_rat(n64, d64);
+    }
     crate::value::make_big_rat_arith(NumBigInt::from(n), NumBigInt::from(d))
 }
 

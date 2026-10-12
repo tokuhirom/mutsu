@@ -3,7 +3,7 @@
 use super::range::{mixin_range_arith, mixin_range_arith_val, range_divide, range_scale};
 use super::rat::{
     as_bigint, big_int_mul, float_mod_floor, is_fat_rat_like, make_fat_rat, needs_bigrat_path,
-    rat_mul_checked, real_to_rat, to_big_rat_parts,
+    plain_rat_pair, rat_mul_checked, real_to_rat, to_big_rat_parts,
 };
 use super::temporal::{instance_duration_raw_value, make_duration_from_value};
 use crate::value::{RuntimeError, Value, ValueView, make_big_fat_rat, make_big_rat_arith};
@@ -16,6 +16,11 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
     // the matching note in `arith_add`; no Range/Duration guard below applies.
     if let Some(product) = big_int_mul(&left, &right) {
         return product;
+    }
+    // Fast path: Rat * Rat or Rat * Int, which the checks below only reach
+    // after cloning both operands for the Range/Mixin probes.
+    if let Some((an, ad, bn, bd)) = plain_rat_pair(&left, &right) {
+        return rat_mul_checked(an, ad, bn, bd);
     }
     // Mixin-wrapped Range * Real: perform Range arithmetic and re-wrap
     if let Some(result) = mixin_range_arith_val(left.clone(), right.clone(), arith_mul)
