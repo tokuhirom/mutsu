@@ -21,7 +21,7 @@ pub(crate) use buf::{
     buf_get_int_items, is_buf_like, read_f32_endian, read_f64_endian, read_int_value,
     resolve_buf_index,
 };
-pub(crate) use dispatch_1arg::native_method_1arg;
+pub(crate) use dispatch_1arg::{native_method_1arg, native_method_1arg_without_table};
 pub(crate) use dispatch_2arg::native_method_2arg;
 pub(crate) use fmt_contains::{
     fmt_joinable_target, fmt_native, list_item_pair_split, native_contains_with_options,

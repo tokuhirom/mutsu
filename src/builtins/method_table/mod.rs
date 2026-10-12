@@ -76,8 +76,8 @@ pub(crate) use instances::{
     temporal_shift,
 };
 pub(crate) use scalars::{
-    blob, blob_read, coerce, complex, complex_math, cool_real, math, numeric_base, numeric_coerce,
-    numify, real, real_misc, str, str_args, str_numeric, str_search, truth, uni, unicode, version,
+    blob, blob_read, coerce, complex_math, cool_real, math, numeric_base, numeric_coerce, numify,
+    real, real_misc, str, str_args, str_numeric, str_search, truth, uni, unicode, version,
 };
 
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
