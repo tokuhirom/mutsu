@@ -657,7 +657,8 @@ pub(crate) fn native_method_0arg_cascade(
         // (`%h but Associative[Int, Int]`) or declare `of` itself: the
         // interpreter's mixin dispatch reads the composition before it asks
         // the wrapped container's row (ADR-11276 §9.86).
-        if matches!(method, "of" | "keyof") && mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
+        if matches!(method, "of" | "keyof")
+            && mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
         {
             return None;
         }
