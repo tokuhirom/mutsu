@@ -392,7 +392,7 @@ mod reduced_subrule_log_tests {
                 to,
                 sym: None,
                 action_name: None,
-                ast: None,
+                made: Default::default(),
                 children: None,
                 match_memo: Default::default(),
             })
