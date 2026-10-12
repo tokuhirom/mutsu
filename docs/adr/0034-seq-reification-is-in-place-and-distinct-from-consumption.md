@@ -1,6 +1,6 @@
 # ADR-0034: Reifying a `Seq` fills the Seq itself — reification and consumption are two operations, not one
 
-- **Status**: Accepted — implemented (2026-08-19/20, all 5 phases; see §7.1 Outcome)
+- **Status**: Accepted — implemented (2026-08-19/20, all 5 phases; see §7.1 Outcome); the §2.5/§6 exclusion of `LazyList`-backed gathers is amended by [ADR-11678](11678-gather-is-a-deferred-seq-source.md)
 - **Date**: 2026-08-19
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0030](0030-native-array-decode-cache-interior-mutability.md) (the `SyncUnsafeCell` primitive and the generation-graveyard technique this ADR reuses verbatim), [ADR-0013](0013-container-interior-mutability-cellvalue.md) (the *other* interior-mutability primitive, and why it does not apply here), [ADR-0015](0015-native-backed-container-storage-and-repr-bodies.md) (the precedent for giving a container a real body instead of a bare payload), [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (the collector that currently cannot see a deferred Seq's iterator)
