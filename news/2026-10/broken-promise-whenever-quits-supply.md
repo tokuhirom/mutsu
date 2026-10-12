@@ -21,4 +21,6 @@ Cro's HTTP client is built from exactly that shape, which is why
   event loop, so a caller that subscribes and then sends (Cro's pipeline) sees the failure
   after its request is queued.
 
-The Cro request now fails within a second with the connect error, as under rakudo.
+The Cro request now fails in about 0.13 s with the connect error, as under rakudo (0.19 s).
+When the refusal still lands before the request is queued — a race in Cro's own pipeline,
+open under rakudo too — it fails just as fast with `PipelineClosedBeforeHeaders`.
