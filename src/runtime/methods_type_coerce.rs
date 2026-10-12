@@ -10,6 +10,9 @@ impl Interpreter {
         if let Some(seq) = crate::builtins::seq_coerce::to_seq_structural(&target) {
             return Ok(seq);
         }
+        if let ValueView::Channel(ch) = target.view() {
+            return self.dispatch_channel_method(&ch, "Seq", Vec::new());
+        }
         Ok(match target.view() {
             ValueView::Seq(_) => target.clone(),
             ValueView::Array(items, ..) => Value::seq(items.to_vec()),

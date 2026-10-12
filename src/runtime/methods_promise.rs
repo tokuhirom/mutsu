@@ -441,7 +441,19 @@ impl Interpreter {
                 self.pump_channel_taps(ch)?;
                 Ok(Value::NIL)
             }
-            "list" | "List" | "Array" | "Seq" => {
+            // `.list`/`.Seq` pull one `receive` per element, on demand, so a
+            // consumer sees each item as it arrives (#12727); `.List` and
+            // `.Array` are the eager forms and drain until the close.
+            "list" | "Seq" => {
+                let mut ll =
+                    crate::value::LazyList::new_cat_pull(
+                    Value::channel(ch.clone()),
+                    crate::value::CatPullMode::ChannelReceive,
+                );
+                ll.list_context = method == "list";
+                Ok(Value::lazy_list(crate::gc::Gc::new(ll)))
+            }
+            "List" | "Array" => {
                 // Drain the channel into a list (blocks until closed)
                 let mut items = Vec::new();
                 loop {

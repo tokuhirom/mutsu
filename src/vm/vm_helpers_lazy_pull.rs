@@ -603,6 +603,20 @@ impl Interpreter {
             };
 
             let pulled: Value = match mode {
+                // One blocking receive; a closed channel answers Nil, which
+                // ends the list below, and a failed one rethrows its cause.
+                CatPullMode::ChannelReceive => match cat.view() {
+                    ValueView::Channel(ch) => match ch.receive_result() {
+                        Ok(v) => v,
+                        Err(cause) => {
+                            let ex = crate::runtime::Interpreter::as_exception_value(cause);
+                            let mut err = RuntimeError::new(ex.to_string_value());
+                            err.exception = Some(Box::new(ex));
+                            return Err(err);
+                        }
+                    },
+                    _ => Value::NIL,
+                },
                 CatPullMode::Lines => self.call_method_with_values(cat.clone(), "get", vec![])?,
                 CatPullMode::Handles if !started => {
                     // First pull: the currently-active handle, opened on demand
