@@ -778,6 +778,43 @@ pub(crate) fn hash_cycle_exit(ptr: usize) -> bool {
 /// Cost: O(t), t = total output length for the whole structure (elements are
 /// rendered and joined once; the cycle guard is a stack of ancestor depth).
 pub fn raku_value(v: &Value) -> String {
+    // `$a = 1 => $a` keeps `$a`'s container as the Pair's value, so a Pair can
+    // be its own ancestor: the node the walk loops back to is named
+    // `Pair_<id>` and carries a `(my \Pair_<id> = ...)` binding.
+    thread_local! {
+        static PAIR_ANCESTORS: std::cell::RefCell<Vec<(usize, bool)>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    let Some(ptr) = v.pair_identity() else {
+        return raku_value_node(v);
+    };
+    let cycle = PAIR_ANCESTORS.with(|seen| {
+        let mut s = seen.borrow_mut();
+        if let Some(entry) = s.iter_mut().rev().find(|(p, _)| *p == ptr) {
+            entry.1 = true;
+            return true;
+        }
+        s.push((ptr, false));
+        false
+    });
+    if cycle {
+        return format!("Pair_{}", ptr);
+    }
+    let rendered = raku_value_node(v);
+    let looped = PAIR_ANCESTORS.with(|seen| {
+        let mut s = seen.borrow_mut();
+        s.iter()
+            .rposition(|(p, _)| *p == ptr)
+            .is_some_and(|pos| s.remove(pos).1)
+    });
+    if looped {
+        format!("(my \\Pair_{} = {})", ptr, rendered)
+    } else {
+        rendered
+    }
+}
+
+// Cost: O(t), t = total output length of this node's subtree.
+fn raku_value_node(v: &Value) -> String {
     // Cycle detection for recursive data structures: track Arc pointers
     // that we're currently rendering. If we encounter the same pointer
     // again, emit a placeholder instead of recursing infinitely.

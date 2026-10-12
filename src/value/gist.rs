@@ -577,8 +577,25 @@ pub(crate) fn gist_value(value: &Value) -> String {
             // their `.Str` (the `_` fall-through) shows only the bare elements.
             setbagmix_gist(value).unwrap_or_else(|| value.to_string_value())
         }
-        ValueView::Pair(k, v) => format!("{} => {}", k, gist_value(v)),
+        // `$a = 1 => $a` keeps `$a`'s container as the Pair's value, so a Pair
+        // can be its own ancestor: it is tracked like an Array or Hash node.
+        ValueView::Pair(k, v) => {
+            let ptr = value.pair_identity().unwrap_or(0);
+            if SEEN_PTRS.with(|seen| check_and_push(seen, ptr)) {
+                return format!("Pair_{}", ptr);
+            }
+            let rendered = format!("{} => {}", k, gist_value(v));
+            if SEEN_PTRS.with(|seen| pop_ptr(seen, ptr)) {
+                cycle_binding("Pair", ptr, &rendered)
+            } else {
+                rendered
+            }
+        }
         ValueView::ValuePair(k, v) => {
+            let ptr = value.pair_identity().unwrap_or(0);
+            if SEEN_PTRS.with(|seen| check_and_push(seen, ptr)) {
+                return format!("Pair_{}", ptr);
+            }
             // A Pair-valued key is parenthesized so the outer arrow is
             // unambiguous: `(red => 2) => apples`, matching raku's gist.
             let key_gist = match k.view() {
@@ -587,7 +604,12 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 }
                 _ => gist_value(k),
             };
-            format!("{} => {}", key_gist, gist_value(v))
+            let rendered = format!("{} => {}", key_gist, gist_value(v));
+            if SEEN_PTRS.with(|seen| pop_ptr(seen, ptr)) {
+                cycle_binding("Pair", ptr, &rendered)
+            } else {
+                rendered
+            }
         }
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
             format!("({})", gist_elements(items.iter(), " "))
