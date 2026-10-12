@@ -381,6 +381,32 @@ mod tests {
     }
 
     #[test]
+    fn a_celled_container_locks_both_its_cell_and_its_node() {
+        // A writer through a `:=` cell and a reader handed the container
+        // itself must exclude each other (#13016): the writer holds the cell's
+        // stripe AND the node's, the reader only knows the node.
+        note_mutator_thread_spawned();
+        let (cell, node) = (0x7020, 0x7030);
+        assert_ne!(stripe_index(cell), stripe_index(node));
+        let writer = ContainerStructGuard::acquire_pair(cell, node);
+        assert!(writer.is_some());
+        let (cell_free, node_free) = std::thread::spawn(move || {
+            (
+                stripe_for(cell).try_lock().is_ok(),
+                stripe_for(node).try_lock().is_ok(),
+            )
+        })
+        .join()
+        .unwrap();
+        assert!(!cell_free, "the cell's stripe is held");
+        assert!(!node_free, "the node's stripe is held");
+        drop(writer);
+        assert!(stripe_for(node).try_lock().is_ok());
+        // One key, or two keys on one stripe, takes a single lock.
+        assert!(ContainerStructGuard::acquire_pair(0x8040, 0x8040 + (STRIPES << 4)).is_some());
+    }
+
+    #[test]
     fn stripes_are_stable_and_spread() {
         assert!(std::ptr::eq(stripe_for(0x5550), stripe_for(0x5550)));
         let distinct = (0..STRIPES)
