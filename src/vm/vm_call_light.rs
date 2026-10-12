@@ -91,13 +91,7 @@ impl Interpreter {
     ) -> RuntimeError {
         let pd = &cf.param_defs[param_idx];
         let val = arg_binding_value(&self.stack[args_base + param_idx]).into_owned();
-        let err = self
-            .typecheck_binding_parameter_failure(
-                &crate::runtime::types::param_display_name(pd),
-                tc,
-                &val,
-            )
-            .with_parameter_object(pd, Some(&*self));
+        let err = self.light_param_type_failure(pd, tc, &val);
         let args = self.stack[args_base..].to_vec();
         self.enhance_binding_error_at_site(err, cf.package_sym(), func_name, &cf.param_defs, &args)
     }
@@ -550,7 +544,14 @@ impl Interpreter {
                     } else {
                         &*val
                     };
-                    Self::fast_type_check_tagged(val, kind, name_sym)
+                    if kind == crate::opcode::FastParamType::UInt {
+                        // The type matcher needs `&mut self`; only this
+                        // constraint can reach it.
+                        let val = val.clone();
+                        self.light_param_type_check(&val, kind, name_sym)
+                    } else {
+                        Self::fast_type_check_tagged(val, kind, name_sym)
+                    }
                 }
                 None => {
                     let Some(tc) = cf.param_defs[param_idx].type_constraint.as_ref() else {
@@ -563,7 +564,12 @@ impl Interpreter {
                     } else {
                         &*val
                     };
-                    Self::fast_type_check(val, tc)
+                    if tc == "UInt" {
+                        let val = val.clone();
+                        self.light_type_check_by_name(&val, tc)
+                    } else {
+                        Self::fast_type_check(val, tc)
+                    }
                 }
             };
             if ok && is_native_int {
@@ -1162,8 +1168,13 @@ impl Interpreter {
             let check_val = explicit_return.as_ref().unwrap_or(&ret_val);
             let passed = match cf.return_fast_type {
                 Some(crate::opcode::FastParamCheck::Fast { kind, name_sym }) => {
-                    Self::light_return_type_check_tagged(check_val, kind, name_sym)
+                    self.light_return_check(check_val, kind, name_sym)
                 }
+                _ if rt == "UInt" => self.light_return_check(
+                    check_val,
+                    crate::opcode::FastParamType::UInt,
+                    crate::symbol::Symbol::intern(rt),
+                ),
                 _ => Self::light_return_type_check(check_val, rt),
             };
             if !passed {
@@ -1331,6 +1342,13 @@ impl Interpreter {
         // itemized (`itemize_for_hash_element`), so `sub f(Bool $b)` called
         // with `%h<k>` must see the Bool, not the item (#10638).
         let val = val.descalarize();
+        // This form has no interpreter to consult, so a `UInt` shape it cannot
+        // answer inline is refused -- the safe direction for its one caller
+        // without one (the const-fill precompute keeps such a routine off the
+        // light paths). The bind sites go through `light_uint_check`.
+        if kind == T::UInt {
+            return Self::uint_inline_answer(val) == Some(true);
+        }
         match val.view() {
             // Allomorphs and other mixins go through the full `isa_check`, as
             // in the by-name form: an `IntStr` satisfies both `Int` and `Str`.
@@ -1452,7 +1470,7 @@ impl Interpreter {
     /// deliberate asymmetry with the *parameter* check: a returned type object
     /// must match the declared return type by name even for `Any`/`Mu`/`Cool`.
     #[inline]
-    fn light_return_type_check_tagged(
+    pub(super) fn light_return_type_check_tagged(
         val: &Value,
         kind: crate::opcode::FastParamType,
         name_sym: Symbol,

@@ -152,6 +152,7 @@ pub(crate) use vm_helpers_lazy_adaptor::{is_infinite_operand, is_unbounded_opera
 pub(crate) use vm_hoist_capture_cells::HoistPendingCell;
 pub(crate) use vm_lexsub_aliases::{LexSubAliasTable, LexSubLatestCells};
 mod vm_call_light_typed;
+mod vm_call_light_uint;
 mod vm_call_method_compiled;
 mod vm_call_method_compiled_cache;
 mod vm_call_method_compiled_coerce;

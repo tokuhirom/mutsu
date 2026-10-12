@@ -225,7 +225,7 @@ impl Interpreter {
                         // The declared constraint, or the `Any` an untyped
                         // routine parameter or an `Any $x` requires (#10878).
                         let failed = match cf.param_defs[i].type_constraint.as_deref() {
-                            Some(tc) if !Self::fast_type_check(&val, tc) => Some(tc),
+                            Some(tc) if !self.light_type_check_by_name(&val, tc) => Some(tc),
                             _ if matches!(
                                 cf.param_fast_types.get(i),
                                 Some(crate::opcode::FastParamCheck::RequiresAny)
@@ -264,13 +264,7 @@ impl Interpreter {
                             // `X::TypeCheck::Argument` only for a call site
                             // whose argument types are all static (#10640).
                             let pd = &cf.param_defs[i];
-                            let err = self
-                                .typecheck_binding_parameter_failure(
-                                    &crate::runtime::types::param_display_name(pd),
-                                    tc,
-                                    &val,
-                                )
-                                .with_parameter_object(pd, Some(&*self));
+                            let err = self.light_param_type_failure(pd, tc, &val);
                             bind_err = Some(self.enhance_binding_error_at_site(
                                 err,
                                 cf.package_sym(),

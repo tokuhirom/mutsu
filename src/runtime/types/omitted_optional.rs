@@ -91,7 +91,7 @@ impl Interpreter {
     /// type is named by `base`, the constraint without its smiley; the value is
     /// spelled as `.raku` does (`Str ("a")`, `Str (Str)`), like the `where`
     /// failure (`typecheck_binding_parameter_where`).
-    pub(super) fn subset_constraint_binding_error(
+    pub(crate) fn subset_constraint_binding_error(
         &self,
         pd: &ParamDef,
         display_name: &str,
