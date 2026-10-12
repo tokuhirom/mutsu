@@ -95,13 +95,23 @@ impl Interpreter {
             self.candidate_specificity_rank_for_args(def, args);
         let (distance, profile) = self.candidate_type_distance_profile(args, def);
         let params = Self::dispatch_visible_params(def);
+        // A capture with a sub-signature (`multi f(|c($x))`) ranks by the
+        // flattened sub-signature, but to rakudo it is still a slurpy capture
+        // whose sub-signature is a bind check and which declares no
+        // positional: `multi f($n)` is narrower
+        // (`roast/S06-multi/subsignature.t`), `multi f(*@a)` is wider.
+        let capture = def.param_defs.iter().any(|p| p.is_capture_subsignature());
         MultiRank {
             nominal: (literal, typed),
             distance,
             refinement: [constrained, subsig, writable, 0],
-            non_slurpy: !multi_rank::has_slurpy_positional(&params),
-            arity: multi_rank::positional_arity(&params),
-            bind_check: multi_rank::needs_named_bind_check(&params),
+            non_slurpy: !capture && !multi_rank::has_slurpy_positional(&params),
+            arity: if capture {
+                (0, 0)
+            } else {
+                multi_rank::positional_arity(&params)
+            },
+            bind_check: capture || multi_rank::needs_named_bind_check(&params),
             optional: multi_rank::optional_positional_count(&params),
             decl_order: def.decl_order,
             profile,
