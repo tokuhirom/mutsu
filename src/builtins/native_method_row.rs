@@ -45,7 +45,7 @@
 
 #[cfg(test)]
 use super::builtin_type_methods::builtin_method_entries;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 use std::sync::OnceLock;
 
 /// Bitmask of the call arities a native row may be served at. `N` covers both
@@ -192,13 +192,19 @@ use super::native_method_row_table::rows;
 type RowKey = (&'static str, &'static str);
 type RowValue = (u8, u8);
 
-fn classification_table() -> &'static HashMap<RowKey, RowValue> {
-    static TABLE: OnceLock<HashMap<RowKey, RowValue>> = OnceLock::new();
+// Cost: O(1) after the first call; that call is O(r), r = rows in the table.
+// Built on the startup path, so it hashes with Fx (the keys are static
+// strings of our own, not attacker-chosen) and is sized once.
+fn classification_table() -> &'static FxHashMap<RowKey, RowValue> {
+    static TABLE: OnceLock<FxHashMap<RowKey, RowValue>> = OnceLock::new();
     TABLE.get_or_init(|| {
-        rows()
-            .iter()
-            .map(|&(owner, name, arity, flags)| ((owner, name), (arity, flags)))
-            .collect()
+        let rows = rows();
+        let mut table = FxHashMap::with_capacity_and_hasher(rows.len(), Default::default());
+        table.extend(
+            rows.iter()
+                .map(|&(owner, name, arity, flags)| ((owner, name), (arity, flags))),
+        );
+        table
     })
 }
 
@@ -334,6 +340,7 @@ mod tests {
     use crate::builtins::builtin_type_methods::{builtin_sample_value, native_method_arities};
     use crate::builtins::native_method_row_table::RAW_ROWS;
     use crate::symbol::Symbol;
+    use std::collections::HashMap;
     use crate::value::Value;
 
     #[test]
