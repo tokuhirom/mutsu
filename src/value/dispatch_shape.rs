@@ -468,10 +468,11 @@ const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 49] = [
     "rand", "int", "uint", "byte", "Complex", "UInt", "Version",
 ];
 
-/// The `Cool` text methods a `Range`, `Seq` or `IO::Path` reaches
+/// The `Cool` text methods a `Range`, `Seq`, `IO::Path` or `Match` reaches
 /// ([`DispatchShape::reaches_audited`]), and every receiver with no shape
-/// that is a `Cool` (`method_table::answer_shapeless`).
-pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
+/// that is a `Cool` (`method_table::answer_shapeless`). Each reads the
+/// receiver's string form; the last four take an argument (§9.90).
+pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 34] = [
     "words",
     "codes",
     "lines",
@@ -502,6 +503,10 @@ pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
     "uniprops",
     "unival",
     "univals",
+    "unimatch",
+    "samecase",
+    "samemark",
+    "indent",
 ];
 
 /// The `Cool` text methods with arguments a `Match` reaches besides
@@ -510,7 +515,7 @@ pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
 /// `Match` nor `Capture` declares these, so each is `Cool`'s candidate, whose
 /// body is `self.Str.METHOD`: the handlers read the receiver's string form,
 /// which for a `Match` is the matched text.
-const COOL_TEXT_FOR_MATCH: [&str; 15] = [
+const COOL_TEXT_FOR_MATCH: [&str; 12] = [
     "contains",
     "starts-with",
     "ends-with",
@@ -518,9 +523,6 @@ const COOL_TEXT_FOR_MATCH: [&str; 15] = [
     "rindex",
     "substr",
     "split",
-    "samecase",
-    "samemark",
-    "indent",
     "subst",
     "trans",
     "indices",

@@ -64,6 +64,8 @@ pub(super) static COOL_ROWS: &[MethodRow] = &[
     row!("Cool", "uniprops", 1, uniprops_of, ARG),
     row!("Cool", "unival", 0, unival, TOK),
     row!("Cool", "univals", 0, univals, TOK),
+    row!("Cool", "unimatch", 1, unimatch, ARG),
+    row!("Cool", "unimatch", 2, unimatch_in, ARG),
     row!("Cool", "uniparse", 0, uniparse, NONE),
     row!("Cool", "parse-names", 0, uniparse, TOK),
     row!("Cool", "NFC", 0, nfc, NONE),

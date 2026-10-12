@@ -34,7 +34,15 @@ macro_rules! shared_rows {
         &[
             row!($owner, "samecase", 1, Handler::Pure(samecase)),
             row!($owner, "samemark", 1, Handler::Pure(samemark)),
-            row!($owner, "indent", 1, Handler::Pure(indent)),
+            // `indent(*)` (Whatever) takes the common indentation away.
+            MethodRow {
+                owner: $owner,
+                name: "indent",
+                arity: 1,
+                handler: Handler::Pure(indent),
+                flags: RowFlags::ANY_ARGS,
+                named: &[],
+            },
             row!($owner, "encode", 0, Handler::Pure(encode)),
         ]
     };

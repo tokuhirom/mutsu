@@ -401,9 +401,24 @@ pub(crate) fn shapeless_row(
 ) -> Option<RowId> {
     use crate::value::ValueView;
     // `join` (its separator), `pick`, `roll`, `head` and `tail` (their count)
-    // alone take an argument.
+    // and the `Cool` text methods that read a property, a pattern or an
+    // amount (§9.90) alone take an argument.
     if arity > 0
-        && (arity > 1 || !matches!(method.as_str(), "join" | "pick" | "roll" | "head" | "tail"))
+        && (arity > 1
+            || !matches!(
+                method.as_str(),
+                "join"
+                    | "pick"
+                    | "roll"
+                    | "head"
+                    | "tail"
+                    | "uniprop"
+                    | "uniprops"
+                    | "unimatch"
+                    | "samecase"
+                    | "samemark"
+                    | "indent"
+            ))
     {
         return None;
     }
@@ -465,7 +480,7 @@ pub(crate) fn shapeless_row(
                     owner = Some(class);
                     break;
                 }
-                if super::owner_row(class, method, 0).is_some() {
+                if super::owner_row(class, method, arity).is_some() {
                     break;
                 }
             }
