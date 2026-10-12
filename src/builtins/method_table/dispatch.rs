@@ -78,6 +78,25 @@ pub(crate) fn invoke(
     call(row(id), None, target, args, Named::NONE).map(|(result, _)| result)
 }
 
+/// Answer a call on a value the table has no shape for whose structure is
+/// `shape`'s (a grammar cursor or an instance of a `Match` subclass reads as a
+/// plain `Match`): the row a receiver of `shape` reaches, if it admits `args`.
+/// A row that needs the interpreter declines.
+// Cost: O(1) to find the row (one hash lookup), plus O(a) to admit a
+// arguments, plus the handler's own cost.
+pub(crate) fn answer_as(
+    shape: DispatchShape,
+    target: &Value,
+    method: Symbol,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
+    let id = super::resolve(Receiver::instance(shape), method, args.len())?;
+    if !admits(id, args) {
+        return None;
+    }
+    invoke(id, target, args)
+}
+
 /// [`invoke`] for a row that may need the interpreter.
 // Cost: O(1) plus the handler's own cost.
 #[inline]

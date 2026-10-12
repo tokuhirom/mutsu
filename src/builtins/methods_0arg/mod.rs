@@ -145,19 +145,29 @@ pub(crate) fn native_method_0arg(
     native_method_0arg_cascade(target, method_sym)
 }
 
-/// `Match`'s row for `method`, invoked on a match the table has no shape for
-/// (a grammar cursor, an instance of a `Match` subclass): their structure is a
-/// `Match`'s, so every row of the owner reads them as it reads a plain match.
-// Cost: O(k), k = rows named `method`, plus the row's own cost.
-fn match_owner_row(target: &Value, method: Symbol) -> Option<Result<Value, RuntimeError>> {
+/// The row a plain `Match` reaches for `method` (its own, then `Cool`'s
+/// audited text rows and `Mu`'s and `Any`'s audited ones), invoked on a match
+/// the table has no shape for (a grammar cursor, an instance of a `Match`
+/// subclass): their structure is a `Match`'s, so every such row reads them as
+/// it reads a plain match.
+// Cost: O(1) to find the row, plus the row's own cost.
+pub(crate) fn match_owner_row(
+    target: &Value,
+    method: Symbol,
+    args: &[Value],
+) -> Option<Result<Value, RuntimeError>> {
     // `Mu.perl` is `.raku`.
     let method = if method == "perl" {
         Symbol::intern("raku")
     } else {
         method
     };
-    let id = crate::builtins::method_table::owner_row(Symbol::intern("Match"), method, 0)?;
-    crate::builtins::method_table::invoke(id, target, &[])
+    crate::builtins::method_table::answer_as(
+        crate::value::DispatchShape::Match,
+        target,
+        method,
+        args,
+    )
 }
 
 /// [`native_method_0arg`] without the method table: the name-matching
@@ -244,7 +254,7 @@ pub(crate) fn native_method_0arg_cascade(
     // never runs for the scalar accessors (`from`, `to`, `pos`, `Str`, ...).
     // Cost: O(k) to find the row, k = rows named `method`, plus the row's own.
     if target.is_lazy_match_value() {
-        if let Some(result) = match_owner_row(target, method_sym) {
+        if let Some(result) = match_owner_row(target, method_sym, &[]) {
             return Some(result);
         }
         match method {
@@ -1246,7 +1256,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     {
         // `Match`'s rows answer a match the table has no shape for (a grammar
         // cursor, an instance of a subclass) through their owner.
-        if let Some(result) = match_owner_row(target, Symbol::intern(method)) {
+        if let Some(result) = match_owner_row(target, Symbol::intern(method), &[]) {
             return Some(result);
         }
         let list_v = target.match_list();

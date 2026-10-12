@@ -82,8 +82,8 @@ pub(crate) use scalars::{
 
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
 pub(crate) use dispatch::{
-    admits, answer, answer_shapeless, invoke, invoke_base, invoke_in, invoke_mut, invoke_owner,
-    invoke_owner_raw, try_dispatch_in,
+    admits, answer, answer_as, answer_shapeless, invoke, invoke_base, invoke_in, invoke_mut,
+    invoke_owner, invoke_owner_raw, try_dispatch_in,
 };
 #[cfg(test)]
 pub(crate) use dispatch::{shapeless_row, try_dispatch};
