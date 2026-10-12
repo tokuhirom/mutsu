@@ -13,4 +13,4 @@ A grammar cursor, a lazy cursor (`$¢`) and an instance of a `Match` subclass
 now answer `Match`'s rows through their owner, replacing the forwarding arms
 of the `Match` blocks.
 
-The pure arity cascades went from 239 to 181 quoted-name arms.
+The pure arity cascades went from 239 to 189 quoted-name arms.

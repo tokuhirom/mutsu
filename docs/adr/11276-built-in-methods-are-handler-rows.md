@@ -1990,19 +1990,23 @@ cross-check failed. Decisions:
 
 Deleted: the `Uni` shadows (`elems`/`codes`/`Int`/`Numeric`/`Str`/`list`/`gist`/`raku`), the `Capture` shadows (`hash`, `list`,
 `elems`/`Numeric`, `keys`, `values`, `kv`, `pairs`, `antipairs`, `raku`, `gist`, `Str`), `Version`'s `parts`/`plus`/`whatever`,
-the 0-arg `re`/`im`/`reals`, `key`/`value`/`antipair`, `contents` and `squish` arms, and the 1-arg `contains`, `index`, `rindex`,
-`substr`, `split`, `comb`, `fmt`, `sprintf`, `base` and `base-repeating` arms. Kept, each because a receiver or argument
+the 0-arg `re`/`im`/`reals`, `key`/`value`/`antipair`, `contents` and `squish` arms, and the 1-arg `base` and `base-repeating`
+arms. Kept, each because a receiver or argument
 no row admits still reaches it (found by deleting the arm and probing): the rest of `collection.rs`/`coercion.rs` (type objects,
 `Nil`, a shaped array, a stash, an `IO::Path`), the `Capture` arms with no row (`Hash`, `Int`, `perl`, `Bool`, `WHAT`, `flat`,
 `Seq`, `List`), `Uni`'s `chars`/`comb`/`perl`, `subbuf` (a user class composing `Blob` over a `VMArray` body has no shape),
-and the 1-arg arms whose argument is not a plain scalar (`in-range` with a
+`comb` and `sprintf` (no 1-arg row on `Str`/`Cool`: the arm is the implementation), `contains`, `index`, `rindex`, `substr`,
+`split` and `fmt` (the `Match` shape reaches no `Cool` row, and the recognition table's `Match` rows of these names are
+answered by the arm on the matched string; `native_method_row`'s `*_rows_are_backed_by_the_cascade` tests pin them), and the
+1-arg arms whose argument is not a plain scalar (`in-range` with a
 `Range`, `round` and `parse-base` on an allomorph or a `Slip`, `AT-POS`, ...).
 
-`method-rows-report.py --arms`: the pure arity cascades go from 239 to 181 arms. A probe of 34 0-arg and 36 1-arg method names
+`method-rows-report.py --arms`: the pure arity cascades go from 239 to 189 arms. A probe of 34 0-arg and 36 1-arg method names
 (with 1 to 5 arguments each, Regex, Range, WhateverCode and Junction arguments among them) over 50 receivers (every shape, type
 objects, user subclasses of `Int`/`Str`/`Array`/`Hash`, a plain instance, an enum, a mixin, an allomorph, code, an exception, a
 lazy list) gave the same answers before and after, apart from object ids and hash order; the debug `prove t/` over the whole
-suite found the two receivers the probe lacked (the itemized `Map` and the `VMArray` buffer class). Pinned in
+suite found the two receivers the probe lacked (the itemized `Map` and the `VMArray` buffer class), and the recognition tests
+the arms the interpreter had been answering identically (the `Match` receiver, `comb`/`sprintf`). Pinned in
 `t/oo/method/method-table-cascade-decline.t`. The cost of the step is one more table lookup on a call the table did not answer
 (a bit test when no row has the name); a handler that declines its receiver runs twice on that call (§9.7 waives the measurement).
 
