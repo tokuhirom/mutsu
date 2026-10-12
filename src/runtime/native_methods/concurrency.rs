@@ -385,6 +385,7 @@ impl Interpreter {
             )),
             "then" => {
                 let block = args.first().cloned().unwrap_or(Value::NIL);
+                self.bind_callable_param("&code", &block)?;
                 let status = attributes
                     .get("status")
                     .cloned()

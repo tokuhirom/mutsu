@@ -224,16 +224,19 @@ impl Interpreter {
             "scheduler" => Ok(self.promise_scheduler_value(shared)),
             "then" => {
                 let block = args.into_iter().next().unwrap_or(Value::NIL);
+                self.bind_callable_param("&code", &block)?;
                 // .then always runs the callback regardless of Kept/Broken
                 Ok(self.promise_chain_method(shared, block, |_| true, true))
             }
             "andthen" => {
                 let block = args.into_iter().next().unwrap_or(Value::NIL);
+                self.bind_callable_param("&code", &block)?;
                 // .andthen runs callback only if Kept; propagates Broken
                 Ok(self.promise_chain_method(shared, block, |s| s == "Kept", false))
             }
             "orelse" => {
                 let block = args.into_iter().next().unwrap_or(Value::NIL);
+                self.bind_callable_param("&code", &block)?;
                 // .orelse runs callback only if Broken; propagates Kept
                 Ok(self.promise_chain_method(shared, block, |s| s == "Broken", true))
             }
