@@ -242,8 +242,9 @@ fn declaration_copy(decl: &Stmt) -> Option<Stmt> {
         if is_pure_member(member) {
             members.push(member.clone());
         } else if declared_names(member).is_some() {
-            // A nested type that runs code too has to be a shell itself.
-            members.push(declaration_copy(member)?);
+            // A nested type that runs code is not shelled: the scope is left
+            // to the in-place handling.
+            return None;
         }
     }
     let mut shell = decl.clone();
