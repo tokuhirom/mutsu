@@ -37,6 +37,11 @@ impl Compiler {
             }
             TokenKind::Tilde => {
                 self.compile_expr(expr);
+                // Names the operand for the "uninitialized value ... in string
+                // context" warning, keyed by the `StrCoerce` op index like an
+                // interpolation part.
+                self.code
+                    .note_interp_part_names(vec![self.interpolation_part_name(expr)]);
                 self.code.emit(OpCode::StrCoerce);
             }
             TokenKind::Caret => {
