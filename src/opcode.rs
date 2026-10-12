@@ -7551,6 +7551,13 @@ pub(crate) struct CompiledCode {
     /// path alone -- the "Use of uninitialized value $x of type Any in numeric
     /// context" warning names the variable the way rakudo's does (#9359).
     pub(crate) numeric_operand_names: Vec<(u32, [Option<Symbol>; 2])>,
+    /// The rakudo spelling (`$x`, `%h{'k'}`, `@a[3]`) of each part of a string
+    /// interpolation, keyed by the index of its [`OpCode::StringConcat`] in
+    /// [`Self::ops`] and sorted by it. Recorded only when some part is a plain
+    /// variable or a literal-subscript element, so most chunks hold nothing.
+    /// Read on the cold path alone: the "Use of uninitialized value %h{'k'} of
+    /// type Any in string context" warning names the part.
+    pub(crate) interp_part_names: Vec<(u32, Vec<Option<Symbol>>)>,
     /// Free variables this code or a nested closure REBINDS with `:=` (#9307).
     /// Folded up by `compute_free_vars` until it reaches the chunk that
     /// declares the name, where the name's slots join
@@ -8119,6 +8126,7 @@ impl CompiledCode {
             rebound_free_names: Vec::new(),
             outer_captures: Vec::new(),
             numeric_operand_names: Vec::new(),
+            interp_part_names: Vec::new(),
             free_var_rebinds: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
@@ -8202,6 +8210,26 @@ impl CompiledCode {
         if names.iter().any(Option::is_some) {
             self.numeric_operand_names
                 .push((self.ops.len() as u32, names));
+        }
+    }
+
+    /// Record the part names of the string interpolation about to be emitted at
+    /// the next op index -- see [`Self::interp_part_names`].
+    pub(crate) fn note_interp_part_names(&mut self, names: Vec<Option<Symbol>>) {
+        if names.iter().any(Option::is_some) {
+            self.interp_part_names.push((self.ops.len() as u32, names));
+        }
+    }
+
+    /// The part names recorded for the `StringConcat` at `ip` (empty when none).
+    // Cost: O(log n), n = interpolations with a named part in this chunk.
+    pub(crate) fn interp_part_names_at(&self, ip: usize) -> &[Option<Symbol>] {
+        match self
+            .interp_part_names
+            .binary_search_by_key(&(ip as u32), |(at, _)| *at)
+        {
+            Ok(i) => &self.interp_part_names[i].1,
+            Err(_) => &[],
         }
     }
 

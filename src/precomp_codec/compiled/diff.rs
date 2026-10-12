@@ -180,6 +180,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         rebound_free_names,
         outer_captures,
         numeric_operand_names,
+        interp_part_names,
         free_var_rebinds,
     );
     cmp_serde!(stmt_pool, proto_token_plans,);

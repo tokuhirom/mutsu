@@ -4,7 +4,7 @@ use Test::Util;
 
 # Using a bare type object in a string context warns
 # "Use of uninitialized value of type X in string context." (or, inside string
-# interpolation, "...value element of type X...") and resumes with the empty
+# interpolation, "...value $x of type X...") and resumes with the empty
 # string, matching raku. This covers every string-context entry point that a
 # type object can reach: the prefix:<~> and infix:<~> operators, `eq`/`lt`/...
 # string comparisons, `print`, and interpolation.
@@ -69,19 +69,18 @@ is (quietly "a{Int}b"), 'ab', 'interpolating a type object yields the empty stri
     is (quietly "y=$y"), 'y=', 'interpolating an uninitialized typed var yields empty';
 }
 {
-    # The common `$var` form uses raku's "element" wording exactly.
+    # The common `$var` form names the variable, as raku's does.
     my Int $y;
     my $msg;
     { my $s = "y=$y"; CONTROL { when CX::Warn { $msg = .message; .resume } } }
     is $msg,
-        "Use of uninitialized value element of type Int in string context.\n" ~
+        "Use of uninitialized value \$y of type Int in string context.\n" ~
         "Methods .^name, .raku, .gist, or .say can be used to stringify it to something meaningful.",
-        'variable interpolation uses raku\'s "element" wording';
+        'variable interpolation names the variable';
 }
 {
     # Block `{...}` interpolation of a type object still warns and resumes with
-    # "" (mutsu emits the "element" wording here too; raku uses "of type" for
-    # the block form, a cosmetic difference not asserted).
+    # "".
     my $warned = False;
     { my $s = "a{Int}b"; CONTROL { when CX::Warn { $warned = True; .resume } } }
     ok $warned, 'block interpolation of a type object emits a warning';

@@ -5489,7 +5489,9 @@ impl Interpreter {
             OpCode::StringConcat(n) => {
                 self.sync_source_line(code, *ip);
                 // #11217: a render truncated by a stack overflow raises.
-                crate::value::render_guard::check_render(self.exec_string_concat_op(*n))?;
+                crate::value::render_guard::check_render(
+                    self.exec_string_concat_op(*n, code.interp_part_names_at(*ip)),
+                )?;
                 *ip += 1;
             }
 

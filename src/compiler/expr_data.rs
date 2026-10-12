@@ -895,6 +895,10 @@ impl Compiler {
     /// Compile StringInterpolation expression.
     pub(super) fn compile_expr_string_interpolation(&mut self, parts: &[Expr]) {
         let n = parts.len() as u32;
+        let names: Vec<Option<Symbol>> = parts
+            .iter()
+            .map(|part| self.interpolation_part_name(part))
+            .collect();
         for part in parts {
             match part {
                 Expr::ArrayVar(name) => self.compile_expr(&Expr::Call {
@@ -922,6 +926,7 @@ impl Compiler {
                 _ => self.compile_expr(part),
             }
         }
+        self.code.note_interp_part_names(names);
         self.code.emit(OpCode::StringConcat(n));
     }
 }
