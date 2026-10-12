@@ -166,94 +166,58 @@ impl Interpreter {
         self.start_callable_promise(block, Symbol::intern("Promise"), scheduler)
     }
 
-    /// `await` — block until Promise(s) resolve, then return their results.
-    /// Build the `RuntimeError` carrying an `X::Await::Died` exception for a
-    /// broken Promise observed by `await`. Raku mixes the `X::Await::Died` role
-    /// INTO the original failure cause (`.^name` is e.g. `X::AdHoc+{X::Await::Died}`),
-    /// so it keeps its class, message and backtrace while also doing
-    /// `X::Await::Died`. We mirror that: when the cause is an exception instance,
-    /// mark it with `__mutsu_does_await_died` (recognized by `isa_check`) and
-    /// re-raise it unchanged, preserving its gist/backtrace. A plain (non-instance)
-    /// cause is wrapped in a fresh `X::Await::Died`.
-    /// Format the current routine stack (the point where `await` was called) as
-    /// a Raku-style backtrace string, innermost frame first. Used to append the
-    /// await/re-throw location to a broken-Promise exception's backtrace.
-    fn await_site_backtrace(&self) -> String {
-        let stack = self.routine_stack();
-        let mut lines = Vec::new();
-        for frame in stack.iter().rev() {
-            let loc = match (frame.file.map(|s| s.as_str()), frame.line) {
-                (Some(f), Some(l)) => format!(" at {} line {}", f, l),
-                (Some(f), None) => format!(" at {}", f),
-                _ => String::new(),
-            };
-            if frame.is_block || frame.name.is_empty() || frame.name == "<unit>" {
-                lines.push(format!("  in block <unit>{}", loc));
-            } else {
-                lines.push(format!("  in sub {}{}", frame.name, loc));
-            }
-        }
-        lines.join("\n")
-    }
-
-    fn await_died_error(&self, cause: Value) -> RuntimeError {
-        // Append the await call-site to the exception's backtrace, so the gist
-        // surfaces both where the Promise's code died (preserved) and where it
-        // was awaited (the re-throw location) — matching Raku's X::Await::Died.
-        // A role mixed into the cause (`TooShort+{X::Promise::Broken}`, which
-        // is what `.result` inside a `.then` callback rethrows) wraps the
-        // instance in a `Mixin`. Every Instance-shaped step below must look
-        // through that wrapper, or the awaited exception loses its real type
-        // to the generic `X::Await::Died` fallback.
-        let cause_instance = Self::exception_instance_of(&cause);
-        if let Some(ValueView::Instance { attributes, .. }) =
-            cause_instance.as_ref().map(Value::view)
-        {
-            let await_bt = self.await_site_backtrace();
-            if !await_bt.is_empty()
-                && let Some(bt) = attributes.as_map().get("backtrace").cloned()
-                && let ValueView::Instance {
-                    class_name: bt_cn,
-                    attributes: bt_attrs,
-                    ..
-                } = bt.view()
-                && bt_cn == "Backtrace"
-            {
-                let old = bt_attrs
-                    .as_map()
-                    .get("text")
-                    .map(Value::to_string_value)
-                    .unwrap_or_default();
-                let combined = if old.is_empty() {
-                    await_bt
-                } else {
-                    format!("{old}\n{await_bt}")
-                };
-                bt_attrs.insert("text".to_string(), Value::str(combined));
-            }
-        }
-        let msg = match cause_instance.as_ref().map(Value::view) {
-            Some(ValueView::Instance { attributes, .. }) => {
-                attributes.insert("__mutsu_does_await_died".to_string(), Value::TRUE);
-                attributes
+    /// Build the `RuntimeError` for a broken Promise observed by `await`.
+    ///
+    /// Rakudo rethrows the cause `but X::Await::Died`: a bare reason
+    /// (`$p.break("s")`) first becomes an `X::AdHoc`, then the role is
+    /// composed into it, so `.^name` is `X::AdHoc+{X::Await::Died}` (or
+    /// `MyEx+{X::Await::Died}`, `X::AdHoc+{X::Promise::Broken}+{X::Await::Died}`
+    /// for a cause that already crossed a `.result`), while `.message` and the
+    /// type checks stay the cause's. The role's `await-backtrace` records the
+    /// await site; its `gist` ("An operation first awaited: ... Died with the
+    /// exception: ...") lives in `wrapper_role_gist`. The cause's own
+    /// backtrace is left as the throw location, as in rakudo.
+    fn await_died_error(&mut self, cause: Value) -> RuntimeError {
+        let ex = self.stamp_throw_site_backtrace(Self::promise_cause_value(cause));
+        let message = Self::exception_instance_of(&ex)
+            .and_then(|inst| match inst.view() {
+                ValueView::Instance { attributes, .. } => attributes
                     .as_map()
                     .get("message")
-                    .map(Value::to_string_value)
-                    .unwrap_or_else(|| cause.to_string_value())
+                    .map(Value::to_string_value),
+                _ => None,
+            })
+            .unwrap_or_else(|| ex.to_string_value());
+        let role = Value::package(Symbol::intern(
+            crate::runtime::wrapper_role_gist::AWAIT_DIED_ROLE,
+        ));
+        let mixed = match self.eval_does_values(ex.clone(), role) {
+            Ok(mixed) => mixed,
+            Err(_) => {
+                let mut err = RuntimeError::new(message);
+                err.exception = Some(Box::new(ex));
+                return err;
             }
-            _ => cause.to_string_value(),
         };
-        let mut err = RuntimeError::new(msg.clone());
-        let exc = if cause_instance.is_some() {
-            cause
-        } else {
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::str(msg.clone()));
-            attrs.insert("payload".to_string(), Value::str(msg));
-            attrs.insert("__mutsu_does_await_died".to_string(), Value::TRUE);
-            Value::make_instance(Symbol::intern("X::Await::Died"), attrs)
+        let mixed = match mixed.view() {
+            ValueView::Mixin(base, mixins) => {
+                let mut mixins = (**mixins).clone();
+                mixins.insert(
+                    crate::meta_ns::MetaNs::Attr
+                        .owned_key_for_str(crate::runtime::wrapper_role_gist::AWAIT_BACKTRACE_ATTR),
+                    self.build_backtrace_value(),
+                );
+                Value::mixin_with_state(base.as_ref().clone(), mixins)
+            }
+            _ => mixed,
         };
-        err.exception = Some(Box::new(exc));
+        // An uncaught one reports its gist, as rakudo's top-level handler does.
+        let text = match self.wrapper_role_gist(&mixed) {
+            Some(Ok(g)) => g.to_string_value(),
+            _ => message,
+        };
+        let mut err = RuntimeError::new(text);
+        err.exception = Some(Box::new(mixed));
         err
     }
 

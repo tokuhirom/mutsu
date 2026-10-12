@@ -1,5 +1,5 @@
 //! `.gist` for an exception carrying one of rakudo's *wrapper* roles:
-//! `X::Promise::Broken` or `X::React::Died`.
+//! `X::Promise::Broken`, `X::React::Died` or `X::Await::Died`.
 //!
 //! Neither role wraps the exception in a new object. rakudo mixes the role
 //! into the original exception on the way out -- `Promise.result` on a broken
@@ -32,6 +32,13 @@ pub(crate) const PROMISE_BROKEN_ROLE: &str = "X::Promise::Broken";
 /// The role a dying `react` block composes into the exception it rethrows.
 pub(crate) const REACT_DIED_ROLE: &str = "X::React::Died";
 
+/// The role `await` composes into a broken promise's cause.
+pub(crate) const AWAIT_DIED_ROLE: &str = "X::Await::Died";
+
+/// `X::Await::Died`'s own attribute (rakudo: `has $.await-backtrace`): where
+/// the promise was awaited, as opposed to where its code died.
+pub(crate) const AWAIT_BACKTRACE_ATTR: &str = "await-backtrace";
+
 /// `X::React::Died`'s own attribute (rakudo: `has $.react-backtrace`): where
 /// the react block was when it died, as opposed to the exception's own
 /// backtrace (where the `whenever` body threw).
@@ -47,7 +54,7 @@ struct WrapperRole {
     header_backtrace_attr: Option<&'static str>,
 }
 
-const WRAPPER_ROLES: [WrapperRole; 2] = [
+const WRAPPER_ROLES: [WrapperRole; 3] = [
     WrapperRole {
         role: PROMISE_BROKEN_ROLE,
         header: "Tried to get the result of a broken Promise",
@@ -59,6 +66,12 @@ const WRAPPER_ROLES: [WrapperRole; 2] = [
         header: "A react block:",
         intro: "Died because of the exception:",
         header_backtrace_attr: Some(REACT_BACKTRACE_ATTR),
+    },
+    WrapperRole {
+        role: AWAIT_DIED_ROLE,
+        header: "An operation first awaited:",
+        intro: "Died with the exception:",
+        header_backtrace_attr: Some(AWAIT_BACKTRACE_ATTR),
     },
 ];
 

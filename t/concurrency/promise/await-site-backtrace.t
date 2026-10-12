@@ -1,6 +1,6 @@
 use Test;
 
-# When `await` rethrows a broken Promise, the exception's gist/backtrace must
+# When `await` rethrows a broken Promise, the exception's gist must
 # contain BOTH where the Promise's code died (the throwing location) and where
 # it was awaited (the re-throw / await-site location) — matching Raku's
 # X::Await::Died.
@@ -22,13 +22,14 @@ sub waiting-for-it {
 }
 waiting-for-it;
 
-# The await-site frame is also present on the structured backtrace.
+# The await site lives in the X::Await::Died role's gist header; the
+# exception's own backtrace stays where its code died (as in rakudo).
 {
     sub inner { die "boom" }
     sub spawner { start { inner() } }
     sub awaiter {
         await spawner();
-        CATCH { default { like .backtrace.Str, /awaiter/, 'backtrace string includes the awaiter' } }
+        CATCH { default { unlike .backtrace.Str, /awaiter/, 'backtrace keeps the throw location only' } }
     }
     awaiter;
 }
