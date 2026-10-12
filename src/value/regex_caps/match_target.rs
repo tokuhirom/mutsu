@@ -20,6 +20,9 @@ pub(crate) struct StrippedMatchTarget {
     chars: Arc<[char]>,
     stripped_to_original: Arc<[usize]>,
     original_to_stripped: Arc<[usize]>,
+    /// Stripping changed nothing: the stripped subject is the original, char
+    /// for char.
+    unchanged: bool,
 }
 
 impl StrippedMatchTarget {
@@ -39,6 +42,10 @@ impl StrippedMatchTarget {
             .get(pos)
             .copied()
             .unwrap_or_else(|| self.original_to_stripped.last().copied().unwrap_or(0))
+    }
+
+    pub(crate) fn is_unchanged(&self) -> bool {
+        self.unchanged
     }
 
     pub(crate) fn stripped_map(&self) -> &[usize] {
@@ -258,6 +265,7 @@ impl MatchTarget {
                 original_to_stripped.push(stripped_pos.min(stripped_len));
             }
             StrippedMatchTarget {
+                unchanged: chars == *self.chars,
                 chars: chars.into(),
                 stripped_to_original: stripped_to_original.into(),
                 original_to_stripped: original_to_stripped.into(),

@@ -489,7 +489,7 @@ impl Interpreter {
                         let name: &crate::runtime::regex_types::NamedAtom = called.as_deref().unwrap_or(declared);
                         let ic = program.atom_ic[atom as usize];
                         // `None`: an argument failed to evaluate, so no match.
-                        match self.rx_call_resolve(name, pkg, ic, levels.top().caps()) {
+                        match self.rx_call_resolve(name, pkg, ic, levels.top().caps(), chars) {
                             None => false,
                             Some(ResolvedCall {
                                 verdict,
@@ -631,6 +631,10 @@ impl Interpreter {
                                                 continue 'run;
                                             }
                                         }
+                                    }
+                                    CallTarget::PlainMarkless(..) => {
+                                        debug_assert!(false, "rx_call_resolve settles PlainMarkless");
+                                        false
                                     }
                                     CallTarget::Single => {
                                         pc += 1;
