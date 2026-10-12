@@ -229,7 +229,10 @@ impl Interpreter {
                 .iter()
                 .filter(|p| !p.named && (counts_invocant || !p.is_invocant)),
             positional,
-        )
+        ) || data
+            .compiled_code
+            .as_ref()
+            .is_some_and(|cc| cc.uses_capture)
     }
 
     /// Whether any candidate reachable from `invocant`'s MRO under `method`

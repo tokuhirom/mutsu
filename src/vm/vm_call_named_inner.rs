@@ -225,6 +225,7 @@ impl Interpreter {
         }
         // Skip bind_function_args_values for 0-arg functions with no params,
         // avoiding the @_ env insert that triggers Arc::make_mut deep clone.
+        self.request_call_capture(cf.code.uses_capture, None);
         let rw_bindings = if args.is_empty() && cf.param_defs.is_empty() && cf.params.is_empty() {
             vec![]
         } else {
@@ -266,7 +267,7 @@ impl Interpreter {
             }
         };
         self.arm_rw_param_rebinds(&cf.code, &rw_bindings);
-        self.record_call_capture(cf.code.uses_capture, None, &args);
+        self.finish_call_capture(&args);
         // The binding is done: the call site's `static_arg_types` must not
         // reach a call the body makes through a route that publishes none.
         self.static_call_args = false;

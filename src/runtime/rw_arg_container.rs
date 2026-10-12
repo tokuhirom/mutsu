@@ -88,6 +88,12 @@ impl Interpreter {
                     def.param_defs.iter().filter(|p| !p.named),
                     positional,
                 )
+                // A body that reads its call capture sees every argument's
+                // container (`runtime::call_capture`, #12839).
+                || def
+                    .compiled
+                    .as_ref()
+                    .is_some_and(|body| body.get().code.uses_capture)
             })
         })
     }

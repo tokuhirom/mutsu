@@ -1021,6 +1021,9 @@ impl Interpreter {
         // must match to legitimately describe THIS call. See its validation
         // where the pending sources are consumed, a few lines down.
         let raw_args_len = args.len();
+        // The call's own arguments, before hllizing and the single-argument
+        // rule reshape them: what a requested call capture records.
+        let call_args = args;
         // Binding a Raku parameter hllizes a raw `VMArray`/`VMHash` argument
         // into the `List`/`Hash` over the same storage (ADR-12666).
         let hllized: Vec<Value>;
@@ -1200,6 +1203,7 @@ impl Interpreter {
         // by an unrelated later writeback of the same name in this frame.
         let arg_source_slots = std::mem::take(&mut self.pending_call_arg_source_slots);
         let mut rw_bindings = Vec::new();
+        self.fill_call_capture(call_args, arg_sources.as_deref(), &mut rw_bindings);
         // `@`/`%` params whose argument came from a named caller container but
         // which take no `rw_bindings` entry (supplied *named* container params
         // don't register an exit writeback) — recorded solely so the
@@ -1821,6 +1825,7 @@ impl Interpreter {
                                 capture_key,
                                 elem_idx,
                                 &mut rw_bindings,
+                                param_defs,
                             ));
                         }
                     }

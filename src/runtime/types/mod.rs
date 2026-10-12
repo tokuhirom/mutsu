@@ -690,6 +690,19 @@ impl Interpreter {
         }
     }
 
+    /// The final value of element `elem_idx` of the `*@v is raw` slurpy or
+    /// `|c` capture bound as `slurpy_key` in the running env: what a slurpy
+    /// element writeback (`decode_slurpy_rw_param`) hands back to its source.
+    // Cost: O(1).
+    pub(crate) fn slurpy_rw_element(&self, slurpy_key: &str, elem_idx: usize) -> Option<Value> {
+        let elem = self.env.get(slurpy_key).and_then(|v| match v.view() {
+            ValueView::Array(arr, _) => arr.items().get(elem_idx).cloned(),
+            ValueView::Capture { positional, .. } => positional.get(elem_idx).cloned(),
+            _ => None,
+        })?;
+        Some(elem.deref_container())
+    }
+
     pub(crate) fn apply_rw_bindings_to_env(
         &self,
         rw_bindings: &[(String, String)],
@@ -703,14 +716,9 @@ impl Interpreter {
             if let Some((slurpy_key, elem_idx, src_idx)) = decode_slurpy_rw_param(param_name) {
                 // A `|c` capture records its variable-sourced positionals the
                 // same way (`capture_param_containers`).
-                let Some(elem) = self.env.get(slurpy_key).and_then(|v| match v.view() {
-                    ValueView::Array(arr, _) => arr.items().get(elem_idx).cloned(),
-                    ValueView::Capture { positional, .. } => positional.get(elem_idx).cloned(),
-                    _ => None,
-                }) else {
+                let Some(elem) = self.slurpy_rw_element(slurpy_key, elem_idx) else {
                     continue;
                 };
-                let elem = elem.deref_container();
                 match src_idx {
                     Some(i) => {
                         // Array source: replace element `i` in the caller's array,

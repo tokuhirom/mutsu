@@ -3,7 +3,7 @@ use Test;
 # A `|c` capture binds its arguments raw, so forwarding it (`g(|c)`) hands the
 # callee the caller's own containers (#11295).
 
-plan 14;
+plan 17;
 
 sub bump($x is rw) { $x++ }
 sub fwd(|c) { bump(|c) }
@@ -81,4 +81,16 @@ sub fwd2(|c) { fwd(|c) }
     my $b = 1;
     mk($b, $offset);
     is $offset, 2, 'a |c forwarded through a method updates a same-named caller variable';
+}
+
+{
+    # A caller variable named like one of the callee's own parameters stays
+    # the caller's: the capture's cell is not installed under that name.
+    sub keep-param($y, |c) { $y }
+    my $y = 5;
+    is keep-param(1, $y), 1, 'a captured caller variable does not replace a same-named parameter';
+    sub copy-param($z is copy, |c) { $z = 9; c[0] }
+    my $z = 3;
+    is copy-param(1, $z), 3, 'nor an is copy parameter';
+    is $z, 3, 'and the caller variable is untouched';
 }
