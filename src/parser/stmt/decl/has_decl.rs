@@ -1338,6 +1338,15 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // empty statement, which preserves those side effects without gating
     // anything. (`try_split_decl_modifier` makes the same compile-time-versus-
     // runtime split for a `my $x = INIT if COND` declaration.)
+    let modifier_source = super::super::modifier::attribute_modifier_source(rest)
+        .ok()
+        .filter(|(source_rest, _)| {
+            let (source_rest, _) = ws(source_rest).unwrap_or((source_rest, ()));
+            !super::super::modifier::is_stmt_modifier_keyword(source_rest)
+                && (source_rest.is_empty()
+                    || source_rest.starts_with(';')
+                    || source_rest.starts_with('}'))
+        });
     let (rest, modifier_sink) = if super::super::modifier::is_stmt_modifier_keyword(rest) {
         let (r, sink) = super::super::modifier::parse_statement_modifier(
             rest,
@@ -1419,11 +1428,19 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // (`class_own_attribute_names`/`compile_class_attr_decls`) only flattens
     // one level at the top of a class body, and would miss `decl` entirely
     // if it sat inside a doubly-nested block.
-    let stmt = match (assign_stmt, modifier_sink) {
-        (None, None) => decl,
-        (Some(assign_stmt), None) => Stmt::SyntheticBlock(vec![decl, assign_stmt]),
-        (None, Some(sink)) => Stmt::SyntheticBlock(vec![decl, sink]),
-        (Some(assign_stmt), Some(sink)) => Stmt::SyntheticBlock(vec![decl, assign_stmt, sink]),
+    let stmt = if let (None, Some(_), Some((_, (condition, kind)))) = (
+        assign_stmt.as_ref(),
+        modifier_sink.as_ref(),
+        modifier_source,
+    ) {
+        crate::ast::attribute_modifier::expand(decl, condition, kind)
+    } else {
+        match (assign_stmt, modifier_sink) {
+            (None, None) => decl,
+            (Some(assign_stmt), None) => Stmt::SyntheticBlock(vec![decl, assign_stmt]),
+            (None, Some(sink)) => Stmt::SyntheticBlock(vec![decl, sink]),
+            (Some(assign_stmt), Some(sink)) => Stmt::SyntheticBlock(vec![decl, assign_stmt, sink]),
+        }
     };
     let Some((colon_rest, tail)) = colon_arglist else {
         return Ok((rest, stmt));

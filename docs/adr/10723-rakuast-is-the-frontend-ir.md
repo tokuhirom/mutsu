@@ -651,3 +651,14 @@ runtime lookup. The focused test pins the node and EVAL result, and
 mode with the imported call followed by a subscript. The refreshed frontend
 ratchet lists 7,056 files, three more than after #12992 including the current
 main coverage refresh.
+
+### 6.20 S10: attribute statement modifiers (2026-10-13)
+
+An attribute declaration with a postfix condition modifier retains the
+declaration, condition and modifier kind as a source-form record. The parser
+and RakuAST lowerer use the same expansion: the attribute is installed
+unconditionally while the modifier's condition still runs in the class body.
+Conversion renders the source declaration with its `condition-modifier`
+instead of inspecting the generated modifier statements. The focused RakuAST
+test pins `when` and `if` structure, the required-attribute behavior, and one
+condition evaluation during class composition.

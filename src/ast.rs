@@ -2837,6 +2837,7 @@ pub(crate) enum AssignOp {
 pub(crate) mod anon_state;
 pub(crate) mod atomic_op;
 pub(crate) mod attr_trait;
+pub(crate) mod attribute_modifier;
 pub(crate) mod bind_decl;
 mod body_local_names;
 mod chains;
