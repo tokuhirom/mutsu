@@ -85,6 +85,7 @@ impl Value {
             action_name: None,
             ast: None,
             children,
+            match_memo: Default::default(),
         };
         Value::lazy_match(std::sync::Arc::new(cap), target)
     }

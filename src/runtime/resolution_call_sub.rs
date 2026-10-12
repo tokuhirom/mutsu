@@ -461,11 +461,16 @@ impl Interpreter {
                 let Some((orig, pos, _)) = Self::cursor_call_position(cursor) else {
                     return Ok(Value::NIL);
                 };
-                let matched = self.run_token_method_at_unwrapped(
+                // The cursor's own subject when it has one, so a wrapped
+                // recursion runs every level against one target (#11404).
+                let target = cursor
+                    .match_target()
+                    .unwrap_or_else(|| crate::value::regex_caps::MatchTarget::new(&orig));
+                let matched = self.run_token_method_on_target(
                     crate::symbol::Symbol::intern(&pkg),
                     &name,
                     &args[1..],
-                    &orig,
+                    target,
                     pos,
                 )?;
                 return Ok(Self::token_wrap_result_or_failure(

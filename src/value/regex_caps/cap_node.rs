@@ -214,6 +214,55 @@ pub(crate) struct CapNode {
     /// Child captures + per-node reduce state. `None` for a leaf with no
     /// captures, no code blocks, and no metadata — the size win of the split.
     pub(crate) children: Option<Box<CapChildren>>,
+    /// The lazy `Match` presenting this node, so every parent that exposes
+    /// it hands out the same one (ADR-11404).
+    pub(crate) match_memo: MatchMemo,
+}
+
+/// A weak back edge from a [`CapNode`] to the lazy `Match` that presents it
+/// (ADR-11404). `Value::lazy_match` consults it, so two parents holding the
+/// same `Arc<CapNode>` share one `Match` and its memoized materialization
+/// instead of each forcing the subtree again.
+///
+/// Weak because the `Match` holds the node strongly: a strong edge back
+/// would be an `Arc` cycle the cycle collector cannot see. A cloned node is a
+/// different node (a `make` or a narrowed `.pos` was written into the copy),
+/// so a clone starts with an empty memo.
+#[derive(Default)]
+pub(crate) struct MatchMemo(std::sync::Mutex<Option<crate::gc::WeakGc<crate::value::MatchNode>>>);
+
+impl Clone for MatchMemo {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl MatchMemo {
+    /// The memoized `Match` when it is still alive and `accept` takes it;
+    /// otherwise the one `make` builds, which becomes the memo.
+    // Cost: O(1) beyond `make`.
+    pub(crate) fn get_or_make(
+        &self,
+        accept: impl FnOnce(&crate::value::MatchNode) -> bool,
+        make: impl FnOnce() -> crate::gc::Gc<crate::value::MatchNode>,
+    ) -> crate::gc::Gc<crate::value::MatchNode> {
+        let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let live = slot.as_ref().and_then(crate::gc::WeakGc::upgrade);
+        if let Some(node) = live {
+            if accept(&node) {
+                return node;
+            }
+            // Dropped below, outside the lock.
+            let made = make();
+            *slot = Some(crate::gc::Gc::downgrade(&made));
+            drop(slot);
+            drop(node);
+            return made;
+        }
+        let made = make();
+        *slot = Some(crate::gc::Gc::downgrade(&made));
+        made
+    }
 }
 
 /// The non-leaf payload of a [`CapNode`]: child captures on both axes plus the
@@ -354,6 +403,7 @@ impl RegexCaptures {
             action_name,
             ast: self.ast,
             children,
+            match_memo: MatchMemo::default(),
         }
     }
 }

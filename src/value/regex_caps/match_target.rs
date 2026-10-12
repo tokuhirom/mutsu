@@ -297,6 +297,15 @@ impl MatchTarget {
         );
     }
 
+    /// Whether `other` is this same engine run's target (a clone of it): the
+    /// same subject buffer and the same cursor-class cell, so a `Match` built
+    /// against one answers exactly as one built against the other.
+    // Cost: O(1).
+    pub(crate) fn same_run(&self, other: &MatchTarget) -> bool {
+        Arc::ptr_eq(&self.chars, &other.chars)
+            && Arc::ptr_eq(&self.cursor_class, &other.cursor_class)
+    }
+
     /// The whole subject as a string (`.orig`).
     pub(crate) fn text(&self) -> &Arc<crate::value::StrBody> {
         &self.text

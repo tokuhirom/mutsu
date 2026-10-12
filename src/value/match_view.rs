@@ -180,6 +180,13 @@ impl Value {
         self.match_attr("orig")
     }
 
+    /// The subject a still-lazy Match ran against, shared rather than
+    /// copied. `None` for an eager `Instance` Match or a non-Match.
+    // Cost: O(1).
+    pub(crate) fn match_target(&self) -> Option<crate::value::regex_caps::MatchTarget> {
+        self.0.as_match_node().map(|node| node.target.clone())
+    }
+
     /// `.prematch` (`before`) or `.postmatch` text sliced straight from a
     /// lazy Match's shared subject. `None` for an eager `Instance` Match (or a
     /// non-Match), whose caller falls back to slicing `.orig`.
