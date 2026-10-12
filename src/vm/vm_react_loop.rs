@@ -23,7 +23,7 @@
 
 use super::*;
 use crate::runtime::native_methods::{
-    SupplyEvent, next_supplier_id, supplier_register_promise, take_supply_channel,
+    next_supplier_id, supplier_register_promise, take_supply_channel,
 };
 use crate::runtime::react_whenever::{ReactSubscription, StreamConsumer, SupplyDrivePolicy};
 
@@ -637,39 +637,22 @@ impl Interpreter {
                     }
                     // Promise source
                     ValueView::Promise(shared) => {
-                        // Create a one-shot channel for the promise
-                        let (tx, rx) =
-                            crate::runtime::native_methods::supply_channel::supply_event_channel();
-                        // Delivery rides the promise's own waiter list rather
-                        // than an OS thread parked in `wait()`: a `whenever
-                        // <Promise>` costs no thread, and a react that ends
-                        // before its promise settles leaves nothing behind
-                        // (issue #7609 — `roast/S17-procasync/stress.t`'s
-                        // 1200 `whenever Promise.in(5)` blocks peaked at 420
-                        // concurrent `promise-wait` threads, each pinned for
-                        // the timer's whole 5s long after its react was
-                        // over). `mark_observed` is what `wait()` used to do
-                        // for us: a Broken promise consumed by a `whenever`
-                        // must not also trip the destruction-time
-                        // "unhandled" diagnostic. The waiter runs either
-                        // inline here (already-resolved promise, on this
-                        // registered thread) or on a pooled worker from
-                        // `dispatch_waiters`; both are registered GC
-                        // mutators, which the `Value` clone in `send`
-                        // requires.
-                        shared.mark_observed();
-                        shared.on_resolve(Box::new(move |status, result, _output, _stderr| {
-                            if status == "Broken" {
-                                let _ = tx.send(SupplyEvent::Quit(result));
-                            } else {
-                                let _ = tx.send(SupplyEvent::Emit(result));
-                                let _ = tx.send(SupplyEvent::Done);
-                            }
-                        }));
+                        // A Kept promise emits its result and is done; a
+                        // Broken one quits with its cause, which the
+                        // whenever's QUIT phaser may handle.
+                        let rx =
+                            crate::runtime::native_methods::supply_channel::promise_source_events(
+                                &shared,
+                            );
+                        let quit_callbacks = items
+                            .get(3)
+                            .and_then(crate::runtime::Interpreter::value_array_items)
+                            .unwrap_or_default();
                         react_subs.push(ReactSubscription {
                             whenever_id,
                             receiver: Some(rx),
                             promise: Some(shared.clone()),
+                            quit_callbacks,
                             ..ReactSubscription::new(callback)
                         });
                     }

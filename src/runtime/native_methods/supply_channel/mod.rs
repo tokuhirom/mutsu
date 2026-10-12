@@ -21,6 +21,8 @@
 //! registration is idempotent per waker identity, and the drive loop
 //! unregisters on every exit path.
 mod broadcast;
+mod promise_source;
+pub(crate) use promise_source::promise_source_events;
 
 use super::SupplyEvent;
 use crate::value::waker::ReactWaker;

@@ -1,5 +1,5 @@
 use Test;
-plan 4;
+plan 6;
 
 # A `die` in a nested on-demand supply's LAST phaser must reach an outer
 # `whenever` subscribing to it via that outer whenever's own QUIT phaser --
@@ -9,16 +9,45 @@ plan 4;
 # Shape: `supply { whenever <live Supplier> -> $v { ...; LAST { die ... } } }`
 # consumed by an outer `whenever <that supply> { ... QUIT { ... } }`. The
 # inner LAST-phaser die must surface as this outer subscription's own QUIT,
-# matching `raku`'s `whenever`-QUIT semantics -- confirmed against `raku`
-# 2026.06 for subtests 1-3 below. (`raku` additionally still crashes the
-# whole react block with the same exception even after its QUIT phaser
-# handles it -- an observed but undocumented and seemingly unintentional
-# raku quirk; mutsu deliberately does NOT replicate that second crash, since
-# a *handled* QUIT is not supposed to propagate further, matching mutsu's
-# own existing semantics for a live (non-nested) Supplier's `.quit()` --
-# see `t/whenever-quit-phaser.t`.)
+# matching `raku`'s `whenever`-QUIT semantics (raku 2026.09). Like CATCH, a
+# QUIT phaser handles the exception only when a `when`/`default` matches;
+# one without either still runs and then rethrows, which dies the react
+# (#12789).
 
-# 1. QUIT handles the die: prints, react completes normally.
+# 1. QUIT sees the die. Without when/default it rethrows: the react dies
+#    after the phaser ran.
+{
+    my $s = Supplier.new;
+    my $inner = supply {
+        my int $expected = 10;
+        whenever $s.Supply -> $blob {
+            emit $blob;
+            $expected -= $blob.chars;
+            LAST {
+                die "too short" if $expected != 0;
+            }
+        }
+    }
+    start { sleep 0.05; $s.emit("ab"); $s.done; }
+    my @seen;
+    my $died;
+    try {
+        react {
+            whenever $inner -> $v {
+                @seen.push("GOT: $v");
+                QUIT {
+                    @seen.push("QUIT: $_");
+                }
+            }
+        }
+        CATCH { default { $died = .message } }
+    }
+    is @seen, ["GOT: ab", "QUIT: too short"],
+        'a nested on-demand supply LAST-phaser die reaches the outer whenever QUIT';
+    is $died, 'too short', '...and a QUIT phaser matching nothing rethrows it';
+}
+
+# 1b. A `default` in the QUIT phaser handles it: the react completes.
 {
     my $s = Supplier.new;
     my $inner = supply {
@@ -37,12 +66,12 @@ plan 4;
         whenever $inner -> $v {
             @seen.push("GOT: $v");
             QUIT {
-                @seen.push("QUIT: $_");
+                default { @seen.push("QUIT: $_") }
             }
         }
     }
     is @seen, ["GOT: ab", "QUIT: too short"],
-        'a nested on-demand supply LAST-phaser die reaches the outer whenever QUIT';
+        'a QUIT phaser with `default` handles the die and the react completes';
 }
 
 # 2. No QUIT handler: the die still propagates and crashes the react (no

@@ -165,7 +165,17 @@ impl Interpreter {
                     SinkEvent::Quit(error) => {
                         let mut handled = false;
                         for quit_cb in react_subs[key].quit_callbacks.clone() {
-                            self.call_supply_quit_handler(quit_cb, error.clone())?;
+                            if let Err(err) = self.call_whenever_quit_phaser(quit_cb, error.clone())
+                            {
+                                react_subs[key].done = true;
+                                if matches!(policy, SupplyDrivePolicy::React)
+                                    && !err.is_react_done()
+                                {
+                                    Self::run_react_close_callbacks(self, react_subs);
+                                }
+                                self.whenever_quit_failed(err, policy)?;
+                                return Ok(true);
+                            }
                             handled = true;
                         }
                         if handled {
@@ -589,7 +599,13 @@ impl Interpreter {
                         }
                         let mut handled = false;
                         for quit_cb in sub.quit_callbacks.clone() {
-                            self.call_supply_quit_handler(quit_cb, reason.clone())?;
+                            if let Err(err) =
+                                self.call_whenever_quit_phaser(quit_cb, reason.clone())
+                            {
+                                sub.done = true;
+                                self.whenever_quit_failed(err, &policy)?;
+                                return Ok(());
+                            }
                             handled = true;
                         }
                         sub.done = true;

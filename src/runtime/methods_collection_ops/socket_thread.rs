@@ -215,6 +215,31 @@ impl Interpreter {
             .unwrap_or_else(|| "utf-8".to_string());
 
         let promise = SharedPromise::new();
+        // Connect off the calling thread, as Rakudo does on its event loop:
+        // the caller gets a Planned promise back, and even a refused
+        // connection is reported asynchronously. Code that subscribes to the
+        // promise and then hands out work (Cro's client pipeline taps the
+        // connection and only then sends its request) relies on that order;
+        // a promise already broken on return made Cro's pipeline die before
+        // its first request and report `PipelineClosedBeforeHeaders` instead
+        // of the connect failure (#12789). It also keeps a slow connect from
+        // blocking the caller. Without a thread, connect inline.
+        let worker_promise = promise.clone();
+        let (worker_host, worker_enc) = (host.clone(), enc.clone());
+        let spawned = crate::runtime::builtins_system::try_spawn_gc_helper_thread(
+            "socket-connect",
+            move || Self::resolve_async_connect(&worker_promise, &worker_host, port, worker_enc),
+        );
+        if spawned.is_err() {
+            Self::resolve_async_connect(&promise, &host, port, enc);
+        }
+        Ok(Value::promise(promise))
+    }
+
+    /// Connect to `host:port` and keep `promise` with the new
+    /// `IO::Socket::Async`, or break it with the connect failure.
+    // Cost: O(h + a), h = host-name length, a = resolved addresses; excludes network waits.
+    fn resolve_async_connect(promise: &SharedPromise, host: &str, port: u16, enc: String) {
         // Every `connect` opens a real TCP stream, including one aimed at a
         // listener in THIS process. `.listen` binds a real `TcpListener` and
         // its accept thread produces `tcp-real` connections, so a loopback
@@ -225,7 +250,7 @@ impl Interpreter {
         // NativeCall consumers of it died: Cro::TCP::NoDelay's
         // `setsockopt(TCP_NODELAY)` failed on the bogus fd, taking down every
         // Cro client that talks to a server in its own process.
-        match Self::connect_real_tcp(&host, port) {
+        match Self::connect_real_tcp(host, port) {
             Ok(socket) => {
                 let conn_id = super::super::native_methods::next_async_socket_id();
                 let local = socket.local_addr().ok();
@@ -246,7 +271,7 @@ impl Interpreter {
                     "socket-port".to_string(),
                     Value::int(local.map(|a| a.port()).unwrap_or(0) as i64),
                 );
-                attrs.insert("peer-host".to_string(), Value::str(host.clone()));
+                attrs.insert("peer-host".to_string(), Value::str(host.to_string()));
                 attrs.insert(
                     "peer-port".to_string(),
                     Value::int(peer.map(|a| a.port()).unwrap_or(port) as i64),
@@ -271,8 +296,6 @@ impl Interpreter {
                     promise.try_break(Value::make_instance(Symbol::intern("X::AdHoc"), ex_attrs));
             }
         }
-
-        Ok(Value::promise(promise))
     }
 
     /// Open a real outbound TCP connection for `IO::Socket::Async.connect`.

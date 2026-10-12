@@ -281,26 +281,7 @@ impl Interpreter {
                 } else {
                     // Broken
                     let (result, _, _) = shared.wait();
-                    // Wrap in X::AdHoc if it's a plain string. Any object
-                    // instance passes through untouched — a name-based check
-                    // (`class_name` containing "Exception" or starting with
-                    // "X::") cannot see a user class's `is Exception`
-                    // ancestry (e.g. `class TooShort is Exception {...}`, the
-                    // shape `Cro::HTTP::RawBodyParser::ContentLength` used
-                    // before its exception got the conventional `X::...`
-                    // name), so gate on the value shape instead — the same
-                    // fix already applied to `Supplier.quit()`'s reason
-                    // handling in `native_supplier_methods.rs`.
-                    let is_exc = Self::is_exception_object(&result);
-                    let cause = if is_exc {
-                        result
-                    } else {
-                        let mut attrs = HashMap::new();
-                        attrs.insert("payload".to_string(), Value::str(result.to_string_value()));
-                        attrs.insert("message".to_string(), Value::str(result.to_string_value()));
-                        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
-                    };
-                    Ok(cause)
+                    Ok(Self::promise_cause_value(result))
                 }
             }
             "Bool" => Ok(Value::truth(shared.is_resolved())),
