@@ -10,6 +10,16 @@ pub(crate) type PrivateResolveKey = (Symbol, Symbol, Vec<Symbol>);
 /// `private_resolve_cache`'s entry: the winning (owner, candidate), if any.
 pub(crate) type PrivateResolved = Option<(Symbol, Arc<MethodDef>)>;
 
+/// `multi_light_cache`'s entry: a type-deterministic multi call's winning
+/// candidate and the compiled body the positional light path runs for it
+/// (its `compiled_fns` key, re-validated by fingerprint on every hit).
+#[derive(Clone)]
+pub(crate) struct MultiLightWinner {
+    pub(crate) def: Arc<FunctionDef>,
+    pub(crate) key: Symbol,
+    pub(crate) fingerprint: u64,
+}
+
 #[derive(Default)]
 pub(crate) struct ResolutionCaches {
     pub(super) protect_block_cache: ProtectBlockCache,
@@ -373,6 +383,13 @@ pub(crate) struct ResolutionCaches {
     /// type-deterministic for those argument types after all. See
     /// `dispatch_narrow.rs` for the soundness rules.
     pub(crate) func_multi_argkey_cacheable: GenCache<FuncMultiResolveKey, bool>,
+    /// A bare multi call's whole dispatch, keyed like `func_multi_resolve_cache`
+    /// (package, name, argument type keys): the winner and its compiled body,
+    /// filled when a call of a type-deterministic family took the positional
+    /// light path, so a later call with the same argument types goes straight
+    /// there (`try_multi_light_call`, #10109, ADR-12529 §2.4). `None` records
+    /// a key whose winner has no body in the caller's compiled table.
+    pub(crate) multi_light_cache: GenCache<FuncMultiResolveKey, Option<MultiLightWinner>>,
     /// Type-keyed dispatch plans for bare-name multi calls: the gathered,
     /// ranked candidate passes, so a value-dependent family (`where`,
     /// `subset`) re-runs only its bind checks per call (#9967,

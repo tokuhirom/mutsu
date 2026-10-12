@@ -116,6 +116,13 @@ impl<K: Eq + Hash, V> GenCache<K, V> {
         }
     }
 
+    /// Whether no key holds an answer for any generation.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     /// Drop every entry, whatever its generation.
     ///
     /// Needed where the thing that changed is *not* the functions map — a
