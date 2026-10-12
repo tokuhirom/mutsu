@@ -135,7 +135,7 @@ impl Env {
         if let Some(bound) = self.get_match_state_sym(key)
             && let ValueView::ContainerRef(cell) = bound.view()
         {
-            let old = cell.lock().unwrap().clone();
+            let old = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             Value::store_through_cell(&cell, &value.deref_container());
             return SavedMatchVar::Cell(cell.clone(), old);
         }

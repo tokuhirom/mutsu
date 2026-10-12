@@ -144,7 +144,9 @@ fn capture_shaped() -> &'static RwLock<(Vec<Symbol>, Vec<Symbol>)> {
 /// its write lock.
 // Cost: O(c), c = capture-shaped symbols interned so far.
 pub(crate) fn for_each_capture_shaped_symbol(mut f: impl FnMut(Symbol)) {
-    let guard = capture_shaped().read().unwrap();
+    let guard = capture_shaped()
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     for &sym in guard.0.iter().chain(guard.1.iter()) {
         f(sym);
     }
