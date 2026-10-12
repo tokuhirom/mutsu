@@ -75,12 +75,15 @@ fn task_id_of(v: &Value) -> Option<u64> {
 /// source pushes `[schedulee, args...]` for an `nqp::` async op, until the
 /// task is cancelled. Built only on the op's own thread; the source's thread
 /// only calls [`QueueSink::push`].
+// No signal registry without Unix, so nothing reads a sink there yet.
+#[cfg_attr(not(unix), allow(dead_code))]
 pub(crate) struct QueueSink {
     queue: SharedChannel,
     schedulee: Value,
     cancelled: Arc<AtomicBool>,
 }
 
+#[cfg_attr(not(unix), allow(dead_code))]
 impl QueueSink {
     /// Whether the task was cancelled (`nqp::cancel`): the source drops the
     /// sink at its next sweep.

@@ -65,6 +65,7 @@ impl Interpreter {
     /// A `BOOTInt` box holding `i`, as MoarVM boxes the integers an async
     /// event pushes onto its queue (a signal number, a byte count).
     // Cost: O(1).
+    #[cfg_attr(not(unix), allow(dead_code))]
     pub(crate) fn boot_int(i: i64) -> Value {
         boot_box(Symbol::intern("BOOTInt"), Value::int(i))
     }
