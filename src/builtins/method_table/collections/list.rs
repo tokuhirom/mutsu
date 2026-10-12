@@ -57,22 +57,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         named: &[],
     },
     MethodRow {
-        owner: "Any",
-        name: "head",
-        arity: 1,
-        handler: Handler::Narrow(head),
-        flags: RowFlags::NONE,
-        named: &[],
-    },
-    MethodRow {
-        owner: "Any",
-        name: "tail",
-        arity: 1,
-        handler: Handler::Narrow(tail),
-        flags: RowFlags::NONE,
-        named: &[],
-    },
-    MethodRow {
         owner: "List",
         name: "Bool",
         arity: 0,
@@ -392,7 +376,9 @@ pub(crate) fn tail(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
     let [arg] = args else {
         return None;
     };
-    if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply") {
+    if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+        || super::terminals::is_lazy_tail_target(target)
+    {
         return None;
     }
     let n = match arg.view() {

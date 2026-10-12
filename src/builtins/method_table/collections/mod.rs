@@ -31,7 +31,7 @@ pub(crate) mod rotate;
 mod sampling;
 pub(crate) mod seq;
 pub(crate) mod subscript;
-mod terminals;
+pub(crate) mod terminals;
 mod truth;
 
 /// Every family of this group.

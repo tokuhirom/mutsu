@@ -382,9 +382,11 @@ pub(crate) fn shapeless_row(
     arity: usize,
 ) -> Option<RowId> {
     use crate::value::ValueView;
-    // `join` (its separator), `pick` and `roll` (their count) alone take an
-    // argument.
-    if arity > 0 && (arity > 1 || !matches!(method.as_str(), "join" | "pick" | "roll")) {
+    // `join` (its separator), `pick`, `roll`, `head` and `tail` (their count)
+    // alone take an argument.
+    if arity > 0
+        && (arity > 1 || !matches!(method.as_str(), "join" | "pick" | "roll" | "head" | "tail"))
+    {
         return None;
     }
     let text = crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method.as_str());

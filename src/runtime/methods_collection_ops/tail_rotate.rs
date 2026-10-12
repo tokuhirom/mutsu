@@ -3,22 +3,6 @@ use crate::meta_ns::MetaNs;
 use crate::value::ValueView;
 
 impl Interpreter {
-    pub(in crate::runtime) fn is_lazy_tail_target(target: &Value) -> bool {
-        match target.view() {
-            ValueView::LazyList(_) => true,
-            ValueView::Range(_, end)
-            | ValueView::RangeExcl(_, end)
-            | ValueView::RangeExclStart(_, end)
-            | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
-            ValueView::GenericRange { start, end, .. } => {
-                let start_f = start.to_f64();
-                let end_f = end.to_f64();
-                !start_f.is_finite() || !end_f.is_finite() || start_f.is_nan() || end_f.is_nan()
-            }
-            _ => false,
-        }
-    }
-
     /// Look up the PredictiveIterator backing a `Seq.new(iterator)` by seq_id.
     /// Prefers the non-scoped `predictive_seq_iters` map (survives scope), then
     /// falls back to the legacy env key for any in-scope registrations.
@@ -44,7 +28,7 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        if Self::is_lazy_tail_target(&target) {
+        if crate::builtins::method_table::terminals::is_lazy_tail_target(&target) {
             let mut attrs = HashMap::new();
             attrs.insert("action".to_string(), Value::str_from("tail"));
             attrs.insert(
