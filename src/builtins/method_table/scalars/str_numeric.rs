@@ -58,6 +58,7 @@ pub(super) static STR_ROWS: &[MethodRow] = &[
 
 pub(super) static COOL_ROWS: &[MethodRow] = &[
     narrow!("Cool", "Complex", cool_complex),
+    narrow!("Cool", "Failure", cool_failure),
     narrow!("Cool", "Num", cool_num),
     narrow!("Cool", "Rat", cool_rat),
     MethodRow {
@@ -132,6 +133,26 @@ fn cool_num(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
         Ok(number) => super::coerce::num_of(&number?).map(Ok),
         Err(failure) => Some(Ok(failure)),
     }
+}
+
+/// `Cool.Failure` (`method Failure(Cool:D:)`): a `Failure` wrapping an `X::AdHoc`
+/// whose payload is the receiver; a type object declines (`:D`).
+// Cost: O(n) for the receiver's n chars (its stringification).
+fn cool_failure(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if matches!(target.view(), ValueView::Package(_)) {
+        return None;
+    }
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("payload".to_string(), target.clone());
+    attrs.insert("message".to_string(), Value::str(target.to_string_value()));
+    let exception = Value::make_instance(crate::symbol::Symbol::intern("X::AdHoc"), attrs);
+    let mut failure_attrs = std::collections::HashMap::new();
+    failure_attrs.insert("exception".to_string(), exception);
+    failure_attrs.insert("handled".to_string(), Value::FALSE);
+    Some(Ok(Value::make_instance(
+        crate::symbol::Symbol::intern("Failure"),
+        failure_attrs,
+    )))
 }
 
 /// `Cool.Complex`.
