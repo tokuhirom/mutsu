@@ -160,3 +160,30 @@ than the release figures above) puts the action walk first: inside `Grammar.pars
 `invoke_grammar_actions` is ~80% of the inclusive cost and the regex engine's own matching
 (`rx_match_ends`) ~22%, with `.new` of the result objects a large share of the actions.
 Direction 4 (the action walk) is the next slice.
+
+### Direction 4, first slice (2026-10-12): the walk's funnels
+
+The `profiling` build on top of #13000 measured **~414M Ir per warm `load-yaml`**
+(four calls minus one, `MUTSU_JIT=off`); the action walk (`invoke_grammar_actions`,
+toggle-collected) was ~260M of it. A micro-benchmark of one action
+(`method c($/) { make ~$/ }` over 2,000 characters) put the parse at ~4k Ir per
+character and the action at ~79k, of which the body's own work was a few thousand:
+the rest was the general method funnel in front of the compiled method (~25k), the
+function-call funnel in front of `make` (~15k) and the call frame. Four changes:
+
+| change | per warm parse |
+|---|---:|
+| a role's captured scope shared (`Arc`) instead of copied with every attribute list (`.new` cloned and dropped ~84k `String`s per parse) | 414M → 358M |
+| action methods resolved directly (`call_grammar_action_method`); unshadowed `make` straight to the builtin; an empty deferred-repeat flush answered by a scan | 358M → 323M |
+| `$<name>` read as the named capture, like `$/<name>`, not through the `AT-KEY` funnel (~45k → ~7.6k Ir per read) | 323M → 290M |
+
+Together **~414M → ~290M (-30%)**. What remains of the walk is spread thin: the
+compiled-method call frame (~10k Ir per call: env merge, frame push/pop, attribute
+reconcile), the per-action env ceremony (`take`/`restore_action_named_captures`,
+~6k), `.new`'s per-construction class-shape work (`collect_class_attributes`,
+`collect_attribute_type_constraints` three times, the attribute-default scope
+inserted into the env per default), hyper method calls (`».ast`) and `~$/`
+re-resolving `prefix:<~>` per call. None of these is above ~3% alone; the
+remaining factor to rakudo (~2.5x by this estimate) needs, above all, the call frame itself
+to get cheaper, which is largely the env campaign's static link (ADR-12529) rather than a
+grammar-side change.
