@@ -113,7 +113,7 @@ impl VisitMut for SlotCollector {
 }
 
 /// The new text of each code block, `None` for one left as it was.
-type Edits = Vec<Option<(String, String)>>;
+pub(crate) type Edits = Vec<Option<(String, String)>>;
 
 /// Pair each code block with its text rewritten to read the slots of the
 /// phasers the lift took out of it. `None` when the scan finds another number
@@ -154,7 +154,7 @@ fn block_edits(
 }
 
 /// `pattern` with every edited code block respelled, left to right.
-fn rewrite_pattern(pattern: &str, edits: &Edits) -> Option<String> {
+pub(crate) fn rewrite_pattern(pattern: &str, edits: &Edits) -> Option<String> {
     let mut out = String::with_capacity(pattern.len());
     let mut cursor = 0;
     for (old, new) in edits.iter().flatten() {
@@ -172,9 +172,15 @@ fn rewrite_pattern(pattern: &str, edits: &Edits) -> Option<String> {
 
 /// Writes each edited code block's new text into the tree, in the order
 /// [`CodeBlocks`] saw them.
-struct CodeRewriter<'a> {
+pub(crate) struct CodeRewriter<'a> {
     edits: &'a Edits,
     next: usize,
+}
+
+impl<'a> CodeRewriter<'a> {
+    pub(crate) fn new(edits: &'a Edits) -> Self {
+        Self { edits, next: 0 }
+    }
 }
 
 impl VisitMut for CodeRewriter<'_> {
@@ -195,6 +201,15 @@ impl VisitMut for CodeRewriter<'_> {
 /// expression it applies to, without the `;` that ends it.
 // Cost: O(n), n = length of `code`.
 fn phaser_statement_spans(code: &str) -> Vec<std::ops::Range<usize>> {
+    statement_spans(code, &["INIT", "CHECK"])
+}
+
+/// Byte spans of the statements of a code block's text that start with one of
+/// `keywords` (whole words), in source order, at any depth of nested blocks.
+/// [`phaser_statement_spans`] is the `INIT`/`CHECK` case; the nested-`BEGIN`
+/// lift scans for `BEGIN` (#12812).
+// Cost: O(n), n = length of `code`.
+pub(crate) fn statement_spans(code: &str, keywords: &[&'static str]) -> Vec<std::ops::Range<usize>> {
     let bytes = code.as_bytes();
     let mut spans = Vec::new();
     let mut at_start = true;
@@ -221,7 +236,7 @@ fn phaser_statement_spans(code: &str) -> Vec<std::ops::Range<usize>> {
             }
             b';' => at_start = in_block,
             _ if in_block && at_start => {
-                if let Some(keyword) = phaser_keyword(code, i) {
+                if let Some(keyword) = phaser_keyword(code, i, keywords) {
                     let end = statement_end(code, i + keyword.len());
                     spans.push(i..end);
                     i = end;
@@ -237,9 +252,9 @@ fn phaser_statement_spans(code: &str) -> Vec<std::ops::Range<usize>> {
     spans
 }
 
-/// `INIT` or `CHECK` when `code` has one as a whole word at `at`.
-fn phaser_keyword(code: &str, at: usize) -> Option<&'static str> {
-    ["INIT", "CHECK"].into_iter().find(|keyword| {
+/// The one of `keywords` that `code` has as a whole word at `at`.
+fn phaser_keyword(code: &str, at: usize, keywords: &[&'static str]) -> Option<&'static str> {
+    keywords.iter().copied().find(|keyword| {
         code[at..].starts_with(keyword)
             && !code[at + keyword.len()..]
                 .chars()

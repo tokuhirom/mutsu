@@ -3,8 +3,9 @@
 //! lexicals of every scope around it and edit that scope's list.
 //!
 //! The walk reaches every child, except at the deliberate stops below: a
-//! package or type body (a BEGIN there "sits in a package body"), a method,
-//! token or proto declaration (which blocks the frame instead), and the
+//! package or type body (a BEGIN there "sits in a package body"), a method
+//! or proto declaration (which blocks the frame instead; a token's code blocks are
+//! walked for their `BEGIN`s, see [`decl_regex`](super::decl_regex)), and the
 //! grouped declarations of a `SyntheticBlock`.
 
 use super::cell_ast::slot_read;
@@ -85,7 +86,7 @@ impl Walker<'_> {
         self.current_frame().edits.push((index, edit));
     }
 
-    fn params_frame(names: impl IntoIterator<Item = String>) -> Frame {
+    pub(super) fn params_frame(names: impl IntoIterator<Item = String>) -> Frame {
         Frame {
             bindings: names
                 .into_iter()
@@ -292,10 +293,19 @@ impl Walker<'_> {
             | Stmt::No { .. }
             | Stmt::Need { .. }
             | Stmt::Import { .. } => self.declare_type_or_import(stmt),
+            // The code blocks of a token, rule or regex are scopes of their own,
+            // whose `BEGIN` statements are lifted (#12812); the declaration still
+            // blocks the frame it is written in.
+            Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {
+                self.lift_declaration_begins(stmt);
+                // A package's members are reached by name from a lifted
+                // phaser, which re-enters the package; the others are not.
+                if !self.directly_in_package() {
+                    self.block_current_frame();
+                }
+            }
             Stmt::ProtoDecl { .. }
             | Stmt::MethodDecl { .. }
-            | Stmt::TokenDecl { .. }
-            | Stmt::RuleDecl { .. }
             | Stmt::ProtoToken { .. }
             | Stmt::AugmentClass { .. } => self.block_current_frame(),
             // Package bodies and the body copy of a nested method (whose
