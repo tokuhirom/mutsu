@@ -2093,7 +2093,15 @@ array, an unsettled `Seq`, a `Failure` and an instance. Rakudo declares all seve
    snapshotted), the copy the interpreter's clone with `:attr(v)` twiddles (`native_instance_clone_value`) now starts from too, so
    every closed shape whose values are instances (`IO::Path`, `IO::Handle`, `Blob`, `Instant`, `Backtrace`, ...) is answered. A call
    with twiddles declines (the row declares no named argument) to the interpreter, which applies them (`Date.clone(day => 5)`).
-4. **The recognition probe** (`native_method_arities`, used by the `*_rows_are_backed_by_the_cascade` tests) counts `Mu`'s audited
+4. **`Pair.WHICH` is its own row, flagged `RANDOM`**: a `Pair` holding a container mints a fresh identity per call (`which_of`),
+   so the call-site lane's cross-check, which runs the call twice, must skip it.
+5. **`Mu.WHERE` is an interpreter row.** A NativeCall handle (a `nativecast`ed `CStruct`/`CArray`, a native array) answers the
+   address of its storage, which only the class registry tells (`Interpreter::try_native_handle_repr_where`); the interpreter asked it
+   before the cascade, but a row is found before the interpreter is, and `NativeHelpers::Blob`'s `OBJECT_BODY` dereferenced the
+   identity hash (a `SIGSEGV` in `t/nativecall/`). `answer_shapeless` hands the interpreter to `Mu`'s rows (the other rows it finds
+   stay pure). The `WHICH`/`WHERE` deferral-base rows and `self.Mu::WHICH` call `Mu`'s row instead of the cascade, which no longer
+   answers an instance; `shapeless_row` declines a `.VAR` descriptor, whose methods ask the value its container holds (ADR-0064).
+6. **The recognition probe** (`native_method_arities`, used by the `*_rows_are_backed_by_the_cascade` tests) counts `Mu`'s audited
    rows for every receiver: an instance reaches them through its MRO, which `shapeless_row` reads only from an interpreter the probe
    does not have.
 
