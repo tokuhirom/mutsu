@@ -384,8 +384,10 @@ impl Interpreter {
                                 levels.top().caps(),
                                 program.atom_ic[i as usize],
                             ),
-                            RegexAtom::VarInterp(name) => match self.var_interp_target(
+                            atom @ (RegexAtom::VarInterp(name)
+                            | RegexAtom::VarAssertion(name)) => match self.var_interp_target(
                                 name,
+                                matches!(atom, RegexAtom::VarAssertion(_)),
                                 levels.top().caps(),
                                 chars,
                                 pos,

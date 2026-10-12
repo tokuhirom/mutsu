@@ -65,6 +65,9 @@ pub(super) fn ltm_atom_mode(atom: &RegexAtom) -> LtmAtomMode<'_> {
         // literal; terminate (constants are inlined as literals before this
         // atom kind is ever produced, so they never reach here — see §2).
         RegexAtom::VarInterp(_) | RegexAtom::QqInterp { .. } => LtmAtomMode::Terminate,
+        // `<$x>` of a declared lexical: its pattern is the value at match
+        // time, as for `<{ code }>`.
+        RegexAtom::VarAssertion(_) => LtmAtomMode::Terminate,
         // `:my $x = …;` / `:our` / `:constant` — a zero-width *declaration*.
         // Rakudo's NFA walks straight past it (validated: reordering two proto
         // candidates whose only difference is a leading `:my` flips the winner
