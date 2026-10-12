@@ -129,6 +129,9 @@ impl Interpreter {
                         Some(&key_str),
                         elem_idx,
                         rw_bindings,
+                        // Recorded before any parameter is bound, so a
+                        // same-named parameter replaces the cell afterwards.
+                        &[],
                     ));
                 }
             }

@@ -1825,6 +1825,7 @@ impl Interpreter {
                                 capture_key,
                                 elem_idx,
                                 &mut rw_bindings,
+                                param_defs,
                             ));
                         }
                     }
