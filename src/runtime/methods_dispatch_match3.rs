@@ -646,10 +646,7 @@ impl Interpreter {
         // row (`method_table::collections::join`) declines these to here.
         let one_element = matches!(
             target.view(),
-            ValueView::Instance { .. }
-                | ValueView::Mixin(..)
-                | ValueView::Package(_)
-                | ValueView::Nil
+            ValueView::Instance { .. } | ValueView::Package(_) | ValueView::Nil
         );
         if !one_element
             && !matches!(

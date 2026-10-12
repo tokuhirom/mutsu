@@ -1793,7 +1793,9 @@ object, a `Version`, an enum value or a type object answers instead of `X::Metho
 objects are `X::Method::NotFound` (were the type object; Rakudo raises `X::Parameter::InvalidConcreteness`). `Array.lazy`,
 `List.lazy` and `Hash.lazy` are a lazy list of the type object (were the type object).
 
-- **Left**: `Thread.join`, `Seq.join` and `Mu.join` on the type objects answer `""` with a warning where Rakudo raises; `Regex.join`
+- **Left**: a mixin keeps joining what its inner value lists as through the runtime's mixin delegation (`join_core` declines it),
+  so an instance mixin with its own `Str` still joins its default rendering (Rakudo: its `Str`), as before.
+  `Thread.join`, `Seq.join` and `Mu.join` on the type objects answer `""` with a warning where Rakudo raises; `Regex.join`
   answers its source where Rakudo warns and answers `""` (both as before for the zero-argument form). A consumed `gather` list answers
   `.is-lazy` `False` where Rakudo throws `X::Seq::Consumed` (before and after: the arm's check is reached only for a list not yet
   marked consumed).

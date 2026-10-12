@@ -29,8 +29,8 @@ enum Joined {
     /// An element needs the interpreter to stringify it (or the receiver must
     /// be forced first).
     NeedsInterpreter,
-    /// A `Thread`, whose `.join` is the thread-join primitive, not a list
-    /// join.
+    /// A `Thread`, whose `.join` is the thread-join primitive, or a mixin,
+    /// which joins its inner value: not a join this routine does.
     NotCovered,
 }
 
@@ -171,6 +171,9 @@ fn join_core(target: &Value, sep: &str) -> Joined {
         // thread finishes), which the runtime's `native_thread` routes.
         ValueView::Instance { class_name, .. } if class_name == "Thread" => Joined::NotCovered,
         ValueView::Package(name) if name == "Thread" => Joined::NotCovered,
+        // A mixin joins what its inner value lists as (`(1, 2) but R`), which
+        // the runtime's mixin delegation reads.
+        ValueView::Mixin(..) => Joined::NotCovered,
         // Anything else is a one-element list (`self.list`): an instance, a
         // type object, `Nil`, a code object. Its element is stringified with
         // its own `Str`, which may be a user method or warn (`Int.join` is ""
