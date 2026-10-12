@@ -4788,6 +4788,7 @@ impl Compiler {
                 // (e.g. `class D` inside `unit module A::B` → `A::B::D`).
                 if *is_lexical {
                     self.shadow_constant_with_lexical_type(&name.resolve());
+                    self.lexical_types_in_scope.insert(name.resolve());
                 }
                 let stmt = self.qualify_decl_name(stmt);
                 let idx = self.add_class_decl_plan(&stmt);
@@ -4823,6 +4824,7 @@ impl Compiler {
             } => {
                 if custom_traits.iter().any(|(t, _)| t == "__my_scoped") {
                     self.shadow_constant_with_lexical_type(&name.resolve());
+                    self.lexical_types_in_scope.insert(name.resolve());
                 }
                 // Same as RegisterClass above: a role method has no creation op,
                 // and `add_role_decl_plan`'s method-body compile pass harvests
