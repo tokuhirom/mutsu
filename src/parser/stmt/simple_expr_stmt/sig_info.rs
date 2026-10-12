@@ -14,6 +14,9 @@ pub(super) struct SigParamInfo {
     pub(super) is_named: bool,
     /// Named keys (e.g. ["type"]) for named parameters; empty otherwise.
     pub(super) named_keys: Vec<String>,
+    /// Nominal type constraint of a `$`-sigiled parameter (`Int` of
+    /// `Int $a`); `None` when untyped or `Any`/`Mu`.
+    pub(super) type_name: Option<String>,
 }
 
 pub(super) fn extract_signature_param_infos(expr: &Expr) -> Option<Vec<SigParamInfo>> {
@@ -43,6 +46,7 @@ pub(super) fn extract_signature_param_infos(expr: &Expr) -> Option<Vec<SigParamI
                 sigiled_name: String::new(),
                 is_named: false,
                 named_keys: Vec::new(),
+                type_name: None,
             });
             continue;
         };
@@ -64,10 +68,18 @@ pub(super) fn extract_signature_param_infos(expr: &Expr) -> Option<Vec<SigParamI
                 .collect(),
             _ => Vec::new(),
         };
+        let type_name = match attributes.as_map().get("type").map(Value::view) {
+            Some(ValueView::Package(ty)) if sigiled_name.starts_with('$') => {
+                let ty = ty.resolve();
+                (!matches!(ty.as_str(), "Any" | "Mu")).then_some(ty)
+            }
+            _ => None,
+        };
         infos.push(SigParamInfo {
             sigiled_name,
             is_named,
             named_keys,
+            type_name,
         });
     }
     Some(infos)

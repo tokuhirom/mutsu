@@ -1063,6 +1063,20 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
                         spelling: Default::default(),
                     }
                 };
+                // A typed parameter (`:(Int $a) := ...`) is checked as the
+                // signature binder checks it, before the name is bound.
+                let value_expr = match info.type_name.as_ref() {
+                    Some(ty) => Expr::Call {
+                        name: Symbol::intern("__mutsu_sig_bind_check"),
+                        args: vec![
+                            value_expr,
+                            Expr::Literal(Value::str(ty.clone())),
+                            Expr::Literal(Value::str(info.sigiled_name.clone())),
+                        ],
+                        listop: false,
+                    },
+                    None => value_expr,
+                };
                 stmts.push(Stmt::Assign {
                     name: assign_name,
                     expr: value_expr,
