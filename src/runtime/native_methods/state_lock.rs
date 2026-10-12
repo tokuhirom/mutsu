@@ -128,6 +128,7 @@ pub(in crate::runtime) fn register_act_loop_close(flag: Arc<AtomicBool>) -> u64 
 
 /// Attach the act loop's drain kick to its close entry, so `close_act_loop`
 /// retires an idle loop at once instead of on its next event.
+#[cfg(not(target_arch = "wasm32"))]
 // Cost: O(1).
 pub(in crate::runtime) fn attach_act_loop_kick(id: u64, kick: super::supply_channel::DrainHook) {
     if let Ok(mut map) = act_loop_close_map().lock()

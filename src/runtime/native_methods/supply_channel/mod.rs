@@ -256,6 +256,7 @@ impl SupplyReceiver {
     /// upstream but not yet queued here would otherwise read as `Empty`, and
     /// its send's hook has already fired, so nothing would wake the consumer
     /// for it again.
+    #[cfg(not(target_arch = "wasm32"))]
     // Cost: O(k), k = events pending upstream (distributed into every tap).
     pub(crate) fn try_recv_settled(&self) -> Result<SupplyEvent, mpsc::TryRecvError> {
         self.own_queue();
@@ -274,6 +275,7 @@ impl SupplyReceiver {
 
     /// Run `hook` on every future send and on sender drop (see
     /// [`DrainHook`]). `id` names it for [`Self::unregister_drain_hook`].
+    #[cfg(not(target_arch = "wasm32"))]
     // Cost: O(h), h = hooks already registered on this broadcast.
     pub(crate) fn register_drain_hook(&self, id: u64, hook: DrainHook) {
         if let Ok(mut hs) = self.broadcast.drain_hooks.0.lock() {
@@ -282,6 +284,7 @@ impl SupplyReceiver {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     // Cost: O(h), h = hooks registered on this broadcast.
     pub(crate) fn unregister_drain_hook(&self, id: u64) {
         if let Ok(mut hs) = self.broadcast.drain_hooks.0.lock() {
