@@ -571,16 +571,20 @@ impl Interpreter {
         }
         let source_sid = crate::runtime::native_methods::supplier_id_from_attrs(attributes)?;
         let downstream_sid = crate::runtime::native_methods::next_supplier_id();
-        crate::runtime::native_methods::register_supplier_transform_tap(
-            source_sid,
-            downstream_sid,
-            callable.clone(),
-            mode,
-        );
+        let preserving = attributes.contains_key("preserving");
+        // A `Supplier::Preserving` source registers its tap only after its
+        // backlog is carried over (`supply_preserving_derive`, #8825).
+        if !preserving {
+            crate::runtime::native_methods::register_supplier_transform_tap(
+                source_sid,
+                downstream_sid,
+                callable.clone(),
+                mode,
+            );
+        }
         // A non-live source can carry values seeded next to its supplier
         // (`Supply.merge` of a live and a cold source): run them through the
         // transform now, since nothing will ever emit them to the tap above.
-        let preserving = attributes.contains_key("preserving");
         let mut seeded_out = Vec::new();
         if !preserving
             && !attributes.get("live").is_some_and(Value::truthy)
@@ -600,7 +604,7 @@ impl Interpreter {
         // `Supplier::Preserving`: the derived supply inherits the backlog
         // (`supply_preserving_derive`, #8825).
         if preserving {
-            self.carry_preserved_backlog_into_derived(source_sid, downstream_sid, &callable, mode);
+            self.tap_preserved_source_into_derived(source_sid, downstream_sid, &callable, mode);
         }
         let has_seeded = !seeded_out.is_empty();
         let mut new_attrs = HashMap::new();

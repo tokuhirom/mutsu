@@ -1733,11 +1733,15 @@ impl Interpreter {
                     .contains_key("preserving")
                     .then(|| supplier_id_from_attrs(attributes))
                     .flatten();
+                let ch = SharedChannel::new();
+                // Take the backlog and register the forwarding tap as one step
+                // against a concurrent `emit` (the emit gate), so an emission
+                // is neither lost between the two nor delivered by both.
+                let _gate = preserved_sid.map(|_| crate::runtime::native_methods::emit_gate());
                 let source_values = match preserved_sid {
                     Some(sid) => supplier_take_preserved_backlog(sid),
                     None => self.supply_get_values(attributes)?,
                 };
-                let ch = SharedChannel::new();
                 for v in source_values {
                     ch.send(v);
                 }

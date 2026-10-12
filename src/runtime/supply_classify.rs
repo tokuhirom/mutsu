@@ -263,21 +263,14 @@ impl Interpreter {
 
                 // Emit Pair(key, supply) to the classify supplier's taps
                 let pair = Value::value_pair(key, sub_supply);
-                supplier_emit(classify_supplier_id, pair.clone());
-                let actions = supplier_emit_callbacks(classify_supplier_id, &pair);
+                let actions = supplier_emit_collect(classify_supplier_id, &pair);
                 self.run_supplier_emit_actions(actions);
 
                 sub_sid
             };
 
             // Emit the value to the sub-supplier
-            supplier_emit(sub_supplier_id, value.clone());
-            let actions = supplier_emit_callbacks(sub_supplier_id, &value);
-            // A tap that is already listening consumed this emission, so it is
-            // not part of the preserved backlog a later tap replays.
-            if !actions.is_empty() {
-                supplier_mark_preserved_consumed(sub_supplier_id);
-            }
+            let actions = supplier_emit_collect(sub_supplier_id, &value);
             self.run_supplier_emit_actions(actions);
         }
 

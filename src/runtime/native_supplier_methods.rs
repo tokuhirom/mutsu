@@ -53,8 +53,7 @@ impl Interpreter {
                         return Ok(Value::NIL);
                     }
                     let value = Value::int(emitted.len() as i64);
-                    supplier_emit(supplier_id, value.clone());
-                    let actions = supplier_emit_callbacks(supplier_id, &value);
+                    let actions = supplier_emit_collect(supplier_id, &value);
                     let _ = self.drive_supplier_emit_actions(supplier_id, actions);
                 }
                 Ok(Value::NIL)
@@ -86,14 +85,10 @@ impl Interpreter {
                 }
                 self.supply_emit_collect(supplier_id_from_attrs(attributes), &value)?;
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
-                    supplier_emit(supplier_id, value.clone());
-                    // Dispatch tap callbacks (head_limit, unique, produce, etc.)
-                    let actions = supplier_emit_callbacks(supplier_id, &value);
-                    // A live tap consumed this emission — it is not part of the
-                    // Supplier::Preserving backlog a future tap replays.
-                    if !actions.is_empty() && attributes.contains_key("preserving") {
-                        supplier_mark_preserved_consumed(supplier_id);
-                    }
+                    // Record the emission and dispatch tap callbacks (head_limit,
+                    // unique, produce, etc.); a live tap consuming it keeps it
+                    // out of the Supplier::Preserving backlog a future tap replays.
+                    let actions = supplier_emit_collect(supplier_id, &value);
                     for action in actions {
                         match action {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
@@ -264,9 +259,6 @@ impl Interpreter {
                 if let Some(buf) = self.async_state.supply_emit_timed_buffer.last_mut() {
                     buf.push((value.clone(), crate::thread_compat::Instant::now()));
                 }
-                if let Some(supplier_id) = supplier_id_from_attrs(&attrs) {
-                    supplier_emit(supplier_id, value.clone());
-                }
                 let pushed = attrs.get_mut("emitted").and_then(|emitted| {
                     emitted.with_array_mut(|items, _kind| {
                         crate::gc::Gc::make_mut(items).push(value.clone());
@@ -291,12 +283,7 @@ impl Interpreter {
                     let _serialize_guard =
                         crate::runtime::native_methods::supplier_serialize_group(sid)
                             .map(crate::runtime::native_methods::acquire_supply_serialize);
-                    let actions = supplier_emit_callbacks(sid, &value);
-                    // A live tap consumed this emission — it is not part of the
-                    // Supplier::Preserving backlog a future tap replays.
-                    if !actions.is_empty() && attrs.contains_key("preserving") {
-                        supplier_mark_preserved_consumed(sid);
-                    }
+                    let actions = supplier_emit_collect(sid, &value);
                     for action in actions {
                         match action {
                             SupplierEmitAction::Call(tap, emitted, delay_seconds) => {
