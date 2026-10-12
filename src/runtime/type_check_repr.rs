@@ -156,6 +156,23 @@ impl Interpreter {
         )
     }
 
+    /// Bind `value` to a native routine's `&`-sigiled parameter `param`
+    /// (`&code` of `Promise.start`/`.then`, `&producer` of `Supply.on-demand`):
+    /// anything that is not Callable is `X::TypeCheck::Binding::Parameter`, as
+    /// rakudo's signature binder reports it (an empty `{ }` is a Hash, #12801).
+    // Cost: O(1) for a built-in Callable; one type check (an MRO walk) for an
+    // object.
+    pub(crate) fn bind_callable_param(
+        &mut self,
+        param: &str,
+        value: &Value,
+    ) -> Result<(), RuntimeError> {
+        if self.type_matches_value("Callable", value) {
+            return Ok(());
+        }
+        Err(self.typecheck_binding_parameter_failure(param, "Callable", value))
+    }
+
     /// Whether the expected type (a type name as a type-check message spells
     /// it: `Positional[Int]`, `Hash`, `Array:D`, ...) is Positional and/or
     /// Associative, i.e. `$!expected ~~ Positional` in rakudo's terms.

@@ -272,11 +272,7 @@ impl Interpreter {
         // resolution just ran it: the match sets `$/` for the candidate's body
         // (`$0`), and resolution ran it in a scope that discarded that. A regex
         // match has no side effects, so running it twice is unobservable.
-        let regex_where = matches!(
-            where_expr.as_ref(),
-            Expr::MatchRegex(_) | Expr::MatchRegexTree { .. } | Expr::MatchRegexDynamicAdverbs { .. }
-        );
-        if skip && !regex_where {
+        if skip && !pd.where_is_regex_match() {
             return Ok(());
         }
         let saved_param = if pd.name.is_empty() {

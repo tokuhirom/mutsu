@@ -699,6 +699,17 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    +0.10%, `bench-multi-dispatch` +0.13% / +0.23%, `bench-string` +0.72% /
    +0.26% (most of it allocator layout and the base binary's directory; the
    setter itself moved ~70k Ir into its shared helper).
+   **Slice 12 done** (`fix/12529-trir-routine-owned-implicits`): the first
+   step of the `$_` family. TRIR compiled a routine's `$_`, `$/`, `$0` and
+   `$<name>` reads as free variables, resolved by name through the running
+   env, and TRIR pushes no frame root, so `sub f($x) { $_ }` called inside
+   `given 'x' { }` answered `'x'` and a sub with parameters read its
+   caller's `$/`. The VM call paths already owned them (the per-call `$_`
+   reset, slices 10 and 11); only TRIR did not. TRIR now declines a read of
+   a routine-owned implicit, as it already declined `$!` and an assignment
+   to `$_`. No benchmark's TRIR accept/decline set changed. The per-call
+   `$_` resets on the VM paths remain; moving `$_` onto slice 10's owner
+   walk is the next step of the family.
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

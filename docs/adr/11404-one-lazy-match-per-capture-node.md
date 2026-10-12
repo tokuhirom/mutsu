@@ -51,6 +51,17 @@ cursor, again for the token body, and once more to LTM-rank the rule's lone cand
    is also what makes rule 1 apply across levels. A lone candidate of a rule with no proto is
    no longer LTM-measured before it is called (the measurement could not change the outcome).
 
+5. **A Match forced under another cursor class is not reused.** A grammar parse stamps its
+   class on the run only after the engine finished, so a Match that user code forced in
+   mid-parse (a code block keeping `$<num>`, a wrapper keeping its `callsame` result) memoized
+   a plain-`Match` attribute map while the run's cursors now report the grammar's class. Such a
+   node reads as neither, and handing it to the action walk made `$/` a bare grammar instance
+   (`make` died with `X::Make::MatchRequired`). `MatchNode::is_current` rejects it from the
+   memo, so the finished tree builds a fresh Match for that node, as before this ADR.
+   Since #12943 a grammar parse stamps its class from the start (`CursorClassScope`: a target
+   built for the parse's own subject buffer is born stamped), so a mid-parse node of a grammar
+   parse is current and shared; the check remains for any node forced before a later stamp.
+
 ## Rejected alternatives
 
 - **A table owned by the `MatchTarget`, keyed by the `Arc<CapNode>` address.** It needs its

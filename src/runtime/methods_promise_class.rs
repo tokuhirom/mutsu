@@ -21,6 +21,9 @@ impl Interpreter {
                 .find(|a| !matches!(a.view(), ValueView::Pair(..)))
                 .cloned()
                 .unwrap_or(Value::NIL);
+            if let Err(e) = self.bind_callable_param("&code", &block) {
+                return Some(Err(e));
+            }
             let scheduler = self.promise_scheduler_binding(Self::named_value(args, "scheduler"));
             return Some(self.start_callable_promise(block, Symbol::intern(&cls), scheduler));
         }

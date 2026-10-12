@@ -20,7 +20,7 @@ pub(crate) use cap_node::{
     SILENT_ACTION_MARKER_PREFIX, SurvivingSpans,
 };
 pub(crate) use captures::{CaptureAliasMap, RegexCaptures};
-pub(crate) use match_target::MatchTarget;
+pub(crate) use match_target::{CursorClassScope, MatchTarget};
 pub(crate) use named_caps::*;
 pub(crate) use numbered::{has_numbered_captures, settle_numbered_captures};
 
