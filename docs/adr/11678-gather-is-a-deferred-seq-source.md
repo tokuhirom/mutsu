@@ -1,6 +1,6 @@
 # ADR-11678: A gather is a deferred `SeqSource`
 
-- **Status**: Accepted — steps 0-3 implemented (2026-10-12, see §8); step 4 and the later slices of step 5 remain
+- **Status**: Accepted — steps 0-3 implemented (2026-10-12, see §8); the hand-off retirement, step 4 and step 5 remain (#13026)
 - **Date**: 2026-10-07
 - **Deciders**: tokuhirom, Claude
 - **Amended**: 2026-10-12 (see "Amendment" below)
@@ -410,4 +410,12 @@ code does where §2 left a choice, and where it deviates:
    `gather-lazy.t` (a Seq does not bind to `@`), `gather-seq-slip.t` (`.Slip`
    twice throws), `take-rw-shared-cell.t` (`my @g = gather ... take-rw` copies
    the values), `gather-infinite-coroutine.t` (`.head`/`.first` consume).
+6. New `ValueView::LazyList` code for plain gathers exists only at the
+   hand-off boundaries above (and the `touch_flat_operand` arm for a handed-off
+   list); retiring them, and step 4, is #13026.
+7. Creation plus drain (`tmp/bench-gather.raku`: 20,000 gathers of 20 takes
+   each, read with `.elems`, plus one 200,000-element gather read with
+   `.List`), release builds, median of 5 wall-clock runs on the remote
+   container: 0.355 s at the merge base, 0.329 s with the adapter (ratio 0.93,
+   within noise; no regression).
 
