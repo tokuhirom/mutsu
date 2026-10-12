@@ -298,6 +298,11 @@ impl Interpreter {
             }
             _ => return Ok(()),
         };
+        // A plain gather becomes a List that keeps pulling its coroutine.
+        if let Some(view) = body.take_gather_as_list() {
+            *self.stack.last_mut().expect("checked above") = Value::seq_body(view);
+            return Ok(());
+        }
         let (items, outcome) = self.take_seq_body(&body)?;
         if matches!(outcome, SeqTaken::Taken) {
             *self.stack.last_mut().expect("checked above") = Value::seq(items);
@@ -576,6 +581,13 @@ impl Interpreter {
         {
             return Ok(list);
         }
+        // ... and on a cached one they pipe over the shared coroutine list,
+        // leaving the Seq readable.
+        if matches!(method, "map" | "grep")
+            && let Some(list) = body.shared_gather_source()
+        {
+            return Ok(list);
+        }
         // `.map`/`.grep` on a not-yet-run `.map`/`.grep` Seq chains onto its
         // source (`MapGrepItems::Chain`, #11176) instead of running the
         // upstream callback over everything first: `dispatch_map_method` /
@@ -677,6 +689,11 @@ impl Interpreter {
             // `Reified`, which `@$s` must keep re-reading
             // (`t/seq-array-context-reiterate.t`). A bare `@$s` on a deferred
             // source is thus over-strict relative to raku (unpinned).
+            // A gather stays a lazily pulled list: `for $g.list` interleaves
+            // with its body, and `(gather { loop {...} }).list[2]` answers.
+            if body.is_gather_source() && body.is_cached() {
+                return Ok(target);
+            }
             if body.has_deferred_source() {
                 let (items, outcome) = self.take_seq_body(&body)?;
                 return Ok(if matches!(outcome, SeqTaken::Taken) {
@@ -707,7 +724,10 @@ impl Interpreter {
             }
             // A plain gather: the iterator resumes the coroutine per
             // `pull-one` (ADR-11678 §2.4).
-            if let Some(list) = body.take_gather_source() {
+            if let Some(list) = body
+                .take_gather_source()
+                .or_else(|| body.shared_gather_source())
+            {
                 return self.dispatch_iterator_method(list);
             }
             // A not-yet-finished `.map`/`.grep`: the iterator streams the
@@ -777,6 +797,13 @@ impl Interpreter {
             // body back through `Deref` — see `SeqBody::store_taken_elements`.
             body.store_taken_elements(items);
             return self.dispatch_iterator_method(target);
+        }
+        // `.List` on a plain gather: a List that keeps pulling its coroutine
+        // (ADR-11678 §2.4).
+        if method == "List"
+            && let Some(view) = body.take_gather_as_list()
+        {
+            return Ok(Value::seq_body(view));
         }
         if crate::value::seq_method_consumes(method) {
             let (items, outcome) = self.take_seq_body(&body)?;

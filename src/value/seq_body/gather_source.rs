@@ -58,11 +58,43 @@ impl SeqBody {
         }
     }
 
+    /// `.List` / `.list` on an uncached gather: Rakudo's `Seq.List` consumes
+    /// the Seq and returns a List that reifies from its iterator lazily, so a
+    /// `for` over it still interleaves with the gather body and `[2]` on an
+    /// infinite gather answers. Steals the inner list into a fresh cached body
+    /// and returns that body's List view. `None` for every other source and
+    /// for a cached body, which serves its elements as usual.
+    // Cost: O(1).
+    pub(crate) fn take_gather_as_list(&self) -> Option<std::sync::Arc<SeqBody>> {
+        let list = self.take_gather_source()?;
+        let fresh = SeqBody::deferred(SeqSource::Gather(list));
+        fresh.mark_cache_requested();
+        Some(fresh.as_list_view())
+    }
+
+    /// The inner gather list for `.iterator`, `.map` or `.grep` on a gather
+    /// whose body was cached (`.cache`, or a subscript or `?` read, which
+    /// cache a Seq in Rakudo): such a Seq is re-readable, so the new iterator
+    /// or pipe shares the coroutine list without consuming the body. A body
+    /// that names its own gather mid-pull (`my \S := gather { ... S.iterator
+    /// ... }`, read by `S[^3]`) gets its iterator this way. `None` for an
+    /// uncached body ([`SeqBody::take_gather_source`] steals that) and for
+    /// every other source.
+    // Cost: O(1), one lock read.
+    pub(crate) fn shared_gather_source(&self) -> Option<Value> {
+        let state = self.core.state.lock().unwrap();
+        match &state.source {
+            SeqSource::Gather(list) if state.cache_requested => Some(list.clone()),
+            _ => None,
+        }
+    }
+
     /// A non-consuming prefix pull of a not-yet-finished gather (`$g[i]`,
     /// `?$g`): `pull` drives the coroutine until it has taken `needed`
     /// elements (or finished) and answers the first `needed` of everything it
     /// has taken. That prefix becomes the body's live generation; the source
-    /// stays in place unless the coroutine ran out. A no-op for every other
+    /// stays in place unless the coroutine ran out, and the body is cached
+    /// (Rakudo's `[i]` and `Bool` cache a Seq). A no-op for every other
     /// source or when the body already holds `needed` elements.
     ///
     /// The state lock is not held across `pull`, which runs the gather body
@@ -76,8 +108,17 @@ impl SeqBody {
         if self.live_generation().len() >= needed {
             return Ok(());
         }
-        let Some(list) = self.gather_source() else {
-            return Ok(());
+        let list = {
+            let mut state = self.core.state.lock().unwrap();
+            let SeqSource::Gather(list) = &state.source else {
+                return Ok(());
+            };
+            let list = list.clone();
+            // Rakudo's positional read and `Bool` cache the Seq: it stays
+            // re-readable, and a later `.List` or `.iterator` serves the
+            // cached elements instead of consuming it.
+            state.cache_requested = true;
+            list
         };
         let prefix = pull(&list, needed)?;
         let exhausted = prefix.len() < needed;

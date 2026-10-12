@@ -9,9 +9,12 @@ plan 14;
 
 # --- finite gather + grep ---
 {
-    my $g = gather { take 1; take 2; take 3 };
-    is $g.grep(* > 1).List, (2, 3), 'grep over finite gather reifies via .List';
-    is $g.grep(* > 1).elems, 2, 'grep over finite gather reifies via .elems';
+    # `.grep` consumes the Seq (Rakudo: a second `.grep` on the same gather
+    # throws X::Seq::Consumed), so each read gets its own gather.
+    is (gather { take 1; take 2; take 3 }).grep(* > 1).List, (2, 3),
+        'grep over finite gather reifies via .List';
+    is (gather { take 1; take 2; take 3 }).grep(* > 1).elems, 2,
+        'grep over finite gather reifies via .elems';
 }
 
 # --- finite gather + map ---
