@@ -554,3 +554,12 @@ target from the parser's RHS offset helper, preserving the skipped RHS prefix
 and the target position. `t/rakuast/rakuast-callable-lvalue.t` pins declaration
 and star-target structure; the existing callable-lvalue and star-list tests
 exercise execution in round-trip mode.
+
+### 6.11 S10: indirect method lvalues and quoted dotty calls (2026-10-12)
+
+Quoted and interpolated method names on assignment targets lower back through
+the parser's dynamic method-lvalue path, preserving the source call and its
+writeback rules. Dotty assignment accepts a quoted method call as its right
+side, including method arguments, and lowers it through the shared `.=`
+expansion. `t/rakuast/rakuast-callable-lvalue.t` pins both node shapes; the
+method-lvalue and dotty RMW suites pass in round-trip mode.

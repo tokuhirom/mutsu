@@ -969,7 +969,12 @@ pub(super) fn lower_dotty_assign(
     if !is_method_call(call) {
         return Err(unsupported(node));
     }
-    let name = crate::symbol::Symbol::intern(&call_name_str(call)?);
+    let quoted = call.class == RakuAstClass::CallQuotedMethod;
+    let name = crate::symbol::Symbol::intern(&if quoted {
+        quoted_method_name(call)?
+    } else {
+        call_name_str(call)?
+    });
     let args = arg_exprs(call)?;
     let modifier = dispatch_modifier(call)?;
     let method_call = move |invocant: Expr| Expr::MethodCall {
@@ -977,7 +982,7 @@ pub(super) fn lower_dotty_assign(
         name,
         args: args.clone(),
         modifier,
-        quoted: false,
+        quoted,
         sugar: false,
     };
     if as_statement && matches!(&target, Expr::Var(topic) if topic == "_") {
@@ -2539,7 +2544,10 @@ fn method_call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> 
         return Ok(None);
     }
     let target = lower_expr(left)?;
-    if !matches!(target, Expr::MethodCall { .. }) {
+    if !matches!(
+        target,
+        Expr::MethodCall { .. } | Expr::DynamicMethodCall { .. }
+    ) {
         return Ok(None);
     }
     let value = lower_expr(named_child(node, "right")?)?;
@@ -5036,7 +5044,7 @@ fn lower_method_postfix(operand: Expr, postfix: &RakuAstNode) -> Result<Expr, Ru
 fn is_method_call(node: &RakuAstNode) -> bool {
     matches!(
         node.class,
-        RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod
+        RakuAstClass::CallMethod | RakuAstClass::CallPrivateMethod | RakuAstClass::CallQuotedMethod
     )
 }
 

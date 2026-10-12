@@ -1819,11 +1819,14 @@ fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Ex
             return None;
         }
     };
-    let (Expr::Literal(method) | Expr::LiteralSrc(method, _)) = method else {
-        return None;
-    };
-    let ValueView::Str(method) = method.view() else {
-        return None;
+    let (method, dynamic_name) = match method {
+        Expr::Literal(method) | Expr::LiteralSrc(method, _) => {
+            let ValueView::Str(method) = method.view() else {
+                return None;
+            };
+            (Some(method.to_string()), None)
+        }
+        name_expr => (None, Some(name_expr)),
     };
     let expected_write_back = crate::parser::method_lvalue_target_name(target);
     let write_back = match write_back {
@@ -1839,24 +1842,35 @@ fn method_lvalue_parts<'a>(name: &str, args: &'a [Expr]) -> Option<(Expr, &'a Ex
     }
     // `$(EXPR) = v` and `$o.AT-POS(i) = v` are assignments the parser routes
     // elsewhere; a record of them did not come from that function.
-    let is_rerouted = (method.as_str() == "item" && method_args.is_empty())
-        || (method.as_str() == "AT-POS"
+    let is_rerouted = (method.as_deref() == Some("item") && method_args.is_empty())
+        || (method.as_deref() == Some("AT-POS")
             && method_args.len() == 1
             && !matches!(target, Expr::Var(n) | Expr::BareWord(n) if n == "self"));
     if is_rerouted {
         return None;
     }
-    let (modifier, method) = match method.strip_prefix('!') {
-        Some(private) => (Some('!'), private),
-        None => (None, &method[..]),
-    };
-    let call = Expr::MethodCall {
-        target: Box::new(target.clone()),
-        name: crate::symbol::Symbol::intern(method),
-        args: method_args.clone(),
-        modifier,
-        quoted: false,
-        sugar: false,
+    let call = if let Some(name_expr) = dynamic_name {
+        Expr::DynamicMethodCall {
+            target: Box::new(target.clone()),
+            name_expr: Box::new(name_expr.clone()),
+            args: method_args.clone(),
+            modifier: None,
+            quoted: matches!(name_expr, Expr::StringInterpolation(_)),
+        }
+    } else {
+        let method = method.as_deref()?;
+        let (modifier, method) = match method.strip_prefix('!') {
+            Some(private) => (Some('!'), private),
+            None => (None, method),
+        };
+        Expr::MethodCall {
+            target: Box::new(target.clone()),
+            name: crate::symbol::Symbol::intern(method),
+            args: method_args.clone(),
+            modifier,
+            quoted: false,
+            sugar: false,
+        }
     };
     Some((call, value))
 }
