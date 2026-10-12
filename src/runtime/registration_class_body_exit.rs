@@ -196,6 +196,11 @@ impl Interpreter {
                 if declared_statics.contains(bare.as_str()) {
                     static_names.push(bare.clone());
                 }
+                let v = if declared_statics.contains(bare.as_str()) {
+                    share_body_static_scalar(&bare, v)
+                } else {
+                    v
+                };
                 store.insert(bare, v);
             }
             // The class body is these names' whole scope. Leaving the bare
@@ -464,4 +469,26 @@ impl Interpreter {
 /// under this package (a `where` regex's `<?{ $/ }>` in a class-scoped `subset`).
 fn is_match_state_name(name: &str) -> bool {
     name == "/" || name == "\u{a2}" || (!name.is_empty() && name.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The value a class or role body's static `bare` is stored under in
+/// `package_lexicals`: a scalar is boxed in a `ContainerRef` cell (#12825).
+///
+/// `package_lexicals` is one of the program tables `clone_for_thread` copies,
+/// so a plain value there is per-thread: a method run on a worker incremented
+/// its own copy of a body's `my $n`, and the parent never saw it (Rakudo shares
+/// the one container). A cell is shared by every copy of the table, and the
+/// by-name write-back (`writeback_package_scope_var`) and every read already
+/// go through a cell entry. `@`/`%`/`&` statics are their own containers.
+// Cost: O(1), one cell allocation for an unboxed scalar.
+pub(crate) fn share_body_static_scalar(bare: &str, value: Value) -> Value {
+    // A sigilless `my \x` / `my constant X` (stored under its term key) is a
+    // binding, not a container.
+    if bare.starts_with(['@', '%', '&'])
+        || bare.starts_with(crate::term_names::TERM_PREFIX)
+        || value.is_container_ref()
+    {
+        return value;
+    }
+    Value::container_ref(crate::gc::Gc::new(crate::value::ContainerCell::new(value)))
 }

@@ -32,6 +32,18 @@ impl Interpreter {
     /// lost its own body scope, reporting `Undeclared name: KV` for a body
     /// `my class` and reading a body `my $x` back as `Nil`.
     pub(crate) fn persist_role_body_lexicals(&mut self, owner: &str, declared: &HashSet<String>) {
+        self.persist_role_body_lexicals_except(owner, declared, &HashSet::new());
+    }
+
+    /// [`Self::persist_role_body_lexicals`], recording the names in `bound`
+    /// (a parametric role's type parameters, bound per composition rather
+    /// than declared by the body) as plain values instead of shared cells.
+    pub(crate) fn persist_role_body_lexicals_except(
+        &mut self,
+        owner: &str,
+        declared: &HashSet<String>,
+        bound: &HashSet<String>,
+    ) {
         let new_lexicals: Vec<(String, Value)> = self
             .env
             .iter()
@@ -80,6 +92,11 @@ impl Interpreter {
             .entry(owner.to_string())
             .or_default();
         for (bare, v) in new_lexicals {
+            let v = if bound.contains(&bare) {
+                v
+            } else {
+                super::registration_class_body_exit::share_body_static_scalar(&bare, v)
+            };
             store.insert(bare, v);
         }
     }
@@ -746,8 +763,10 @@ impl Interpreter {
                 .flat_map(|op| op.declared_vars.iter())
                 .map(|s| s.resolve().to_string())
                 .collect();
-            declared.extend(role_param_values.keys().map(|k| k.to_string()));
-            self.persist_role_body_lexicals(cx.name, &declared);
+            let bound: HashSet<String> =
+                role_param_values.keys().map(|k| k.to_string()).collect();
+            declared.extend(bound.iter().cloned());
+            self.persist_role_body_lexicals_except(cx.name, &declared, &bound);
         }
         // Rename each newly-declared nested class to its
         // per-composition parameterized name and record an alias so a

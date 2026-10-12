@@ -87,11 +87,18 @@ impl Interpreter {
         }
         // The object about to be reblessed may be reachable from other
         // threads, whose registries do not have this type (#11456).
+        let body_lexicals = self
+            .lexicals
+            .package_lexicals
+            .get(&name)
+            .map(|store| store.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
+            .unwrap_or_default();
         self.types.published_mixins.publish(
             &name,
             crate::runtime::published_mixins::MixinRecipe {
                 base: base_class.to_string(),
                 roles: fresh,
+                body_lexicals,
             },
         );
         Ok(name)
@@ -135,9 +142,34 @@ impl Interpreter {
         {
             return false;
         }
+        // The creating thread already ran the role bodies of this
+        // composition; Rakudo runs them once per composed type, not once per
+        // thread. Mark them composed so the registration below skips them, and
+        // bind the lexicals they left, whose scalars are cells shared with the
+        // creator (#12825).
+        for role in &recipe.roles {
+            self.registry_mut()
+                .composed_role_bodies
+                .insert(format!("class:{class_name}:{role}"));
+        }
         self.types.adopting_mixins.push(class_name.to_string());
         let composed = self.ensure_mixin_class(&recipe.base, &recipe.roles);
         self.types.adopting_mixins.retain(|n| n != class_name);
+        if !recipe.body_lexicals.is_empty() {
+            let marks = crate::runtime::cow_table_mut(&mut self.lexicals.class_body_static_names)
+                .entry(class_name.to_string())
+                .or_default();
+            for (bare, _) in &recipe.body_lexicals {
+                marks.insert(bare.clone());
+            }
+            let store = self
+                .package_lexicals_cow_mut()
+                .entry(class_name.to_string())
+                .or_default();
+            for (bare, value) in recipe.body_lexicals {
+                store.insert(bare, value);
+            }
+        }
         matches!(composed, Ok(name) if name == class_name)
     }
 
