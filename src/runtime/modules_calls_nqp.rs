@@ -54,6 +54,7 @@ pub(crate) mod nqp_ops_list;
 mod nqp_ops_multidim;
 pub(crate) mod nqp_ops_native;
 pub(crate) mod nqp_ops_async;
+mod nqp_ops_proc;
 mod nqp_ops_numeric;
 mod nqp_ops_object;
 pub(crate) mod nqp_ops_p6;

@@ -1,8 +1,9 @@
 # ADR-11502: The Asynchronous `nqp::` ops push onto a blocking queue
 
 - **Status**: Accepted (user decision 2026-10-12; Proposed the same day). §2.1–§2.3 are implemented in the PR that adds
-  `runtime/nqp_ops_async.rs`. Of §2.4, `signal` (§2.4.1) and `watchfile` (§2.4.2)
-  are implemented; the other ops are not yet.
+  `runtime/nqp_ops_async.rs`. Of §2.4, `signal` (§2.4.1), `watchfile` (§2.4.2) and
+  the process ops `spawnprocasync`, `permit` and `killprocasync` (§2.4.3) are
+  implemented; the socket ops are not yet.
 - **Date**: 2026-10-12
 - **Issue**: [#11502](https://github.com/tokuhirom/mutsu/issues/11502) (campaign
   [#11488](https://github.com/tokuhirom/mutsu/issues/11488))
@@ -127,6 +128,46 @@ from the poller's snapshot diff, so they follow the same mapping as `watch-path`
 libuv's inotify mapping. For example, unlinking a watched file is "renamed" in mutsu, but
 "changed" under inotify.
 
+#### 2.4.3 `nqp::spawnprocasync`, `nqp::permit` and `nqp::killprocasync` (implemented)
+
+`nqp::spawnprocasync($queue, $program, $argv, $cwd, $env, $callbacks)` takes no handle
+type. Its handle is a `BOOTIO` (REPR `MVMOSHandle`). `$argv` starts with the program's own
+name, and `$callbacks` is a hash: each event pushes `[callback, args…]` with the callback
+taken from it. Observed on Rakudo 2026.09:
+
+- `ready`: `[ready, BOOTIntArray[stdout fd, stderr fd], BOOTInt pid]`. A fd is -1 for a
+  stream without a `*_bytes` callback, which is not piped and goes to the parent's own.
+- `stdout_bytes` / `stderr_bytes`: `[cb, BOOTInt seq, Buf, BOOTStr]` per chunk, where the
+  `Buf` is of `buf_type`'s class and the last slot is the `BOOTStr` type object. The
+  end of the stream is `[cb, seq, BOOTStr, BOOTStr]`, and a read error goes in the last
+  slot. `seq` counts the stream's events from 0.
+- A stream is read only after `nqp::permit($handle, $channel, $permits)`: channel 1 is
+  stdout, 2 is stderr. `$permits` is how many more chunks may be read: -1 for any number,
+  and 0 pauses the stream. `permit` answers the handle, and dies with `Can only permit
+  an AsyncTask handle` for another object.
+- `done`: `[done, BOOTInt status]`, the raw wait status: `exit << 8`, or the signal
+  number.
+- A failed spawn pushes `[error, BOOTStr message, BOOTInt -errno]` and no `ready`. The
+  message is `Failed to spawn process <program>: <libuv text> (error code <-errno>)`. The
+  op still answers a handle.
+- stdin is closed unless `write` is present.
+- `nqp::killprocasync($handle, $signal)` signals the child and answers 0. Killing a reaped
+  child is not an error; another object dies with `killprocasync requires a process
+  handle`.
+
+Rakudo orders `done` against the output only loosely (MoarVM pushes `done` when libuv
+reports the exit). mutsu pushes `done` after every *permitted* reader has nothing more to
+push for now: it has reached its end, or it waits for a permit. A permit given after the
+child was reaped still reads what the pipe holds, after `done`.
+
+mutsu spawns the child and reads its pipes with `Proc::Async.start`'s code
+(`runtime/proc_spawn.rs`: `ProcSpawn` and `pump_pipe`). Only what happens to a chunk
+differs: `Proc::Async` decodes it into its Supplies, and the op pushes a `Buf` onto the
+queue. Not modelled yet, and refused with an error that names the option: `merge_bytes`
+(permit channel 0), `pty`, and binding the child's stdio to a given fd (`stdin_fd`,
+`stdout_fd`, `stderr_fd`). The write side (`write`, then `asyncwritebytes` on the handle)
+belongs with the socket ops.
+
 ### 2.5 Not provided: `$*SCHEDULER.queue`
 
 `ThreadPoolScheduler.queue` is an undocumented Rakudo internal. A program that wants these
@@ -141,4 +182,4 @@ family.
   `nqp::shift` to wait on events.
 - The timer adds no thread: it shares the heap `Supply.interval` and `Promise.in` use.
 - `docs/nqp-op-coverage.md`: Asynchronous goes from 0 / 11 to 2 / 11 (§2.1–§2.3), then
-  to 3 / 11 (`signal`), then to 4 / 11 (`watchfile`).
+  to 3 / 11 (`signal`), then to 4 / 11 (`watchfile`), then to 7 / 11 (the process ops).

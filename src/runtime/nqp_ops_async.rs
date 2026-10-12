@@ -119,7 +119,7 @@ fn handle_class(interp: &Interpreter, op: &str, ty: &Value) -> Result<Symbol, Ru
 /// The channel of an async op's queue operand (`<op> <what> must have
 /// ConcBlockingQueue REPR` otherwise).
 // Cost: O(1).
-fn queue_operand(op: &str, what: &str, v: &Value) -> Result<SharedChannel, RuntimeError> {
+pub(crate) fn queue_operand(op: &str, what: &str, v: &Value) -> Result<SharedChannel, RuntimeError> {
     queue_of(v).map(|(_, q)| q).ok_or_else(|| {
         RuntimeError::new(format!("{op} {what} must have ConcBlockingQueue REPR"))
     })

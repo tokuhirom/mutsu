@@ -36,7 +36,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | --- | ---: | ---: | --- |
 | Arithmetic | 26 / 26 | 0 | #11490 |
 | Array | 60 / 60 | 0 | #11493 |
-| Asynchronous | 4 / 11 | 7 | #11502 |
+| Asynchronous | 7 / 11 | 4 | #11502 |
 | Atomic | 11 / 11 | 0 | #11502 |
 | Binary Data | 6 / 6 | 0 |  |
 | Bit | 15 / 15 | 0 | #11491 |
@@ -68,11 +68,11 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 4 / 4 | 0 | #11499 |
 | Rakudo p6* (HLL) | 25 / 26 | 1 | #11505 |
-| **Total** | **562 / 575** | **13** | |
+| **Total** | **565 / 575** | **10** | |
 
 ## Missing ops by category
 
-- **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `killprocasync`, `permit`, `spawnprocasync`
+- **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`
 - **NativeCall** (#11504): `nativecallinvoke`
 - **Objects** (#11499): `setwho`
 - **Profiling** (#11504): `mvmendprofile`, `mvmstartprofile`
