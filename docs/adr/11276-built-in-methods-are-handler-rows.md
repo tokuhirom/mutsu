@@ -2047,6 +2047,32 @@ Pinned in `t/regex/match/match-cool-text-rows.t`. Still differing from Rakudo, o
 where Rakudo has no candidate (`X::Method::NotFound`), and a `Cool` subclass instance with its own `Str` is searched by its default
 rendering (#13035).
 
+### 9.90 Slice 5: every `Cool` receiver reaches the 1-arg Unicode, case and indent rows; their arms go (2026-10-12)
+
+`refactor/11276-cool-unicode-args-rows`. §9.89 kept the 1-arg `uniprop`, `uniprops`, `unimatch`, `samemark`, `samecase` and
+`indent` arms, the only implementation for the `Cool` receivers no row reached: a `Range`, a `Seq`, an `IO::Path`, an enum and an
+instance of a `Cool` subclass. Decisions:
+
+1. **`COOL_TEXT_FOR_CLOSED_SHAPES` gains `unimatch`, `samecase`, `samemark` and `indent`** (Rakudo declares all four on `Cool`, and
+   their `Cool` candidates read `self.Str`), so the closed `Range`, `Seq`, `IO::Path` and `Match` shapes reach them; `uniprop` and
+   `uniprops` were already there, at every arity. `Cool` gains the `unimatch` rows `Str` and `Int` had, and the recognition table a
+   `Cool.unimatch` row.
+2. **`answer_shapeless` admits these six names at arity 1**, besides `join`/`pick`/`roll`/`head`/`tail`: an enum and a `Cool`
+   subclass instance reach `Cool`'s row. The instance walk now asks each class of the MRO for a row of the call's arity, not arity 0,
+   so a built-in class declaring only the argument form stops the walk too.
+3. **An allomorph reads its `Str` part** through a 1-arg probe in the cascade, as the 0-arg cascade's allomorph block does: the
+   allomorph has no shape, and the interpreter would read its number (`<65>.uniprop("Script")` is `Common`, the script of "6").
+4. **`indent` admits any plain argument** (`RowFlags::ANY_ARGS`): `indent(*)` takes the common indentation away.
+
+Behaviour changes, toward Rakudo: a receiver that is not `Cool` (`Pair`, `Capture`, the quant hashes, `Version`, `Uni`, code, a plain
+instance) answers `X::Method::NotFound` for these methods instead of reading its string form, and so does a `Str`/`Int` type object
+(Rakudo: `X::Multi::NoMatch`); the recognition rows of `Str`/`Cool` `samecase`/`samemark` drop `TYPE_OBJECT_OK`. `Nil` answers `Nil`
+(was the empty string; Rakudo raises `X::Multi::NoMatch`, except `Nil.indent`, which is `""`).
+
+`method-rows-report.py --arms`: the pure arity cascades go from 180 to 174 arms. A probe of the six names (with property, pattern,
+junction, Whatever and negative arguments) over 25 receivers changed only the answers above. Pinned in
+`t/types/cool-text-argument-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
