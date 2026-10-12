@@ -84,6 +84,10 @@ pub(crate) struct ValueCallCompileCache {
 impl Interpreter {
     /// The closure bytecode (and its nested-routine table) a compile-on-the-fly
     /// `Sub` runs, compiled on the first call and reused afterwards.
+    // The keys hash and compare by `Arc` address only, so the interior
+    // mutability clippy sees inside the AST (a doc slot's `OnceLock`) can
+    // never move an entry.
+    #[allow(clippy::mutable_key_type)]
     // Cost: O(1) amortized on a hit; O(body) for the compile on a miss.
     pub(crate) fn value_call_compiled_body(
         &mut self,
@@ -121,6 +125,10 @@ impl Interpreter {
     /// declares its own) followed by the method's parameters. Built once per
     /// candidate so every callable handed out for it shares the same `Arc`s,
     /// which is what lets [`Self::value_call_compiled_body`] reuse its compile.
+    // The keys hash and compare by `Arc` address only, so the interior
+    // mutability clippy sees inside the AST (a doc slot's `OnceLock`) can
+    // never move an entry.
+    #[allow(clippy::mutable_key_type)]
     // Cost: O(1) amortized on a hit; O(params) on a miss.
     pub(crate) fn nextcallee_method_signature(
         &mut self,
