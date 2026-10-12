@@ -39,5 +39,6 @@ mod regex_parse_ltm;
 mod regex_parse_modifier;
 mod regex_parse_numbering;
 mod regex_qq_array_interp;
+mod regex_quote_scan;
 mod regex_types;
 mod regex_value_keyed_parse;

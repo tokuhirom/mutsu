@@ -1363,69 +1363,6 @@ pub(super) fn regex_single_quote_closes(open: char, ch: char) -> bool {
         && crate::regex_qq_atoms::quote_closes(open, ch)
 }
 
-/// The opening quote of the regex string literal (`'...'`, `"..."` and their
-/// Unicode variants) that char position `pos` sits inside, if any. Tracks both
-/// quote families so a `'` inside a `"..."` region (`"it's" $x`), or a `"`
-/// inside a `'...'` region, is not mistaken for an opener.
-// Cost: O(pos).
-fn open_regex_quote_at(chars: &[char], pos: usize) -> Option<char> {
-    let mut open: Option<char> = None;
-    let mut escaped = false;
-    for &ch in chars.iter().take(pos) {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if ch == '\\' && open != Some('\u{FF62}') {
-            escaped = true;
-            continue;
-        }
-        match open {
-            Some(o) => {
-                let closes = if is_double_quote_opener(o) {
-                    matches!(ch, '"' | '\u{201D}')
-                } else {
-                    regex_single_quote_closes(o, ch)
-                };
-                if closes {
-                    open = None;
-                }
-            }
-            None => {
-                if matches!(ch, '\'' | '\u{2018}' | '\u{201A}' | '\u{FF62}')
-                    || is_double_quote_opener(ch)
-                {
-                    open = Some(ch);
-                }
-            }
-        }
-    }
-    open
-}
-
-fn is_double_quote_opener(ch: char) -> bool {
-    matches!(ch, '"' | '\u{201C}' | '\u{201E}')
-}
-
-/// Whether char position `pos` sits inside a single-quoted regex literal
-/// (`'...'`), where `$` is not interpolated.
-pub(super) fn is_inside_single_quoted_regex_literal(chars: &[char], pos: usize) -> bool {
-    open_regex_quote_at(chars, pos).is_some_and(|o| !is_double_quote_opener(o))
-}
-
-/// Whether char position `pos` sits inside any regex quote literal
-/// (`'...'`, `"..."` or a Unicode variant).
-pub(super) fn is_inside_regex_quote_literal(chars: &[char], pos: usize) -> bool {
-    open_regex_quote_at(chars, pos).is_some()
-}
-
-/// Whether char position `pos` sits inside a double-quoted regex literal
-/// (`"..."`). Used to decide when a `$var.method(...)` chain is a qq-string
-/// interpolation rather than a bare scalar followed by a match-any `.`.
-pub(super) fn is_inside_double_quoted_regex_literal(chars: &[char], pos: usize) -> bool {
-    open_regex_quote_at(chars, pos).is_some_and(is_double_quote_opener)
-}
-
 pub(super) fn regex_single_quote_atom(literal: String, ignore_case: bool) -> RegexAtom {
     let lit_chars: Vec<char> = literal.chars().collect();
     if lit_chars.is_empty() {

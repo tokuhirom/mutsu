@@ -187,3 +187,35 @@ re-resolving `prefix:<~>` per call. None of these is above ~3% alone; the
 remaining factor to rakudo (~2.5x by this estimate) needs, above all, the call frame itself
 to get cheaper, which is largely the env campaign's static link (ADR-12529) rather than a
 grammar-side change.
+
+### Re-profile after #13022, and the interpolation pre-pass (2026-10-13)
+
+The bench history put `bench-yaml-parse-big@section` at **3.47x** rakudo on 2b75985b
+(before #13022). The `profiling` build on `main` after #13022 measured **~272M Ir per
+warm `load-yaml`** (four calls minus one, `MUTSU_JIT=off`).
+
+The largest single self-cost row was `open_regex_quote_at` (~14M per parse): the
+interpolation pre-pass (`interpolate_regex_scalars`) asked at every `<`, `$` and `@` of a
+pattern whether the position sits inside a quote literal, and every ask re-scanned the
+pattern from its start, so the pre-pass was quadratic in the pattern length. It runs in
+the steady state because the LTM measurement of a call with arguments
+(`regex_ltm_nfa_run::dyn_call`) resolves the callee through the argument-less candidate
+path, whose body is not static (it names the rule's parameters) and so is re-interpolated
+on every measurement — ~2,100 times per parse for YAMLish's `block` and `block-string`.
+`RegexQuoteCursor` (`src/runtime/regex_quote_scan.rs`) carries the quote state forward
+instead: **~272M → ~259M Ir per parse (−4.7%)**.
+
+The same profile, by inclusive cost per parse: the action walk ~128M (the action
+methods' own bodies ~97M of it), the regex engine ~52M plus LTM ordering ~22M,
+`.new` from actions ~23M (of which `enforce_attribute_where_constraints`' per-attribute
+type checks ~7M), the LTM `dyn_call` path ~8M, the thread-local `Symbol` tables
+(`intern`/`lookup`, ~150k probes) ~9% self, and the allocator (`malloc`/`free`) ~12%
+self. No remaining row is above ~3% on its own outside the action methods' frames,
+which stay the env campaign's (ADR-12529).
+
+Two follow-ups this profile names, each small: measure an argument-bearing call's
+callee in LTM through its value-independent body (`runtime_param_rule_body`, as the
+left-call graph already does) and memoize it, instead of re-interpolating the
+argument-less body with whatever value the parameter happens to hold in the env; and
+cache `enforce_attribute_where_constraints`' per-class verdict inputs in
+`NativeCtorPlan`.

@@ -1,4 +1,4 @@
-use super::regex_parse::*;
+use super::regex_quote_scan::RegexQuoteCursor;
 use super::*;
 
 impl Interpreter {
@@ -176,6 +176,8 @@ impl Interpreter {
 
     pub(super) fn interpolate_regex_scalars(&self, pattern: &str) -> Result<String, RuntimeError> {
         let chars: Vec<char> = pattern.chars().collect();
+        // The quote state at `i`, carried forward as `i` advances.
+        let mut quotes = RegexQuoteCursor::new();
         let mut out = String::new();
         let mut i = 0usize;
         // Scalar names introduced by an in-pattern `:my $v …` / `:let $v …`. A
@@ -402,13 +404,13 @@ impl Interpreter {
             // (`s:g/<<$name>>/…/`, Inline::BASIC).
             if ch == '<'
                 && chars.get(i + 1) == Some(&'<')
-                && !is_inside_regex_quote_literal(&chars, i)
+                && !quotes.inside_any(&chars, i)
             {
                 out.push_str("<<");
                 i += 2;
                 continue;
             }
-            if ch == '<' && !is_inside_regex_quote_literal(&chars, i) {
+            if ch == '<' && !quotes.inside_any(&chars, i) {
                 out.push(ch);
                 let rest = &chars[i + 1..];
                 let consumed = super::regex_parse_core::scan_angle_assertion_consumed(rest);
@@ -428,7 +430,7 @@ impl Interpreter {
                     i += 2;
                     continue;
                 }
-                let inside_sq = is_inside_single_quoted_regex_literal(&chars, i);
+                let inside_sq = quotes.inside_single(&chars, i);
                 let mut j = i + 1;
                 if j < chars.len() && chars[j] == '{' {
                     j += 1;
@@ -462,7 +464,7 @@ impl Interpreter {
                         Self::check_hash_in_regex(&value)?;
                         // The `"..."` tokenizer arm strips the mark and makes
                         // the whole literal a non-declarative atom.
-                        let inside_qq = is_inside_double_quoted_regex_literal(&chars, i);
+                        let inside_qq = quotes.inside_double(&chars, i);
                         let is_const = self.is_compile_time_constant_scalar(&name);
                         if !is_const {
                             out.push(Self::NON_DECLARATIVE_INTERP_MARK);
@@ -521,7 +523,7 @@ impl Interpreter {
                     // structural parser lowers to a match-time
                     // `RegexAtom::CodeInterp` matched literally (#10157).
                     if let Some(chain_end) = scan_interp_method_chain(&chars, j)
-                        && is_inside_double_quoted_regex_literal(&chars, i)
+                        && quotes.inside_double(&chars, i)
                     {
                         out.push_str("$(");
                         out.extend(chars[i..chain_end].iter());
@@ -565,7 +567,7 @@ impl Interpreter {
                         .unwrap_or(Value::NIL);
                     let value = value.into_deref();
                     Self::check_hash_in_regex(&value)?;
-                    let inside_qq = is_inside_double_quoted_regex_literal(&chars, i);
+                    let inside_qq = quotes.inside_double(&chars, i);
                     let is_const = !is_overlay && self.is_compile_time_constant_scalar(&name);
                     if !is_const {
                         out.push(Self::NON_DECLARATIVE_INTERP_MARK);
@@ -616,12 +618,12 @@ impl Interpreter {
                 // double-quoted one it follows qq-string rules (`"@a"` is
                 // literal, `"@a[]"` interpolates the space-joined elements),
                 // not the bare-`@name` alternation expansion below.
-                if is_inside_single_quoted_regex_literal(&chars, i) {
+                if quotes.inside_single(&chars, i) {
                     out.push('@');
                     i += 1;
                     continue;
                 }
-                if is_inside_double_quoted_regex_literal(&chars, i)
+                if quotes.inside_double(&chars, i)
                     && let Some(next) = self.interpolate_qq_array_in_regex(&chars, i, &mut out)
                 {
                     i = next;
