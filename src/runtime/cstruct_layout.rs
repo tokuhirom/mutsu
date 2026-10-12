@@ -1048,6 +1048,8 @@ impl crate::runtime::Interpreter {
             Some("NativeCall")
         } else if reg.cstr_classes.contains(name) {
             Some("CStr")
+        } else if let Some(repr) = reg.async_repr_classes.get(name) {
+            Some(*repr)
         } else {
             drop(reg);
             // A parameterised spelling (`CArray[T]`, `CArray[CArray[uint8]]`) is

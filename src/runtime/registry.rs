@@ -274,6 +274,9 @@ pub(crate) struct Registry {
     /// matches a class by short name, and keying the set that way turns that
     /// match into one probe instead of a scan of every entry.
     pub(crate) vmarray_classes: HashSet<String>,
+    /// `is repr('ConcBlockingQueue')` / `is repr('AsyncTask')` classes
+    /// (#11502), by name, with the REPR each declared.
+    pub(crate) async_repr_classes: HashMap<String, &'static str>,
     pub(crate) vmhash_classes: HashSet<String>,
     /// Classes marked `is hidden` (excluded from `.^mro` etc.).
     pub(crate) hidden_classes: HashSet<String>,

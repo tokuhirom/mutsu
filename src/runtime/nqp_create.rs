@@ -37,6 +37,9 @@ pub(crate) enum CreateKind {
     /// `nqp::push` or to install a separately built store into it, which an
     /// attribute-less `Mu.CREATE` instance would not allow.
     New,
+    /// An `is repr('ConcBlockingQueue')` / `is repr('AsyncTask')` class: an
+    /// instance carrying its queue or task storage (#11502).
+    AsyncRepr(&'static str),
     /// Everything else: the REPR-level `CREATE` (never a user `CREATE`
     /// method -- rakudo runs none).
     Create,
@@ -159,6 +162,9 @@ impl Interpreter {
             // List-kind: a VMArray, not a high-level Array (see `nqp_backing`).
             CreateKind::VmArray => Ok(Value::vm_array(Vec::new())),
             CreateKind::CArray => self.create_carray_instance(Symbol::intern(name), &ty),
+            CreateKind::AsyncRepr(repr) => {
+                Ok(self.create_async_repr_instance(Symbol::intern(name), repr))
+            }
             CreateKind::New => self.call_method_with_values(ty, "new", vec![]),
             // Allocate directly rather than through `call_method_with_values`,
             // whose resolution walk before its own `CREATE` arm cost ~20K
@@ -206,7 +212,11 @@ impl Interpreter {
             bare && reg.vmhash_classes.contains(short),
             bare && reg.vmarray_classes.contains(short),
         );
+        let async_repr = reg.async_repr_classes.get(name).copied();
         drop(reg);
+        if let Some(repr) = async_repr {
+            return CreateKind::AsyncRepr(repr);
+        }
         if kind == CreateKind::Create && self.is_carray_repr_class(name) {
             return CreateKind::CArray;
         }

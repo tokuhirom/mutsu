@@ -114,13 +114,16 @@ impl Interpreter {
     }
 
     /// Whether `class` was declared with a REPR whose instance is its own body
-    /// (`is repr<NativeCall>`, `is repr<CStr>`): `.REPR` can report it for an
+    /// (`is repr<NativeCall>`, `is repr<CStr>`, and the queue / task REPRs of
+    /// #11502): `.REPR` can report it for an
     /// instance as well as for the type object, since there is no separate
     /// body for it to under-report.
     // Cost: O(n), n = chars of the name.
     pub(crate) fn is_bodied_repr_class(&self, class: &str) -> bool {
         let reg = self.registry();
-        reg.nativecall_classes.contains(class) || reg.cstr_classes.contains(class)
+        reg.nativecall_classes.contains(class)
+            || reg.cstr_classes.contains(class)
+            || reg.async_repr_classes.contains_key(class)
     }
 
     /// The object native ops on `obj` apply to: the value of `obj`'s

@@ -36,7 +36,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 | --- | ---: | ---: | --- |
 | Arithmetic | 26 / 26 | 0 | #11490 |
 | Array | 60 / 60 | 0 | #11493 |
-| Asynchronous | 0 / 11 | 11 | #11502 |
+| Asynchronous | 2 / 11 | 9 | #11502 |
 | Atomic | 11 / 11 | 0 | #11502 |
 | Binary Data | 6 / 6 | 0 |  |
 | Bit | 15 / 15 | 0 | #11491 |
@@ -68,11 +68,11 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 4 / 4 | 0 | #11499 |
 | Rakudo p6* (HLL) | 25 / 26 | 1 | #11505 |
-| **Total** | **558 / 575** | **17** | |
+| **Total** | **560 / 575** | **15** | |
 
 ## Missing ops by category
 
-- **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `cancel`, `killprocasync`, `permit`, `signal`, `spawnprocasync`, `timer`, `watchfile`
+- **Asynchronous** (#11502): `asyncconnect`, `asynclisten`, `asyncreadbytes`, `asyncwritebytes`, `killprocasync`, `permit`, `signal`, `spawnprocasync`, `watchfile`
 - **NativeCall** (#11504): `nativecallinvoke`
 - **Objects** (#11499): `setwho`
 - **Profiling** (#11504): `mvmendprofile`, `mvmstartprofile`

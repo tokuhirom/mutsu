@@ -38,7 +38,7 @@ pub(in crate::runtime) fn next_lock_id() -> u64 {
     id
 }
 
-pub(super) fn next_cancellation_id() -> u64 {
+pub(crate) fn next_cancellation_id() -> u64 {
     static COUNTER: AtomicU64 = AtomicU64::new(1);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     if let Ok(mut map) = cancellation_map().lock() {
@@ -47,7 +47,7 @@ pub(super) fn next_cancellation_id() -> u64 {
     id
 }
 
-pub(super) fn cancellation_state(id: u64) -> Option<Arc<AtomicBool>> {
+pub(crate) fn cancellation_state(id: u64) -> Option<Arc<AtomicBool>> {
     cancellation_map()
         .lock()
         .ok()
