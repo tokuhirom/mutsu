@@ -225,8 +225,24 @@ pub(crate) fn invoke_mut(
     // at the one entry a `Mut` row has, so every caller (the VM's opcodes, the
     // by-name and by-value entries) is excluded alike. A no-op until a second
     // VM mutator thread is spawned, and nested acquisition is a no-op too.
-    let _exclusion =
-        crate::value::container_lock::ContainerStructGuard::acquire_for(None, place.value());
+    //
+    // A receiver reached through a `:=`-bound cell (`my $c := @a; $c.push`)
+    // is keyed on that cell, as the element store through it is
+    // (`env_root_descended_mut_tracked`): threads sharing one cell hold
+    // different nodes once `Gc::make_mut` copies an aliased one, so a
+    // node-keyed lock here excluded nothing against `$c[$i] = v` (#13016).
+    let _exclusion = if crate::value::container_lock::multi_mutator_threads_live() {
+        match place.binding_cell(interp) {
+            Some((cell, held)) => {
+                crate::value::container_lock::ContainerStructGuard::acquire_for(Some(cell), &held)
+            }
+            None => {
+                crate::value::container_lock::ContainerStructGuard::acquire_for(None, place.value())
+            }
+        }
+    } else {
+        None
+    };
     if named_count == 0 {
         return handler(interp, place, args, Named::NONE);
     }

@@ -34,7 +34,17 @@ impl Interpreter {
         // The stripe lock excludes the other celled-container funnels, which
         // mutate through a pointer derived under the cell's mutex but no longer
         // hold it; the cell's own mutex excludes a reader cloning the array out.
-        let _structure = ContainerStructGuard::acquire_for_cell(&cell);
+        // Keyed on the held node too: a reader handed the array itself (an
+        // argument) never saw the cell and keys on the node (#13016).
+        let held = cell
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let _structure = ContainerStructGuard::acquire_for(
+            Some(crate::gc::Gc::as_ptr(&cell) as usize),
+            &held,
+        );
+        drop(held);
         let mut inner = cell
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);

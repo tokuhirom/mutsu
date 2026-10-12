@@ -20,9 +20,18 @@ use crate::meta_ns::MetaNs;
 /// non-empty list whose elements are ALL shared `ContainerRef` cells (one per
 /// selected leaf). A raw `\target` bound to such a value is writable: a later
 /// `target = v` distributes the RHS element-wise through the cells.
+///
+/// It walks the argument's elements, which another thread may be pushing to
+/// (an array passed to a routine from several `start` blocks), so the walk
+/// excludes structural writers (ADR-0068, #13016).
+// Cost: O(n), n = the array's elements (the walk stops at the first non-cell).
 fn is_multidim_slice_cells(value: &crate::value::Value) -> bool {
-    matches!(value.view(), crate::value::ValueView::Array(items, ..)
-        if !items.is_empty() && items.iter().all(crate::value::Value::is_container_ref))
+    let crate::value::ValueView::Array(items, ..) = value.view() else {
+        return false;
+    };
+    let _structure =
+        crate::value::container_lock::ContainerStructGuard::acquire_for(None, value);
+    !items.is_empty() && items.iter().all(crate::value::Value::is_container_ref)
 }
 
 /// A parameter as raku spells it in an error message. `ParamDef::name` carries

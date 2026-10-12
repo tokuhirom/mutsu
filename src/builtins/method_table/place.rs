@@ -161,6 +161,27 @@ impl<'a> ReceiverPlace<'a> {
         }
     }
 
+    /// For a binding reached through a `:=`-bound cell: the address of the
+    /// outermost cell, the identity two threads sharing the container have in
+    /// common (ADR-0068 §2), and the container the cell holds *now*, which is
+    /// what the row will mutate (it can differ from [`Self::value`], read
+    /// before another thread re-seated the cell). `None` for a binding that is
+    /// not celled and for a detached receiver.
+    // Cost: one env lookup plus the cell descent, as [`Self::slot`].
+    pub(crate) fn binding_cell(&self, interp: &mut Interpreter) -> Option<(usize, Value)> {
+        let ReceiverPlace::Var { name, .. } = self else {
+            return None;
+        };
+        if name.is_empty() {
+            return None;
+        }
+        let mut addr = None;
+        let held = interp
+            .env_root_descended_mut_tracked(name, &mut addr)
+            .map(|slot| slot.clone())?;
+        Some((addr?, held))
+    }
+
     /// Replace the value the receiver holds (a method that changes the value,
     /// not the container: `Str.subst-mutate`). A binding is written in both
     /// halves of the dual store when the call came through the VM; a detached
