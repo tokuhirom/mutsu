@@ -51,7 +51,9 @@ fn next_send_seq() -> u64 {
 /// wakers so a drive loop notices the disconnect promptly.
 #[derive(Debug)]
 pub(crate) struct SupplySender {
-    tx: mpsc::Sender<(u64, SupplyEvent)>,
+    /// `Some` for the sender's whole life; taken only by `Drop`, which must
+    /// disconnect the channel BEFORE it wakes the consumers (#13015).
+    tx: Option<mpsc::Sender<(u64, SupplyEvent)>>,
     wakers: WakerSet,
     broadcast: Weak<Broadcast>,
 }
@@ -80,8 +82,10 @@ impl SupplySender {
         }
         // Stamped immediately before the send, so a sequence is never
         // visible out of happens-before order.
-        self.tx
-            .send((next_send_seq(), event))
+        let Some(tx) = self.tx.as_ref() else {
+            return Err(mpsc::SendError(event));
+        };
+        tx.send((next_send_seq(), event))
             .map_err(|mpsc::SendError((_, event))| mpsc::SendError(event))?;
         if let Some(broadcast) = broadcast {
             notify_all(&self.wakers, &broadcast);
@@ -124,6 +128,13 @@ impl Drop for SupplySender {
         // subscription on `TryRecvError::Disconnected`): wake the consumers so
         // they observe the hangup without waiting out their idle cap. Bare
         // pokes from non-final clones are harmless.
+        //
+        // The `mpsc::Sender` is dropped FIRST. A field is only dropped after
+        // this body returns, so waking first let a woken event-driven drain
+        // (`ActLoop`) read the still-connected channel as `Empty`, go idle, and
+        // never be woken for the disconnect that followed: a `Proc::Async`
+        // whose stdout reader was refused hung in `proc-wait` (#13015).
+        drop(self.tx.take());
         if let Some(broadcast) = self.broadcast.upgrade() {
             notify_all(&self.wakers, &broadcast);
         }
@@ -337,7 +348,7 @@ pub(crate) fn supply_event_channel() -> (SupplySender, SupplyReceiver) {
     });
     (
         SupplySender {
-            tx,
+            tx: Some(tx),
             wakers,
             broadcast: Arc::downgrade(&broadcast),
         },
@@ -583,6 +594,27 @@ mod tests {
             sub.try_recv_settled(),
             Err(mpsc::TryRecvError::Disconnected)
         ));
+    }
+
+    #[test]
+    fn the_hangup_wake_sees_the_channel_already_disconnected() {
+        // #13015: a drain woken by the last sender's drop must find the channel
+        // disconnected. Waking before the inner sender was dropped let it read
+        // `Empty`, go idle, and never be woken again.
+        let (tx, template) = supply_event_channel();
+        let sub = Arc::new(template.subscribe());
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let (hook_sub, hook_seen) = (Arc::clone(&sub), Arc::clone(&seen));
+        sub.register_drain_hook(1, Arc::new(move || {
+            let disconnected = matches!(
+                hook_sub.try_recv_settled(),
+                Err(mpsc::TryRecvError::Disconnected)
+            );
+            hook_seen.lock().unwrap().push(disconnected);
+        }));
+        drop(tx);
+        sub.unregister_drain_hook(1);
+        assert_eq!(*seen.lock().unwrap(), vec![true]);
     }
 
     #[test]
