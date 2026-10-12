@@ -383,7 +383,8 @@ code does where §2 left a choice, and where it deviates:
   attempt; the cost is leniency (an iterating builtin does not consume the
   gather) and a second identity reachable inside those builtins. Retiring the
   boundaries one consumer at a time is follow-up work (#13026).
-- **Builtin routines no longer share the inner list** (#13026 step 1, §8.2).
+- **Builtin routines no longer share the inner list** (#13026 step 1, §8.2),
+  nor do the methods of built-in receivers (step 2, §8.3).
 - **Pure renderers.** `say`/`put`/`print`/`note`, a `--> Array(...)`-style
   return coercion, slurpy binding and `.flatmap`'s flattening run a gather
   whole first (`reify_gather_seq`), as Rakudo's do; nested gathers are run by
@@ -453,3 +454,27 @@ cache: `sum(gather {...})` answered 0, `max` the whole list, `set` an empty Set,
 pins the rows. The remaining hand-offs are the methods of built-in receivers,
 `.AT-POS` / `.EXISTS-POS`, and `gather_operand` for zip/cross metaoperators and
 reductions.
+
+### 8.3 Built-in receivers' method arguments (#13026 step 2)
+
+`call_method_with_values_unviewed` no longer hands a gather argument over as
+its shared inner list, and the `CallMethod` / `CallMethodMut` opcodes, which
+never did and read the gather's empty seed (`Set.new(gather {...})` was
+`Set()`, #13024), now read it too. `method_gather_args` applies the §8.2
+classes to a method of a built-in receiver, measured against `raku`:
+
+- **Consume**: `new` (`Set.new`, `Bag.new`, `Array.new`), `append`,
+  `prepend`.
+- **Pass**: `push`, `unshift` (the Seq is stored as one element), and
+  `Supply.from-list`, which pulls the gather itself: a gather that dies
+  becomes the materialized supply's `quit_reason`, so a `whenever`'s `QUIT`
+  phaser sees it (the supply-block `whenever` path now honours a static
+  supply's `quit_reason` too, as the `react` path did since #12986).
+- **Cache**: every other method (`split`, `splice`, `polymod`, `List.new`).
+
+A user object's method, a role's method and a method the program declared on a
+type object receive the Seq unchanged. `shared_gather_list` /
+`shared_gather_args` are deleted; `600.polymod(gather { loop {...} })` hung
+before this change too, and still does (a `Cache` read pulls the whole gather).
+`t/collections/lazy-seq/gather-receiver-args.t` pins the rows. The remaining
+hand-offs are `.AT-POS` / `.EXISTS-POS` and `gather_operand`.

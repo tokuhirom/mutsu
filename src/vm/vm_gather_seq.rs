@@ -1,7 +1,7 @@
 //! The interpreter half of a plain `gather` as a `Seq`
 //! (docs/adr/11678-gather-is-a-deferred-seq-source.md): driving the
-//! `SeqSource::Gather` coroutine a prefix at a time, and handing its inner
-//! list to the consumers that already stream a `LazyList`.
+//! `SeqSource::Gather` coroutine a prefix at a time, and reading a gather
+//! argument the way the builtin routine or method it is passed to reads it.
 
 use super::*;
 
@@ -43,23 +43,6 @@ impl Interpreter {
         }
     }
 
-    /// A plain gather `Seq` handed to a builtin routine as its inner
-    /// coroutine list, without consuming the Seq. Only the methods of a
-    /// built-in receiver still read a gather this way (ADR-11678 §8; #13026
-    /// retires it). Every other value is returned unchanged.
-    // Cost: O(1).
-    pub(crate) fn shared_gather_list(&self, value: Value) -> Value {
-        match value.view() {
-            ValueView::Seq(body) => body.gather_source().unwrap_or(value),
-            // A named argument (`C.new(c => gather {...})`) carries it as the
-            // Pair's value.
-            ValueView::Pair(key, inner) if Self::is_gather_seq(inner) => {
-                Value::pair(key.clone(), self.shared_gather_list(inner.clone()))
-            }
-            _ => value,
-        }
-    }
-
     /// The arguments of builtin routine `name` with every plain gather `Seq`
     /// read the way Rakudo's routine reads it ([`builtin_gather_read`]):
     /// a streaming routine steals the coroutine and consumes the Seq, an
@@ -76,7 +59,46 @@ impl Interpreter {
         if !Self::has_builtin_seq_read(args) {
             return Ok(std::borrow::Cow::Borrowed(args));
         }
-        let read = builtin_gather_read(name);
+        self.read_gather_args(builtin_gather_read(name), args)
+            .map(std::borrow::Cow::Owned)
+    }
+
+    /// The arguments of method `method` on `target` with every plain gather
+    /// `Seq` read the way Rakudo's method reads it ([`method_gather_read`]),
+    /// when the method is a built-in one: a user object's method, a role's,
+    /// and a method the program declared on a type object keep receiving the
+    /// Seq itself. Returns `args` unchanged when no argument is a gather.
+    // Cost: O(n), n = arguments, plus running each gather the method reads
+    // whole to completion.
+    pub(crate) fn method_gather_args(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: Vec<Value>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        if !Self::has_builtin_seq_read(&args) {
+            return Ok(args);
+        }
+        let builtin = match target.view() {
+            ValueView::Instance { .. } | ValueView::Mixin(..) => false,
+            ValueView::Package(name) => {
+                !self.has_user_method_including_role(&name.resolve(), method)
+            }
+            _ => true,
+        };
+        if !builtin {
+            return Ok(args);
+        }
+        self.read_gather_args(method_gather_read(target, method), &args)
+    }
+
+    /// Every argument of `args` read as `read` says.
+    // Cost: O(n), n = arguments, plus the reads.
+    fn read_gather_args(
+        &mut self,
+        read: GatherRead,
+        args: &[Value],
+    ) -> Result<Vec<Value>, RuntimeError> {
         let mut out = Vec::with_capacity(args.len());
         for arg in args {
             // A Seq an earlier read consumed (`sum(s); sum(s)`) cannot be
@@ -100,7 +122,7 @@ impl Interpreter {
             };
             out.push(arg);
         }
-        Ok(std::borrow::Cow::Owned(out))
+        Ok(out)
     }
 
     /// One plain gather argument read as `read` says.
@@ -114,6 +136,7 @@ impl Interpreter {
         match read {
             GatherRead::Pass => Ok(value),
             GatherRead::Stream => Ok(self.gather_operand(value)),
+
             GatherRead::Consume => {
                 let (items, outcome) = self.take_seq_body(&body)?;
                 Ok(match outcome {
@@ -154,24 +177,6 @@ impl Interpreter {
     pub(crate) fn is_gather_arg(value: &Value) -> bool {
         Self::is_gather_seq(value)
             || matches!(value.view(), ValueView::Pair(_, inner) if Self::is_gather_seq(inner))
-    }
-
-    /// [`Self::shared_gather_list`] over a builtin's argument list, borrowing
-    /// it unchanged when no argument is a gather (the common case).
-    // Cost: O(n), n = arguments.
-    pub(crate) fn shared_gather_args<'a>(
-        &self,
-        args: &'a [Value],
-    ) -> std::borrow::Cow<'a, [Value]> {
-        if !args.iter().any(Self::is_gather_arg) {
-            return std::borrow::Cow::Borrowed(args);
-        }
-        std::borrow::Cow::Owned(
-            args.iter()
-                .cloned()
-                .map(|a| self.shared_gather_list(a))
-                .collect(),
-        )
     }
 
     /// Run a plain gather `Seq` to completion before a reader that renders it
@@ -236,6 +241,25 @@ fn builtin_gather_read(name: &str) -> GatherRead {
         "sum" | "min" | "max" | "minmax" | "unique" | "repeated" | "squish" | "pick" | "roll"
         | "classify" | "categorize" | "produce" | "reduce" | "keys" | "values" | "kv" | "pairs"
         | "permutations" | "combinations" | "cross" | "append" | "prepend" => GatherRead::Consume,
+        _ => GatherRead::Cache,
+    }
+}
+
+/// [`GatherRead`] for built-in method `method` on `target`, measured against
+/// Rakudo (`t/collections/lazy-seq/gather-receiver-args.t`). Unlisted methods
+/// read through the cache.
+// Cost: O(1).
+fn method_gather_read(target: &Value, method: &str) -> GatherRead {
+    match method {
+        // `List.new(g)` keeps the Seq readable (Rakudo stores it as one
+        // element).
+        "new" if matches!(target.view(), ValueView::Package(name) if name == "List") => {
+            GatherRead::Cache
+        }
+        // `Supply.from-list` pulls the gather itself, so that a gather that
+        // dies quits the supply.
+        "push" | "unshift" | "from-list" => GatherRead::Pass,
+        "new" | "append" | "prepend" => GatherRead::Consume,
         _ => GatherRead::Cache,
     }
 }

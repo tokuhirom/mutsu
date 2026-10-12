@@ -326,7 +326,32 @@ impl Interpreter {
     }
 
     /// Handle Supply.from-list class method
-    pub(super) fn dispatch_supply_from_list(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn dispatch_supply_from_list(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // A gather source is pulled here (the materialized Supply holds its
+        // values); one that dies becomes the supply's quit, which a
+        // `whenever`'s `QUIT` phaser sees, as in Rakudo where the tap
+        // iterates it (#13024).
+        if let [source] = args
+            && Self::is_gather_seq(source)
+            && let ValueView::Seq(body) = source.view()
+        {
+            let body = std::sync::Arc::clone(&body);
+            if let Err(err) = self.reify_seq_body(&body) {
+                let reason = err
+                    .exception
+                    .as_deref()
+                    .cloned()
+                    .unwrap_or_else(|| Value::str(err.message.to_string()));
+                return Ok(Self::static_supply_from_stage(
+                    Vec::new(),
+                    &AttrMap::default(),
+                    Some(reason),
+                ));
+            }
+        }
         // Implement +@ single-arg rule:
         // - Single array/list arg: iterate its elements
         // - Multiple args: each arg is one value

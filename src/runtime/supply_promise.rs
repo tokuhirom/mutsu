@@ -792,7 +792,10 @@ impl Interpreter {
                     // here — same cost as before, no new tap-and-drain call.
                     let mut lv = static_last_value.take().unwrap_or(Value::NIL);
                     let (values, initial_quit) = match self.supply_get_values(&inner_map) {
-                        Ok(items) => (items, None),
+                        // A materialized supply that ends in a quit (a stage
+                        // over it died, or a `from-list` gather source did)
+                        // replays its values, then quits.
+                        Ok(items) => (items, inner_map.get("quit_reason").cloned()),
                         Err(err) => (
                             Vec::new(),
                             Some(
