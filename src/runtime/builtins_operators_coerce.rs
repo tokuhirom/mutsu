@@ -23,8 +23,13 @@ impl Interpreter {
         // stripe first (a leaf read, no user code), or even locating the range
         // can see it torn mid-update (#11210). One relaxed load and no lock
         // until a second mutator thread exists; nothing for a non-container.
-        let structure =
-            crate::value::container_lock::ContainerStructGuard::acquire_for(None, &value);
+        let structure = if crate::value::container_lock::multi_mutator_threads_live()
+            && matches!(value.view(), ValueView::Array(..))
+        {
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, &value)
+        } else {
+            None
+        };
         if let Some(items) = value.as_list_items() {
             return Ok(Value::int(items.len() as i64));
         }
