@@ -1,7 +1,8 @@
 # ADR-11502: The Asynchronous `nqp::` ops push onto a blocking queue
 
 - **Status**: Proposed (2026-10-12). §2.1–§2.3 are implemented in the PR that adds
-  `runtime/nqp_ops_async.rs`; §2.4 is not yet implemented.
+  `runtime/nqp_ops_async.rs`. Of §2.4, `signal` is implemented (§2.4.1); the other
+  ops are not yet.
 - **Date**: 2026-10-12
 - **Issue**: [#11502](https://github.com/tokuhirom/mutsu/issues/11502) (campaign
   [#11488](https://github.com/tokuhirom/mutsu/issues/11488))
@@ -79,6 +80,30 @@ To serve these ops, each one gets a sink that can also be a queue push of `[sche
 args…]`, behind one abstraction. Each op then reuses its native implementation; none gets
 a second one. That refactor is the next slice.
 
+#### 2.4.1 `nqp::signal` (implemented)
+
+MoarVM's operand order is `nqp::signal($setup_queue, $setup_schedulee, $queue,
+$schedulee, $signum, $type)`. Rakudo's `signal()` waits on the setup queue so that the
+handler is armed before it returns. Observed on Rakudo 2026.09:
+
+- `[$setup_schedulee]` is pushed onto the setup queue once the handler is installed.
+- Each delivery pushes `[$schedulee, $signum]`, with `$signum` a `BOOTInt`.
+- Each handle on a signal gets its own push.
+- Cancelling the last handle gives the signal back to its previous disposition.
+- Errors, in the order they are checked:
+  - `signal result type must have REPR AsyncTask`;
+  - `signal target queue must have ConcBlockingQueue REPR`;
+  - `signal setup notify queue must have ConcBlockingQueue REPR`;
+  - `Unsupported signal handler N` for a number outside the standard signals.
+
+mutsu adds the sink as a second kind of registration in the existing signal watcher
+(`signal_watcher_unix.rs`). A registration is either the `signal()` Supply it always
+served, or a `QueueSink` (`nqp_ops_async.rs`): the queue, the schedulee and the task's
+cancellation flag. They share one registry, one self-pipe handler and one
+disposition restore. A queue registration retires when its flag is set, and
+`nqp::cancel` runs the watcher's retire sweep at once, so the disposition goes back at
+the cancel, as in MoarVM. The other §2.4 ops are to reuse `QueueSink` the same way.
+
 ### 2.5 Not provided: `$*SCHEDULER.queue`
 
 `ThreadPoolScheduler.queue` is an undocumented Rakudo internal. A program that wants these
@@ -92,4 +117,5 @@ family.
 - Rakudo's own way of building these ops works: a queue class, a handle class, and
   `nqp::shift` to wait on events.
 - The timer adds no thread: it shares the heap `Supply.interval` and `Promise.in` use.
-- `docs/nqp-op-coverage.md`: Asynchronous goes from 0 / 11 to 2 / 11.
+- `docs/nqp-op-coverage.md`: Asynchronous goes from 0 / 11 to 2 / 11 (§2.1–§2.3), then
+  to 3 / 11 (`signal`).

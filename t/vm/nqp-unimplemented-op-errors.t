@@ -38,12 +38,13 @@ throws-like 'use nqp; nqp::setwho($_, 1)', X::AdHoc,
 # (`nqp::substr` was the example here until the String::Utils slice implemented
 # it, then `nqp::chr` until the JSON::Fast slice did, then `nqp::sprintf` until
 # the string-op slice (#11495) did, then `nqp::cas` until the atomic-op slice
-# (#11502) did. The example must stay a real nqp op that mutsu does NOT
-# provide and whose Raku namesake would have answered plausibly: raku's
-# `signal(SIGINT)` answers a Supply, so aliasing to it would look right and
+# (#11502) did, then `nqp::signal` until the async-signal slice (#11502) did.
+# The example must stay a real nqp op that mutsu does NOT provide and whose
+# Raku face would have answered plausibly: `IO::Path.watch` answers a Supply
+# of file changes, so aliasing `nqp::watchfile` to it would look right and
 # hide the gap.)
-throws-like 'use nqp; nqp::signal(SIGINT)', X::AdHoc,
-    message => /'nqp::signal'/,
+throws-like 'use nqp; nqp::watchfile("x")', X::AdHoc,
+    message => /'nqp::watchfile'/,
     'including ops whose Raku namesake would have produced a plausible answer';
 
 # Regression guard: this must stay scoped to `nqp::`. An ordinary qualified
