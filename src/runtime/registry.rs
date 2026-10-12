@@ -426,7 +426,7 @@ pub(crate) struct Registry {
     /// Roles implicitly composed by enums: enum -> [role names].
     pub(crate) class_enum_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Subs declared inside a class body: class -> (sub name -> value).
-    pub(crate) class_subs: HashMap<String, HashMap<String, Value>>,
+    pub(crate) class_subs: CowTable<HashMap<String, HashMap<String, Value>>>,
     /// Per-attribute `BUILD` override: (class, attr) -> builder value.
     pub(crate) attribute_build_overrides: HashMap<(String, String), Value>,
     /// Per-attribute default value: (class, attr) -> default value.
@@ -502,12 +502,12 @@ pub(crate) struct Registry {
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,
     /// attributes, deferred body, ...). Like `classes`, callers clone the
     /// minimal projection under a short-lived guard rather than the whole def.
-    pub(crate) roles: HashMap<String, RoleDef>,
+    pub(crate) roles: CowTable<HashMap<String, RoleDef>>,
     /// Roles explicitly declared via user code (not pre-registered builtins);
     /// used to detect `X::Redeclaration` for role->class name conflicts.
     pub(crate) user_declared_roles: HashSet<String>,
     /// Parameterized role candidates: role name -> [candidate by arity/types].
-    pub(crate) role_candidates: HashMap<String, Vec<RoleCandidateDef>>,
+    pub(crate) role_candidates: CowTable<HashMap<String, Vec<RoleCandidateDef>>>,
     /// Role inheritance: role -> [parent role specs].
     pub(crate) role_parents: CowTable<HashMap<String, Vec<String>>>,
     /// `also hides` relationships on roles: role -> [hidden names].
@@ -531,7 +531,7 @@ pub(crate) struct Registry {
     /// the in-place registration of the same declaration must not repeat them.
     pub(crate) nested_shell_traits_applied: HashSet<u64>,
     /// Bound role type parameters per class: class -> (param name -> value).
-    pub(crate) class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
+    pub(crate) class_role_param_bindings: CowTable<HashMap<String, HashMap<String, Value>>>,
     /// Anonymous type-object identity cache for a role-mixed value's `.WHAT`
     /// (ADR-0060): composition key
     /// (`crate::value::types::mixin_composition_key`) -> the shared
@@ -2097,6 +2097,45 @@ impl std::ops::DerefMut for RegistryWriteGuard<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A thread clone shares its parent's `Arc<Registry>`, and its first write
+    /// (an inner `my sub` re-installed on every call) copies the `Registry`.
+    /// The role and class-sub tables must survive that copy as shared
+    /// refcounts: when they were plain maps, each such clone deep-copied every
+    /// role definition and kept it, ~10 MB per Cro keep-alive connection
+    /// (#12981).
+    #[test]
+    fn copying_the_registry_shares_role_tables_until_they_are_written() {
+        let mut parent = Registry::default();
+        parent
+            .role_candidates
+            .insert("R".to_string(), Vec::new());
+        parent.class_subs.insert("C".to_string(), HashMap::default());
+        parent
+            .class_role_param_bindings
+            .insert("C".to_string(), HashMap::default());
+        let shared = Arc::new(parent);
+        let mut child_arc = Arc::clone(&shared);
+        let child = Arc::make_mut(&mut child_arc);
+        child.functions_mut().insert(
+            Symbol::intern("GLOBAL::inner"),
+            Arc::new(dummy_proto_def("GLOBAL", "inner")),
+        );
+        assert!(child.roles.shares_with(&shared.roles));
+        assert!(child.role_candidates.shares_with(&shared.role_candidates));
+        assert!(child.class_subs.shares_with(&shared.class_subs));
+        assert!(
+            child
+                .class_role_param_bindings
+                .shares_with(&shared.class_role_param_bindings)
+        );
+        child
+            .class_subs
+            .insert("D".to_string(), HashMap::default());
+        assert!(!child.class_subs.shares_with(&shared.class_subs));
+        assert!(!shared.class_subs.contains_key("D"));
+        assert!(child.roles.shares_with(&shared.roles));
+    }
 
     /// The three scope-snapshotted routine tables are copy-on-write: taking a
     /// snapshot is a refcount bump, and the copy happens on the next write --
