@@ -8888,10 +8888,17 @@ impl CompiledCode {
         // literal `"_"` only costs a harmless extra topic-shadow write on that
         // routine's calls. A topic-free routine (e.g. `fib`) has no `"_"`
         // constant, so its hot-loop calls skip the shadow write entirely.
+        // A block nested in this one that reads `$_` without binding its own
+        // reads this one's, so its read counts here too (a nested routine owns
+        // its own), as `uses_routine_state` folds in nested blocks.
         self.reads_topic = self
             .constants
             .iter()
-            .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "_"));
+            .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "_"))
+            || self
+                .closure_compiled_codes
+                .iter()
+                .any(|c| c.reads_topic && !c.is_routine);
         self.mentions_native_scalar_type_name = self.constants.iter().any(|c| {
             matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num")
                 || crate::native_types::is_native_int_type(s.as_str()))

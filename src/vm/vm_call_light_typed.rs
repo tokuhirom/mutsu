@@ -110,11 +110,12 @@ impl Interpreter {
         // that is itself such an empty frame, which sees exactly the same
         // program scope past it.
         let outer_is_unit = cf.code.links_frame_to_unit();
-        // A body that touches `$/` reuses only a frame that owns one, so its
-        // match state is never another frame's (`env::routine_owned`).
+        // A body that touches `$/`, `$!` or `$_` reuses only a frame that
+        // owns them, so they are never another frame's (`env::routine_owned`).
+        let owns_state = cf.code.uses_routine_state || (cf.code.reads_topic && cf.code.is_routine);
         let caller_env = if self.env().overlay_is_shared_empty()
             && (!outer_is_unit || self.env().is_empty_unit_frame())
-            && (!cf.code.uses_routine_state || self.env().owns_routine_state())
+            && (!owns_state || self.env().owns_routine_state())
         {
             None
         } else {
@@ -541,18 +542,14 @@ impl Interpreter {
             self.unmark_readonly_topic();
         }
         // Raku: a routine gets its own `$_` = `(Any)`, not the caller's topic.
-        // Shadow the caller's topic with Any before the body reads it (gated on
-        // `reads_topic` so a topic-free routine pays nothing). See vm_call_light.
+        // The frame root answers it (see vm_call_light); only a local slot
+        // standing for `$_` needs the value.
         if cf.code.reads_topic
             && cf.code.is_routine
             && !cf.param_defs.iter().any(|pd| pd.name == "_")
+            && let Some(slot) = cf.code.locals.iter().position(|n| n == "_")
         {
-            let any_val = Value::package(crate::symbol::wk::any());
-            if let Some(slot) = cf.code.locals.iter().position(|n| n == "_") {
-                self.locals[slot] = any_val.clone();
-            }
-            self.env_mut()
-                .insert_sym(crate::symbol::wk::topic(), any_val);
+            self.locals[slot] = Value::package(crate::symbol::wk::any());
         }
         for (i, pd) in cf.param_defs.iter().enumerate() {
             if !pd.name.is_empty()

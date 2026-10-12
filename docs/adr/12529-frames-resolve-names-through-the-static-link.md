@@ -710,6 +710,42 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    to `$_`. No benchmark's TRIR accept/decline set changed. The per-call
    `$_` resets on the VM paths remain; moving `$_` onto slice 10's owner
    walk is the next step of the family.
+   **Slice 13 done** (`perf/12529-routine-owned-topic`): `$_` on slice
+   10's owner walk. A new symbol flag, `ROUTINE_OWNED` (the
+   `ROUTINE_SCOPED_IMPLICIT` names plus `_`), selects the walk. The topic
+   stays out of `ROUTINE_SCOPED_IMPLICIT` because the return merges and
+   `uses_routine_state` treat it on their own terms. An owning frame root
+   answers `Any` for a `$_` the routine has not bound. A block's frame root
+   answers from its capture. A capture made in a routine that had not set
+   its `$_` holds that routine's `Any`, not the program scope's topic
+   (`layered_capture` and `filtered_flat_capture`).
+
+   - The per-call `$_` inserts on rooted frames are gone: named, light,
+     typed-light, fast, closure-dispatch and both method paths. So are the
+     redundant `$!` resets on the named, closure and method paths. Of 12
+     per-call sites, four remain, all for a method that creates closures
+     and so runs unrooted (#12882).
+   - The fast path gives a topic-reading routine a root. `reads_topic` now
+     folds in nested blocks, as `uses_routine_state` does, so a block
+     created in the body cannot read the caller's topic. A light frame is
+     reused for such a body only when that frame owns its state.
+   - A placeholder block or a WhateverCode that reads `$_` binds its
+     caller's in its own frame. It runs as a routine, but its topic is the
+     outer one.
+   - An empty routine frame is now common, because nothing is inserted.
+     That exposed two "an empty tier is invisible" shortcuts. `scoped_child`
+     skipped an empty owner root, which a lookup must stop at. The
+     flattening short-circuit replaced the frame's `FrameIds` with its
+     parent's, which made a block's `return` lose its target routine. An
+     owner root is no longer skipped, and the short-circuit keeps the
+     frame's ids.
+
+   Release-build Ir against the merge base (interpreter lane / JIT lane):
+   `bench-fib` +0.06% / +0.11%, `bench-tak` +0.04% / +0.06%, `method-call`
+   -2.32% / -2.36%, `poly-call` -0.74% / -0.69%, `bench-ctor` -1.14% /
+   -1.05%, `bench-multi-dispatch` -1.14% / -1.16%, `bench-string` -0.05% /
+   +0.03%. Allocations: -10,000 on `method-call` and `bench-multi-dispatch`
+   (one overlay map per call that no longer receives a `$_`).
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,

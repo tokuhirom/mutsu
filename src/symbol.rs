@@ -224,6 +224,13 @@ pub(crate) mod flags {
     /// past the frame root of the routine that owns them. Mirrors
     /// `is_routine_scoped_implicit_var`.
     pub(crate) const ROUTINE_SCOPED_IMPLICIT: u16 = 1 << 0;
+    /// A name a routine owns and a by-name lookup does not look for past the
+    /// frame root of the routine that owns it (ADR-12529 phase 3,
+    /// `env::routine_owned`): every [`ROUTINE_SCOPED_IMPLICIT`] name, and the
+    /// topic `_`. The topic is kept out of that flag because its other
+    /// consumers (the return merges, `CompiledCode::uses_routine_state`)
+    /// treat it on their own terms.
+    pub(crate) const ROUTINE_OWNED: u16 = 1 << 1;
     /// A *shadow metadata* key: `__mutsu_type::<name>` (a typed lexical's
     /// constraint) or `__mutsu_var_source_name::<name>` (the caller variable a
     /// `@`/`%`/raw parameter was bound from). Nothing can observe one except
@@ -422,10 +429,13 @@ pub(crate) fn is_routine_scoped_implicit_var(name: &str) -> bool {
 fn compute_flags(s: &str) -> u16 {
     let mut f = flags::COMPUTED;
     if is_routine_scoped_implicit_var(s) {
-        f |= flags::ROUTINE_SCOPED_IMPLICIT | flags::CAPTURE_VOLATILE;
+        f |= flags::ROUTINE_SCOPED_IMPLICIT | flags::ROUTINE_OWNED | flags::CAPTURE_VOLATILE;
     }
     if matches!(s, "_" | "@_" | "%_") {
         f |= flags::CAPTURE_VOLATILE;
+    }
+    if s == "_" {
+        f |= flags::ROUTINE_OWNED;
     }
     if s.starts_with(TYPE_META_PREFIX) || s.starts_with(VAR_SOURCE_META_PREFIX) {
         f |= flags::SHADOW_META;
@@ -553,7 +563,7 @@ pub(crate) enum EnvKeyProbe {
     Absent,
     /// May be an env key; not routine-owned.
     Plain,
-    /// May be an env key, and routine-owned (`$!`, `/`, `0`, `<name>`).
+    /// May be an env key, and routine-owned (`_`, `!`, `/`, `0`, `<name>`).
     RoutineOwned,
 }
 
@@ -572,7 +582,7 @@ pub(crate) fn env_key_probe(sym: Symbol) -> EnvKeyProbe {
     let f = slot.load(Ordering::Relaxed);
     if f & flags::EVER_ENV_KEY == 0 {
         EnvKeyProbe::Absent
-    } else if f & flags::ROUTINE_SCOPED_IMPLICIT != 0 {
+    } else if f & flags::ROUTINE_OWNED != 0 {
         EnvKeyProbe::RoutineOwned
     } else {
         EnvKeyProbe::Plain
@@ -971,13 +981,13 @@ impl Symbol {
         f
     }
 
-    /// Whether this symbol names a routine-owned implicit (`$!`, `$/` and its
-    /// capture views `0`, `<name>`), which a by-name lookup does not look for
-    /// past the routine's frame root (ADR-12529 phase 3,
-    /// `env::routine_owned`); see [`flags::ROUTINE_SCOPED_IMPLICIT`].
+    /// Whether this symbol names a routine-owned implicit (`$_`, `$!`, `$/`
+    /// and its capture views `0`, `<name>`), which a by-name lookup does not
+    /// look for past the routine's frame root (ADR-12529 phase 3,
+    /// `env::routine_owned`); see [`flags::ROUTINE_OWNED`].
     #[inline]
     pub(crate) fn is_routine_owned(self) -> bool {
-        self.flags() & flags::ROUTINE_SCOPED_IMPLICIT != 0
+        self.flags() & flags::ROUTINE_OWNED != 0
     }
 
     /// Memoized [`crate::env::is_plain_user_lexical`] for this symbol's string.

@@ -456,7 +456,8 @@ impl Interpreter {
         // env, unlinked: a root of its own would cost a flatten per method
         // call in its body.
         let links_frame = cc.links_frame_to_unit();
-        if cc.closure_compiled_codes.is_empty() {
+        let rooted = cc.closure_compiled_codes.is_empty();
+        if rooted {
             let parent = self.env().clone();
             let mut frame = crate::env::Env::scoped_child(parent);
             // A method owns its `$/` (`env::routine_owned`).
@@ -569,14 +570,19 @@ impl Interpreter {
         // $_ in a method body is Any unless the invocant is explicitly named $_
         // (e.g. `method foo ($_: ) { ... }`). The invocant binding loop below
         // will set $_ back to self if the invocant param is named "_".
-        self.env_mut().insert_sym(
-            crate::symbol::wk::topic(),
-            Value::package(crate::symbol::wk::any()),
-        );
-
-        // Raku: $! is scoped per routine — fresh Nil on entry
-        self.env_mut()
-            .insert_sym(crate::symbol::wk::error_var(), Value::NIL);
+        // A rooted method's frame answers both (`env::routine_owned`); one
+        // that runs in its caller's env (it creates closures) shadows them.
+        // TODO(#12882): give a closure-creating method a root without the
+        // per-call flatten slice 8 measured, and drop these inserts.
+        if !rooted {
+            self.env_mut().insert_sym(
+                crate::symbol::wk::topic(),
+                Value::package(crate::symbol::wk::any()),
+            );
+            // Raku: $! is scoped per routine — fresh Nil on entry
+            self.env_mut()
+                .insert_sym(crate::symbol::wk::error_var(), Value::NIL);
+        }
 
         // Assign a unique callable ID for this method invocation so that
         // non-local returns from blocks defined inside this method can target it.
@@ -2322,13 +2328,13 @@ impl Interpreter {
         self.inject_class_body_statics(owner_class);
         if skip_env_setup {
             let env = self.env_mut();
-            // 4 fixed keys below (`self`, `__ANON_STATE__`, `?CLASS`, the
-            // topic) plus one per bound parameter -- see `Env::reserve`.
-            env.reserve(4 + param_values.len());
+            // 3 fixed keys below (`self`, `__ANON_STATE__`, `?CLASS`) plus
+            // one per bound parameter -- see `Env::reserve`.
+            env.reserve(3 + param_values.len());
             env.insert_sym(crate::symbol::wk::self_(), base.clone());
             env.insert_sym(crate::symbol::wk::anon_state(), base.clone());
             env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
-            env.insert_sym(crate::symbol::wk::topic(), any_val.clone());
+            // `$_` is the rooted frame's own (`env::routine_owned`).
             if let Some(ref role_name) = role_context {
                 env.insert_sym(
                     crate::symbol::wk::role_decl(),
@@ -2346,8 +2352,11 @@ impl Interpreter {
             env.insert_sym(crate::symbol::wk::self_(), base.clone());
             env.insert_sym(crate::symbol::wk::anon_state(), base.clone());
             env.insert_sym(crate::symbol::wk::class_decl(), class_val.clone());
-            env.insert_sym(crate::symbol::wk::topic(), any_val.clone());
-            env.insert_sym(crate::symbol::wk::error_var(), Value::NIL);
+            // A rooted frame answers `$_` and `$!` (`env::routine_owned`).
+            if !use_scoped {
+                env.insert_sym(crate::symbol::wk::topic(), any_val.clone());
+                env.insert_sym(crate::symbol::wk::error_var(), Value::NIL);
+            }
             env.set_callable_id(method_callable_id as i64);
             if let Some(ref role_name) = role_context {
                 env.insert_sym(

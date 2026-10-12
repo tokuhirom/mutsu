@@ -1,6 +1,6 @@
-//! The routine-owned implicits -- `$/` with its capture views, and `$!` --
-//! looked up by name without passing the routine that owns them (ADR-12529
-//! phase 3, slices 10 and 11).
+//! The routine-owned implicits -- `$/` with its capture views, `$!` and `$_`
+//! -- looked up by name without passing the routine that owns them
+//! (ADR-12529 phase 3, slices 10, 11 and 13).
 //!
 //! In Raku every routine declares its own `$/` (and with it `$0`, `$<name>`,
 //! which are views into it) and its own `$!`, initially `Nil`; a block has
@@ -28,6 +28,15 @@
 //! (`Interpreter::capture_block_match_var`), which the setters store through
 //! ([`Env::assign_match_var`], [`Env::assign_error_var`]).
 //!
+//! The topic `$_` takes the same walk ([`crate::symbol::flags::ROUTINE_OWNED`]),
+//! with two differences. A routine's own starts as `Any`, not unset, so the
+//! owning frame root answers `Any` -- which is why no call path inserts one
+//! per call any more. And a block that binds its own (an argument, a `for`
+//! or `.map` iteration) binds it in its frame; only one called with no
+//! argument reaches its frame root, which answers from its capture, and a
+//! capture made in a routine that had not set its `$_` holds that routine's
+//! `Any` (`Env::layered_capture`).
+//!
 //! The marking costs nothing per lookup on any other chain: the walk is
 //! selected by `Env::chain_has_routine_owner`, a latch like
 //! `chain_has_static_link`, and only for the handful of routine-owned
@@ -37,6 +46,14 @@
 use super::Env;
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
+
+/// The `$_` a routine starts with: `Any`, which its frame root answers until
+/// the routine binds its own, so a call inserts nothing for it.
+// Cost: O(1) after the first call per process.
+fn routine_topic() -> &'static Value {
+    static ANY: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    ANY.get_or_init(|| Value::package(crate::symbol::wk::any()))
+}
 
 /// The `$/` a [`Env::publish_match_var`] replaced: the shared cell it stored
 /// through and the value the cell held, or the binding it shadowed.
@@ -81,7 +98,8 @@ impl Env {
             }
             if cur.frame_root {
                 if cur.owns_routine_state {
-                    return None;
+                    // A routine's own `$_` starts as `Any`; the others unset.
+                    return (key == crate::symbol::wk::topic()).then(routine_topic);
                 }
                 // A block's `$/` and `$!` are its lexical scope's, which its
                 // capture holds. Its capture views (`$0`, `$<name>`) go on to the
@@ -93,6 +111,18 @@ impl Env {
                         || key == crate::symbol::wk::error_var())
                 {
                     return fb.get(&key);
+                }
+                // A block called with no argument reads its lexical scope's
+                // `$_` (one that binds its own found it in its frame above).
+                // A capture that holds none was made in a routine that had not
+                // set its own, whose root answers `Any`.
+                if let Some(fb) = &cur.fallback
+                    && key == crate::symbol::wk::topic()
+                {
+                    return Some(match fb.get(&key) {
+                        Some(v) => v,
+                        None => routine_topic(),
+                    });
                 }
             }
             match &cur.parent {
@@ -211,6 +241,7 @@ impl Env {
         };
         check(crate::symbol::wk::match_var());
         check(crate::symbol::wk::error_var());
+        check(crate::symbol::wk::topic());
         crate::symbol::for_each_capture_shaped_symbol(check);
         if fixes.is_empty() {
             return;

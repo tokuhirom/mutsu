@@ -394,11 +394,12 @@ impl Interpreter {
         // that is itself such an empty frame, which sees exactly the same
         // program scope past it.
         let outer_is_unit = cf.code.links_frame_to_unit();
-        // A body that touches `$/` reuses only a frame that owns one, so its
-        // match state is never another frame's (`env::routine_owned`).
+        // A body that touches `$/`, `$!` or `$_` reuses only a frame that
+        // owns them, so they are never another frame's (`env::routine_owned`).
+        let owns_state = cf.code.uses_routine_state || (cf.code.reads_topic && cf.code.is_routine);
         let caller_env = if self.env().overlay_is_shared_empty()
             && (!outer_is_unit || self.env().is_empty_unit_frame())
-            && (!cf.code.uses_routine_state || self.env().owns_routine_state())
+            && (!owns_state || self.env().owns_routine_state())
         {
             None
         } else {
@@ -816,23 +817,17 @@ impl Interpreter {
         // the SetLocal path (`flush_local_to_env`).
 
         // Raku: a routine gets its own `$_` initialized to `(Any)` — it does NOT
-        // inherit the caller's topic. This positional-light path reads `$_`
-        // through the scoped overlay, which would otherwise fall through to the
-        // caller's topic (`given 'x' { f(1) }` where `sub f($n){ ... $_ ... }`
-        // saw `'x'`, not `Any`). Shadow it with `Any` here — gated on
-        // `reads_topic` so a topic-free hot loop (`fib`) never pays this env
-        // write and keeps the frame-reuse fast path. An explicit `$_` parameter
-        // (bound above) owns `$_`, so skip when one is present.
+        // inherit the caller's topic. The frame root owns it
+        // (`env::routine_owned`, and the frame-reuse check above), so a by-name
+        // read answers `Any` without an env write; only a local slot standing
+        // for `$_` needs the value. An explicit `$_` parameter (bound above)
+        // owns `$_`, so skip when one is present.
         if cf.code.reads_topic
             && cf.code.is_routine
             && !cf.param_defs.iter().any(|pd| pd.name == "_")
+            && let Some(slot) = cf.code.locals.iter().position(|n| n == "_")
         {
-            let any_val = Value::package(crate::symbol::wk::any());
-            if let Some(slot) = cf.code.locals.iter().position(|n| n == "_") {
-                self.locals[slot] = any_val.clone();
-            }
-            self.env_mut()
-                .insert_sym(crate::symbol::wk::topic(), any_val);
+            self.locals[slot] = Value::package(crate::symbol::wk::any());
         }
 
         let saved_stack_depth = self.stack.len();

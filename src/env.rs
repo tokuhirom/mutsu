@@ -971,9 +971,14 @@ impl Env {
         // A tier carrying a closure-capture `fallback` is NOT invisible — its
         // captured names resolve through it — so it is never skipped here,
         // however empty its own overlay is.
+        //
+        // Nor is a routine's frame root that owns its `$_`, `$/` and `$!`
+        // (`env::routine_owned`): a lookup of one stops there, which it would
+        // not do past the skipped tier.
         if parent.inner.is_empty()
             && parent.tombstones.is_none()
             && parent.fallback.is_none()
+            && !parent.owns_routine_state
             && parent.inner.static_link().is_none()
             && let Some(gp) = parent.parent.take()
         {
@@ -981,6 +986,7 @@ impl Env {
             while arc.inner.is_empty()
                 && arc.tombstones.is_none()
                 && arc.fallback.is_none()
+                && !arc.owns_routine_state
                 && arc.inner.static_link().is_none()
                 && let Some(gp) = &arc.parent
             {
@@ -1547,6 +1553,10 @@ impl Env {
                 // describes the wrong frame: drop it. `flattened_for_frame`
                 // installs this env's own (see #7630).
                 flat.frame_writes = None;
+                // The ids are this frame's too: a routine frame that bound
+                // nothing by name (its `$_` is its root's, `env::routine_owned`)
+                // is still the callable a block's `return` targets.
+                flat.frame_ids = self.frame_ids;
                 flat
             }
             Some(_) => {
@@ -2064,6 +2074,17 @@ impl Env {
         let outermost =
             !self.chain_has_fallback || !self.collect_fallbacks_filtered(&mut out, keep, base_map);
         collect(self, &mut out, keep, probe, outermost);
+        // The walk merged the callers' tiers too; the topic is the one the
+        // chain answers, which stops at the routine that owns it
+        // (`env::routine_owned`).
+        if self.chain_has_routine_owner {
+            let topic = crate::symbol::wk::topic();
+            if let Some(v) = self.get_sym(topic)
+                && keep(topic, v)
+            {
+                out.insert(topic, v.clone());
+            }
+        }
         // `keep` may have rejected `?FILE`, so re-derive rather than inherit.
         let file_sym = out.get(&file_key()).and_then(file_sym_of);
         // The per-interpreter base tier rides along by reference, exactly as
@@ -2161,8 +2182,20 @@ impl Env {
         }
         let mut own = SymMap::default();
         let mut layers: Vec<Layer> = Vec::new();
+        // A routine's root owns its `$_`, which it has not bound when no tier
+        // above holds one: the closure captures that `Any`, not the program
+        // scope's topic below the root (`env::routine_owned`).
+        let topic = crate::symbol::wk::topic();
+        let mut past_owner = false;
         // Leaf first, so the first binding of a name is the visible one.
         for env in &nodes {
+            if std::mem::take(&mut past_owner) && !own.contains_key(&topic) {
+                let any = Value::package(crate::symbol::wk::any());
+                if keep(topic, &any) {
+                    own.insert(topic, any);
+                }
+            }
+            past_owner = env.frame_root && env.owns_routine_state;
             let tier = &env.inner;
             for &k in probe {
                 if let Some(v) = tier.get(&k)
