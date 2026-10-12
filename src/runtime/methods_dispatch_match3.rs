@@ -973,6 +973,9 @@ impl Interpreter {
                 Ok(Value::seq(vals))
             }
             ValueView::Array(items, ..) => Ok(Value::seq(items.to_vec())),
+            // A List over a gather still being pulled is its own `.values`
+            // (ADR-11678): it reifies from the coroutine as it is read.
+            ValueView::Seq(body) if body.is_gather_source() => Ok(target.clone()),
             ValueView::Hash(map) => Ok(Value::seq(map.values().cloned().collect())),
             ValueView::Pair(_, value) => Ok(Value::seq(vec![value.clone()])),
             ValueView::ValuePair(_, value) => Ok(Value::seq(vec![value.clone()])),

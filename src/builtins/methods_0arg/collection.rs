@@ -342,6 +342,9 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     Some(Ok(Value::seq(crate::runtime::utils::value_to_list(target))))
                 }
                 ValueView::LazyList(_) => None, // fall through to runtime to force
+                // A List over a gather still being pulled is its own `.values`
+                // (ADR-11678): it reifies from the coroutine as it is read.
+                ValueView::Seq(body) if body.is_gather_source() => Some(Ok(target.clone())),
                 _ => Some(Ok(Value::seq(crate::runtime::utils::value_to_list(target)))),
             }
         }
