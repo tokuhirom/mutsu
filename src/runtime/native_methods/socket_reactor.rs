@@ -129,7 +129,7 @@ fn run_reactor(shared: &Shared, wake_read: RawFd) {
             revents: 0,
         });
         pollfds.extend(readers.iter().map(|r| libc::pollfd {
-            fd: r.stream.as_raw_fd(),
+            fd: r.fd,
             events: libc::POLLIN,
             revents: 0,
         }));
@@ -163,7 +163,7 @@ fn run_reactor(shared: &Shared, wake_read: RawFd) {
                 readers.swap_remove(i);
                 continue;
             }
-            let read = recv_dontwait(reader.stream.as_raw_fd(), &mut buf);
+            let read = recv_dontwait(reader.fd, &mut buf);
             if matches!(&read, Err(e) if super::socket_reader::is_would_block(e)) {
                 continue;
             }
