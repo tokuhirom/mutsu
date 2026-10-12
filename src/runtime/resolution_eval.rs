@@ -61,7 +61,7 @@ impl CarrierBody {
     }
 }
 
-/// The four per-`SubData` mutations `eval_block_value_inner` applies to the
+/// The three per-`SubData` mutations `eval_block_value_inner` applies to the
 /// chunk it compiles for a carrier block, gathered so they can be both keyed on
 /// and applied in one place.
 ///
@@ -72,14 +72,12 @@ pub(super) struct CarrierPostCompile {
     is_supply_block_body: bool,
     supply_emitter_sym: Option<crate::symbol::Symbol>,
     authoritative_free_vars: Vec<crate::symbol::Symbol>,
-    inherited_owned_lexicals: Vec<crate::symbol::Symbol>,
 }
 
 impl CarrierPostCompile {
     fn apply(&self, code: &mut crate::opcode::CompiledCode) {
         code.is_supply_block_body = self.is_supply_block_body;
         code.supply_emitter_sym = self.supply_emitter_sym;
-        code.inherited_owned_lexicals = self.inherited_owned_lexicals.clone();
         for sym in &self.authoritative_free_vars {
             if !code.authoritative_free_vars.contains(sym) {
                 code.authoritative_free_vars.push(*sym);
@@ -567,7 +565,6 @@ impl Interpreter {
             supply_block_body: post.is_supply_block_body,
             supply_emitter_sym: post.supply_emitter_sym,
             supply_authoritative_free_vars: post.authoritative_free_vars.clone(),
-            whenever_inherited_owned: post.inherited_owned_lexicals.clone(),
         }
     }
 
@@ -596,7 +593,7 @@ impl Interpreter {
         }
         crate::vm::vm_stats::record_carrier_compile(false);
         let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit, routineness);
-        // The four per-`SubData` mutations, applied BEFORE the chunk is shared.
+        // The three per-`SubData` mutations, applied BEFORE the chunk is shared.
         // They are part of the key above, so an entry served from the cache is
         // byte-identical to what this fresh path produces for the same key --
         // which is what lets them be cached at all rather than forcing a
@@ -664,7 +661,6 @@ impl Interpreter {
         let supply_emitter_sym = std::mem::take(&mut self.pending_supply_emitter_sym);
         let supply_authoritative_free_vars =
             std::mem::take(&mut self.pending_supply_authoritative_free_vars);
-        let whenever_inherited_owned = std::mem::take(&mut self.pending_whenever_inherited_owned);
         let let_mark = self.let_saves_len();
         // All five snapshots are refcount bumps, not copies: every one of these
         // tables is a copy-on-write `Arc` (`Registry::functions`,
@@ -723,7 +719,6 @@ impl Interpreter {
             is_supply_block_body,
             supply_emitter_sym,
             authoritative_free_vars: supply_authoritative_free_vars,
-            inherited_owned_lexicals: whenever_inherited_owned,
         };
         // Re-armed only for the duration of the compile below (the cache key
         // and `compile_block_value_opts` read it), then cleared before the body

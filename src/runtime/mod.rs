@@ -433,59 +433,20 @@ struct CarrierCompileCtxKey {
     /// serve a unit compiled under the wrong classification.
     eval_context_routine: Option<EvalContextRoutineState>,
     /// The four post-compile mutations `eval_block_value_inner` applies to the
-    /// chunk it just compiled: the supply-body mark, the emitter name, the
-    /// vouched capture set and the inherited owned-lexical set. They come from
+    /// chunk it just compiled: the supply-body mark, the emitter name and the
+    /// vouched capture set. They come from
     /// the `SubData` being run, so they are the same on every call for one
     /// `cache_id` -- but they are *not* the same across two different code
     /// objects that happen to share one, so they belong in the key.
     ///
     /// They used to bypass the cache instead ("compile fresh, don't store"),
-    /// which meant a `whenever` callback -- whose `authoritative_captures` is
-    /// never empty -- was re-compiled from AST on every single emitted value.
+    /// which meant a `whenever` callback (then still dispatched through the
+    /// carrier) was re-compiled from AST on every single emitted value.
     /// On Cro's HTTP/2 parser that was one full `Compiler::compile` per DATA
     /// frame, 38% of the frame's instructions (#7667).
     supply_block_body: bool,
     supply_emitter_sym: Option<Symbol>,
     supply_authoritative_free_vars: Vec<Symbol>,
-    whenever_inherited_owned: Vec<Symbol>,
-}
-
-/// Split-and-shared `whenever` body, memoized per parse site.
-///
-/// `split_whenever_body_phasers` partitions a `whenever` body into its main
-/// statements and its `LAST`/`QUIT` phaser bodies. That is a pure function of
-/// the body AST, but it ran on every *registration*, deep-cloning every
-/// statement into fresh `Vec`s -- so a `whenever` registered in a loop paid an
-/// O(body) AST copy each time AND handed the callback `Sub` a brand-new
-/// `Arc<Vec<Stmt>>`, which meant the carrier compile cache (keyed by parse
-/// site, see [`CarrierCacheKey`]) could never hit for it. Memoizing it hands
-/// every registration the same `Arc`s. Keyed by the pool-owned body `Arc`,
-/// held rather than addressed for the same soundness reason as
-/// [`MapGrepCacheKey`].
-type WheneverBodySplit = (
-    Arc<Vec<crate::ast::Stmt>>,
-    Vec<Arc<Vec<crate::ast::Stmt>>>,
-    Vec<Arc<Vec<crate::ast::Stmt>>>,
-);
-
-/// Key for `whenever_body_splits`: pointer identity of the pool-owned body
-/// `Arc`, held so the allocation cannot be freed and reused underneath a
-/// cached split.
-#[derive(Clone)]
-pub(crate) struct WheneverBodyKey(Arc<Vec<crate::ast::Stmt>>);
-
-impl PartialEq for WheneverBodyKey {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-    }
-}
-
-impl Eq for WheneverBodyKey {}
-
-impl std::hash::Hash for WheneverBodyKey {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        (Arc::as_ptr(&self.0) as *const u8 as usize).hash(state);
-    }
 }
 
 /// What a carrier-block compile is cached *under*.
@@ -2081,16 +2042,6 @@ pub struct Interpreter {
     /// `authoritative_free_vars` itself — it has no enclosing frame to vouch.
     /// Travels with `pending_supply_block_body`.
     pending_supply_authoritative_free_vars: Vec<Symbol>,
-    /// The `authoritative_captures` of the closure whose body `eval_block_value`
-    /// is about to re-compile, so the carrier chunk can hand them to any
-    /// `whenever` it registers (`CompiledCode::inherited_owned_lexicals`).
-    ///
-    /// This is what lets a `whenever` nested inside another `whenever`'s body
-    /// keep the outer callback's owned lexicals — above all the supply block's
-    /// shared-per-parse-site emitter name. Travels the same way as
-    /// `pending_supply_authoritative_free_vars`, but is NOT restricted to supply
-    /// bodies: a `whenever` callback has no `CompiledCode` of its own at all.
-    pending_whenever_inherited_owned: Vec<Symbol>,
     /// Names the block `eval_block_value_inner` most recently FINISHED running
     /// declared with its own `my` (excluding those it also uses as free
     /// variables). Written just before that function returns, so after a call

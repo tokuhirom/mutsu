@@ -7350,14 +7350,15 @@ impl Interpreter {
                 self.sync_source_line(code, *ip);
                 self.exec_react_scope_op(code, *body_end, ip, compiled_fns)?;
             }
-            // Cost: O(f), f = captured free vars (boxed and snapshotted), plus the subscription.
+            // Cost: O(p * f), p = 1 + the body's LAST/QUIT phasers, f = captured free vars (each closure's capture), plus the subscription.
             OpCode::WheneverScope {
                 body_idx,
-                analysis_cc_idx,
+                body_cc_idx,
+                phasers,
                 yields_value,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_whenever_scope_op(code, *body_idx, *analysis_cc_idx, *yields_value)?;
+                self.exec_whenever_scope_op(code, *body_idx, *body_cc_idx, phasers, *yields_value)?;
                 *ip += 1;
             }
 

@@ -172,7 +172,6 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         is_supply_block_body,
         eval_context_target_callable_id,
         supply_emitter_sym,
-        inherited_owned_lexicals,
         upvalue_syms,
         env_only_decls,
         const_syms,

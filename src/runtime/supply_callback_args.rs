@@ -26,15 +26,15 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // A compiled block runs as bytecode, as a `.map` callback does: its
         // free variables are its capture's, never a same-named lexical of the
-        // frame that emitted (#12872). A `supply`/`whenever` body keeps the
-        // carrier, which hands it the supply's emitter and owned captures.
+        // frame that emitted (#12872). That includes a `whenever` body, whose
+        // owned captures ride in its `authoritative_captures`. A `supply`
+        // block body keeps the carrier, which hands it its emitter.
         if let ValueView::Sub(data) = func.view()
             && data.compiled_routine.is_none()
             && data
                 .compiled_code
                 .as_ref()
                 .is_some_and(|cc| !cc.is_supply_block_body && cc.supply_emitter_sym.is_none())
-            && data.authoritative_captures.is_empty()
         {
             return self.vm_call_on_value(func, emitted_args_positional(args), None);
         }
