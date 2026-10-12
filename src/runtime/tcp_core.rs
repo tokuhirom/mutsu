@@ -5,7 +5,7 @@
 //! accepted connection (a Supply emit, or a queue push) stays with the caller.
 
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 /// Why a listener could not be bound.
@@ -48,6 +48,55 @@ pub(crate) fn bind_tcp_listener(host: &str, port: u16) -> Result<TcpListener, Tc
     }
 }
 
+/// A listener's per-connection handler: answers `false` to stop accepting.
+pub(crate) type OnConn = Box<dyn FnMut(TcpStream, SocketAddr) -> bool + Send>;
+/// Runs once a listener has stopped and its OS socket is closed.
+pub(crate) type OnEnd = Box<dyn FnOnce(AcceptEnd) + Send>;
+
+/// Accept connections on `listener`, handing each to `on_conn`, until `closed`
+/// is raised (and [`wake_listeners`] called) or the handler stops; then drop
+/// the listener and run `on_end`.
+///
+/// On Unix the socket reactor watches the listener (#12968), so an idle one
+/// costs no thread and no wake-ups. Elsewhere a thread named `thread_name`
+/// runs `accept_loop`.
+// Cost: O(1) to register; O(c) over the listener's life, c = connections.
+pub(crate) fn serve_listener(
+    thread_name: &str,
+    listener: TcpListener,
+    closed: std::sync::Arc<AtomicBool>,
+    on_conn: OnConn,
+    on_end: OnEnd,
+) -> Result<(), crate::runtime::RuntimeError> {
+    #[cfg(all(unix, feature = "libc"))]
+    {
+        let _ = thread_name;
+        crate::runtime::native_methods::socket_reactor::register_listener(
+            listener, closed, on_conn, on_end,
+        )
+    }
+    #[cfg(not(all(unix, feature = "libc")))]
+    {
+        let mut on_conn = on_conn;
+        crate::runtime::builtins_system::try_spawn_gc_helper_thread(thread_name, move || {
+            let end = accept_loop(&listener, &closed, &mut on_conn);
+            #[cfg_attr(target_arch = "wasm32", allow(clippy::drop_non_drop))]
+            drop(listener);
+            on_end(end);
+        })
+        .map(|_| ())
+        .map_err(crate::runtime::builtins_system::refused_thread_error)
+    }
+}
+
+/// Tell the listeners [`serve_listener`] started that a close flag may have
+/// been raised.
+// Cost: O(1).
+pub(crate) fn wake_listeners() {
+    #[cfg(all(unix, feature = "libc"))]
+    crate::runtime::native_methods::socket_reactor::wake_reactor();
+}
+
 /// How an accept loop ended.
 pub(crate) enum AcceptEnd {
     /// `closed` was set and the backlog is drained.
@@ -68,6 +117,7 @@ pub(crate) enum AcceptEnd {
 /// connection sitting in the backlog -- dropping it because the close won the
 /// poll race would lose a connection the client believes it made.
 // Cost: O(c), c = connections accepted, plus one poll per 10ms.
+#[cfg(not(all(unix, feature = "libc")))]
 pub(crate) fn accept_loop(
     listener: &TcpListener,
     closed: &AtomicBool,
@@ -76,7 +126,7 @@ pub(crate) fn accept_loop(
     let _ = listener.set_nonblocking(true);
     let mut draining = false;
     loop {
-        if !draining && closed.load(Ordering::SeqCst) {
+        if !draining && closed.load(std::sync::atomic::Ordering::SeqCst) {
             draining = true;
         }
         match listener.accept() {

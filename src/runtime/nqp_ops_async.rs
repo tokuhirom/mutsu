@@ -226,6 +226,9 @@ impl Interpreter {
                 if let Some(flag) = args.first().and_then(task_id_of).and_then(cancellation_state)
                 {
                     flag.store(true, Ordering::Release);
+                    // A cancelled `nqp::asynclisten` is noticed by the socket
+                    // reactor only when woken (#12968).
+                    crate::runtime::tcp_core::wake_listeners();
                     // A cancelled `nqp::signal` gives the signal back to its
                     // previous disposition now, as MoarVM does, not at the
                     // next delivery.

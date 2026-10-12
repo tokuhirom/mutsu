@@ -1221,6 +1221,8 @@ pub(in crate::runtime) fn set_listener_closed(listener_id: u64) {
     if !closed_any {
         return;
     }
+    // The socket reactor notices the flag only when woken (#12968).
+    crate::runtime::tcp_core::wake_listeners();
     // Closing a Tap must stop the listener *synchronously*: the OS socket stays
     // bound until the accept thread notices the flag and drops it, and until
     // then a `connect` to that port still succeeds (a real TCP connect, since
