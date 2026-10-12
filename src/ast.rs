@@ -379,7 +379,9 @@ impl ParamDef {
         self.where_constraint.as_deref().is_some_and(|expr| {
             matches!(
                 expr,
-                Expr::MatchRegex(_) | Expr::MatchRegexTree { .. } | Expr::MatchRegexDynamicAdverbs { .. }
+                Expr::MatchRegex(_)
+                    | Expr::MatchRegexTree { .. }
+                    | Expr::MatchRegexDynamicAdverbs { .. }
             )
         })
     }
