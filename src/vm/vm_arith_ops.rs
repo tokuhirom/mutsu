@@ -538,6 +538,13 @@ impl Interpreter {
             return Ok(());
         }
         let _rat_overflow_scope = self.rat_overflow_scope_for(&left, &right);
+        // Fast path: Rat * Rat or Rat * Int. Neither operand is a junction, a
+        // Range instance or a value the numeric bridge would coerce, so the
+        // wrapper below has nothing to do for them (#10111).
+        if !has_override && crate::builtins::arith::plain_rat_pair(&left, &right).is_some() {
+            self.stack.push(crate::builtins::arith_mul(left, right));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:<*>", &l, &r)? {
                 return Ok(result);

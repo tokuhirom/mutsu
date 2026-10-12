@@ -765,7 +765,18 @@ impl Interpreter {
                         || constraint == "int"
                         || crate::runtime::native_types::is_native_int_type(constraint)
                 }
+                ValueView::BigInt(_) => constraint == "Int",
                 ValueView::Num(_) => constraint == "Num" || constraint == "num",
+                // A `Rat $r` parameter otherwise walked the whole gauntlet
+                // below, through the role-key resolution, to accept its own
+                // type (~1.4k instructions per bind). `value_type_name`
+                // tells a FatRat-flavoured BigRat from a Rat-flavoured one.
+                ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::BigRat(..)
+                | ValueView::Complex(..) => {
+                    constraint == crate::runtime::value_type_name(value_for_tag)
+                }
                 ValueView::Str(_) => constraint == "Str" || constraint == "str",
                 ValueView::Bool(_) => {
                     constraint == "Bool"
