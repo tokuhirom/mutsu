@@ -352,7 +352,7 @@ macro_rules! for_each_registration {
             {
                 let mut m = 0;
                 while m < mro.len() {
-                    if $shape.reaches_owner(mro[m]) || $shape.may_reach_audited_cool(mro[m]) {
+                    if $shape.reaches_owner(mro[m]) || $shape.may_reach_audited(mro[m]) {
                         let (lo, hi) = owner_range(mro[m]);
                         let mut k = lo;
                         while k < hi {
