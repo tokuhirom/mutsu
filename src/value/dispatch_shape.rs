@@ -269,7 +269,7 @@ impl DispatchShape {
     /// or `Mu`).
     // Cost: O(1).
     pub(crate) const fn reaches(self, owner: &str, method: &str) -> bool {
-        self.reaches_owner(owner) || self.reaches_audited_cool(owner, method)
+        self.reaches_owner(owner) || self.reaches_audited(owner, method)
     }
 
     /// [`Self::reaches`] for the rows of `owner` as a whole, before the
@@ -289,11 +289,51 @@ impl DispatchShape {
     /// Whether some row of `owner` may reach this shape through the per-method
     /// audit ([`Self::reaches`] decides which).
     // Cost: O(1).
-    pub(crate) const fn may_reach_audited_cool(self, owner: &str) -> bool {
-        matches!(
+    pub(crate) const fn may_reach_audited(self, owner: &str) -> bool {
+        (matches!(
             self,
             DispatchShape::Range | DispatchShape::Seq | DispatchShape::IoPath
-        ) && const_str_eq(owner, "Cool")
+        ) && const_str_eq(owner, "Cool"))
+            || (self.reaches_audited_any() && const_str_eq(owner, "Any"))
+    }
+
+    /// Whether this closed shape reaches some of `Any`'s list rows
+    /// ([`ANY_LIST_FOR_CLOSED_SHAPES`]; [`Self::reaches_audited_any_method`]
+    /// says which). A `Match` reaches none: it answers them on its matched
+    /// string (`methods_0arg`'s `Match` delegation).
+    // Cost: O(1).
+    const fn reaches_audited_any(self) -> bool {
+        !self.inherits() && self.has_instances() && !matches!(self, DispatchShape::Match)
+    }
+
+    /// Whether `Any`'s list row `method` reaches this closed shape. None
+    /// reaches `sort`, whose handler reads only a list (a closed shape sorts
+    /// through the interpreter), and only a `Pair` reaches `reverse`, whose
+    /// handler reads a scalar, a hash, a list and a pair. A `Capture` flattens to itself
+    /// (`methods_0arg`'s `Capture` block), and the
+    /// quant hashes read as their list of pairs for `unique` first
+    /// (`hashlike_receiver_as_pairs_list`), then reach the row as a `List`;
+    /// the rest reach the row with themselves as invocant.
+    // Cost: O(m), m = audited names.
+    const fn reaches_audited_any_method(self, method: &str) -> bool {
+        if !const_list_contains(&ANY_LIST_FOR_CLOSED_SHAPES, method) {
+            return false;
+        }
+        match self {
+            _ if const_str_eq(method, "sort") => false,
+            DispatchShape::Pair => true,
+            _ if const_str_eq(method, "reverse") => false,
+            DispatchShape::Capture => !const_str_eq(method, "flat"),
+            DispatchShape::Set
+            | DispatchShape::SetHash
+            | DispatchShape::Bag
+            | DispatchShape::BagHash
+            | DispatchShape::Mix
+            | DispatchShape::MixHash => {
+                !const_str_eq(method, "reverse") && !const_str_eq(method, "unique")
+            }
+            _ => true,
+        }
     }
 
     /// Whether `Cool`'s `method` row is one a closed `Range`, `Seq` or
@@ -308,9 +348,12 @@ impl DispatchShape {
     /// (ADR-11276 §9.16, §9.79), not per owner, so the iteration and search rows
     /// `Cool` also declares stay unreachable.
     // Cost: O(m), m = audited names.
-    const fn reaches_audited_cool(self, owner: &str, method: &str) -> bool {
-        if !self.may_reach_audited_cool(owner) {
+    const fn reaches_audited(self, owner: &str, method: &str) -> bool {
+        if !self.may_reach_audited(owner) {
             return false;
+        }
+        if const_str_eq(owner, "Any") {
+            return self.reaches_audited_any_method(method);
         }
         const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
             || (!matches!(self, DispatchShape::IoPath)
@@ -363,7 +406,7 @@ impl DispatchShape {
 }
 
 /// The `Cool` numeric methods a `Range` or `Seq` reaches
-/// ([`DispatchShape::reaches_audited_cool`]).
+/// ([`DispatchShape::reaches_audited`]).
 const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 49] = [
     "sin", "cos", "tan", "sec", "cosec", "cotan", "sinh", "cosh", "tanh", "sech", "cosech",
     "cotanh", "asin", "acos", "atan", "asec", "acosec", "acotan", "asinh", "acosh", "atanh",
@@ -373,7 +416,8 @@ const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 49] = [
 ];
 
 /// The `Cool` text methods a `Range`, `Seq` or `IO::Path` reaches
-/// ([`DispatchShape::reaches_audited_cool`]).
+/// ([`DispatchShape::reaches_audited`]), and every receiver with no shape
+/// that is a `Cool` (`method_table::answer_shapeless`).
 pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
     "words",
     "codes",
@@ -406,6 +450,15 @@ pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
     "unival",
     "univals",
 ];
+
+/// The `Any` list methods every closed shape with instances reaches
+/// ([`DispatchShape::reaches_audited_any`]): Rakudo's `Any` declares them as
+/// `self.list.METHOD`, and their handlers read any receiver as its list (a
+/// `Pair` or a `Set` as one element or its pairs, a `Blob` as its bytes).
+/// A shape whose own type declares one of them (`Seq.reverse`, `Range.flat`)
+/// answers its own row first.
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 6] =
+    ["flat", "sort", "unique", "repeated", "reverse", "end"];
 
 /// Whether `list` contains `name`, for a `const fn`.
 // Cost: O(n), n = entries of `list`.

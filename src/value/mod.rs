@@ -553,7 +553,9 @@ pub(crate) mod compare;
 pub(crate) mod container_lock;
 mod dispatch_shape;
 pub(crate) mod render_guard;
-pub(crate) use dispatch_shape::{COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, const_str_eq};
+pub(crate) use dispatch_shape::{
+    ANY_LIST_FOR_CLOSED_SHAPES, COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, const_str_eq,
+};
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
 mod entry_path;

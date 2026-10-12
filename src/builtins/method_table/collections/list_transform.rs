@@ -3,28 +3,30 @@
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, Value, ValueView, const_str_eq};
 
 macro_rules! rows {
-    ($owner:literal: $($name:literal => $handler:ident),* $(,)?) => {
+    ($owner:literal, $flags:expr; $($name:literal => $handler:ident),* $(,)?) => {
         &[$(MethodRow {
             owner: $owner,
             name: $name,
             arity: 0,
             handler: Handler::Narrow($handler),
-            flags: RowFlags::NONE,
+            flags: $flags,
             named: &[],
         }),*]
     };
 }
 
-pub(super) static ANY_ROWS: &[MethodRow] = rows!["Any":
+/// `Any`'s rows answer a type object too (`Str.sort` is `(Str,)`): Rakudo's
+/// `Any` candidates take `self.list`, and a type object lists as itself.
+pub(super) static ANY_ROWS: &[MethodRow] = rows!["Any", RowFlags::TYPE_OBJECT_OK;
     "sort" => sort,
     "unique" => unique,
     "repeated" => repeated,
 ];
 
-pub(super) static LIST_ROWS: &[MethodRow] = rows!["List":
+pub(super) static LIST_ROWS: &[MethodRow] = rows!["List", RowFlags::NONE;
     "sort" => sort,
 ];
 
@@ -43,7 +45,12 @@ pub(super) const fn flat_row(owner: &'static str) -> MethodRow {
         name: "flat",
         arity: 0,
         handler: Handler::Named(flat_named),
-        flags: RowFlags::NONE,
+        // `Any.flat` answers a type object as its one element (`Str.flat`).
+        flags: if const_str_eq(owner, "Any") {
+            RowFlags::TYPE_OBJECT_OK
+        } else {
+            RowFlags::NONE
+        },
         named: &["hammer"],
     }
 }
