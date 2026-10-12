@@ -1,5 +1,5 @@
 //! `Str`'s iteration rows: `comb`, `words`, `lines` and `ords` with no
-//! arguments.
+//! arguments, and `comb` with an `Int` or `Str` matcher.
 //!
 //! As with the text rows (`str.rs`), Rakudo declares each method on `Str`
 //! and again on `Cool`, whose candidate stringifies the invocant. Both
@@ -19,6 +19,16 @@ macro_rules! iter_rows {
                 name: "comb",
                 arity: 0,
                 handler: Handler::Pure(comb),
+                flags: RowFlags::NONE,
+                named: &[],
+            },
+            // `comb($matcher)` with an `Int` chunk size or a `Str` needle;
+            // a `Regex`, a code object or a `Pair` takes the interpreter.
+            MethodRow {
+                owner: $owner,
+                name: "comb",
+                arity: 1,
+                handler: Handler::Narrow(crate::builtins::comb::native_comb_method),
                 flags: RowFlags::NONE,
                 named: &[],
             },

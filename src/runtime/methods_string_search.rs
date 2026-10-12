@@ -10,6 +10,13 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // A type-object needle binds no candidate.
+        if let Some(ValueView::Package(type_name)) = args.first().map(Value::view) {
+            return Err(RuntimeError::new(format!(
+                "Cannot resolve caller contains({}:U)",
+                type_name
+            )));
+        }
         let mut positional: Vec<Value> = Vec::new();
         let mut ignore_case = false;
         let mut ignore_mark = false;
