@@ -31,9 +31,15 @@ pub(crate) fn arith_add(left: Value, right: Value) -> Result<Value, RuntimeError
     // Fast path: a pair of plain integers with at least one big operand. None
     // of the Whatever/Range/Date/Instant/Duration guards below can match a bare
     // Int/BigInt, and for a wide operand walking them costs more than the
-    // arithmetic itself. (Int+Int keeps falling through: the VM fast-paths the
-    // machine-word case before it ever reaches here, and an overflowing pair
-    // still needs the widening below.)
+    // arithmetic itself. The machine-word pair is answered first: the VM
+    // opcode fast-paths it too, but a reduction fold and a `callsame` into the
+    // core candidate arrive here with it (#10111). An overflowing pair still
+    // needs the widening below.
+    if let (Some(a), Some(b)) = (left.as_int(), right.as_int())
+        && let Some(sum) = a.checked_add(b)
+    {
+        return Ok(Value::int(sum));
+    }
     if let Some(sum) = big_int_add(&left, &right) {
         return Ok(sum);
     }
@@ -223,7 +229,13 @@ pub(crate) fn arith_sub(left: Value, right: Value) -> Value {
     let (left, right) = (left.into_deref(), right.into_deref());
     // Fast path: a pair of plain integers with at least one big operand -- see
     // the note in `arith_add`; no Range/Date/Instant/Duration guard below can
-    // match a bare Int/BigInt either.
+    // match a bare Int/BigInt either. A machine-word pair first, as in
+    // `arith_add`.
+    if let (Some(a), Some(b)) = (left.as_int(), right.as_int())
+        && let Some(diff) = a.checked_sub(b)
+    {
+        return Value::int(diff);
+    }
     if let Some(diff) = big_int_sub(&left, &right) {
         return diff;
     }

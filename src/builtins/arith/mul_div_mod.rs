@@ -14,6 +14,12 @@ pub(crate) fn arith_mul(left: Value, right: Value) -> Value {
     let (left, right) = (left.into_deref(), right.into_deref());
     // Fast path: a pair of plain integers with at least one big operand — see
     // the matching note in `arith_add`; no Range/Duration guard below applies.
+    // A machine-word pair first, as in `arith_add`.
+    if let (Some(a), Some(b)) = (left.as_int(), right.as_int())
+        && let Some(product) = a.checked_mul(b)
+    {
+        return Value::int(product);
+    }
     if let Some(product) = big_int_mul(&left, &right) {
         return product;
     }

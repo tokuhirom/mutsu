@@ -1,4 +1,4 @@
-# `Rat * Int` and a `Rat` parameter check stop taking the long way
+# `Rat * Int`, core `Int` arithmetic and a `Rat` parameter check stop taking the long way
 
 Three costs in the multi-method section of `bench-multi-dispatch`, which
 computes `($r * 4).Int` in a `multi method scale(Rat $r)` candidate (#10111):
@@ -20,5 +20,13 @@ computes `($r * 4).Int` in a `multi method scale(Rat $r)` candidate (#10111):
   `Bool`, so a `Rat $r` parameter walked the whole check, through the role-key
   resolution, to accept a `Rat`. That was about 1.4k instructions per bind.
 
-On that section (30,000 `multi method` calls, a third of them with a Rat),
+- **The shared `+`, `-` and `*` answer a machine-word Int pair first.** The VM
+  opcodes had that fast path, but a `callsame` into the core candidate and a
+  reduction fold (`[+]`, `Z*`) call the shared routines directly. There an
+  `Int + Int` walked the Range, Date and Duration guards, about 1.1k
+  instructions. On the operator section of the same benchmark
+  (`multi infix:<*>(UInt, UInt) { callsame() mod $*modulus }`), callgrind went
+  from 661.6M to 635.0M instructions.
+
+On the multi-method section (30,000 `multi method` calls, a third of them with a Rat),
 callgrind went from 936.0M to 851.4M instructions (-9.0%).
