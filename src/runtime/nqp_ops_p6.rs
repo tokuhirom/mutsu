@@ -31,6 +31,16 @@ const BIND_VAL_NUM: i64 = 2;
 const BIND_VAL_STR: i64 = 3;
 const BIND_VAL_UINT: i64 = 10;
 
+/// The code objects whose `FIRST` flag is set (`nqp::p6setfirstflag`), keyed
+/// by name and closure-clone identity. Process-wide, as the flag on a MoarVM
+/// code object is visible from every thread; an entry lives from the set to
+/// the next `p6takefirstflag` of that clone.
+fn first_flags() -> std::sync::MutexGuard<'static, rustc_hash::FxHashSet<(Symbol, u64)>> {
+    static FLAGS: std::sync::LazyLock<std::sync::Mutex<rustc_hash::FxHashSet<(Symbol, u64)>>> =
+        std::sync::LazyLock::new(Default::default);
+    FLAGS.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// An operand with any argument wrapper and container stripped.
 fn operand(args: &[Value], i: usize) -> Value {
     crate::runtime::types::unwrap_varref_value(args.get(i).cloned().unwrap_or(Value::NIL))
@@ -144,6 +154,16 @@ impl Interpreter {
             // whole observable effect (ADR-11505 §2.3).
             // Cost: O(1).
             "p6setpre" | "p6clearpre" => Ok(Value::NIL),
+            // nqp::p6setfirstflag($do): set the `FIRST` flag of a code object
+            // (its bytecode handle, `nqp::getattr(&code, Code, '$!do')`) and
+            // answer it. The flag belongs to the closure clone (ADR-11505 §2.5).
+            // Cost: O(1).
+            "p6setfirstflag" => self.nqp_p6setfirstflag(args),
+            // nqp::p6takefirstflag(): read and clear the running frame's code
+            // object's `FIRST` flag, 1 or 0. The parse-time frame pass
+            // (`parser::p6_frame_state`) hands the op that code object.
+            // Cost: O(1).
+            "p6takefirstflag" => Ok(Value::int(i64::from(self.nqp_p6takefirstflag(args)))),
             _ => return self.call_nqp_op_ffi(op, args),
         })
     }
@@ -231,6 +251,39 @@ impl Interpreter {
         let mut args = positional;
         args.extend(named.iter().map(|(k, v)| Value::pair(k.clone(), v.clone())));
         Ok(args)
+    }
+
+    /// The key a code object's `FIRST` flag is kept under: its name and the
+    /// closure-clone identity its `state` variables are scoped by, so every
+    /// view of one clone (`&f`, its `$!do`, `&?BLOCK`) shares the flag.
+    // Cost: O(1).
+    fn first_flag_key(&self, code: &Value) -> Option<(Symbol, u64)> {
+        let code = Self::unwrap_callable_mixin(operand(std::slice::from_ref(code), 0));
+        match code.view() {
+            ValueView::Sub(data) => Some((data.name, self.sub_state_scope_id(&data))),
+            _ => None,
+        }
+    }
+
+    fn nqp_p6setfirstflag(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let code = args.first().cloned().unwrap_or(Value::NIL);
+        let direct = match operand(args, 0).view() {
+            ValueView::Sub(data) => crate::runtime::code_do_attr::is_direct(&data),
+            _ => false,
+        };
+        let key = self.first_flag_key(&code).filter(|_| direct).ok_or_else(|| {
+            RuntimeError::new("p6setfirstflag requires a bytecode handle")
+        })?;
+        first_flags().insert(key);
+        Ok(code)
+    }
+
+    fn nqp_p6takefirstflag(&self, args: &[Value]) -> bool {
+        let Some(code) = args.first() else {
+            return false;
+        };
+        self.first_flag_key(code)
+            .is_some_and(|key| first_flags().remove(&key))
     }
 
     fn nqp_p6argvmarray(&self) -> Value {
