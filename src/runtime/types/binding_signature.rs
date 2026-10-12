@@ -2182,6 +2182,33 @@ impl Interpreter {
                         // hand it the whole `arg`, not its extracted elements, matching
                         // every other call site (`sprintf`, `catdir`, ...).
                         let arg = unwrap_varref_value(raw_arg);
+                        // A `$`-variable holds its value as ONE item, so a
+                        // Seq / Range / finite gather read from one is not
+                        // flattened by a `*@` slurpy (`my $s = (1,2).map(*);
+                        // f($s)` binds one element, as `my $l = (1,2)` already
+                        // does through its itemized List kind). The producer
+                        // of a deferred Seq still has to run before the
+                        // element is read.
+                        if !is_alias_slurpy
+                            && varref
+                                .as_ref()
+                                .is_some_and(|(name, _, _)| !name.starts_with(['@', '%', '&']))
+                            && match arg.view() {
+                                ValueView::Seq(..)
+                                | ValueView::Range(..)
+                                | ValueView::RangeExcl(..)
+                                | ValueView::RangeExclStart(..)
+                                | ValueView::RangeExclBoth(..)
+                                | ValueView::GenericRange { .. } => true,
+                                ValueView::LazyList(ll) => !ll.is_genuinely_lazy(),
+                                _ => false,
+                            }
+                        {
+                            self.reify_map_grep_seq(&arg)?;
+                            items.push(arg);
+                            positional_idx += 1;
+                            continue;
+                        }
                         // A `gather` / sequence-operator argument is a LazyList,
                         // not a `Seq` body, so it matched none of the iterable
                         // arms below and arrived as ONE slurpy element holding
