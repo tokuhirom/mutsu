@@ -12,26 +12,42 @@
 
 use super::*;
 use crate::runtime::native_methods::{
-    TransformMode, supplier_done, supplier_snapshot, supplier_take_preserved_backlog,
-    supplier_take_preserved_terminal,
+    TransformMode, register_supplier_transform_tap_if_drained, supplier_done, supplier_snapshot,
+    supplier_take_preserved_backlog, supplier_take_preserved_terminal,
 };
 
 impl Interpreter {
-    /// Run the un-replayed backlog of preserving `source_sid` through the
-    /// transform into `downstream_sid`. A source that already finished never
+    /// Register the transform tap of the derived supply `downstream_sid` on the
+    /// preserving `source_sid`, after running the source's un-replayed backlog
+    /// through the transform into it. A source that already finished never
     /// signals the transform tap, so its `done` is carried over too; the
     /// derived supply's first tap then replays it after the values.
-    // Cost: O(b), b = the backlog length (plus one transform call per value).
-    pub(in crate::runtime) fn carry_preserved_backlog_into_derived(
+    ///
+    /// The tap is registered only once the backlog is drained (under the emit
+    /// gate): values emitted while the backlog is being carried pile up in the
+    /// source and are carried in the next round, so nothing is delivered twice
+    /// or out of order against a concurrent `emit`.
+    // Cost: O(b), b = the values buffered over the rounds (one transform call each).
+    pub(in crate::runtime) fn tap_preserved_source_into_derived(
         &mut self,
         source_sid: u64,
         downstream_sid: u64,
         callable: &Value,
         mode: TransformMode,
     ) {
-        for value in supplier_take_preserved_backlog(source_sid) {
-            let _ =
-                self.handle_supply_transform_emit(downstream_sid, callable.clone(), mode, value);
+        loop {
+            for value in supplier_take_preserved_backlog(source_sid) {
+                let _ = self.handle_supply_transform_emit(
+                    downstream_sid,
+                    callable.clone(),
+                    mode,
+                    value,
+                );
+            }
+            if register_supplier_transform_tap_if_drained(source_sid, downstream_sid, callable, mode)
+            {
+                break;
+            }
         }
         let (_, source_done, _) = supplier_snapshot(source_sid);
         if source_done && supplier_take_preserved_terminal(source_sid) {

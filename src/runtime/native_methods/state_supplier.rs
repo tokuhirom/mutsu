@@ -3,7 +3,10 @@ use crate::value::ValueView;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use super::state::take_complete_lines_from_buffer;
+use super::state::{
+    supplier_emit_push, supplier_has_preserved_backlog, supplier_mark_preserved_consumed,
+    take_complete_lines_from_buffer,
+};
 
 #[derive(Clone)]
 struct UniqueFilterState {
@@ -1292,6 +1295,63 @@ pub(in crate::runtime) fn supplier_live_tap_indices(supplier_id: u64) -> Vec<usi
         .filter(|(_, tap)| !tap.closed && tap.head_limit.is_none_or(|limit| tap.head_count < limit))
         .map(|(idx, _)| idx)
         .collect()
+}
+
+/// Serializes a `Supplier::Preserving` emission's two halves -- recording the
+/// value (`supplier_emit_push`) and handing it to the taps listening right now
+/// (`supplier_emit_callbacks`) -- against a derived supply registering its
+/// transform tap. Without it, a tap registered between the halves receives the
+/// value live *and* finds it in the backlog it takes (a duplicate), or takes
+/// the backlog after a later emission was already forwarded (an inversion).
+static EMIT_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Lock [`EMIT_GATE`]. Holding it must never run user code or block.
+pub(in crate::runtime) fn emit_gate() -> std::sync::MutexGuard<'static, ()> {
+    EMIT_GATE.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// Emit `value` on `supplier_id` and return what its live taps ask for: the
+/// push, the callback collection and the "a live tap consumed this" backlog
+/// bookkeeping happen as one step with respect to
+/// [`register_supplier_transform_tap_if_drained`].
+// Cost: O(s + t), s = the sinks, t = the taps of the supplier.
+pub(in crate::runtime) fn supplier_emit_collect(
+    supplier_id: u64,
+    value: &Value,
+) -> Vec<SupplierEmitAction> {
+    let gate = emit_gate();
+    let pending = supplier_emit_push(supplier_id, value.clone());
+    let actions = supplier_emit_callbacks(supplier_id, value);
+    // A live tap consumed this emission, so it is not part of the backlog a
+    // preserving supply replays to its next tap.
+    if !actions.is_empty() {
+        supplier_mark_preserved_consumed(supplier_id);
+    }
+    drop(gate);
+    if let Some(pending) = pending {
+        pending.await_delivery();
+    }
+    actions
+}
+
+/// Register the `grep`/`map`/`do` transform tap of a `Supplier::Preserving`
+/// derived supply once the source has no backlog left. Returns `false`
+/// (registering nothing) while a backlog remains: the caller runs it through
+/// the transform first and tries again, so a value emitted in the meantime
+/// still reaches the derived supply after the ones before it.
+// Cost: O(1) amortized.
+pub(in crate::runtime) fn register_supplier_transform_tap_if_drained(
+    source_sid: u64,
+    downstream_sid: u64,
+    callable: &Value,
+    mode: TransformMode,
+) -> bool {
+    let _gate = emit_gate();
+    if supplier_has_preserved_backlog(source_sid) {
+        return false;
+    }
+    register_supplier_transform_tap(source_sid, downstream_sid, callable.clone(), mode);
+    true
 }
 
 pub(in crate::runtime) fn supplier_emit_callbacks(

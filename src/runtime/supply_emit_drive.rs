@@ -10,8 +10,7 @@
 //! Every re-emit site used to inline its own loop of the shape
 //!
 //! ```ignore
-//! supplier_emit(dsid, v.clone());
-//! for a in supplier_emit_callbacks(dsid, &v) {
+//! for a in supplier_emit_collect(dsid, &v) {
 //!     if let SupplierEmitAction::Call(tap, emitted, delay) = a { /* ... */ }
 //! }
 //! ```
@@ -30,8 +29,7 @@
 
 use super::*;
 use crate::runtime::native_methods::{
-    SupplierEmitAction, ZipAction, supplier_emit, supplier_emit_callbacks,
-    supplier_mark_preserved_consumed, supplier_produce_update_acc, supplier_unique_mark_seen,
+    SupplierEmitAction, ZipAction, supplier_emit_collect, supplier_produce_update_acc, supplier_unique_mark_seen,
     zip_buffer_value, zip_latest_buffer_value, zip_latest_state_info, zip_state_info,
 };
 
@@ -43,14 +41,7 @@ impl Interpreter {
         downstream_supplier_id: u64,
         value: Value,
     ) -> Result<(), RuntimeError> {
-        supplier_emit(downstream_supplier_id, value.clone());
-        let actions = supplier_emit_callbacks(downstream_supplier_id, &value);
-        // A live tap consumed this emission, so it is not part of the backlog
-        // a preserving derived supply replays to its next tap (the same
-        // bookkeeping `Supplier.emit` does for its own supplier).
-        if !actions.is_empty() {
-            supplier_mark_preserved_consumed(downstream_supplier_id);
-        }
+        let actions = supplier_emit_collect(downstream_supplier_id, &value);
         self.drive_supplier_emit_actions(downstream_supplier_id, actions)
     }
 

@@ -53,7 +53,7 @@ pub(in crate::runtime) use state::{
     register_promise_combinator_sources, register_supply_done_tap, register_supply_quit_tap, register_supply_tap,
     register_udp_bound_socket, set_supply_collected_bytes, set_supply_collected_output,
     set_supply_enc, supplier_done_deferred, supplier_emit, supplier_id_from_attrs,
-    supplier_mark_preserved_consumed, supplier_mark_terminal_delivered, supplier_reset,
+    supplier_mark_terminal_delivered, supplier_reset,
     supplier_reset_keep_quit, supplier_take_preserved_backlog, supplier_take_preserved_terminal,
     supply_channel_map, supply_channel_map_pub, take_supply_collected_bytes, udp_port_in_use,
 };
@@ -89,7 +89,8 @@ pub(in crate::runtime) use state_supplier::{
     register_supplier_whenever_quit_callback, register_supplier_words_transform_tap,
     register_supplier_zip_latest_tap, register_supplier_zip_tap, register_zip_latest_state,
     register_zip_state, set_supplier_serialize_group, set_supplier_serialize_group_if_absent,
-    supplier_done_call_count, supplier_emit_callbacks, supplier_produce_update_acc,
+    supplier_done_call_count, emit_gate, supplier_emit_callbacks, supplier_emit_collect,
+    register_supplier_transform_tap_if_drained, supplier_produce_update_acc,
     supplier_serialize_group, supplier_tap_count, supplier_unique_get_seen,
     supplier_unique_mark_seen, take_supplier_close_callbacks, take_supplier_done_callbacks,
     take_supplier_quit_callbacks_via_group, take_supplier_reduce_results,

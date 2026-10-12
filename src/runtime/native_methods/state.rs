@@ -718,19 +718,42 @@ pub(crate) fn supplier_register_promise(supplier_id: u64, promise: SharedPromise
 }
 
 pub(in crate::runtime) fn supplier_emit(supplier_id: u64, value: Value) {
-    if let Ok(mut map) = supplier_state_map().lock() {
-        let state = map.entry(supplier_id).or_default();
-        if state.done || state.quit_reason.is_some() {
-            return;
-        }
-        let seq = next_emit_seq();
-        let waits =
-            state.push_to_sinks(seq, || crate::value::waker::SinkEvent::Emit(value.clone()));
-        state.emitted.push(value);
-        state.emitted_seq.push(seq);
-        drop(map);
-        await_sink_delivery(waits, seq);
+    if let Some(pending) = supplier_emit_push(supplier_id, value) {
+        pending.await_delivery();
     }
+}
+
+/// Sinks an emission was pushed to, still to be waited on.
+pub(in crate::runtime) struct PendingSinkDelivery {
+    wakers: Vec<crate::value::waker::ReactWaker>,
+    seq: u64,
+}
+
+impl PendingSinkDelivery {
+    /// Block until every sink has taken the emission.
+    // Cost: O(s) wakeups awaited, s = the sinks the emission was pushed to.
+    pub(in crate::runtime) fn await_delivery(self) {
+        await_sink_delivery(self.wakers, self.seq);
+    }
+}
+
+/// Record `value` as emitted and push it to the supplier's sinks, without
+/// waiting for them. `None` when the supplier already terminated.
+// Cost: O(s + 1), s = the sinks of the supplier.
+pub(in crate::runtime) fn supplier_emit_push(
+    supplier_id: u64,
+    value: Value,
+) -> Option<PendingSinkDelivery> {
+    let mut map = supplier_state_map().lock().ok()?;
+    let state = map.entry(supplier_id).or_default();
+    if state.done || state.quit_reason.is_some() {
+        return None;
+    }
+    let seq = next_emit_seq();
+    let wakers = state.push_to_sinks(seq, || crate::value::waker::SinkEvent::Emit(value.clone()));
+    state.emitted.push(value);
+    state.emitted_seq.push(seq);
+    Some(PendingSinkDelivery { wakers, seq })
 }
 
 /// `Supplier::Preserving`: take the buffered backlog (values emitted while no
@@ -744,6 +767,16 @@ pub(in crate::runtime) fn supplier_take_preserved_backlog(supplier_id: u64) -> V
     } else {
         Vec::new()
     }
+}
+
+/// `Supplier::Preserving`: whether values were emitted that no tap has
+/// consumed yet.
+// Cost: O(1).
+pub(in crate::runtime) fn supplier_has_preserved_backlog(supplier_id: u64) -> bool {
+    supplier_state_map().lock().is_ok_and(|map| {
+        map.get(&supplier_id)
+            .is_some_and(|state| state.preserved_consumed < state.emitted.len())
+    })
 }
 
 /// `Supplier::Preserving`: record that `done` was delivered live, to a tap that
