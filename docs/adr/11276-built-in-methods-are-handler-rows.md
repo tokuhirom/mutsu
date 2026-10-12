@@ -1716,6 +1716,8 @@ from `dispatch_core_unicode.rs` `ord`, `ords`, `uniname`, `uninames`, `uniprop`,
 - **The E2 probes** (§9.78 item 2): `native_method_arities` asks the table at arity 0 too, and the type-object probe accepts a name the
   `Cool` type-object gate (`cool_type_object_gate`) answers ahead of the table. `try_native_method_raw` asks the table again once it has
   stripped a named argument no method declares (`255.fmt(:zzz)`): the table was asked with it and declined, and the arm is gone.
+  The recognition row `Str.encode` loses `TYPE_OBJECT_OK`, which only the deleted arm backed: Rakudo refuses `Str.encode` ("Cannot unbox
+  a type object").
 - **Left in `dispatch_core_str.rs`**: `so`, `not`, `is-lazy`, `lazy`, `join`, the `Mu`/`Any` answers every receiver reaches by name. They
   need the same step for `Mu` and `Any` (every receiver reaches their rows), which is a larger audit than `Cool`'s text rows: `Any` declares
   the iteration methods. `chars` stays in `dispatch_core_unicode.rs` because a `Blob` must raise `X::Buf::AsStr` and has no row for it.

@@ -18,7 +18,7 @@ class MyInt is Int { }
 subtest 'a Str subclass instance answers the Str rows on its payload', {
     # Rakudo boxes some of these answers into MyStr; mutsu answers a Str,
     # so the text, not the type, is compared.
-    plan 10;
+    plan 9;
     my $s = MyStr.new(value => "  ab c\n");
     is $s.flip, "\nc ba  ", 'flip';
     is $s.trim, "ab c", 'trim';
@@ -97,3 +97,4 @@ subtest 'a receiver that is no Cool has no Cool text method', {
     class Plain { }
     throws-like { Plain.new.flip }, X::Method::NotFound, 'a plain user class keeps X::Method::NotFound';
 }
+
