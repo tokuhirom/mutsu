@@ -3978,6 +3978,11 @@ impl Interpreter {
             if !is_public {
                 continue;
             }
+            // Rakudo's default `.raku` lists only the attributes `.new` can
+            // set: a public `is built(False)` attribute is left out.
+            if !self.is_attribute_buildable(class_name, attr_name) {
+                continue;
+            }
             // Reading the attribute to render it vivifies it, as Rakudo's
             // `.raku` does through `Attribute.get_value` (#11003).
             if let Some(val) = attributes.get_vivify(attr_name.as_str()) {

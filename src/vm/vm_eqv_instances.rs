@@ -49,12 +49,20 @@ impl<'a> RakudoInstanceEqv<'a> {
             } else {
                 attrs
             };
-            let private: Vec<String> = attrs
-                .iter()
-                .filter(|attr| !attr.is_public)
-                .filter(|attr| !attrs.iter().any(|a| a.is_public && a.name == attr.name))
-                .map(|attr| attr.name.clone())
-                .collect();
+            // The default `.raku` Rakudo compares leaves out the attributes
+            // `.new` cannot set: the private ones and the public `is
+            // built(False)` ones.
+            let mut private: Vec<String> = Vec::new();
+            for attr in &attrs {
+                let hidden = if attr.is_public {
+                    !self.interp.is_attribute_buildable(&name, &attr.name)
+                } else {
+                    !attrs.iter().any(|a| a.is_public && a.name == attr.name)
+                };
+                if hidden {
+                    private.push(attr.name.clone());
+                }
+            }
             Some(Rc::from(private))
         };
         self.classes.insert(class, mode.clone());
