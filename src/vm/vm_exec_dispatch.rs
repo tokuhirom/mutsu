@@ -6277,7 +6277,7 @@ impl Interpreter {
                 // die() with empty array (from parsing die() with parens) should
                 // check $! first, falling back to "Died" default
                 let val = if matches!(val.view(), ValueView::Array(items, _) if items.is_empty()) {
-                    let current = self.env().get("!").cloned();
+                    let current = self.env().get("!").map(Value::deref_container);
                     if let Some(ref c) = current
                         && !c.is_nil()
                     {

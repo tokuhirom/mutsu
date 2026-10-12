@@ -459,8 +459,8 @@ impl Interpreter {
         if cc.closure_compiled_codes.is_empty() {
             let parent = self.env().clone();
             let mut frame = crate::env::Env::scoped_child(parent);
-            // A method owns its `$/` (`env::match_state`).
-            frame.mark_owns_match_state();
+            // A method owns its `$/` (`env::routine_owned`).
+            frame.mark_owns_routine_state();
             self.set_env(frame);
         }
 
@@ -1976,8 +1976,8 @@ impl Interpreter {
         if use_scoped {
             let parent = self.env().clone();
             let mut scoped = crate::env::Env::scoped_child(parent);
-            // A method owns its `$/` (`env::match_state`).
-            scoped.mark_owns_match_state();
+            // A method owns its `$/` (`env::routine_owned`).
+            scoped.mark_owns_routine_state();
             self.set_env(scoped);
         }
         let saved_var_bindings = self.take_var_bindings();

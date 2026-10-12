@@ -16,7 +16,7 @@ impl Interpreter {
     /// positionally, and any non-Match scalar self-indexes (`.[0]` is the value,
     /// `.[N>0]` is Nil). A Match a match exported as digit keys is answered by
     /// those keys, but a frame that reads the `$/` it shares with its scope
-    /// (`env::match_state`) does not see the keys of the frame that matched:
+    /// (`env::routine_owned`) does not see the keys of the frame that matched:
     /// it indexes the Match's positional captures. Other instances are Nil.
     pub(super) fn bound_slash_positional(slash: &Value, i: usize) -> Value {
         slash.with_deref(|v| match v.view() {

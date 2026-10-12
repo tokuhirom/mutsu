@@ -103,9 +103,9 @@ impl Interpreter {
                 self.env_mut().mark_outer_is_unit();
             }
             // A routine owns its `$/`: a match-state lookup that misses the
-            // frame does not reach the caller's (ADR-12529, `env::match_state`).
+            // frame does not reach the caller's (ADR-12529, `env::routine_owned`).
             if cf.code.is_routine {
-                self.env_mut().mark_owns_match_state();
+                self.env_mut().mark_owns_routine_state();
             }
         }
 

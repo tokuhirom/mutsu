@@ -244,7 +244,7 @@ impl Interpreter {
             .first()
             .cloned()
             .filter(|v| !v.is_nil())
-            .or_else(|| self.env.get("!").cloned().filter(|v| !v.is_nil()))
+            .or_else(|| self.env.get("!").map(Value::deref_container).filter(|v| !v.is_nil()))
             .unwrap_or_else(default_exception);
         // Wrap non-Exception values in X::AdHoc (Raku behavior).
         let wrap_adhoc = |raw: Value| {
