@@ -290,6 +290,7 @@ impl Compiler {
             .collect();
         // Hoist sub declarations
         self.hoist_sub_decls(stmts, true);
+        self.note_block_lexsubs(stmts);
         // Hoist `my TYPE $var;` type constraints (see `hoist_typed_var_decls`).
         self.hoist_typed_var_decls(stmts);
         // Register sigilless names BEFORE compiling their VarDecl (mirroring

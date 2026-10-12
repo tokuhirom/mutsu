@@ -134,6 +134,8 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         named_sub_captures,
         lexical_routines,
         amp_shadowed_calls,
+        lexsub_refs,
+        code_var_upvalue_reads,
         lexical_subtree,
         nested_routine_free_reads,
         bounded_lazy_decl_plans,

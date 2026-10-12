@@ -29,6 +29,63 @@
 use super::*;
 
 impl Interpreter {
+    /// Fill the upvalues of the closure `cc` that `code` is creating for the
+    /// block-declared routines it names (`CompiledCode::lexsub_refs`,
+    /// ADR-12529 phase 2), and return each `&g` binding the closure ends up
+    /// with. A routine `code` itself declares gets the code object of this
+    /// activation's routine, which closes over this activation as a `&g` read
+    /// here does; one `code` only hands on already holds the binding
+    /// `capture_upvalues` took from this frame's own upvalues. A routine this
+    /// interpreter cannot resolve leaves its entry empty, and the closure's
+    /// call resolves by name.
+    ///
+    /// The closure also carries the returned bindings in its captured env: a
+    /// runtime recompile of its body (the inline `map` path, which can run
+    /// after this frame returned) has no upvalue array and reads `&g` by name.
+    // Cost: O(r * (p + u) + capture), r = `cc`'s refs, p = `code`'s routine
+    // declarations, u = `cc`'s upvalues; only for a closure that names a
+    // block-declared routine.
+    pub(super) fn bind_lexsub_upvalues(
+        &mut self,
+        code: &CompiledCode,
+        cc: &CompiledCode,
+        upvalues: &mut [Option<Value>],
+    ) -> Vec<(Symbol, Value)> {
+        let mut bound = Vec::new();
+        for &name in &cc.lexsub_refs {
+            let Some(i) = name.with_str(|n| {
+                cc.upvalue_syms
+                    .iter()
+                    .position(|s| s.with_str(|s| s.strip_prefix('&') == Some(n)))
+            }) else {
+                continue;
+            };
+            let Some(entry) = upvalues.get_mut(i) else {
+                continue;
+            };
+            if code.sub_decl_plans.iter().any(|p| p.name == name) {
+                let val = self.resolve_code_var_unshadowed(name.as_str());
+                if !matches!(val.view(), ValueView::Sub(_)) {
+                    continue;
+                }
+                *entry = Some(self.capture_lexsub_activation(code, val));
+            }
+            // A body compiled at run time (the inline `map` path) runs without
+            // the upvalue array it would hand on from; the binding then lives
+            // in the env its closure carries.
+            if entry.is_none()
+                && let Some(val) = self.env().get_sym(cc.upvalue_syms[i])
+                && matches!(val.view(), ValueView::Sub(_))
+            {
+                *entry = Some(val.clone());
+            }
+            if let Some(val) = entry {
+                bound.push((cc.upvalue_syms[i], val.clone()));
+            }
+        }
+        bound
+    }
+
     /// `val`, the code object the declaring `code` just resolved for its own
     /// nested sub `name`, as a capture of the running activation: each free
     /// variable of the sub that is a local of `code` is boxed into a shared

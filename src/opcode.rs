@@ -7028,6 +7028,18 @@ pub(crate) struct CompiledCode {
     /// sequence generator) has no scope chain, so it re-seeds these names to
     /// reach the same binding instead of the outer routine.
     pub(crate) amp_shadowed_calls: Vec<Symbol>,
+    /// Block-declared routines (ADR-12529 phase 2) this closure chunk names by
+    /// bare name: `g` for a `sub g` declared in an enclosing block, loop body
+    /// or closure body, read from here as `g(...)` or `&g`. Such a call compiles
+    /// as `&g(...)` (`CallOnCodeVar`), and `compute_upvalues` makes `&g` an
+    /// upvalue, which the creating frame fills with the code object of the
+    /// activation that declared `g` (`bind_lexsub_upvalues`). Empty for every
+    /// other chunk.
+    pub(crate) lexsub_refs: Vec<Symbol>,
+    /// `(name_idx, upvalue index)` of each `GetCodeVar` that reads one of
+    /// [`Self::lexsub_refs`]: the `&g` value is the captured binding, not the
+    /// routine the name resolves to at the read.
+    pub(crate) code_var_upvalue_reads: Vec<(u32, u32)>,
     /// True when this chunk or one of its nested closures has
     /// `lexical_routines`. A closure created from such a chunk registers its
     /// body with the interpreter, so a runtime recompile of that body (the
@@ -8078,6 +8090,8 @@ impl CompiledCode {
             named_sub_captures: Vec::new(),
             lexical_routines: Vec::new(),
             amp_shadowed_calls: Vec::new(),
+            lexsub_refs: Vec::new(),
+            code_var_upvalue_reads: Vec::new(),
             lexical_subtree: false,
             nested_routine_free_reads: Vec::new(),
             bounded_lazy_decl_plans: Vec::new(),
@@ -11111,6 +11125,7 @@ impl CompiledCode {
     ///   capture is boxed into a shared `ContainerRef` cell, which the snapshot
     ///   clones), so reads stay coherent without any write-back.
     pub(crate) fn compute_upvalues(&mut self, runtime_bound: &std::collections::HashSet<Symbol>) {
+        self.inherit_child_lexsub_refs();
         let own: std::collections::HashSet<&str> = self.locals.iter().map(|s| s.as_str()).collect();
         let written: std::collections::HashSet<Symbol> = self
             .free_var_writes
@@ -11127,9 +11142,18 @@ impl CompiledCode {
         // A free `&name` is eligible on the same terms, but only its CALLS
         // are rewritten (`CallOnCodeVar::upvalue`): a value read (`&p` as an
         // argument) keeps resolving by name.
+        // A block-declared routine this body reads (`lexsub_refs`) is a free
+        // `&name` on the same terms, whether or not the free-variable pass saw
+        // the read: only a nested closure may name it.
+        let lexsub_syms: Vec<Symbol> = self
+            .lexsub_refs
+            .iter()
+            .map(|n| n.with_str(|n| Symbol::intern(&format!("&{n}"))))
+            .collect();
         let eligible_code: std::collections::HashSet<Symbol> = self
             .free_var_syms
             .iter()
+            .chain(lexsub_syms.iter())
             .copied()
             .filter(|sym| !written.contains(sym))
             .filter(|sym| !runtime_bound.contains(sym))
@@ -11173,6 +11197,7 @@ impl CompiledCode {
         let mut syms: Vec<Symbol> = Vec::new();
         let mut rewrites: Vec<(usize, u32, u32)> = Vec::new();
         let mut code_rewrites: Vec<(usize, u32)> = Vec::new();
+        let mut code_var_reads: Vec<(u32, u32)> = Vec::new();
         for (op_pos, op) in self.ops.iter().enumerate() {
             if let Some(idx) = Self::op_upvalue_read_const_idx(op)
                 && let Some(ValueView::Str(name)) =
@@ -11186,6 +11211,21 @@ impl CompiledCode {
                         n
                     });
                     rewrites.push((op_pos, uv, idx));
+                }
+            }
+            if !lexsub_syms.is_empty()
+                && let OpCode::GetCodeVar(name_idx) = op
+                && let Some(name) = self.constants.get(*name_idx as usize).and_then(Value::as_str)
+                && self.lexsub_refs.iter().any(|r| r.with_str(|r| r == name))
+            {
+                let sym = Symbol::intern(&format!("&{name}"));
+                if eligible_code.contains(&sym) {
+                    let uv = *index_of.entry(sym).or_insert_with(|| {
+                        let n = syms.len() as u32;
+                        syms.push(sym);
+                        n
+                    });
+                    code_var_reads.push((*name_idx, uv));
                 }
             }
             if !eligible_code.is_empty()
@@ -11237,7 +11277,32 @@ impl CompiledCode {
                 *upvalue = Some(uv);
             }
         }
+        code_var_reads.sort_unstable();
+        code_var_reads.dedup();
+        self.code_var_upvalue_reads = code_var_reads;
         self.upvalue_syms = syms;
+    }
+
+    /// Carry the block-declared routines the nested closures read
+    /// (`lexsub_refs`) into this body's own list, unless this body declares
+    /// the routine itself: it then creates those closures with its own
+    /// activation's binding, while an enclosing closure hands the binding on
+    /// through its upvalue array.
+    // Cost: O(c * r * p), c = nested closures, r = their refs, p = this
+    // body's routine declarations.
+    fn inherit_child_lexsub_refs(&mut self) {
+        let mut inherited: Vec<Symbol> = Vec::new();
+        for child in &self.closure_compiled_codes {
+            for name in &child.lexsub_refs {
+                if !self.lexsub_refs.contains(name)
+                    && !inherited.contains(name)
+                    && !self.sub_decl_plans.iter().any(|p| p.name == *name)
+                {
+                    inherited.push(*name);
+                }
+            }
+        }
+        self.lexsub_refs.extend(inherited);
     }
 
     /// Store a compiled closure body and return its index. `escapes` records

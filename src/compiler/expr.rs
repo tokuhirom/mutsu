@@ -1089,6 +1089,7 @@ impl Compiler {
                     Some(&slot) => self.code.emit(OpCode::GetCodeVarLocal { name_idx, slot }),
                     None => {
                         self.note_unscoped_amp_read(name);
+                        self.note_lexsub_code_var(name);
                         self.code.emit(OpCode::GetCodeVar(name_idx))
                     }
                 };

@@ -4047,6 +4047,12 @@ impl Compiler {
                 custom_traits,
                 ..
             } => {
+                // A routine declared in a nested block that does not hoist its
+                // routines (a `while` body) is still that block's binding for
+                // the closures created after it (`block_lexsubs.rs`).
+                if self.decl_scope_depth > 0 {
+                    self.note_block_lexsubs(std::slice::from_ref(stmt));
+                }
                 // A user-defined operator overrides even native `Int + Int`, so
                 // it disables constant folding for the whole unit (ADR-0006
                 // §2.1). A runtime-named sub (`sub ::($n)`) could be anything.

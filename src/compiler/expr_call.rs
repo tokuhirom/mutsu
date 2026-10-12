@@ -468,6 +468,15 @@ impl Compiler {
             self.compile_expr_call_on(&target, args);
             return;
         }
+        // A routine an enclosing block declared is that block's `&name`
+        // binding for this closure body (ADR-12529 phase 2): call it as
+        // `&name(...)`, whose `&name` the closure captures from the
+        // activation that created it (`block_lexsubs.rs`).
+        if self.reads_enclosing_lexsub(*name) {
+            let target = Expr::CodeVar(name.resolve());
+            self.compile_expr_call_on(&target, args);
+            return;
+        }
         // `f(...) = v` where `f` is a `my &f` binding. The parser lowers the
         // assignment to `__mutsu_assign_named_sub_lvalue("f", [args], value)`,
         // which hides the callee behind a string constant: the runtime then

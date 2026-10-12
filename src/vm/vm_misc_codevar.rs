@@ -145,6 +145,18 @@ impl Interpreter {
             self.stack.push(val);
             return Ok(());
         }
+        // A block-declared routine this closure captured from the activation
+        // that created it (ADR-12529 phase 2, `block_lexsubs.rs`).
+        if !code.code_var_upvalue_reads.is_empty()
+            && let Some(&(_, index)) = code
+                .code_var_upvalue_reads
+                .iter()
+                .find(|(idx, _)| *idx == name_idx)
+            && let Some(val) = self.code_var_upvalue(code, index, name_idx)
+        {
+            self.stack.push(val);
+            return Ok(());
+        }
         // A `my sub name` declared in this very chunk is what its own `&name`
         // reads, whatever an enclosing caller bound under that name in env: a
         // method that declares `my sub process` and passes `&process` to a

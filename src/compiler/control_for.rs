@@ -598,6 +598,7 @@ impl Compiler {
             }
         }
         self.hoist_sub_decls(&loop_body, true);
+        self.note_block_lexsubs(&loop_body);
         // A `for` body is its own Raku call frame; count it so a
         // `callframe`/`caller` inside sees the enclosing routine one level
         // further up (see `callframe_block_depth`).

@@ -1437,6 +1437,7 @@ impl Compiler {
             }
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.note_unscoped_amp_read(name);
+            self.note_lexsub_code_var(name);
             self.code.emit(OpCode::CallOnCodeVar {
                 name_idx,
                 arity: args.len() as u32,

@@ -1109,6 +1109,7 @@ mod expr_unary;
 mod frame_lexical_ast_scan;
 pub(crate) mod frame_lexical_inherit;
 pub(crate) mod frame_lexical_routines;
+mod block_lexsubs;
 mod helpers;
 mod helpers_ast_utils;
 mod helpers_block_inline;
@@ -1219,6 +1220,19 @@ pub(crate) struct Compiler {
     /// scope-frame entries (an `&name` entry there means a `my &name`
     /// binding), so a `MY::` naming the frame lists them from here.
     scope_routine_decls: Vec<(usize, Symbol)>,
+    /// The plain routines each active block scope of this compilation binds
+    /// for the closures nested in it, as `(local_scopes depth, name)`; see
+    /// `block_lexsubs.rs` (ADR-12529 phase 2).
+    block_lexsub_decls: Vec<(usize, Symbol)>,
+    /// The block-declared routines of the enclosing compilations that a bare
+    /// name in this closure body reaches through its binding, not by name
+    /// (`block_lexsubs.rs`). Empty outside closure bodies.
+    enclosing_lexsubs: Vec<Symbol>,
+    /// Set by a runtime path that compiles a closure body's AST as a whole
+    /// compilation (the inline `map`/`grep` path): the top level is that
+    /// block's scope, so its routines are bindings for the closures nested
+    /// in it (`block_lexsubs.rs`).
+    top_level_is_block_body: bool,
     /// Declarations the NEXT [`Self::push_local_scope`] starts its frame with.
     /// A multi-parameter `for` loop declares its parameters before its body's
     /// scope frame is pushed; they belong to that frame (Raku puts a block's
@@ -1984,6 +1998,9 @@ impl Compiler {
             local_scopes: vec![lex_scope::ScopeFrame::new()],
             import_scope_levels: Vec::new(),
             scope_routine_decls: Vec::new(),
+            block_lexsub_decls: Vec::new(),
+            enclosing_lexsubs: Vec::new(),
+            top_level_is_block_body: false,
             pending_scope_frame: None,
             retired_loop_param_slots: HashMap::new(),
             enclosing_scopes: Vec::new(),
@@ -3055,6 +3072,8 @@ impl Compiler {
         let depth = self.local_scopes.len();
         self.import_scope_levels.retain(|&level| level <= depth);
         self.scope_routine_decls
+            .retain(|&(level, _)| level <= depth);
+        self.block_lexsub_decls
             .retain(|&(level, _)| level <= depth);
         if !shadow_slots_active() {
             // DEFAULT build: behavior-preserving no-op (frame already dropped).
@@ -4611,6 +4630,9 @@ impl Compiler {
                 self.hoist_sub_decls(stmts, false);
             }
             None => self.hoist_sub_decls(stmts, false),
+        }
+        if self.top_level_is_block_body {
+            self.note_block_lexsubs(stmts);
         }
         // Pre-register declaration-only shells of class/role declarations so a
         // mainline statement that runs before the textual declaration can

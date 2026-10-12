@@ -112,5 +112,14 @@ impl super::Compiler {
         if !frame.is_empty() {
             self.enclosing_scopes.push(frame);
         }
+        // A block-declared routine the body read through its binding stays
+        // one (`block_lexsubs.rs`); the closure carries it in its captured env.
+        visit_code(origin, &mut |c| {
+            for name in &c.lexsub_refs {
+                if !self.enclosing_lexsubs.contains(name) {
+                    self.enclosing_lexsubs.push(*name);
+                }
+            }
+        });
     }
 }
