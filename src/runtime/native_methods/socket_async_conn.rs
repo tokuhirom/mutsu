@@ -92,7 +92,7 @@ impl Interpreter {
 
     /// The exception a text-mode socket Supply quits with when the peer sends
     /// bytes that are not valid UTF-8.
-    fn malformed_utf8_exception() -> Value {
+    pub(super) fn malformed_utf8_exception() -> Value {
         let mut attrs = HashMap::new();
         attrs.insert(
             "message".to_string(),
@@ -109,7 +109,7 @@ impl Interpreter {
     /// extend. Returns the text that is safe to emit now, `Ok(None)` when this
     /// read produced nothing complete, and `Err(())` when the bytes are not
     /// UTF-8 at all — which quits the Supply rather than substituting U+FFFD.
-    fn decode_socket_chunk(
+    pub(super) fn decode_socket_chunk(
         chunk: &[u8],
         enc: &str,
         pending_bytes: &mut Vec<u8>,
@@ -182,120 +182,15 @@ impl Interpreter {
         if let Ok(mut map) = supply_channel_map().lock() {
             map.insert(supply_id, rx);
         }
-        // Start a reader thread for this connection
-        if let Some(stream_arc) = get_tcp_stream(id) {
-            let stream_clone = stream_arc.lock().ok().and_then(|s| s.try_clone().ok());
-            if let Some(mut reader) = stream_clone {
-                // Registered spawn: emits freshly built `Gc` values (Buf
-                // instances) whose drops on a failed send must not race a
-                // cycle scan; the blocking read is a quiescent safe region.
-                let spawned = crate::runtime::builtins_system::try_spawn_gc_helper_thread(
-                    "sock-conn",
-                    move || {
-                        use std::io::Read;
-                        let mut buf = [0u8; 4096];
-                        // Text mode carries decoding state across reads: TCP splits
-                        // wherever it likes, so a read can end mid-UTF-8-sequence
-                        // (`pending_bytes`) or mid-grapheme (`pending_text`, e.g. a
-                        // "u" whose COMBINING DOT ABOVE is in the next packet).
-                        // Emitting either half on its own is wrong, so both are held
-                        // back until the next read resolves them or the stream ends.
-                        let mut pending_bytes: Vec<u8> = Vec::new();
-                        let mut pending_text = String::new();
-                        // rakudo reads a connection only while a tap listens, so a
-                        // consumer that finished (a `react` that said `done`) leaves
-                        // the next chunk for the next `.Supply` tap. This reader must
-                        // therefore stop before it takes a chunk nobody can receive:
-                        // wake up periodically, and retire once every tap has gone.
-                        // (The timeout is a socket option shared by the stream's
-                        // clones; writers are unaffected by a receive timeout.)
-                        let _ = reader.set_read_timeout(Some(std::time::Duration::from_millis(50)));
-                        loop {
-                            if tx.is_retired() {
-                                break;
-                            }
-                            // Peek first: a chunk that arrives while no tap listens
-                            // must stay in the kernel buffer for the next tap, so
-                            // the retirement check has to come after the data shows
-                            // up and before it is read.
-                            match crate::gc::block_quiescent(|| reader.peek(&mut buf)) {
-                                Err(e)
-                                    if matches!(
-                                        e.kind(),
-                                        std::io::ErrorKind::WouldBlock
-                                            | std::io::ErrorKind::TimedOut
-                                    ) =>
-                                {
-                                    continue;
-                                }
-                                Ok(n) if n > 0 && tx.is_retired() => break,
-                                _ => {}
-                            }
-                            match crate::gc::block_quiescent(|| reader.read(&mut buf)) {
-                                Err(e)
-                                    if matches!(
-                                        e.kind(),
-                                        std::io::ErrorKind::WouldBlock
-                                            | std::io::ErrorKind::TimedOut
-                                    ) =>
-                                {
-                                    continue;
-                                }
-                                Ok(0) => {
-                                    if !is_bin && !pending_text.is_empty() {
-                                        let _ = tx.send(SupplyEvent::Emit(Value::str(
-                                            std::mem::take(&mut pending_text),
-                                        )));
-                                    }
-                                    let _ = tx.send(SupplyEvent::Done);
-                                    break;
-                                }
-                                Ok(n) => {
-                                    let value = if is_bin {
-                                        Some(Self::make_buf(buf[..n].to_vec()))
-                                    } else {
-                                        match Self::decode_socket_chunk(
-                                            &buf[..n],
-                                            &enc,
-                                            &mut pending_bytes,
-                                            &mut pending_text,
-                                        ) {
-                                            Ok(text) => text.map(Value::str),
-                                            // Not UTF-8: Raku quits the Supply with
-                                            // the decode failure rather than
-                                            // substituting replacement characters.
-                                            Err(()) => {
-                                                let _ = tx.send(SupplyEvent::Quit(
-                                                    Self::malformed_utf8_exception(),
-                                                ));
-                                                break;
-                                            }
-                                        }
-                                    };
-                                    if let Some(value) = value
-                                        && tx.send(SupplyEvent::Emit(value)).is_err()
-                                    {
-                                        break;
-                                    }
-                                }
-                                Err(_) => {
-                                    if !is_bin && !pending_text.is_empty() {
-                                        let _ = tx.send(SupplyEvent::Emit(Value::str(
-                                            std::mem::take(&mut pending_text),
-                                        )));
-                                    }
-                                    let _ = tx.send(SupplyEvent::Done);
-                                    break;
-                                }
-                            }
-                        }
-                    },
-                );
-                // A refused reader thread (#9401) is a catchable X::AdHoc.
-                if let Err(e) = spawned {
-                    discard_supply_channel(supply_id);
-                    return Err(crate::runtime::builtins_system::refused_thread_error(e));
-                }
+        // Read the connection into the Supply (see `socket_reader`).
+        if let Some(stream_arc) = get_tcp_stream(id)
+            && let Some(stream) = stream_arc.lock().ok().and_then(|s| s.try_clone().ok())
+        {
+            let reader = super::socket_reader::SocketReader::new(stream, tx, is_bin, enc);
+            // A refused reader thread (#9401) is a catchable X::AdHoc.
+            if let Err(e) = super::socket_reader::start_socket_reader(reader) {
+                discard_supply_channel(supply_id);
+                return Err(e);
             }
         }
         let mut attrs = HashMap::new();
