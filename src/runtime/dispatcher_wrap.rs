@@ -112,7 +112,8 @@ impl Interpreter {
     /// `[invocant, ...args]` and then pops both. Shared by the two method-wrap
     /// entry sites (`class_dispatch.rs`, `check_method_wrap_chain`).
     // Cost: O(m + c), m = receiver MRO length, c = candidates of `method` on
-    // `owner_class` (the candidate-index scan); O(1) when nothing is wrapped.
+    // `owner_class` (the candidate-index scan); O(1) when no candidate of
+    // `method` was ever wrapped.
     pub(crate) fn enter_method_wrap_chain(
         &mut self,
         receiver_class: &str,
@@ -129,6 +130,14 @@ impl Interpreter {
             self.push_method_samewith_context(receiver_class, method, args, Some(invocant.clone()));
             self.push_dispatcher_wrap_frame(receiver_class, method, args, invocant, &chain);
             return chain.last().map(|(_, wrapper)| wrapper.clone());
+        }
+        // No candidate of this name was ever wrapped: skip the index scan.
+        if !self
+            .registry()
+            .candidate_wrapped_methods
+            .contains(method)
+        {
+            return None;
         }
         let cand_idx =
             self.find_method_candidate_index(owner_class.as_str(), method, method_def)?;
