@@ -213,6 +213,11 @@ impl Interpreter {
                         }
                     }
                 }
+                // Nested `whenever` taps close first, so their CLOSE phasers
+                // run before the block's own (#12864).
+                if let Some(cid) = attributes.get("close_supplier_id").and_then(Value::as_int) {
+                    self.close_supply_child_taps(cid as u64)?;
+                }
                 // Cascade upstream. In raku, closing a tap closes the supply
                 // block that produced it, which closes the `whenever`
                 // subscriptions inside it, which closes *their* sources — all

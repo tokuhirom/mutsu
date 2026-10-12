@@ -55,6 +55,9 @@ impl Interpreter {
     fn visit_supply_registries(&self, visitor: &mut dyn RootVisitor) {
         crate::runtime::native_methods::state::visit_supply_state_roots(visitor);
         crate::runtime::native_methods::state_supplier::visit_supplier_subscription_roots(visitor);
+        crate::runtime::native_methods::state_supply_child_taps::visit_supply_child_tap_roots(
+            visitor,
+        );
     }
 
     /// Former `VM` struct fields (CP-3 collapse) — the live bytecode

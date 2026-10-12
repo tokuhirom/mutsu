@@ -48,6 +48,9 @@ impl Interpreter {
             }
             return Ok(false);
         }
+        if Self::forget_supply_child_tap_on_done(&done_cb) {
+            return Ok(false);
+        }
         // A done chain bundles several done callbacks (e.g. a whenever's LAST
         // phaser plus the enclosing supply's done-group marker) into the single
         // `done => ...` slot of a chained inner tap. Fire each in order; a
@@ -85,6 +88,11 @@ impl Interpreter {
                 .get("close_supplier_id")
                 .map(|v| v.view())
         {
+            // Not the nested `whenever` taps (#12864): this marker sits on
+            // every supplier-backed source's done, so it fires when ONE source
+            // ends while the block's other subscriptions -- the nested ones
+            // above all, e.g. `Cro::HTTP::Client`'s `establish` once its
+            // connection promise is kept -- are still live.
             for cb in take_supplier_close_callbacks(cid as u64) {
                 self.call_sub_value(cb, vec![], true)?;
             }
@@ -104,6 +112,7 @@ impl Interpreter {
         {
             let attrs = attributes.as_map();
             if let Some(ValueView::Int(cid)) = attrs.get("close_supplier_id").map(|v| v.view()) {
+                self.close_supply_child_taps(cid as u64)?;
                 for cb in take_supplier_close_callbacks(cid as u64) {
                     self.call_sub_value(cb, vec![], true)?;
                 }
