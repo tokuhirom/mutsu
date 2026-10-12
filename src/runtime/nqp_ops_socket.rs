@@ -232,9 +232,15 @@ impl Interpreter {
         ]);
         // Builds `Gc` values per connection: a registered GC mutator, its
         // accept poll quiescent. Runs no user VM code.
-        crate::runtime::builtins_system::try_spawn_gc_helper_thread("nqp-listen", move || {
-            let cancelled = sink.cancelled_flag();
-            crate::runtime::tcp_core::accept_loop(&listener, &cancelled, |stream, _| {
+        // Accepted from the socket reactor (#12968): an idle listener wakes
+        // no thread. The handler builds `Gc` values per connection on a
+        // registered GC helper and runs no user VM code.
+        let cancelled = sink.cancelled_flag();
+        crate::runtime::tcp_core::serve_listener(
+            "nqp-listen",
+            listener,
+            cancelled,
+            Box::new(move |stream, _| {
                 // MoarVM's connections block; some platforms hand back an
                 // accepted stream non-blocking like its listener.
                 let _ = stream.set_nonblocking(false);
@@ -250,9 +256,9 @@ impl Interpreter {
                     port.clone(),
                 ]);
                 true
-            });
-        })
-        .map_err(crate::runtime::builtins_system::refused_thread_error)?;
+            }),
+            Box::new(|_| {}),
+        )?;
         Ok(handle)
     }
 

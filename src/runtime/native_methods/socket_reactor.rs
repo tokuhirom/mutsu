@@ -10,6 +10,11 @@
 //! O(n) over the watched sockets, which stays far below the per-connection
 //! threads it replaces at the connection counts mutsu programs reach.
 //!
+//! Listening sockets are watched the same way (#12968): a listener is
+//! accepted from when `poll` reports it readable, and a close is noticed
+//! through the self-pipe wake ([`wake_reactor`]), so an idle listener wakes
+//! no thread and costs none of its own.
+//!
 //! Registration hands a [`SocketReader`] to the reactor through a queue and
 //! writes a byte to a self-pipe so a blocked `poll` picks it up at once. A
 //! reader whose taps have all gone is dropped (releasing its hold on the
@@ -21,7 +26,10 @@
 
 use super::socket_reader::{ReadOutcome, SocketReader};
 use crate::runtime::RuntimeError;
-use std::os::unix::io::RawFd;
+use crate::runtime::tcp_core::{AcceptEnd, OnConn, OnEnd};
+use std::net::TcpListener;
+use std::os::unix::io::{AsRawFd, RawFd};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// How often a reactor with registered readers wakes to drop readers whose
@@ -31,7 +39,16 @@ const SWEEP_INTERVAL_MS: libc::c_int = 250;
 
 struct Shared {
     incoming: Mutex<Vec<SocketReader>>,
+    incoming_listeners: Mutex<Vec<Listener>>,
     wake_write: RawFd,
+}
+
+/// A listening socket the reactor accepts from until `closed` is raised.
+struct Listener {
+    listener: TcpListener,
+    closed: Arc<AtomicBool>,
+    on_conn: OnConn,
+    on_end: OnEnd,
 }
 
 static REACTOR: Mutex<Option<Arc<Shared>>> = Mutex::new(None);
@@ -39,7 +56,52 @@ static REACTOR: Mutex<Option<Arc<Shared>>> = Mutex::new(None);
 /// Hand `reader` to the reactor, starting the reactor thread on first use.
 // Cost: O(1) amortized.
 pub(super) fn register(reader: SocketReader) -> Result<(), RuntimeError> {
-    let shared = {
+    let shared = reactor()?;
+    if let Ok(mut incoming) = shared.incoming.lock() {
+        incoming.push(reader);
+    }
+    wake(shared.wake_write);
+    Ok(())
+}
+
+/// Accept connections on `listener` from the reactor, handing each to
+/// `on_conn` (which answers `false` to stop), until `closed` is raised and
+/// [`wake_reactor`] is called; then the backlog is drained once more, the
+/// listener is dropped, and `on_end` runs.
+// Cost: O(1) amortized.
+pub(crate) fn register_listener(
+    listener: TcpListener,
+    closed: Arc<AtomicBool>,
+    on_conn: OnConn,
+    on_end: OnEnd,
+) -> Result<(), RuntimeError> {
+    let _ = listener.set_nonblocking(true);
+    let shared = reactor()?;
+    if let Ok(mut incoming) = shared.incoming_listeners.lock() {
+        incoming.push(Listener {
+            listener,
+            closed,
+            on_conn,
+            on_end,
+        });
+    }
+    wake(shared.wake_write);
+    Ok(())
+}
+
+/// Wake the reactor so it re-reads its listeners' close flags. A no-op when
+/// the reactor was never started.
+// Cost: O(1).
+pub(crate) fn wake_reactor() {
+    let shared = REACTOR.lock().ok().and_then(|slot| slot.as_ref().map(Arc::clone));
+    if let Some(shared) = shared {
+        wake(shared.wake_write);
+    }
+}
+
+/// The running reactor, started on first use.
+fn reactor() -> Result<Arc<Shared>, RuntimeError> {
+    Ok({
         let mut slot = REACTOR
             .lock()
             .map_err(|_| RuntimeError::new("socket reactor lock poisoned"))?;
@@ -51,12 +113,7 @@ pub(super) fn register(reader: SocketReader) -> Result<(), RuntimeError> {
                 shared
             }
         }
-    };
-    if let Ok(mut incoming) = shared.incoming.lock() {
-        incoming.push(reader);
-    }
-    wake(shared.wake_write);
-    Ok(())
+    })
 }
 
 fn wake(fd: RawFd) {
@@ -92,6 +149,7 @@ fn start_reactor() -> Result<Arc<Shared>, RuntimeError> {
         wake_pipe().map_err(crate::runtime::builtins_system::refused_thread_error)?;
     let shared = Arc::new(Shared {
         incoming: Mutex::new(Vec::new()),
+        incoming_listeners: Mutex::new(Vec::new()),
         wake_write,
     });
     let thread_shared = Arc::clone(&shared);
@@ -115,13 +173,31 @@ fn start_reactor() -> Result<Arc<Shared>, RuntimeError> {
 
 fn run_reactor(shared: &Shared, wake_read: RawFd) {
     let mut readers: Vec<SocketReader> = Vec::new();
+    let mut listeners: Vec<Listener> = Vec::new();
     let mut pollfds: Vec<libc::pollfd> = Vec::new();
     let mut buf = [0u8; 4096];
     loop {
         if let Ok(mut incoming) = shared.incoming.lock() {
             readers.append(&mut incoming);
         }
+        if let Ok(mut incoming) = shared.incoming_listeners.lock() {
+            listeners.append(&mut incoming);
+        }
         readers.retain(|r| !r.is_retired());
+        // A closed listener drains its backlog and ends. The OS completes a
+        // handshake without us, so a peer whose `connect` already returned is
+        // an ESTABLISHED connection in the backlog, and dropping it because
+        // the close won the race would lose a connection the client made.
+        for i in (0..listeners.len()).rev() {
+            if listeners[i].closed.load(Ordering::SeqCst) {
+                let mut listener = listeners.swap_remove(i);
+                let end = match accept_ready(&mut listener) {
+                    Some(end) => end,
+                    None => AcceptEnd::Closed,
+                };
+                finish_listener(listener, end);
+            }
+        }
         pollfds.clear();
         pollfds.push(libc::pollfd {
             fd: wake_read,
@@ -130,6 +206,11 @@ fn run_reactor(shared: &Shared, wake_read: RawFd) {
         });
         pollfds.extend(readers.iter().map(|r| libc::pollfd {
             fd: r.fd,
+            events: libc::POLLIN,
+            revents: 0,
+        }));
+        pollfds.extend(listeners.iter().map(|l| libc::pollfd {
+            fd: l.listener.as_raw_fd(),
             events: libc::POLLIN,
             revents: 0,
         }));
@@ -148,6 +229,17 @@ fn run_reactor(shared: &Shared, wake_read: RawFd) {
         }
         if pollfds[0].revents != 0 {
             drain_wake_pipe(wake_read);
+        }
+        // `pollfds[1 + readers.len() + i]` describes `listeners[i]`; visited
+        // before the readers, whose swap-removes would shift that base.
+        let base = 1 + readers.len();
+        for i in (0..listeners.len()).rev() {
+            if pollfds[base + i].revents == 0 {
+                continue;
+            }
+            if let Some(end) = accept_ready(&mut listeners[i]) {
+                finish_listener(listeners.swap_remove(i), end);
+            }
         }
         // `pollfds[i + 1]` describes `readers[i]`; walk back to front so a
         // finished reader can be swap-removed without disturbing the pairs
@@ -172,6 +264,33 @@ fn run_reactor(shared: &Shared, wake_read: RawFd) {
             }
         }
     }
+}
+
+/// Accept every connection `listener` has ready. `Some` when the listener is
+/// done: its handler asked to stop, or the accept failed.
+// Cost: O(c), c = connections ready.
+fn accept_ready(listener: &mut Listener) -> Option<AcceptEnd> {
+    loop {
+        match listener.listener.accept() {
+            Ok((stream, peer)) => {
+                if !(listener.on_conn)(stream, peer) {
+                    return Some(AcceptEnd::Stopped);
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => return None,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return Some(AcceptEnd::Failed),
+        }
+    }
+}
+
+/// Drop the OS listener, freeing its port, then report how it ended.
+fn finish_listener(listener: Listener, end: AcceptEnd) {
+    let Listener {
+        listener, on_end, ..
+    } = listener;
+    drop(listener);
+    on_end(end);
 }
 
 fn drain_wake_pipe(fd: RawFd) {

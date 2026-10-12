@@ -151,84 +151,63 @@ impl Interpreter {
                     map.insert(supply_id, rx);
                 }
 
-                // Set a short accept timeout so the thread can check
-                // the closed flag periodically
-                let _ = tcp_listener
-                    .set_nonblocking(false)
-                    .and_then(|_| tcp_listener.set_nonblocking(false));
-
                 let accept_host = host.clone();
                 let accept_enc = enc;
-                // Start a background thread to accept connections.
-                // Registered spawn: it builds `Gc` values (the connection
-                // Instance) whose drop on a failed send must not race a cycle
-                // scan; the poll sleep is a quiescent safe region.
+                // Accept from the socket reactor (#12968): an idle listener
+                // wakes no thread. The handlers build `Gc` values (the
+                // connection Instance) on the reactor, a registered GC helper.
                 let stopped_on_refusal = stopped_flag.clone();
-                let spawned = crate::runtime::builtins_system::try_spawn_gc_helper_thread(
-                    "sock-async",
-                    move || {
-                        let end = crate::runtime::tcp_core::accept_loop(
-                            &tcp_listener,
-                            &closed_flag,
-                            |stream, peer_addr| {
-                                let conn_id = next_async_socket_id();
-                                // Store the TcpStream globally
-                                if let Ok(cloned) = stream.try_clone() {
-                                    register_tcp_stream(conn_id, cloned);
-                                }
-
-                                let mut conn_attrs = HashMap::new();
-                                conn_attrs.insert("conn-id".to_string(), Value::int(conn_id as i64));
-                                conn_attrs.insert("tcp-real".to_string(), Value::TRUE);
-                                conn_attrs.insert(
-                                    "socket-host".to_string(),
-                                    Value::str(accept_host.clone()),
-                                );
-                                conn_attrs.insert(
-                                    "socket-port".to_string(),
-                                    Value::int(actual_port as i64),
-                                );
-                                conn_attrs.insert(
-                                    "peer-host".to_string(),
-                                    Value::str(peer_addr.ip().to_string()),
-                                );
-                                conn_attrs.insert(
-                                    "peer-port".to_string(),
-                                    Value::int(peer_addr.port() as i64),
-                                );
-                                conn_attrs.insert("enc".to_string(), Value::str(accept_enc.clone()));
-                                let conn_val = Value::make_instance(
-                                    Symbol::intern("IO::Socket::Async"),
-                                    conn_attrs,
-                                );
-                                tx.send(SupplyEvent::Emit(conn_val)).is_ok()
-                            },
-                        );
-                        // The backlog is drained after a close, or the accept
-                        // failed: the Supply ends. A dropped receiver needs no
-                        // `Done`.
-                        if !matches!(end, crate::runtime::tcp_core::AcceptEnd::Stopped) {
-                            let _ = tx.send(SupplyEvent::Done);
+                let on_conn: crate::runtime::tcp_core::OnConn = {
+                    let tx = tx.clone();
+                    Box::new(move |stream, peer_addr| {
+                        let conn_id = next_async_socket_id();
+                        // Store the TcpStream globally
+                        if let Ok(cloned) = stream.try_clone() {
+                            register_tcp_stream(conn_id, cloned);
                         }
-                        // Free the port *before* acknowledging, so a `Tap.close`
-                        // that waits on this flag can rely on the listener being
-                        // gone once it returns. On wasm32 `TcpListener` is an
-                        // unsupported stub with no `Drop`, so clippy is right that
-                        // the call does nothing there -- and wrong that it can go.
-                        #[cfg_attr(target_arch = "wasm32", allow(clippy::drop_non_drop))]
-                        drop(tcp_listener);
-                        stopped_flag.store(true, Ordering::SeqCst);
-                    },
+
+                        let mut conn_attrs = HashMap::new();
+                        conn_attrs.insert("conn-id".to_string(), Value::int(conn_id as i64));
+                        conn_attrs.insert("tcp-real".to_string(), Value::TRUE);
+                        conn_attrs.insert("socket-host".to_string(), Value::str(accept_host.clone()));
+                        conn_attrs.insert("socket-port".to_string(), Value::int(actual_port as i64));
+                        conn_attrs.insert(
+                            "peer-host".to_string(),
+                            Value::str(peer_addr.ip().to_string()),
+                        );
+                        conn_attrs.insert("peer-port".to_string(), Value::int(peer_addr.port() as i64));
+                        conn_attrs.insert("enc".to_string(), Value::str(accept_enc.clone()));
+                        let conn_val =
+                            Value::make_instance(Symbol::intern("IO::Socket::Async"), conn_attrs);
+                        tx.send(SupplyEvent::Emit(conn_val)).is_ok()
+                    })
+                };
+                // The OS listener is already dropped, freeing the port, when
+                // this runs, so a `Tap.close` that waits on the stopped flag can
+                // rely on the listener being gone once it returns. The backlog
+                // is drained after a close, or the accept failed: the Supply
+                // ends. A dropped receiver needs no `Done`.
+                let on_end: crate::runtime::tcp_core::OnEnd = Box::new(move |end| {
+                    if !matches!(end, crate::runtime::tcp_core::AcceptEnd::Stopped) {
+                        let _ = tx.send(SupplyEvent::Done);
+                    }
+                    stopped_flag.store(true, Ordering::SeqCst);
+                });
+                let spawned = crate::runtime::tcp_core::serve_listener(
+                    "sock-async",
+                    tcp_listener,
+                    closed_flag,
+                    on_conn,
+                    on_end,
                 );
                 // A refused accept thread (#9401) ends the listener (the OS
                 // listener was dropped with the closure) and is reported the
                 // way a failed bind is: through the tap's `quit`, or as a
                 // catchable X::AdHoc when there is none.
-                if let Err(e) = spawned {
+                if let Err(err) = spawned {
                     close_async_listener(listener_id);
                     stopped_on_refusal.store(true, Ordering::SeqCst);
                     discard_supply_channel(supply_id);
-                    let err = crate::runtime::builtins_system::refused_thread_error(e);
                     let Some(q) = quit_cb else {
                         return Err(err);
                     };
