@@ -1437,7 +1437,14 @@ impl Interpreter {
         // lookaround bodies, alternation branches) re-enter here and inherit it.
         let _top_level_source =
             crate::runtime::regex_parse::TopLevelSourceScope::enter(interpolated);
-        let mut source = interpolated.trim_start();
+        // A rule body's runtime-parameter declaration block
+        // (`regex_rule_params`), declared below like a `:my` lexical.
+        let (rule_params, unmarked) =
+            match super::regex::regex_rule_params::split_rule_params(interpolated) {
+                Some((names, rest)) => (names.map(str::to_string).collect::<Vec<_>>(), rest),
+                None => (Vec::new(), interpolated),
+            };
+        let mut source = unmarked.trim_start();
         let mut ignore_case = false;
         let mut ignore_mark = false;
         let mut sigspace = false;
@@ -1562,7 +1569,7 @@ impl Interpreter {
             }
             break;
         }
-        let had_modifier = source.len() != interpolated.trim_start().len();
+        let had_modifier = source.len() != unmarked.trim_start().len();
         source = if sigspace {
             source.trim_start()
         } else {
@@ -1743,6 +1750,12 @@ impl Interpreter {
         // `ENCLOSING_REGEX_VARS`). The guard restores that set on the way out.
         let (_enclosing_vars_guard, mut declared_regex_vars) =
             super::regex::regex_helpers::EnclosingRegexVarsGuard::enter();
+        // A rule's runtime parameters are its body's outermost lexicals: every
+        // sub-pattern parse sees them, as it sees a `:my`.
+        for name in rule_params {
+            super::regex::regex_helpers::declare_enclosing_regex_var(&name);
+            declared_regex_vars.insert(name);
+        }
         // ADR-0022 Slice 5: `interpolate_regex_scalars` wraps a span
         // substituted from a non-constant runtime variable in a pair of
         // `NON_DECLARATIVE_INTERP_MARK` sentinels. Toggled (not

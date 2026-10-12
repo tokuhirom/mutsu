@@ -9,6 +9,7 @@ mod regex_code_atom;
 pub(in crate::runtime) mod regex_code_interp;
 pub(crate) mod regex_cursor;
 pub(crate) mod regex_dynparams;
+pub(crate) mod regex_rule_params;
 mod regex_eval;
 mod regex_eval_class;
 mod regex_eval_repeat;

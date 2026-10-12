@@ -243,9 +243,11 @@ impl Interpreter {
         if !ANY_DYNAMIC_TOKEN_PARAM.load(std::sync::atomic::Ordering::Relaxed)
             && !regex_args_have_opaque(args)
         {
-            // The callee's `"…"` atoms read their qq thunks' results, run at
-            // rule entry, from the window.
-            return self.install_subrule_qq_thunks(&spec.lookup_name, pkg, None);
+            // The callee's runtime parameters (`regex_rule_params`), then its
+            // `"…"` atoms' qq thunks, run at rule entry: both are read from the
+            // window.
+            let prior = self.install_runtime_rule_params(&spec.lookup_name, pkg, args, None);
+            return self.install_subrule_qq_thunks(&spec.lookup_name, pkg, prior);
         }
         self.install_subrule_dynamic_params_named(&spec.lookup_name, pkg, args, None)
     }
@@ -282,7 +284,20 @@ impl Interpreter {
             return None;
         }
         let mut saved = params.unwrap_or_default();
-        let mut attach: Vec<String> = saved.iter().map(|(key, _)| key.clone()).collect();
+        // A runtime parameter (`regex_rule_params`) is a lexical of the rule's
+        // own body, not a dynamic variable its action reads: it is in the
+        // window but not filed on the Match.
+        let runtime_params = if saved.is_empty() {
+            None
+        } else {
+            self.runtime_rule_params(&name.spec().lookup_name, pkg)
+        };
+        let mut attach: Vec<String> = saved
+            .iter()
+            .map(|(key, _)| key)
+            .filter(|key| runtime_params.as_ref().is_none_or(|names| !names.contains(key)))
+            .cloned()
+            .collect();
         let scope_keys = rule_frame.map(|frame| {
             let (frame_saved, keys) = Self::into_window_parts(frame);
             saved.extend(frame_saved);

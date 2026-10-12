@@ -19,6 +19,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use super::super::regex_atom_leaf::VarInterpTarget;
 use super::super::regex_match_delta::group_merge_delta;
 use super::super::regex_zero_width_iter::zero_width_iter_counts;
 use super::rx_call::{CallTarget, ResolvedCall};
@@ -372,19 +373,41 @@ impl Interpreter {
                     // registers. Outside a frame-running loop the pattern is
                     // matched up front instead: its all-ends match, then O(c) per
                     // candidate entered, c = the captures it adds.
-                    RxOp::InterpEnds(i) => {
-                        let RegexAtom::CodeInterp { code, list } = &program.atoms[i as usize]
-                        else {
-                            debug_assert!(false, "an InterpEnds op names a CodeInterp atom");
-                            break 'run None;
+                    // A `$x` (`VarInterp`) holding a plain value is a literal
+                    // compared in place: O(r), r = its length.
+                    RxOp::InterpEnds(i) => 'interp: {
+                        let parsed = match &program.atoms[i as usize] {
+                            RegexAtom::CodeInterp { code, list } => self.regex_code_interp_parsed(
+                                code,
+                                *list,
+                                chars,
+                                levels.top().caps(),
+                                program.atom_ic[i as usize],
+                            ),
+                            RegexAtom::VarInterp(name) => match self.var_interp_target(
+                                name,
+                                levels.top().caps(),
+                                chars,
+                                pos,
+                                program.atom_ic[i as usize],
+                            ) {
+                                VarInterpTarget::End(end) => {
+                                    pc += 1;
+                                    break 'interp match end {
+                                        Some(end) => {
+                                            pos = end;
+                                            true
+                                        }
+                                        None => false,
+                                    };
+                                }
+                                VarInterpTarget::Pattern(parsed) => Some(parsed),
+                            },
+                            _ => {
+                                debug_assert!(false, "an InterpEnds op names an interpolation");
+                                break 'run None;
+                            }
                         };
-                        let parsed = self.regex_code_interp_parsed(
-                            code,
-                            *list,
-                            chars,
-                            levels.top().caps(),
-                            program.atom_ic[i as usize],
-                        );
                         pc += 1;
                         match parsed {
                             None => false,

@@ -275,6 +275,14 @@ impl Interpreter {
             let mut fp = String::new();
             for v in arg_values {
                 fp.push('\u{0}');
+                // Whether the value takes the runtime-parameter path
+                // (`regex_rule_params`): a value that does not can render
+                // like one that does (`(1,)` and `1`).
+                fp.push(if super::regex_rule_params::arg_binds_by_identity(v) {
+                    'i'
+                } else {
+                    'b'
+                });
                 fp.push_str(&Self::format_named_regex_arg_value(v));
             }
             Some(fp)
@@ -430,6 +438,14 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> Vec<(String, Symbol, Option<String>)> {
         let mut out = Vec::new();
+        // The same test the call's window applies before binding them
+        // (`install_runtime_rule_params`).
+        let runtime_params = self.runtime_rule_params(name, pkg).filter(|names| {
+            names.len() == arg_values.len()
+                && arg_values
+                    .iter()
+                    .all(super::regex_rule_params::arg_binds_by_identity)
+        });
         let defs = self.resolve_token_defs_in_pkg(name, pkg);
         // Several candidates and no proto: the call is an ordinary multi
         // dispatch, so ONE candidate runs (or the call dies as ambiguous).
@@ -506,7 +522,7 @@ impl Interpreter {
                 if !Self::body_is_constant(&def.body) {
                     super::regex_arg_purity::note_opaque_read();
                 }
-                self.resolve_one_token_pattern_with_args(&def, arg_values)
+                self.resolve_one_token_pattern_with_args(&def, arg_values, runtime_params.as_deref())
             });
             match resolved {
                 Ok(mut candidates) => {
@@ -563,10 +579,16 @@ impl Interpreter {
     /// the arguments over an isolated copy of the env
     /// ([`Self::run_regex_sub_eval`]) in the token's package, evaluate the body,
     /// and render the resulting pattern.
+    ///
+    /// With `runtime_params` (the rule's parameters are bound per call, see
+    /// `regex_rule_params`), the binding only validates the arguments, and the
+    /// pattern is the body unchanged behind its parameter declaration block:
+    /// the same text for every argument list.
     fn resolve_one_token_pattern_with_args(
         &mut self,
         def: &Arc<FunctionDef>,
         arg_values: &[Value],
+        runtime_params: Option<&[String]>,
     ) -> Result<Vec<(String, Symbol, Option<String>)>, RuntimeError> {
         let env = self.env.clone();
         self.run_regex_sub_eval(env, Some(def.package), |interp| {
@@ -604,6 +626,15 @@ impl Interpreter {
                     ValueView::Nil => String::new(),
                     _ => value.to_string_value(),
                 };
+                if let Some(names) = runtime_params {
+                    let sym_val = Self::extract_sym_adverb(&def.name.resolve());
+                    out.push((
+                        super::regex_rule_params::mark_rule_params(names, &pattern),
+                        def.package,
+                        sym_val,
+                    ));
+                    return Ok(out);
+                }
                 // Bake the bound parameter values into any `{ ... }` code
                 // blocks of the pattern. This is needed because regex code
                 // blocks execute in the outer interpreter env (which does

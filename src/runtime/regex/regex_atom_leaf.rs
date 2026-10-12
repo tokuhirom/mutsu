@@ -12,6 +12,13 @@ use super::regex_helpers::{
     LTM_DECLARATIVE_MODE, NamedRegexLookupSpec, is_word_char,
 };
 
+/// What a `$name` interpolation ([`RegexAtom::VarInterp`]) matches at a
+/// position: a literal's end (`None`: no match), or a pattern to run there.
+pub(in crate::runtime) enum VarInterpTarget {
+    End(Option<usize>),
+    Pattern(std::sync::Arc<RegexPattern>),
+}
+
 impl Interpreter {
     /// Match the leaf atom `atom` at `pos`: its end and the capture delta it
     /// files, or `None` for no match. `caps` is the matching level's captures
@@ -51,9 +58,18 @@ impl Interpreter {
             RegexAtom::NamedBackref(name) => {
                 named_backref_end(name, caps, chars, pos).map(|end| (end, RegexCaptures::default()))
             }
-            RegexAtom::VarInterp(name) => self
-                .var_interp_end(name, caps, chars, pos)
-                .map(|end| (end, RegexCaptures::default())),
+            RegexAtom::VarInterp(name) => {
+                match self.var_interp_target(name, caps, chars, pos, ignore_case) {
+                    VarInterpTarget::End(end) => end,
+                    // The walk takes the interpolated pattern's
+                    // highest-priority end, as for a `$( … )` atom.
+                    VarInterpTarget::Pattern(parsed) => self
+                        .regex_code_interp_pattern_ends(&parsed, chars, pos, pkg)
+                        .pop()
+                        .map(|(end, _)| end),
+                }
+                .map(|end| (end, RegexCaptures::default()))
+            }
             RegexAtom::QqInterp { key, fallback } => {
                 match self.match_qq_interp_result(*key, chars, pos, ignore_case) {
                     Some(end) => end.map(|end| (end, RegexCaptures::default())),
@@ -75,19 +91,25 @@ impl Interpreter {
         }
     }
 
-    /// The end of `$name` matched literally at `pos`. The value is the in-regex
-    /// `:my $name …` lexical from the level's `regex_vars` (set by an earlier
-    /// `VarDecl` or code block), else the outer env's. An undefined value (Nil
-    /// or a bare type object) interpolates as the empty string, a zero-width
-    /// match, rather than as its `.gist`.
-    // Cost: O(r), r = the value's length.
-    fn var_interp_end(
+    /// What `$name` matches at `pos`. The value is the in-regex `:my $name …`
+    /// lexical from the level's `regex_vars` (set by an earlier `VarDecl` or
+    /// code block), else the env's — an outer variable, or a rule's runtime
+    /// parameter bound in the call's window (`regex_rule_params`). A `Regex`
+    /// value is matched as a pattern, as rakudo's interpolation node calls
+    /// it; anything else as a literal, and under `:i` through a pattern too
+    /// (the case-folding literal match lives in the engine). An undefined
+    /// value (Nil or a bare type object) interpolates as the empty string, a
+    /// zero-width match, rather than as its `.gist`.
+    // Cost: O(r), r = the value's length; a pattern's parse is cached by its
+    // source.
+    pub(in crate::runtime) fn var_interp_target(
         &self,
         name: &str,
         caps: &RegexCaptures,
         chars: &[char],
         pos: usize,
-    ) -> Option<usize> {
+        ignore_case: bool,
+    ) -> VarInterpTarget {
         let val = caps
             .regex_vars()
             .get(name)
@@ -95,21 +117,38 @@ impl Interpreter {
             .cloned()
             .or_else(|| self.env.get(name).cloned())
             .or_else(|| self.env.get(&format!("${name}")).cloned());
-        let ref_text = match val {
+        let val = val.map(Value::into_deref);
+        let is_regex = val.as_ref().is_some_and(|v| {
+            matches!(v.view(), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_))
+        });
+        let ref_text = match &val {
+            Some(v) if is_regex => Self::regex_alternation_sources(v).swap_remove(0),
             Some(v) => match v.view() {
                 ValueView::Nil | ValueView::Package(_) => String::new(),
                 _ => v.to_string_value(),
             },
             None => String::new(),
         };
+        if is_regex || (ignore_case && !ref_text.is_empty()) {
+            let mut source = String::from(if ignore_case { ":i " } else { "" });
+            if is_regex {
+                source.push_str(&ref_text);
+            } else {
+                source.push_str(&Self::escape_regex_scalar_literal(&ref_text));
+            }
+            return match self.parse_regex(&source) {
+                Some(parsed) => VarInterpTarget::Pattern(parsed),
+                None => VarInterpTarget::End(None),
+            };
+        }
         let mut end = pos;
         for want in ref_text.chars() {
             if chars.get(end) != Some(&want) {
-                return None;
+                return VarInterpTarget::End(None);
             }
             end += 1;
         }
-        Some(end)
+        VarInterpTarget::End(Some(end))
     }
 
     /// A call `<name>` of no rule: a builtin (`<wb>`, `<ww>`, `<ws>`, a
