@@ -1033,15 +1033,14 @@ impl Interpreter {
                 && crate::builtin_types::catalog::builtin_type_info(&pkg).is_some()
                 && (self.is_builtin_type_method(&pkg, &name_str)
                     || self.type_matches_value(&pkg, &args[0]))
+                && (!matches!(args[0].view(), ValueView::Package(_)) || name_str != "new")
             {
-                if !matches!(args[0].view(), ValueView::Package(_)) || name_str != "new" {
-                    let invocant = args[0].clone();
-                    return self.try_compiled_method_or_interpret(
-                        invocant,
-                        &name_str,
-                        args[1..].to_vec(),
-                    );
-                }
+                let invocant = args[0].clone();
+                return self.try_compiled_method_or_interpret(
+                    invocant,
+                    &name_str,
+                    args[1..].to_vec(),
+                );
             }
             if self.has_declared_function_cached(&name_str)
                 || self.has_proto_cached(&name_str)
