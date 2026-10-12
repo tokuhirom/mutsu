@@ -79,7 +79,7 @@ pub(crate) fn serve_listener(
     {
         let mut on_conn = on_conn;
         crate::runtime::builtins_system::try_spawn_gc_helper_thread(thread_name, move || {
-            let end = accept_loop(&listener, &closed, |stream, peer| on_conn(stream, peer));
+            let end = accept_loop(&listener, &closed, &mut on_conn);
             #[cfg_attr(target_arch = "wasm32", allow(clippy::drop_non_drop))]
             drop(listener);
             on_end(end);
