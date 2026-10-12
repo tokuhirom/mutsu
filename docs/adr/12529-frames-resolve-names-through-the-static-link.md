@@ -408,11 +408,11 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      recompile of its body reads by name (the inline `map` path seeds the
      names as enclosing routines, `seed_amp_shadowed_calls_from`).
 
-   Left on the registry: a block-declared routine's own body calling itself
-   or a sibling by name after the block exited (it is a named routine body,
-   compiled without the block's records; converting its calls would cost the
-   recursion fast paths), `multi`/`our`/exported/traited routines, and a
-   routine named like a builtin (`sub dd`).
+   Left on the registry: a block-declared routine's own body calling a
+   sibling routine of its block by name after the block exited (it is a
+   named routine body, compiled without the block's records; #13037),
+   `multi`/`our`/exported/traited routines, and a routine named like a
+   builtin (`sub dd`).
 3. **The static link.** Frames carry the outer link; the reflective name view
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay
