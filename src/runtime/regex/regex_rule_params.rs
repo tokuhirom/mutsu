@@ -305,6 +305,23 @@ impl Interpreter {
         name: &str,
         pkg: Symbol,
     ) -> Option<Option<(Arc<RegexPattern>, Symbol)>> {
+        Some(self.runtime_param_rule_text(name, pkg)?.and_then(|(marked, sub_pkg)| {
+            self.parse_candidate_in_pkg(&marked, sub_pkg)
+                .map(|p| (p, sub_pkg))
+        }))
+    }
+
+    /// The text [`Self::runtime_param_rule_body`] parses: the rule's one body
+    /// with its parameter declaration block in front, and the package it is
+    /// parsed in. Same `None` / `Some(None)` answers, except that a body that
+    /// would not parse is still `Some(Some(..))` here.
+    // Cost: O(1) expected for the eligibility probe; then O(b) to scan and
+    // mark the body, b = its length.
+    pub(super) fn runtime_param_rule_text(
+        &self,
+        name: &str,
+        pkg: Symbol,
+    ) -> Option<Option<(String, Symbol)>> {
         let names = self.runtime_rule_params(name, pkg)?;
         let raw = self.resolve_token_patterns_static_in_pkg(name, pkg);
         let [(text, sub_pkg, _)] = &raw[..] else {
@@ -313,11 +330,7 @@ impl Interpreter {
         if body_splices_list(text) {
             return Some(None);
         }
-        let marked = mark_rule_params(&names, text);
-        Some(
-            self.parse_candidate_in_pkg(&marked, *sub_pkg)
-                .map(|p| (p, *sub_pkg)),
-        )
+        Some(Some((mark_rule_params(&names, text), *sub_pkg)))
     }
 }
 

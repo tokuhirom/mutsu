@@ -475,6 +475,18 @@ fn dyn_call(
     // not an error of the program. Such a call is a fate, as Rakudo's `<$x>`
     // is; the real match binds the arguments and reports any genuine error.
     let ignores_args = !spec.arg_exprs.is_empty();
+    // A rule whose parameters are bound at run time is measured through the
+    // one body every call of it runs, its parameters read at match time
+    // (`regex_ltm_param_body`).
+    if ignores_args
+        && let Some((parsed, sub_pkg)) =
+            interp.ltm_param_rule_body(&spec.lookup_name, spec.lookup_sym, pkg)
+    {
+        let mut names = names.to_vec();
+        names.push(spec.lookup_sym);
+        let nfa = interp.ltm_nfa_for(&parsed, sub_pkg, ic);
+        return nfa.run(interp, chars, pos, &names);
+    }
     let prior_error = ignores_args
         .then(|| crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|e| e.borrow_mut().take()))
         .flatten();
