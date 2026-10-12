@@ -119,7 +119,64 @@ thread_local! {
         const { std::cell::RefCell::new(Vec::new()) };
 }
 
+thread_local! {
+    /// The grammar parses in progress on this thread, innermost last: each
+    /// parse's subject (its buffer's address and length) and its grammar
+    /// class (a `Symbol` id). See [`CursorClassScope`].
+    static PARSE_CLASSES: std::cell::RefCell<Vec<(usize, usize, u32)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// While alive, a [`MatchTarget`] built for the parse's own subject buffer is
+/// stamped with the grammar's class from the start, so every cursor of the
+/// parse -- including one a code block or a token's `.wrap` wrapper sees in
+/// mid-parse -- reports the grammar's type, as in rakudo (#12943).
+///
+/// The subject is recognized by the address and length of the very `&str`
+/// the parse matches; the scope holds them only as numbers, compared, never
+/// dereferenced, while the parse's own `String` keeps that buffer alive. A
+/// regex match inside the parse on any other string (an action's `$/.orig`,
+/// a code block's `$s ~~ /x/`) is a different buffer and stays a plain
+/// `Match`.
+pub(crate) struct CursorClassScope(());
+
+impl CursorClassScope {
+    // Cost: O(1).
+    pub(crate) fn enter(subject: &str, class: Symbol) -> Self {
+        PARSE_CLASSES.with(|s| {
+            s.borrow_mut()
+                .push((subject.as_ptr() as usize, subject.len(), class.raw()))
+        });
+        CursorClassScope(())
+    }
+}
+
+impl Drop for CursorClassScope {
+    fn drop(&mut self) {
+        PARSE_CLASSES.with(|s| {
+            s.borrow_mut().pop();
+        });
+    }
+}
+
 impl MatchTarget {
+    /// Stamp the class of the innermost parse whose subject is `text`.
+    // Cost: O(p), p = the grammar parses in progress on this thread.
+    fn stamp_parse_class(self, text: &str) -> Self {
+        let key = (text.as_ptr() as usize, text.len());
+        let class = PARSE_CLASSES.with(|s| {
+            s.borrow()
+                .iter()
+                .rev()
+                .find(|(ptr, len, _)| (*ptr, *len) == key)
+                .map(|(_, _, class)| *class)
+        });
+        if let Some(class) = class {
+            self.set_cursor_class(Symbol::from_raw(class));
+        }
+        self
+    }
+
     /// The target for `text`, reusing the one already built for the same
     /// `Str` payload when an entry point primed it with
     /// [`MatchTarget::of_subject`].
@@ -133,12 +190,14 @@ impl MatchTarget {
     /// built from. A `&str` that is not a primed payload misses and is copied, as
     /// before.
     // Cost: O(1) on a hit (a scan of SUBJECT_CACHE_SLOTS entries); O(n) on a
-    // miss, n = chars of `text`, to copy and collect the subject.
+    // miss, n = chars of `text`, to copy and collect the subject; plus
+    // O(p), p = grammar parses in progress (`stamp_parse_class`).
     pub(crate) fn new(text: &str) -> Self {
-        if let Some(hit) = Self::cached(text) {
-            return hit;
-        }
-        Self::build(Arc::new(text.to_string().into()))
+        let target = match Self::cached(text) {
+            Some(hit) => hit,
+            None => Self::build(Arc::new(text.to_string().into())),
+        };
+        target.stamp_parse_class(text)
     }
 
     /// The target for a `Str` payload, built at most once while the payload

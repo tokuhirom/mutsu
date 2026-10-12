@@ -653,6 +653,12 @@ impl Interpreter {
             source_text
         };
 
+        // Every cursor this parse mints is of the grammar's type from the
+        // start, not only once the parse finished (#12943).
+        let _cursor_class_scope = crate::value::regex_caps::CursorClassScope::enter(
+            &text,
+            Symbol::intern(package_name),
+        );
         let saved_package = self.current_package();
         let saved_topic = self.env.get("_").cloned();
         let saved_made = self.env.get("made").cloned();

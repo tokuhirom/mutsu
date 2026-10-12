@@ -58,8 +58,9 @@ cursor, again for the token body, and once more to LTM-rank the rule's lone cand
    node reads as neither, and handing it to the action walk made `$/` a bare grammar instance
    (`make` died with `X::Make::MatchRequired`). `MatchNode::is_current` rejects it from the
    memo, so the finished tree builds a fresh Match for that node, as before this ADR.
-   Stamping the class at parse start, as rakudo's cursors have it from the start, would let
-   the node be shared; that is #12943.
+   Since #12943 a grammar parse stamps its class from the start (`CursorClassScope`: a target
+   built for the parse's own subject buffer is born stamped), so a mid-parse node of a grammar
+   parse is current and shared; the check remains for any node forced before a later stamp.
 
 ## Rejected alternatives
 
