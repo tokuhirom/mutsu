@@ -887,6 +887,16 @@ impl Interpreter {
         name_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // A plain gather argument reaches a builtin as its coroutine list,
+        // which the builtins already stream (ADR-11678). `list $g` is the
+        // one builtin that hands its Seq argument back as is.
+        let gather_args;
+        let args: &[Value] = if name_sym.as_str() == "list" {
+            args
+        } else {
+            gather_args = self.shared_gather_args(args);
+            &gather_args
+        };
         // Atomic var/element RMW markers (`__mutsu_atomic_*` / `__mutsu_cas_*`) for the
         // `⚛`-operators. Dispatch them here directly so they don't fall through to the
         // generic `call_function` name-match (§D state ownership). Checked before the

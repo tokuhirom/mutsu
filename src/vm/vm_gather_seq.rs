@@ -42,4 +42,58 @@ impl Interpreter {
             _ => value,
         }
     }
+
+    /// A plain gather `Seq` handed to a builtin routine as its inner
+    /// coroutine list, without consuming the Seq: the builtins read a
+    /// `LazyList` lazily. The Seq stays readable afterwards (Rakudo would
+    /// consume it for an iterating builtin; mutsu is lenient there). Every
+    /// other value is returned unchanged.
+    // Cost: O(1).
+    pub(crate) fn shared_gather_list(&self, value: Value) -> Value {
+        if !value.is_seq_value() {
+            return value;
+        }
+        match value.view() {
+            ValueView::Seq(body) => body.gather_source().unwrap_or(value),
+            _ => value,
+        }
+    }
+
+    /// Whether `value` is a plain gather `Seq` still pulling its coroutine.
+    // Cost: O(1).
+    pub(crate) fn is_gather_seq(value: &Value) -> bool {
+        value.is_seq_value() && matches!(value.view(), ValueView::Seq(body) if body.is_gather_source())
+    }
+
+    /// [`Self::shared_gather_list`] over a builtin's argument list, borrowing
+    /// it unchanged when no argument is a gather (the common case).
+    // Cost: O(n), n = arguments.
+    pub(crate) fn shared_gather_args<'a>(
+        &self,
+        args: &'a [Value],
+    ) -> std::borrow::Cow<'a, [Value]> {
+        if !args.iter().any(Self::is_gather_seq) {
+            return std::borrow::Cow::Borrowed(args);
+        }
+        std::borrow::Cow::Owned(
+            args.iter()
+                .cloned()
+                .map(|a| self.shared_gather_list(a))
+                .collect(),
+        )
+    }
+
+    /// Run a plain gather `Seq` to completion before a reader that renders it
+    /// through pure code (`say`, `put`, `print`, `note`): Rakudo's rendering
+    /// iterates the whole Seq too. A no-op for every other value.
+    // Cost: runs the gather body to completion.
+    pub(crate) fn reify_gather_seq(&mut self, value: &Value) -> Result<(), RuntimeError> {
+        if let ValueView::Seq(body) = value.view()
+            && body.is_gather_source()
+        {
+            let body = std::sync::Arc::clone(&body);
+            self.reify_seq_body(&body)?;
+        }
+        Ok(())
+    }
 }
