@@ -1857,6 +1857,27 @@ interpreter, whose 1-arg native entry never asks the table; `Mu.unique` and `Mu.
 - **Left in `dispatch_core_range.rs`**: `head`, `tail`, `first`, `min`, `max`, `of`, `keyof` and the `Range` accessors, which carry
   real bodies.
 
+### 9.84 Slice 5: `head` and `tail` are rows at both arities; their arms go (2026-10-12)
+
+`refactor/11276-head-tail-rows`. The `head`/`tail` arms of `methods_0arg/dispatch_core_range.rs` (with real bodies) and the
+delegating `head`/`tail` arm of `methods_narg/dispatch_1arg.rs` (with its `head_tail.rs`) are deleted:
+
+1. **The bodies move** into `method_table/collections/terminals.rs` as `head_one`/`tail_one`, the one implementation of the argless
+   forms. They are the rows `Any.head`, `List.head`, `Map.head`, `Any.tail`, `List.tail` and `Array.tail` at arity 0, the owners
+   Rakudo declares; `Seq.head`'s row calls `head_one` too (its private copy is gone).
+2. **`Any.head` and `Any.tail` are `TYPE_OBJECT_OK` at both arities** (`Int.head` is `Int`, `Int.tail(2)` is `(Int,)`): the arm
+   answered shaped type objects only because nothing ahead of it did.
+3. **`ANY_LIST_FOR_CLOSED_SHAPES` gains `head` and `tail`**, and `answer_shapeless` admits their count. A user-class instance (any
+   class with no dispatch shape, `Supply` included) is declined, as the arm declined every instance: its own accessor, or its
+   `iterator`, is the interpreter's. An instance of a built-in class with a shape (`Date`) is now answered, as itself.
+
+`method-rows-report.py --arms`: the pure arity cascades go from 308 arms to 303. The probe (both arities, ~55 receiver kinds) changed,
+each toward Rakudo: `Mu.head` is `X::Method::NotFound` (was `Mu`); `IO::Path.head` and `Date.head` answer the receiver (were
+`X::Method::NotFound`). `class S is Str` instances now answer `Str` for `.tail` as they already did for `.head` (Rakudo answers the
+`S`); that and `Mu.tail` answering `Mu` are recorded on #12958. Pinned in `t/types/any-head-tail-rows.t`.
+
+- **Left in `dispatch_core_range.rs`**: `first`, `min`, `max`, `of`, `keyof` and the `Range` accessors.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

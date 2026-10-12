@@ -70,7 +70,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     narrow!("Capture", capture),
     narrow!("reverse", list::reverse),
     narrow!("sink", sink),
-    narrow!("head", head_one),
+    narrow!("head", super::terminals::head_one),
     narrow_at!("head", 1, list::head),
     narrow_at!("join", 0, list::join),
     narrow_at!("join", 1, list::join),
@@ -179,15 +179,4 @@ fn sink(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     // No pull to run: a settled body is reified, so `sink`'s closure is unreachable.
     let _ = body.sink_explicit(|_| unreachable!("a settled Seq has no source to pull"));
     Some(Ok(Value::NIL))
-}
-
-/// `Seq.head`: the first element, `Nil` for an empty `Seq`.
-// Cost: O(1).
-fn head_one(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    if !args.is_empty() {
-        return None;
-    }
-    Some(Ok(crate::runtime::with_receiver_items(target, |items| {
-        items.first().cloned().unwrap_or(Value::NIL)
-    })))
 }

@@ -1,6 +1,5 @@
 /// Range and collection selection methods: head, tail, first, min, max,
 /// excludes-min, excludes-max, bounds, is-int, infinite, of, keyof
-use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -9,106 +8,6 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
-        // Cost: O(1) on an Array, a List, a reified Seq or a Range; O(e) on any other
-        // list-like, e = elements of the invocant (decomposed into a Vec to read one
-        // slot).
-        "head" => Some(match target.view() {
-            // User-defined class instances may have a `head` attribute or
-            // method — defer to runtime dispatch so the user accessor wins
-            // over the list-like fallback.
-            ValueView::Instance { .. } => return None,
-            // Argless `.head` reads the backing store raw (Rakudo's Array.head
-            // candidate): a hole at index 0 yields `Nil`, not the vivified
-            // `Any` that iteration (`for @a`, `.head(n)`) would produce.
-            // An `Array`'s element comes back as its container, as rakudo's
-            // `Array.head` hands out the element itself: `$_ = 9 with
-            // @a.head` and `my $x := @a.head` write into `@a`.
-            ValueView::Array(items, kind) => Some(Ok(if items.hole_at(0) || items.is_empty() {
-                Value::NIL
-            } else if !kind.is_immutable_list() {
-                target
-                    .array_slot_ref(0, true)
-                    .unwrap_or_else(|| items.first().cloned().unwrap_or(Value::NIL))
-            } else {
-                items.first().cloned().unwrap_or(Value::NIL)
-            })),
-            ValueView::Range(start, end) => {
-                if start > end {
-                    Some(Ok(Value::NIL))
-                } else {
-                    Some(Ok(Value::int(start)))
-                }
-            }
-            ValueView::RangeExcl(start, end) => {
-                if start >= end {
-                    Some(Ok(Value::NIL))
-                } else {
-                    Some(Ok(Value::int(start)))
-                }
-            }
-            ValueView::RangeExclBoth(start, end) => {
-                if start + 1 >= end {
-                    Some(Ok(Value::NIL))
-                } else {
-                    Some(Ok(Value::int(start + 1)))
-                }
-            }
-            ValueView::RangeExclStart(start, end) => {
-                if start >= end {
-                    Some(Ok(Value::NIL))
-                } else {
-                    Some(Ok(Value::int(start + 1)))
-                }
-            }
-            ValueView::GenericRange { .. }
-                if let Some(first) = crate::runtime::unbounded_range::first(target) =>
-            {
-                Some(Ok(first))
-            }
-            ValueView::GenericRange {
-                start, excl_start, ..
-            } => {
-                let items = runtime::value_to_list(target);
-                if items.is_empty() {
-                    Some(Ok(Value::NIL))
-                } else if excl_start {
-                    if let ValueView::Int(n) = start.view() {
-                        Some(Ok(Value::int(n + 1)))
-                    } else {
-                        Some(Ok(items.first().cloned().unwrap_or(Value::NIL)))
-                    }
-                } else {
-                    Some(Ok((**start).clone()))
-                }
-            }
-            _ => {
-                // ADR-0040: decompose the RECEIVER into its own elements,
-                // ignoring its own itemization (see
-                // `value_to_list_for_receiver`'s doc comment).
-                Some(Ok(runtime::with_receiver_items(target, |items| {
-                    items.first().cloned().unwrap_or(Value::NIL)
-                })))
-            }
-        }),
-        // Cost: O(1) on an Array, a List or a reified Seq; O(e) otherwise, e =
-        // elements of the invocant (decomposed into a Vec to read the last slot).
-        "tail" => Some(match target.view() {
-            // User-defined class instances may have a `tail` attribute or
-            // method — defer to runtime dispatch so the user accessor wins
-            // over the list-like fallback.
-            ValueView::Instance { .. } => return None,
-            // As for `.head`: an `Array`'s last element comes back as its
-            // container.
-            ValueView::Array(items, kind) => Some(Ok(match items.len().checked_sub(1) {
-                Some(last) if !kind.is_immutable_list() && !items.hole_at(last) => target
-                    .array_slot_ref(last, true)
-                    .unwrap_or_else(|| items.last().cloned().unwrap_or(Value::NIL)),
-                _ => items.last().cloned().unwrap_or(Value::NIL),
-            })),
-            _ => Some(Ok(runtime::with_receiver_items(target, |items| {
-                items.last().cloned().unwrap_or(Value::NIL)
-            }))),
-        }),
         "first" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::NIL))),
             _ => None,

@@ -703,7 +703,6 @@ fn native_method_1arg_cascade(
         }
         // Cost: O(k) on Array/List, k = selected elements; O(e) otherwise,
         // e = receiver elements materialized before selecting a window.
-        "head" | "tail" => super::head_tail::dispatch(target, method, arg),
         // Cost: O(e) per call, e = elements of the invocant (snapshotted), then O(k)
         // per combination of size k pulled (`ListGen::Combinations`).
         // The `List.combinations` row's handler (ADR-11276): the cascade

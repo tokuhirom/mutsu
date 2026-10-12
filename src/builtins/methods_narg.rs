@@ -12,7 +12,6 @@ mod dispatch_1arg;
 mod dispatch_2arg;
 pub(crate) mod flatten;
 mod fmt_contains;
-mod head_tail;
 pub(crate) mod indent;
 mod numeric;
 mod str_match;
