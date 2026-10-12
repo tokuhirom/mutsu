@@ -302,6 +302,24 @@ impl InstanceAttrs {
         self.as_map().clone()
     }
 
+    /// The attributes a `clone` of this instance starts from: an owned copy
+    /// of the map in which a slot promoted to a `ContainerRef` cell (a
+    /// `:=`-bound attribute) holds a snapshot of its value, so a write to the
+    /// clone's attribute stays invisible to the original (Rakudo's clones get
+    /// fresh containers). The one copy `Mu.clone`'s row and the interpreter's
+    /// clone with `:attr(v)` twiddles share.
+    // Cost: O(a), a = attributes.
+    pub(crate) fn to_clone_map(&self) -> AttrMap {
+        let mut attrs = self.to_map();
+        for v in attrs.values_mut() {
+            if matches!(v.view(), ValueView::ContainerRef(_)) {
+                let taken = std::mem::replace(v, Value::NIL);
+                *v = taken.deref_container();
+            }
+        }
+        attrs
+    }
+
     /// This instance's stable identity id.
     pub(crate) fn instance_id(&self) -> u64 {
         self.id

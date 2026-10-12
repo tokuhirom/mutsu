@@ -22,7 +22,6 @@
 
 use crate::builtins::method_table::{Handler, MethodRow, RowFlags};
 use crate::runtime::Interpreter;
-use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
 macro_rules! base_row {
@@ -95,13 +94,19 @@ pub(super) static ROWS: &[MethodRow] = &[
             .call_method_with_values(target.clone(), "Bool", Vec::new())
             .map(|v| Value::truth(!v.truthy()))
     )),
-    // `Mu.WHICH` and `Mu.WHERE`: the identity the native cascade computes.
+    // `Mu.WHICH` and `Mu.WHERE`: `Mu`'s own arity-0 rows (`mu_identity`), not
+    // the receiver's, which an override or a subclass's row may answer.
     // Cost: O(1).
     base_row!("WHICH", |_interp, target, _args, _named| {
-        crate::builtins::native_method_0arg(target, Symbol::intern("WHICH"))
+        Some(super::mu_identity::which(target, &[]))
     }),
-    base_row!("WHERE", |_interp, target, _args, _named| {
-        crate::builtins::native_method_0arg(target, Symbol::intern("WHERE"))
+    base_row!("WHERE", |interp, target, _args, _named| {
+        super::mu_identity::where_in(
+            interp,
+            target,
+            &[],
+            crate::builtins::method_table::Named::NONE,
+        )
     }),
     // `Mu.gist`: `(Name)` for a type object, else the receiver's own `raku`.
     // Cost: O(1) plus the receiver's `raku`.

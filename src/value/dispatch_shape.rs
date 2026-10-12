@@ -548,7 +548,10 @@ pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 14] = [
 /// handlers read only the receiver's truth or its lazy flag, wrap it in an item
 /// container, or sink it, which every value supports. A shape whose own type declares one (`Match.not`, `Range.is-lazy`)
 /// answers its own row first.
-pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 5] = ["so", "not", "is-lazy", "item", "sink"];
+pub(crate) const MU_FOR_CLOSED_SHAPES: [&str; 12] = [
+    "so", "not", "is-lazy", "item", "sink", "self", "defined", "DEFINITE", "Bool", "WHICH",
+    "WHERE", "clone",
+];
 
 /// Whether `list` contains `name`, for a `const fn`.
 // Cost: O(n), n = entries of `list`.

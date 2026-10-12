@@ -1986,6 +1986,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Mu", "is-lazy", 1, 24),
     ("Mu", "item", 1, 24),
     ("Mu", "sink", 1, 24),
+    ("Mu", "self", 1, 24),
     ("Mu", "not", 1, 56),
     ("Mu", "note", 8, 28),
     ("Mu", "print", 8, 28),

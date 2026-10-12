@@ -2073,6 +2073,56 @@ instance) answers `X::Method::NotFound` for these methods instead of reading its
 junction, Whatever and negative arguments) over 25 receivers changed only the answers above. Pinned in
 `t/types/cool-text-argument-rows.t`.
 
+### 9.91 Slice 5: `Mu`'s `self`, `defined`, `DEFINITE`, `Bool`, `WHICH`, `WHERE` and `clone` are rows (2026-10-12)
+
+`refactor/11276-coerce-type-object-rows`. `methods_0arg/dispatch_core_coerce.rs` answered these seven names by name for every
+receiver no row reached: the closed shapes, the type objects with no shape, a `Junction`, a code object, an enum, a lazy or shaped
+array, an unsettled `Seq`, a `Failure` and an instance. Rakudo declares all seven on `Mu`. Decisions:
+
+1. **They are arity-0 `Mu` rows** (`method_table::ctors_mop::mu_identity`, `TYPE_OBJECT_OK`), with the arms' bodies: `self` explodes
+   an unhandled `Failure` and deitemizes, `defined` collapses a `Junction`'s eigenstates and handles a `Failure`, `Bool` declines a
+   `Real`/`Numeric` instance and a regex (the interpreter's), `WHERE` keeps the NativeCall `Pointer` address. They join
+   `MU_FOR_CLOSED_SHAPES`, so every closed shape reaches them (its own row first: `Capture.Bool`, `Match.WHICH`), and
+   `answer_shapeless` answers every receiver with no shape, an instance from the first class of its MRO that declares the name.
+   `self` gains a `Mu` recognition row (the table had it on `Any`).
+2. **The `WHICH` rows answer every receiver.** `Int`/`Str`/... `WHICH` (`scalars::render`) and the collections' (`collections::render`)
+   declined anything but their own value kinds, which before this slice fell to the arm: an instance of a user subclass (`class S is
+   Int`, `is Array`, a `Stash`), which `answer_shapeless`'s MRO walk now hands to the subclass's built-in ancestor's row, and a `Pair`
+   holding a container. Both are `which_of`, the one identity routine; the decline step (§9.88) makes the debug cross-check agree.
+3. **`Mu.clone` copies an instance** through `InstanceAttrs::to_clone_map` (a copy of the attributes with a `:=`-bound slot
+   snapshotted), the copy the interpreter's clone with `:attr(v)` twiddles (`native_instance_clone_value`) now starts from too, so
+   every closed shape whose values are instances (`IO::Path`, `IO::Handle`, `Blob`, `Instant`, `Backtrace`, ...) is answered. A call
+   with twiddles declines (the row declares no named argument) to the interpreter, which applies them (`Date.clone(day => 5)`).
+4. **`Pair.WHICH` is its own row, flagged `RANDOM`**: a `Pair` holding a container mints a fresh identity per call (`which_of`),
+   so the call-site lane's cross-check, which runs the call twice, must skip it.
+5. **`Mu.WHERE` is an interpreter row.** A NativeCall handle (a `nativecast`ed `CStruct`/`CArray`, a native array) answers the
+   address of its storage, which only the class registry tells (`Interpreter::try_native_handle_repr_where`); the interpreter asked it
+   before the cascade, but a row is found before the interpreter is, and `NativeHelpers::Blob`'s `OBJECT_BODY` dereferenced the
+   identity hash (a `SIGSEGV` in `t/nativecall/`). `answer_shapeless` hands the interpreter to `Mu`'s rows (the other rows it finds
+   stay pure). The `WHICH`/`WHERE` deferral-base rows and `self.Mu::WHICH` call `Mu`'s row instead of the cascade, which no longer
+   answers an instance; `shapeless_row` declines a `.VAR` descriptor, whose methods ask the value its container holds (ADR-0064).
+6. **The recognition probe** (`native_method_arities`, used by the `*_rows_are_backed_by_the_cascade` tests) counts `Mu`'s audited
+   rows for every receiver: an instance reaches them through its MRO, which `shapeless_row` reads only from an interpreter the probe
+   does not have.
+
+`method-rows-report.py --arms`: the pure arity cascades go from 174 to 167 arms. The probe (15 names over 95 receivers: every shape,
+the type objects of 30 built-in types and a user class, `Junction`s, code, enums, a mixin, allomorphs, an unhandled `Failure`, a
+lazy and a shaped array, user subclasses of `Int`/`Str`/`Array`/`Hash`) changed only toward Rakudo: `Match.self` is the match (was its
+string), `Capture.clone` and `Uni.clone` answer (were `X::Method::NotFound`). Pinned in `t/types/mu-identity-rows.t`.
+
+**Not done: the numeric and string coercions of the same file** (`Str`/`Stringy`, `Int`, `UInt`, `Version`, `Num`, `Real`,
+`Numeric`, and the `Range`/lazy/`Blob` blocks in front of them). Deleting them and probing shows which receivers they are still the
+only implementation for, so each needs its owner's row first: `Range`'s `Int`/`Num`/`Real` (Range declares `Numeric`; its handler,
+`range::numeric_coercion`, already exists), `FatRat`'s `Real`/`Numeric` (no row reaches a `FatRat`: Rakudo has them on the
+`Rational` role), the collections' `Real` (`Array`, `List`, `Hash`, `Map`, `Seq`), `Seq`/`Slip` `Num`, `Blob`/`Buf` `Int`/`Numeric`,
+`Match`'s `UInt`/`Real`, `Str.Real`, `Complex.UInt`, the lazy and shaped arrays, a `Junction`'s `Int`/`Num`, a `Stash`'s
+`Numeric`, the type objects of `Int`/`Str`/`Num`/`Rat`/`FatRat`/`Complex`/`UInt`/`RatStr` (`Int.Int` is the type object,
+`Rat.Int` throws `X::Parameter::InvalidConcreteness`, `Int.Real` warns and is `0`), and `Stringy` of a `Hash` subclass, a `Promise`,
+a `Channel` and an unhandled `Failure`. `Version` is answered by rows already: deleting its arm changed no probe.
+
+Found, not fixed: a quoted call of `WHICH`/`WHERE`/`DEFINITE`/`WHAT` on a variable (`$x."WHICH"()`) answers
+`X::Method::NotFound` (#13055).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
