@@ -173,15 +173,6 @@ fn string_entries(v: &Value) -> Vec<(String, String)> {
     }
 }
 
-/// MoarVM's (libuv's) spelling of an OS error: `no such file or directory`
-/// (an OS error text is ASCII).
-// Cost: O(m), m = message length.
-fn uv_error_text(e: &std::io::Error) -> String {
-    let text = e.to_string();
-    let text = text.split(" (os error").next().unwrap_or(&text);
-    text.to_ascii_lowercase()
-}
-
 /// The raw wait status MoarVM reports: `exit << 8`, or the signal number.
 // Cost: O(1).
 fn wait_status(status: &std::process::ExitStatus) -> i64 {
@@ -249,7 +240,7 @@ impl ProcTask {
                 true
             });
             let last = match error {
-                Some(e) => Interpreter::boot_str(&uv_error_text(&e)),
+                Some(e) => Interpreter::boot_str(&crate::runtime::native_io::fs_errors::libuv_text(&e)),
                 None => boot_str_type(),
             };
             task.push(
@@ -359,7 +350,7 @@ impl Interpreter {
                     let errno = e.raw_os_error().unwrap_or(0);
                     let message = format!(
                         "Failed to spawn process {program}: {} (error code {})",
-                        uv_error_text(&e),
+                        crate::runtime::native_io::fs_errors::libuv_text(&e),
                         -errno
                     );
                     queue.send(Value::vm_array(vec![
