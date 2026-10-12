@@ -1077,6 +1077,7 @@ mod atomic_elem_forms;
 mod atomic_target;
 mod begin_use;
 mod bind_ternary;
+mod block_lexsubs;
 mod body_scans;
 mod call_arg_index_assign;
 pub(crate) mod compile_inputs;
@@ -1109,7 +1110,6 @@ mod expr_unary;
 mod frame_lexical_ast_scan;
 pub(crate) mod frame_lexical_inherit;
 pub(crate) mod frame_lexical_routines;
-mod block_lexsubs;
 mod helpers;
 mod helpers_ast_utils;
 mod helpers_block_inline;
@@ -3073,8 +3073,7 @@ impl Compiler {
         self.import_scope_levels.retain(|&level| level <= depth);
         self.scope_routine_decls
             .retain(|&(level, _)| level <= depth);
-        self.block_lexsub_decls
-            .retain(|&(level, _)| level <= depth);
+        self.block_lexsub_decls.retain(|&(level, _)| level <= depth);
         if !shadow_slots_active() {
             // DEFAULT build: behavior-preserving no-op (frame already dropped).
             return;

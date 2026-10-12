@@ -11215,7 +11215,10 @@ impl CompiledCode {
             }
             if !lexsub_syms.is_empty()
                 && let OpCode::GetCodeVar(name_idx) = op
-                && let Some(name) = self.constants.get(*name_idx as usize).and_then(Value::as_str)
+                && let Some(name) = self
+                    .constants
+                    .get(*name_idx as usize)
+                    .and_then(Value::as_str)
                 && self.lexsub_refs.iter().any(|r| r.with_str(|r| r == name))
             {
                 let sym = Symbol::intern(&format!("&{name}"));
