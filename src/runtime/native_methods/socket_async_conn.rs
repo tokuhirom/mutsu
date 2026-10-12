@@ -183,9 +183,7 @@ impl Interpreter {
             map.insert(supply_id, rx);
         }
         // Read the connection into the Supply (see `socket_reader`).
-        if let Some(stream_arc) = get_tcp_stream(id)
-            && let Some(stream) = stream_arc.lock().ok().and_then(|s| s.try_clone().ok())
-        {
+        if let Some(stream) = get_tcp_stream(id) {
             let reader = super::socket_reader::SocketReader::new(stream, tx, is_bin, enc);
             // A refused reader thread (#9401) is a catchable X::AdHoc.
             if let Err(e) = super::socket_reader::start_socket_reader(reader) {

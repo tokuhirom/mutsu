@@ -29,9 +29,14 @@ for ^N {
 sleep 0.5;
 
 my $tasks = "/proc/$*PID/task".IO;
-sub pool-threads() { $tasks.dir.grep({ .add('comm').slurp.chomp eq 'pool' }) }
+sub pool-threads() { $tasks.dir.grep({ ((try .add('comm').slurp.chomp) // '') eq 'pool' }) }
+# A pool thread may exit between the listing and the read (an idle worker
+# retires); one that is gone counts as zero.
 sub wakeups(@threads) {
-    [+] @threads.map: { (.add('status').slurp ~~ /'voluntary_ctxt_switches:' \s* (\d+)/)[0].Int }
+    [+] @threads.map: {
+        my $status = try .add('status').slurp;
+        $status ?? ($status ~~ /'voluntary_ctxt_switches:' \s* (\d+)/)[0].Int !! 0
+    }
 }
 if $tasks.d {
     my @pool = pool-threads();
@@ -56,6 +61,9 @@ my @after-close;
 my $supplier-tap = Supply.interval(0.01).tap: -> $ { @after-close.push: 1 };
 sleep 0.1;
 $supplier-tap.close;
+# A body that had already started when `close` ran may still finish; none may
+# start afterwards.
+sleep 0.05;
 my $seen = @after-close.elems;
 sleep 0.2;
 is @after-close.elems, $seen, 'a closed tap dispatches nothing more';

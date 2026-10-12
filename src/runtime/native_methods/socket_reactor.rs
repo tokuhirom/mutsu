@@ -12,16 +12,16 @@
 //!
 //! Registration hands a [`SocketReader`] to the reactor through a queue and
 //! writes a byte to a self-pipe so a blocked `poll` picks it up at once. A
-//! reader whose taps have all gone is dropped (closing its socket clone)
-//! without reading: when its socket next becomes readable, or at the next
-//! sweep, which runs every [`SWEEP_INTERVAL_MS`] while any reader is
-//! registered. Reads use `MSG_DONTWAIT` per call instead of switching the
+//! reader whose taps have all gone is dropped (releasing its hold on the
+//! connection's shared stream) without reading: when its socket next becomes
+//! readable, or at the next sweep, which runs every [`SWEEP_INTERVAL_MS`]
+//! while any reader is registered. Reads use `MSG_DONTWAIT` per call instead of switching the
 //! socket to non-blocking mode, because that flag is shared with the
-//! writer's clone of the same socket.
+//! writers of the same socket.
 
 use super::socket_reader::{ReadOutcome, SocketReader};
 use crate::runtime::RuntimeError;
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
 
 /// How often a reactor with registered readers wakes to drop readers whose
@@ -129,7 +129,7 @@ fn run_reactor(shared: &Shared, wake_read: RawFd) {
             revents: 0,
         });
         pollfds.extend(readers.iter().map(|r| libc::pollfd {
-            fd: r.stream.as_raw_fd(),
+            fd: r.fd,
             events: libc::POLLIN,
             revents: 0,
         }));
@@ -163,7 +163,7 @@ fn run_reactor(shared: &Shared, wake_read: RawFd) {
                 readers.swap_remove(i);
                 continue;
             }
-            let read = recv_dontwait(reader.stream.as_raw_fd(), &mut buf);
+            let read = recv_dontwait(reader.fd, &mut buf);
             if matches!(&read, Err(e) if super::socket_reader::is_would_block(e)) {
                 continue;
             }
