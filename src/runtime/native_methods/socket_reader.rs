@@ -6,7 +6,7 @@
 //!
 //! - On Unix (with `libc`) one process-wide reactor thread watches every
 //!   reader's socket with `poll(2)` and reads a socket only when it is
-//!   readable ([`socket_reactor`]). An idle connection costs nothing but its
+//!   readable (`super::socket_reactor`). An idle connection costs nothing but its
 //!   slot in the poll set. This is the model Rakudo gets from libuv (#12865).
 //! - Elsewhere each reader keeps its own thread, which wakes every 50 ms to
 //!   notice that every tap has gone.
