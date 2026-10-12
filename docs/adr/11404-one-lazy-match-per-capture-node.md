@@ -81,7 +81,9 @@ cursor, again for the token body, and once more to LTM-rank the rule's lone cand
 - When no one keeps the per-level results, a wrapper that renders the whole subtree at every
   level still does quadratic work. That is inherent to the output (rakudo prints the same
   quadratic volume); only the constant factor differs.
-- Not covered: rakudo files the wrapper's *returned* Match itself as `$<TOP>` (`$m<TOP> ===
-  $callsame-result`). mutsu files a capture node rebuilt from the token's captures, so the two
-  are distinct Matches that share every child. That is a filing change in the subrule-call
-  path, tracked as #12918.
+- A wrapped token's `callsame` result is the caller's `$<rule>` (#12918): mutsu still files a
+  capture node rebuilt from the token's captures, but when that node reads exactly as the
+  returned Match's (`CapNode::presents_like`: same span and metadata, the very same child
+  nodes), its memo is seeded with the returned Match (`Value::adopt_as_match_of`). An alias
+  (`<x=rule>`) records the rule's name as `action_name` on the filed node, so it is not alike
+  and gets its own Match.

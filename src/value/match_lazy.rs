@@ -375,6 +375,27 @@ impl Value {
         Value::from_repr(ValueRepr::Match(node))
     }
 
+    /// Let this lazy Match present `node` too, when a Match over `node` would
+    /// read exactly as this one (`CapNode::presents_like`): a wrapped token's
+    /// `callsame` result is then the very Match its caller files as
+    /// `$<rule>`, as in rakudo (#12918). Returns whether it was adopted.
+    // Cost: O(c), c = the child slots of the two nodes.
+    pub(crate) fn adopt_as_match_of(&self, node: &Arc<CapNode>) -> bool {
+        let Some(own) = self.0.as_match_node() else {
+            return false;
+        };
+        if !Arc::ptr_eq(&own.cap, node) && !own.cap.presents_like(node) {
+            return false;
+        }
+        match self.0.match_node_weak() {
+            Some(weak) => {
+                node.match_memo.set(weak);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// For a still-lazy Match: a fresh lazy Match carrying `ast` (a `make`
     /// from a grammar action), sharing the subject and cloning the capture
     /// node. `None` when `self` is eager or already materialized — callers
