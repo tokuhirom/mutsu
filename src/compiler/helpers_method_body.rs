@@ -116,6 +116,12 @@ impl Compiler {
         // A `my class NAME` shadowing an outer `constant NAME` is what a bare
         // `NAME` in its own methods means too (#11517).
         method_compiler.lexical_type_shadows = self.lexical_type_shadows.clone();
+        // So is every lexical type of an enclosing scope: the method reads it
+        // by name, which puts it in its declaration-time capture (#13014).
+        method_compiler
+            .lexical_type_shadows
+            .extend(self.lexical_types_in_scope.iter().cloned());
+        method_compiler.lexical_types_in_scope = self.lexical_types_in_scope.clone();
         if let Some(name) = lexical_type_name {
             method_compiler.seed_lexical_type_name(name);
         }
