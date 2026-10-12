@@ -1728,6 +1728,31 @@ from `dispatch_core_unicode.rs` `ord`, `ords`, `uniname`, `uninames`, `uniprop`,
 - **Found, filed**: a `Cool` row on an instance reads the instance's built-in string form, not a user `Str` method (#12848); `Cool.fmt` and
   the text methods on a `Cool` type object (#12849).
 
+### 9.80 Slice 5: `Any`'s list methods reach every receiver; the `dispatch_core_list` arms go (2026-10-12)
+
+`refactor/11276-shapeless-any-resolution`. The arms of `methods_0arg/dispatch_core_list.rs` (`end`, `flat`, `sort`, `reverse`, `unique`,
+`repeated`) answered every receiver by name. They are deleted; the receivers reach `Any`'s rows instead, the same three ways §9.79 opened
+`Cool`'s text rows:
+
+1. **The rows carry the arms' bodies.** `Any.end` is a `Narrow` handler with the arm's full body (the last index of whatever the receiver lists
+   as; `X::Cannot::Lazy` for a lazy list; a `LazyList` still being produced declines to the interpreter), and `Any.reverse` falls back to
+   `List.reverse`'s handler beyond a scalar or a hash. `Any`'s six list rows are `TYPE_OBJECT_OK`: Rakudo's `Any` candidates take `self.list`,
+   and a type object lists as itself (`Str.sort` is `(Str,)`, `Int.end` is `0`).
+2. **Closed shapes** reach an audited subset (`ANY_LIST_FOR_CLOSED_SHAPES`, `DispatchShape::reaches_audited_any_method`): none reaches
+   `sort`, whose handler reads only a list; only a `Pair` reaches `reverse`; a `Capture` keeps its own `flat` (the `Capture` block of
+   `methods_0arg`); the quant hashes keep reading as their pairs for `unique` (`hashlike_receiver_as_pairs_list`, the pair-view step
+   §9.60 warned about); a `Match` reaches none (it answers on its matched string).
+3. **Shapeless receivers** reach them in `method_table::answer_shapeless`, after the cascades: a code object, a regex, a promise, a channel,
+   a RakuAST node, a type object with no shape (`Any`, a user class), an enum value, a `Seq` without a settled shape, and an instance whose
+   MRO reaches `Any` before a built-in class that declares the method. A `Failure` is never answered there.
+
+`method-rows-report.py --arms`: the pure arity cascades go from 336 arms to 330. A probe of the six names over ~45 receiver kinds against the
+pre-change binary found no answer that changed except `MyStr.reverse` (now `("ab",)`, as in Rakudo, through §9.79's native base).
+`t/oo/method/shapeless-any-list-method-rows.t` pins the receiver kinds.
+
+- **Left**: `Capture.reverse` is `X::Method::NotFound` before and after (Rakudo: the positionals reversed); `List.reverse`'s handler does
+  not read a `Capture`. `so`, `not`, `is-lazy`, `lazy` and `join` in `dispatch_core_str.rs` need the same step for `Mu`'s rows.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
