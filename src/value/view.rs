@@ -303,6 +303,18 @@ impl Value {
         })))
     }
 
+    /// Identity of a Pair / ValuePair node, for the renderers' cycle detection
+    /// (`$a = 1 => $a` keeps `$a`'s container as the value, closing a cycle).
+    // Cost: O(1).
+    pub(crate) fn pair_identity(&self) -> Option<usize> {
+        match self.clone().into_repr() {
+            ValueRepr::Pair(data) | ValueRepr::ValuePair(data) => {
+                Some(crate::gc::Gc::as_ptr(&data) as usize)
+            }
+            _ => None,
+        }
+    }
+
     /// Return the mutable QuantHash binding a `.pairs` result writes through.
     pub(crate) fn quanthash_weight_source(&self) -> Option<String> {
         match self.clone().into_repr() {
