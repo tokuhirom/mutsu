@@ -8,6 +8,11 @@ use super::*;
 #[derive(Default)]
 pub(crate) struct ControlState {
     pub(crate) halted: bool,
+    /// Set only on the main program's interpreter (`main.rs`, through
+    /// `Interpreter::adopt_worker_exits`): a worker thread's `exit` is handed
+    /// over to this interpreter, which unwinds as if it had called `exit`
+    /// itself and runs the END phasers (ADR-11617, `crate::exit_handover`).
+    pub(crate) adopts_worker_exits: bool,
     /// Prints an uncaught mainline exception; `run` calls it before the END
     /// phasers, as rakudo's top-level handler does. See [`Interpreter::set_uncaught_reporter`].
     pub(crate) uncaught_reporter: Option<UncaughtReporter>,

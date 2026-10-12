@@ -321,9 +321,16 @@ impl SharedChannel {
             // the channel is drained-closed; the queue pop / `Value` clones run
             // only outside a stop-the-world window. On wasm the wait pumps the
             // cooperative scheduler, so a queued `start` block gets to send.
+            // See `SharedPromise::wait` for the worker-`exit` interruption
+            // (ADR-11617).
             let mut state = match crate::gc::wait_until(lock, cvar, |s| {
-                !s.queue.is_empty() || s.drained_closed
+                !s.queue.is_empty()
+                    || s.drained_closed
+                    || crate::exit_handover::interrupts_current_thread()
             }) {
+                Some(state) if state.queue.is_empty() && !state.drained_closed => {
+                    return Ok(Value::NIL);
+                }
                 Some(state) => state,
                 None => return Err(Value::str(crate::gc::DEADLOCK_MESSAGE.to_string())),
             };

@@ -380,6 +380,9 @@ fn run_main() {
 
     let mut interpreter = Interpreter::new();
     interpreter.set_immediate_stdout(true);
+    // A worker thread's `exit` is handed to this interpreter, which runs the
+    // END phasers before the process ends (ADR-11617).
+    interpreter.adopt_worker_exits();
     if no_precomp {
         interpreter.set_precomp_enabled(false);
     }

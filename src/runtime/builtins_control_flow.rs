@@ -397,38 +397,73 @@ impl Interpreter {
         // and needs to wake up.
         if !self.nested_mode {
             set_global_exit_flag(code);
-            // `exit` terminates the PROCESS in raku, wherever it is called.
-            // The flag above only works if some thread polls it; when `exit`
-            // runs on a worker thread while the main thread is stuck inside a
-            // long non-polling computation (`start { sleep 2; exit }; EVAL
-            // 'say 1.0000001 ** 10**8'`, A01-limits/overflow.t), the process
-            // would hang forever. Flush this thread's buffered output, then
-            // exit for real.
+            // `exit` terminates the PROCESS in raku, wherever it is called,
+            // and the process runs its END phasers on the way out. Those
+            // belong to the main program's interpreter, so a worker hands its
+            // `exit` over to it (ADR-11617) instead of returning.
             if self.output_sink().is_thread_clone {
-                use std::io::Write;
-                let (out, err, shared_out, shared_err) = {
-                    let sink = self.output_sink();
-                    (
-                        sink.output.clone(),
-                        sink.stderr_output.clone(),
-                        sink.shared_thread_output.clone(),
-                        sink.shared_thread_stderr.clone(),
-                    )
-                };
-                let mut stdout = std::io::stdout();
-                if let Some(so) = shared_out {
-                    let _ = stdout.write_all(so.lock().unwrap().as_bytes());
-                }
-                let _ = stdout.write_all(out.as_bytes());
-                let _ = stdout.flush();
-                let mut stderr_h = std::io::stderr();
-                if let Some(se) = shared_err {
-                    let _ = stderr_h.write_all(se.lock().unwrap().as_bytes());
-                }
-                let _ = stderr_h.write_all(err.as_bytes());
-                let _ = stderr_h.flush();
-                std::process::exit(code as i32);
+                self.exit_from_worker(code);
             }
+        }
+    }
+
+    /// End the process from a worker thread with status `code` (ADR-11617).
+    /// The worker's buffered output is written first, since it came first; then
+    /// the main program's interpreter is asked to adopt the `exit` — unwind,
+    /// run END, exit with `code`. The main thread may be stuck in a long native
+    /// computation that never polls (`start { sleep 2; exit }; EVAL 'say
+    /// 1.0000001 ** 10**8'`, A01-limits/overflow.t), so if nobody adopts the
+    /// `exit` within `exit_handover::GRACE` the worker ends the process itself,
+    /// without END, as it did before the handover existed.
+    // Cost: O(o), o = this thread's buffered output, plus the wait.
+    pub(crate) fn exit_from_worker(&mut self, code: i64) -> ! {
+        use std::io::Write;
+        let (out, err, shared_out, shared_err) = {
+            let mut sink = self.output_sink_mut();
+            (
+                std::mem::take(&mut sink.output),
+                std::mem::take(&mut sink.stderr_output),
+                sink.shared_thread_output.clone(),
+                sink.shared_thread_stderr.clone(),
+            )
+        };
+        // Taken, not copied: the main thread drains the shared buffers again
+        // in `finish` once it adopts the `exit`.
+        let mut stdout = std::io::stdout();
+        if let Some(so) = shared_out {
+            let _ = stdout.write_all(std::mem::take(&mut *so.lock().unwrap()).as_bytes());
+        }
+        let _ = stdout.write_all(out.as_bytes());
+        let _ = stdout.flush();
+        let mut stderr_h = std::io::stderr();
+        if let Some(se) = shared_err {
+            let _ = stderr_h.write_all(std::mem::take(&mut *se.lock().unwrap()).as_bytes());
+        }
+        let _ = stderr_h.write_all(err.as_bytes());
+        let _ = stderr_h.flush();
+        // The browser build runs `start` blocks on its one thread: there is no
+        // main thread to wait for.
+        #[cfg(target_arch = "wasm32")]
+        std::process::exit(code as i32);
+        #[cfg(not(target_arch = "wasm32"))]
+        match crate::exit_handover::request(code) {
+            crate::exit_handover::Request::Made => {
+                // Quiescent while waiting and parked: the main thread may
+                // need a stop-the-world collection on its way to END.
+                let adopted = crate::gc::block_quiescent(|| {
+                    crate::exit_handover::await_adoption(crate::exit_handover::GRACE)
+                });
+                if !adopted {
+                    std::process::exit(code as i32);
+                }
+                crate::gc::block_quiescent(|| crate::exit_handover::park_forever())
+            }
+            // An earlier `exit` owns the status; the main thread (or that
+            // worker's fallback) ends the process.
+            crate::exit_handover::Request::AlreadyExiting => {
+                crate::gc::block_quiescent(|| crate::exit_handover::park_forever())
+            }
+            crate::exit_handover::Request::Closed => std::process::exit(code as i32),
         }
     }
 

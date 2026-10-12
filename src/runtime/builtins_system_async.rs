@@ -53,9 +53,7 @@ impl Interpreter {
                 // Poll for global exit flag so that `start { exit }` can
                 // wake us up.
                 loop {
-                    crate::gc::block_quiescent(|| {
-                        crate::thread_compat::sleep(Duration::from_millis(100))
-                    });
+                    Self::sleep_quiescent(Duration::from_millis(100));
                     if let Some(code) = super::builtins_control_flow::global_exit_requested() {
                         self.control.halted = true;
                         self.control.exit_code = code;
@@ -75,12 +73,25 @@ impl Interpreter {
                         return Ok(Value::NIL);
                     }
                 } else {
-                    crate::gc::block_quiescent(|| crate::thread_compat::sleep(duration));
+                    Self::sleep_quiescent(duration);
                 }
                 self.sync_shared_vars_to_env();
                 Ok(Value::NIL)
             }
         }
+    }
+
+    /// Sleep `duration`, counted GC-quiescent. On the main program's thread
+    /// the sleep ends early when a worker's `exit` is waiting to be adopted
+    /// (ADR-11617); the VM sees the pending exit right after the `sleep` op.
+    // Cost: O(1) plus the sleep.
+    fn sleep_quiescent(duration: Duration) {
+        crate::gc::block_quiescent(|| {
+            #[cfg(not(target_arch = "wasm32"))]
+            crate::exit_handover::sleep_interruptible(duration);
+            #[cfg(target_arch = "wasm32")]
+            crate::thread_compat::sleep(duration);
+        });
     }
 
     /// Sleep for the given duration, but check for global exit every 100ms.
@@ -90,7 +101,7 @@ impl Interpreter {
         while crate::thread_compat::mono_now() - start < total_secs {
             let remaining = total_secs - (crate::thread_compat::mono_now() - start);
             let chunk = Duration::from_secs_f64(remaining).min(Duration::from_millis(100));
-            crate::gc::block_quiescent(|| crate::thread_compat::sleep(chunk));
+            Self::sleep_quiescent(chunk);
             if super::builtins_control_flow::global_exit_requested().is_some() {
                 return;
             }

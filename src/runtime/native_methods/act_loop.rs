@@ -349,9 +349,11 @@ impl ActLoop {
                 let _ = std::io::stderr().flush();
             }
         }
-        // If the callback called exit, terminate the process.
+        // If the callback called exit, terminate the process (running the
+        // main program's END phasers, ADR-11617).
         if interp.control.halted {
-            std::process::exit(interp.control.exit_code as i32);
+            let code = interp.control.exit_code;
+            interp.exit_from_worker(code);
         }
         let Err(mut err) = result else {
             return Flow::Continue;
@@ -386,7 +388,7 @@ impl ActLoop {
             err.message
         );
         let _ = std::io::stderr().flush();
-        std::process::exit(1);
+        self.interp.exit_from_worker(1);
     }
 }
 
