@@ -1124,6 +1124,16 @@ impl MethodClassFrame {
 /// the method-dispatch caches at every registry/type mutation site, plus the
 /// MOP mutators that alter class shape without passing those sites
 /// (`Attribute.set_build`, `^add_attribute`, `^add_method`, `^compose`).
+/// The smiley-constraint rules of one class shape (see
+/// `NativeCtorPlan::smiley_rules`).
+#[derive(Default)]
+pub(crate) struct SmileyRules {
+    /// `(attribute name, smiley)`, the most derived declaration first.
+    pub(crate) smileys: Vec<(String, String)>,
+    /// Attribute names declared `is required` anywhere in the MRO.
+    pub(crate) required: std::collections::HashSet<String>,
+}
+
 pub(crate) struct NativeCtorPlan {
     pub(crate) eligible: bool,
     /// Not `eligible` only because the class (or an ancestor) declares a
@@ -1136,6 +1146,13 @@ pub(crate) struct NativeCtorPlan {
     /// dropped on (`native_ctor_plan_cache` is cleared at every class-shape
     /// mutation and generation bump), so the memo cannot outlive it.
     pub(crate) noarg_user_new_declines: std::sync::OnceLock<bool>,
+    /// The `:D`/`:U` smileys and `is required` attribute names across the
+    /// MRO that `enforce_attribute_smiley_constraints` checks, collected once
+    /// per class shape instead of per construction (#12917).
+    pub(crate) smiley_rules: std::sync::OnceLock<Arc<SmileyRules>>,
+    /// The builtin QuantHash a `is Set`/`is BagHash`/... subclass stores its
+    /// data as (`quanthash_base_kind`), memoized per class shape (#12917).
+    pub(crate) quanthash_base: std::sync::OnceLock<Option<&'static str>>,
     /// Per attribute (same order as `class_attrs`): the value its seed
     /// default (`default_is_seed`, the declared type's type object for a
     /// `has Str $.x` with no initializer) evaluated to, once it has evaluated

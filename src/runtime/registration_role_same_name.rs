@@ -6,15 +6,14 @@
 
 use super::*;
 
-impl Interpreter {
+impl super::registry::Registry {
     /// The definition of the `base` candidate that is parametric (or plain,
     /// when `parametric` is false), when the name has exactly one such
     /// candidate. `None` when the name has no candidate list or the shape is
     /// ambiguous; the caller then keeps its by-name answer.
     // Cost: O(c), c = candidates registered under `base`.
-    pub(crate) fn role_candidate_of_shape(&self, base: &str, parametric: bool) -> Option<RoleDef> {
-        let registry = self.registry();
-        let candidates = registry.role_candidates.get(base)?;
+    pub(crate) fn role_candidate_of_shape(&self, base: &str, parametric: bool) -> Option<&RoleDef> {
+        let candidates = self.role_candidates.get(base)?;
         let mut matching = candidates
             .iter()
             .filter(|c| c.type_params.is_empty() != parametric);
@@ -22,9 +21,11 @@ impl Interpreter {
         if matching.next().is_some() {
             return None;
         }
-        Some(found.role_def.clone())
+        Some(&found.role_def)
     }
+}
 
+impl Interpreter {
     /// Whether the role composed as `owner` (`Some` or `Some[Int]`) declares
     /// `attr` with a type, so that a `role_attribute_types` entry under its
     /// base name is its own and not a same-named candidate's. True when the

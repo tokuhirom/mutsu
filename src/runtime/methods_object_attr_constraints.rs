@@ -310,36 +310,71 @@ impl Interpreter {
         }
     }
 
+    /// The smileys and `is required` names of `class_name`'s MRO: the most
+    /// derived declaration of a name wins. Pure class shape, memoized on the
+    /// class's `NativeCtorPlan`.
+    // Cost: O(m * a), m = MRO length, a = attributes per class.
+    fn collect_smiley_rules(&mut self, class_name: &str) -> crate::runtime::SmileyRules {
+        let mut rules = crate::runtime::SmileyRules::default();
+        let mro = self.class_mro(class_name);
+        let registry = self.registry();
+        for mro_class in mro.iter().map(|s| s.as_str()) {
+            if let Some(class_def) = registry.classes.get(mro_class) {
+                for (attr_name, smiley) in &class_def.attribute_smileys {
+                    if !rules.smileys.iter().any(|(name, _)| name == attr_name) {
+                        rules.smileys.push((attr_name.clone(), smiley.clone()));
+                    }
+                }
+                for attr in &class_def.attributes {
+                    if attr.is_required.is_some() {
+                        rules.required.insert(attr.name.clone());
+                    }
+                }
+            }
+        }
+        rules
+    }
+
     pub(crate) fn enforce_attribute_smiley_constraints(
         &mut self,
         class_name: &str,
         attrs: &AttrMap,
         provided: Option<&std::collections::HashSet<String>>,
     ) -> Result<(), RuntimeError> {
-        // Collect smileys and required status from this class and all parent classes in the MRO
-        let mut smileys: HashMap<String, String> = HashMap::new();
-        let mut required_attrs: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
-        let mro = self.class_mro(class_name);
-        for mro_class in mro.iter().map(|s| s.as_str()) {
-            if let Some(class_def) = self.registry().classes.get(mro_class) {
-                for (attr_name, smiley) in &class_def.attribute_smileys {
-                    smileys
-                        .entry(attr_name.clone())
-                        .or_insert_with(|| smiley.clone());
-                }
-                for attr in &class_def.attributes {
-                    if attr.is_required.is_some() {
-                        required_attrs.insert(attr.name.clone());
+        // A registered class answers from its memoized plan; an unregistered
+        // one (whose plan is not memoized) is collected on the spot.
+        let (rules, class_attrs, attr_type_constraints) =
+            if self.registry().classes.contains_key(class_name) {
+                let plan = self.native_ctor_plan(crate::symbol::Symbol::intern(class_name));
+                let rules = match plan.smiley_rules.get() {
+                    Some(rules) => rules.clone(),
+                    None => {
+                        let rules = std::sync::Arc::new(self.collect_smiley_rules(class_name));
+                        let _ = plan.smiley_rules.set(rules.clone());
+                        rules
                     }
+                };
+                (rules, plan.class_attrs.clone(), plan.type_constraints.clone())
+            } else {
+                let rules = std::sync::Arc::new(self.collect_smiley_rules(class_name));
+                if rules.smileys.is_empty() {
+                    return Ok(());
                 }
-            }
+                (
+                    rules,
+                    std::sync::Arc::new(self.collect_class_attributes(class_name)),
+                    std::sync::Arc::new(self.collect_attribute_type_constraints(class_name)),
+                )
+            };
+        if rules.smileys.is_empty() {
+            return Ok(());
         }
+        let smileys = &rules.smileys;
+        let required_attrs = &rules.required;
+        let class_attrs = &class_attrs;
+        let attr_type_constraints = &attr_type_constraints;
 
-        let class_attrs = self.collect_class_attributes(class_name);
-        let attr_type_constraints = self.collect_attribute_type_constraints(class_name);
-
-        for (attr_name, smiley) in &smileys {
+        for (attr_name, smiley) in smileys {
             // For an @/% attribute the declared type and its definedness smiley
             // constrain each element/value, not the collection itself. An empty
             // collection is therefore valid for either :D or :U, while a
@@ -347,12 +382,12 @@ impl Interpreter {
             if let Some(attr) = class_attrs.iter().find(|attr| attr.name == *attr_name)
                 && matches!(attr.sigil, '@' | '%')
             {
-                let storage_key = super::attribute_storage_key(&class_attrs, attr_name, attr.sigil);
+                let storage_key = super::attribute_storage_key(class_attrs, attr_name, attr.sigil);
                 if let Some(value) = attrs.get(storage_key) {
                     let base = super::attribute_type_constraint(
-                        &class_attrs,
+                        class_attrs,
                         attr,
-                        &attr_type_constraints,
+                        attr_type_constraints,
                     )
                     .unwrap_or_else(|| "Any".to_string());
                     // Elements are checked against the value type alone; an
@@ -422,13 +457,14 @@ impl Interpreter {
             let Some(value) = attrs.get(attr_name) else {
                 continue;
             };
-            let constraint = self.attribute_constraint_with_smiley(class_name, attr_name, smiley);
             match smiley.as_str() {
                 // `:U` wants a type object. A *defined* value can never satisfy
                 // it, which rakudo reports as the attribute-default error
                 // ("Can never assign default value ..."), not an assignment
                 // failure.
                 "U" if super::types::value_is_defined(value) => {
+                    let constraint =
+                        self.attribute_constraint_with_smiley(class_name, attr_name, smiley);
                     return Err(crate::runtime::utils::attribute_default_never_assign_error(
                         attr_name,
                         &constraint,
@@ -438,6 +474,8 @@ impl Interpreter {
                 // `:D` wants a defined value; a type object reaching the slot is
                 // the ordinary assignment type-check failure.
                 "D" if !super::types::value_is_defined(value) => {
+                    let constraint =
+                        self.attribute_constraint_with_smiley(class_name, attr_name, smiley);
                     return Err(crate::runtime::utils::definite_type_check_assignment_error(
                         &format!("$!{}", attr_name),
                         &constraint,

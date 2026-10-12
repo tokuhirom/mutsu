@@ -73,20 +73,21 @@ impl Interpreter {
             .filter(|role| !role.contains('['))
             .map(String::as_str)
             .collect();
-        let candidate_def = |role_name: &str| -> Option<crate::runtime::RoleDef> {
-            if parameterized_bases.contains(role_name) {
-                self.role_candidate_of_shape(role_name, true)
-            } else if bare_composed.contains(role_name) {
-                self.role_candidate_of_shape(role_name, false)
+        // Only the requested submethod's candidates are copied out, under the
+        // registry guard; cloning each role's whole `RoleDef` (every method
+        // table and attribute) to read one entry was the bulk of a YAMLish
+        // `.new` (#12917).
+        let mut result = Vec::new();
+        let registry = self.registry();
+        for role_name in &ordered {
+            let role_def = if parameterized_bases.contains(role_name.as_str()) {
+                registry.role_candidate_of_shape(role_name, true)
+            } else if bare_composed.contains(role_name.as_str()) {
+                registry.role_candidate_of_shape(role_name, false)
             } else {
                 None
             }
-        };
-        // Now filter to only roles that have the requested submethod
-        let mut result = Vec::new();
-        for role_name in &ordered {
-            let role_def =
-                candidate_def(role_name).or_else(|| self.registry().roles.get(role_name).cloned());
+            .or_else(|| registry.roles.get(role_name));
             if let Some(role_def) = role_def
                 && let Some(overloads) = role_def.methods.get(method_name)
             {
@@ -97,6 +98,7 @@ impl Interpreter {
                 }
             }
         }
+        drop(registry);
         // A parameterized role's TWEAK runs before the TWEAKs supplied by a
         // role it composes. This is observable for model-style roles whose
         // derived TWEAK installs the state a parent TWEAK consumes. Direct
