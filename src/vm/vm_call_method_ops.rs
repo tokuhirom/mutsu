@@ -1218,7 +1218,7 @@ impl Interpreter {
         // closure or run an interpreter fallback that iterates it; collapse a
         // transient scoped overlay env to a flat env first so the full lexical
         // view is seen.
-        self.flatten_scoped_env();
+        // EXPERIMENT self.flatten_scoped_env();
         // Junction auto-threading: thread method calls over junction values
         if let ValueView::Junction { kind, values } = target.view()
             && !matches!(

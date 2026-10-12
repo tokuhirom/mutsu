@@ -1199,7 +1199,7 @@ impl Interpreter {
         // flat env so the full lexical view is seen. Placed after the accessor
         // read so a `$.attr` read inside a scoped method body does not collapse
         // the overlay (defeating the per-method-call deep-copy elimination).
-        self.flatten_scoped_env();
+        // EXPERIMENT self.flatten_scoped_env();
         // Detect calls on undeclared type names: when a BareWord resolved to a Str
         // (because the name wasn't a known type/class), and .new() is called on it,
         // this means the user tried to instantiate a nonexistent class.
