@@ -127,7 +127,10 @@ impl Interpreter {
     fn own_return_type(env: &mut Env, return_type: Option<&str>) {
         env.remove_sym(crate::symbol::well_known::return_type());
         if let Some(rt) = return_type {
-            env.insert_sym(crate::symbol::well_known::return_type(), Value::str_from(rt));
+            env.insert_sym(
+                crate::symbol::well_known::return_type(),
+                Value::str_from(rt),
+            );
         }
     }
 }
