@@ -1977,7 +1977,10 @@ cross-check failed. Decisions:
    now declines too, so the interpreter answers the user's `.wrap`/`augment`, as that route's comment already required (the
    shadow arms answered the built-in there).
 2. **`native_method_1arg` asks the table first**, as `native_method_0arg` does, and `native_method_1arg_without_table` is the
-   cascade the two callers above use. The 1-arg callers that reached the cascade directly (the routine forms, `.^can`'s
+   cascade the two callers above use. Its receiver probes re-enter `native_method_1arg` with the unwrapped receiver (a `Scalar`'s
+   value, an itemized hash made plain, the 0-arg entry's and `call_method_with_values`'s #10744 rule), so the decline step asks
+   the table about the receiver the table was asked about: the VM refuses `$map.contains('a')` on the itemized form, and before
+   this rule only the deleted `contains` arm answered it (the interpreter's route loses the resumable warning). The 1-arg callers that reached the cascade directly (the routine forms, `.^can`'s
    recognition probe, `Complex`/`Instant` delegation) get the row now; the debug cross-check already held the two answers equal.
 3. **A shapeless `Match` answers by owner** (`match_owner_row`: `owner_row("Match", ..)` + `invoke`, the §9.87 mechanism): a
    grammar cursor, a lazy cursor and an instance of a `Match` subclass. It replaces the forwarding arms of the lazy-match fast path
@@ -1988,16 +1991,18 @@ cross-check failed. Decisions:
 Deleted: the `Uni` shadows (`elems`/`codes`/`Int`/`Numeric`/`Str`/`list`/`gist`/`raku`), the `Capture` shadows (`hash`, `list`,
 `elems`/`Numeric`, `keys`, `values`, `kv`, `pairs`, `antipairs`, `raku`, `gist`, `Str`), `Version`'s `parts`/`plus`/`whatever`,
 the 0-arg `re`/`im`/`reals`, `key`/`value`/`antipair`, `contents` and `squish` arms, and the 1-arg `contains`, `index`, `rindex`,
-`substr`, `split`, `comb`, `fmt`, `sprintf`, `base`, `base-repeating` and `subbuf` arms. Kept, each because a receiver or argument
+`substr`, `split`, `comb`, `fmt`, `sprintf`, `base` and `base-repeating` arms. Kept, each because a receiver or argument
 no row admits still reaches it (found by deleting the arm and probing): the rest of `collection.rs`/`coercion.rs` (type objects,
 `Nil`, a shaped array, a stash, an `IO::Path`), the `Capture` arms with no row (`Hash`, `Int`, `perl`, `Bool`, `WHAT`, `flat`,
-`Seq`, `List`), `Uni`'s `chars`/`comb`/`perl`, and the 1-arg arms whose argument is not a plain scalar (`in-range` with a
+`Seq`, `List`), `Uni`'s `chars`/`comb`/`perl`, `subbuf` (a user class composing `Blob` over a `VMArray` body has no shape),
+and the 1-arg arms whose argument is not a plain scalar (`in-range` with a
 `Range`, `round` and `parse-base` on an allomorph or a `Slip`, `AT-POS`, ...).
 
 `method-rows-report.py --arms`: the pure arity cascades go from 239 to 181 arms. A probe of 34 0-arg and 36 1-arg method names
 (with 1 to 5 arguments each, Regex, Range, WhateverCode and Junction arguments among them) over 50 receivers (every shape, type
 objects, user subclasses of `Int`/`Str`/`Array`/`Hash`, a plain instance, an enum, a mixin, an allomorph, code, an exception, a
-lazy list) gave the same answers before and after, apart from object ids and hash order. Pinned in
+lazy list) gave the same answers before and after, apart from object ids and hash order; the debug `prove t/` over the whole
+suite found the two receivers the probe lacked (the itemized `Map` and the `VMArray` buffer class). Pinned in
 `t/oo/method/method-table-cascade-decline.t`. The cost of the step is one more table lookup on a call the table did not answer
 (a bit test when no row has the name); a handler that declines its receiver runs twice on that call (§9.7 waives the measurement).
 
