@@ -173,11 +173,11 @@ function-call funnel in front of `make` (~15k) and the call frame. Four changes:
 
 | change | per warm parse |
 |---|---:|
-| a role's captured scope shared (`Arc`) instead of copied with every attribute list (`.new` cloned and dropped ~84k `String`s per parse) | 414M → 358M |
+| a role attribute default's captured scope shared (`Arc`) instead of copied with every attribute list (`.new` cloned and dropped ~84k `String`s per parse); landed concurrently by #13012 (#12981), #13022 only shares the role's own copy too | 414M → 358M |
 | action methods resolved directly (`call_grammar_action_method`); unshadowed `make` straight to the builtin; an empty deferred-repeat flush answered by a scan | 358M → 323M |
 | `$<name>` read as the named capture, like `$/<name>`, not through the `AT-KEY` funnel (~45k → ~7.6k Ir per read) | 323M → 290M |
 
-Together **~414M → ~290M (-30%)**. What remains of the walk is spread thin: the
+Together **~414M → ~290M (-30%)**; #13022's own share, measured against `main` with #13012 (2b75985b), is **~359M → ~290M (-19%)**. What remains of the walk is spread thin: the
 compiled-method call frame (~10k Ir per call: env merge, frame push/pop, attribute
 reconcile), the per-action env ceremony (`take`/`restore_action_named_captures`,
 ~6k), `.new`'s per-construction class-shape work (`collect_class_attributes`,
