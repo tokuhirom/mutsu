@@ -410,8 +410,8 @@ regresses one of those rows is fixed on its branch, not landed with a note.
 
    Left on the registry: a block-declared routine's own body calling a
    sibling routine of its block by name after the block exited (it is a
-   named routine body, compiled without the block's records; #13037),
-   `multi`/`our`/exported/traited routines, and a routine named like a
+   named routine body, compiled without the block's records; #13037, slice
+   5), `multi`/`our`/exported/traited routines, and a routine named like a
    builtin (`sub dd`).
 
    Release-build Ir against the merge base: `bench-fib` -0.00%, `bench-tak`
@@ -421,6 +421,26 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    +30% through the inline `map` path, which has no upvalue array and
    resolves `&h` by name per call. The call goes through a code object's
    closure dispatch instead of the named call path; #13049 tracks it.
+
+   **Slice 5 done** (`fix/13037-block-sub-sibling-binding`, #13037): a
+   block-declared routine's own body reaches the sibling routines of its
+   block. Its body stays a named routine body (its calls keep the named call
+   paths); the binding lives in the activation instead.
+
+   - `capture_lexsub_activation` also binds, as `&name` in the activation
+     capture, each sibling routine of the declaring code whose name the
+     constant pool of the routine or of a closure nested in it holds (a
+     by-name call reads its callee from there). Each binding is the sibling's own capture of the same
+     activation, so a chain `a → b → c` keeps the activation all the way. A
+     cycle (`ev`/`od` calling each other) binds its back edge to a cell that
+     receives the routine's capture once it is built.
+   - A `CallFunc` in a frame linked to an activation that binds `&name`
+     (`Env::frame_activation_binds_routine`, O(1) in every other frame)
+     calls that binding through the code-variable call path, ahead of the
+     registry, which holds only the latest activation's routine (none once
+     the block exited).
+
+   Left on the registry: the declarations slice 4 leaves there.
 3. **The static link.** Frames carry the outer link; the reflective name view
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay
@@ -890,6 +910,7 @@ the issue's original local remedy.
 | [#12902](https://github.com/tokuhirom/mutsu/issues/12902) | `$!` is not routine-owned on the light call paths; a `try` in a block called by another routine does not set its scope's `$!` | 3 (slice 11 closes) |
 | [#12850](https://github.com/tokuhirom/mutsu/issues/12850) | a block-declared sub called by name from a closure that outlives the block dies with "Unknown function" | 2 (slice 4 closes) |
 | [#12851](https://github.com/tokuhirom/mutsu/issues/12851) | `&g` taken in a closure nested in `g`'s declaring block reads the latest activation's lexicals | 2 (slice 4 closes) |
+| [#13037](https://github.com/tokuhirom/mutsu/issues/13037) | a block-declared sub calling a sibling sub of its block by name dies after the block exited | 2 (slice 5 closes) |
 | [#12526](https://github.com/tokuhirom/mutsu/issues/12526) | an `@x` parameter costs ~12x a `$x` one (generic binder + copy-out writeback) | partly 3: the writeback becomes unnecessary (§2.3). The binder half is independent and can land first |
 
 **Out of scope.** [#12204](https://github.com/tokuhirom/mutsu/issues/12204)

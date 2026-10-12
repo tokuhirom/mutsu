@@ -94,6 +94,32 @@ impl Interpreter {
     // Cost: O(f * l), f = the sub's free variables, l = `code`'s locals; only
     // for a `&name` read of a sub the running code declares.
     pub(super) fn capture_lexsub_activation(&mut self, code: &CompiledCode, val: Value) -> Value {
+        let mut building: Vec<(Symbol, Option<Value>)> = Vec::new();
+        self.capture_lexsub_activation_in(code, val, &mut building)
+    }
+
+    /// [`Self::capture_lexsub_activation`], also binding the sibling routines
+    /// of the same declaring code that the sub's body calls by bare name
+    /// (#13037): `sub a1 { b1() }; sub b1 { ... }` in a loop body, with `a1`
+    /// called from a closure after the iteration ended. `a1`'s body is a named
+    /// routine body, so its `b1()` is a by-name call, and the registry holds
+    /// only the latest activation's `b1` (none once the block exited). The
+    /// capture binds `&b1`, and a by-name call in a frame linked to the
+    /// capture calls that binding (`Env::frame_activation_binds_routine`).
+    /// Each sibling's binding is its own
+    /// capture of this activation. `building` holds the routines whose capture
+    /// is under construction: a sibling cycle (`ev` and `od` calling each
+    /// other) binds its back edge to a cell that receives the routine's
+    /// capture once it is built.
+    // Cost: O(s * (k + f * l)) per routine captured, s = `code`'s routine
+    // declarations, k = the sub's constants; each sibling is captured once
+    // per enclosing capture chain.
+    fn capture_lexsub_activation_in(
+        &mut self,
+        code: &CompiledCode,
+        val: Value,
+        building: &mut Vec<(Symbol, Option<Value>)>,
+    ) -> Value {
         let ValueView::Sub(data) = val.view() else {
             return val;
         };
@@ -123,15 +149,65 @@ impl Interpreter {
                 cells.push((*sym, cell));
             }
         }
-        if cells.is_empty() {
+        let mut siblings: Vec<(Symbol, Value)> = Vec::new();
+        building.push((data.name, None));
+        for plan in &code.sub_decl_plans {
+            let name = plan.name;
+            if name == data.name
+                || siblings.iter().any(|(s, _)| *s == name)
+                || !Self::code_names_routine(&cf.code, name)
+            {
+                continue;
+            }
+            // A back edge of a sibling cycle: bind the cell the routine's
+            // capture is stored into once built.
+            if let Some((_, cell)) = building.iter_mut().find(|(s, _)| *s == name) {
+                let cell = cell.get_or_insert_with(|| Value::NIL.into_container_ref());
+                siblings.push((name, cell.clone()));
+                continue;
+            }
+            let sibling = self.resolve_code_var_unshadowed(name.as_str());
+            if !matches!(sibling.view(), ValueView::Sub(_)) {
+                continue;
+            }
+            let sibling = self.capture_lexsub_activation_in(code, sibling, building);
+            siblings.push((name, sibling));
+        }
+        let back_edge = building.pop().and_then(|(_, cell)| cell);
+        if cells.is_empty() && siblings.is_empty() {
+            if let Some(cell) = back_edge {
+                cell.assign_into_container(val.clone());
+            }
             return val;
         }
         let mut new_data = (**data).clone();
         for (sym, cell) in cells {
             new_data.env.insert_sym(sym, cell);
         }
+        for (name, sibling) in siblings {
+            new_data.env.insert(format!("&{name}"), sibling);
+        }
         new_data.env.mark_activation_capture();
-        Value::sub_value(crate::gc::Gc::new(new_data))
+        let captured = Value::sub_value(crate::gc::Gc::new(new_data));
+        if let Some(cell) = back_edge {
+            cell.assign_into_container(captured.clone());
+        }
+        captured
+    }
+
+    /// Whether `code` (a routine body) names the routine `name` as a call
+    /// target: its constant pool, or that of a closure nested in it, holds the
+    /// name every by-name call op reads.
+    // Cost: O(k), k = the constants of `code` and of its nested closures.
+    fn code_names_routine(code: &CompiledCode, name: Symbol) -> bool {
+        name.with_str(|n| {
+            code.constants
+                .iter()
+                .any(|c| matches!(c.view(), ValueView::Str(s) if s.as_str() == n))
+        }) || code
+            .closure_compiled_codes
+            .iter()
+            .any(|cc| Self::code_names_routine(cc, name))
     }
 
     /// The shared cell behind local `slot` (`name`) of the running frame,
