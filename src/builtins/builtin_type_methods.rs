@@ -83,11 +83,25 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     // A registered row recognizes its arity for a receiver of its shape
     // (ADR-11276), table first: a migrated method has no arm left to probe,
     // and `native_method_0arg` asks the table only for a call it would admit.
-    if let Some(receiver) = crate::builtins::method_table::Receiver::of(value) {
+    let receivers = [
+        crate::builtins::method_table::Receiver::of(value),
+        crate::builtins::method_table::Receiver::of_settled(value),
+    ];
+    for receiver in receivers.into_iter().flatten() {
         for arity in 0..=2u8 {
             if crate::builtins::method_table::resolve(receiver, sym, usize::from(arity)).is_some() {
                 arities |= 1 << arity;
             }
+        }
+    }
+    // A receiver with no shape reaches the rows `answer_shapeless` finds for
+    // it (ADR-11276 §9.79-§9.81); a row that needs the interpreter to finish
+    // (an element's own `Str`) still recognizes the call.
+    for arity in 0..=2u8 {
+        if crate::builtins::method_table::shapeless_row(None, value, sym, usize::from(arity))
+            .is_some()
+        {
+            arities |= 1 << arity;
         }
     }
     // A few 1/2-arg native methods inspect the argument type before recognizing

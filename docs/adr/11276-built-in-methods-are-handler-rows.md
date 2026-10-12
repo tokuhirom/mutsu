@@ -1770,6 +1770,7 @@ the three ways §9.79 and §9.80 opened:
 2. **`Any.join`.** The row is `TYPE_OBJECT_OK` and `join` joins `ANY_LIST_FOR_CLOSED_SHAPES`, which a `Match` now reaches for `join`
    only (it joins its positional captures; the `Match` block of `methods_0arg` no longer delegates `join` to the matched string).
    `join_core` reads a `Blob`/`Buf` as its elements and any receiver it does not read as a list as a one-element list (`self.list`).
+   Any other built-in class with a shape (`IO::Path`, `IO::Handle`, `Version`, ...) is a one-element list of its `.Str`.
    An element that needs its own `Str` (an instance, a type object, `Nil`) declines the row to the interpreter's list join
    (`dispatch_join_method`), which now takes such a receiver as its one-element list, so a user `Str` is called and a type object
    warns. A `Thread` still declines to the thread-join primitive. `answer_shapeless` passes `join`'s separator, and the one-argument
@@ -1777,7 +1778,11 @@ the three ways §9.79 and §9.80 opened:
 3. **`Iterable`'s `lazy`.** Rakudo declares `lazy` on `List`, `Seq` and `Map` only (`5.lazy` is `X::Method::NotFound`, as before).
    The re-tag of a lazy `LazyList` (kept lazy when assigned to an array) moves into the shared `lazy` handler, and `answer_shapeless`
    answers a `LazyList` or unsettled `Seq` from `Seq.lazy` and a lazy or shaped array or a `Slip` from `List.lazy`
-   (`ITERABLE_FOR_SHAPELESS`).
+   (`ITERABLE_FOR_SHAPELESS`). `List.lazy` and `Map.lazy` are `TYPE_OBJECT_OK`: Rakudo lists a type object as itself
+   (`Array.lazy` is `(Array).lazy.Seq`; the arm answered the type object).
+4. **The E2 probes.** The recognition table gains `Mu.is-lazy` (Rakudo declares it on `Mu`). `native_method_arities` (the
+   inverse probe of the recognition rows) also asks the guard step's settled receiver and `method_table::shapeless_row`, the
+   row-finding half of `answer_shapeless`: `Any.join` on the `Any` type object finishes in the interpreter, but the row is found.
 
 `method-rows-report.py --arms`: the pure arity cascades go from 330 arms to 324. A probe of the five names over ~50 receiver kinds (and
 `join` with a separator) against the pre-change binary found these answers changed, each toward Rakudo and pinned in
@@ -1785,7 +1790,8 @@ the three ways §9.79 and §9.80 opened:
 type object joins to `""` with the uninitialized-value warning (was `"(Int)"`); `Blob.join` joins its bytes (was its gist); `Match.join`
 is its positional captures at both arities (the zero-argument form answered the matched string); the one-argument `join` of a code
 object, a `Version`, an enum value or a type object answers instead of `X::Method::NotFound`. `Seq.lazy` and `Range.lazy` on the type
-objects are `X::Method::NotFound` (were the type object; Rakudo raises `X::Parameter::InvalidConcreteness`).
+objects are `X::Method::NotFound` (were the type object; Rakudo raises `X::Parameter::InvalidConcreteness`). `Array.lazy`,
+`List.lazy` and `Hash.lazy` are a lazy list of the type object (were the type object).
 
 - **Left**: `Thread.join`, `Seq.join` and `Mu.join` on the type objects answer `""` with a warning where Rakudo raises; `Regex.join`
   answers its source where Rakudo warns and answers `""` (both as before for the zero-argument form). A consumed `gather` list answers

@@ -368,9 +368,22 @@ pub(crate) fn answer_shapeless(
     method: Symbol,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
+    let id = shapeless_row(interp, target, method, args.len())?;
+    call(row(id), None, target, args, Named::NONE).map(|(result, _)| result)
+}
+
+/// The row [`answer_shapeless`] answers a call with `arity` positional
+/// arguments from, without running it.
+// Cost: as [`answer_shapeless`], without the handler.
+pub(crate) fn shapeless_row(
+    interp: Option<&mut Interpreter>,
+    target: &Value,
+    method: Symbol,
+    arity: usize,
+) -> Option<RowId> {
     use crate::value::ValueView;
     // `join` alone takes an argument (its separator).
-    if !args.is_empty() && (args.len() > 1 || method.as_str() != "join") {
+    if arity > 0 && (arity > 1 || method.as_str() != "join") {
         return None;
     }
     let text = crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method.as_str());
@@ -440,8 +453,7 @@ pub(crate) fn answer_shapeless(
         _ if list => any,
         _ => return None,
     };
-    let id = super::owner_row(owner, method, args.len())?;
-    call(row(id), None, target, args, Named::NONE).map(|(result, _)| result)
+    super::owner_row(owner, method, arity)
 }
 
 /// Whether the named argument `pair` is one `row` binds.

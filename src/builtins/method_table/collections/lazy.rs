@@ -8,12 +8,15 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 macro_rules! row {
     ($owner:literal, $name:literal, $handler:ident) => {
+        row!($owner, $name, $handler, RowFlags::NONE)
+    };
+    ($owner:literal, $name:literal, $handler:ident, $flags:expr) => {
         MethodRow {
             owner: $owner,
             name: $name,
             arity: 0,
             handler: Handler::Narrow($handler),
-            flags: RowFlags::NONE,
+            flags: $flags,
             named: &[],
         }
     };
@@ -26,8 +29,10 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("List", "race", race),
     row!("Map", "race", race),
     row!("Range", "race", race),
-    row!("List", "lazy", lazy),
-    row!("Map", "lazy", lazy),
+    // A `List`/`Array`/`Hash` type object lists as itself: `Array.lazy` is
+    // `(Array).lazy.Seq`.
+    row!("List", "lazy", lazy, RowFlags::TYPE_OBJECT_OK),
+    row!("Map", "lazy", lazy, RowFlags::TYPE_OBJECT_OK),
     row!("Range", "lazy", lazy),
     row!("Map", "item", item),
     row!("Range", "item", item),
@@ -78,7 +83,9 @@ pub(crate) fn lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
         }
         return Some(Ok(target.clone()));
     }
-    let items = if let Some(items) = target.as_list_items() {
+    let items = if matches!(target.view(), ValueView::Package(_)) {
+        vec![target.clone()]
+    } else if let Some(items) = target.as_list_items() {
         items.to_vec()
     } else if target.is_range() || matches!(target.view(), ValueView::Hash(_)) {
         // A Hash (`Map`'s `list`) is its pairs.

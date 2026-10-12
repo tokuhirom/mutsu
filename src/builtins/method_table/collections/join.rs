@@ -161,6 +161,12 @@ fn join_core(target: &Value, sep: &str) -> Joined {
         {
             Joined::Done(Ok(Value::str(target.to_string_value())))
         }
+        // Any other built-in class with a shape (never a user subclass, whose
+        // `Str` may be its own: `IO::Path`, `IO::Handle`, `Version`, ...) is a
+        // one-element list of its `.Str`.
+        _ if target.dispatch_shape().is_some() => {
+            Joined::Done(Ok(Value::str(target.to_string_value())))
+        }
         // `.join` on a Thread is the thread-join primitive (block until the
         // thread finishes), which the runtime's `native_thread` routes.
         ValueView::Instance { class_name, .. } if class_name == "Thread" => Joined::NotCovered,

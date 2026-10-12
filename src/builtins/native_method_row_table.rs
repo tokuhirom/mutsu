@@ -1982,6 +1982,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // carry dispatch rows, but their inherited names come from Mu on :all.
     ("Mu", "Int", 8, 28),
     ("Mu", "Numeric", 8, 28),
+    ("Mu", "is-lazy", 1, 24),
     ("Mu", "not", 1, 56),
     ("Mu", "note", 8, 28),
     ("Mu", "print", 8, 28),
