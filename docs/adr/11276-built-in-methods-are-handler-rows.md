@@ -1937,7 +1937,7 @@ by-name mutating dispatch, and the `keyof` half of the VM's hash bypass. Kept, w
 composing `Positional[V]`/`Associative[V,K]` and for a mixin that declares `of`, and the by-name `@`/`%` variable fallback to the
 variable's constraint.
 
-`method-rows-report.py --arms`: the pure arity cascades go from 300 arms to 298 and lose a file. The probe (both names over ~90
+`method-rows-report.py --arms`: the pure arity cascades lose 2 arms and a file (241 → 239 after §9.87). The probe (both names over ~90
 receivers, against the pre-change binary and `raku`) changed only toward Rakudo: `Map.of`, `Associative.keyof`, `Associative[..].keyof`
 (`Str(Any)`/the key parameter), `Range.of`, `Pair.of`/`keyof`, `Callable[Int].of`, `Regex.of`, `QuantHash`/`Baggy`/`Setty`/`Mixy`
 `of`/`keyof`, `Stash`/`PseudoStash` `of`/`keyof`, `Bag[Int].keyof`/`Set[Str].keyof` (were `Mu`), `SetHash[Int].new.keyof`
