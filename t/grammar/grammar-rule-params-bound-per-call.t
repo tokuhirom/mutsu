@@ -6,7 +6,7 @@ use Test;
 # see the value of *this* call, also when the same rule is entered again with
 # another value further down.
 
-plan 13;
+plan 14;
 
 grammar Indent {
     token TOP { <line('  ')> }
@@ -71,3 +71,12 @@ grammar CaseFold {
     token t($x) { :i $x }
 }
 ok CaseFold.parse('ab'), 'an interpolated parameter honours :i';
+
+# A parameter used in a top-level alternation branch of a rule reached through
+# another rule's frame (YAMLish's `map-entry`).
+grammar Branch {
+    token TOP { <outer> }
+    token outer { <me('')> }
+    token me(Str $i) { 'k' | '?' $i ':' }
+}
+ok Branch.parse('?:'), 'a parameter in a top-level alternation branch';

@@ -1439,10 +1439,19 @@ impl Interpreter {
             crate::runtime::regex_parse::TopLevelSourceScope::enter(interpolated);
         // A rule body's runtime-parameter declaration block
         // (`regex_rule_params`), declared below like a `:my` lexical.
-        let (rule_params, unmarked) =
+        // They are declared before anything below parses a sub-pattern (the
+        // top-level alternation split comes first), and stay declared for the
+        // whole parse.
+        let (_rule_params_guard, unmarked) =
             match super::regex::regex_rule_params::split_rule_params(interpolated) {
-                Some((names, rest)) => (names.map(str::to_string).collect::<Vec<_>>(), rest),
-                None => (Vec::new(), interpolated),
+                Some((names, rest)) => {
+                    let (guard, _) = super::regex::regex_helpers::EnclosingRegexVarsGuard::enter();
+                    for name in names {
+                        super::regex::regex_helpers::declare_enclosing_regex_var(name);
+                    }
+                    (Some(guard), rest)
+                }
+                None => (None, interpolated),
             };
         let mut source = unmarked.trim_start();
         let mut ignore_case = false;
@@ -1750,12 +1759,6 @@ impl Interpreter {
         // `ENCLOSING_REGEX_VARS`). The guard restores that set on the way out.
         let (_enclosing_vars_guard, mut declared_regex_vars) =
             super::regex::regex_helpers::EnclosingRegexVarsGuard::enter();
-        // A rule's runtime parameters are its body's outermost lexicals: every
-        // sub-pattern parse sees them, as it sees a `:my`.
-        for name in rule_params {
-            super::regex::regex_helpers::declare_enclosing_regex_var(&name);
-            declared_regex_vars.insert(name);
-        }
         // ADR-0022 Slice 5: `interpolate_regex_scalars` wraps a span
         // substituted from a non-constant runtime variable in a pair of
         // `NON_DECLARATIVE_INTERP_MARK` sentinels. Toggled (not
