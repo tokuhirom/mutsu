@@ -386,8 +386,12 @@ pub(crate) fn answer_shapeless(
     {
         return call(row(id), interp, target, args, Named::NONE).map(|(result, _)| result);
     }
-    let id = shapeless_row(interp, target, method, args.len())?;
-    call(row(id), None, target, args, Named::NONE).map(|(result, _)| result)
+    let mut interp = interp;
+    let id = shapeless_row(interp.as_deref_mut(), target, method, args.len())?;
+    // `Mu.WHERE` reads the class registry for a NativeCall handle (§9.91); the
+    // other rows found here are pure.
+    let interp = interp.filter(|_| row(id).owner == "Mu");
+    call(row(id), interp, target, args, Named::NONE).map(|(result, _)| result)
 }
 
 /// The row [`answer_shapeless`] answers a call with `arity` positional
@@ -427,6 +431,12 @@ pub(crate) fn shapeless_row(
     let mu = crate::value::MU_FOR_CLOSED_SHAPES.contains(&method.as_str());
     let iterable = ITERABLE_FOR_SHAPELESS.contains(&method.as_str());
     if !(text || list || mu || iterable) || Receiver::of_settled(target).is_some() {
+        return None;
+    }
+    // A `.VAR` descriptor asks the value its container holds (ADR-0064), which
+    // only `Interpreter::try_var_meta_delegate` can read: `$u.VAR.Bool` is the
+    // truth of the undefined value, not of the descriptor.
+    if crate::runtime::runtime_var_meta::var_meta_descriptor_defers(target, method.as_str()) {
         return None;
     }
     let (cool, any) = (Symbol::intern("Cool"), Symbol::intern("Any"));

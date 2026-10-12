@@ -29,7 +29,18 @@ macro_rules! rows {
 }
 
 pub(super) static WHICH_ROWS: &[MethodRow] = rows!("WHICH" => which:
-    "Array", "Hash", "Pair", "Range", "Set", "Bag", "Mix", "Capture");
+    "Array", "Hash", "Range", "Set", "Bag", "Mix", "Capture");
+/// `Pair.WHICH`. A Pair holding a container or a reference type has no stable
+/// identity string (`which_of` mints a fresh id per call), so a second run of
+/// the call answers differently: the debug cross-checks must not re-run it.
+pub(super) static PAIR_WHICH_ROWS: &[MethodRow] = &[MethodRow {
+    owner: "Pair",
+    name: "WHICH",
+    arity: 0,
+    handler: Handler::Narrow(which),
+    flags: RowFlags::RANDOM,
+    named: &[],
+}];
 pub(super) static LIST_GIST_ROWS: &[MethodRow] =
     rows!("gist" => collection_gist: "List", "Seq", "Hash", "Pair");
 pub(super) static QUANT_GIST_ROWS: &[MethodRow] =

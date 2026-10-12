@@ -15,7 +15,8 @@
 //! `mu_base` with the same names are the last candidate of a user override's
 //! `callsame` chain and are reached only by their owner.
 
-use crate::builtins::method_table::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::{Handler, MethodRow, Named, RowFlags};
+use crate::runtime::Interpreter;
 use crate::value::{JunctionKind, RuntimeError, Value, ValueView};
 
 macro_rules! row {
@@ -37,7 +38,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("DEFINITE", Handler::Pure(definite)),
     row!("Bool", Handler::Narrow(bool_)),
     row!("WHICH", Handler::Pure(which)),
-    row!("WHERE", Handler::Narrow(where_)),
+    row!("WHERE", Handler::Interp(where_in)),
     row!("clone", Handler::Narrow(clone)),
 ];
 
@@ -138,8 +139,27 @@ fn bool_(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
 
 /// `Mu.WHICH`: the receiver's identity (`methods_0arg::which`).
 // Cost: O(1) for a reference type; O(n) for a value type, n = its rendering.
-fn which(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+pub(super) fn which(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
     Ok(crate::builtins::methods_0arg::which::which_of(target))
+}
+
+/// `Mu.WHERE` with the interpreter: a NativeCall handle (a `nativecast`ed
+/// `CStruct`/`CUnion`/`CArray`, a native array) reports the address of its
+/// storage, which only the class registry can tell
+/// (`Interpreter::try_native_handle_repr_where`): a module dereferences it
+/// (`MoarVM::Guts::REPRs`' `OBJECT_BODY`), so the identity hash of [`where_`]
+/// would make it read wild memory. A pure entry has no interpreter and declines.
+// Cost: O(1) plus the class-registry probe; as [`where_`] otherwise.
+pub(super) fn where_in(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if let Some(address) = interp.try_native_handle_repr_where(target, "WHERE") {
+        return Some(Ok(address));
+    }
+    where_(target, &[])
 }
 
 /// `Mu.WHERE`: Rakudo answers the object's memory address. mutsu's scalars

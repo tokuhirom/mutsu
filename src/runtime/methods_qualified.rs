@@ -243,7 +243,14 @@ impl Interpreter {
                 // `self.Mu::WHICH` is the object's own identity, bypassing a
                 // class's `WHICH` override (Rake's `$!WHICH := self.Mu::WHICH`
                 // for a non-value-type instance).
-                "WHICH" => crate::builtins::native_method_0arg(target, Symbol::intern("WHICH")),
+                // `Mu`'s own row, which an instance with no shape reaches only
+                // through the interpreter's MRO walk.
+                "WHICH" => crate::builtins::method_table::owner_row(
+                    Symbol::intern("Mu"),
+                    Symbol::intern("WHICH"),
+                    0,
+                )
+                .and_then(|id| crate::builtins::method_table::invoke(id, target, &[])),
                 _ => None,
             },
             _ => None,
