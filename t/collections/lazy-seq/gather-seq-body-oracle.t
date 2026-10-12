@@ -7,7 +7,7 @@ use Test;
 # table are `todo` until the adapter lands (§7 item 1 removes the markers);
 # the rest already match and must stay so.
 
-plan 57;
+plan 60;
 
 # --- Itemization (§1.2 rows 1-7) ---------------------------------------------
 
@@ -226,9 +226,16 @@ is out-of('my $g = gather { for 1..3 { say "t$_"; take $_ } }; say $g[0]; my $h 
     is @l[1].List, (2, 3), 'the nested gather yields its elements';
 }
 {
+    # #13003: a `return` in the body returns from the routine that wrote the
+    # gather while that routine is still running, whatever forces the gather.
     sub f { my $g = gather { take 1; return 42; take 2 }; $g.eager; 99 }
-    todo 'return in a gather body forced inside its routine dies (#13003)';
     is (try f()), 42, 'return in the body returns from the routine that wrote it';
+    sub f2 { my $g = gather { take 1; return 42; take 2 }; my $s = ~$g; 99 }
+    is (try f2()), 42, '... when the gather is stringified';
+    sub f3 { my @g = gather { take 1; return 42; take 2 }; 99 }
+    is (try f3()), 42, '... when the gather is assigned to an array';
+    sub f4 { (gather { take 1; return 42; take 2 }).eager; 99 }
+    is (try f4()), 42, '... when an unstored gather is forced';
 }
 {
     my $g = gather { for 1..5 { next if $_ == 2; last if $_ == 4; take $_ } };

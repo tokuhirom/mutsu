@@ -795,10 +795,15 @@ impl Interpreter {
             if let Some(view) = body.take_gather_as_list() {
                 return Ok(Value::seq_body(view));
             }
-            // Already that List (an outer dispatch layer converted it): it
-            // keeps pulling as it is read.
+            // A cached gather (`.cache`, a subscript, `?`) stays readable: its
+            // List is a List view over the same core, which keeps pulling as
+            // it is read. A List view is already that List (an outer dispatch
+            // layer converted it).
             if body.is_gather_source() && body.is_cached() {
-                return Ok(target);
+                return Ok(match body.view() {
+                    crate::value::SeqView::List | crate::value::SeqView::ItemList => target,
+                    _ => Value::seq_body(body.as_list_view()),
+                });
             }
         }
         if crate::value::seq_method_consumes(method) {
