@@ -1373,10 +1373,10 @@ impl Interpreter {
     /// dispatched in source order.
     fn dispatch_silent_action_caps(
         &mut self,
-        attrs: &crate::value::AttrReadGuard<'_>,
+        silent_caps: Option<&Value>,
         actions: &mut Value,
     ) -> Result<(), RuntimeError> {
-        if let Some(ValueView::Array(silent_arr, _)) = attrs.get("silent_caps").map(Value::view) {
+        if let Some(ValueView::Array(silent_arr, _)) = silent_caps.map(Value::view) {
             let mut items: Vec<Value> = silent_arr.iter().cloned().collect();
             items.sort_by_key(|m| m.match_from().unwrap_or(0));
             for item in items {
@@ -1391,8 +1391,7 @@ impl Interpreter {
     /// childless Match's action method without materializing its attribute
     /// map. The env ceremony only has to hide the parent's captures — a
     /// childless leaf installs no `$<x>`/`$0..` of its own — and a `make`
-    /// from the action becomes a fresh lazy node carrying the `ast`
-    /// (`match_with_ast_lazy`). Per-char leaf actions (`method space($/) {
+    /// from the action writes the capture node's `.made` cell in place. Per-char leaf actions (`method space($/) {
     /// make ~$/ }`, the YAMLish shape) hit this for every matched character,
     /// so it must not touch `InstanceAttrs` at all.
     fn invoke_leaf_action_lazy(
@@ -1531,18 +1530,12 @@ impl Interpreter {
             Err(e) => return Err(e),
         }
 
-        Ok(match self.regex_state.action_made.take() {
-            Some(ast) => match match_obj.match_with_ast_lazy(ast.clone()) {
-                Some(v) => v,
-                // The action observed `$/`, materializing this cursor. Keep
-                // its identity and update it where retained references see it.
-                None => {
-                    match_obj.set_match_ast_in_place(ast);
-                    match_obj
-                }
-            },
-            None => match_obj,
-        })
+        // `make` writes `.made` into the node in place (#12954); see the
+        // main walk for a `make` that reached `action_made` another way.
+        if let Some(ast) = self.regex_state.action_made.take() {
+            match_obj.set_match_ast_in_place(ast);
+        }
+        Ok(match_obj)
     }
 
     /// The class an actions object dispatches its methods on, if it names one.
@@ -1607,30 +1600,27 @@ impl Interpreter {
     /// [`Self::invoke_grammar_actions`], but at most once per capture node
     /// within one parent's child walk.
     ///
-    /// `seen` memoizes `(node identity, updated Match)` for the siblings
-    /// dispatched so far. The one shape that repeats a node among siblings is
-    /// a non-suppressing alias (`<x=rule>` files the same node under `x` and
-    /// `rule`), where raku hands out one cursor — so the second slot must
-    /// receive the SAME updated Match (carrying the `.made` the single
-    /// dispatch produced), not a second dispatch of its own.
+    /// `seen` records the node identities of the siblings dispatched so far.
+    /// The one shape that repeats a node among siblings is a non-suppressing
+    /// alias (`<x=rule>` files the same node under `x` and `rule`), where
+    /// raku hands out one cursor — so the second slot must not dispatch
+    /// again; it reads the `.made` the single dispatch wrote into the node.
     fn invoke_grammar_actions_once(
         &mut self,
-        seen: &mut Vec<(usize, Value)>,
+        seen: &mut Vec<usize>,
         match_obj: Value,
         actions: &mut Value,
         rule_name: &str,
-    ) -> Result<Value, RuntimeError> {
+    ) -> Result<(), RuntimeError> {
         let identity = match_obj.match_node_identity();
-        if let Some(id) = identity
-            && let Some((_, updated)) = seen.iter().find(|(seen_id, _)| *seen_id == id)
-        {
-            return Ok(updated.clone());
-        }
-        let updated = self.invoke_grammar_actions(match_obj, actions, rule_name)?;
         if let Some(id) = identity {
-            seen.push((id, updated.clone()));
+            if seen.contains(&id) {
+                return Ok(());
+            }
+            seen.push(id);
         }
-        Ok(updated)
+        self.invoke_grammar_actions(match_obj, actions, rule_name)?;
+        Ok(())
     }
 
     fn restore_action_reduce_vars(&mut self, saved: &[(String, Option<Value>)]) {
@@ -1720,45 +1710,49 @@ impl Interpreter {
                 );
             }
         }
-        let (class_name, attributes) = if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = match_obj.view()
-        {
-            (class_name, attributes.as_ref().clone())
-        } else {
-            return Ok(match_obj);
+        // The node's structural slots, read once. The action walk does not
+        // rebuild the tree: each action's `make` writes `.made` into its own
+        // node in place (#12954), so the slots keep presenting the very
+        // Matches the walk dispatched. The read guard is dropped here, since
+        // a `make` on this node writes its (memoized) attribute map.
+        let (named_v, list_v, silent_v, vars_v, sym_v) = {
+            let ValueView::Instance { attributes, .. } = match_obj.view() else {
+                return Ok(match_obj);
+            };
+            let amap = attributes.as_map();
+            (
+                amap.get("named").cloned(),
+                amap.get("list").cloned(),
+                amap.get("silent_caps").cloned(),
+                amap.get("reduce_time_vars").cloned(),
+                amap.get("sym_variant").cloned(),
+            )
         };
 
         // Re-install this match's own `:my $*x` bindings before descending into
         // children. A parent-owned binding (for example `:my %*PLAYED = ();`
         // in `deal`) must remain live while child actions accumulate into it;
         // the child walk restores only bindings owned by the child itself.
-        let saved_reduce_vars: Vec<(String, Option<Value>)> = if let Some(ValueView::Hash(vars)) =
-            attributes.as_map().get("reduce_time_vars").map(Value::view)
-        {
-            let mut saved = Vec::new();
-            for (k, v) in vars.iter() {
-                for env_key in Self::grammar_dynvar_env_keys(k) {
-                    if !saved.iter().any(|(saved_key, _)| saved_key == &env_key) {
-                        saved.push((env_key.clone(), self.env.get(&env_key).cloned()));
+        let saved_reduce_vars: Vec<(String, Option<Value>)> =
+            if let Some(ValueView::Hash(vars)) = vars_v.as_ref().map(Value::view) {
+                let mut saved = Vec::new();
+                for (k, v) in vars.iter() {
+                    for env_key in Self::grammar_dynvar_env_keys(k) {
+                        if !saved.iter().any(|(saved_key, _)| saved_key == &env_key) {
+                            saved.push((env_key.clone(), self.env.get(&env_key).cloned()));
+                        }
+                        self.env.insert(env_key, v.clone());
                     }
-                    self.env.insert(env_key, v.clone());
                 }
-            }
-            saved
-        } else {
-            Vec::new()
-        };
+                saved
+            } else {
+                Vec::new()
+            };
 
         // Recursively process child named captures and hidden subrules in
         // reduction order (bottom-up within each child).
         // Keep the parent frame installed for that entire walk so child action
         // methods can read and mutate parent-owned dynamic variables.
-        // This is a private working map. Its child containers are rebuilt
-        // below before publication, so a shallow Value copy is sufficient.
-        let mut updated_attrs = attributes.as_map().clone();
         macro_rules! restore_on_error {
             ($expr:expr) => {
                 match $expr {
@@ -1770,9 +1764,11 @@ impl Interpreter {
                 }
             };
         }
-        if let Some(ValueView::Hash(named_hash)) = attributes.as_map().get("named").map(Value::view)
-        {
-            let mut updated_named = named_hash.as_ref().clone();
+        let named_hash = match named_v.as_ref().map(Value::view) {
+            Some(ValueView::Hash(named_hash)) => Some(named_hash),
+            _ => None,
+        };
+        if let Some(named_hash) = &named_hash {
             // A quantified named capture is stored as one Array under its
             // capture name, but grammar actions run at each cursor's reduce
             // point. Sorting the named-capture slots first therefore grouped
@@ -1781,47 +1777,37 @@ impl Interpreter {
             // parsers that maintain scope or interpolation variables) observe
             // the wrong order. Flatten the individual captures before sorting
             // so sibling capture types are interleaved by source position.
-            let mut children: Vec<(Option<String>, Option<usize>, Value)> = Vec::new();
-            let mut array_children: std::collections::HashMap<
-                String,
-                (crate::value::ArrayKind, Vec<Value>),
-            > = std::collections::HashMap::new();
+            let mut children: Vec<(Option<&String>, Value)> = Vec::new();
             for (child_name, child_match) in named_hash.iter() {
-                if let ValueView::Array(items, kind) = child_match.view() {
-                    let values = items.to_vec();
-                    for (index, item) in values.iter().enumerate() {
-                        children.push((Some(child_name.clone()), Some(index), item.clone()));
+                if let ValueView::Array(items, _) = child_match.view() {
+                    for item in items.iter() {
+                        children.push((Some(child_name), item.clone()));
                     }
-                    array_children.insert(child_name.clone(), (kind, values));
                 } else {
-                    children.push((Some(child_name.clone()), None, child_match.clone()));
+                    children.push((Some(child_name), child_match.clone()));
                 }
             }
             // A silent subrule still reduces at its position in the pattern.
             // It has no named slot, but its action must run among the named
             // captures rather than after all of them.
-            if let Some(ValueView::Array(silent, _)) =
-                attributes.as_map().get("silent_caps").map(Value::view)
-            {
+            if let Some(ValueView::Array(silent, _)) = silent_v.as_ref().map(Value::view) {
                 for item in silent.iter() {
-                    children.push((None, None, item.clone()));
+                    children.push((None, item.clone()));
                 }
             }
             // A zero-width hidden subrule and the following capture can share
             // a start position. The earlier reduction has the earlier end;
             // both seam reads leave lazy Match children unmaterialized.
-            children
-                .sort_by_key(|(_, _, v)| (v.match_to().unwrap_or(0), v.match_from().unwrap_or(0)));
+            children.sort_by_key(|(_, v)| (v.match_to().unwrap_or(0), v.match_from().unwrap_or(0)));
             // A non-suppressing alias (`<x=rule>`) files ONE capture node under
             // both `x` and `rule`, so the same cursor appears twice among these
             // siblings. Rakudo dispatches an action per reduced cursor, not per
             // capture slot; dispatching per slot fired the whole subtree's
             // actions twice per alias level, compounding to 2^depth (256x on
-            // `benchmarks/bench-yaml-parse.raku`). Dispatch once per node and
-            // give both slots the same updated child — which is also what
-            // `$<x> === $<rule>` means.
-            let mut seen: Vec<(usize, Value)> = Vec::new();
-            for (child_name, array_index, child_match) in children {
+            // `benchmarks/bench-yaml-parse.raku`). Dispatch once per node; the
+            // `.made` it writes is the node's, so both slots read it.
+            let mut seen: Vec<usize> = Vec::new();
+            for (child_name, child_match) in children {
                 if let Some(child_from) = child_match.match_from() {
                     restore_on_error!(
                         self.flush_deferred_repeats(actions, |from, _| from as i64 <= child_from)
@@ -1836,127 +1822,52 @@ impl Interpreter {
                     ));
                     continue;
                 };
-                // Probe Match first (non-materializing); only non-Match values
-                // (arrays of per-iteration Matches) go through `view()`.
-                if child_match.is_match_instance() {
-                    let dispatch_name =
-                        Self::get_action_name(&child_match).unwrap_or_else(|| child_name.clone());
-                    let updated_child = restore_on_error!(self.invoke_grammar_actions_once(
-                        &mut seen,
-                        child_match,
-                        actions,
-                        &dispatch_name,
-                    ));
-                    if let Some(index) = array_index {
-                        if let Some((_, items)) = array_children.get_mut(&child_name) {
-                            items[index] = updated_child;
-                        }
-                    } else {
-                        updated_named.insert(child_name, updated_child);
-                    }
-                } else {
-                    let dispatch_name =
-                        Self::get_action_name(&child_match).unwrap_or_else(|| child_name.clone());
-                    let updated_child = restore_on_error!(self.invoke_grammar_actions_once(
-                        &mut seen,
-                        child_match,
-                        actions,
-                        &dispatch_name,
-                    ));
-                    if let Some(index) = array_index {
-                        if let Some((_, items)) = array_children.get_mut(&child_name) {
-                            items[index] = updated_child;
-                        }
-                    } else {
-                        updated_named.insert(child_name, updated_child);
-                    }
-                }
+                let dispatch_name =
+                    Self::get_action_name(&child_match).unwrap_or_else(|| child_name.clone());
+                restore_on_error!(self.invoke_grammar_actions_once(
+                    &mut seen,
+                    child_match,
+                    actions,
+                    &dispatch_name,
+                ));
             }
-            for (child_name, (kind, items)) in array_children {
-                updated_named.insert(
-                    child_name,
-                    Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                        kind,
-                    ),
-                );
-            }
-            updated_attrs.insert("named".to_string(), Value::hash_bare_values(updated_named));
         }
 
         // Recurse into positional `( )` group captures the same way. A group
         // itself has no action method (dispatch name "" unless the capture
         // carries an aliased `action_name`), but the named subrules matched
         // INSIDE it do — DBDish::Pg's tokenizer is `( <normal> | <placeholder>
-        // )*` with per-token actions — and their `.made` must be attached to
-        // the Match objects reachable via `$0[…]`, so the updated children are
-        // stored back into `list`.
-        if let Some(ValueView::Array(pos_arr, meta)) =
-            attributes.as_map().get("list").map(Value::view)
-        {
-            let mut updated_list = Vec::with_capacity(pos_arr.len());
-            let mut changed = false;
-            for item in pos_arr.as_ref() {
+        // )*` with per-token actions — and their `.made` lands on the Match
+        // objects reachable via `$0[…]`.
+        if let Some(ValueView::Array(pos_arr, _)) = list_v.as_ref().map(Value::view) {
+            for item in pos_arr.iter() {
                 // Probe Match first (non-materializing, covers lazy children).
-                let updated_item = if item.is_match_instance() {
+                if item.is_match_instance() {
                     let dispatch_name = Self::get_action_name(item).unwrap_or_default();
                     restore_on_error!(self.invoke_grammar_actions(
                         item.clone(),
                         actions,
                         &dispatch_name,
-                    ))
-                } else {
-                    match item.view() {
-                        // A quantified group `(...)*`: an Array of per-iteration Matches.
-                        ValueView::Array(items, imeta) => {
-                            let mut updated_items = Vec::with_capacity(items.len());
-                            for it in items.as_ref() {
-                                let dispatch_name = Self::get_action_name(it).unwrap_or_default();
-                                let updated = restore_on_error!(self.invoke_grammar_actions(
-                                    it.clone(),
-                                    actions,
-                                    &dispatch_name,
-                                ));
-                                updated_items.push(updated);
-                            }
-                            Value::array_with_kind(
-                                crate::gc::Gc::new(crate::value::ArrayData::new(updated_items)),
-                                imeta,
-                            )
-                        }
-                        ValueView::Instance { .. } => {
-                            let dispatch_name = Self::get_action_name(item).unwrap_or_default();
-                            restore_on_error!(self.invoke_grammar_actions(
-                                item.clone(),
-                                actions,
-                                &dispatch_name,
-                            ))
-                        }
-                        _ => item.clone(),
+                    ));
+                } else if let ValueView::Array(items, _) = item.view() {
+                    // A quantified group `(...)*`: an Array of per-iteration Matches.
+                    for it in items.iter() {
+                        let dispatch_name = Self::get_action_name(it).unwrap_or_default();
+                        restore_on_error!(self.invoke_grammar_actions(
+                            it.clone(),
+                            actions,
+                            &dispatch_name,
+                        ));
                     }
-                };
-                changed = true;
-                updated_list.push(updated_item);
-            }
-            if changed {
-                updated_attrs.insert(
-                    "list".to_string(),
-                    Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(updated_list)),
-                        meta,
-                    ),
-                );
+                }
             }
         }
 
         // A node without a named-capture hash still needs to dispatch its
         // hidden subrules. Nodes with that hash handled them above, interleaved
         // with the captured children. Silent results have no public slot.
-        if !matches!(
-            attributes.as_map().get("named").map(Value::view),
-            Some(ValueView::Hash(_))
-        ) {
-            restore_on_error!(self.dispatch_silent_action_caps(&attributes.as_map(), actions));
+        if named_hash.is_none() {
+            restore_on_error!(self.dispatch_silent_action_caps(silent_v.as_ref(), actions));
         }
 
         // Backtracked reductions inside this node's span ran before its own
@@ -1965,27 +1876,28 @@ impl Interpreter {
             restore_on_error!(self.flush_deferred_repeats(actions, |_, to| to as i64 <= node_to));
         }
 
-        // Rebuild match_obj with updated children
-        let match_obj = Value::make_instance(class_name, updated_attrs.clone());
-
         // Interior node with no action method of its own: the children (and
         // silent captures) above are already dispatched, and none of the env
         // ceremony below can matter — no method will read `$/`/`$<x>`/`$0…`,
-        // and `make` cannot run. Return the rebuilt node directly. (`$/` is
-        // (re)set by the caller after the walk, so skipping the insert here
-        // does not change what user code observes.)
+        // and `make` cannot run. (`$/` is (re)set by the caller after the
+        // walk, so skipping the insert here does not change what user code
+        // observes.)
+        let sym_val: Option<String> = match sym_v.as_ref().map(Value::view) {
+            Some(ValueView::Str(sym_val)) => Some(sym_val.to_string()),
+            _ => None,
+        };
         {
             let no_own_action = {
                 match Self::actions_class_name_of(actions) {
                     None => false,
                     Some(cn) => {
-                        let sym_hit = match updated_attrs.get("sym_variant").map(Value::view) {
-                            Some(ValueView::Str(sym_val)) => {
+                        let sym_hit = match &sym_val {
+                            Some(sym_val) => {
                                 let sym_name =
-                                    self.variant_action_method_name(Some(&cn), rule_name, &sym_val);
+                                    self.variant_action_method_name(Some(&cn), rule_name, sym_val);
                                 self.actions_answer_method(&cn, &sym_name)
                             }
-                            _ => false,
+                            None => false,
                         };
                         !sym_hit && !self.actions_answer_method(&cn, rule_name)
                     }
@@ -2004,7 +1916,7 @@ impl Interpreter {
         // Save old named capture env vars so parent captures don't leak into child actions
         let saved_named_captures = self.take_action_named_captures();
         // Set named capture env vars (<a>, <b>, etc.) so $<a> works inside action methods
-        if let Some(ValueView::Hash(named_hash)) = updated_attrs.get("named").map(Value::view) {
+        if let Some(named_hash) = &named_hash {
             for (k, v) in named_hash.iter() {
                 self.env.insert(format!("<{}>", k), v.clone());
             }
@@ -2013,7 +1925,7 @@ impl Interpreter {
         // First, save and clear any existing positional captures from parent/sibling action
         // calls so they don't leak into this action method's scope.
         let saved_positional = self.take_action_positional_captures();
-        if let Some(ValueView::Array(pos_arr, _)) = updated_attrs.get("list").map(Value::view) {
+        if let Some(ValueView::Array(pos_arr, _)) = list_v.as_ref().map(Value::view) {
             for (i, v) in pos_arr.iter().enumerate() {
                 self.env.insert_sym(
                     super::methods_grammar_action_env::positional_key_sym(i),
@@ -2027,14 +1939,10 @@ impl Interpreter {
 
         // For protoregex :sym<> variants, try dispatching to the specific
         // action method (e.g., alt:sym<baz>) first.
-        let sym_method_name = if let Some(ValueView::Str(sym_val)) =
-            updated_attrs.get("sym_variant").map(Value::view)
-        {
+        let sym_method_name = sym_val.as_deref().map(|sym_val| {
             let cn = Self::actions_class_name_of(actions);
-            Some(self.variant_action_method_name(cn.as_deref(), rule_name, &sym_val))
-        } else {
-            None
-        };
+            self.variant_action_method_name(cn.as_deref(), rule_name, sym_val)
+        });
         // Cheap existence pre-check: most match-tree nodes are low-level
         // tokens (e.g. YAMLish's `space`, `single-bare`, `line-break`) that
         // the actions class never defines a method for. Without this check,
@@ -2146,21 +2054,13 @@ impl Interpreter {
             Err(e) => return Err(e),
         }
 
-        // If make() was called (via action_made which persists across env restore),
-        // update .ast on match
-        let final_obj = if let Some(ast) = self.regex_state.action_made.take() {
-            let mut attrs = updated_attrs;
-            attrs.insert("ast".to_string(), ast);
-            // Preserve actions attribute if present
-            if let Some(act_val) = attributes.as_map().get("actions") {
-                attrs.insert("actions".to_string(), act_val.clone());
-            }
-            Value::make_instance(class_name, attrs)
-        } else {
-            match_obj
-        };
-
-        Ok(final_obj)
+        // `make` already wrote `.made` into this node in place when the
+        // action ran it on `$/`; a `make` that reached `action_made` some
+        // other way (an action whose `$/` is not this node) lands here.
+        if let Some(ast) = self.regex_state.action_made.take() {
+            match_obj.set_match_ast_in_place(ast);
+        }
+        Ok(match_obj)
     }
 
     pub(super) fn parse_failure_for_pattern(&mut self, text: &str, pattern: Option<&str>) -> Value {

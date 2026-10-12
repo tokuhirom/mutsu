@@ -41,24 +41,15 @@ impl Interpreter {
         Err(err)
     }
 
-    /// Rakudo's `make` sets `$/.made`: store `value` as the `.ast` of the
-    /// frame's `$/` Match, writing it back where
-    /// [`Self::frame_match_topic`] found it (the local slot first, else env).
-    /// A Match is a value here, so the updated copy (same identity) replaces
-    /// the old one.
+    /// Rakudo's `make` sets `$/.made`: store `value` as the `.made` of the
+    /// frame's `$/` Match (found as [`Self::frame_match_topic`] finds it).
+    /// The write is in place, so every holder of that Match -- the parse
+    /// tree, a code block or wrapper that kept it -- sees it (#12954).
     ///
-    /// Cost: O(a), a = the Match's attribute count (the copy).
+    /// Cost: O(1), one [`Self::frame_match_topic`] read and one cell write.
     pub(super) fn attach_made_to_match_topic(&mut self, code: &CompiledCode, value: Value) {
-        if let Some(slot) = self.find_local_slot(code, "/") {
-            if let Some(updated) = self.locals[slot].match_with_ast_keeping_id(value) {
-                self.locals[slot] = updated;
-            }
-        } else if let Some(updated) = self
-            .env()
-            .get("/")
-            .and_then(|m| m.deref_container().match_with_ast_keeping_id(value))
-        {
-            self.env_mut().assign_match_var(updated);
+        if let Some(topic) = self.frame_match_topic(code) {
+            topic.set_match_ast_in_place(value);
         }
     }
 }

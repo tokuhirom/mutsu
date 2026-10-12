@@ -17,7 +17,8 @@
 //! accessors (`match_view.rs`) answer scalar reads (`.from`, `.Str`, `.made`,
 //! ...) straight from the `CapNode` without forcing. Post-hoc attribute
 //! writes (`match_with_attrs*`) force and rebuild a plain eager Instance,
-//! same as before.
+//! same as before -- except `.made`, which `make` writes in place into the
+//! capture node's shared cell (#12954).
 
 use super::*;
 use crate::value::regex_caps::{
@@ -116,6 +117,17 @@ impl MatchNode {
             .is_none_or(|attrs| attrs.class_name() == cursor_class_symbol(&self.target))
     }
 
+    /// `make`: write the capture node's shared `.made` cell, and mirror it
+    /// into the memoized attribute map when this node is already forced, so
+    /// both read paths of `.made` agree (#12954).
+    // Cost: O(1) expected.
+    pub(in crate::value) fn set_made(&self, made: Value) {
+        self.cap.made.set(made.clone());
+        if let Some(attrs) = self.attrs.get() {
+            attrs.insert("ast", made);
+        }
+    }
+
     /// Sever the memoized `Gc` edge (cycle-collector reclaim).
     pub(in crate::value) fn take_attrs_for_gc(&mut self) {
         let _ = self.attrs.take();
@@ -138,7 +150,7 @@ impl MatchNode {
             "from" => Some(Value::Int(self.cap.from as i64)),
             "to" => Some(Value::Int(self.cap.to as i64)),
             "orig" => Some(Value::str_arc(Arc::clone(self.target.text()))),
-            "ast" => self.cap.ast.clone(),
+            "ast" => self.cap.made.get(),
             "sym_variant" => self.cap.sym.map(|s| Value::str(s.resolve())),
             "action_name" => self.cap.action_name.map(|s| Value::str(s.resolve())),
             // Post-hoc attributes exist only on REBUILT eager Matches (the
@@ -218,9 +230,10 @@ impl MatchNode {
         if let Some(action_name) = &cap.action_name {
             attrs.insert("action_name", Value::str(action_name.resolve()));
         }
-        // Inline `{ make … }` value produced by this subrule at reduce time.
-        if let Some(ast) = &cap.ast {
-            attrs.insert("ast", ast.clone());
+        // This node's `.made`: an inline `{ make … }` from reduce time, or a
+        // grammar action's `make` that already ran.
+        if let Some(ast) = cap.made.get() {
+            attrs.insert("ast", ast);
         }
         // Per-match `:my $*x` values, re-installed around this node's action
         // by the grammar action walk.
@@ -394,21 +407,6 @@ impl Value {
             }
             None => false,
         }
-    }
-
-    /// For a still-lazy Match: a fresh lazy Match carrying `ast` (a `make`
-    /// from a grammar action), sharing the subject and cloning the capture
-    /// node. `None` when `self` is eager or already materialized — callers
-    /// fall back to the eager rebuild. Used by the action walk's leaf fast
-    /// path, where the clone is a childless node (cheap).
-    pub(crate) fn match_with_ast_lazy(&self, ast: Value) -> Option<Value> {
-        let node = self.0.as_match_node()?;
-        if node.forced().is_some() {
-            return None;
-        }
-        let mut cap = (*node.cap).clone();
-        cap.ast = Some(ast);
-        Some(Value::lazy_match(Arc::new(cap), node.target.clone()))
     }
 
     /// A just-built lazy Match whose cursor ended at `pos` although a `)>`

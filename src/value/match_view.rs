@@ -375,11 +375,20 @@ impl Value {
         }
     }
 
-    /// Set `.made` on an already-materialized Match cursor. An action can
-    /// retain its `$/` cursor before calling `make`; both the retained cursor
-    /// and the parse tree must then observe the same AST.
+    /// `make`: store `made` as this Match's `.made`, in place. In rakudo
+    /// `make` writes the one cursor object, so every holder of this Match --
+    /// an action that kept its `$/`, a code block that kept `$<num>` in
+    /// mid-parse, the finished parse tree -- observes it (#12954). A lazy
+    /// Match writes its capture node's shared `.made` cell (without forcing
+    /// the materialization) and mirrors it into the memoized attribute map
+    /// when one exists; an eager Match writes its attribute map. Returns
+    /// whether `self` is a Match.
     // Cost: O(1) expected for the attribute write.
     pub(crate) fn set_match_ast_in_place(&self, ast: Value) -> bool {
+        if let Some(node) = self.0.as_match_node() {
+            node.set_made(ast);
+            return true;
+        }
         if !self.is_match_instance() {
             return false;
         }
@@ -416,11 +425,6 @@ impl Value {
             }
             _ => None,
         }
-    }
-
-    /// A Match with `.ast` set, preserving the instance identity (`Match.make`).
-    pub(crate) fn match_with_ast_keeping_id(&self, ast: Value) -> Option<Value> {
-        self.match_with_attrs_keeping_id(vec![("ast", ast)])
     }
 }
 
