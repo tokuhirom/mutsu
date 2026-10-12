@@ -191,3 +191,19 @@ pub(crate) fn is_lazy_tail_target(target: &Value) -> bool {
         _ => false,
     }
 }
+
+/// `.first` with no matcher: the first element of the invocant's list, `Nil`
+/// when there is none. A user-class instance is its own one-element list.
+// Cost: O(1) on an Array, a List or a reified Seq; O(e) otherwise, e =
+// elements of the invocant.
+pub(crate) fn first_one(target: &Value) -> Value {
+    match target.view() {
+        ValueView::Instance { class_name, .. } if user_instance(class_name) => target.clone(),
+        ValueView::Array(items, ..) => items.first().cloned().unwrap_or(Value::NIL),
+        // A role mixed into a list (`(1, 2) but R`) lists as what it wraps.
+        ValueView::Mixin(inner, _) => first_one(inner),
+        _ => runtime::with_receiver_items(target, |items| {
+            items.first().cloned().unwrap_or(Value::NIL)
+        }),
+    }
+}
