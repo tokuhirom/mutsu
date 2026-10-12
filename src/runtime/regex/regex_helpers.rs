@@ -350,9 +350,9 @@ impl ReducedSubruleLog {
     /// `surviving` holds the spans of the successful tree's nodes: a reduction
     /// whose span no surviving node has was inside a failed alternative (the
     /// caller backtracked past it entirely), and Raku preserved its action too.
-    pub(crate) fn into_repeated_entries<'a>(
+    pub(crate) fn into_repeated_entries(
         self,
-        surviving: impl FnOnce() -> crate::value::regex_caps::SurvivingSpans<'a>,
+        surviving: impl FnOnce() -> crate::value::regex_caps::SurvivingSpans,
     ) -> Vec<(String, std::sync::Arc<CapNode>)> {
         let entries = self.entries;
         if entries.is_empty() {
@@ -369,7 +369,7 @@ impl ReducedSubruleLog {
             .enumerate()
             .map(|(index, (rule, caps))| {
                 last.get(&(*rule, caps.from, caps.to)).copied() != Some(index)
-                    || !surviving.contains(&(rule.as_str(), caps.from, caps.to))
+                    || !surviving.contains(&(*rule, caps.from, caps.to))
             })
             .collect();
         entries
@@ -405,7 +405,10 @@ mod reduced_subrule_log_tests {
             ],
             seen: Default::default(),
         };
-        let surviving = [("a", 0, 1), ("b", 0, 1), ("a", 1, 2)].into_iter().collect();
+        let surviving = [("a", 0, 1), ("b", 0, 1), ("a", 1, 2)]
+            .into_iter()
+            .map(|(rule, from, to)| (Symbol::intern(rule), from, to))
+            .collect();
         let repeated = log.into_repeated_entries(|| surviving);
         assert_eq!(repeated.len(), 1);
         assert_eq!(repeated[0].0, "a");
