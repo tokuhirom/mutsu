@@ -2723,10 +2723,15 @@ impl Interpreter {
                 // the one that does.
                 // Write through ContainerRef: update inner value for env-based variables.
                 // Return early to avoid overwriting the ContainerRef in env with a plain value.
-                if !is_rebind && !raw_mode {
+                // None of these write-throughs applies to a fresh declaration:
+                // the cell, the escaped-`our` binding or the sigilless alias they
+                // find by bare name belongs to another binding of the name --
+                // possibly a caller frame's, reached through the dynamic chain
+                // (a caller's `Str $str is rw` parameter aliases `$str` to its
+                // argument's variable, #13007).
+                if !is_rebind && !raw_mode && !fresh_binding_decl {
                     // Check env directly (not through alias resolution to avoid circular lookups)
-                    if !fresh_binding_decl
-                        && !is_attr_twigil
+                    if !is_attr_twigil
                         && let Some(cell_val) = self.env().get(&name).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
@@ -2959,6 +2964,13 @@ impl Interpreter {
                     // `vardecl_context` has already been cleared past by the
                     // time this line runs, hence capturing the flag earlier).
                     self.set_env_with_main_alias_fresh_binding(&name, val.clone());
+                    // The new variable is no other binding's alias either: hide
+                    // an alias the name inherits (a caller's `Str $str is rw`
+                    // parameter's, #13007), so a later by-name store to it stays
+                    // in this binding.
+                    if self.env().contains_key_sym(alias_key) {
+                        self.env_mut().remove_sym(alias_key);
+                    }
                 } else if is_array_hash_attr_twigil
                     && !is_bind_ctx
                     && !is_rebind
@@ -3053,13 +3065,18 @@ impl Interpreter {
                 {
                     loan_env!(self, set_shared_var(&name, val.clone()));
                 }
-                let mut alias_name = self.env().get_sym(alias_key).and_then(|v| {
-                    if let ValueView::Str(name) = v.view() {
-                        Some(name.to_string())
-                    } else {
-                        None
-                    }
-                });
+                // A fresh declaration is no other binding's alias (#13007).
+                let mut alias_name = self
+                    .env()
+                    .get_sym(alias_key)
+                    .filter(|_| !fresh_binding_decl)
+                    .and_then(|v| {
+                        if let ValueView::Str(name) = v.view() {
+                            Some(name.to_string())
+                        } else {
+                            None
+                        }
+                    });
                 let mut seen_aliases = std::collections::HashSet::new();
                 while let Some(current_alias) = alias_name {
                     if !seen_aliases.insert(current_alias.clone()) {
