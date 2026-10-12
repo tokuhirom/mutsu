@@ -167,8 +167,20 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
                 Value::int(0)
             }
         }
+        // An Array's count reads its live range under the container's stripe
+        // (see `Value::truthy`): locating the range unguarded can see another
+        // thread's `shift` torn mid-update (#11210).
+        ValueView::Array(..) => {
+            let _structure =
+                crate::value::container_lock::ContainerStructGuard::acquire_for(None, &val);
+            Value::int(val.as_list_items().map_or(0, |items| items.len()) as i64)
+        }
         _ if val.as_list_items().is_some() => Value::int(val.as_list_items().unwrap().len() as i64),
-        ValueView::Hash(items) => Value::int(items.len() as i64),
+        ValueView::Hash(items) => {
+            let _structure =
+                crate::value::container_lock::ContainerStructGuard::acquire_for(None, &val);
+            Value::int(items.len() as i64)
+        }
         ValueView::Set(items, _) => Value::int(items.len() as i64),
         ValueView::Bag(items, _) => Value::from_bigint(items.values().sum::<BigInt>()),
         ValueView::Mix(items, _) => {

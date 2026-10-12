@@ -628,24 +628,6 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         // This aggregate handler is also the Any method-table row.
         // Cost: O(e), e = elements, plus the digit growth of the running total.
         "sum" => crate::builtins::method_table::list_aggregate::sum(target, &[]),
-        // Squish needs WHICH identity, which can dispatch user methods, so it
-        // stays on its existing guarded interpreter route.
-        // Cost: O(e + t), e = elements, t = total chars stringified.
-        "squish" => match target.view() {
-            ValueView::Array(items, ..) => {
-                let mut result = Vec::new();
-                let mut last: Option<String> = None;
-                for item in items.iter() {
-                    let s = item.to_string_value();
-                    if last.as_ref() != Some(&s) {
-                        last = Some(s);
-                        result.push(item.clone());
-                    }
-                }
-                Some(Ok(Value::seq(result)))
-            }
-            _ => None,
-        },
         // Cost: O(e) to snapshot the receiver, then O(e) per permutation pulled.
         "permutations" => crate::builtins::method_table::list_aggregate::permutations(target, &[]),
         // Cost: O(e) to snapshot the receiver, then O(k) per combination pulled.

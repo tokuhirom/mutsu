@@ -63,8 +63,21 @@ impl Value {
             ValueView::RangeExclStart(_, _) => true,
             ValueView::RangeExclBoth(_, _) => true,
             ValueView::GenericRange { .. } => true,
-            ValueView::Array(items, ..) => !items.is_empty(),
-            ValueView::Hash(items) => !items.is_empty(),
+            // Emptiness reads the container's live range, which another
+            // thread's `push`/`shift` rewrites under the container's stripe;
+            // take it too (a leaf read), or the range can be seen torn
+            // mid-update (#11210). One relaxed load until a second mutator
+            // thread exists.
+            ValueView::Array(items, ..) => {
+                let _structure =
+                    super::container_lock::ContainerStructGuard::acquire_for(None, self);
+                !items.is_empty()
+            }
+            ValueView::Hash(items) => {
+                let _structure =
+                    super::container_lock::ContainerStructGuard::acquire_for(None, self);
+                !items.is_empty()
+            }
             ValueView::Rat(n, _) => n != 0,
             ValueView::FatRat(n, _) => n != 0,
             ValueView::BigRat(n, _) => !n.is_zero(),

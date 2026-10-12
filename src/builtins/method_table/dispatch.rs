@@ -564,7 +564,7 @@ fn debug_assert_matches_full_path(
         }
         let slow = match args {
             [] => super::super::methods_0arg::native_method_0arg_cascade(target, method),
-            [a] => super::super::native_method_1arg(target, method, a),
+            [a] => super::super::native_method_1arg_without_table(target, method, a),
             [a, b] => super::super::native_method_2arg(target, method, a, b),
             _ => return,
         };

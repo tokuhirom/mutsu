@@ -1690,6 +1690,13 @@ pub(crate) struct Compiler {
     /// lexical block like `constant_vars_in_scope`, and handed to nested
     /// closure compilers by `inherit_enclosing_scopes`.
     lexical_type_shadows: std::collections::HashSet<String>,
+    /// Bare names of the lexical types (`my class`/`my role`/`my grammar`)
+    /// declared in this scope or an enclosing one. A method body's compiler
+    /// reads them through `lexical_type_shadows`, so a method names such a
+    /// type through its declaration-time capture rather than whatever its
+    /// caller's env chain holds (#13014). Same lifecycle as
+    /// `lexical_type_shadows`.
+    lexical_types_in_scope: std::collections::HashSet<String>,
     /// Constants declared in the *current* lexical block only (reset on block
     /// entry). Declaring the same constant twice in one block is an
     /// X::Redeclaration; a shadowing declaration in an inner block is allowed.
@@ -2048,6 +2055,7 @@ impl Compiler {
             readonly_scalar_params: std::collections::HashSet::new(),
             constant_vars_in_scope: std::collections::HashSet::new(),
             lexical_type_shadows: std::collections::HashSet::new(),
+            lexical_types_in_scope: std::collections::HashSet::new(),
             constant_vars_current_scope: std::collections::HashSet::new(),
             my_vars_current_scope: std::collections::HashSet::new(),
             class_names_current_scope: std::collections::HashSet::new(),
@@ -2650,6 +2658,8 @@ impl Compiler {
         sub.code.lexical_use_modules = self.code.lexical_use_modules.clone();
         sub.lexical_type_shadows
             .extend(self.lexical_type_shadows.iter().cloned());
+        sub.lexical_types_in_scope
+            .extend(self.lexical_types_in_scope.iter().cloned());
     }
 
     /// Record a named sub declared in this scope in
