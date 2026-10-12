@@ -520,6 +520,10 @@ pub(crate) struct Registry {
     /// must not run it again, while each distinct consuming class remains its
     /// own composition.
     pub(crate) composed_role_bodies: HashSet<String>,
+    /// `decl_id`s of nested class declarations whose compile-time shell has
+    /// already dispatched the declaration's `trait_mod:<is>` traits (#12708);
+    /// the in-place registration of the same declaration must not repeat them.
+    pub(crate) nested_shell_traits_applied: HashSet<u64>,
     /// Bound role type parameters per class: class -> (param name -> value).
     pub(crate) class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
     /// Anonymous type-object identity cache for a role-mixed value's `.WHAT`

@@ -792,8 +792,19 @@ impl Interpreter {
             // Dispatch custom `is` traits via trait_mod:<is> if defined.
             // Merge explicitly parsed custom_traits with deferred_traits
             // (unknown lowercase parents deferred from register_class_decl).
-            let has_trait_mod =
-                self.has_proto("trait_mod:<is>") || self.has_multi_candidates("trait_mod:<is>");
+            //
+            // A nested declaration's shell (`HoistedShell::Nested`) already ran
+            // them at compile time, once (#12708); the in-place registration,
+            // repeated on every entry of the enclosing code, must not.
+            let traits_ran_in_shell = !is_hoisted_shell
+                && *decl_id != 0
+                && self
+                    .registry()
+                    .nested_shell_traits_applied
+                    .contains(decl_id);
+            let has_trait_mod = !traits_ran_in_shell
+                && (self.has_proto("trait_mod:<is>")
+                    || self.has_multi_candidates("trait_mod:<is>"));
             if has_trait_mod && (!custom_traits.is_empty() || !deferred_traits.is_empty()) {
                 let type_obj = Value::package(Symbol::intern(&storage_name));
                 // Dispatch explicitly parsed custom traits (with args)
@@ -832,11 +843,12 @@ impl Interpreter {
                 // variable-/attribute-trait no-candidate fallback).
                 // A hoisted shell carries the header's parents but not its
                 // traits; the real declaration dispatches them, once.
-                let deferred_traits: &[String] = if is_hoisted_shell {
-                    &[]
-                } else {
-                    &deferred_traits
-                };
+                let deferred_traits: &[String] =
+                    if hoisted_shell == crate::runtime::HoistedShell::Forward {
+                        &[]
+                    } else {
+                        &deferred_traits
+                    };
                 for trait_name in deferred_traits {
                     let spelling = parent_spelling(custom_traits, trait_name).unwrap_or(trait_name);
                     let named_arg = Value::pair(spelling.to_string(), Value::TRUE);
@@ -871,6 +883,12 @@ impl Interpreter {
                         self.vm_call_function("trait_mod:<is>", call_args)?;
                     }
                 }
+            }
+
+            if hoisted_shell == crate::runtime::HoistedShell::Nested && *decl_id != 0 {
+                self.registry_mut()
+                    .nested_shell_traits_applied
+                    .insert(*decl_id);
             }
 
             // A class trait that mixed a role with a `compose` method into the
