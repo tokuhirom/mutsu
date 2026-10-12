@@ -52,7 +52,6 @@ plan 21;
 {
     my &c = do { my sub bar() { 'closure outer' }; -> { bar() } };
     sub bar() { 'global bar' }
-    todo 'ADR-12529 phase 2: routine names bind lexically';
     is c(), 'closure outer', 'a closure keeps calling the `my sub` of the scope it closed over';
 }
 
