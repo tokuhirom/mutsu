@@ -338,7 +338,9 @@ pub(crate) struct ModuleState {
     /// opposite problem: an ordinary (non-loading) routine call never
     /// updates it, so consulting it OUTSIDE a load would misattribute to
     /// whichever compunit happened to load last. This stack is unambiguous
-    /// exactly because `load_module_inner` is the only writer.
+    /// exactly because its only writers are `load_module_inner` and a role's
+    /// deferred body run (`enter_source_file`), which is that role's
+    /// compunit's mainline code re-run from the composing scope.
     pub(crate) module_loading_unit_stack: Vec<(Symbol, usize)>,
     /// Exports each module registered while it was the module currently being
     /// loaded (attributed via `module_load_stack`), mapping module -> name ->
