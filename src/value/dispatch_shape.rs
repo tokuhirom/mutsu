@@ -374,7 +374,7 @@ const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 49] = [
 
 /// The `Cool` text methods a `Range`, `Seq` or `IO::Path` reaches
 /// ([`DispatchShape::reaches_audited_cool`]).
-const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
+pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
     "words",
     "codes",
     "lines",

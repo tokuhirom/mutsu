@@ -1639,9 +1639,15 @@ mod tests {
                 "IO::Path" => &path_sample,
                 "IO::Handle" => {
                     let mut h = crate::runtime::Interpreter::new();
-                    h.run(r#"my $e11-vfh = "tmp/e11_verify_handle.txt".IO.open(:w);"#)
+                    // `tmp/` is not checked in: without it `open` answers a
+                    // `Failure`, which no row backs.
+                    h.run(r#"mkdir "tmp"; my $e11-vfh = "tmp/e11_verify_handle.txt".IO.open(:w);"#)
                         .unwrap();
                     let fh = h.env().get("e11-vfh").cloned().unwrap();
+                    assert!(
+                        matches!(fh.view(), crate::value::ValueView::Instance { class_name, .. } if class_name == "IO::Handle"),
+                        "the IO::Handle sample did not open"
+                    );
                     assert_row_backed(row_owner, name, arity, flags, &fh);
                     continue;
                 }

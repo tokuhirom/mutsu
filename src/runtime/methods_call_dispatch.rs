@@ -3192,7 +3192,14 @@ impl Interpreter {
                 Some(result)
             } else {
                 match cascade_args {
-                    [] => crate::builtins::native_method_0arg(&target, method_sym),
+                    [] => crate::builtins::native_method_0arg(&target, method_sym).or_else(|| {
+                        crate::builtins::method_table::answer_shapeless(
+                            Some(self),
+                            &target,
+                            method_sym,
+                            &[],
+                        )
+                    }),
                     [a] => crate::builtins::native_method_1arg(&target, method_sym, a),
                     [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b),
                     _ => None,

@@ -1573,7 +1573,12 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         )));
     }
 
-    dispatch_core_families(target, method)
+    // A receiver with no shape that is a `Cool` reaches `Cool`'s text rows
+    // once the cascade declined it (ADR-11276 §9.79); an instance needs the
+    // interpreter's MRO and is answered by the entries that have one.
+    dispatch_core_families(target, method).or_else(|| {
+        crate::builtins::method_table::answer_shapeless(None, target, Symbol::intern(method), &[])
+    })
 }
 
 /// The eight method families [`dispatch_core`] ends in, without the

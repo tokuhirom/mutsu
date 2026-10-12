@@ -1696,8 +1696,12 @@ taken when a receiver has no shape:
    reserved attributes). The methods about the instance itself (`WHAT`, `raku`, `gist`, `Str`, `clone`, ...) and the coercers that answer
    `self` (`MyInt.new(5).Int`) are not redirected. A plain user class has no payload and keeps `X::Method::NotFound`.
 2. **Shapeless `Cool`.** An enum value, a `Seq`/`Slip`/`LazyList` without a settled shape, and an instance whose MRO reaches `Cool` before
-   any built-in class that declares the method reach `Cool`'s own row, themselves as invocant (`is_shapeless_cool`). An instance is asked of
-   the interpreter's MRO, so a pure entry declines it; `class MyPath is IO::Path` keeps reaching `IO::Path.lines` by its owner.
+   any built-in class that declares the method reach `Cool`'s own row, themselves as invocant (`method_table::answer_shapeless`). This step
+   runs *after* the cascades and answers only the audited text names, because a receiver-specific answer in the cascade or the slow path
+   comes first: an enum's `sign`, and a `class NotComplex is Cool` whose own `Numeric` the trig methods must call (`roast/S32-trig`,
+   `roast/S32-num/cool-num.t`; a first cut that resolved every `Cool` row in front of the cascade broke both). An instance is asked of the
+   interpreter's MRO (the VM's `try_native_method_raw` and `call_method_with_values` pass it), so the pure entry declines it;
+   `class MyPath is IO::Path` keeps reaching `IO::Path.lines` by its owner, and a `Failure` is never answered.
 3. **Closed shapes.** `Range`, `Seq` and `IO::Path` reach an audited list of `Cool`'s text rows (`COOL_TEXT_FOR_CLOSED_SHAPES`:
    `words`, `codes`, `lines`, `trim*`, `flip`, `chomp`, `chop`, `comb`, `fmt`, the case maps, `encode`, the normalization forms and the
    per-codepoint Unicode methods), the way §9.16 opened their numeric rows. `IO::Path`'s own `lines`, `words` and `comb` come first in its MRO.

@@ -720,7 +720,16 @@ impl Interpreter {
             // the table for this very receiver and method before calling here,
             // and a row it would answer from but the lever-A gate above refused
             // must not answer here either.
-            crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym)
+            crate::builtins::methods_0arg::native_method_0arg_cascade(target, method_sym).or_else(
+                || {
+                    crate::builtins::method_table::answer_shapeless(
+                        Some(self),
+                        target,
+                        method_sym,
+                        &[],
+                    )
+                },
+            )
         } else {
             return None;
         };

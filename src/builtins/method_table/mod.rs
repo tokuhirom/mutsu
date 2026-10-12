@@ -84,8 +84,8 @@ pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
 #[cfg(test)]
 pub(crate) use dispatch::try_dispatch;
 pub(crate) use dispatch::{
-    admits, answer, invoke, invoke_base, invoke_in, invoke_mut, invoke_owner, invoke_owner_raw,
-    try_dispatch_in,
+    admits, answer, answer_shapeless, invoke, invoke_base, invoke_in, invoke_mut, invoke_owner,
+    invoke_owner_raw, try_dispatch_in,
 };
 pub(crate) use mutating::buf::by_value as buf_by_value;
 pub(crate) use mutating::owners_of as mut_owners_of;
