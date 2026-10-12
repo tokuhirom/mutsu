@@ -52,6 +52,9 @@ pub(super) struct Frame {
     pub(super) entry_pos: usize,
     /// The call's `Named` atom, in the caller's program.
     pub(super) site: u32,
+    /// The rule a symbolic call (`<::(EXPR)>`) computed its name to be, which
+    /// the return files the callee's Match under instead of the site's atom.
+    pub(super) called: Option<Rc<crate::runtime::regex_types::NamedAtom>>,
     /// The call's token is ratcheted: the first end is the only one.
     pub(super) commit: bool,
     /// The backtrack-stack height when the call was made.
@@ -119,6 +122,8 @@ pub(super) struct ProtoChoice {
     pub(super) pc: u32,
     pub(super) pos: usize,
     pub(super) atom: u32,
+    /// The computed name of a symbolic call ([`Frame::called`]).
+    pub(super) called: Option<Rc<crate::runtime::regex_types::NamedAtom>>,
     pub(super) cands: Arc<TokenCandidates>,
     pub(super) ranked: Rc<[usize]>,
     pub(super) next: usize,

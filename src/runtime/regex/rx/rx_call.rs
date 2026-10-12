@@ -83,9 +83,6 @@ pub(super) enum CallTarget {
     /// does not, the candidates are evaluated eagerly as for
     /// [`CallTarget::Eager`], with left-recursion bookkeeping forced.
     CustomHow(Arc<TokenCandidates>),
-    /// `<::(EXPR)>`: the rule's name is computed where the call is reached,
-    /// then the call is evaluated eagerly (`rx_symbolic_call_ends`).
-    Symbolic,
 }
 
 impl Interpreter {
@@ -116,14 +113,6 @@ impl Interpreter {
         caps: &crate::runtime::regex_types::RegexCaptures,
     ) -> Option<ResolvedCall> {
         let spec = name.spec();
-        // `<::(EXPR)>`: its single argument is the name, evaluated by the call.
-        if spec.lookup_name == "::" {
-            return Some(ResolvedCall {
-                verdict: CallTarget::Symbolic,
-                args: None,
-                window: None,
-            });
-        }
         let args = if spec.arg_exprs.is_empty() {
             None
         } else {

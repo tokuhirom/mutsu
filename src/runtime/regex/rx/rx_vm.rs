@@ -189,7 +189,8 @@ impl Interpreter {
         // and a frame that returns to `$ret_pc` in the caller.
         macro_rules! enter_frame {
             ($callee:expr, $callee_pkg:expr, $atom:expr, $entry:expr, $ret_pc:expr,
-             $commit:expr, $stack_base:expr, $proto:expr, $window:expr, $interp:expr) => {{
+             $commit:expr, $stack_base:expr, $proto:expr, $window:expr, $interp:expr,
+             $called:expr) => {{
                 let callee: Arc<RxProgram> = $callee;
                 let callee_pkg: Symbol = $callee_pkg;
                 let entry: usize = $entry;
@@ -212,6 +213,7 @@ impl Interpreter {
                     ret_pc: $ret_pc,
                     entry_pos: entry,
                     site: $atom,
+                    called: $called,
                     commit: $commit,
                     stack_base: $stack_base,
                     journal_base,
@@ -404,7 +406,8 @@ impl Interpreter {
                                         stack_base,
                                         None,
                                         None,
-                                        true
+                                        true,
+                                        None
                                     );
                                     continue 'run;
                                 }
@@ -463,15 +466,27 @@ impl Interpreter {
                     // the first call in a frame that runs a grammar method also creates
                     // the frame's cursor, O(a), a = the grammar's attributes.
                     // The callee's own ops state their costs.
-                    RxOp::Call { atom, commit } => {
+                    RxOp::Call { atom, commit } => 'call: {
                         if !FRAMES {
                             debug_assert!(false, "a program without frames has no Call op");
                             break 'run None;
                         }
-                        let RegexAtom::Named(name) = &program.atoms[atom as usize] else {
+                        let RegexAtom::Named(declared) = &program.atoms[atom as usize] else {
                             debug_assert!(false, "a Call op names a `<subrule>` atom");
                             break 'run None;
                         };
+                        // `<::(EXPR)>` names its rule where the cursor reaches the
+                        // call; from here the call is one of that rule, a frame
+                        // like any other, filed under the computed name.
+                        let called = if declared.spec().lookup_name == "::" {
+                            match self.rx_symbolic_called(declared, levels.top().caps()) {
+                                Some(called) => Some(Rc::new(called)),
+                                None => break 'call false,
+                            }
+                        } else {
+                            None
+                        };
+                        let name: &crate::runtime::regex_types::NamedAtom = called.as_deref().unwrap_or(declared);
                         let ic = program.atom_ic[atom as usize];
                         // `None`: an argument failed to evaluate, so no match.
                         match self.rx_call_resolve(name, pkg, ic, levels.top().caps()) {
@@ -503,8 +518,16 @@ impl Interpreter {
                                     target @ (CallTarget::Eager(..)
                                     | CallTarget::Wrapped
                                     | CallTarget::CustomHow(_)) => {
+                                        let computed;
+                                        let site_atom = match &called {
+                                            Some(called) => {
+                                                computed = RegexAtom::Named((**called).clone());
+                                                &computed
+                                            }
+                                            None => &program.atoms[atom as usize],
+                                        };
                                         let mut ends = self.rx_eager_call_ends(
-                                            &program.atoms[atom as usize],
+                                            site_atom,
                                             &target,
                                             lr_window,
                                             call_args.as_deref().unwrap_or(&[]),
@@ -538,7 +561,8 @@ impl Interpreter {
                                                 stack_base,
                                                 None,
                                                 window,
-                                                false
+                                                false,
+                                                called.clone()
                                             );
                                             continue 'run;
                                         }
@@ -573,6 +597,7 @@ impl Interpreter {
                                                             pc: pc + 1,
                                                             pos,
                                                             atom,
+                                                            called: called.clone(),
                                                             cands: Arc::clone(&cands),
                                                             ranked: Rc::from(&proto_rank[..]),
                                                             next: 1,
@@ -600,32 +625,12 @@ impl Interpreter {
                                                     stack_base,
                                                     Some((Arc::clone(&cands), first)),
                                                     window,
-                                                    false
+                                                    false,
+                                                    called.clone()
                                                 );
                                                 continue 'run;
                                             }
                                         }
-                                    }
-                                    CallTarget::Symbolic => {
-                                        crate::vm::vm_stats_regex_vm::record_regex_eager(
-                                            "symbolic-name",
-                                        );
-                                        let slot = frame
-                                            .map_or(&root_cursor, |f| &frames[f as usize].cursor);
-                                        let mut ends = self.rx_symbolic_call_ends(
-                                            name,
-                                            chars,
-                                            pos,
-                                            levels.top().caps(),
-                                            pkg,
-                                            |interp| interp.rx_cursor_of(slot, chars, pos, pkg),
-                                            (commit, ic),
-                                        );
-                                        if commit && ends.len() > 1 {
-                                            ends.drain(..ends.len() - 1);
-                                        }
-                                        pc += 1;
-                                        enter_cands!(ends)
                                     }
                                     CallTarget::Single => {
                                         pc += 1;
@@ -998,7 +1003,7 @@ impl Interpreter {
                                     // its level goes with the frame.
                                     drop(inner);
                                 } else {
-                                    let RegexAtom::Named(name) = &caller.atoms[f.site as usize]
+                                    let RegexAtom::Named(site_name) = &caller.atoms[f.site as usize]
                                     else {
                                         debug_assert!(
                                             false,
@@ -1006,6 +1011,7 @@ impl Interpreter {
                                         );
                                         break 'run None;
                                     };
+                                    let name = f.called.as_deref().unwrap_or(site_name);
                                     // Filed straight into the caller's level, which
                                     // the close above made the innermost one again.
                                     let entry_pos = f.entry_pos;
@@ -1101,6 +1107,7 @@ impl Interpreter {
                                 pc,
                                 pos,
                                 atom,
+                                called,
                                 cands,
                                 ranked,
                                 next,
@@ -1116,6 +1123,7 @@ impl Interpreter {
                                     pc,
                                     pos,
                                     atom,
+                                    called: called.clone(),
                                     cands: Arc::clone(&cands),
                                     ranked: Rc::clone(&ranked),
                                     next: next + 1,
@@ -1124,8 +1132,9 @@ impl Interpreter {
                                     commit,
                                 })));
                             }
-                            enter_proto =
-                                Some((atom, pos, pc, cands, idx, stack_base, window, commit));
+                            enter_proto = Some((
+                                atom, pos, pc, cands, idx, stack_base, window, commit, called,
+                            ));
                             (pc, pos, mark)
                         }
                         Choice::Run {
@@ -1211,7 +1220,7 @@ impl Interpreter {
                         }
                         frame = target_frame;
                         match enter_proto {
-                            Some((atom, entry, ret_pc, cands, idx, stack_base, window, commit)) => {
+                            Some((atom, entry, ret_pc, cands, idx, stack_base, window, commit, called)) => {
                                 let (parsed, sub_pkg, _) = &cands[idx];
                                 let Some(callee) = program_for(parsed) else {
                                     debug_assert!(false, "a proto's candidates compile");
@@ -1227,7 +1236,8 @@ impl Interpreter {
                                     stack_base,
                                     Some((Arc::clone(&cands), idx)),
                                     window,
-                                    false
+                                    false,
+                                    called
                                 );
                             }
                             None => {
@@ -1238,7 +1248,7 @@ impl Interpreter {
                         continue 'run;
                     }
                     match enter_proto {
-                        Some((atom, entry, ret_pc, cands, idx, stack_base, window, commit)) => {
+                        Some((atom, entry, ret_pc, cands, idx, stack_base, window, commit, called)) => {
                             let (parsed, sub_pkg, _) = &cands[idx];
                             let Some(callee) = program_for(parsed) else {
                                 debug_assert!(false, "a proto's candidates compile");
@@ -1254,7 +1264,8 @@ impl Interpreter {
                                 stack_base,
                                 Some((Arc::clone(&cands), idx)),
                                 window,
-                                false
+                                false,
+                                called
                             );
                             continue 'run;
                         }
