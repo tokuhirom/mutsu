@@ -168,7 +168,7 @@ pub(super) fn roll_n(target: &Value, arg: &Value) -> Option<Result<Value, Runtim
             if hi <= lo {
                 return Value::int(lo);
             }
-            crate::builtins::methods_0arg::dispatch_core_range::range_pick_one_i64(lo, hi)
+            super::range::range_pick_one_i64(lo, hi)
         };
         match range.view() {
             ValueView::Range(start, end) => Some(random_i64(start, end)),
@@ -201,7 +201,7 @@ pub(super) fn roll_n(target: &Value, arg: &Value) -> Option<Result<Value, Runtim
             } => {
                 // Try BigInt-based fast path for integer ranges
                 if let Some(result) =
-                    crate::builtins::methods_0arg::dispatch_core_range::generic_range_pick_one(
+                    super::range::generic_range_pick_one(
                         start, end, excl_start, excl_end,
                     )
                 {

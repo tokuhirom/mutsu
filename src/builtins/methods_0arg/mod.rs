@@ -10,7 +10,6 @@ mod dispatch_core_coerce;
 mod dispatch_core_list;
 pub(crate) mod dispatch_core_math;
 mod dispatch_core_numeric;
-pub(crate) mod dispatch_core_range;
 mod dispatch_core_repr;
 mod dispatch_core_unicode;
 pub(crate) mod which;
@@ -1611,7 +1610,6 @@ fn dispatch_core_families(target: &Value, method: &str) -> Option<Result<Value, 
     try_dispatch!(dispatch_core_numeric);
     try_dispatch!(dispatch_core_list);
     try_dispatch!(dispatch_core_repr);
-    try_dispatch!(dispatch_core_range);
     try_dispatch!(dispatch_core_math);
 
     None

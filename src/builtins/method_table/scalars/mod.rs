@@ -94,6 +94,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     capture_none::ROWS,
     blob::ROWS,
     blob::COERCE_ROWS,
+    blob::OF_ROWS,
     blob_decode::ROWS,
     blob_read::READ_ROWS,
     blob_read::SUBBUF_ROWS,

@@ -12,7 +12,7 @@
 
 mod pick;
 mod pickpairs;
-mod range;
+pub(crate) mod range;
 mod roll;
 
 use crate::builtins::rng::builtin_rand;

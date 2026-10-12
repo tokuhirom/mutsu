@@ -140,8 +140,20 @@ impl Interpreter {
     pub(crate) fn tag_container_metadata(
         &mut self,
         mut value: Value,
-        info: ContainerTypeInfo,
+        mut info: ContainerTypeInfo,
     ) -> Value {
+        // A quant hash's declared type is its own parameterization
+        // (`BagHash[Int]`, read by `QuantHash.keyof`), set by its constructor or
+        // its `is` trait. The variable-constraint registration that follows an
+        // `is BagHash[Int]` trait names no declared type and must not erase it.
+        if info.declared_type.is_none() {
+            info.declared_type = match value.view() {
+                ValueView::Set(data, _) => data.declared_type.clone(),
+                ValueView::Bag(data, _) => data.declared_type.clone(),
+                ValueView::Mix(data, _) => data.declared_type.clone(),
+                _ => None,
+            };
+        }
         // Skip the copy-on-write clone when the metadata is already present.
         // `Arc::make_mut` on a shared container clones the backing data, which
         // changes the container's identity (`.WHICH` is pointer-based) — so a

@@ -87,12 +87,6 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("BagHash", "default", default),
     row!("Mix", "default", default),
     row!("MixHash", "default", default),
-    row!("Set", "of", of),
-    row!("SetHash", "of", of),
-    row!("Bag", "of", of),
-    row!("BagHash", "of", of),
-    row!("Mix", "of", of),
-    row!("MixHash", "of", of),
     row!("Set", "list", list),
     row!("SetHash", "list", list),
     row!("Bag", "list", list),
@@ -273,18 +267,6 @@ pub(crate) fn default(target: &Value, _args: &[Value]) -> Option<Result<Value, R
         ValueView::Bag(..) | ValueView::Mix(..) => Value::int(0),
         _ => return None,
     }))
-}
-
-/// `.of`: the type of the values (`Bool`, `UInt`, `Real`).
-// Cost: O(1).
-pub(crate) fn of(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    let name = match target.view() {
-        ValueView::Set(..) => "Bool",
-        ValueView::Bag(..) => "UInt",
-        ValueView::Mix(..) => "Real",
-        _ => return None,
-    };
-    Some(Ok(Value::package(crate::symbol::Symbol::intern(name))))
 }
 
 /// `.hash`: the Hash `.Hash` makes, one implementation with the hyper ops.

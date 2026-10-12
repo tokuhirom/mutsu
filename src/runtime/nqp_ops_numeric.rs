@@ -137,7 +137,7 @@ pub(super) fn call_nqp_numeric_op(op: &str, args: &[Value]) -> Option<Result<Val
                 )));
             }
             Ok(Value::from_bigint(
-                builtins::methods_0arg::dispatch_core_range::random_bigint_in_range(&max),
+                builtins::sampling::range::random_bigint_in_range(&max),
             ))
         }
         // Seeds the generator and answers the seed.

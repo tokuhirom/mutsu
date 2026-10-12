@@ -110,26 +110,6 @@ impl Interpreter {
             self.env.insert(target_var.to_string(), updated);
             return Ok(current);
         }
-        // .keyof on Mix/Set/Bag variables: check type constraint for parameterized type
-        if method == "keyof"
-            && args.is_empty()
-            && matches!(
-                target.view(),
-                ValueView::Mix(_, _) | ValueView::Set(_, _) | ValueView::Bag(_, _)
-            )
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmutwithvalues",
-                "keyof",
-            );
-            if let Some(constraint) = self.var_type_constraint(target_var)
-                && let Some(bracket_pos) = constraint.find('[')
-            {
-                let param = &constraint[bracket_pos + 1..constraint.len() - 1];
-                return Ok(Value::package(Symbol::intern(param)));
-            }
-            return Ok(Value::package(Symbol::intern("Mu")));
-        }
         if method == "VAR" && args.is_empty() {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmutwithvalues",
@@ -433,25 +413,6 @@ impl Interpreter {
             && !self.mixin_composes_method(&target, "of")
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmutwithvalues", "of");
-            // An `@`/`%` param bound to a parametric TYPE OBJECT
-            // (`sub g(@x) { @x.of }` called with `Positional[Dog]` — the
-            // JSON::Unmarshal attribute-type shape) reads the element type
-            // from the parametric name itself.
-            if let ValueView::Package(name) = target.view() {
-                let n = name.resolve();
-                if let Some(inner) = n
-                    .split_once('[')
-                    .and_then(|(_, rest)| rest.strip_suffix(']'))
-                {
-                    // `ValueType{KeyType}` object-hash form: `.of` is the value
-                    // type only (the key type may contain commas, so split the
-                    // braces before any comma handling).
-                    let (value_type, key) =
-                        crate::runtime::types::split_object_hash_constraint(inner);
-                    let of_type = if key.is_some() { value_type } else { inner };
-                    return Ok(Value::package(Symbol::intern(of_type)));
-                }
-            }
             // `%`/`@` variables route their method calls through this mutable
             // dispatch path. A statically composed container role keeps its
             // type parameter on the class, not in the backing Hash/Array, so

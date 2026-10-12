@@ -368,6 +368,11 @@ pub(crate) fn answer_shapeless(
     method: Symbol,
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
+    if args.is_empty()
+        && let Some(id) = super::collections::type_params::type_object_row(target, method)
+    {
+        return call(row(id), interp, target, args, Named::NONE).map(|(result, _)| result);
+    }
     let id = shapeless_row(interp, target, method, args.len())?;
     call(row(id), None, target, args, Named::NONE).map(|(result, _)| result)
 }

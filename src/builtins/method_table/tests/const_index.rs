@@ -50,14 +50,26 @@ fn legacy() -> Legacy {
         }
     }
     for shape in DispatchShape::ALL {
-        let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_syms(shape.type_name())
+        let Some(mro) = crate::builtin_types::catalog::builtin_type_mro_strs(shape.type_name())
         else {
             continue;
         };
-        for owner in mro.iter() {
-            if !shape.reaches_owner(owner.as_str()) && !shape.may_reach_audited(owner.as_str()) {
-                continue;
+        // Each class, then the roles it composes (ADR-11276 §9.86).
+        let mut owners: Vec<&str> = Vec::new();
+        for (m, &class) in mro.iter().enumerate() {
+            if shape.reaches_owner(class) || shape.may_reach_audited(class) {
+                owners.push(class);
             }
+            for &role in crate::builtin_types::catalog::builtin_type_roles_strs(class) {
+                if shape.reaches_role(role)
+                    && crate::builtin_types::catalog::composes_role_at(mro, m, role)
+                {
+                    owners.push(role);
+                }
+            }
+        }
+        for owner in owners {
+            let owner = Symbol::intern(owner);
             for (idx, row) in all.iter().enumerate() {
                 // A `Mut` row is registered by its owner only (ADR-11276 §9.23).
                 if row.owner != owner.as_str()
