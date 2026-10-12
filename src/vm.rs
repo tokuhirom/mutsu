@@ -175,6 +175,7 @@ mod vm_call_method_ops;
 mod vm_call_method_plain_lane;
 mod vm_call_named;
 mod vm_call_named_inner;
+mod vm_trailing_sub_decl;
 mod vm_call_nqp;
 mod vm_call_resolve;
 pub(crate) mod vm_call_state_guard;
