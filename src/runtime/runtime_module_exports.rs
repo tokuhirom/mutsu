@@ -1359,8 +1359,15 @@ impl Interpreter {
                         .entry(short.clone())
                         .or_insert_with(|| target.clone());
                 }
+                // A built-in type of the same spelling (`Endian`, seeded as a
+                // bare name marker) is no local binding: the exported type
+                // takes the short name over it.
                 if let Some(short) = short_pkg
-                    && self.env.get(&short).is_none()
+                    && self.env.get(&short).is_none_or(|bound| match bound.view() {
+                        ValueView::Package(p) => p.as_str() == short,
+                        ValueView::Str(s) => s.as_str() == short,
+                        _ => false,
+                    })
                 {
                     self.unsuppress_name(&short);
                     // Part of the loading module's own lexical scope too (see

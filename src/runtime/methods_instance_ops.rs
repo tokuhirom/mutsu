@@ -1116,6 +1116,12 @@ impl Interpreter {
                         // The object may arrive wrapped in a Scalar container
                         // (a `$`-bound alias of the instance); read through it.
                         let obj = obj.clone().deref_container();
+                        // A `$obj but Role` mixin keeps the object's attributes
+                        // on the value it wraps.
+                        let obj = match obj.view() {
+                            ValueView::Mixin(inner, _) => Value::clone(inner),
+                            _ => obj.clone(),
+                        };
                         let attr_name = attributes
                             .as_map()
                             .get("__mutsu_attr_name")
@@ -1151,6 +1157,10 @@ impl Interpreter {
                         // object's methods read (a silent no-op here loses e.g.
                         // OO::Monitors' lock installation).
                         let obj = args[0].clone().deref_container();
+                        let obj = match obj.view() {
+                            ValueView::Mixin(inner, _) => Value::clone(inner),
+                            _ => obj.clone(),
+                        };
                         if let ValueView::Instance {
                             attributes: obj_attrs,
                             ..

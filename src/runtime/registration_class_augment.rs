@@ -1512,7 +1512,66 @@ impl Interpreter {
                     .remove(&compose_key);
                 return Err(error);
             }
+            // The ancestor's own lexicals (`my constant`, `my $x`) belong to
+            // the composing type's statics like the direct role's do; the
+            // next role body run must not overwrite them in the env.
+            let mut declared: HashSet<String> = HashSet::new();
+            Self::collect_role_body_declared_names(&ops, &mut declared);
+            self.persist_role_body_lexicals(regex_owner, &declared);
         }
+        Ok(())
+    }
+
+    /// `role R[T] does R { }` composes the group's nullary candidate (`role R
+    /// { }`) as a parent: when a type composes the parameterized candidate
+    /// `composed`, that candidate's body runs, then the nullary one's, as for
+    /// any composed parent role. The group name is not an ancestor in
+    /// [`Self::role_ancestor_names`], so the sibling is handled here.
+    // Cost: O(c + b), c = candidates of the group, b = body statements.
+    pub(crate) fn run_sibling_candidate_body(
+        &mut self,
+        base_role_name: &str,
+        composed: &RoleDef,
+        owner: &str,
+    ) -> Result<(), RuntimeError> {
+        let candidates = self
+            .registry()
+            .role_candidates
+            .get(base_role_name)
+            .cloned()
+            .unwrap_or_default();
+        let composes_sibling = candidates.iter().any(|c| {
+            c.role_def.role_id == composed.role_id
+                && !c.type_params.is_empty()
+                && c.parents.iter().any(|p| p == base_role_name)
+        });
+        if !composes_sibling {
+            return Ok(());
+        }
+        let Some(sibling) = candidates.iter().find(|c| c.type_params.is_empty()) else {
+            return Ok(());
+        };
+        let compose_key = format!("class:{owner}:{base_role_name}#sibling");
+        if !self
+            .registry_mut()
+            .composed_role_bodies
+            .insert(compose_key.clone())
+        {
+            return Ok(());
+        }
+        let decl_file = sibling.role_def.decl_file.clone();
+        if let Err(error) = self.run_role_body_for_composition(
+            base_role_name,
+            owner,
+            &sibling.role_def.deferred_body,
+            decl_file.as_deref(),
+        ) {
+            self.registry_mut().composed_role_bodies.remove(&compose_key);
+            return Err(error);
+        }
+        let mut declared: HashSet<String> = HashSet::new();
+        Self::collect_role_body_declared_names(&sibling.role_def.deferred_body, &mut declared);
+        self.persist_role_body_lexicals(owner, &declared);
         Ok(())
     }
 
