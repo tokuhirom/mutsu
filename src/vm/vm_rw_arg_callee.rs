@@ -42,6 +42,7 @@
 
 use super::*;
 use crate::opcode::{RwArgCallee, RwArgCalleeMark};
+use crate::runtime::rw_arg_container::positional_binds_container_at;
 
 impl Interpreter {
     /// The gate behind [`OpCode::MarkRwArgRefContextCallee`]: does the callee
@@ -114,6 +115,18 @@ impl Interpreter {
                 // `my &g = sub ($x is rw) { ... }; g(@a[0])`.
                 let name = Self::const_str(code, *name_idx);
                 let name_sym = code.const_sym(*name_idx);
+                // A frame-lexical routine (ADR-0113) is in no registry, so
+                // both questions below miss it, and the code-variable
+                // resolution then walked every registered routine's key on
+                // every call (Digest::RIPEMD's `rotl($A[2], 10)`, #11686).
+                // The call handler dispatches such a site to the chunk's own
+                // routine first; ask that routine's signature, as it does.
+                if let Some(def) = self.frame_lexical_call_def(code, name_sym) {
+                    return positional_binds_container_at(
+                        def.param_defs.iter().filter(|p| !p.named),
+                        positional,
+                    );
+                }
                 if let Some(answer) =
                     self.registered_routine_binds_container_at_sym(name, name_sym, positional)
                 {
