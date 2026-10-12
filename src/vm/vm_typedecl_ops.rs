@@ -461,6 +461,13 @@ impl Interpreter {
                     self.registry_mut()
                         .cstr_classes
                         .insert(storage_name.to_string());
+                } else if let Some(repr) = ["ConcBlockingQueue", "AsyncTask"]
+                    .into_iter()
+                    .find(|r| *r == repr_name)
+                {
+                    self.registry_mut()
+                        .async_repr_classes
+                        .insert(storage_name.to_string(), repr);
                 } else if repr_name == "VMArray" || repr_name == "VMHash" {
                     self.register_vm_storage_class(&storage_name, repr_name == "VMHash");
                 }

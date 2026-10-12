@@ -340,6 +340,13 @@ impl SharedChannel {
         }
     }
 
+    /// The values waiting to be received.
+    // Cost: O(1).
+    pub(crate) fn len(&self) -> usize {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().queue.len()
+    }
+
     pub(crate) fn poll_result(&self) -> Result<Option<Value>, Value> {
         let (lock, _) = &*self.inner;
         let mut state = lock.lock().unwrap();

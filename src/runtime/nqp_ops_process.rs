@@ -327,6 +327,8 @@ impl Interpreter {
                 }
             }
 
+            // The scheduler-queue ops (#11502): runtime/nqp_ops_async.rs.
+            "timer" | "cancel" => return self.call_nqp_op_async(op, args),
             // The Threads family (#11502): runtime/nqp_ops_thread.rs.
             "currentthread" | "newthread" | "threadrun" | "threadjoin" | "threadid"
             | "threadyield" | "threadlockcount" => return self.call_nqp_op_thread(op, args),

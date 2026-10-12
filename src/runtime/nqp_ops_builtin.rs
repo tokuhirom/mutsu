@@ -30,6 +30,9 @@ impl Interpreter {
         op: &str,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        if let Some(result) = self.nqp_queue_op(op, args) {
+            return result;
+        }
         super::nqp_repr_check::check_operand_named(op, args)?;
         self.dispatch_nqp_op_unchecked(op, args)
     }
@@ -76,8 +79,13 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let _region = crate::profile::enter(crate::profile::Region::Nqp);
-        super::nqp_repr_check::check_operand(id, args)?;
         let op = crate::runtime::nqp_op_ids::nqp_op_name(id);
+        // A `ConcBlockingQueue` takes `push`/`shift`/`elems` (#11502), which
+        // the REPR check would refuse for an object.
+        if let Some(result) = self.nqp_queue_op(op, args) {
+            return result;
+        }
+        super::nqp_repr_check::check_operand(id, args)?;
         let claimed = match crate::runtime::nqp_op_ids::nqp_op_table(id) {
             NqpOpTable::Builtin => self.call_nqp_interpreter_op(op, args),
             NqpOpTable::Value => self.call_nqp_op(op, args),
