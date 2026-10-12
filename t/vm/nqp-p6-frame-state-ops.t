@@ -4,7 +4,7 @@ use nqp;
 # The Rakudo `p6*` nqp ops that read the running frame (#11505, ADR-11505).
 # Every expectation matches rakudo 2026.09.
 
-plan 30;
+plan 39;
 
 # -- p6argvmarray: the call's positional arguments ----------------------------
 
@@ -101,4 +101,39 @@ plan 30;
     my $s = '';
     for 1..2 { state $x; $s ~= nqp::p6stateinit() }
     is $s, '10', 'p6stateinit: a loop body with state is a frame';
+}
+
+# -- p6setfirstflag / p6takefirstflag: a code object's FIRST flag -------------
+
+{
+    sub never { nqp::p6takefirstflag() }
+    is (never(), never()).join, '00', 'p6takefirstflag: 0 when nothing set the flag';
+    sub self-set {
+        nqp::p6setfirstflag(nqp::getattr(&self-set, Code, '$!do'));
+        nqp::p6takefirstflag() ~ nqp::p6takefirstflag()
+    }
+    is (self-set(), self-set()).join(' '), '10 10', 'p6takefirstflag: reads and clears the flag';
+    sub later { nqp::p6takefirstflag() }
+    nqp::p6setfirstflag(nqp::getattr(&later, Code, '$!do'));
+    is (later(), later()).join, '10', 'p6setfirstflag: set from outside the routine';
+    sub inlined { if 1 { nqp::p6takefirstflag() } }
+    nqp::p6setfirstflag(nqp::getattr(&inlined, Code, '$!do'));
+    is (inlined(), inlined()).join, '10', 'p6takefirstflag: an inlined block reads its routine';
+    sub outer-only { my $c = { nqp::p6takefirstflag() }; $c() }
+    nqp::p6setfirstflag(nqp::getattr(&outer-only, Code, '$!do'));
+    is outer-only(), 0, 'p6takefirstflag: a closure reads its own flag';
+    is nqp::p6takefirstflag(), 0, 'p6takefirstflag: 0 in the mainline';
+}
+
+{
+    my &b = { nqp::p6takefirstflag() };
+    nqp::p6setfirstflag(nqp::getattr(nqp::decont(&b), Code, '$!do'));
+    is (b(), b()).join, '10', 'p6setfirstflag: a block';
+    my @c = (^2).map({ -> { nqp::p6takefirstflag() } });
+    nqp::p6setfirstflag(nqp::getattr(nqp::decont(@c[1]), Code, '$!do'));
+    is (@c[0](), @c[1](), @c[1]()).join, '010', 'p6setfirstflag: the flag is per closure clone';
+    sub plain { 1 }
+    throws-like { nqp::p6setfirstflag(&plain) }, Exception,
+        message => 'p6setfirstflag requires a bytecode handle',
+        'p6setfirstflag: a Code object is not a bytecode handle';
 }

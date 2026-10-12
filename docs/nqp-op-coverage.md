@@ -67,8 +67,8 @@ recorded under "Not applicable" with its reason, never stubbed.
 | Type / Conversion | 53 / 53 | 0 | #11553 |
 | Unicode Properties | 8 / 8 | 0 | #11495 |
 | Miscellaneous | 4 / 4 | 0 | #11499 |
-| Rakudo p6* (HLL) | 23 / 26 | 3 | #11505 |
-| **Total** | **556 / 575** | **19** | |
+| Rakudo p6* (HLL) | 25 / 26 | 1 | #11505 |
+| **Total** | **558 / 575** | **17** | |
 
 ## Missing ops by category
 
@@ -77,7 +77,7 @@ recorded under "Not applicable" with its reason, never stubbed.
 - **Objects** (#11499): `setwho`
 - **Profiling** (#11504): `mvmendprofile`, `mvmstartprofile`
 - **Serialization context** (#11504): `forceouterctx`
-- **Rakudo p6* (HLL)** (#11505): `p6setfirstflag`, `p6staticouter`, `p6takefirstflag`
+- **Rakudo p6* (HLL)** (#11505): `p6staticouter`
 
 Out of scope (JS/JVM-only, `const` as a call, or rejected by Rakudo itself): `add_i64`, `sub_i64`, `atposref`, `push_o`, `shift_o`, `captureamedshash`, `coerce_sn`, `stringify`, `bindkey_o`, `falsey`, `iseq_snfg`, `isne_snfg`, `heap`, `instrumented`, `charsnfg`, `iscclassnfg`, `rindexfromend`, `substr2`, `substr3`, `substrnfg`, `RUSAGE_MSGRCVA`, `jvmclasspaths`, `jvmgetproperties`, `jvmgetunicodeversion`, `const`, `debugnoop`, `js`, `p6capturelexwhere`, `p6invokehandler`
 
