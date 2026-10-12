@@ -137,6 +137,12 @@ impl Interpreter {
                 // carries it up to the installing frame.
                 self.pending_rw_writeback_sources.push(name.clone());
                 self.record_caller_var_writeback(name);
+                // The value must also survive each frame exit between the raise
+                // site and the installing frame (a callee whose argument is an
+                // aggregate variable restores its caller's env on return and
+                // would otherwise drop the write), which is what a run-time
+                // named write needs.
+                self.record_runtime_name_write(name);
                 // This env write happened without a call opcode, so a leaf closure
                 // between the raise site and the installing frame would otherwise
                 // drop it on return. See `inline_control_env_writes`.
