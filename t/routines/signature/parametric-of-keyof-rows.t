@@ -6,7 +6,7 @@ use Test;
 # dispatch shape (a role, a code type, a parameterized type) reaches them by
 # its base type's MRO; the parameters are read from its name.
 
-plan 9;
+plan 10;
 
 subtest 'unparameterized type objects', {
     plan 20;
@@ -115,4 +115,14 @@ subtest 'itemized containers', {
     is $ref.of.raku ~ ' ' ~ $ref.keyof.raku, 'Int Str(Any)', 'itemized typed hash';
     my $ia = [1];
     is $ia.of.raku, 'Mu', 'itemized array';
+}
+
+subtest 'a class trait names the element type', {
+    plan 2;
+    my class A is Array[Str] { }
+    my @a is A = <a b c>;
+    is-deeply @a.of, Str, 'my @a is A, A is Array[Str]';
+    my @b is A = <d>;
+    my $capture = { @b[0] };
+    is-deeply @b.of, Str, 'also when a closure captures the variable';
 }
