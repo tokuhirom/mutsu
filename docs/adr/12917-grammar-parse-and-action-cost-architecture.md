@@ -145,3 +145,16 @@ So the next slice is a new direction ahead of 3-5: **bound a look-behind through
 it calls** (a static, argument-less rule body has a bounded width just as an inline class
 does). It removes most of the ~275M and the quadratic growth with document size. The
 action walk (~306M, direction 4) is then the largest remaining item.
+
+### Look-behind bound through rule calls (2026-10-12, #13000)
+
+`lookbehind_start_floor_in` (`src/runtime/regex/regex_lookbehind.rs`) now bounds a call to
+an argument-less rule by the longest of its candidates' bodies (up to eight calls deep), and
+a builtin class such as `<.alnum>` by one character. One warm `load-yaml` of the 60-row
+benchmark document went from ~646M to ~294M Ir (-54%; release, `MUTSU_JIT=off`), the section
+time here from ~0.165 s to ~0.108 s, and growth with document size became linear (640 rows:
+6.46 s to 1.45 s).
+
+The re-profile on top of it puts the action walk first: `invoke_grammar_actions` is ~261M of
+the ~449M inclusive per parse, the grammar match ~72M (`rx_match_ends`), and `.new` of the
+result objects ~82M. Direction 4 (the action walk) is the next slice.
