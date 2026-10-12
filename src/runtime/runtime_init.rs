@@ -2884,6 +2884,9 @@ impl Interpreter {
                 // rethrows the exception `but X::React::Died` (its `gist`
                 // lives in `wrapper_role_gist`).
                 "X::React::Died",
+                // And for `await` of a broken promise: rakudo rethrows the
+                // cause `but X::Await::Died` (gist in `wrapper_role_gist`).
+                "X::Await::Died",
                 // Also not a marker role: rakudo's
                 // `X::AdHoc.from-slurpy(...)` mixes this into the
                 // `Capture` it stores as `.payload`, so the payload's

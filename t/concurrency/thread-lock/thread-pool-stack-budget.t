@@ -98,7 +98,8 @@ else {
     my ($rc, $rout, $rerr) = run-child($refuse, :ulimit(~($vmsize + 12_000)));
     ok $rout.contains('survived'), 'a refused thread does not take the process down';
     my @refusals = $rout.lines.grep(/^ ['start'|'thread'] ': '/);
-    ok @refusals && @refusals.all ~~ /'X::AdHoc: Could not create a new Thread'/,
+    # An awaited refusal arrives `but X::Await::Died`, as in rakudo.
+    ok @refusals && @refusals.all ~~ /'X::AdHoc' '+{X::Await::Died}'? ': Could not create a new Thread'/,
         '... and surfaces as X::AdHoc'
         or diag "stdout: $rout\nstderr: $rerr";
 }

@@ -81,7 +81,7 @@ impl Interpreter {
     /// Give `ex` the current throw-site backtrace if it does not already have
     /// one. Returns a copy; the original instance is left untouched so an
     /// alias (here: the promise's stored cause) does not gain a backtrace.
-    fn stamp_throw_site_backtrace(&self, ex: Value) -> Value {
+    pub(super) fn stamp_throw_site_backtrace(&self, ex: Value) -> Value {
         let ValueView::Instance {
             class_name,
             attributes,

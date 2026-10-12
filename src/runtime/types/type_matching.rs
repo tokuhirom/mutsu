@@ -897,21 +897,6 @@ impl Interpreter {
         if constraint == "Exception" && value.is_match_instance() {
             return false;
         }
-        // X::Await::Died role mixed into an exception by `await` of a broken
-        // Promise (see `await_died_error`): the cause keeps its own class but
-        // also does X::Await::Died.
-        if constraint == "X::Await::Died"
-            && let ValueView::Instance { attributes, .. } = value.view()
-            && matches!(
-                attributes
-                    .as_map()
-                    .get("__mutsu_does_await_died")
-                    .map(Value::view),
-                Some(ValueView::Bool(true))
-            )
-        {
-            return true;
-        }
         // Every enum value and every enum type object does `Enumeration`: those
         // are their own `Value` shapes, so no composed-role list mentions the
         // role and the membership has to be asserted here. Anything else FALLS

@@ -234,21 +234,6 @@ impl Value {
                 return true;
             }
         }
-        // The X::Await::Died role is mixed into the original exception when
-        // `await` observes a broken Promise (see `await_died_error`): the cause
-        // keeps its own class but also does X::Await::Died.
-        if type_name == "X::Await::Died"
-            && let ValueView::Instance { attributes, .. } = self.view()
-            && matches!(
-                attributes
-                    .as_map()
-                    .get("__mutsu_does_await_died")
-                    .map(Value::view),
-                Some(ValueView::Bool(true))
-            )
-        {
-            return true;
-        }
         // Perl6::Metamodel:: and Metamodel:: are equivalent namespaces
         if let Some(short) = my_type.strip_prefix("Perl6::")
             && short == type_name
