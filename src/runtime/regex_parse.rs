@@ -1453,7 +1453,7 @@ pub(super) fn regex_single_quote_atom(literal: String, ignore_case: bool) -> Reg
         // `'क्ष'` inside a regex is one grapheme, not three codepoint atoms:
         // this token list is built here rather than by the tokenizer, so it
         // needs the same re-joining pass.
-        let tokens = super::regex_parse_grapheme::merge_grapheme_literal_tokens(tokens);
+        let tokens = super::regex_parse_grapheme::merge_grapheme_literal_tokens(tokens, &[]);
         RegexAtom::Group(RegexPattern {
             tokens,
             anchor_start: false,
