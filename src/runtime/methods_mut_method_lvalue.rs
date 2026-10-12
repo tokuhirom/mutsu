@@ -635,10 +635,22 @@ impl Interpreter {
                 // loop pair) writes `.value` straight through to the shared hash
                 // node in place, so `$p.value = X` updates `%h{$p.key}` and the
                 // ref keeps reading the new value.
-                if let ValueView::HashEntryRef { .. } = current_value.as_ref().view()
+                if let ValueView::HashEntryRef { eager, .. } = current_value.as_ref().view()
                     && let Some(terminal) = current_value.hash_entry_terminal()
                 {
-                    terminal.insert(value.clone());
+                    // A DEFERRED token (`k => %h<x>`, `k => @a[5]` for a slot
+                    // that does not exist yet) only reads through a
+                    // `ContainerRef` cell, so the first write materializes the
+                    // slot as one: the Pair then sees its own write.
+                    let has_cell = matches!(
+                        terminal.peek().as_ref().map(Value::view),
+                        Some(ValueView::ContainerRef(_))
+                    );
+                    if eager || has_cell {
+                        terminal.insert(value.clone());
+                    } else {
+                        self.materialize_entry_cell(&terminal, value.clone())?;
+                    }
                     return Ok(value);
                 }
                 // A Pair whose value is a shared `ContainerRef` (built by `key =>
