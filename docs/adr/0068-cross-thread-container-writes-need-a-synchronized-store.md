@@ -870,3 +870,13 @@ Acceptance (release, three threads inserting for 1.5 s): `.sort`, `.map`, `.gist
 on `%!h` 0 crashes in 4 each (were 2, 2 and 4 of 4). Pinned by
 `t/concurrency/concurrent-attr-hash-iteration-does-not-corrupt.t`.
 Not measured: `for %!h.kv` on a fast path (separate look needed).
+
+Measured on 2026-10-12 (#12483), release build: three threads inserting into
+`has %!h` for 1.5 s while each runs a `for` over it. `for %!h` crashed twice in
+at most 10 runs (SIGSEGV in `HashData::typed_key` under `hash_live_pairs`). The VM's `for`
+dispatch walked the keys of the live map with nothing held. It now walks them
+under the container stripe; building the live pairs runs no user code, so §7.4
+holds. `for %!h.kv`, `.keys`, `.values` and `.pairs` go through the method
+funnel (`is_leaf_structure_read`), and `for @!a` with a concurrent `push` did not
+crash. 0 of 16 runs crash afterwards. Pinned by
+`t/concurrency/concurrent-attr-hash-for-loop-iteration.t`.
