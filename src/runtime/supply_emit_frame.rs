@@ -33,6 +33,11 @@ pub(crate) struct EmitFrame {
     /// The body quit its emitter (held back in `quit`, or delivered at once
     /// when the frame streams to a tap): later emits and quits are dropped.
     pub(crate) quit_seen: bool,
+    /// Collects what one `whenever` body emits while its cold source is
+    /// replayed synchronously (`drive_whenever_body_over_values`). It is not a
+    /// subscription registry: a `whenever` nested in that body taps its source
+    /// directly, so its emits land here in order (#12985).
+    pub(crate) capture_only: bool,
 }
 
 impl EmitFrame {
@@ -42,6 +47,15 @@ impl EmitFrame {
         Self {
             values: Vec::new(),
             owner: Some(owner),
+            ..Self::default()
+        }
+    }
+
+    /// The frame a replayed `whenever` body's emits are captured in.
+    // Cost: O(1).
+    pub(crate) fn capture() -> Self {
+        Self {
+            capture_only: true,
             ..Self::default()
         }
     }

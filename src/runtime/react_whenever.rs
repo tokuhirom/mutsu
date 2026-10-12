@@ -289,7 +289,21 @@ impl Interpreter {
         // inside a running react drive loop -- a `whenever` nested in another
         // `whenever`'s body registers while the loop is already driving, after
         // the body's own registration frame was popped.
-        if !self.async_state.supply_emit_buffer.is_empty() || self.async_state.react_active > 0 {
+        //
+        // A capture frame is the exception: a `whenever` written in a
+        // `whenever` body that is being replayed over a cold source taps its
+        // source here and now, so what it emits is captured in order with the
+        // body's own emits. Registering it would leave its marker among the
+        // captured values, where the tap took it for an emitted value (#12985).
+        let in_capture = self
+            .async_state
+            .supply_emit_buffer
+            .last()
+            .is_some_and(|f| f.capture_only);
+        if !in_capture
+            && (!self.async_state.supply_emit_buffer.is_empty()
+                || self.async_state.react_active > 0)
+        {
             if let ValueView::Instance { class_name, .. } = supply_val.view()
                 && class_name == "IO::Socket::Async::Listener"
             {
