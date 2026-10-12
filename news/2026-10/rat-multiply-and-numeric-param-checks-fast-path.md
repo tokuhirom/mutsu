@@ -1,7 +1,8 @@
 # `Rat * Int`, core `Int` arithmetic and a `Rat` parameter check stop taking the long way
 
-Three costs in the multi-method section of `bench-multi-dispatch`, which
-computes `($r * 4).Int` in a `multi method scale(Rat $r)` candidate (#10111):
+Four per-call costs in `bench-multi-dispatch` (#10111). The first three are in
+the multi-method section, which computes `($r * 4).Int` in a
+`multi method scale(Rat $r)` candidate; the fourth is in the operator section:
 
 - **`Rat * Rat` and `Rat * Int` skip the generic multiply.** The opcode went
   through the junction wrapper and the numeric bridge, and the shared
@@ -19,7 +20,6 @@ computes `($r * 4).Int` in a `multi method scale(Rat $r)` candidate (#10111):
   fast accept.** The type check's tag fast path knew `Int`, `Num`, `Str` and
   `Bool`, so a `Rat $r` parameter walked the whole check, through the role-key
   resolution, to accept a `Rat`. That was about 1.4k instructions per bind.
-
 - **The shared `+`, `-` and `*` answer a machine-word Int pair first.** The VM
   opcodes had that fast path, but a `callsame` into the core candidate and a
   reduction fold (`[+]`, `Z*`) call the shared routines directly. There an
@@ -28,5 +28,6 @@ computes `($r * 4).Int` in a `multi method scale(Rat $r)` candidate (#10111):
   (`multi infix:<*>(UInt, UInt) { callsame() mod $*modulus }`), callgrind went
   from 661.6M to 635.0M instructions.
 
-On the multi-method section (30,000 `multi method` calls, a third of them with a Rat),
-callgrind went from 936.0M to 851.4M instructions (-9.0%).
+For the first three, on the multi-method section (30,000 `multi method` calls,
+a third of them with a Rat), callgrind went from 936.0M to 851.4M instructions
+(-9.0%).
