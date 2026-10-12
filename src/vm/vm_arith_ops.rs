@@ -579,6 +579,20 @@ impl Interpreter {
     pub(super) fn exec_mod_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // Fast path: Int % non-zero Int, as `+`/`-` have. Neither operand can
+        // be a junction, a temporal value or a string to coerce, so the
+        // wrapper below had nothing to do for it but cost ~1.5k instructions
+        // per op (#10111). A zero divisor keeps the general path, which
+        // builds the divide-by-zero Failure.
+        if let Some(a) = left.as_int()
+            && let Some(b) = right.as_int()
+            && b != 0
+            && !self.user_infix_override("infix:<%>")
+        {
+            self.stack
+                .push(Value::int(crate::builtins::arith::int_mod_i64(a, b)));
+            return Ok(());
+        }
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             // `infix:<%>` is a `multi` like every other operator, so a user
             // candidate that out-narrows the core set takes the call — this was

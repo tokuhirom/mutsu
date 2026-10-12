@@ -1208,7 +1208,7 @@ impl Interpreter {
             // ([#8696](https://github.com/tokuhirom/mutsu/issues/8696) step 2).
             && !self.func_multi_argkeys_cacheable(pkg_sym, name_sym, name, args, &arg_keys)
         {
-            return self.resolve_function_with_types(name, args);
+            return self.resolve_function_with_types_keyed(name, args, Some(&arg_keys));
         }
         let key = (pkg_sym, name_sym, arg_keys);
         let generation = self.caches.fn_resolve_gen;
@@ -1217,7 +1217,7 @@ impl Interpreter {
         }
         // A dispatch error (ambiguity, a `where` that died) must be raised on
         // every call, so only an answer is cached.
-        let resolved = self.resolve_function_with_types(name, args)?;
+        let resolved = self.resolve_function_with_types_keyed(name, args, Some(&key.2))?;
         // Tagged with the generation the resolution ran under: the resolve
         // itself cannot write the functions map, but assert that rather than
         // assume it, since a stale tag would be served as fresh.
