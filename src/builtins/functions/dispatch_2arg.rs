@@ -103,12 +103,13 @@ pub(crate) fn native_function_2arg(
         // did not know the `Whatever` type object as a count).
         "roll" => {
             let list = Value::array(runtime::value_to_list(arg2));
-            crate::builtins::native_method_1arg(&list, crate::symbol::Symbol::intern("roll"), arg1)
+            crate::builtins::sampling::roll(&list, std::slice::from_ref(arg1))
         }
+        // Cost: O(n + k), n = elements of the list (copied), k = count picked.
+        // `pick($count, @list)` is the method `.pick($count)` on the list.
         "pick" => {
-            // pick($count, @list) — sub form delegates to method .pick($count)
             let list = Value::array(runtime::value_to_list(arg2));
-            crate::builtins::native_method_1arg(&list, crate::symbol::Symbol::intern("pick"), arg1)
+            crate::builtins::sampling::pick(&list, std::slice::from_ref(arg1))
         }
         "atan2" => {
             // atan2(y, x)

@@ -2,9 +2,9 @@
 //!
 //! Rakudo declares `pick` and `roll` on `List`, `Range`, `Map`, `Bool` and `Any`, and on
 //! the six quant hashes, which also declare `pickpairs`. Every row calls the one
-//! implementation in [`crate::builtins::sampling`], which the cascades' arms for
-//! a `Seq`, a lazy list, a shaped array and an itemized hash (receivers with no
-//! dispatch shape) call too. The answer is random, so every row is flagged
+//! implementation in [`crate::builtins::sampling`]; a receiver with no dispatch
+//! shape (a `Seq`, a lazy list, a shaped array) reaches `Any`'s rows through
+//! `method_table::answer_shapeless`. The answer is random, so every row is flagged
 //! `RANDOM`: the debug cross-check does not re-run it. A `Callable` count is the
 //! interpreter's to invoke, so the handler declines it.
 
@@ -15,13 +15,16 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 macro_rules! rows {
     ($name:literal => $handler:path: $($owner:literal),*) => {
+        rows!($name => $handler, RowFlags::NONE; $($owner),*)
+    };
+    ($name:literal => $handler:path, $extra:expr; $($owner:literal),*) => {
         &[$(
             MethodRow {
                 owner: $owner,
                 name: $name,
                 arity: 0,
                 handler: Handler::Narrow($handler),
-                flags: RowFlags::RANDOM,
+                flags: RowFlags::RANDOM.or($extra),
                 named: &[],
             },
             MethodRow {
@@ -29,7 +32,7 @@ macro_rules! rows {
                 name: $name,
                 arity: 1,
                 handler: Handler::Narrow($handler),
-                flags: RowFlags::RANDOM.or(RowFlags::ANY_ARGS),
+                flags: RowFlags::RANDOM.or(RowFlags::ANY_ARGS).or($extra),
                 named: &[],
             },
         )*]
@@ -37,9 +40,17 @@ macro_rules! rows {
 }
 
 pub(super) static PICK_ROWS: &[MethodRow] = rows!("pick" => sampling::pick:
-    "Any", "List", "Range", "Map", "Set", "SetHash", "Bag", "BagHash", "Mix", "MixHash");
+    "List", "Range", "Map", "Set", "SetHash", "Bag", "BagHash", "Mix", "MixHash");
 pub(super) static ROLL_ROWS: &[MethodRow] = rows!("roll" => sampling::roll:
-    "Any", "List", "Range", "Map", "Set", "SetHash", "Bag", "BagHash", "Mix", "MixHash");
+    "List", "Range", "Map", "Set", "SetHash", "Bag", "BagHash", "Mix", "MixHash");
+/// `Any.pick` and `Any.roll` are `self.list.pick` / `self.list.roll`, which a
+/// type object answers too (`Int.pick` is `Int`). Every closed shape reaches
+/// them (`ANY_LIST_FOR_CLOSED_SHAPES`), and every receiver with no shape
+/// through `method_table::answer_shapeless`.
+pub(super) static ANY_PICK_ROWS: &[MethodRow] =
+    rows!("pick" => sampling::pick, RowFlags::TYPE_OBJECT_OK; "Any");
+pub(super) static ANY_ROLL_ROWS: &[MethodRow] =
+    rows!("roll" => sampling::roll, RowFlags::TYPE_OBJECT_OK; "Any");
 pub(super) static PICKPAIRS_ROWS: &[MethodRow] = rows!("pickpairs" => sampling::pickpairs:
     "Set", "SetHash", "Bag", "BagHash", "Mix", "MixHash");
 

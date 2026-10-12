@@ -472,8 +472,8 @@ pub(crate) const COOL_TEXT_FOR_CLOSED_SHAPES: [&str; 30] = [
 /// answers its own row first. `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
 /// (`method_table::collections::join`).
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 7] = [
-    "flat", "sort", "unique", "repeated", "reverse", "end", "join",
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 10] = [
+    "flat", "sort", "unique", "repeated", "reverse", "end", "join", "pick", "roll", "minmax",
 ];
 
 /// The `Mu` methods every closed shape reaches ([`DispatchShape::reaches_audited`])

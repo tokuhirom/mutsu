@@ -1,6 +1,5 @@
-/// Range and collection selection methods: head, tail, pick, roll, pickpairs,
-/// grab, grabpairs, first, min, max, excludes-min, excludes-max, bounds,
-/// is-int, minmax, infinite, of, keyof
+/// Range and collection selection methods: head, tail, first, min, max,
+/// excludes-min, excludes-max, bounds, is-int, infinite, of, keyof
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -110,12 +109,6 @@ pub(super) fn dispatch(
                 items.last().cloned().unwrap_or(Value::NIL)
             }))),
         }),
-        // Cost: see `sampling::pick`.
-        "pick" => Some(crate::builtins::sampling::pick(target, &[])),
-        // Cost: see `sampling::roll`.
-        "roll" => Some(crate::builtins::sampling::roll(target, &[])),
-        // Cost: see `sampling::pickpairs`.
-        "pickpairs" => Some(crate::builtins::sampling::pickpairs(target, &[])),
         "first" => Some(match target.view() {
             ValueView::Array(items, ..) => Some(Ok(items.first().cloned().unwrap_or(Value::NIL))),
             _ => None,
@@ -174,8 +167,6 @@ pub(super) fn dispatch(
             ValueView::Seq(..) | ValueView::Slip(..) => None,
             _ => Some(Ok(target.clone())),
         }),
-        // The `Range.minmax` row's implementation (`method_table::range`).
-        "minmax" => Some(crate::builtins::method_table::range::minmax(target, &[])),
         // Cost: O(1) (a type-name match; a Buf answers its element type).
         "of" => Some(match target.view() {
             ValueView::Hash(_) | ValueView::Array(..) => None,

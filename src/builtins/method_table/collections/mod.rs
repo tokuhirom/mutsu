@@ -73,6 +73,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     sampling::BOOL_ROWS,
     sampling::PICK_ROWS,
     sampling::ROLL_ROWS,
+    sampling::ANY_PICK_ROWS,
+    sampling::ANY_ROLL_ROWS,
     sampling::PICKPAIRS_ROWS,
     seq::ROWS,
     terminals::ROWS,
