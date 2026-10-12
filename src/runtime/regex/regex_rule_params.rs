@@ -243,6 +243,30 @@ impl Interpreter {
         Some(saved)
     }
 
+    /// The keys of a call window's bindings `saved` whose final values are
+    /// filed on the callee's Match for its action: every binding but the
+    /// rule's runtime parameters, which are lexicals of its own body, not
+    /// dynamic variables an action reads.
+    // Cost: O(b * p), b = the bindings, p = the rule's parameters.
+    pub(crate) fn window_attach_keys(
+        &self,
+        saved: &SavedDynParams,
+        name: &str,
+        pkg: Symbol,
+    ) -> Vec<String> {
+        let runtime = if saved.is_empty() {
+            None
+        } else {
+            self.runtime_rule_params(name, pkg)
+        };
+        saved
+            .iter()
+            .map(|(key, _)| key)
+            .filter(|key| runtime.as_ref().is_none_or(|names| !names.contains(key)))
+            .cloned()
+            .collect()
+    }
+
     /// The one body of the rule `name` (called from `pkg`) whose parameters
     /// are bound at run time, parsed as every call of it runs it, for the
     /// call-graph analyses: `None` when the rule has no runtime parameters;

@@ -284,20 +284,7 @@ impl Interpreter {
             return None;
         }
         let mut saved = params.unwrap_or_default();
-        // A runtime parameter (`regex_rule_params`) is a lexical of the rule's
-        // own body, not a dynamic variable its action reads: it is in the
-        // window but not filed on the Match.
-        let runtime_params = if saved.is_empty() {
-            None
-        } else {
-            self.runtime_rule_params(&name.spec().lookup_name, pkg)
-        };
-        let mut attach: Vec<String> = saved
-            .iter()
-            .map(|(key, _)| key)
-            .filter(|key| runtime_params.as_ref().is_none_or(|names| !names.contains(key)))
-            .cloned()
-            .collect();
+        let mut attach = self.window_attach_keys(&saved, &name.spec().lookup_name, pkg);
         let scope_keys = rule_frame.map(|frame| {
             let (frame_saved, keys) = Self::into_window_parts(frame);
             saved.extend(frame_saved);
