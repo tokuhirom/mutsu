@@ -64,9 +64,6 @@ pub(super) fn roll_one(target: &Value) -> Option<Result<Value, RuntimeError>> {
 // integer Range; O(e + k) on any other list-like, e = elements (decomposed
 // into the sampling pool first). `.roll(*)` copies the pool once, O(e).
 pub(super) fn roll_n(target: &Value, arg: &Value) -> Option<Result<Value, RuntimeError>> {
-    if matches!(target.view(), ValueView::Package(_)) {
-        return None;
-    }
     let count = match arg.view() {
         ValueView::Int(i) if i > 0 => Some(i as usize),
         ValueView::Int(_) => Some(0),

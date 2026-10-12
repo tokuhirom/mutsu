@@ -3244,6 +3244,8 @@ impl Interpreter {
         if method == "tail"
             && !bypass_native_fastpath
             && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+            // `Mu` is no `Any`: it has no `tail`.
+            && !matches!(target.view(), ValueView::Package(name) if name == "Mu")
         {
             // `dispatch_tail` reads `args[0]` as the tail COUNT, so it needs the
             // same named-blindness the arity cascade below gets: `tail` is

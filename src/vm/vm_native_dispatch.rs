@@ -597,10 +597,17 @@ impl Interpreter {
         {
             return None;
         }
-        // Pick/roll on Package/Str
+        // `pick`/`roll` on an enum type object (or its name as a `Str`) sample
+        // its values, which only the interpreter's enum registry knows
+        // (`dispatch_enum_pick_roll`); any other type object reaches the
+        // `Any.pick`/`Any.roll` rows and samples itself.
         if (method_sym == "pick" || method_sym == "roll")
             && args.len() <= 1
-            && matches!(target.view(), ValueView::Package(_) | ValueView::Str(_))
+            && match target.view() {
+                ValueView::Package(name) => self.registry().enum_types.contains_key(name.as_str()),
+                ValueView::Str(name) => self.registry().enum_types.contains_key(name.as_str()),
+                _ => false,
+            }
         {
             return None;
         }
