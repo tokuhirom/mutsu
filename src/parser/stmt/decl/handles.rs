@@ -207,8 +207,7 @@ pub(in crate::parser) fn parse_handle_specs<'a>(
 
 /// The written term of one `handles` clause that spans `input` up to `rest`,
 /// when reading it as a term rebuilds exactly the clause's `specs`; `None`
-/// for a spelling the term does not capture (a rename pair, a regex, a
-/// variable or slip, a bare name).
+/// for a spelling the term does not capture.
 // Cost: O(n), n = length of the clause.
 pub(in crate::parser) fn handles_clause_term(
     input: &str,
@@ -219,36 +218,116 @@ pub(in crate::parser) fn handles_clause_term(
     if after.len() != rest.len() {
         return None;
     }
-    let rebuilt = handle_specs_from_term(&term)?;
+    let rebuilt = match &term {
+        crate::ast::Expr::RegexLiteral { .. } => {
+            let after_open = input.strip_prefix('/')?;
+            let (pattern, _) =
+                crate::parser::primary::regex::scan_to_delim(after_open, '/', '/', false)?;
+            vec![HandleSpec::Regex(pattern.to_string())]
+        }
+        _ => handle_specs_from_term(&term)?,
+    };
     let same = rebuilt.len() == specs.len()
         && rebuilt.iter().zip(specs).all(|(a, b)| match (a, b) {
             (HandleSpec::Name(x), HandleSpec::Name(y)) => x == y,
+            (
+                HandleSpec::Rename {
+                    exposed: a,
+                    target: b,
+                },
+                HandleSpec::Rename {
+                    exposed: c,
+                    target: d,
+                },
+            ) => a == c && b == d,
+            (HandleSpec::Regex(a), HandleSpec::Regex(b)) => a == b,
             (HandleSpec::Wildcard, HandleSpec::Wildcard) => true,
+            (HandleSpec::Expr(a), HandleSpec::Expr(b)) => format!("{a:?}") == format!("{b:?}"),
             _ => false,
         });
     same.then_some(term)
 }
 
-/// The specs a `handles` term names: a method name (`'x'`), a list of them
-/// (`<a b>`, `('a', 'b')`), or every method (`*`). `None` for any other term.
+/// The specs a `handles` term names: method names, rename pairs, regexes,
+/// dynamic expressions, or every method. `None` for any other term.
 // Cost: O(n), n = size of the term.
 pub(crate) fn handle_specs_from_term(term: &crate::ast::Expr) -> Option<Vec<HandleSpec>> {
     use crate::ast::Expr;
     // Parentheses are transparent: `handles ('a', 'b')` names the same list.
     // So is the spelling a word list `<a b>` keeps for RakuAST (ADR-12199).
-    match term.peel_parens() {
+    let term = match term.peel_parens() {
+        Expr::PositionalPair(inner) => inner.peel_parens(),
+        other => other,
+    };
+    match term {
         Expr::Whatever => Some(vec![HandleSpec::Wildcard]),
+        Expr::BareWord(name) => Some(vec![HandleSpec::Name(name.clone())]),
         Expr::Literal(value) => Some(vec![HandleSpec::Name(value.as_str()?.to_string())]),
+        Expr::Binary {
+            left,
+            op: crate::token_kind::TokenKind::FatArrow,
+            right,
+            ..
+        } => {
+            let exposed = match left.as_ref() {
+                Expr::BareWord(key) => key.clone(),
+                Expr::Literal(key) => key.as_str()?.to_string(),
+                _ => return None,
+            };
+            let Expr::Literal(value) = right.as_ref() else {
+                return None;
+            };
+            Some(vec![HandleSpec::Rename {
+                exposed,
+                target: value.as_str()?.to_string(),
+            }])
+        }
         Expr::ArrayLiteral(items) => {
             let mut specs = Vec::with_capacity(items.len());
             for item in items {
-                let Expr::Literal(value) = item else {
-                    return None;
-                };
-                specs.push(HandleSpec::Name(value.as_str()?.to_string()));
+                match item {
+                    Expr::BareWord(name) => specs.push(HandleSpec::Name(name.clone())),
+                    Expr::Literal(value) => {
+                        specs.push(HandleSpec::Name(value.as_str()?.to_string()))
+                    }
+                    Expr::Binary {
+                        left,
+                        op: crate::token_kind::TokenKind::FatArrow,
+                        right,
+                        ..
+                    } => {
+                        let exposed = match left.as_ref() {
+                            Expr::BareWord(key) => key.clone(),
+                            Expr::Literal(key) => key.as_str()?.to_string(),
+                            _ => return None,
+                        };
+                        let Expr::Literal(value) = right.as_ref() else {
+                            return None;
+                        };
+                        specs.push(HandleSpec::Rename {
+                            exposed,
+                            target: value.as_str()?.to_string(),
+                        });
+                    }
+                    Expr::Unary {
+                        op: crate::token_kind::TokenKind::Pipe,
+                        expr,
+                        ..
+                    } => specs.push(HandleSpec::Expr(Box::new((**expr).clone()))),
+                    _ => return None,
+                }
             }
             Some(specs)
         }
+        Expr::Var(_) | Expr::MethodCall { .. } | Expr::Call { .. } => {
+            Some(vec![HandleSpec::Expr(Box::new(term.clone()))])
+        }
+        Expr::RegexLiteral { value, .. } => match value.view() {
+            crate::value::ValueView::Regex(pattern) => {
+                Some(vec![HandleSpec::Regex(pattern.to_string())])
+            }
+            _ => None,
+        },
         _ => None,
     }
 }

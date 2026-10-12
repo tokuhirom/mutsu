@@ -466,6 +466,7 @@ t/collections/range-pair/pair-type.t
 t/collections/range-pair/pair-typed-value-container.t
 t/collections/range-pair/pair-unique-seq.t
 t/collections/range-pair/pair-value-assign-binds-container.t
+t/collections/range-pair/pair-value-assign-vivify.t
 t/collections/range-pair/pair-value-consumers-accept-both-flavors.t
 t/collections/range-pair/pair-value-container.t
 t/collections/range-pair/pair-value-deferred-seq-gist.t
@@ -1033,11 +1034,14 @@ t/concurrency/supply/supply-block-reinstantiated.t
 t/concurrency/supply/supply-block-tap-streams-emits.t
 t/concurrency/supply/supply-block-transform.t
 t/concurrency/supply/supply-block-whenever-bare-channel.t
+t/concurrency/supply/supply-callback-closure-captures.t
 t/concurrency/supply/supply-callback-pair-positional.t
 t/concurrency/supply/supply-categorize.t
 t/concurrency/supply/supply-chained-live-pipeline.t
 t/concurrency/supply/supply-channel-supply-forward.t
+t/concurrency/supply/supply-close-phaser-finite-block.t
 t/concurrency/supply/supply-close-phaser-sees-block-lexicals.t
+t/concurrency/supply/supply-close-phaser-waits-for-all-whenevers.t
 t/concurrency/supply/supply-close-phaser.t
 t/concurrency/supply/supply-cold-whenever-live-inner-drain.t
 t/concurrency/supply/supply-cold-whenever-nonreact-drive.t
@@ -1698,6 +1702,7 @@ t/grammar/grammar-action-capture-order.t
 t/grammar/grammar-action-failed-alternative.t
 t/grammar/grammar-action-generic-rule-category.t
 t/grammar/grammar-action-made-in-assertion.t
+t/grammar/grammar-action-make-shared-match.t
 t/grammar/grammar-action-math-method.t
 t/grammar/grammar-action-mid-parse-kept-match.t
 t/grammar/grammar-action-sym-with-double-colon.t
@@ -1752,6 +1757,7 @@ t/grammar/grammar-method-subrule-dynvar-write.t
 t/grammar/grammar-method-subrule-self-token.t
 t/grammar/grammar-method-subrule.t
 t/grammar/grammar-methods-list-tokens.t
+t/grammar/grammar-mid-parse-cursor-class.t
 t/grammar/grammar-mro-match.t
 t/grammar/grammar-named-capture.t
 t/grammar/grammar-named-cursor.t
@@ -2200,6 +2206,7 @@ t/lang/operators/prefix-stacked-loose-unary.t
 t/lang/operators/prefix-tilde-hash.t
 t/lang/operators/prefix-tilde-junction.t
 t/lang/operators/prefix-tilde-skips-fallback.t
+t/lang/operators/prefix-tilde-uninit-warning-name.t
 t/lang/operators/qualified-operator-code-ref.t
 t/lang/operators/quanthash-hyper-funcop.t
 t/lang/operators/reduction-call-form-in-call-args.t
@@ -4230,7 +4237,11 @@ t/oo/trait/do-decl-container-trait-once.t
 t/oo/trait/enum-trait-arg-and-trait-mod-call.t
 t/oo/trait/eval-load-cached-trait.t
 t/oo/trait/handles-container-attr-writeback.t
+t/oo/trait/handles-dynamic-list.t
+t/oo/trait/handles-fat-arrow-rename.t
+t/oo/trait/handles-paren-strings.t
 t/oo/trait/handles-proto-dispatch-mut-invocant.t
+t/oo/trait/handles-quoted-fat-arrow-rename.t
 t/oo/trait/handles-wildcard-lvalue-assign.t
 t/oo/trait/inline-container-trait-expression.t
 t/oo/trait/is-implementation-detail-trait.t
@@ -4401,6 +4412,7 @@ t/rakuast/rakuast-formatter.t
 t/rakuast/rakuast-frontend-mode.t
 t/rakuast/rakuast-given-pointy-block.t
 t/rakuast/rakuast-given-when.t
+t/rakuast/rakuast-handles-spelling.t
 t/rakuast/rakuast-hash-literal.t
 t/rakuast/rakuast-heredoc-spelling.t
 t/rakuast/rakuast-hyper-function-infix.t
@@ -4569,6 +4581,7 @@ t/regex/contains-regex.t
 t/regex/dir-test-bare-regex-predicate.t
 t/regex/gate-b-regex-interp-env-sync.t
 t/regex/handle-comb-no-matcher.t
+t/regex/handles-regex-raku-syntax.t
 t/regex/ignorecase-casefold-equivalence.t
 t/regex/m-prefixed-kebab-sub.t
 t/regex/match/array-num-smartmatch.t
@@ -5305,6 +5318,7 @@ t/routines/dispatch/multi-aggregate-rejects-nil.t
 t/routines/dispatch/multi-candidate-dispatcher.t
 t/routines/dispatch/multi-candidate-key-narrowing.t
 t/routines/dispatch/multi-candidate-ranking.t
+t/routines/dispatch/multi-candidate-search-packages.t
 t/routines/dispatch/multi-candidate-state-otf.t
 t/routines/dispatch/multi-candidate-term-value.t
 t/routines/dispatch/multi-candidates-declaration-order.t
@@ -5371,6 +5385,7 @@ t/routines/dispatch/multi-value-dependent-dispatch-plan.t
 t/routines/dispatch/multi-variadic-vs-smiley-narrowness.t
 t/routines/dispatch/multi-variadic-where-named-bind-check.t
 t/routines/dispatch/multi-where-copy-order.t
+t/routines/dispatch/multi-where-literal-compare.t
 t/routines/dispatch/multi-where-narrowest-first.t
 t/routines/dispatch/multi-where-otf-dispatch.t
 t/routines/dispatch/multi-where-runs-once-when-nothing-binds.t
@@ -5550,6 +5565,7 @@ t/routines/routine-name-line-file-rows.t
 t/routines/routine-nested-sub-shadowed-free-var.t
 t/routines/routine-of-returns-rows.t
 t/routines/routine-own-bind-ignores-caller-binding.t
+t/routines/routine-owned-topic.t
 t/routines/routine-prec.t
 t/routines/routine-precedence-associative.t
 t/routines/routine-set-name-qualified.t
@@ -5964,8 +5980,10 @@ t/tooling/testing-is-approx.t
 t/tooling/vendored-real-test-module.t
 t/types/angle-list-numeric-words.t
 t/types/any-are.t
+t/types/any-head-tail-rows.t
 t/types/any-list-derived-methods-use-user-list.t
 t/types/any-reverse-rotate.t
+t/types/any-sampling-minmax-rows.t
 t/types/any-serial.t
 t/types/any-splice-instance-receivers.t
 t/types/base64-battery.t

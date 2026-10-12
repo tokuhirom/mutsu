@@ -614,3 +614,15 @@ pipe runs longer than three instead of inventing empty branches. The existing
 matcher still executes the source pattern. `t/rakuast/rakuast-regex-source-
 cohort.t` pins the node and round-trip match; `t/regex/null-regex.t` exercises
 the EVAL path in RakuAST mode.
+
+### 6.17 S10: attribute handles source terms (2026-10-12)
+
+Attribute `handles` clauses retain their written term through conversion,
+including parenthesized rename pairs, mixed dynamic lists, and regex terms.
+Bare identifiers inside a handles list denote delegated method names and are
+converted as string terms; identifiers inside a slipped expression keep their
+ordinary expression meaning. Lowering derives delegation specs from the term
+and uses the existing attribute composition path. The focused RakuAST test
+covers term structure and evaluation; all five existing first-refusal files
+for handles spelling pass in round-trip mode. After refreshing the ratchet on
+the current main tree, it lists 7,041 files, 18 more than the branch base.
