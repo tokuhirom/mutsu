@@ -434,9 +434,10 @@ impl Interpreter {
     /// [`Self::is_positional_light_call_eligible`] for the winner of a
     /// value-dependent `multi` whose resolution just ran every one of its
     /// `where` clauses against these exact arguments (`where_verified`): the
-    /// light bind never runs a `where`, and here none is left to run
-    /// (#8697's `pending_skip_constraint_recheck` is the general binder's
-    /// equivalent of the same trust).
+    /// light bind never runs a `where`, and here none is left to run -- except
+    /// a regex `where`, whose match is the body's `$/` and so must run at bind
+    /// time (#12915). #8697's `pending_skip_constraint_recheck` is the general
+    /// binder's equivalent of the same trust.
     pub(super) fn is_positional_light_call_eligible_where(
         cf: &CompiledFunction,
         fn_name: &str,
@@ -496,7 +497,8 @@ impl Interpreter {
                 || (caller_code.is_some() && Self::positional_light_rw_args_admitted(cf, args)))
             && cf.param_defs.iter().all(|pd| {
                 !pd.named
-                    && (where_verified || pd.where_constraint.is_none())
+                    && (pd.where_constraint.is_none()
+                        || (where_verified && !pd.where_is_regex_match()))
                     && !pd.slurpy
                     && !pd.double_slurpy
                     && pd.code_signature.is_none()
