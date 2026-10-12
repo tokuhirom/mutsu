@@ -18,9 +18,9 @@
 //!
 //! A start earlier than `pos` minus the most `X` can consume cannot end at
 //! `pos`, so those starts are provably unreachable and skipping them changes no
-//! answer. [`lookbehind_start_floor`] computes that bound and returns the first
-//! start worth trying; when it cannot bound the pattern it returns 0 and the
-//! search is exactly what it was.
+//! answer. [`Interpreter::lookbehind_start_floor_in`] computes that bound and
+//! returns the first start worth trying; when it cannot bound the pattern it
+//! returns 0 and the search is exactly what it was.
 //!
 //! The bound counts **grapheme clusters**, not `char`s, because that is what
 //! the matcher consumes: one `<.alnum>` can span a base character plus any
