@@ -253,6 +253,7 @@ impl Compiler {
                                 )
                             }))
                         || is_constant_decl
+                        || Self::is_scalar_bind_decl(name, custom_traits)
                         || self.call_arg_decl_slots.contains(name))
                 {
                     // ADR-0039 slice 2: a container declaration in expression
