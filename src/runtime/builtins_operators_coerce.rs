@@ -17,8 +17,15 @@ impl Interpreter {
         // `(1,2,3) == (1,2,4)` is `3 == 3` (True), NOT an element-wise compare
         // (that is `cmp`). This must run before the Instance check below so the
         // numeric comparison ops (`== != < > <= >= <=>`) see the elem count.
-        if let Some(items) = value.as_list_items() {
-            return Ok(Value::int(items.len() as i64));
+        if value.as_list_items().is_some() {
+            // The count reads the container's live range, which another
+            // thread's `push`/`shift` rewrites under its stripe: take the same
+            // stripe (a leaf read, no user code) or the range can be torn
+            // mid-update (#11210).
+            let _structure =
+                crate::value::container_lock::ContainerStructGuard::acquire_for(None, &value);
+            let len = value.as_list_items().map_or(0, |items| items.len());
+            return Ok(Value::int(len as i64));
         }
         // An enum VALUE (e.g. `CBOR_Tag_Invalid_8Byte` from `enum CBORMinMax
         // (... => 18446744073709551615, ...)`) numifies to its underlying
