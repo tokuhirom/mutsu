@@ -458,6 +458,42 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      the block exited).
 
    Left on the registry: the declarations slice 4 leaves there.
+
+   **Slice 6 done** (`fix/12529-block-multi-binding`): the first step of
+   §2.4's binding half. A `multi` family declared in a block is that block's
+   `&name` binding for the closures nested in it, as a plain `sub` is since
+   slice 4, so a closure calling it after the block exited stops dying with
+   "Unknown function".
+
+   - `plain_lexsub_name` (`compiler/block_lexsubs.rs`) admits `multi`
+     declarations under the same exclusions (`our`, exported, traited,
+     builtin-named). The binding the creating frame fills is the family's
+     dispatcher value (`sub_value_from_multi_candidates`): every candidate
+     visible at the block, an outer scope's included, captured when the
+     closure is created. That is the "candidate list built when the scope's
+     declarations are complete" of §2.4, built per closure creation for now.
+   - A dispatcher whose candidates are still live dispatches by name, as
+     before. Once they are out of scope it ranks its captured candidates
+     (#12474) and now runs the winner as a dispatch
+     (`call_captured_multi_winner`): inside a multi-dispatch frame over the
+     other captured candidates that accept the arguments, so `callsame` /
+     `nextsame` defer to them, and with a samewith context that re-dispatches
+     through the dispatcher value. Closure dispatch does not replace that
+     context with the candidate itself (`samewith_context_is_family_of`).
+     Both were broken for any out-of-scope dispatcher value (`my &n; { multi
+     ns ...; &n = &ns }; n(7)` died with "callsame is not in the dynamic
+     scope of a dispatcher").
+   - Candidates are not re-closured per activation: a candidate reads its
+     free variables through the env captured with the dispatcher. Rakudo
+     does not clone multi candidates per block entry either, so a closure
+     made in each iteration of a loop that declares a `multi` answers with
+     the *last* iteration's lexicals there (`for 1, 2 -> $v { multi m(Int) {
+     $v }; @a.push: -> { m(0) } }` gives `2 2` in rakudo); mutsu gives `1 2`.
+     Neither is pinned.
+
+   Left on the registry: a multi family's generation is still the registry's
+   `fn_resolve_gen`, a multi *method* call has no cache in front of the
+   resolver, and value-dependent families take the generic path.
 3. **The static link.** Frames carry the outer link; the reflective name view
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay
