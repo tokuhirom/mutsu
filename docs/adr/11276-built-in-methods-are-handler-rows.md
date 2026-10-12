@@ -1685,6 +1685,43 @@ It was reverted: no arm can go yet.
   plain user class keeps `X::Method::NotFound`. Today each family of arms re-implements "stringify the instance" on its own. With that in
   place the arms of all eight families in `dispatch_core_families` can be deleted together, not one file at a time.
 
+### 9.79 Slice 5: the native-base and shapeless-`Cool` resolution; the `Cool` text arms go (2026-10-12)
+
+`refactor/12836-native-base-resolution` (closes #12836). The resolution §9.78 asked for is a step of the guard step (`method_table::dispatch`),
+taken when a receiver has no shape:
+
+1. **Native base.** An instance of a user class deriving from a built-in scalar type (`class MyStr is Str`, `is Int`, `is Num`, `is Rat`, a
+   coercion-boxed `MyStr("x")`) is answered by the rows of its payload's shape, the payload as invocant (`builtins::native_base::redirect`;
+   the module is the former `numeric_subclass`, now covering `Str` payloads, `value::numeric_payload::native_base_payload` reading the five
+   reserved attributes). The methods about the instance itself (`WHAT`, `raku`, `gist`, `Str`, `clone`, ...) and the coercers that answer
+   `self` (`MyInt.new(5).Int`) are not redirected. A plain user class has no payload and keeps `X::Method::NotFound`.
+2. **Shapeless `Cool`.** An enum value, a `Seq`/`Slip`/`LazyList` without a settled shape, and an instance whose MRO reaches `Cool` before
+   any built-in class that declares the method reach `Cool`'s own row, themselves as invocant (`is_shapeless_cool`). An instance is asked of
+   the interpreter's MRO, so a pure entry declines it; `class MyPath is IO::Path` keeps reaching `IO::Path.lines` by its owner.
+3. **Closed shapes.** `Range`, `Seq` and `IO::Path` reach an audited list of `Cool`'s text rows (`COOL_TEXT_FOR_CLOSED_SHAPES`:
+   `words`, `codes`, `lines`, `trim*`, `flip`, `chomp`, `chop`, `comb`, `fmt`, the case maps, `encode`, the normalization forms and the
+   per-codepoint Unicode methods), the way §9.16 opened their numeric rows. `IO::Path`'s own `lines`, `words` and `comb` come first in its MRO.
+
+With that the arms that only re-called a `Str`/`Cool` row handler are deleted: from `dispatch_core_str.rs` `naive-word-wrapper`, `words`,
+`codes`, `lines`, `Date`, `DateTime`, `trim`, `trim-leading`, `trim-trailing`, `flip`, `chomp`, `chop`, `comb`, `fmt`; from
+`dispatch_core_numeric.rs` `uc`, `lc`, `fc`, `tc`; from `dispatch_core_math.rs` `tclc`, `wordcase`, `encode`, `NFC`, `NFD`, `NFKC`, `NFKD`;
+from `dispatch_core_unicode.rs` `ord`, `ords`, `uniname`, `uninames`, `uniprop`, `uniprops`, `unival`, `univals`. `method-rows-report.py
+--arms`: the pure arity cascades go from 369 arms to 336.
+
+- **Behaviour changes toward Rakudo** (pinned in `t/oo/method/shapeless-cool-method-rows.t`): a `Str` subclass instance answers
+  `naive-word-wrapper`, `chomp` and `Date` (they were `X::Method::NotFound`); `IO::Path.chomp` is `Cool.chomp`; a receiver that is no
+  `Cool` (`Pair`, `Set`, `Bag`, `Capture`, `Version`, `Sub`, `Regex`) answers `X::Method::NotFound` for these methods instead of a text
+  made from its string form. A probe of the 34 deleted names over ~40 receiver kinds against the pre-change binary found no answer that
+  matched Rakudo before and does not now.
+- **The E2 probes** (§9.78 item 2): `native_method_arities` asks the table at arity 0 too, and the type-object probe accepts a name the
+  `Cool` type-object gate (`cool_type_object_gate`) answers ahead of the table. `try_native_method_raw` asks the table again once it has
+  stripped a named argument no method declares (`255.fmt(:zzz)`): the table was asked with it and declined, and the arm is gone.
+- **Left in `dispatch_core_str.rs`**: `so`, `not`, `is-lazy`, `lazy`, `join`, the `Mu`/`Any` answers every receiver reaches by name. They
+  need the same step for `Mu` and `Any` (every receiver reaches their rows), which is a larger audit than `Cool`'s text rows: `Any` declares
+  the iteration methods. `chars` stays in `dispatch_core_unicode.rs` because a `Blob` must raise `X::Buf::AsStr` and has no row for it.
+- **Found, filed**: a `Cool` row on an instance reads the instance's built-in string form, not a user `Str` method (#12848); `Cool.fmt` and
+  the text methods on a `Cool` type object (#12849).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
