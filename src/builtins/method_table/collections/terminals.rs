@@ -72,6 +72,9 @@ pub(crate) fn head_one(target: &Value, args: &[Value]) -> Option<Result<Value, R
     if !args.is_empty() {
         return None;
     }
+    if reads_through_interpreter(target) {
+        return None;
+    }
     let first = |items: &[Value]| items.first().cloned().unwrap_or(Value::NIL);
     Some(Ok(match target.view() {
         ValueView::Instance { class_name, .. } if user_instance(class_name) => return None,
@@ -135,6 +138,11 @@ pub(crate) fn tail_one(target: &Value, args: &[Value]) -> Option<Result<Value, R
     if !args.is_empty() {
         return None;
     }
+    // A lazy list cannot be tailed: the interpreter raises `X::Cannot::Lazy`
+    // (`dispatch_tail`), and reads a `Seq.new($iterator)` body.
+    if reads_through_interpreter(target) || is_lazy_tail_target(target) {
+        return None;
+    }
     let last = |items: &[Value]| items.last().cloned().unwrap_or(Value::NIL);
     Some(Ok(match target.view() {
         ValueView::Instance { class_name, .. } if user_instance(class_name) => return None,
@@ -154,4 +162,32 @@ pub(crate) fn tail_one(target: &Value, args: &[Value]) -> Option<Result<Value, R
 // Cost: O(s), s = instance-backed shapes.
 fn user_instance(class: crate::symbol::Symbol) -> bool {
     crate::value::DispatchShape::from_instance_class(class).is_none()
+}
+
+/// Whether `target` is a buffer-backed positional mixin (upstream NativeCall's
+/// `CArray[T]`), which reads its elements through its own `.list`: only the
+/// interpreter can call it (`call_method_with_values_inner`).
+// Cost: O(1).
+fn reads_through_interpreter(target: &Value) -> bool {
+    matches!(target.view(), ValueView::Mixin(..))
+        && crate::value::value_buf::buf_target(target).is_some()
+}
+
+/// Whether `.tail` on `target` must raise `X::Cannot::Lazy`: a lazy list or a
+/// Range with an infinite end.
+// Cost: O(1).
+pub(crate) fn is_lazy_tail_target(target: &Value) -> bool {
+    match target.view() {
+        ValueView::LazyList(_) => true,
+        ValueView::Range(_, end)
+        | ValueView::RangeExcl(_, end)
+        | ValueView::RangeExclStart(_, end)
+        | ValueView::RangeExclBoth(_, end) => end == i64::MAX,
+        ValueView::GenericRange { start, end, .. } => {
+            let start_f = start.to_f64();
+            let end_f = end.to_f64();
+            !start_f.is_finite() || !end_f.is_finite() || start_f.is_nan() || end_f.is_nan()
+        }
+        _ => false,
+    }
 }

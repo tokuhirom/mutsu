@@ -376,7 +376,9 @@ pub(crate) fn tail(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
     let [arg] = args else {
         return None;
     };
-    if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply") {
+    if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
+        || super::terminals::is_lazy_tail_target(target)
+    {
         return None;
     }
     let n = match arg.view() {

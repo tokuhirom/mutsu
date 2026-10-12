@@ -5,7 +5,7 @@ use Test;
 # `Array.tail` on their owners, `Any.head`/`Any.tail` (`self.list.head`) for
 # every other receiver, a type object included. `Mu` is no `Any`.
 
-plan 25;
+plan 26;
 
 class P { has $.head = 'attr' }
 class Q { }
@@ -37,4 +37,5 @@ ok Int.tail === Int, 'a type object tails itself';
 is Int.head(2).elems, 1, 'a type object heads one element';
 ok List.tail === List, 'the List type object tails itself';
 is (1, 2, 3).tail(2), (2, 3), 'List.tail(2)';
+throws-like { (1..*).tail }, X::Cannot::Lazy, 'an infinite Range cannot be tailed';
 throws-like { Mu.head }, X::Method::NotFound, 'Mu.head has no candidate';

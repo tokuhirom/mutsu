@@ -65,6 +65,7 @@ pub(crate) use collections::{
     capture, clone as collection_clone, lazy, list, list_aggregate, list_transform, map, pair,
     positional, quanthash, range, render as collection_render,
     render_names as collection_render_names, rotate as collection_rotate, seq, subscript,
+    terminals,
 };
 pub(crate) use instances::compunit_handle::owners_of as compunit_handle_owners_of;
 #[cfg(test)]

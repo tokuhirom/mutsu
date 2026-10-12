@@ -3267,7 +3267,7 @@ impl Interpreter {
             )
             && !bypass_native_fastpath
             && !matches!(target.view(), ValueView::Instance { .. })
-            && !Self::is_lazy_tail_target(&target)
+            && !crate::builtins::method_table::terminals::is_lazy_tail_target(&target)
         {
             return self.dispatch_head(target, &args[0]);
         }
