@@ -145,6 +145,21 @@ pub(crate) fn native_method_0arg(
     native_method_0arg_cascade(target, method_sym)
 }
 
+/// `Match`'s row for `method`, invoked on a match the table has no shape for
+/// (a grammar cursor, an instance of a `Match` subclass): their structure is a
+/// `Match`'s, so every row of the owner reads them as it reads a plain match.
+// Cost: O(k), k = rows named `method`, plus the row's own cost.
+fn match_owner_row(target: &Value, method: Symbol) -> Option<Result<Value, RuntimeError>> {
+    // `Mu.perl` is `.raku`.
+    let method = if method == "perl" {
+        Symbol::intern("raku")
+    } else {
+        method
+    };
+    let id = crate::builtins::method_table::owner_row(Symbol::intern("Match"), method, 0)?;
+    crate::builtins::method_table::invoke(id, target, &[])
+}
+
 /// [`native_method_0arg`] without the method table: the name-matching
 /// cascade, which `method_table`'s debug cross-check also runs.
 pub(crate) fn native_method_0arg_cascade(
@@ -223,37 +238,17 @@ pub(crate) fn native_method_0arg_cascade(
         return Some(Ok(Value::array(directives)));
     }
 
-    // Lazy-Match scalar fast path: these arms are semantically identical to
-    // the Match block far below, but answered here straight from the capture
-    // node so the probe gauntlet in between (each a `view()`, which would
-    // materialize the Match) never runs. Structural methods (`gist`, `list`,
-    // `hash`, `caps`, ...) fall through and materialize as before.
+    // A lazy Match the table has no shape for (a grammar cursor) answers
+    // `Match`'s rows here, straight from the capture node, so the probe
+    // gauntlet in between (each a `view()`, which would materialize the Match)
+    // never runs for the scalar accessors (`from`, `to`, `pos`, `Str`, ...).
+    // Cost: O(k) to find the row, k = rows named `method`, plus the row's own.
     if target.is_lazy_match_value() {
+        if let Some(result) = match_owner_row(target, method_sym) {
+            return Some(result);
+        }
         match method {
-            // Cost: O(1) (`.from`/`.to`/`.pos` read the capture node; `.orig`
-            // returns the shared subject Value; `.Str` copies the k matched chars).
-            // The `Match` rows' handlers (`method_table::regex_match`), for the
-            // lazy matches the table has no shape for (a grammar cursor).
-            "from" => return Some(Ok(crate::builtins::method_table::regex_match::from(target))),
-            "to" => return Some(Ok(crate::builtins::method_table::regex_match::to(target))),
-            "pos" => return Some(Ok(crate::builtins::method_table::regex_match::pos(target))),
-            "Str" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::str_value(
-                    target,
-                )));
-            }
-            "Bool" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::truthiness(
-                    target,
-                )));
-            }
-            "orig" | "target" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::orig(target)));
-            }
-            "ast" | "made" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::made(target)));
-            }
-            "Capture" | "clone" => return Some(Ok(target.clone())),
+            "Capture" => return Some(Ok(target.clone())),
             // `$<>` / `$/<>`: the zen slice of a Match is the Match itself.
             // Cost: O(1).
             "__mutsu_zen_angle" => return Some(Ok(target.clone())),
@@ -401,21 +396,6 @@ pub(crate) fn native_method_0arg_cascade(
         )
     {
         return native_method_0arg(inner, method_sym);
-    }
-
-    // Cost: O(p), p = number of parts in the Version; `.plus` is O(1), while
-    // `.parts` allocates O(p) result storage and `.whatever` scans O(p).
-    // Version introspection: `.parts` (list of Int/Str/Whatever parts),
-    // `.plus` (trailing `+`), `.whatever` (any `*` part). Used by zef's
-    // DependencySpecification version matching.
-    // The `Version` rows' handlers (ADR-11276, `method_table::scalars::version`).
-    if let ValueView::Version { .. } = target.view() {
-        match method {
-            "parts" => return crate::builtins::method_table::version::parts(target, &[]),
-            "plus" => return crate::builtins::method_table::version::plus(target, &[]),
-            "whatever" => return crate::builtins::method_table::version::whatever(target, &[]),
-            _ => {}
-        }
     }
 
     // $!.pending returns a list of all tracked Failure values (S04 spec).
@@ -705,6 +685,18 @@ pub(crate) fn native_method_0arg_cascade(
         }
         return native_method_0arg(inner, method_sym);
     }
+    // A call the method table answers has no arm below this point: the row is
+    // the method's only implementation (ADR-11276 §9.88). `native_method_0arg`
+    // asked the table before the cascade, so this declines only for the two
+    // callers that run the cascade without it: the debug cross-check, which
+    // takes a decline as agreement, and the VM entry whose user-override veto
+    // refused the row, where the interpreter must answer instead. The probes
+    // above stay in front of the rows, so the cross-check still verifies them.
+    // Cost: O(1) when no row has the name (a bit test); otherwise a tag probe,
+    // one hash lookup and, for a row found, its handler.
+    if crate::builtins::method_table::answer(target, method_sym, &[]).is_some() {
+        return None;
+    }
     // Any.nl-out returns the default newline separator "\n"
     if method == "nl-out" {
         return Some(Ok(Value::str_from("\n")));
@@ -723,24 +715,14 @@ pub(crate) fn native_method_0arg_cascade(
             method,
         ));
     }
-    // Uni types: the rows of `builtins::method_table::uni` answer `elems`, `codes`,
-    // `Int`, `Numeric`, `Str`, `list`, `gist`, `raku` and the positional
-    // subscript, and the table is asked first; the cascade reaches a `Uni` only
-    // when called without it (the debug cross-check), and then calls the rows'
-    // handlers. `.chars`, `.comb` and `.perl` (the deprecated alias of `.raku`)
-    // have no row.
+    // Uni types: the rows of `builtins::method_table::uni` answer the rest.
+    // `.chars`, `.comb` and `.perl` (the deprecated alias of `.raku`) have no
+    // row.
     if let ValueView::Uni(u) = target.view() {
-        use crate::builtins::method_table::uni;
         match method {
             // `chars` is no `Uni` method in current Rakudo, but roast pins it as the
             // codepoint count (`S15-string-types/NF-types.t`: `NFC.chars`).
-            "chars" | "elems" | "codes" | "Int" | "Numeric" => {
-                return Some(uni::elems(target, &[]));
-            }
-            "Str" => return Some(uni::str(target, &[])),
-            "list" => return Some(uni::list(target, &[])),
-            "gist" => return Some(uni::gist(target, &[])),
-            "raku" => return Some(uni::raku(target, &[])),
+            "chars" => return Some(crate::builtins::method_table::uni::elems(target, &[])),
             "perl" => {
                 return Some(Ok(Value::str(raku_repr::uni_raku_repr(&u.text(), &u.form))));
             }
@@ -790,38 +772,17 @@ fn dispatch_capture(
     named: &ValueMap,
     method: &str,
 ) -> Option<Result<Value, RuntimeError>> {
-    // Capture `.keys`/`.values`/`.kv`/`.pairs` interleave the positional
-    // part (indexed 0..n) with the named part (raku Capture semantics).
-    // These are the `Capture` rows' implementations (`method_table::capture`).
-    use crate::builtins::method_table::capture;
+    // The rest of `Capture`'s methods are rows (`method_table::capture`).
     match method {
-        "hash" => capture::hash(target, &[]),
-        "Hash" => capture::hash_coerce(target, &[]),
-        "list" => capture::list(target, &[]),
-        "elems" | "Numeric" | "Int" => capture::elems(target, &[]),
+        "Hash" => crate::builtins::method_table::capture::hash_coerce(target, &[]),
+        "Int" => crate::builtins::method_table::capture::elems(target, &[]),
         "is-lazy" => Some(Ok(Value::FALSE)),
-        "keys" => capture::keys(target, &[]),
-        "values" => capture::values(target, &[]),
-        "kv" => capture::kv(target, &[]),
-        "pairs" => capture::pairs(target, &[]),
-        "antipairs" => capture::antipairs(target, &[]),
-        // The renderers the `Capture` rows share (`method_table::collection_render_names`).
-        "raku" | "perl" => {
-            crate::builtins::method_table::collection_render_names::raku(target, &[])
-        }
-        "gist" => Some(Ok(Value::str(crate::value::capture_text::capture_gist(
-            positional, named,
-        )))),
-        "Str" => crate::builtins::method_table::collection_render_names::str_row(target, &[]),
+        "perl" => crate::builtins::method_table::collection_render_names::raku(target, &[]),
         "Bool" => Some(Ok(Value::truth(
             !positional.is_empty() || !named.is_empty(),
         ))),
         "WHAT" => Some(Ok(Value::package(Symbol::intern("Capture")))),
-        "flat" => {
-            let cap = Value::capture(positional.to_vec(), named.clone());
-            Some(Ok(Value::seq(vec![cap])))
-        }
-        "Seq" | "List" => {
+        "flat" | "Seq" | "List" => {
             let cap = Value::capture(positional.to_vec(), named.clone());
             Some(Ok(Value::seq(vec![cap])))
         }
@@ -1280,47 +1241,17 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     }
 
     // Match object methods
-    if let ValueView::Instance { attributes, .. } = target.view()
+    if let ValueView::Instance { .. } = target.view()
         && target.is_match_instance()
     {
+        // `Match`'s rows answer a match the table has no shape for (a grammar
+        // cursor, an instance of a subclass) through their owner.
+        if let Some(result) = match_owner_row(target, Symbol::intern(method)) {
+            return Some(result);
+        }
         let list_v = target.match_list();
         let named_v = target.match_named();
         match method {
-            // The `Match` rows' handlers (`method_table::regex_match`), for the
-            // matches the table has no shape for (a grammar cursor, an instance
-            // of a subclass).
-            "from" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::from(target)));
-            }
-            "to" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::to(target)));
-            }
-            "pos" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::pos(target)));
-            }
-            "gist" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::gist(
-                    &(attributes).as_map(),
-                )));
-            }
-            "Str" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::str_value(
-                    target,
-                )));
-            }
-            "Bool" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::truthiness(
-                    target,
-                )));
-            }
-            "orig" | "target" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::orig(target)));
-            }
-            "raku" | "perl" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::raku(
-                    &(attributes).as_map(),
-                )));
-            }
             "list" => {
                 return Some(Ok(target.match_list_view()));
             }
@@ -1452,46 +1383,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 };
                 return Some(Ok(Value::int(count as i64)));
             }
-            "ast" | "made" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::made(target)));
-            }
-            "prematch" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::prematch(
-                    target,
-                )));
-            }
-            "postmatch" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::postmatch(
-                    target,
-                )));
-            }
-            "actions" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::actions(
-                    &(attributes).as_map(),
-                )));
-            }
-            "caps" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::caps(
-                    &(attributes).as_map(),
-                )));
-            }
-            "chunks" => {
-                return Some(Ok(crate::builtins::method_table::regex_match::chunks(
-                    &(attributes).as_map(),
-                )));
-            }
             "Capture" => {
                 // Match.Capture returns self
-                return Some(Ok(target.clone()));
-            }
-            "clone" => {
-                // A Match clones to a Match — it must NOT delegate to its Str
-                // (the Cool `_` coercion below), which would drop the match
-                // structure and return the bare matched string. A Match is
-                // immutable, so a value clone (sharing the attribute storage) is
-                // a correct clone that keeps positional/named captures. (Before
-                // scalar `.clone` became a real method this happened to work via
-                // `Str.clone` falling through to the slow path.)
                 return Some(Ok(target.clone()));
             }
             // A Match has reference identity (`ObjAt.new("Match|<id>")`), not
