@@ -142,9 +142,9 @@ impl Interpreter {
                 };
                 let found = if *is_behind {
                     // A start earlier than `pos` minus the most the body can
-                    // consume cannot end at `pos` (#7576).
-                    let floor =
-                        super::super::regex_lookbehind::lookbehind_start_floor(pattern, chars, pos);
+                    // consume cannot end at `pos` (#7576), rule calls included
+                    // (#12917).
+                    let floor = self.lookbehind_start_floor_in(pattern, chars, pos, pkg);
                     (floor..=pos).find_map(|from| run(self, from, Some(pos)))
                 } else {
                     run(self, pos, None)
