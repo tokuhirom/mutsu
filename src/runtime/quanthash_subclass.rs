@@ -94,7 +94,22 @@ impl Interpreter {
         if attrs.contains_key("__baggy_data__") {
             return Ok(());
         }
-        let Some(base) = self.quanthash_base_kind(class_key) else {
+        // Pure class shape, memoized on a registered class's plan: the parent
+        // walk costs more than the rest of a plain `.new` (#12917).
+        let base = if self.registry().classes.contains_key(class_key) {
+            let plan = self.native_ctor_plan(Symbol::intern(class_key));
+            match plan.quanthash_base.get() {
+                Some(base) => *base,
+                None => {
+                    let base = self.quanthash_base_kind(class_key);
+                    let _ = plan.quanthash_base.set(base);
+                    base
+                }
+            }
+        } else {
+            self.quanthash_base_kind(class_key)
+        };
+        let Some(base) = base else {
             return Ok(());
         };
         let storage = self.quanthash_base_storage(base, positional_args.to_vec())?;

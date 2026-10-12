@@ -1384,9 +1384,8 @@ impl Interpreter {
                 // attribute; storing it would make `eqv` compare a key the object
                 // is not supposed to have. Only when the class's attribute set is
                 // fully known — see `NativeCtorPlan::attrs_fully_known`.
-                let attrs_fully_known = self
-                    .native_ctor_plan(crate::symbol::Symbol::intern(class_key))
-                    .attrs_fully_known;
+                let ctor_plan = self.native_ctor_plan(crate::symbol::Symbol::intern(class_key));
+                let attrs_fully_known = ctor_plan.attrs_fully_known;
                 // First, collect constructor args into attrs
                 self.env = saved_default_env.clone();
                 let class_mro = self.class_mro(class_key);
@@ -1400,14 +1399,10 @@ impl Interpreter {
                 // Role-composed BUILD submethods count as a BUILD phase too, for
                 // the attribute-initializer ordering below (not for the
                 // named-arg mapping above, which only a class BUILD takes over).
-                let any_role_build = class_mro.iter().map(|s| s.as_str()).any(|cn| {
-                    cn != "Any"
-                        && cn != "Mu"
-                        && !self
-                            .ordered_role_submethods_for_class(cn, "BUILD")
-                            .is_empty()
-                });
-                let has_build_phase = any_build || any_role_build;
+                // The plan's `has_build` counts them, from the class shape
+                // (re-ordering every role's submethods per construction was
+                // most of a `.new`, #12917).
+                let has_build_phase = any_build || ctor_plan.has_build;
                 // A custom BUILD takes over named-arg → attribute mapping only
                 // for the attributes of the MRO layer declaring it; other
                 // layers still auto-assign (see `build_owning_attr_names`).
@@ -1863,7 +1858,6 @@ impl Interpreter {
                 // `run_build_phase` / `run_tweak_phase` (formerly duplicated
                 // inline here).
                 inv_cell.commit_attrs(attrs);
-                let mro = self.class_mro(class_key);
                 self.push_build_write_frame(&inv);
                 let build_result = self.run_build_phase(*class_name, &inv, &args);
                 let build_writes = self.pop_build_write_frame();
@@ -1914,15 +1908,9 @@ impl Interpreter {
                     self.enforce_attribute_where_constraints(class_key, &class_attrs_info, &attrs)?;
                     self.enforce_attribute_smiley_constraints(class_key, &attrs, None)?;
                 }
-                let any_tweak = mro.iter().map(|s| s.as_str()).any(|cn| {
-                    cn != "Any"
-                        && cn != "Mu"
-                        && (self.registry().user_method_overloads(cn, "TWEAK").is_some()
-                            || !self
-                                .ordered_role_submethods_for_class(cn, "TWEAK")
-                                .is_empty())
-                });
-                if any_tweak {
+                // A class or role-composed TWEAK anywhere in the MRO, from the
+                // class shape (see `has_build_phase`).
+                if ctor_plan.has_tweak {
                     // `fail` inside TWEAK yields a Failure `.new` returns.
                     if let Err(failure) = self.run_tweak_phase(*class_name, &inv, &args)? {
                         return Ok(failure);

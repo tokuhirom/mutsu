@@ -526,6 +526,8 @@ impl Interpreter {
             eligible,
             eligible_when_user_new_declines,
             noarg_user_new_declines: std::sync::OnceLock::new(),
+            smiley_rules: std::sync::OnceLock::new(),
+            quanthash_base: std::sync::OnceLock::new(),
             class_attrs,
             attr_syms,
             type_constraints,
