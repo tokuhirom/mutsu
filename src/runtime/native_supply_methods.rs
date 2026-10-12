@@ -282,7 +282,7 @@ impl Interpreter {
     }
 
     /// Deliver a failure raised by *producer* code running on a detached
-    /// `run_supply_act_loop` worker to the enclosing supply's `quit =>`
+    /// act loop (`native_methods::act_loop`) to the enclosing supply's `quit =>`
     /// handlers (issue #8185).
     ///
     /// `err` is a `die` from a `supply { }` block's `whenever` body, or a Rust

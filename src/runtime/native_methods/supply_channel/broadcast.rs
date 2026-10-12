@@ -14,6 +14,24 @@ use std::sync::{Arc, Condvar, Mutex, Weak};
 
 pub(super) type WakerSet = Arc<Mutex<Vec<ReactWaker>>>;
 
+/// A callback-style waker: run on the sending thread after every send (and on
+/// sender drop) instead of waking a parked thread. An event-driven consumer
+/// (the channel-backed tap's act loop, issue #12892) registers one that
+/// schedules a drain task, so an idle tap holds no thread at all. It must be
+/// cheap and must not block: it runs inside `SupplySender::send`.
+pub(crate) type DrainHook = Arc<dyn Fn() + Send + Sync>;
+
+/// Registered drain hooks, keyed by an id their owner picks.
+#[derive(Default)]
+pub(super) struct DrainHooks(pub(super) Mutex<Vec<(u64, DrainHook)>>);
+
+impl std::fmt::Debug for DrainHooks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let n = self.0.lock().map(|hs| hs.len()).unwrap_or(0);
+        write!(f, "DrainHooks({n})")
+    }
+}
+
 /// Condvar-backed "something happened" signal, bumped by every send. Blocking
 /// subscribers wait on it instead of spinning; the wait is bounded anyway, so
 /// a lost notification costs latency, never a hang.
@@ -43,13 +61,25 @@ impl Signal {
     }
 }
 
-pub(super) fn notify_all(wakers: &WakerSet, signal: &Signal) {
+// Cost: O(w + h), w = registered drive-loop wakers, h = registered drain hooks.
+pub(super) fn notify_all(wakers: &WakerSet, broadcast: &Broadcast) {
     if let Ok(ws) = wakers.lock() {
         for w in ws.iter() {
             w.notify();
         }
     }
-    signal.bump();
+    broadcast.signal.bump();
+    // Cloned out of the lock: a hook may submit a pool task, and nothing it
+    // reaches may need this lock (registration from the drain it schedules).
+    let hooks: Vec<DrainHook> = broadcast
+        .drain_hooks
+        .0
+        .lock()
+        .map(|hs| hs.iter().map(|(_, h)| Arc::clone(h)).collect())
+        .unwrap_or_default();
+    for hook in hooks {
+        hook();
+    }
 }
 
 /// One tap's private queue.
@@ -93,6 +123,7 @@ pub(super) struct Broadcast {
     pub(super) exclusive: AtomicBool,
     pub(super) wakers: WakerSet,
     pub(super) signal: Signal,
+    pub(super) drain_hooks: DrainHooks,
 }
 
 impl Broadcast {
