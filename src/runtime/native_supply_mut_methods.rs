@@ -541,12 +541,20 @@ impl Interpreter {
                         } else {
                             done_cb.clone()
                         };
-                        done_group_marker = group_done.map(|group_done| {
-                            let group_id =
-                                create_whenever_done_group(whenever_supplier_count, group_done);
-                            done_group_id = Some(group_id);
-                            Self::make_whenever_done_group_marker(group_id)
-                        });
+                        // The block ends when its whole group does -- every
+                        // counted `whenever` finished -- and only then do its
+                        // CLOSE phasers run, after the downstream `done`, as
+                        // in rakudo (#12880). The group therefore exists even for a tap
+                        // with no `done =>`.
+                        let close_marker = Self::make_supply_close_marker(emitter_supplier_id);
+                        let group_done = match group_done {
+                            Some(done) => Self::make_supply_done_chain(vec![done, close_marker]),
+                            None => close_marker,
+                        };
+                        let group_id =
+                            create_whenever_done_group(whenever_supplier_count, group_done);
+                        done_group_id = Some(group_id);
+                        done_group_marker = Some(Self::make_whenever_done_group_marker(group_id));
                     }
 
                     let mut plain_values = Vec::new();
@@ -767,15 +775,6 @@ impl Interpreter {
                                 // so done only fires when ALL whenevers complete.
                                 if let Some(ref marker) = done_group_marker {
                                     register_supplier_done_callback(supplier_id, marker.clone());
-                                }
-                                // Fire CLOSE phasers when this source signals
-                                // done (normal termination), in addition to an
-                                // explicit tap close.
-                                if let Some(cid) = close_supplier_id {
-                                    register_supplier_done_callback(
-                                        supplier_id,
-                                        Self::make_supply_close_marker(cid),
-                                    );
                                 }
                                 // This source's `.on-close` callbacks run when
                                 // the block stops listening to it, which is

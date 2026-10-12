@@ -88,11 +88,10 @@ impl Interpreter {
                 .get("close_supplier_id")
                 .map(|v| v.view())
         {
-            // Not the nested `whenever` taps (#12864): this marker sits on
-            // every supplier-backed source's done, so it fires when ONE source
-            // ends while the block's other subscriptions -- the nested ones
-            // above all, e.g. `Cro::HTTP::Client`'s `establish` once its
-            // connection promise is kept -- are still live.
+            // The block's done group fires this once every counted `whenever`
+            // has finished (#12880). Its nested `whenever` taps are not closed
+            // here (#12864): a nested one is a member of the same group, so
+            // it has finished too or is not counted.
             for cb in take_supplier_close_callbacks(cid as u64) {
                 self.call_sub_value(cb, vec![], true)?;
             }
