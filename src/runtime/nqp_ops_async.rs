@@ -195,7 +195,7 @@ impl Interpreter {
         })
     }
 
-    /// `nqp::timer` / `nqp::cancel` / `nqp::signal`.
+    /// `nqp::timer` / `nqp::cancel` / `nqp::signal` / `nqp::watchfile`.
     pub(crate) fn call_nqp_op_async(
         &mut self,
         op: &str,
@@ -229,6 +229,13 @@ impl Interpreter {
             // Cost: O(w + s), w = live signal watchers (the retired-watcher
             // sweep), s = signal numbers watched.
             "signal" => self.nqp_signal(args),
+            // nqp::watchfile($queue, $schedulee, $path, $type): push
+            // `[$schedulee, $name, $renamed, $error]` onto `$queue` for each
+            // change to `$path` (a file, or a directory's entries); answer a
+            // new `$type` handle.
+            // Cost: O(1) here; the watcher thread pays O(n) per poll, n =
+            // entries of the watched directory (1 for a file).
+            "watchfile" => self.nqp_watchfile(args),
             _ => return None,
         })
     }
@@ -265,6 +272,21 @@ impl Interpreter {
         crate::runtime::signal_watcher::register_signal_queue(signum as i32, sink)
             .map_err(crate::runtime::builtins_system::refused_thread_error)?;
         setup_queue.send(Value::vm_array(vec![args[1].clone()]));
+        Ok(handle)
+    }
+
+    fn nqp_watchfile(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        check_arity("watchfile", args, 4)?;
+        let class = handle_class(self, "file watch", &args[3])?;
+        let queue = queue_operand("file watch", "target queue", &args[0])?;
+        let path = operand(&args[2]).to_string_value();
+        let (handle, cancelled) = self.new_task(class)?;
+        let sink = QueueSink {
+            queue,
+            schedulee: args[1].clone(),
+            cancelled,
+        };
+        self.watch_path_queue(&path, sink)?;
         Ok(handle)
     }
 

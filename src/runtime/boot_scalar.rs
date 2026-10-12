@@ -70,6 +70,12 @@ impl Interpreter {
         boot_box(Symbol::intern("BOOTInt"), Value::int(i))
     }
 
+    /// A `BOOTStr` box holding `s` (a watched file's name, an error).
+    // Cost: O(len(s)).
+    pub(crate) fn boot_str(s: &str) -> Value {
+        boot_box(Symbol::intern("BOOTStr"), Value::str_from(s))
+    }
+
     /// `nqp::create` of a BOOT scalar type: a box holding the type's zero.
     // Cost: O(1).
     pub(crate) fn create_boot_scalar(name: &str) -> Option<Value> {
