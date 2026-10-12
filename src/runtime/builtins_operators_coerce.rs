@@ -17,9 +17,23 @@ impl Interpreter {
         // `(1,2,3) == (1,2,4)` is `3 == 3` (True), NOT an element-wise compare
         // (that is `cmp`). This must run before the Instance check below so the
         // numeric comparison ops (`== != < > <= >= <=>`) see the elem count.
+        //
+        // The count reads an Array's live range, which another thread's
+        // `push`/`shift` rewrites under the container's stripe: take the same
+        // stripe first (a leaf read, no user code), or even locating the range
+        // can see it torn mid-update (#11210). One relaxed load and no lock
+        // until a second mutator thread exists; nothing for a non-container.
+        let structure = if crate::value::container_lock::multi_mutator_threads_live()
+            && matches!(value.view(), ValueView::Array(..))
+        {
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, &value)
+        } else {
+            None
+        };
         if let Some(items) = value.as_list_items() {
             return Ok(Value::int(items.len() as i64));
         }
+        drop(structure);
         // An enum VALUE (e.g. `CBOR_Tag_Invalid_8Byte` from `enum CBORMinMax
         // (... => 18446744073709551615, ...)`) numifies to its underlying
         // value, matching Raku's `Enumeration` role — `$n == SomeEnumValue`

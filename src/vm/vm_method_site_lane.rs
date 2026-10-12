@@ -325,8 +325,13 @@ impl Interpreter {
             Err(e) => render(Err(e)),
         };
         let diverted_by_handler = resumed.is_some() && full.is_err();
+        // The two runs read the receiver twice. Once a second VM mutator thread
+        // exists, another thread may change a shared container between them
+        // (`@x.elems` while a sibling pushes, #11210): a different answer is
+        // then the program's race, not a dispatch difference.
+        let raced = crate::value::container_lock::multi_mutator_threads_live();
         debug_assert!(
-            diverted_by_handler || lane == full_rendered,
+            diverted_by_handler || raced || lane == full_rendered,
             "the method-table lane disagrees with the full CallMethodMut path for .{} \
              (row owner {}) at ip {ip} -- a probe the lane skips now claims this call\n  \
              lane: {lane:?}\n  full: {full_rendered:?}",
