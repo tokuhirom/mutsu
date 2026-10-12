@@ -1,8 +1,8 @@
 # ADR-11505: Rakudo's frame-state `p6*` nqp ops
 
 - **Status**: Accepted (user decision 2026-10-12; Proposed 2026-10-11). §2.1–§2.4 are
-  implemented in [#12842](https://github.com/tokuhirom/mutsu/pull/12842); §2.5 and §2.6 are
-  not yet implemented.
+  implemented in [#12842](https://github.com/tokuhirom/mutsu/pull/12842), §2.5 in the PR
+  that adds `parser/p6_frame_state.rs`; §2.6 is not yet implemented.
 - **Date**: 2026-10-11
 - **Issue**: [#11505](https://github.com/tokuhirom/mutsu/issues/11505) (campaign
   [#11488](https://github.com/tokuhirom/mutsu/issues/11488))
@@ -117,13 +117,20 @@ declaration on the first run.
 Residue: Rakudo's optimizer also inlines a statement-level `for 1 { }` over one constant
 element. These rules treat that as an inlined body, which agrees with Rakudo's answer.
 
-### 2.5 `p6setfirstflag` / `p6takefirstflag` (decided, not yet implemented)
+### 2.5 `p6setfirstflag` / `p6takefirstflag`
 
 `p6setfirstflag($do)` sets a flag on a code object. Like Rakudo, it requires the bytecode
 handle (`nqp::getattr(&f, Code, '$!do')`, not `&f`). `p6takefirstflag()` reads and clears
 the flag of the running frame's code object, with the frame found as in §2.4. The flag
-belongs to the closure clone, so it is kept per clone identity, in the subsystem that owns
-code objects (never a new `Interpreter` field).
+belongs to the closure clone.
+
+Implementation: the §2.4 parse-time pass (now `parser/p6_frame_state.rs`) hands each
+`p6takefirstflag()` its frame's code object as an operand: `&name` in a named sub,
+`&?ROUTINE` in a method or a multi, `&?BLOCK` in any other code object, and the literal 0 in
+the mainline. A process-wide set (`runtime/nqp_ops_p6.rs`) holds the flagged code objects,
+keyed by name plus `sub_state_scope_id`, the closure-clone identity that `state` variables
+are already scoped by. So `&f`, its `$!do` and `&?BLOCK` of one clone share one flag
+without depending on the identity of the `&?ROUTINE` value (#12840).
 
 Not mirrored: Rakudo's `for` loop sets the flag on a loop body that has a `FIRST` phaser, so
 a `p6takefirstflag()` inside that body answers 1 on the first iteration. A `while` loop does
@@ -136,9 +143,18 @@ program reads the flag inside such a loop.
 given code was declared in: its static outer, which is `<unit>` at the top level of a
 program. Implementing it needs a code object to record its static outer when it is compiled.
 
+What Rakudo makes observable (2026.09): the answer is a code ref (`nqp::iscoderef` is 1)
+whose `nqp::getcodename` is the enclosing routine's name, or `<unit>` at the top level; the
+chain continues through the outer units. It is the *static* code, not the running clone:
+`p6staticouter($do) =:= nqp::getattr(&g, Code, '$!do')` is False even when `g` encloses
+the code, and two calls do not answer the same object. The planned shape: each compiled code
+chunk keeps a weak reference to its enclosing chunk, and the op answers a direct code object
+over that chunk with no captured environment.
+
 ## 3. Consequences
 
-- `docs/nqp-op-coverage.md`: Rakudo p6* goes from 17 / 26 to 23 / 26 with §2.1–§2.4.
+- `docs/nqp-op-coverage.md`: Rakudo p6* goes from 17 / 26 to 23 / 26 with §2.1–§2.4, and
+  to 25 / 26 with §2.5.
 - `nqp::usecapture` in a routine TRIR used to admit now gets its capture.
 - No per-call cost for code that does not use these ops: the capture is recorded only for
   flagged code objects, and the `p6stateinit` pass runs only when the source mentions the op.

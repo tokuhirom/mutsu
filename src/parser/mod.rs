@@ -40,7 +40,7 @@ pub(crate) mod helpers;
 pub(in crate::parser) mod memo;
 pub(crate) mod no_execute;
 mod outer_redecl;
-mod p6_stateinit;
+mod p6_frame_state;
 mod parse_result;
 mod primary;
 pub(crate) use primary::container::finalize_array_sections;
@@ -843,10 +843,10 @@ fn parse_program_keeping(
             // `use trace` hooks hold their statement's source offset until the
             // whole unit's statement attempts are known.
             stmt::trace::number_statements(&mut stmts);
-            // `nqp::p6stateinit()` reads its frame's first-run flag, which
-            // only the whole tree can place (ADR-11505 §2.4).
-            if !keep_spelling && source.contains("p6stateinit") {
-                p6_stateinit::lower_program(&mut stmts);
+            // `nqp::p6stateinit()` and `nqp::p6takefirstflag()` read their frame,
+            // which only the whole tree can place (ADR-11505 §2.4, §2.5).
+            if !keep_spelling && p6_frame_state::mentions_op(source) {
+                p6_frame_state::lower_program(&mut stmts);
             }
             let rest_trimmed = rest.trim();
             if !rest_trimmed.is_empty() {
