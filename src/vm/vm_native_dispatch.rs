@@ -892,7 +892,7 @@ impl Interpreter {
         // back, so a caller that falls through to another dispatch path after
         // a `None` passes on the stolen or pulled argument rather than the
         // consumed Seq.
-        if Self::has_builtin_seq_read(&args) {
+        if Self::has_builtin_seq_read(args) {
             match self.builtin_gather_args(name_sym.as_str(), args) {
                 Ok(read) => *args = read.into_owned(),
                 Err(e) => return Some(Err(e)),
