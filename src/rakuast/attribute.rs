@@ -36,6 +36,7 @@ use super::lower::{lower_expr, named_child, named_child_or_positional, positiona
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Expr;
 use crate::ast::attr_trait::AttrTrait;
+use crate::ast_visit::VisitMut;
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// The message the parser records for a bare `is DEPRECATED`.
@@ -181,7 +182,7 @@ impl AttributeTraits {
                         .ok_or_else(|| unsupported("attribute `handles` spelling not kept"))?;
                     Value::rakuast(Box::new(RakuAstNode {
                         class: RakuAstClass::TraitHandles,
-                        fields: vec![node_field(None, convert_expr(term)?)],
+                        fields: vec![node_field(None, convert_handles_term(term)?)],
                     }))
                 }
             };
@@ -189,6 +190,34 @@ impl AttributeTraits {
         }
         Ok(items)
     }
+}
+
+/// Bare identifiers in a `handles(...)` list name delegated methods, so their
+/// term value is the method name string rather than a lexical bareword.
+// Cost: O(e), e = size of the handles term.
+fn convert_handles_term(term: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    struct MethodNames;
+    impl VisitMut for MethodNames {
+        fn visit_expr_mut(&mut self, expr: &mut Expr) {
+            if matches!(
+                expr,
+                Expr::Unary {
+                    op: crate::token_kind::TokenKind::Pipe,
+                    ..
+                }
+            ) {
+                return;
+            }
+            if let Expr::BareWord(name) = expr {
+                *expr = Expr::Literal(Value::str(name.clone()));
+                return;
+            }
+            crate::ast_visit::walk_expr_mut(self, expr);
+        }
+    }
+    let mut term = term.clone();
+    MethodNames.visit_expr_mut(&mut term);
+    convert_expr(&term)
 }
 
 /// `(EXPR)` as a trait argument.
