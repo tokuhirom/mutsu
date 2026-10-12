@@ -116,6 +116,12 @@ impl Env {
     // Cost: O(d), d = tiers between the write and the owning frame root.
     pub(crate) fn assign_match_var(&mut self, value: Value) {
         let key = crate::symbol::wk::match_var();
+        // The common case, a frame matching again: its own tier already binds
+        // a plain `$/`, which nothing below can shadow.
+        if self.inner.get(&key).is_some_and(|v| !v.is_container_ref()) {
+            self.insert_sym(key, value);
+            return;
+        }
         // `is_container_ref` first: viewing the previous `$/` would force a
         // lazy Match the program never looked at.
         if let Some(bound) = self.get_match_state_sym(key)
