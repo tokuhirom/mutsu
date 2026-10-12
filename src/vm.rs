@@ -189,6 +189,7 @@ mod vm_comparison_order_ops;
 mod vm_ctor_lane;
 mod vm_eqv_instances;
 mod vm_operator_values;
+mod vm_trailing_sub_decl;
 pub(crate) use vm_operator_values::StrCmp;
 mod vm_concat_assign;
 mod vm_control_ops;

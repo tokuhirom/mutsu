@@ -1429,9 +1429,7 @@ impl Interpreter {
         if pushed_samewith_context {
             self.pop_samewith_context();
         }
-        drop(pkg_guard);
-
-        let ret_val = if result.is_ok() {
+        let mut ret_val = if result.is_ok() {
             if self.stack.len() > saved_stack_depth {
                 self.stack.pop().unwrap_or(Value::NIL)
             } else {
@@ -1440,6 +1438,16 @@ impl Interpreter {
         } else {
             Value::NIL
         };
+        // A body ending in a `sub` declaration returns that Sub, as on the
+        // named call path (#13040): a named routine called through its code
+        // object (`&pw()`) runs here. Still under the callee's package, so
+        // the declared routine's registry key resolves.
+        if result.is_ok()
+            && let Some(sub) = self.trailing_sub_decl_value(cc, &ret_val, compiled_fns)
+        {
+            ret_val = sub;
+        }
+        drop(pkg_guard);
 
         // Natural fall-through completion (no explicit return / break arm): a
         // body that ends with `temp $x = ...` must restore the `temp` binding
