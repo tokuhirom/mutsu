@@ -1182,6 +1182,22 @@ impl Compiler {
         Some(slot)
     }
 
+    /// Whether an expression-position declaration is a scalar bind
+    /// (`(my $x := EXPR)`). Like the statement form it takes a declaration slot,
+    /// so each execution declares a fresh cell: a later `$q := $x` then aliases
+    /// that cell rather than the name `x`, which a repeated declaration (a loop
+    /// body) would otherwise re-bind underneath it.
+    // Cost: O(t), t = the declaration's traits.
+    pub(super) fn is_scalar_bind_decl(
+        name: &str,
+        custom_traits: &[(String, Option<Expr>)],
+    ) -> bool {
+        !name.starts_with('@')
+            && !name.starts_with('%')
+            && !name.starts_with('&')
+            && custom_traits.iter().any(|(t, _)| t == "__scalar_bind")
+    }
+
     /// Whether ADR-0039 slice 2's read flip covers `sigiled` at all — the
     /// name-shape predicate of [`Compiler::container_read_slot`], without
     /// requiring that a slot already exists.
