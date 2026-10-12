@@ -344,7 +344,10 @@ impl SharedChannel {
     // Cost: O(1).
     pub(crate) fn len(&self) -> usize {
         let (lock, _) = &*self.inner;
-        lock.lock().unwrap().queue.len()
+        lock.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .queue
+            .len()
     }
 
     pub(crate) fn poll_result(&self) -> Result<Option<Value>, Value> {
