@@ -389,63 +389,12 @@ impl Interpreter {
             {
                 return Ok(Some(def));
             }
-            let prefix = format!("{}/{arity}:", name);
-            let untyped_key = format!("{}/{}", name, arity);
-            let untyped_key_sym = Symbol::intern(&untyped_key);
-            let untyped_m_prefix = format!("{}__m", untyped_key);
-            let base_keys = self.fn_keys_for_base(name);
-            let mut candidates: Vec<(String, Arc<FunctionDef>)> = {
-                let registry = self.registry();
-                base_keys
-                    .iter()
-                    .filter_map(|key| registry.functions.get(key).map(|def| (key, def)))
-                    .filter(|(key, _)| {
-                        let ks = key.as_str();
-                        ks.starts_with(&prefix)
-                            || **key == untyped_key_sym
-                            || ks.starts_with(&untyped_m_prefix)
-                    })
-                    .map(|(key, def)| (key.resolve(), def.clone()))
-                    .collect()
-            };
-            self.merge_flexible_arity_candidates(name, &mut candidates);
-            self.sort_candidates_by_specificity(&mut candidates);
+            // Every arity at once: a candidate registered under another arity
+            // (an optional, defaulted or slurpy positional, or a sub-signature
+            // capture, registered at arity 0) is ranked in the same tiers as
+            // the exact-arity ones.
+            let candidates = self.qualified_multi_candidates(name);
             if let Some(def) = self.choose_best_matching_candidate(name, arg_values, candidates)? {
-                return Ok(Some(def));
-            }
-            // Capture-subsignature candidates (`multi foo(|c(...))`) are registered
-            // at arity 0 because the capture consumes all arguments; the real
-            // dispatch parameters live in the subsignature.  Such candidates are
-            // not found by the arity-keyed lookup above, so collect them
-            // separately (across all arities under `name/`) and dispatch on them.
-            let subsig_prefix = format!("{}/", name);
-            let mut subsig_candidates: Vec<(String, Arc<FunctionDef>)> = {
-                let registry = self.registry();
-                base_keys
-                    .iter()
-                    .filter_map(|key| registry.functions.get(key).map(|def| (key, def)))
-                    .filter(|(key, def)| {
-                        key.as_str().starts_with(&subsig_prefix)
-                            && def.param_defs.iter().any(|p| p.is_capture_subsignature())
-                    })
-                    .map(|(key, def)| (key.resolve(), def.clone()))
-                    .collect()
-            };
-            if !subsig_candidates.is_empty() {
-                self.sort_candidates_by_specificity(&mut subsig_candidates);
-                if let Some(def) =
-                    self.choose_best_matching_candidate(name, arg_values, subsig_candidates)?
-                {
-                    return Ok(Some(def));
-                }
-            }
-            // A candidate whose declared arity differs from the call's because a
-            // trailing parameter is optional/defaulted/slurpy.
-            let flexible = self.qualified_flexible_arity_candidates(name);
-            if !flexible.is_empty()
-                && let Some(def) =
-                    self.choose_best_matching_candidate(name, arg_values, flexible)?
-            {
                 return Ok(Some(def));
             }
             // Visibility was decided by the gate at the top of this branch.
