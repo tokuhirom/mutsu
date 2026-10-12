@@ -50,7 +50,8 @@ my $all = q:to/CODE/;
     unlike $err, /panicked/, '... and is never a panic';
     my @lines = $out.lines.grep(/':'/);
     is +@lines, 10, '... every operation reports';
-    ok @lines.all ~~ /': X::AdHoc: Could not create a new Thread'/,
+    # An awaited refusal arrives `but X::Await::Died`, as in rakudo.
+    ok @lines.all ~~ /': X::AdHoc' '+{X::Await::Died}'? ': Could not create a new Thread'/,
         '... each as the catchable refused-thread X::AdHoc'
         or diag $out;
 }
@@ -66,7 +67,7 @@ my $all = q:to/CODE/;
         CATCH { default { say .^name, ": ", .message; say "fast" if now - $t < 20 } }
         CODE
     my ($rc, $out, $err) = run-child($code, 'proc-out');
-    like $out, /^ 'X::AdHoc: Could not create a new Thread'/,
+    like $out, /^ 'X::AdHoc+{X::Await::Died}: Could not create a new Thread'/,
         'a refused stdout reader breaks the start promise';
     ok $out.contains('fast'), '... after killing the child rather than waiting for it';
 }
