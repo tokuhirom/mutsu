@@ -6,7 +6,7 @@ use Test;
 # name at parse time, so the node says what it is (measured on rakudo 2026.09):
 # a type is a `Type::Simple`, a setting enum value a `Term::Enum`, any other
 # defined term (a setting constant, the unit's enum value, a sigilless
-# parameter) a `Term::Name`, and an argument-less redispatch call a
+# parameter) a `Term::Name`, and a core call without parentheses a
 # `Call::Name::WithoutParentheses`. Each EVALs back to what the name means.
 
 plan 34;
