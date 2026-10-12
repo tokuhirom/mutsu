@@ -169,6 +169,11 @@ struct Frame {
     /// statement. A lifted BEGIN that calls one gets its own copy
     /// ([`Routine`]).
     routines: Vec<Routine>,
+    /// Routines declared in this scope that the prologue cannot copy but that a
+    /// body can only reach by calling them by name: a `multi`, an `our` or
+    /// exported `sub`. A lifted BEGIN that calls any name it cannot copy stays
+    /// behind, so these need no more than their presence recorded.
+    uncopyable_routines: bool,
     /// Edits to this scope's statement list, applied once it has been walked.
     edits: Vec<(usize, Edit)>,
     /// Phasers prepended to this scope's statements once it has been walked.

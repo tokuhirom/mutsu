@@ -219,6 +219,24 @@ fn copyable_routine_name(decl: &Stmt) -> Option<String> {
     plain.then_some(name)
 }
 
+/// Whether `decl` is a routine with an ordinary name, which a body reaches only
+/// by calling that name: a `multi`, an `our` or exported `sub`. An operator or
+/// other category routine is also reached through syntax the parser
+/// registered, so it is not one.
+// Cost: O(t), t = traits on the declaration.
+fn named_by_call_only(decl: &Stmt) -> bool {
+    let Stmt::SubDecl {
+        name,
+        name_expr: None,
+        supersede: false,
+        ..
+    } = decl
+    else {
+        return false;
+    };
+    !name.resolve().contains(':')
+}
+
 impl Walker<'_> {
     /// Note a routine declared in the current scope. A plain one can be
     /// declared again in a lifted BEGIN's block; any other blocks the scope.
@@ -232,6 +250,7 @@ impl Walker<'_> {
                 decl: decl.clone(),
                 bindings: frame.bindings.len(),
             }),
+            None if named_by_call_only(decl) => frame.uncopyable_routines = true,
             None => frame.blocked = true,
         }
     }
@@ -263,7 +282,7 @@ impl Walker<'_> {
         let routines_in_scope = self
             .frames
             .iter()
-            .any(|f| !f.routines.is_empty() || !f.types.is_empty());
+            .any(|f| !f.routines.is_empty() || !f.types.is_empty() || f.uncopyable_routines);
         // The body sees every scope; a routine sees the ones it was declared in,
         // up to its own position.
         let mut pending = vec![(Scan::of(body), None)];
