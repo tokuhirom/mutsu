@@ -192,7 +192,13 @@ impl Env {
                 // An activation's capture stays observable to the per-name
                 // store checks (`frame_capture_holds`), which the chain flag
                 // lets in.
-                if matches!(&*record, StaticLink::UnitOuter { activation: Some(_), .. }) {
+                if matches!(
+                    &*record,
+                    StaticLink::UnitOuter {
+                        activation: Some(_),
+                        ..
+                    }
+                ) {
                     flat.chain_has_static_link = true;
                 }
                 flat.cow_mut().set_static_link(record);

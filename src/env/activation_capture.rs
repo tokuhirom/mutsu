@@ -46,7 +46,9 @@ impl Env {
         self.chain_has_static_link
             && lexically_scoped(key)
             && !suppressed()
-            && self.frame_activation().is_some_and(|view| view.get(&key).is_some())
+            && self
+                .frame_activation()
+                .is_some_and(|view| view.get(&key).is_some())
     }
 
     /// Whether the frame this env runs in is linked to a declaring
