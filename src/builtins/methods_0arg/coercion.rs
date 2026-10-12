@@ -35,20 +35,6 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         {
             Some(Ok(Value::FALSE))
         }
-        "re" => match target.view() {
-            ValueView::Complex(..) => Some(crate::builtins::method_table::complex::re(target, &[])),
-            _ => None,
-        },
-        "im" => match target.view() {
-            ValueView::Complex(..) => Some(crate::builtins::method_table::complex::im(target, &[])),
-            _ => None,
-        },
-        "reals" => match target.view() {
-            ValueView::Complex(..) => {
-                Some(crate::builtins::method_table::complex::reals(target, &[]))
-            }
-            _ => None,
-        },
         "Complex" => match target.view() {
             ValueView::Instance { .. }
                 if target.does_check("Real") || target.does_check("Numeric") =>
@@ -92,49 +78,6 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             ValueView::Package(name) if name.resolve() == "Pair" => Some(Ok(target.clone())),
             _ => None,
         },
-        // `key`, `value` and `antipair` on a `Pair` are the `Pair` rows'
-        // handlers (`method_table::pair`).
-        "key" => match target.view() {
-            ValueView::Pair(..) | ValueView::ValuePair(..) => {
-                crate::builtins::method_table::pair::key(target, &[])
-            }
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Pair" => Some(Ok(attributes
-                .as_map()
-                .get("key")
-                .cloned()
-                .unwrap_or(Value::NIL))),
-            ValueView::Bool(_) => Some(crate::builtins::method_table::truth::bool_key(target, &[])),
-            _ => None,
-        },
-        "value" => match target.view() {
-            // `hash_entry_read` returns the live node value for a `for %h -> $p`
-            // pair's HashEntryRef (so `$p.value` in arithmetic sees the plain
-            // value and tracks in-loop `%h{$p.key} = X` writes), and is a plain
-            // clone for any other pair value.
-            ValueView::Pair(..) | ValueView::ValuePair(..) => {
-                crate::builtins::method_table::pair::value(target, &[])
-            }
-            ValueView::Instance {
-                class_name,
-                attributes,
-                ..
-            } if class_name == "Pair" => Some(Ok(attributes
-                .as_map()
-                .get("value")
-                .cloned()
-                .unwrap_or(Value::NIL))),
-            ValueView::Bool(_) => Some(crate::builtins::method_table::truth::bool_value(
-                target,
-                &[],
-            )),
-            _ => None,
-        },
-        // ADR-0021 I2: data-minted pairs default positional.
-        "antipair" => crate::builtins::method_table::pair::antipair(target, &[]),
         "Capture" => Some(value_to_capture(target)),
         // Cost: O(e), e = elements (O(1) for a Slip, which is returned as is).
         "Slip" => match target.view() {
@@ -422,20 +365,6 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 Some(Ok(target.clone()))
             }
             _ => Some(Ok(target.clone())),
-        },
-        // `Blob`/`Buf.contents` — the buffer's elements as a `List`, the same
-        // shape `.list` yields. This is a plain `Blob` method (the `use
-        // experimental :pack` doc example merely happens to demonstrate it),
-        // so it is gated on the buffer classes only: anything else declines so
-        // an instance attribute named `contents` (`Pod::Block.contents`) still
-        // resolves through its own accessor.
-        "contents" => match target.view() {
-            ValueView::Instance { class_name, .. }
-                if crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve()) =>
-            {
-                crate::builtins::method_table::blob::list(target, &[])
-            }
-            _ => None,
         },
         "list" | "Array" => {
             // `.Array` yields a real `@`-sigiled Array; `.list` yields a List.
