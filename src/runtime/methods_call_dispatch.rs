@@ -262,10 +262,16 @@ impl Interpreter {
         // stream (`600.polymod(gather {...})`, ADR-11678). A user object's
         // method keeps receiving the Seq itself.
         let args = if args.iter().any(Self::is_gather_seq)
-            && !matches!(
-                target.view(),
-                ValueView::Instance { .. } | ValueView::Package(_) | ValueView::Mixin(..)
-            ) {
+            && match target.view() {
+                ValueView::Instance { .. } | ValueView::Mixin(..) => false,
+                // A type object whose method is a built-in one
+                // (`Supply.from-list(gather {...})`); a method the program
+                // declared keeps the Seq.
+                ValueView::Package(name) => {
+                    !self.has_user_method_including_role(&name.resolve(), method)
+                }
+                _ => true,
+            } {
             self.shared_gather_args(&args).into_owned()
         } else {
             args
