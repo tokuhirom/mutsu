@@ -476,6 +476,12 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!("Whatever", mro: ["Whatever", "Any", "Mu"], roles: [], owner: ""),
     row!("HyperWhatever", mro: ["HyperWhatever", "Any", "Mu"], roles: [], owner: ""),
     row!("Proxy", mro: ["Proxy", "Any", "Mu"], roles: [], owner: ""),
+    // raku: `Attribute.^mro` is `(Attribute Any Mu)` and `Lock.^mro` is
+    // `(Lock Any Mu)`; neither does a role. Without a row, every method call
+    // on one recomputed the MRO from a registry with no class to cache it in
+    // (#12875: Method::Protected's `$attribute.get_value(self)`).
+    row!("Attribute", mro: ["Attribute", "Any", "Mu"], roles: [], owner: ""),
+    row!("Lock", mro: ["Lock", "Any", "Mu"], roles: [], owner: ""),
     // ---- Backtrace (ADR-11276 §9.35): the shapes of the method table's rows. ----
     // raku: `Backtrace.^mro` is `(Backtrace Any Mu)`, `Backtrace::Frame.^mro`
     // is `(Frame Any Mu)`; neither does a role.

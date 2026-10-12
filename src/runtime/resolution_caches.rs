@@ -424,6 +424,15 @@ pub(crate) struct ResolutionCaches {
     /// container subclass's NATIVE `AT-KEY` when a user override asks for it
     /// with `nextcallee`. Built on first use; see `container_element_proxy`.
     pub(crate) container_element_proxy: Option<Value>,
+    /// Compiles of AST-body code objects called as values, and the shared
+    /// signatures of `nextcallee`'s method callables that let those compiles
+    /// be reused; see `value_call_compile_cache`. Pure recomputable
+    /// optimization; starts empty per thread.
+    pub(crate) value_call_compile_cache: value_call_compile_cache::ValueCallCompileCache,
+    /// The `nextcallee` callable at the end of a dispatcher wrap chain, per
+    /// method name (`dispatcher_redispatch_callee`). Bounded by the number of
+    /// wrapped proto method names in the program.
+    pub(crate) dispatcher_redispatch_callees: HashMap<String, Value>,
 }
 
 impl ResolutionCaches {

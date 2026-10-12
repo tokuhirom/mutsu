@@ -166,6 +166,9 @@ impl Interpreter {
         for frame in &self.dispatch.method_dispatch_stack {
             visitor.visit_value(&frame.invocant);
             visit_slice(visitor, &frame.args);
+            if let Some(lazy) = &frame.lazy_tail {
+                visitor.visit_value(lazy.root());
+            }
             // ADR-0019 E9b-1: a `Wrapper` entry carries a live callable Value;
             // no builder emits one yet (E9b-2), but tracing it now means the
             // cutover never has to remember to add this.

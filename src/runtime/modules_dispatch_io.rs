@@ -79,4 +79,5 @@ mod metamodel;
 mod metamodel_new_type;
 mod metamodel_role_how;
 mod method_dispatch_lazy;
+pub(crate) mod method_dispatch_lazy_tail;
 mod method_object_bound;

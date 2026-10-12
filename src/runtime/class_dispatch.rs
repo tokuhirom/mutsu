@@ -435,22 +435,31 @@ impl Interpreter {
             return result.map(|v| (v, None));
         }
         let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, attributes);
-        let remaining = self.deferral_tail_entries(
-            receiver_class_name,
-            method_name,
-            &args,
-            &method_def,
-            &inv_value,
-        );
         // A user-overridden grammar `parse`/`subparse`/`parsefile` still needs an MRO
         // frame even with no further USER candidate, so a `nextsame`/`nextwith` inside
         // it can defer to the NATIVE grammar parse — the base candidate that is not a
         // `MethodDef` and so never appears in `remaining` (YAMLish's `method parse`
         // does `nextwith($input, :actions(Actions))`).
-        let grammar_parse_fallback = remaining.is_empty()
-            && matches!(method_name, "parse" | "subparse" | "parsefile")
+        let grammar_parse = matches!(method_name, "parse" | "subparse" | "parsefile")
             && self.class_is_grammar(receiver_class_name);
-        let pushed_dispatch = !remaining.is_empty() || grammar_parse_fallback;
+        // A lazy tail removes its frame again when it is built empty, which
+        // is what not pushing one means (see `method_dispatch_lazy_tail`).
+        let (remaining, lazy_tail) = match self.plan_deferral_tail(
+            receiver_class_name,
+            method_name,
+            &args,
+            &method_def,
+            &inv_value,
+            !grammar_parse,
+        ) {
+            super::method_dispatch_lazy_tail::DeferralTail::Empty => (Vec::new(), None),
+            super::method_dispatch_lazy_tail::DeferralTail::Lazy(lazy) => (Vec::new(), Some(lazy)),
+            super::method_dispatch_lazy_tail::DeferralTail::Eager(tail) => (tail, None),
+        };
+        let grammar_parse_fallback = remaining.is_empty() && grammar_parse;
+        let pushed_dispatch =
+            !remaining.is_empty() || lazy_tail.is_some() || grammar_parse_fallback;
+        let mut pushed_token = 0;
         self.push_method_samewith_context(
             receiver_class_name,
             method_name,
@@ -461,6 +470,7 @@ impl Interpreter {
             let rw_params =
                 super::builtins_dispatch_next::rw_scalar_positional_params(&method_def.param_defs);
             let dispatch_token = self.next_dispatch_token();
+            pushed_token = dispatch_token;
             self.dispatch
                 .method_dispatch_stack
                 .push(MethodDispatchFrame {
@@ -472,6 +482,7 @@ impl Interpreter {
                     dispatch_token,
                     arg_sources: None,
                     in_wrapper: false,
+                    lazy_tail,
                 });
         }
         // Check for `is DEPRECATED` trait on the method
@@ -499,7 +510,7 @@ impl Interpreter {
         );
         self.pop_method_samewith_context();
         if pushed_dispatch {
-            self.dispatch.method_dispatch_stack.pop();
+            self.pop_method_dispatch_frame_with_token(pushed_token);
         }
         result
     }

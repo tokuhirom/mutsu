@@ -197,6 +197,12 @@ pub(crate) struct Registry {
     /// for `Interpreter::dispatcher_wrap_chain`: a name is never removed, so
     /// a stale entry only costs one MRO walk, never a missed wrapper.
     pub(crate) dispatcher_wrapped_methods: std::collections::HashSet<String>,
+    /// Method names that have ever had a chain on one of their CANDIDATE
+    /// slots (a `.wrap` or a bound `$!do` body). The same kind of
+    /// conservative prefilter as `dispatcher_wrapped_methods`, for the
+    /// candidate-index scan `Interpreter::enter_method_wrap_chain` runs before
+    /// it can look a chain up (#12875).
+    pub(crate) candidate_wrapped_methods: std::collections::HashSet<String>,
     /// `enum Name (...)` declarations: enum name -> [(variant name, value)].
     pub(crate) enum_types: HashMap<String, Vec<(String, EnumValue)>>,
     /// Enums minted by `Metamodel::EnumHOW.new_type`: type name -> the value
@@ -950,6 +956,9 @@ impl Registry {
         if candidate_idx == DISPATCHER_WRAP_IDX {
             self.dispatcher_wrapped_methods
                 .insert(method_name.to_string());
+        } else {
+            self.candidate_wrapped_methods
+                .insert(method_name.to_string());
         }
         self.method_wrap_chains
             .entry((
@@ -974,6 +983,10 @@ impl Registry {
         body: Value,
     ) {
         let handle = crate::runtime::code_do_attr::DO_BODY_HANDLE;
+        if candidate_idx != DISPATCHER_WRAP_IDX {
+            self.candidate_wrapped_methods
+                .insert(method_name.to_string());
+        }
         let chain = self
             .method_wrap_chains
             .entry((

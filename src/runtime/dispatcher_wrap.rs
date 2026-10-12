@@ -112,7 +112,8 @@ impl Interpreter {
     /// `[invocant, ...args]` and then pops both. Shared by the two method-wrap
     /// entry sites (`class_dispatch.rs`, `check_method_wrap_chain`).
     // Cost: O(m + c), m = receiver MRO length, c = candidates of `method` on
-    // `owner_class` (the candidate-index scan); O(1) when nothing is wrapped.
+    // `owner_class` (the candidate-index scan); O(1) when no candidate of
+    // `method` was ever wrapped.
     pub(crate) fn enter_method_wrap_chain(
         &mut self,
         receiver_class: &str,
@@ -129,6 +130,14 @@ impl Interpreter {
             self.push_method_samewith_context(receiver_class, method, args, Some(invocant.clone()));
             self.push_dispatcher_wrap_frame(receiver_class, method, args, invocant, &chain);
             return chain.last().map(|(_, wrapper)| wrapper.clone());
+        }
+        // No candidate of this name was ever wrapped: skip the index scan.
+        if !self
+            .registry()
+            .candidate_wrapped_methods
+            .contains(method)
+        {
+            return None;
         }
         let cand_idx =
             self.find_method_candidate_index(owner_class.as_str(), method, method_def)?;
@@ -164,10 +173,32 @@ impl Interpreter {
         call_args.extend(args.iter().cloned());
         let outermost = chain.last().expect("dispatcher wrap chain is non-empty").1.clone();
         self.shift_arg_sources_for_wrap_invocant();
-        let result = self.call_sub_value(outermost, call_args, false);
+        let result = self.call_method_wrapper(outermost, call_args);
         self.pop_method_dispatch();
         self.pop_method_samewith_context();
         result
+    }
+
+    /// Invoke the outermost wrapper of a method wrap chain with
+    /// `[invocant, ...args]`. A wrapper with closure bytecode (`my method
+    /// (|c) { ... }`, the usual shape) runs it through the VM's value call;
+    /// anything else (a `Method` object, a `Routine`) takes the general
+    /// `call_sub_value` entry. The interpreter carrier that entry uses for a
+    /// closure recompiles the body from its AST and costs several times the
+    /// call itself (#12875).
+    // Cost: O(1) besides the wrapper's own body.
+    pub(crate) fn call_method_wrapper(
+        &mut self,
+        wrapper: Value,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if let ValueView::Sub(data) = wrapper.view()
+            && data.compiled_code.is_some()
+            && !data.is_decl_expr_thunk
+        {
+            return self.vm_call_on_value(wrapper, args, None);
+        }
+        self.call_sub_value(wrapper, args, false)
     }
 
     /// Push the `MethodDispatchFrame` for a dispatcher wrap: the
@@ -203,6 +234,7 @@ impl Interpreter {
                 dispatch_token,
                 arg_sources,
                 in_wrapper: true,
+                lazy_tail: None,
             });
     }
 
@@ -231,8 +263,14 @@ impl Interpreter {
     /// The callable `nextcallee` answers at the end of a dispatcher wrap
     /// chain: `sub (\obj, |c)` running [`Self::redispatch_after_dispatcher_wrap`]
     /// through the `__mutsu_dispatcher_redispatch` builtin.
-    // Cost: O(n), n = length of `method` (the snippet is parsed per call).
+    // Cost: O(1) amortized; O(n), n = length of `method`, for the parse on
+    // the first call per method name.
     pub(crate) fn dispatcher_redispatch_callee(&mut self, method: &str) -> Option<Value> {
+        // The callable depends on nothing but the method name, so it is built
+        // once per name instead of being parsed and compiled per call (#12875).
+        if let Some(cached) = self.caches.dispatcher_redispatch_callees.get(method) {
+            return Some(cached.clone());
+        }
         let quoted = method.replace('\\', "\\\\").replace('\'', "\\'");
         let src = format!(
             "sub (\\obj, |c) {{ __mutsu_dispatcher_redispatch('{quoted}', obj, |c) }}"
@@ -240,6 +278,9 @@ impl Interpreter {
         let (stmts, _) = crate::runtime::prelude_source::parse_prelude_source(&src).ok()?;
         let value = self.eval_block_value(&stmts).ok()?;
         value.as_sub()?;
+        self.caches
+            .dispatcher_redispatch_callees
+            .insert(method.to_string(), value.clone());
         Some(value)
     }
 }
