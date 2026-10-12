@@ -80,6 +80,13 @@ impl Interpreter {
     /// into the role's compunit, not the composer's (#9944). Returns `None` --
     /// meaning "nothing to restore" -- when `file` is `None`, so a caller with
     /// no recorded file is a no-op.
+    ///
+    /// The body also counts as running in that compunit's mainline
+    /// (`module_loading_unit_stack`): it runs under whatever routine frames
+    /// the composer has on the stack, and a `sub` it declares must record the
+    /// role's file, not the innermost frame's (#12895: a role composed from an
+    /// `EVAL` inside a sub registered its `sub det` as declared in the
+    /// caller's file, so `det` could not see the role module's imports).
     pub(crate) fn enter_source_file(
         &mut self,
         file: Option<&str>,
@@ -90,6 +97,8 @@ impl Interpreter {
             .insert("?FILE".to_string(), Value::str(file.to_string()));
         let unit = self.unit_of_source(Some(file));
         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
+        let depth = self.routine_stack.len();
+        self.module.module_loading_unit_stack.push((unit, depth));
         Some((saved, saved_unit))
     }
 
@@ -98,6 +107,7 @@ impl Interpreter {
         let Some((saved, saved_unit)) = saved else {
             return;
         };
+        self.module.module_loading_unit_stack.pop();
         self.current_unit = saved_unit;
         match saved {
             Some(prev) => {
