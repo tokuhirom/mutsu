@@ -604,6 +604,7 @@ t/collections/subscript/bind-angle-subscript-chain.t
 t/collections/subscript/bind-zen-slice.t
 t/collections/subscript/block-subscript-list.t
 t/collections/subscript/bound-array-slice-arity.t
+t/collections/subscript/brace-subscript-postfix.t
 t/collections/subscript/buf-from-end-subscript-assign.t
 t/collections/subscript/buf-index-slice-assign.t
 t/collections/subscript/buf-range-slice.t
@@ -1144,6 +1145,7 @@ t/concurrency/supply/supply-worker-panic-reaches-quit.t
 t/concurrency/supply/whenever-body-closure-cross-thread-cell.t
 t/concurrency/supply/whenever-body-lexical-private.t
 t/concurrency/supply/whenever-broken-promise-quits.t
+t/concurrency/supply/whenever-callback-closure-captures.t
 t/concurrency/supply/whenever-callback-recompile-semantics.t
 t/concurrency/supply/whenever-cross-thread-lexical.t
 t/concurrency/supply/whenever-in-nested-routine.t
@@ -4428,6 +4430,7 @@ t/rakuast/rakuast-hyper-whatever-term.t
 t/rakuast/rakuast-identity.t
 t/rakuast/rakuast-if-pointy-block.t
 t/rakuast/rakuast-imaginary-literal.t
+t/rakuast/rakuast-imported-bareword-call.t
 t/rakuast/rakuast-index-assign.t
 t/rakuast/rakuast-index-bind.t
 t/rakuast/rakuast-indirect-name.t
