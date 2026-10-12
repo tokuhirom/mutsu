@@ -219,3 +219,14 @@ left-call graph already does) and memoize it, instead of re-interpolating the
 argument-less body with whatever value the parameter happens to hold in the env; and
 cache `enforce_attribute_where_constraints`' per-class verdict inputs in
 `NativeCtorPlan`.
+
+### LTM measures a call with arguments through its rule's one body (2026-10-13)
+
+The first follow-up the re-profile above names. `dyn_call` now measures an
+argument-bearing call to a runtime-parameter rule through the body every call of it
+runs (`regex_ltm_param_body.rs`): `$param` is a match-time `VarInterp`, which ends the
+declarative prefix as rakudo's interpolation does, instead of a splice of whatever the
+env held at measurement time. The body is memoized per (package, rule, token
+generation) when its text interpolates to itself. **~258.2M → ~252.1M Ir per warm
+parse (−2.4%)**, paired against `main` at 47774046 (`profiling`, `MUTSU_JIT=off`,
+(4−1)/3). Upstream YAMLish's own test files pass unchanged.
