@@ -129,6 +129,25 @@ impl Interpreter {
         Some(self.sub_value_from_function_def((**def).clone()))
     }
 
+    /// The definition a bare call to `name` in this chunk dispatches to when
+    /// that call is a frame-lexical one: the chunk lists `name`, this
+    /// interpreter has derived the routine, and no `.wrap` diverts the call
+    /// to by-name dispatch — exactly the cases
+    /// [`Interpreter::exec_frame_lexical_call`] does not decline. `None`
+    /// otherwise, so a caller falls back to the name-keyed question.
+    // Cost: O(l), l = frame-lexical routines this chunk calls (a short list).
+    pub(super) fn frame_lexical_call_def(
+        &self,
+        code: &CompiledCode,
+        name: Symbol,
+    ) -> Option<&Arc<crate::ast::FunctionDef>> {
+        let r = code.lexical_routine(name)?;
+        if self.any_routine_wrapped() && self.routine_is_wrapped(name.as_str()) {
+            return None;
+        }
+        self.lexicals.frame_lexical_routines.get(&r)?.def.as_ref()
+    }
+
     /// The cold path of a `CallTrir` site whose callee is a frame-lexical
     /// routine (ADR-0113). Such a routine is never registered, so the
     /// by-name fallback cannot find it; the call goes through the lexical
