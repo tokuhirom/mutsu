@@ -20,11 +20,9 @@ pub(crate) fn native_method_1arg(
     method_sym: Symbol,
     arg: &Value,
 ) -> Option<Result<Value, RuntimeError>> {
-    if let Some(result) = crate::builtins::method_table::answer(
-        target.descalarize(),
-        method_sym,
-        std::slice::from_ref(arg),
-    ) {
+    if let Some(result) =
+        crate::builtins::method_table::answer(target, method_sym, std::slice::from_ref(arg))
+    {
         return Some(result);
     }
     native_method_1arg_without_table(target, method_sym, arg)
@@ -58,8 +56,21 @@ fn native_method_1arg_cascade(
     let method = method_sym.resolve();
     let method = method.as_str();
 
-    // Scalar containers are transparent for method dispatch (no .VAR at this arity).
-    let target = target.descalarize();
+    // Scalar containers are transparent for method dispatch (no .VAR at this
+    // arity): the held value is a call of its own, which asks the table first,
+    // so the decline step below sees the receiver the table was asked about.
+    let settled = target.descalarize();
+    if !std::ptr::eq(settled, target) {
+        return native_method_1arg(settled, method_sym, arg);
+    }
+    // A method call decontainerizes an itemized Hash receiver (`$map`, an
+    // element read out of an Array) the same way, as the 0-arg entry and
+    // `call_method_with_values` do (#10744): the table refuses the itemized
+    // form, so the plain hash is asked again.
+    // Cost: O(1), a tag probe (`hash_is_itemized` is false for every non-Hash).
+    if target.hash_is_itemized() {
+        return native_method_1arg(&target.clone().with_hash_itemized(false), method_sym, arg);
+    }
     // An instance of a user subclass of `Int` answers `Int`'s methods on its
     // payload (`builtins::native_base`).
     if let Some(result) =
@@ -784,6 +795,12 @@ fn native_method_1arg_cascade(
             }
             _ => None,
         },
+        // A user class composing a buffer role over a VMArray body
+        // (`class B does Blob[uint8] is repr('VMArray')`) has no shape; the
+        // `Blob` row's handler answers it and keeps its class.
+        "subbuf" => {
+            crate::builtins::method_table::blob_read::subbuf(target, std::slice::from_ref(arg))
+        }
         "isa" => {
             // Instance, Mixin(Instance), and Package values need interpreter
             // access for user-defined class hierarchies, role checks, and
