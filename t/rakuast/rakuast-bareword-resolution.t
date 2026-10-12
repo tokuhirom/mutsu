@@ -9,7 +9,7 @@ use Test;
 # parameter) a `Term::Name`, and an argument-less redispatch call a
 # `Call::Name::WithoutParentheses`. Each EVALs back to what the name means.
 
-plan 33;
+plan 34;
 
 sub expr(Str $src, Int $i = 0) { $src.AST.statements[$i].expression }
 
@@ -74,3 +74,8 @@ is Q|class A { method m { "A" } }; class B is A { method m { "B" ~ callsame } };
     'BA', 'callsame EVALs as a redispatch';
 is Q|multi f(Int $x) { nextsame }; multi f(Any $x) { "any" }; f(1)|.AST.EVAL, 'any',
     'nextsame EVALs as a redispatch';
+
+# --- the supply completion routine as a bare call ----------------------------
+is expr(Q|sub f { done }|).body.statement-list.statements[0].expression.^name,
+    'RakuAST::Call::Name::WithoutParentheses',
+    'done in expression position is a call without parentheses';
