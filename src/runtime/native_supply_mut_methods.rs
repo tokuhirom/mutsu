@@ -344,6 +344,13 @@ impl Interpreter {
                     Some(ValueView::Bool(true))
                 );
                 let mut on_demand_quit: Option<Value> = None;
+                // A `supply { }` block with no live `whenever` ends with its
+                // body (#12873): falling off the end, an explicit `done` or a
+                // `die`. Its CLOSE phasers then run once, here, rather than
+                // only on a later explicit `Tap.close`. `Some(true)` when they
+                // run before the downstream `done` (a body `done`, finished
+                // cold `whenever`s), `Some(false)` after it (the plain end).
+                let mut block_ended: Option<bool> = None;
                 // Set when an explicit `Supply.on-demand` producer returned
                 // without completing: `done` then waits on its emitter.
                 let mut producer_done_supplier: Option<u64> = None;
@@ -507,6 +514,18 @@ impl Interpreter {
                         })
                         .count();
 
+                    if is_block_body && !shared_on_demand && whenever_supplier_count == 0 {
+                        // Its `whenever`s, if any, were cold and are finished:
+                        // that end, like a body `done`, tears down first.
+                        let had_whenever = emitted.iter().any(|item| {
+                            matches!(item.view(), ValueView::Array(arr, ..)
+                                if arr.len() == 5
+                                    && matches!(arr[0].view(),
+                                        ValueView::Instance { class_name, .. }
+                                            if class_name == "Supply"))
+                        });
+                        block_ended = Some(body_ran_done || had_whenever);
+                    }
                     let mut done_group_id: Option<u64> = None;
                     if whenever_supplier_count > 0 {
                         // A shared block always needs its done group: its
@@ -1376,6 +1395,14 @@ impl Interpreter {
                     self.record_eager_block_free_var_writeback(&code, &data.params);
                 }
 
+                // Rakudo tears a block down before it reports a `done` the
+                // body sent, or a `die`, but after its implicit end's `done`.
+                if let Some(cid) = close_supplier_id
+                    && (block_ended == Some(true)
+                        || (block_ended.is_some() && on_demand_quit.is_some()))
+                {
+                    self.run_supply_close_callbacks(cid)?;
+                }
                 if let Some(quit_reason) = on_demand_quit {
                     if let Some(quit_fn) = quit_cb {
                         self.call_supply_quit_handler(quit_fn, quit_reason)?;
@@ -1442,6 +1469,11 @@ impl Interpreter {
                         // so done can fire immediately in that case.
                         self.invoke_done_callback(done_fn)?;
                     }
+                }
+                if let Some(cid) = close_supplier_id
+                    && block_ended == Some(false)
+                {
+                    self.run_supply_close_callbacks(cid)?;
                 }
                 if let Some(quit_fn) = quit_cb {
                     if let Some(ValueView::Int(supplier_id)) =

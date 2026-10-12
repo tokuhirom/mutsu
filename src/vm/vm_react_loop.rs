@@ -501,6 +501,7 @@ impl Interpreter {
                                 .and_then(crate::runtime::Interpreter::value_array_items)
                                 .unwrap_or_default();
                             let mut tagged_live = false;
+                            let subs_before = react_subs.len();
                             for v in emitted {
                                 if crate::runtime::Interpreter::is_supply_subscription_registration(
                                     &v,
@@ -554,6 +555,12 @@ impl Interpreter {
                                     .supply_stream_consumers
                                     .truncate(stream_base.unwrap_or(stream_idx));
                                 return Ok(true);
+                            }
+                            // The body opened no live subscription: the block
+                            // has ended, so its CLOSE phasers run now (#12873)
+                            // rather than never.
+                            if react_subs.len() == subs_before {
+                                self.run_supply_close_callbacks(emitter_supplier_id)?;
                             }
                             // Supply.on-demand(..., closing => { ... }): the
                             // `closing` callback runs when the supply is closed.
