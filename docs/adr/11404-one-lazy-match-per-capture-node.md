@@ -62,6 +62,21 @@ cursor, again for the token body, and once more to LTM-rank the rule's lone cand
    built for the parse's own subject buffer is born stamped), so a mid-parse node of a grammar
    parse is current and shared; the check remains for any node forced before a later stamp.
 
+6. **`.made` is mutable, shared state of the node** (amendment, 2026-10-12, #12954). In rakudo
+   `make` writes the `.made` attribute of the one cursor object. mutsu's `make` and the post-parse
+   action walk instead built a *copy* carrying the ast (`match_with_ast_keeping_id`,
+   `match_with_ast_lazy`, an eager `make_instance` per walked node) and re-filed it in a rebuilt
+   tree, so a Match kept in mid-parse never saw its `.made`. `CapNode` now carries a `MadeCell`
+   (seeded by a reduce-time inline `{ make … }`), `make` writes it in place
+   (`Value::set_match_ast_in_place`: the cell, mirrored into the memoized attribute map when the
+   node is already forced; an eager Match writes its attribute map), and the action walk
+   dispatches each node's action without rebuilding the tree. This is the one exception to "a
+   Match is an immutable value": rule 1 makes "the node's Match" well defined, and the cell lives
+   on the node rather than the `MatchNode` because the memo is weak — a `MatchNode` rebuilt for
+   the node after the first one died must still read the `.made`. Like the node's other `Value`s,
+   the cell is not traced by the cycle collector (a cycle routed through it defers, never
+   corrupts). A cloned node copies the value the cell holds at the time of the clone.
+
 ## Rejected alternatives
 
 - **A table owned by the `MatchTarget`, keyed by the `Arc<CapNode>` address.** It needs its
@@ -69,6 +84,8 @@ cursor, again for the token body, and once more to LTM-rank the rule's lone cand
   new node unless the key also holds a `Weak<CapNode>`; the per-node weak edge has neither
   problem and dies with the node.
 - **A strong memo on the node.** The `Arc` cycle above.
+- **A `.made` cell on the `MatchNode`** (rule 6). The memo is weak, so once every holder of the
+  `MatchNode` dropped it, the next `lazy_match` built a fresh one without the `.made`.
 - **Rendering `.raku` straight from the capture node.** It would make a second
   implementation of the Match shape next to `materialize_map` (one primitive, one
   implementation), and it leaves the identity divergence in place.
