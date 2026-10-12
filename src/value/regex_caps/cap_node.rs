@@ -238,6 +238,12 @@ impl Clone for MatchMemo {
 }
 
 impl MatchMemo {
+    /// Make `node` the memoized `Match`.
+    // Cost: O(1).
+    pub(crate) fn set(&self, node: crate::gc::WeakGc<crate::value::MatchNode>) {
+        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = Some(node);
+    }
+
     /// The memoized `Match` when it is still alive and `accept` takes it;
     /// otherwise the one `make` builds, which becomes the memo.
     // Cost: O(1) beyond `make`.

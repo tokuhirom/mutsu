@@ -941,6 +941,23 @@ impl NanBox {
         }
     }
 
+    /// A weak handle to the `MatchNode` if this is a lazy `Match`, for a
+    /// capture node's `MatchMemo` (ADR-11404).
+    // Cost: O(1).
+    #[inline]
+    pub(in crate::value) fn match_node_weak(&self) -> Option<crate::gc::WeakGc<MatchNode>> {
+        let bits = self.0.get();
+        match classify(bits) {
+            Classified::Kind(Kind::Match) => {
+                // SAFETY: Match words carry a Gc<MatchNode>; the handle is
+                // wrapped in ManuallyDrop so the word keeps its reference.
+                let g = ManuallyDrop::new(unsafe { take_gc::<MatchNode>(bits) });
+                Some(crate::gc::Gc::downgrade(&g))
+            }
+            _ => None,
+        }
+    }
+
     /// The erased GC node handle if this is a lazy `Match` — for `gc_trace`,
     /// which must not go through `view()` (that would materialize the match
     /// during a collect).

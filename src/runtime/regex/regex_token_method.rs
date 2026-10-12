@@ -428,6 +428,21 @@ impl Interpreter {
         pkg: Symbol,
         arg_values: &[Value],
     ) -> Option<Option<(usize, RegexCaptures)>> {
+        self.run_wrapped_token_call(name, chars, pos, pkg, arg_values)
+            .map(|hit| hit.map(|(end, caps, _)| (end, caps)))
+    }
+
+    /// [`Self::run_wrapped_token_candidate`], also handing back the Match the
+    /// wrapper returned.
+    // Cost: O(m) for the caller package's MRO of m classes, plus the wrapped call.
+    fn run_wrapped_token_call(
+        &mut self,
+        name: &str,
+        chars: &[char],
+        pos: usize,
+        pkg: Symbol,
+        arg_values: &[Value],
+    ) -> Option<Option<(usize, RegexCaptures, Value)>> {
         let chain = self.token_method_wrap_chain(pkg.as_str(), name)?;
         let target = Self::wrapped_call_target(chars);
         LAST_TOKEN_METHOD_MATCH.with(|slot| slot.borrow_mut().take());
@@ -474,7 +489,7 @@ impl Interpreter {
                 ..RegexCaptures::default()
             },
         };
-        Some(Some((to_abs, inner_caps)))
+        Some(Some((to_abs, inner_caps, result)))
     }
 
     /// Whether `rule:sym<sym_key>` carries a `.wrap` chain (any spelling).
@@ -534,18 +549,27 @@ impl Interpreter {
         pkg: Symbol,
         arg_values: &[Value],
     ) -> Option<Vec<(usize, RegexCaptures)>> {
-        let (to_abs, inner_caps) = match self.run_wrapped_token_candidate(
-            &spec.lookup_name,
-            chars,
-            pos,
-            pkg,
-            arg_values,
-        )? {
-            Some(hit) => hit,
-            None => return Some(Vec::new()),
-        };
+        let (to_abs, inner_caps, result) =
+            match self.run_wrapped_token_call(&spec.lookup_name, chars, pos, pkg, arg_values)? {
+                Some(hit) => hit,
+                None => return Some(Vec::new()),
+            };
         let sym = inner_caps.sym();
-        Some(self.build_named_candidates_from_inner(vec![(to_abs, inner_caps)], pos, spec, sym))
+        let out =
+            self.build_named_candidates_from_inner(vec![(to_abs, inner_caps)], pos, spec, sym);
+        // The Match the wrapper returned is the one the caller files as
+        // `$<rule>`, as in rakudo (#12918), whenever the filed node reads
+        // exactly as it.
+        let filed_under = spec
+            .capture_sym
+            .filter(|_| spec.capture_name.is_some())
+            .or((!spec.silent).then_some(spec.lookup_sym));
+        if let Some(node) = filed_under
+            .and_then(|sym| out.first()?.1.named.get(&sym)?.nodes.last())
+        {
+            result.adopt_as_match_of(node);
+        }
+        Some(out)
     }
 
     /// Run a wrapped whitespace rule from the compact `WsRule` regex atom.

@@ -7,6 +7,7 @@
 //! whole set, so engine code keeps its `crate::runtime::…` paths.
 
 mod cap_node;
+mod cap_node_eq;
 mod captures;
 mod marks;
 mod match_target;
