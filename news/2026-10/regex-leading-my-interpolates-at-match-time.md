@@ -12,3 +12,8 @@ declaration block a rule body uses for its parameters (`regex_rule_params`),
 so `$n` lowers to the match-time interpolation that reads the variable when
 the cursor reaches it, as rakudo does. YAMLish's `root-block` uses this
 shape (`:my $new-indent; <?before … { $new-indent = ~$<sp> }> $new-indent`).
+
+A `$name` interpolation of a regex lexical is now also an ordinary atom to
+the structural parser: `/ {} :my $q = 'a'; $q+ b /` applies the `+` to the
+interpolation, where the parser used to push the atom and skip its
+quantifier.

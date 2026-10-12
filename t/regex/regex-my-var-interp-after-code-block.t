@@ -5,7 +5,7 @@ use Test;
 # reaches it -- after a code block assigned it -- not the value it had when
 # the match started (#13004).
 
-plan 9;
+plan 12;
 
 ok "x a" ~~ / :my $n; { $n = "x" } $n .* /,
     'a :my without an initializer, assigned in a code block, interpolates its new value';
@@ -26,3 +26,9 @@ grammar Indented {
 }
 ok Indented.parse("  item"), 'a grammar token reads the indent its lookahead measured';
 nok Indented.parse("item "), 'and still fails when the text does not match';
+
+# The interpolation is an ordinary atom: a quantifier applies to it, whether
+# the `:my` leads the pattern or follows another atom.
+is ~("aab" ~~ / :my $q = 'a'; $q+ b /), 'aab', 'a leading :my interpolation can be quantified';
+is ~("aab" ~~ / {} :my $q = 'a'; $q+ b /), 'aab', 'and so can a mid-pattern one';
+is ~("abab" ~~ / {} :my $r = 'ab'; $r ** 2 /), 'abab', 'and counted';
