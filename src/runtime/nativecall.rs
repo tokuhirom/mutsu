@@ -847,6 +847,8 @@ fn write_pointer_address(v: &Value, addr: usize) {
             attributes.insert("address".to_string(), Value::int(addr as i64));
         }
         ValueView::Scalar(inner) => write_pointer_address(inner, addr),
+        // A typed `Pointer[T]` is a mixin around the Pointer instance.
+        ValueView::Mixin(inner, _) => write_pointer_address(inner, addr),
         ValueView::ContainerRef(cell) => {
             if let Ok(g) = cell.lock() {
                 write_pointer_address(&g, addr);

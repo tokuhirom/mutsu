@@ -332,6 +332,13 @@ impl Interpreter {
         if !shadowed_by_subset && crate::runtime::native_types::is_native_int_type(base_constraint)
         {
             if value.is_nil() {
+                // `my MyByte $x;` where `MyByte` is a constant alias of a native
+                // type the compiler could not resolve (one imported from a
+                // module): the declaration has no initializer, so there is
+                // nothing to unbox.
+                if !has_explicit_initializer {
+                    return Ok(());
+                }
                 return Err(RuntimeError::new(format!(
                     "Cannot unbox a type object (Nil) to {}.",
                     base_constraint
