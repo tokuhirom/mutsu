@@ -399,11 +399,55 @@ pub(crate) fn validate_sprintf_arg_types(fmt: &str, args: &[Value]) -> Result<()
             )));
             return Err(err);
         }
+        // A `Str` that is no number cannot feed a numeric directive: Rakudo
+        // numifies it and, on failure, throws `BadType` with the directive's
+        // base spelling (`%X` and `%i` report `%x` and `%d`).
+        if let Some(arg) = args.get(effective_index)
+            && arg.is_str_value()
+            && let Some(base) = numeric_directive_base(spec)
+            && let Some(Ok(numeric)) = crate::builtins::methods_0arg::native_method_0arg(
+                arg,
+                Symbol::intern("Numeric"),
+            )
+            && matches!(numeric.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+        {
+            // The probe's Failure is consumed here, not left to warn on drop.
+            numeric.mark_failure_handled();
+            let message = format!("Directive %{base} not applicable for value of type Str");
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("type".to_string(), Value::str("Str".to_string()));
+            attrs.insert("directive".to_string(), Value::str(base.to_string()));
+            attrs.insert("value".to_string(), arg.clone());
+            attrs.insert("message".to_string(), Value::str(message.clone()));
+            let mut err = RuntimeError::new(message);
+            err.exception = Some(Box::new(Value::make_instance(
+                Symbol::intern("X::Str::Sprintf::Directives::BadType"),
+                attrs,
+            )));
+            return Err(err);
+        }
         if positional_arg.is_none() {
             arg_index += 1;
         }
     }
     Ok(())
+}
+
+/// The directive letter Rakudo reports for a numeric sprintf directive that
+/// rejected its `Str` argument, or `None` for a directive taking any value.
+fn numeric_directive_base(spec: char) -> Option<char> {
+    match spec {
+        'd' | 'i' => Some('d'),
+        'u' => Some('u'),
+        'x' | 'X' => Some('x'),
+        'o' => Some('o'),
+        'b' | 'B' => Some('b'),
+        'e' | 'E' => Some('e'),
+        'f' | 'F' => Some('f'),
+        'g' | 'G' => Some('g'),
+        'c' => Some('c'),
+        _ => None,
+    }
 }
 
 /// Collect `(arg_index, conversion_spec)` for each value-consuming directive, so
