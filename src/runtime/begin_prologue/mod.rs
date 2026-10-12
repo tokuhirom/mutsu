@@ -56,6 +56,9 @@ use use_if::{if_condition_check, next_if_condition_slot};
 pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<Stmt> {
     // Lift the BEGINs nested in each top-level statement first (slice 2):
     // each lifted effect joins the prologue just ahead of its statement.
+    if is_eval {
+        value_tail_begin(stmts);
+    }
     let unit_names = unit_lexical_names(stmts);
     let mut unit = nested::UnitContext {
         is_eval,
@@ -175,6 +178,30 @@ pub(crate) fn take_unit_prologue(stmts: &mut Vec<Stmt>, is_eval: bool) -> Vec<St
     }
     *stmts = rest;
     prologue
+}
+
+/// An EVAL'd unit ending in a `BEGIN` block has the block's value (#12900).
+/// The statement form moves into the prologue and leaves no value behind; the
+/// expression form `(BEGIN { ... })` runs there too but yields its value in
+/// place, so the tail is rewritten to it.
+// Cost: O(n), n = statements of the unit.
+fn value_tail_begin(stmts: &mut [Stmt]) {
+    let Some(i) = crate::ast::last_value_stmt_index(stmts, crate::ast::TailSkip::Markers) else {
+        return;
+    };
+    if let Stmt::Phaser {
+        kind: PhaserKind::Begin,
+        body,
+        condition: None,
+        ..
+    } = &mut stmts[i]
+    {
+        let body = std::mem::take(body);
+        stmts[i] = Stmt::Expr(Expr::Grouped(Box::new(Expr::PhaserExpr {
+            kind: PhaserKind::Begin,
+            body,
+        })));
+    }
 }
 
 /// A statement that reads the value of the constant `stmt` declares, or
