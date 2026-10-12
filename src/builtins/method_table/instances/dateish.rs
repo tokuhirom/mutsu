@@ -3,9 +3,8 @@
 //! Rakudo composes the `Dateish` role into both classes, so each declares every
 //! one of these methods itself, and both owners' rows point at one handler
 //! here. A handler reads the instance's `year`/`month`/`day` attributes, which
-//! a `Date` and a `DateTime` both carry; the cascade's `date_method_0arg` and
-//! `datetime_method_0arg` call the same functions for a *subclass* instance (it
-//! has no shape, so no row).
+//! a `Date` and a `DateTime` both carry, so a *subclass* instance (it has no
+//! shape) reaches the same row through its owner (ADR-11276 §9.87).
 
 use super::temporal::{sep_arg, with_attrs};
 use super::{Handler, MethodRow, RowFlags};

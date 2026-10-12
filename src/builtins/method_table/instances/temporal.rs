@@ -2,9 +2,8 @@
 //! rows for the two instance-class shapes; slice 3D moves the rest: see
 //! `dateish.rs`, `date.rs` and `datetime.rs`).
 //!
-//! The functions take the instance's attributes, which is what the native
-//! cascade's `date_method_0arg` / `datetime_method_0arg` hold for a *subclass*
-//! of `Date` (no shape, so no row); both call them.
+//! The functions take the instance's attributes, so a *subclass* instance (no
+//! shape) reaches the same rows through their owner (ADR-11276 §9.87).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::value::temporal_core::{date_attrs, datetime_attrs};

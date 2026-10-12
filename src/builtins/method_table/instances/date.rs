@@ -2,8 +2,8 @@
 //! coercions and the renderings.
 //!
 //! Like the calendar rows (`dateish.rs`), the handlers take the instance's
-//! attributes, and the cascade's `date_method_0arg` calls the same functions
-//! for the receivers the table has no shape for (an instance of a subclass).
+//! attributes, so an instance of a subclass (no shape) is answered by the same
+//! rows through their owner (ADR-11276 §9.87).
 
 use super::temporal::with_attrs;
 use super::{Handler, MethodRow, RowFlags};

@@ -1899,6 +1899,20 @@ answer `1`/`3`; Rakudo raises `X::Cannot::Lazy` (#12971). Pinned in `t/types/any
 - **Left in `dispatch_core_range.rs`**: `of`, `keyof` and the `Range` accessors (`excludes-min`, `excludes-max`, `bounds`, `is-int`,
   `infinite`).
 
+### 9.87 Slice 5: a `Date`/`DateTime` subclass instance reaches the rows through their owner; `temporal_dispatch`'s arms go (2026-10-12)
+
+`refactor/11276-temporal-subclass-rows`. `methods_0arg/temporal_dispatch.rs` held two name `match`es (`date_method_0arg`,
+`datetime_method_0arg`, 59 arms). For an instance of a user subclass of `Date`/`DateTime`, which has no shape, they called the row
+handlers of `instances/{date,dateish,datetime,temporal}.rs` by name. They are replaced by one lookup in the 0-arg cascade,
+`temporal_owner_row`: `owner_row("DateTime" | "Date", method, 0)`, then `invoke` with the instance as invocant. Every one of those
+rows reads the instance's attributes, which a subclass instance carries too. `perl` asks the `raku` row (`Mu.perl` is `.raku`).
+The `DateTime` subclass `utc` exception (the interpreter re-blesses the result) stays in front of it.
+
+`method-rows-report.py --arms`: the pure arity cascades lose 59 arms (300 → 241 on this branch's base). A probe of all 76 argless
+methods on a `Date` and a `DateTime` subclass instance was identical before and after. Pinned in
+`t/types/temporal/date-subclass-owner-rows.t`, for the 67 answers that agree with Rakudo. **Found, not fixed** (#12994): `succ`,
+`pred`, `raku`, `WHICH` and `utc` of a subclass instance answer with the base class name, as before.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
