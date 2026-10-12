@@ -45,7 +45,8 @@ impl Interpreter {
     }
 
     /// Dispatch the parked reductions for which `ready(from, to)` holds.
-    // Cost: O(p) per call when entries are pending, p = pending entries; O(1) otherwise.
+    // Cost: O(p) per call when entries are pending, p = pending entries (a
+    // scan without allocation when none is ready); O(1) otherwise.
     pub(super) fn flush_deferred_repeats(
         &mut self,
         actions: &mut Value,
@@ -54,6 +55,12 @@ impl Interpreter {
         let taken = PENDING.with(|p| {
             let mut slot = p.borrow_mut();
             let (text, entries) = slot.as_mut()?;
+            // The walk asks at every child and node, and almost every ask
+            // finds nothing ready: answer those with a scan, without
+            // rebuilding the pending list.
+            if !entries.iter().any(|(_, caps)| ready(caps.from, caps.to)) {
+                return None;
+            }
             let (now, later): (Vec<Entry>, Vec<Entry>) = std::mem::take(entries)
                 .into_iter()
                 .partition(|(_, caps)| ready(caps.from, caps.to));
