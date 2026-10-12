@@ -2584,9 +2584,16 @@ impl Interpreter {
         if enum_type_name != name && !is_anonymous {
             crate::value::note_enum_display_name(enum_type_name, name);
         }
-        self.registry_mut()
-            .enum_types
-            .insert(enum_type_name.to_string(), enum_variants.clone());
+        // A declaration that runs again (a `my enum` in a routine or supply
+        // body, once per run) usually re-registers the same variants. Leave
+        // the shared registry alone then: the write copied the whole registry
+        // on a thread clone that still shared it, and the clone kept the copy
+        // (#12981).
+        if self.registry().enum_types.get(enum_type_name) != Some(&enum_variants) {
+            self.registry_mut()
+                .enum_types
+                .insert(enum_type_name.to_string(), enum_variants.clone());
+        }
         // A `my enum` dies with its enclosing block: `block_declared_vars`
         // (see the caller) tears down its ENV bindings at block exit, but the
         // `enum_types` registry entry above is never removed. Mark it

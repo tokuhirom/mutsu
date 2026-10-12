@@ -52,7 +52,7 @@ impl<'a> AttrDeclScope<'a> {
     /// The scope one registered attribute declaration carries.
     pub(crate) fn of(attr: &'a crate::runtime::ClassAttributeDef) -> Self {
         Self {
-            env: attr.captured_env.as_ref(),
+            env: attr.captured_env.as_deref(),
             unit: attr.captured_unit,
             package: attr.declaring_package.map(|p| p.as_str()),
         }
@@ -66,7 +66,7 @@ pub(crate) struct DeferredAttrDefault {
     /// The `has $.x = <expr>` initializer, when the attribute has one.
     pub(crate) default: Option<DeclTraitArg>,
     /// Lexicals captured where a role-composed attribute default was declared.
-    pub(crate) captured_env: Option<ValueMap>,
+    pub(crate) captured_env: Option<std::sync::Arc<ValueMap>>,
     /// Compunit whose imports were visible where that default was declared.
     pub(crate) captured_unit: Option<crate::symbol::Symbol>,
     /// The class or role body that default was declared in (#8842).
@@ -183,7 +183,7 @@ impl Interpreter {
                         inv,
                         &attrs,
                         AttrDeclScope {
-                            env: d.captured_env.as_ref(),
+                            env: d.captured_env.as_deref(),
                             unit: d.captured_unit,
                             package: d.declaring_package.map(|p| p.as_str()),
                         },

@@ -619,9 +619,7 @@ impl Interpreter {
         why: Value,
     ) -> Result<Value, RuntimeError> {
         let name = self.mop_receiver_owner(target);
-        crate::runtime::cow_table_mut(&mut self.types.type_metadata)
-            .entry(name)
-            .or_default()
+        self.type_metadata_mut(name)
             .insert("__set_why__".to_string(), why.clone());
         Ok(why)
     }

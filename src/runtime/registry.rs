@@ -726,6 +726,23 @@ impl Registry {
         entries.into_iter().map(|entry| entry.name).collect()
     }
 
+    /// Whether `type_name`'s own built-in catalog rows declare `method_name`
+    /// -- the membership test [`Self::builtin_method_names`] answers, without
+    /// listing every row of the owner.
+    // Cost: O(1) hash probe.
+    pub(crate) fn declares_builtin_method(&self, type_name: &str, method_name: &str) -> bool {
+        let owner = crate::builtins::builtin_type_methods::canonical_builtin_owner(type_name);
+        if owner.is_empty() {
+            return false;
+        }
+        self.method_entries
+            .get(&MethodEntryKey {
+                owner: Symbol::intern(owner),
+                name: Symbol::intern(method_name),
+            })
+            .is_some_and(|entry| entry.builtin.is_some())
+    }
+
     /// Whether `owner` (a class, or a role, whose methods live on its
     /// `RoleDef` until composition) declares a `new` of its own. A qualified
     /// `self.Owner::new(...)` runs that method on the original invocant

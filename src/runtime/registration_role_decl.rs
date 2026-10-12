@@ -228,10 +228,15 @@ impl Interpreter {
         if has_expr_default {
             let captured_env = self.env.flatten();
             let captured_unit = self.current_unit;
-            role_def.captured_env = Some(captured_env.clone());
+            // One shared copy for every attribute: a `ClassAttributeDef` is
+            // cloned per consuming class and per construction plan, and a
+            // deep copy of the role scope's lexicals rode along each time
+            // (#12981).
+            let shared_env = std::sync::Arc::new(captured_env.clone());
+            role_def.captured_env = Some(captured_env);
             for attr in &mut role_def.attributes {
                 if attr.default.is_some() && attr.captured_env.is_none() {
-                    attr.captured_env = Some(captured_env.clone());
+                    attr.captured_env = Some(shared_env.clone());
                     attr.captured_unit = Some(captured_unit);
                 }
             }
