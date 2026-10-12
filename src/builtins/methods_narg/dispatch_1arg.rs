@@ -829,12 +829,6 @@ fn native_method_1arg_cascade(
         "round" => {
             crate::builtins::method_table::cool_real::round_to(target, std::slice::from_ref(arg))
         }
-        // Cost: see `sampling::pick`.
-        "pick" => crate::builtins::sampling::pick(target, std::slice::from_ref(arg)),
-        // Cost: see `sampling::pickpairs`.
-        "pickpairs" => crate::builtins::sampling::pickpairs(target, std::slice::from_ref(arg)),
-        // Cost: see `sampling::roll`.
-        "roll" => crate::builtins::sampling::roll(target, std::slice::from_ref(arg)),
         // Buf/Blob `read-*` (1 arg: offset, native byte order): the rows'
         // implementation (`method_table::blob_read`).
         "read-num32" | "read-num64" | "read-uint8" | "read-int8" | "read-uint16" | "read-int16"

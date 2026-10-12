@@ -3,10 +3,10 @@
 //!
 //! Rakudo declares `pick` and `roll` on `List`, `Range`, `Map`, `Bool`, `Any` and the
 //! six quant hashes, and `pickpairs` on the quant hashes. The rows in
-//! `method_table::collections::sampling` and the cascade arms that still answer
-//! a `Seq`, a lazy list, a shaped array or an itemized hash (receivers with no
-//! dispatch shape) call [`fn@pick`], [`fn@roll`] and [`fn@pickpairs`], so a count means
-//! the same thing however the call arrives.
+//! `method_table::collections::sampling` (which `method_table::answer_shapeless`
+//! also reaches for a `Seq`, a lazy list or a shaped array) and the sub forms
+//! call [`fn@pick`], [`fn@roll`] and [`fn@pickpairs`], so a count means the same
+//! thing however the call arrives.
 //!
 //! The answer is random, so the table flags the rows `RANDOM`.
 

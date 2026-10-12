@@ -1831,6 +1831,32 @@ raises `X::AdHoc`). Sinking a `gather`, a `map`, a handled and an unhandled `Fai
 
 - **Left in the arity-0 cascade's delegating arms**: `pick`, `roll`, `pickpairs` and `minmax` of `dispatch_core_range.rs`.
 
+### 9.83 Slice 5: `Any.pick`/`Any.roll`/`Any.minmax` reach every receiver; the sampling and `minmax` arms go (2026-10-12)
+
+`refactor/11276-range-sampling-rows`. The delegating `pick`, `roll`, `pickpairs` and `minmax` arms of
+`methods_0arg/dispatch_core_range.rs`, the `pick`/`roll`/`pickpairs` arms of `methods_narg/dispatch_1arg.rs` and the `minmax` arm of
+`methods_0arg/collection.rs` are deleted:
+
+1. **`Any.pick` and `Any.roll`** (both arities) are `TYPE_OBJECT_OK` rows (`Int.pick` is `Int`, as in Rakudo, where `Any`'s candidate
+   is `self.list.pick`); the `List`, `Range`, `Map` and quant-hash rows keep needing an instance.
+2. **`ANY_LIST_FOR_CLOSED_SHAPES` gains `pick`, `roll` and `minmax`**, so a `Capture`, a `Blob`, an `IO::Path`, a `Version` or a
+   `Pair` reaches `Any`'s row, and `answer_shapeless` answers a `Seq`, a `Slip`, a shaped or lazy array, a code object, a promise, an
+   instance and a type object with no shape. It admits a count for `pick` and `roll` as it does a separator for `join`.
+3. **`Mu` is no `Any`**: `answer_shapeless` refuses the `Mu` type object for `Any`'s list methods, so `Mu.pick`, `Mu.roll` and
+   `Mu.flat` are `X::Method::NotFound` (they answered `Mu`), as in Rakudo.
+4. **`pickpairs`** is declared only on the quant hashes, whose rows answer it; the arm answered nothing else.
+5. The sub forms `pick($n, @list)` / `roll($n, @list)` called the 1-arg cascade; they call `sampling::pick`/`sampling::roll`, the one
+   implementation, directly.
+
+`method-rows-report.py --arms`: the pure arity cascades go from 316 arms to 308. A probe of the four names (both arities) over ~50
+receiver kinds against the pre-change binary changed only `Mu.pick`/`Mu.roll` (pinned in `t/types/any-sampling-minmax-rows.t`); the
+quant-hash answers differ run to run on the old binary too (hash order). **Found, not fixed** (#12958): `Int.roll(2)`/`Any.roll(2)`
+are `X::Method::NotFound` and `Int.pick(2)` is `((Int))`, because `try_native_method_raw` sends a type object's `pick`/`roll` to the
+interpreter, whose 1-arg native entry never asks the table; `Mu.unique` and `Mu.minmax` are still answered.
+
+- **Left in `dispatch_core_range.rs`**: `head`, `tail`, `first`, `min`, `max`, `of`, `keyof` and the `Range` accessors, which carry
+  real bodies.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

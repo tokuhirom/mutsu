@@ -382,8 +382,9 @@ pub(crate) fn shapeless_row(
     arity: usize,
 ) -> Option<RowId> {
     use crate::value::ValueView;
-    // `join` alone takes an argument (its separator).
-    if arity > 0 && (arity > 1 || method.as_str() != "join") {
+    // `join` (its separator), `pick` and `roll` (their count) alone take an
+    // argument.
+    if arity > 0 && (arity > 1 || !matches!(method.as_str(), "join" | "pick" | "roll")) {
         return None;
     }
     let text = crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method.as_str());
@@ -451,6 +452,8 @@ pub(crate) fn shapeless_row(
             owner?
         }
         ValueView::Instance { .. } => return None,
+        // `Mu` is no `Any`: `Mu.flat` and `Mu.pick` have no candidate.
+        ValueView::Package(name) if name == "Mu" => return None,
         // Every other receiver the cascades declined (a code object, a regex,
         // a promise, a RakuAST node, a type object with no shape, a shaped or
         // lazy array) lists as itself or its elements.

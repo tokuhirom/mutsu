@@ -625,9 +625,7 @@ pub(crate) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             }
         },
-        // These aggregate handlers are also the Any/List method-table rows.
-        // Cost: O(e), e = elements and their minimum/maximum candidates.
-        "minmax" => crate::builtins::method_table::list_aggregate::minmax(target, &[]),
+        // This aggregate handler is also the Any method-table row.
         // Cost: O(e), e = elements, plus the digit growth of the running total.
         "sum" => crate::builtins::method_table::list_aggregate::sum(target, &[]),
         // Squish needs WHICH identity, which can dispatch user methods, so it
