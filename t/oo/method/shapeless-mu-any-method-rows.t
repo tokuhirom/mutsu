@@ -53,7 +53,7 @@ subtest 'is-lazy reaches every receiver', {
 
 subtest 'lazy reaches the Iterable receivers only', {
     plan 8;
-    is-deeply Array.lazy.List, (Array,), 'an Array type object lists as itself';
+    is-deeply Array.lazy[0], Array, 'an Array type object lists as itself';
     is-deeply Hash.lazy.is-lazy, True, 'so does a Hash type object';
     my @a = (1..3).map(* + 1).lazy;
     is-deeply @a.is-lazy, True, 'a lazy map list stays lazy when assigned';
