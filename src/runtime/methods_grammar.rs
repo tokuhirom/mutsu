@@ -1429,51 +1429,12 @@ impl Interpreter {
             })
             .unwrap_or_default();
 
-        let actions_class_name = match actions.view() {
-            ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
-            ValueView::Package(name) => Some(name.as_str()),
-            _ => None,
-        };
-        let mut called_action = false;
-        let method_result = if let Some(sym_name) = sym_method_name {
-            let sym_exists =
-                actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, sym_name));
-            if sym_exists {
-                called_action = true;
-                let result = self.call_method_with_values(
-                    actions.clone(),
-                    sym_name,
-                    vec![match_obj.clone()],
-                );
-                match result {
-                    Err(e) if e.is_method_not_found_for(sym_name) => {
-                        if actions_class_name
-                            .is_none_or(|cn| self.actions_answer_method(cn, rule_name))
-                        {
-                            self.call_method_with_values(
-                                actions.clone(),
-                                rule_name,
-                                vec![match_obj.clone()],
-                            )
-                        } else {
-                            Ok(match_obj.clone())
-                        }
-                    }
-                    other => other,
-                }
-            } else if actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, rule_name))
-            {
-                called_action = true;
-                self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
-            } else {
-                Ok(match_obj.clone())
-            }
-        } else if actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, rule_name)) {
-            called_action = true;
-            self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
-        } else {
-            Ok(match_obj.clone())
-        };
+        let (called_action, method_result) = self.call_grammar_action_method(
+            actions,
+            rule_name,
+            sym_method_name,
+            &match_obj,
+        );
 
         // Re-read a possibly-mutated actions instance (same as the main walk).
         if called_action
@@ -1954,54 +1915,12 @@ impl Interpreter {
         // `has_user_method` is a direct MRO + HashMap-by-name lookup, so the
         // common "no action for this rule" case now costs a lookup instead of
         // a full dispatch resolution + error.
-        let actions_class_name = match actions.view() {
-            ValueView::Instance { class_name, .. } => Some(class_name.as_str()),
-            // A stateless `:actions(Actions)` grammar action is often passed
-            // as the bare type object, not an instance.
-            ValueView::Package(name) => Some(name.as_str()),
-            _ => None,
-        };
-        let mut called_action = false;
-        let method_result = if let Some(ref sym_name) = sym_method_name {
-            let sym_exists =
-                actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, sym_name));
-            if sym_exists {
-                called_action = true;
-                let result = self.call_method_with_values(
-                    actions.clone(),
-                    sym_name,
-                    vec![match_obj.clone()],
-                );
-                match result {
-                    Err(e) if e.is_method_not_found_for(sym_name) => {
-                        // Fall back to plain rule name.
-                        if actions_class_name
-                            .is_none_or(|cn| self.actions_answer_method(cn, rule_name))
-                        {
-                            self.call_method_with_values(
-                                actions.clone(),
-                                rule_name,
-                                vec![match_obj.clone()],
-                            )
-                        } else {
-                            Ok(match_obj.clone())
-                        }
-                    }
-                    other => other,
-                }
-            } else if actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, rule_name))
-            {
-                called_action = true;
-                self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
-            } else {
-                Ok(match_obj.clone())
-            }
-        } else if actions_class_name.is_none_or(|cn| self.actions_answer_method(cn, rule_name)) {
-            called_action = true;
-            self.call_method_with_values(actions.clone(), rule_name, vec![match_obj.clone()])
-        } else {
-            Ok(match_obj.clone())
-        };
+        let (called_action, method_result) = self.call_grammar_action_method(
+            actions,
+            rule_name,
+            sym_method_name.as_deref(),
+            &match_obj,
+        );
 
         // After the method call, if actions is an Instance, its attributes
         // may have been mutated.  Retrieve the updated version from env so

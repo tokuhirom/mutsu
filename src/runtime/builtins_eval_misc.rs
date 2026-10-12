@@ -3,7 +3,7 @@ use crate::value::ValueView;
 
 impl Interpreter {
     // Cost: O(a), a = arguments.
-    pub(super) fn builtin_make(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(crate) fn builtin_make(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // `make` is `sub make(Mu \made)`: exactly one positional, no nameds.
         // A named argument reaches here as a plain `Pair` (the call site
         // turns every positional Pair into a `ValuePair`, ADR-0021), so

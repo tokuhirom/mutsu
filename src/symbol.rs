@@ -675,6 +675,10 @@ pub(crate) mod wk {
         nextsame => "nextsame";
         amp_callsame => "&callsame";
         amp_nextsame => "&nextsame";
+        /// The `make` routine and the `&make` key a lexical override of it
+        /// binds under (`vm_make_ops`).
+        make => "make";
+        amp_make => "&make";
         /// The `$self` lexical a `self`-declaring invocant parameter binds
         /// (`crate::env::LEX_SELF`).
         lex_self => "$self";
