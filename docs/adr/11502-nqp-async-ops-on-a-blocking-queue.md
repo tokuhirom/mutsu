@@ -1,6 +1,6 @@
 # ADR-11502: The Asynchronous `nqp::` ops push onto a blocking queue
 
-- **Status**: Proposed (2026-10-12). §2.1–§2.3 are implemented in the PR that adds
+- **Status**: Accepted (user decision 2026-10-12; Proposed the same day). §2.1–§2.3 are implemented in the PR that adds
   `runtime/nqp_ops_async.rs`. Of §2.4, `signal` (§2.4.1) and `watchfile` (§2.4.2)
   are implemented; the other ops are not yet.
 - **Date**: 2026-10-12
