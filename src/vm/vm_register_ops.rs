@@ -667,10 +667,22 @@ impl Interpreter {
                         && sym.with_str(|name| !name.starts_with(['$', '@', '%', '&']))
                 })
                 .filter_map(|sym| {
-                    self.env()
-                        .get_sym(*sym)
-                        .filter(|v| v.is_package_value())
-                        .map(|v| (*sym, v.clone()))
+                    // A scalar's env key carries no sigil, so `my Reg $instance`
+                    // holding its type object also reads as a package here.
+                    // Only the type's own binding (named after it) is a type
+                    // name; a variable keeps its shared-cell capture.
+                    let value = self.env().get_sym(*sym)?;
+                    let ValueView::Package(type_name) = value.view() else {
+                        return None;
+                    };
+                    // A lexical type's storage name carries a `\0`-separated
+                    // disambiguator after its source-facing name.
+                    let source_name = type_name.with_str(|n| {
+                        Symbol::intern(n.split_once('\u{0}').map_or(n, |(name, _)| name))
+                    });
+                    let names_itself = source_name == *sym
+                        || crate::qualified::unqualified_part(source_name) == *sym;
+                    names_itself.then(|| (*sym, value.clone()))
                 })
                 .collect();
             capture_syms.retain(|sym| {
