@@ -230,10 +230,8 @@ fn builtin_gather_read(name: &str) -> GatherRead {
         "list" | "item" | "defined" | "push" | "unshift" => GatherRead::Pass,
         "first" | "zip" | "roundrobin" | "flat" | "map" | "grep" => GatherRead::Stream,
         "sum" | "min" | "max" | "minmax" | "unique" | "repeated" | "squish" | "pick" | "roll"
-        | "classify" | "categorize" | "produce" | "reduce" | "keys" | "values" | "kv"
-        | "pairs" | "permutations" | "combinations" | "cross" | "append" | "prepend" => {
-            GatherRead::Consume
-        }
+        | "classify" | "categorize" | "produce" | "reduce" | "keys" | "values" | "kv" | "pairs"
+        | "permutations" | "combinations" | "cross" | "append" | "prepend" => GatherRead::Consume,
         _ => GatherRead::Cache,
     }
 }
