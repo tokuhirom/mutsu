@@ -693,6 +693,12 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    scope the block is written in. The per-call `$!` resets on the named,
    closure and method paths are now redundant on a frame with a root and
    are left for phase 4, which removes the call-setup env work.
+   Release-build Ir against the merge base (interpreter lane / JIT lane):
+   `bench-fib` +0.01% / +0.02%, `bench-tak` +0.01% / +0.02%, `method-call`
+   +0.09% / +0.10%, `poly-call` +0.02% / +0.04%, `bench-ctor` +0.20% /
+   +0.10%, `bench-multi-dispatch` +0.13% / +0.23%, `bench-string` +0.72% /
+   +0.26% (most of it allocator layout and the base binary's directory; the
+   setter itself moved ~70k Ir into its shared helper).
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
