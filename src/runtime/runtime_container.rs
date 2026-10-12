@@ -233,16 +233,6 @@ impl Interpreter {
         {
             return value;
         }
-        // A variable promoted to a shared cell (a closure captures it) holds
-        // its container in the cell: tag what the cell holds and store it back,
-        // so the cell, which is the variable's identity, carries the
-        // descriptor (`container_type_metadata_with` reads through it too).
-        if let ValueView::ContainerRef(cell) = value.view() {
-            let inner = cell.lock().unwrap().clone();
-            let tagged = self.tag_container_metadata(inner, info);
-            *cell.lock().unwrap() = tagged;
-            return value;
-        }
         let mixin_parts = match value.view() {
             ValueView::Mixin(inner, m)
                 if matches!(
