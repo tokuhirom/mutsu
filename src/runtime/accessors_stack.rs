@@ -39,6 +39,7 @@ impl Interpreter {
         self.caches.func_multi_resolve_cache.clear();
         self.caches.func_multi_type_cacheable.clear();
         self.caches.func_multi_argkey_cacheable.clear();
+        self.caches.multi_light_cache.clear();
         self.caches.bare_multi_plan_cache.clear();
         self.caches.core_infix_wins_cache.clear();
         self.caches.light_call_cache.clear();

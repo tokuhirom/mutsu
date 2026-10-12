@@ -225,6 +225,23 @@ The call site caches the chosen candidate keyed by the argument shape
 invalidate the dispatcher's own generation counter, which the call-site cache
 checks; nothing else can change the candidate set of a binding.
 
+**First step landed** (`perf/10109-multi-call-site-cache`, #10109): the
+call-site cache half, ahead of the binding half. A bare multi call of a
+type-deterministic family (`func_multi_dispatch_type_cacheable`) keys its
+whole dispatch by (package, name, argument type keys) in `multi_light_cache`,
+the key `func_multi_resolve_cache` already uses for the winner. The generic
+path fills it when such a call took the positional light bind; a later call
+with the same types goes from `CallFunc` straight to the winner's light bind
+with the dispatch frame and samewith context (`vm_multi_light_call.rs`),
+re-checking only what can differ per call: the light bind's admissions, a
+wrapper, the mainline-capture block. The registry generation stands in for
+the dispatcher's own counter until the binding is a value: an inner scope's
+candidate, an `EVAL`ed one or a `wrap` retires the entries as they retire
+`func_multi_resolve_cache`'s. The repro of #10109 went from 13.3k to 8.7k Ir
+per call, against 9.8k for the plain sub. Value-dependent families (`where`,
+subsets) still take the generic path; #9967's `BareMultiPlan` is their
+equivalent.
+
 ### 2.5 Cost contract
 
 | operation | after |

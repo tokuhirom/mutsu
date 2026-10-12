@@ -934,6 +934,17 @@ impl Interpreter {
             }
         }
 
+        // A multi call whose winner this site's argument types already
+        // resolved runs it through the positional light bind directly
+        // (`vm_multi_light_call.rs`, #10109). After the plain caches above,
+        // which a multi name never enters, so a plain sub pays nothing.
+        if !skip_name_caches
+            && !call_has_slip
+            && !call_has_named
+            && self.try_multi_light_call(code, name_idx, arity, compiled_fns)?
+        {
+            return Ok(());
+        }
         // Light-call cache check for named-param functions.
         if !skip_name_caches {
             let name_sym = code.const_sym(name_idx);
@@ -2134,6 +2145,16 @@ impl Interpreter {
                     && self.wrap_sub_id_for_name(name).is_none()
                     && !self.light_call_blocked_by_mainline_capture(name)
                 {
+                    if !where_verified {
+                        self.note_multi_light_call(
+                            name,
+                            name_sym,
+                            &args,
+                            multi_def_memo.as_ref(),
+                            cf,
+                            compiled_fns,
+                        );
+                    }
                     let pushed_dispatch = loan_env!(
                         self,
                         push_multi_dispatch_frame_with_winner_sym(
