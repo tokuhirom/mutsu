@@ -617,12 +617,7 @@ impl Interpreter {
             && args.is_empty()
         {
             let mn = method_name;
-            if (mn == "raku" || mn == "perl" || mn == "keyof")
-                && self.container_type_metadata(target).is_some()
-            {
-                return None;
-            }
-            if mn == "keyof" {
+            if (mn == "raku" || mn == "perl") && self.container_type_metadata(target).is_some() {
                 return None;
             }
         }

@@ -33,6 +33,7 @@ pub(crate) mod seq;
 pub(crate) mod subscript;
 pub(crate) mod terminals;
 mod truth;
+pub(crate) mod type_params;
 
 /// Every family of this group.
 pub(super) static FAMILIES: &[&[MethodRow]] = &[
@@ -78,5 +79,6 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     sampling::PICKPAIRS_ROWS,
     seq::ROWS,
     terminals::ROWS,
+    type_params::ROWS,
     truth::ROWS,
 ];

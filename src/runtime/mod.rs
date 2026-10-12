@@ -2483,17 +2483,11 @@ impl ContainerConstraintParts<'_> {
 /// `Interpreter::subset_predicate_cache`.
 type SubsetPredicateCompiled = Arc<(crate::opcode::CompiledCode, crate::opcode::CompiledFns)>;
 
-/// Read a value's container type metadata. Array/Hash/Set/Bag/Mix carry it
-/// embedded in their backing data struct (travels across copy-on-write);
-/// `Instance` values look it up in the shared `instance_type_metadata` side
-/// table by id. This free function is the single implementation shared by
-/// `Interpreter::container_type_metadata` and the VM's peer-handle native read
-/// (CP-3 Track 1: removes the interpreter bounce for `Instance` type-meta
-/// reads). It touches no `env`, so neither caller needs an env loan.
-pub(crate) fn container_type_metadata_with(
-    value: &Value,
-    instance_meta: &Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
-) -> Option<ContainerTypeInfo> {
+/// The container type metadata an `Array`, `Hash`, `Set`, `Bag` or `Mix`
+/// carries in its own backing data, or `None` for any other value. Needs no
+/// interpreter: the method table's `of`/`keyof` rows read it (ADR-11276 §9.86).
+// Cost: O(1) plus the clone of the type names.
+pub(crate) fn embedded_container_type_info(value: &Value) -> Option<ContainerTypeInfo> {
     // Embedded-metadata readers for Set/Bag/Mix (mirrors `hashdata_type_info`).
     macro_rules! embedded_type_info {
         ($data:ident) => {
@@ -2514,6 +2508,27 @@ pub(crate) fn container_type_metadata_with(
         ValueView::Set(items, _) => embedded_type_info!(items),
         ValueView::Bag(items, _) => embedded_type_info!(items),
         ValueView::Hash(items) => Interpreter::hashdata_type_info(&items),
+        _ => None,
+    }
+}
+
+/// Read a value's container type metadata. Array/Hash/Set/Bag/Mix carry it
+/// embedded in their backing data struct (travels across copy-on-write);
+/// `Instance` values look it up in the shared `instance_type_metadata` side
+/// table by id. This free function is the single implementation shared by
+/// `Interpreter::container_type_metadata` and the VM's peer-handle native read
+/// (CP-3 Track 1: removes the interpreter bounce for `Instance` type-meta
+/// reads). It touches no `env`, so neither caller needs an env loan.
+pub(crate) fn container_type_metadata_with(
+    value: &Value,
+    instance_meta: &Arc<RwLock<Arc<HashMap<u64, ContainerTypeInfo>>>>,
+) -> Option<ContainerTypeInfo> {
+    match value.view() {
+        ValueView::Array(..)
+        | ValueView::Mix(..)
+        | ValueView::Set(..)
+        | ValueView::Bag(..)
+        | ValueView::Hash(_) => embedded_container_type_info(value),
         ValueView::Instance { id, .. } => instance_meta.read().unwrap().get(&id).cloned(),
         ValueView::Mixin(inner, _) => container_type_metadata_with(inner, instance_meta),
         // A captured variable promoted to a shared cell (escape analysis)

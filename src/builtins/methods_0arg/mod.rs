@@ -10,7 +10,6 @@ mod dispatch_core_coerce;
 mod dispatch_core_list;
 pub(crate) mod dispatch_core_math;
 mod dispatch_core_numeric;
-pub(crate) mod dispatch_core_range;
 mod dispatch_core_repr;
 mod dispatch_core_unicode;
 pub(crate) mod which;
@@ -651,6 +650,15 @@ pub(crate) fn native_method_0arg_cascade(
             && mixins
                 .keys()
                 .any(|k| k.starts_with("__mutsu_role__") || k.starts_with("__mutsu_attr__"))
+        {
+            return None;
+        }
+        // A role mixed in may parameterize the element or key type
+        // (`%h but Associative[Int, Int]`) or declare `of` itself: the
+        // interpreter's mixin dispatch reads the composition before it asks
+        // the wrapped container's row (ADR-11276 §9.86).
+        if matches!(method, "of" | "keyof")
+            && mixins.keys().any(|k| k.starts_with("__mutsu_role__"))
         {
             return None;
         }
@@ -1611,7 +1619,6 @@ fn dispatch_core_families(target: &Value, method: &str) -> Option<Result<Value, 
     try_dispatch!(dispatch_core_numeric);
     try_dispatch!(dispatch_core_list);
     try_dispatch!(dispatch_core_repr);
-    try_dispatch!(dispatch_core_range);
     try_dispatch!(dispatch_core_math);
 
     None

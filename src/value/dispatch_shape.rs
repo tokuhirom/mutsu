@@ -266,10 +266,20 @@ impl DispatchShape {
     /// one reaches its own type's rows and those of the ancestors it names
     /// here, which its slice has audited (the `IO::Spec` family reaches
     /// `IO::Spec::Unix`, whose methods its classes inherit, and never `Any`
-    /// or `Mu`).
-    // Cost: O(1).
+    /// or `Mu`). A role's rows reach every shape whose type composes it
+    /// ([`Self::reaches_role`]).
+    // Cost: O(r), r = audited roles.
     pub(crate) const fn reaches(self, owner: &str, method: &str) -> bool {
-        self.reaches_owner(owner) || self.reaches_audited(owner, method)
+        self.reaches_owner(owner) || self.reaches_audited(owner, method) || self.reaches_role(owner)
+    }
+
+    /// Whether the rows of the role `role`, which this shape's type composes,
+    /// reach it (ADR-11276 §9.86). A role is opened as a whole, for every shape
+    /// whose type composes it, open or closed, once its rows were audited for
+    /// all of them; [`ROLES_WITH_ROWS`] lists the roles that were.
+    // Cost: O(r), r = audited roles.
+    pub(crate) const fn reaches_role(self, role: &str) -> bool {
+        const_list_contains(&ROLES_WITH_ROWS, role)
     }
 
     /// [`Self::reaches`] for the rows of `owner` as a whole, before the
@@ -422,6 +432,21 @@ impl DispatchShape {
             .map(|&(_, shape)| shape)
     }
 }
+
+/// The roles whose rows reach every shape whose type composes them
+/// ([`DispatchShape::reaches_role`]). Their only rows are the element and key
+/// type methods `of`/`keyof` (§9.86), which read nothing but the receiver's
+/// type and its container descriptor; a role gaining another row is audited
+/// for every composing shape first.
+pub(crate) const ROLES_WITH_ROWS: [&str; 7] = [
+    "Positional",
+    "Associative",
+    "Callable",
+    "Baggy",
+    "Setty",
+    "Mixy",
+    "QuantHash",
+];
 
 /// The `Cool` numeric methods a `Range` or `Seq` reaches
 /// ([`DispatchShape::reaches_audited`]).

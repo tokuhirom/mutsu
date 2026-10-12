@@ -3512,19 +3512,6 @@ impl Interpreter {
             return self.dispatch_split_row(target, args);
         }
 
-        // .of on Array/Hash
-        // (a role mixed onto the container that declares its own `of` wins)
-        if method == "of"
-            && args.is_empty()
-            && matches!(target.view(), ValueView::Array(..) | ValueView::Hash(_))
-            && !self.mixin_composes_method(&target, "of")
-        {
-            if let Some(info) = self.container_type_metadata(&target) {
-                return Ok(Value::package(Symbol::intern(&info.value_type)));
-            }
-            return Ok(Value::package(Symbol::intern("Mu")));
-        }
-
         // A class that statically composes `Associative[V,K]` or
         // `Positional[V]` keeps that role's type arguments in class metadata,
         // rather than in the native Hash/Array payload. Reflect `.of` from the
@@ -3546,82 +3533,6 @@ impl Interpreter {
             && let Some(value_type) = self.composed_container_role_value_type(name.as_str())
         {
             return Ok(Value::package(Symbol::intern(&value_type)));
-        }
-
-        // .of on a parametric type object, e.g. `array[int]`, `Array[Int]`,
-        // `Positional[Int]`. Returns the element type.
-        if method == "of"
-            && args.is_empty()
-            && let ValueView::Package(name) = target.view()
-        {
-            let resolved = name.resolve();
-            if let Some(open) = resolved.find('[')
-                && resolved.ends_with(']')
-            {
-                let base = &resolved[..open];
-                if matches!(
-                    base,
-                    "array"
-                        | "Array"
-                        | "Positional"
-                        | "List"
-                        | "Seq"
-                        | "Hash"
-                        | "Map"
-                        | "Associative"
-                ) {
-                    let inner = &resolved[open + 1..resolved.len() - 1];
-                    // `ValueType{KeyType}` object-hash form first — the key
-                    // type may itself contain commas (a subset where-clause),
-                    // so the comma split below would truncate it.
-                    let (obj_hash_value, key) =
-                        crate::runtime::types::split_object_hash_constraint(inner);
-                    // Hash[ValueType, KeyType] -> .of is the value type.
-                    let value_type = if key.is_some() {
-                        obj_hash_value
-                    } else {
-                        inner.split(',').next().unwrap_or(inner).trim()
-                    };
-                    return Ok(Value::package(Symbol::intern(value_type)));
-                }
-            }
-        }
-
-        // .keyof on Hash
-        if method == "keyof" && args.is_empty() && matches!(target.view(), ValueView::Hash(_)) {
-            if let Some(info) = self.container_type_metadata(&target)
-                && let Some(ref key_type) = info.key_type
-            {
-                return Ok(Value::package(Symbol::intern(key_type)));
-            }
-            // A `Hash[V,K,..]` declared type (`Baggy.hash` is `Hash[UInt,Mu,Any]`)
-            // names its key type as the second parameter.
-            if let Some(info) = self.container_type_metadata(&target)
-                && let Some(dt) = info.declared_type.as_deref()
-                && let Some(inner) = dt.strip_prefix("Hash[").and_then(|r| r.strip_suffix(']'))
-                && let Some(key_type) = inner.split(',').nth(1)
-            {
-                return Ok(Value::package(Symbol::intern(key_type.trim())));
-            }
-            return Ok(Value::package(Symbol::intern("Str(Any)")));
-        }
-
-        // .keyof on Mix/Set/Bag - check container type metadata for parameterized types
-        if method == "keyof"
-            && args.is_empty()
-            && matches!(
-                target.view(),
-                ValueView::Mix(_, _) | ValueView::Set(_, _) | ValueView::Bag(_, _)
-            )
-        {
-            if let Some(info) = self.container_type_metadata(&target)
-                && let Some(ref declared_type) = info.declared_type
-                && let Some(bracket_pos) = declared_type.find('[')
-            {
-                let param = &declared_type[bracket_pos + 1..declared_type.len() - 1];
-                return Ok(Value::package(Symbol::intern(param)));
-            }
-            return Ok(Value::package(Symbol::intern("Mu")));
         }
 
         // Complex -> Real type conversion (`$*TOLERANCE` decides whether the

@@ -2315,4 +2315,18 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Set", "BIND-KEY", 4, 26),
     ("Bag", "BIND-KEY", 4, 26),
     ("Mix", "BIND-KEY", 4, 26),
+    // ADR-11276 §9.86: the element and key type methods on the classes and
+    // roles Rakudo declares them on.
+    ("Hash", "of", 1, 25),
+    ("Hash", "keyof", 1, 57),
+    ("Array", "of", 1, 25),
+    ("Positional", "of", 1, 25),
+    ("Associative", "of", 1, 25),
+    ("Associative", "keyof", 1, 25),
+    ("Callable", "of", 1, 25),
+    ("Baggy", "of", 1, 25),
+    ("Setty", "of", 1, 25),
+    ("Mixy", "of", 1, 25),
+    ("QuantHash", "of", 1, 25),
+    ("QuantHash", "keyof", 1, 25),
 ];

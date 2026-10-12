@@ -748,7 +748,28 @@ impl Interpreter {
                     self.stack.pop(); // discard unused trait argument
                 }
                 let name_str = name.to_string();
+                let info = crate::runtime::Interpreter::parse_container_constraint(&name_str, &et);
                 self.vm_set_var_type_constraint(&name_str, Some(et));
+                // The registration re-tags `env`'s value only (see the quant
+                // hash trait above); the variable's own slot must carry the
+                // element type too, because `Array.of` reads the descriptor the
+                // value carries. A slot promoted to a shared cell (a closure
+                // captures the variable) is tagged inside the cell.
+                if let Some(s) = self.resolve_local_slot(code, eff_slot, &name_str) {
+                    let cell = match self.locals[s].view() {
+                        ValueView::ContainerRef(cell) => Some(cell.clone()),
+                        _ => None,
+                    };
+                    if let Some(cell) = cell {
+                        let inner = cell.lock().unwrap().clone();
+                        let tagged = self.tag_container_metadata(inner, info);
+                        *cell.lock().unwrap() = tagged;
+                    } else if let Some(tagged) = self.env().get(&name_str).cloned()
+                        && !tagged.is_container_ref()
+                    {
+                        self.locals[s] = tagged;
+                    }
+                }
                 return Ok(());
             }
         }

@@ -1899,6 +1899,53 @@ answer `1`/`3`; Rakudo raises `X::Cannot::Lazy` (#12971). Pinned in `t/types/any
 - **Left in `dispatch_core_range.rs`**: `of`, `keyof` and the `Range` accessors (`excludes-min`, `excludes-max`, `bounds`, `is-int`,
   `infinite`).
 
+### 9.86 Slice 5: `of` and `keyof` are rows; role-declared rows; a type-object branch; `dispatch_core_range.rs` goes (2026-10-12)
+
+`refactor/11276-of-keyof-rows`. The last two arms of `methods_0arg/dispatch_core_range.rs` answered `of`/`keyof` for type objects
+by *name* (`"Positional"` → `Mu`, `Bag[Int]` → `Int`, `buf16` → `uint16`) and declined the container instances to four
+name-matching blocks of `call_method_with_values` and a VM bypass. Two design questions had no answer in the table: Rakudo declares
+most of these methods on **roles** (`Positional.of`, `Associative.of`/`keyof`, `Callable.of`, `Baggy`/`Setty`/`Mixy.of`,
+`QuantHash.keyof`; only `Hash.of`/`keyof`, `Array.of` and `Blob.of` are on classes), and a role or a **parameterized type object**
+(`Positional`, `Sub`, `Bag[Int]`, `Hash[Int,Str]`) has no `DispatchShape`. Decisions:
+
+1. **A row may be owned by a role.** The registration walk (`table_const.rs`) visits, after each class of a shape's catalog MRO,
+   the roles that class composes (`catalog::composes_role_at`: listed in its catalog `roles` and not in its parent's, so
+   `Positional` is composed at `List`, `Associative` at `Map`), because Rakudo flattens a role's methods into the class that does it:
+   they lose to the class's own rows and win over its parent's. A role's rows reach every shape whose type composes it, open or
+   closed, once audited for all of them: `DispatchShape::reaches_role` reads `ROLES_WITH_ROWS`, the seven roles above. A role that
+   gains a row is added there only after that audit.
+2. **A type object with no shape is answered through `answer_shapeless`**, by a branch that runs before the audited name lists
+   (`type_object_row`): the base name (before `[`) is looked up in the catalog and its MRO walked as in 1; a role is its own owner,
+   followed by the roles it does (`ROLE_PARENTS`: `Mixy` does `Baggy`, `QuantHash`, `Associative`); a buffer name (`buf16`,
+   `Buf[uint32]`, `utf8`) is `Blob`. The branch passes the interpreter on, so a code type object reaches `Code.of` (an interpreter
+   row) and answers `Mu`. A user type is not in the catalog and declines to the interpreter, which answers `class A does
+   Positional[Int]` from its composition as before. A shaped or lazy array (no `Array` shape) reaches `Array.of` the same way.
+3. **The parameters stay in the type object's name.** A parameterized type object is a `Package` whose name is its spelling
+   throughout the runtime (type checks, `.^name`, the constructors); making the parameterization structural data on the type object
+   would touch every one of those readers for no gain here. The handlers parse the name once per call (`Hash[Int,Str]`,
+   `Hash[Int{Str}]`, nested brackets through `split_balanced_comma_list`).
+4. **An instance answers from the descriptor it carries** (`runtime::embedded_container_type_info`, the pure half of
+   `container_type_metadata_with`; an `Instance`'s side-table descriptor stays the interpreter's), so every handler is pure.
+   `tag_container_metadata` no longer lets a variable-constraint registration erase a quant hash's declared type: `my %b is
+   BagHash[Int]` registers `BagHash[Int]` as the variable's constraint, which re-tagged the value with no declared type and left
+   `QuantHash.keyof` nothing to read.
+
+Deleted: the two arms and the file (its random-range helpers move to `builtins/sampling/range.rs`, their one user), the six
+`Set`/`Bag`/`Mix` `of` rows (now `Baggy`/`Setty`/`Mixy`'s), the `of`/`keyof` blocks of `call_method_with_values` for `Array`/`Hash`
+instances, parametric type objects and quant hashes, the parametric-type-object branch and the quant-hash `keyof` block of the
+by-name mutating dispatch, and the `keyof` half of the VM's hash bypass. Kept, with the interpreter: the answers for a user class
+composing `Positional[V]`/`Associative[V,K]` and for a mixin that declares `of`, and the by-name `@`/`%` variable fallback to the
+variable's constraint.
+
+`method-rows-report.py --arms`: the pure arity cascades lose 2 arms and a file (241 → 239 after §9.87). The probe (both names over ~90
+receivers, against the pre-change binary and `raku`) changed only toward Rakudo: `Map.of`, `Associative.keyof`, `Associative[..].keyof`
+(`Str(Any)`/the key parameter), `Range.of`, `Pair.of`/`keyof`, `Callable[Int].of`, `Regex.of`, `QuantHash`/`Baggy`/`Setty`/`Mixy`
+`of`/`keyof`, `Stash`/`PseudoStash` `of`/`keyof`, `Bag[Int].keyof`/`Set[Str].keyof` (were `Mu`), `SetHash[Int].new.keyof`
+(was `Mu`), `Hash[Int,Str]` bound to `%x` (`.of` was `Int,Str`) and `Map.new.of` (was the empty type name). Pinned in
+`t/routines/signature/parametric-of-keyof-rows.t`. Still differing from Rakudo, out of scope: `Junction.of`/`keyof` (Rakudo `Mu`; mutsu has no `Junction`
+owner) and `keyof` of a user class composing `Associative[V,K]` (`X::Method::NotFound`, #12989); `.^can`/`.^methods` do not yet
+walk a class's composed roles, so `List.^can('of')` is empty (#12990).
+
 ### 9.87 Slice 5: a `Date`/`DateTime` subclass instance reaches the rows through their owner; `temporal_dispatch`'s arms go (2026-10-12)
 
 `refactor/11276-temporal-subclass-rows`. `methods_0arg/temporal_dispatch.rs` held two name `match`es (`date_method_0arg`,
