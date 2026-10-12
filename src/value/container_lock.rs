@@ -95,10 +95,14 @@ const STRIPES: usize = 64;
 static STRIPE_LOCKS: [Mutex<()>; STRIPES] = [const { Mutex::new(()) }; STRIPES];
 
 fn stripe_for(addr: usize) -> &'static Mutex<()> {
+    &STRIPE_LOCKS[stripe_index(addr)]
+}
+
+fn stripe_index(addr: usize) -> usize {
     // Container nodes are heap allocations, so the low bits are alignment
     // padding; shift them out before masking or every node lands in a handful
     // of stripes.
-    &STRIPE_LOCKS[(addr >> 4) & (STRIPES - 1)]
+    (addr >> 4) & (STRIPES - 1)
 }
 
 thread_local! {
@@ -114,6 +118,9 @@ thread_local! {
 /// so it is released when the mutation region ends.
 pub(crate) struct ContainerStructGuard {
     _guard: MutexGuard<'static, ()>,
+    /// The node's stripe, for a celled container whose node hashes to a
+    /// different stripe than its cell. See [`Self::acquire_for`].
+    _node_guard: Option<MutexGuard<'static, ()>>,
 }
 
 impl ContainerStructGuard {
@@ -137,8 +144,45 @@ impl ContainerStructGuard {
         if !multi_mutator_threads_live() {
             return None;
         }
-        let addr = cell_addr.or_else(|| container_node_addr(container))?;
-        Self::acquire(addr)
+        let node = container_node_addr(container);
+        match (cell_addr, node) {
+            // A container reached through a cell is keyed on BOTH: the cell is
+            // what two threads writing through it share (they can hold
+            // different nodes once `Gc::make_mut` copies an aliased one), and
+            // the node is what a reader that was handed the container itself
+            // (an argument, a `.map` source) keys on, since it never saw the
+            // cell. A writer that mutates the node in place
+            // (`gc_contents_mut`) must exclude both (#13016).
+            (Some(cell), Some(node)) => Self::acquire_pair(cell, node),
+            (Some(addr), None) | (None, Some(addr)) => Self::acquire(addr),
+            (None, None) => None,
+        }
+    }
+
+    /// Lock the stripes of two keys. They are taken in stripe order, which is
+    /// the one order every pair acquisition uses, so two threads cannot wait
+    /// on each other; a single-key acquisition holds one stripe and waits for
+    /// none, which keeps the scheme deadlock-free.
+    fn acquire_pair(a: usize, b: usize) -> Option<Self> {
+        let (ia, ib) = (stripe_index(a), stripe_index(b));
+        if ia == ib {
+            return Self::acquire(a);
+        }
+        if HOLDS_STRUCT_LOCK.with(Cell::get) {
+            return None;
+        }
+        HOLDS_STRUCT_LOCK.with(|held| held.set(true));
+        let lock = |i: usize| {
+            STRIPE_LOCKS[i]
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+        };
+        let first = lock(ia.min(ib));
+        let second = lock(ia.max(ib));
+        Some(Self {
+            _guard: first,
+            _node_guard: Some(second),
+        })
     }
 
     /// Exclude concurrent access to what a shared `ContainerRef`/`ContainerView`
@@ -174,7 +218,10 @@ impl ContainerStructGuard {
         let guard = stripe_for(addr)
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        Some(Self { _guard: guard })
+        Some(Self {
+            _guard: guard,
+            _node_guard: None,
+        })
     }
 }
 
@@ -331,6 +378,32 @@ mod tests {
             ContainerStructGuard::acquire(0x2000).is_some(),
             "the thread-local flag must be cleared on drop"
         );
+    }
+
+    #[test]
+    fn a_celled_container_locks_both_its_cell_and_its_node() {
+        // A writer through a `:=` cell and a reader handed the container
+        // itself must exclude each other (#13016): the writer holds the cell's
+        // stripe AND the node's, the reader only knows the node.
+        note_mutator_thread_spawned();
+        let (cell, node) = (0x7020, 0x7030);
+        assert_ne!(stripe_index(cell), stripe_index(node));
+        let writer = ContainerStructGuard::acquire_pair(cell, node);
+        assert!(writer.is_some());
+        let (cell_free, node_free) = std::thread::spawn(move || {
+            (
+                stripe_for(cell).try_lock().is_ok(),
+                stripe_for(node).try_lock().is_ok(),
+            )
+        })
+        .join()
+        .unwrap();
+        assert!(!cell_free, "the cell's stripe is held");
+        assert!(!node_free, "the node's stripe is held");
+        drop(writer);
+        assert!(stripe_for(node).try_lock().is_ok());
+        // One key, or two keys on one stripe, takes a single lock.
+        assert!(ContainerStructGuard::acquire_pair(0x8040, 0x8040 + (STRIPES << 4)).is_some());
     }
 
     #[test]

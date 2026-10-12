@@ -908,3 +908,47 @@ container, never a lost one. Hashes, shaped arrays and the other §16 methods ke
 the snapshot. The stripe is keyed on the node address (`acquire_for(None, ..)`),
 as `shared_snapshot`'s was. Pinned by
 `t/concurrency/concurrent-map-grep-rw-writes-reach-live-container.t`.
+
+## 17. A celled container is keyed on its cell and its node (2026-10-12, #13016)
+
+§7 keyed the structure lock on the shared `ContainerCell` when a writer reached the
+container through one, and on the node otherwise. Two holes followed from choosing one
+key:
+
+- A mutating method row (`$c.push`, `@x.splice` on a parameter that a `start` closure
+  captured, which makes it a cell) locked the node it had *read*, while the element store
+  through the same cell (`$c[$i] = v`) locked the cell. The two never excluded each other.
+- A reader handed the container itself, such as argument binding's slice-cell probe
+  (`is_multidim_slice_cells`), never sees the cell. It can only key on the node, which no
+  writer through the cell locked.
+
+So a writer through a cell now takes **both** stripes: the cell's, and the stripe of the
+node the cell holds *at that moment* (`ContainerStructGuard::acquire_pair`, used by
+`acquire_for(Some(cell), container)`). The node is re-read from the cell, because another
+thread may have re-seated the cell since the receiver was read. A pair is always taken in
+stripe order, and a single-key acquisition waits for nothing while holding a stripe, so
+the scheme stays deadlock-free. The Mut-row entry (`method_table::dispatch::invoke_mut`,
+`ReceiverPlace::binding_cell`) and `celled_array_mutate` use it. The binding probe takes
+the node stripe.
+
+Measured on a debug build, 6 runs each, `main` → this slice:
+
+| Shape | `main` | This slice |
+| --- | --- | --- |
+| `$c := @a`, 8 threads mixing `$c[$k] = $k` with `$c.push`/`$c.shift` | 6/6 crash | 0/6 |
+| A parameter array passed to a routine while others `push`/`shift` it | 6/6 crash | 0/6 |
+| The same, with `splice`, inside a nested routine | 6/6 crash | 1/6 |
+
+Pinned by the `container_lock` unit test
+`a_celled_container_locks_both_its_cell_and_its_node`.
+
+### 17.1 Still open
+
+- The remaining crashes are `Gc::drop strong-count underflow` (on the main thread, in
+  `apply_rw_bindings_to_env` or `apply_pending_rw_writeback_slow`) and nanbox `classify`
+  panics. They mean a `Value` slot is being copied or overwritten without its refcount
+  being taken, probably the raw-pointer slot writes of `descend_container_ref` racing a
+  clone out of the same cell. This is #13016 item 1, still open.
+- #13016 item 2 cannot race. Since #11242, `SeqBody`'s generations are published as
+  immutable `Arc<Vec<Value>>` generations behind an `AtomicPtr`, and a reader never touches
+  the graveyard `Vec` that a publisher pushes onto (`value/seq_body/generations.rs`).
