@@ -3043,7 +3043,7 @@ impl Interpreter {
                     },
                 );
             }
-            roles
+            roles.into()
         };
         // ADR-0029: role-to-role composition among the 16 `X::` marker
         // roles above, re-verified against real rakudo (2026-08-19,

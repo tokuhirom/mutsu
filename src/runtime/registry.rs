@@ -426,7 +426,7 @@ pub(crate) struct Registry {
     /// Roles implicitly composed by enums: enum -> [role names].
     pub(crate) class_enum_roles: CowTable<HashMap<String, Vec<String>>>,
     /// Subs declared inside a class body: class -> (sub name -> value).
-    pub(crate) class_subs: HashMap<String, HashMap<String, Value>>,
+    pub(crate) class_subs: CowTable<HashMap<String, HashMap<String, Value>>>,
     /// Per-attribute `BUILD` override: (class, attr) -> builder value.
     pub(crate) attribute_build_overrides: HashMap<(String, String), Value>,
     /// Per-attribute default value: (class, attr) -> default value.
@@ -502,12 +502,12 @@ pub(crate) struct Registry {
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,
     /// attributes, deferred body, ...). Like `classes`, callers clone the
     /// minimal projection under a short-lived guard rather than the whole def.
-    pub(crate) roles: HashMap<String, RoleDef>,
+    pub(crate) roles: CowTable<HashMap<String, RoleDef>>,
     /// Roles explicitly declared via user code (not pre-registered builtins);
     /// used to detect `X::Redeclaration` for role->class name conflicts.
     pub(crate) user_declared_roles: HashSet<String>,
     /// Parameterized role candidates: role name -> [candidate by arity/types].
-    pub(crate) role_candidates: HashMap<String, Vec<RoleCandidateDef>>,
+    pub(crate) role_candidates: CowTable<HashMap<String, Vec<RoleCandidateDef>>>,
     /// Role inheritance: role -> [parent role specs].
     pub(crate) role_parents: CowTable<HashMap<String, Vec<String>>>,
     /// `also hides` relationships on roles: role -> [hidden names].
@@ -531,7 +531,7 @@ pub(crate) struct Registry {
     /// the in-place registration of the same declaration must not repeat them.
     pub(crate) nested_shell_traits_applied: HashSet<u64>,
     /// Bound role type parameters per class: class -> (param name -> value).
-    pub(crate) class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
+    pub(crate) class_role_param_bindings: CowTable<HashMap<String, HashMap<String, Value>>>,
     /// Anonymous type-object identity cache for a role-mixed value's `.WHAT`
     /// (ADR-0060): composition key
     /// (`crate::value::types::mixin_composition_key`) -> the shared
