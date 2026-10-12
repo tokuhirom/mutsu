@@ -89,4 +89,24 @@ impl Env {
         let key = sym.unwrap_or_else(|| Symbol::intern(name));
         lexically_scoped(key) && !suppressed() && view.get(&key).is_some()
     }
+
+    /// Whether the frame this env runs in is linked to a declaring activation
+    /// whose capture binds the routine `&name`: a block-declared sub's body
+    /// calling a sibling routine of its block by bare name
+    /// (`capture_lexsub_activation`, #13037). That binding is the call's
+    /// lexical target; the routine registry holds only the latest
+    /// activation's routine, or none once the block exited.
+    // Cost: O(1) when the chain holds no static link; else O(d + l + n),
+    // d = tiers above the frame root, l = the capture's layers, n = `name`
+    // (the `&name` key is interned only in a frame linked to an activation).
+    pub(crate) fn frame_activation_binds_routine(&self, name: &str) -> bool {
+        if !self.chain_has_static_link || suppressed() {
+            return false;
+        }
+        let Some(view) = self.frame_activation() else {
+            return false;
+        };
+        let key = Symbol::intern(&format!("&{name}"));
+        view.get(&key).is_some()
+    }
 }

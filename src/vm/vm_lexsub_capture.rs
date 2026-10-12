@@ -102,10 +102,11 @@ impl Interpreter {
     /// of the same declaring code that the sub's body calls by bare name
     /// (#13037): `sub a1 { b1() }; sub b1 { ... }` in a loop body, with `a1`
     /// called from a closure after the iteration ended. `a1`'s body is a named
-    /// routine body, so its `b1()` resolves by name; once the block exits the
-    /// registry no longer has `b1`, and the last-resort by-name path reads the
-    /// block-lexical binding (`BLOCK_LEXICAL_SUB_PREFIX`) through `a1`'s
-    /// frame, which links this capture first. Each sibling's binding is its own
+    /// routine body, so its `b1()` is a by-name call, and the registry holds
+    /// only the latest activation's `b1` (none once the block exited). The
+    /// capture binds `&b1`, and a by-name call in a frame linked to the
+    /// capture calls that binding (`Env::frame_activation_binds_routine`).
+    /// Each sibling's binding is its own
     /// capture of this activation. `building` holds the routines whose capture
     /// is under construction: a sibling cycle (`ev` and `od` calling each
     /// other) binds its back edge to a cell that receives the routine's
@@ -184,10 +185,7 @@ impl Interpreter {
             new_data.env.insert_sym(sym, cell);
         }
         for (name, sibling) in siblings {
-            new_data.env.insert(
-                format!("{}{name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX),
-                sibling,
-            );
+            new_data.env.insert(format!("&{name}"), sibling);
         }
         new_data.env.mark_activation_capture();
         let captured = Value::sub_value(crate::gc::Gc::new(new_data));
@@ -198,14 +196,18 @@ impl Interpreter {
     }
 
     /// Whether `code` (a routine body) names the routine `name` as a call
-    /// target: its constant pool holds the name every by-name call op reads.
-    // Cost: O(k), k = `code`'s constants.
+    /// target: its constant pool, or that of a closure nested in it, holds the
+    /// name every by-name call op reads.
+    // Cost: O(k), k = the constants of `code` and of its nested closures.
     fn code_names_routine(code: &CompiledCode, name: Symbol) -> bool {
         name.with_str(|n| {
             code.constants
                 .iter()
                 .any(|c| matches!(c.view(), ValueView::Str(s) if s.as_str() == n))
-        })
+        }) || code
+            .closure_compiled_codes
+            .iter()
+            .any(|cc| Self::code_names_routine(cc, name))
     }
 
     /// The shared cell behind local `slot` (`name`) of the running frame,

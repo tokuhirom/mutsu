@@ -1274,15 +1274,13 @@ impl Interpreter {
         // escaped it: block exit restored the routine registry, so nothing
         // above could resolve the name, but the closure's captured env still
         // carries the Sub under a reserved key. Last resort, after every
-        // registry path (see `BLOCK_LEXICAL_SUB_PREFIX`). A sibling binding
-        // that closes a cycle of block-declared routines is a cell holding
-        // the routine (`capture_lexsub_activation`).
+        // registry path (see `BLOCK_LEXICAL_SUB_PREFIX`).
         if let Some(sub_val) = self
             .env
             .get(&format!("{}{name}", crate::env::BLOCK_LEXICAL_SUB_PREFIX))
             .cloned()
         {
-            return self.eval_call_on_value(sub_val.deref_container(), args.to_vec());
+            return self.eval_call_on_value(sub_val, args.to_vec());
         }
 
         // A CORE term constant called as a routine is `X::Undeclared` naming

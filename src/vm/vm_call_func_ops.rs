@@ -553,6 +553,24 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // A block-declared routine's body calling a sibling routine of its
+        // block: the declaring activation's capture binds it as `&name`
+        // (#13037), which the code-variable call resolves through the frame's
+        // static link ahead of the registry's latest-activation routine.
+        if self
+            .env()
+            .frame_activation_binds_routine(Self::const_str(code, name_idx))
+        {
+            return self.exec_call_on_code_var_op(
+                code,
+                name_idx,
+                arity,
+                arg_sources_idx,
+                false,
+                None,
+                compiled_fns,
+            );
+        }
         // An argument-less `callsame` / `nextsame` that nothing shadows goes
         // straight to the builtin (see `vm_call_dispatcher_builtin`). With no
         // real arguments there are no argument sources to honour.

@@ -4,7 +4,7 @@ use Test;
 # name, from a closure that outlived the block (#13037, ADR-12529 phase 2).
 # Each closure keeps the routines of the activation it was created in.
 
-plan 6;
+plan 8;
 
 {
     my @c;
@@ -66,4 +66,26 @@ plan 6;
         @c.push(-> { plain-a() });
     }
     is @c.map({ $_() }).join(' '), 'papb papb', 'siblings with no free variables';
+}
+
+{
+    my @c;
+    for 1, 2 -> $v {
+        sub na { nb(:k<x>) }
+        sub nb(:$k) { "$k$v" }
+        sub ra { my $z = 1; rb($z); $z }
+        sub rb($p is rw) { $p = $v * 10 }
+        @c.push(-> { na() ~ '/' ~ ra() });
+    }
+    is @c.map({ $_() }).join(' '), 'x1/10 x2/20', 'named and is-rw arguments to a sibling';
+}
+
+{
+    my @c;
+    for 1, 2 -> $v {
+        sub ma { (1,).map({ mb() }).head }
+        sub mb { "m$v" }
+        @c.push(-> { ma() });
+    }
+    is @c.map({ $_() }).join(' '), 'm1 m2', 'sibling called from a closure in the body';
 }
