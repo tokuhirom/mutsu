@@ -256,7 +256,16 @@ impl Interpreter {
                     // ADR-0019 E1a shadow probe (zero behavior change): see
                     // `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
                     self.shadow_check_owner("multi_arg_type_keys", a, name);
-                    crate::symbol::Symbol::intern(name)
+                    // The scalar types every numeric/string call passes are
+                    // interned once per process, not hashed per argument.
+                    let wk = crate::type_id::well_known_types();
+                    match a.view() {
+                        ValueView::Int(_) | ValueView::BigInt(_) => wk.int.symbol(),
+                        ValueView::Num(_) => wk.num.symbol(),
+                        ValueView::Str(_) => wk.str_.symbol(),
+                        ValueView::Bool(_) => wk.bool_.symbol(),
+                        _ => crate::symbol::Symbol::intern(name),
+                    }
                 }
             };
             keys.push(key);

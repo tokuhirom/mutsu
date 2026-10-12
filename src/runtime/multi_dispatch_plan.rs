@@ -87,10 +87,11 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
+        arg_keys: Option<&[Symbol]>,
         search_pkgs: &[Symbol],
         arity: usize,
     ) -> Resolved {
-        let plan = self.bare_multi_plan(name, arg_values, search_pkgs);
+        let plan = self.bare_multi_plan(name, arg_values, arg_keys, search_pkgs);
         // A program is specific to the argument-type key, so only a plan the
         // cache keyed may build one (an unkeyed plan is per call).
         let program = if plan.keyed && !plan.stage.is_empty() {
@@ -125,9 +126,10 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
+        arg_keys: Option<&[Symbol]>,
         search_pkgs: &[Symbol],
     ) -> Arc<BareMultiPlan> {
-        let key = self.bare_multi_plan_key(name, arg_values);
+        let key = self.bare_multi_plan_key(name, arg_values, arg_keys);
         let generation = self.caches.fn_resolve_gen;
         if let Some(key) = &key
             && let Some(plan) = self.caches.bare_multi_plan_cache.get(generation, key)
@@ -153,11 +155,15 @@ impl Interpreter {
         &mut self,
         name: &str,
         arg_values: &[Value],
+        arg_keys: Option<&[Symbol]>,
     ) -> Option<BareMultiPlanKey> {
         if self.is_unit_scoped_routine_name(name) {
             return None;
         }
-        let arg_keys = self.multi_arg_type_keys(arg_values)?;
+        let arg_keys = match arg_keys {
+            Some(keys) => keys.to_vec(),
+            None => self.multi_arg_type_keys(arg_values)?,
+        };
         let visibility = self.operator_has_import_scope(name).then(|| {
             (
                 self.current_unit,

@@ -317,6 +317,19 @@ impl Interpreter {
         name: &str,
         arg_values: &[Value],
     ) -> Resolved {
+        self.resolve_function_with_types_keyed(name, arg_values, None)
+    }
+
+    /// [`Self::resolve_function_with_types`] for a caller that already built
+    /// `arg_values`' [`Self::multi_arg_type_keys`] (`None`: not built yet, or
+    /// the arguments cannot be keyed), so the multi plan does not build them
+    /// a second time.
+    pub(crate) fn resolve_function_with_types_keyed(
+        &mut self,
+        name: &str,
+        arg_values: &[Value],
+        arg_keys: Option<&[Symbol]>,
+    ) -> Resolved {
         // The plain-routine tail below does not read the arguments, so its
         // answer is memoized (#9081, `plain_fn_resolve_memo.rs`).
         let plain_key = self.plain_fn_resolve_key(name);
@@ -537,7 +550,7 @@ impl Interpreter {
         }
         // Gather, rank and bind, with the type-keyed half cached (#9967,
         // `multi_dispatch_plan.rs`).
-        self.run_bare_multi_plan(name, arg_values, &search_pkgs, arity)
+        self.run_bare_multi_plan(name, arg_values, arg_keys, &search_pkgs, arity)
     }
 
     /// Collect all matching multi dispatch candidates for a function call,
