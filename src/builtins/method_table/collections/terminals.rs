@@ -201,7 +201,7 @@ pub(crate) fn first_one(target: &Value) -> Value {
         ValueView::Instance { class_name, .. } if user_instance(class_name) => target.clone(),
         ValueView::Array(items, ..) => items.first().cloned().unwrap_or(Value::NIL),
         // A role mixed into a list (`(1, 2) but R`) lists as what it wraps.
-        ValueView::Mixin(inner, _) => first_one(&inner),
+        ValueView::Mixin(inner, _) => first_one(inner),
         _ => runtime::with_receiver_items(target, |items| {
             items.first().cloned().unwrap_or(Value::NIL)
         }),
