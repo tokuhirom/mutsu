@@ -5907,7 +5907,9 @@ impl Interpreter {
             OpCode::StrCoerce => {
                 self.sync_source_line(code, *ip);
                 // #11217: a render truncated by a stack overflow raises.
-                crate::value::render_guard::check_render(self.exec_str_coerce_op())?;
+                crate::value::render_guard::check_render(self.exec_str_coerce_op(
+                    code.interp_part_names_at(*ip).first().copied().flatten(),
+                ))?;
                 *ip += 1;
             }
             // Cost: O(1) (lazy Range).

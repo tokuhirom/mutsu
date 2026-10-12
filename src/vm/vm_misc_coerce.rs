@@ -153,7 +153,10 @@ impl Interpreter {
         Ok(())
     }
 
-    pub(super) fn exec_str_coerce_op(&mut self) -> Result<(), RuntimeError> {
+    pub(super) fn exec_str_coerce_op(
+        &mut self,
+        operand_name: Option<crate::symbol::Symbol>,
+    ) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         // ADR-0058: stringifying a Seq renders its elements, so a
         // still-deferred `.map` has to run its callback first.
@@ -192,7 +195,7 @@ impl Interpreter {
             let mut results = Vec::with_capacity(values.len());
             for v in values.iter() {
                 self.stack.push(v.clone());
-                self.exec_str_coerce_op()?;
+                self.exec_str_coerce_op(None)?;
                 results.push(self.stack.pop().unwrap_or(Value::NIL));
             }
             self.stack.push(Value::junction(kind, results));
@@ -400,7 +403,11 @@ impl Interpreter {
                 self.stack.push(r?);
                 return Ok(());
             }
-            let resumed = self.warn_type_object_string_context(&cn, false)?;
+            let resumed = self.warn_type_object_string_context_named(
+                &cn,
+                operand_name.as_ref().map(|name| name.as_str()),
+                false,
+            )?;
             self.stack.push(resumed);
             return Ok(());
         }
