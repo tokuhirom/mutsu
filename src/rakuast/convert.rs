@@ -2902,6 +2902,19 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             quoted_regex_node(tree)
         }
         Expr::Call { name, args, .. } | Expr::UserRoutineCall { name, args, .. } => {
+            if name.as_str() == "__object_hash" {
+                let mut fields = Vec::with_capacity(2);
+                if args.len() == 1 {
+                    fields.push(node_field(None, convert_expr(&args[0])?));
+                } else if !args.is_empty() {
+                    fields.push(node_field(None, comma_list_node(args)?));
+                }
+                fields.push(leaf_field(Some("object-hash"), Value::truth(true)));
+                return Ok(RakuAstNode {
+                    class: RakuAstClass::CircumfixHashComposer,
+                    fields,
+                });
+            }
             if name.as_str() == "require"
                 && let Some(require) = super::use_stmt::convert_require(args)
             {

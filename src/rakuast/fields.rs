@@ -385,6 +385,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         StatementImport => &[("module-name", Absent::Required), ("argument", EXPRESSION)],
         StatementNeed => &[("module-names", Absent::EmptyList)],
         StatementLanguageVersion => &[("version", Absent::Required)],
+        CircumfixHashComposer => &[("expression", EXPRESSION), ("object-hash", Absent::False)],
         // The conditional family. `If` and `With` take the `elsif`/`orwith`
         // chain and an `else`; `Unless` and `Without` take neither (rakudo
         // rejects them at compile time) and name their block `body` rather than

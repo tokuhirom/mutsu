@@ -583,3 +583,15 @@ node shape; lowering routes it through the parser's ordinary named call path,
 so lookup errors remain catchable at evaluation time. The focused round-trip
 test covers both the method-call shape and a `try` around a missing qualified
 type. The frontend ratchet passes 6952 of 7268 files.
+
+### 6.14 S10: object-hash composer (2026-10-12)
+
+The parser's `:{ ... }` spelling uses the same
+`RakuAST::Circumfix::HashComposer` as `{ ... }`, with `object-hash => True`.
+Conversion now preserves the expression and flag, including empty and
+multi-pair composers; lowering restores the existing `__object_hash` call so
+Mu-keyed key identity and current execution semantics remain shared. The
+constructor and accessor expose the optional flag, whose absent value is
+`False`. `t/rakuast/rakuast-object-hash.t` covers read and constructed trees,
+ordinary-hash distinction, and evaluation. The frontend ratchet passes 6960
+of 7274 files and lists 6973 entries.
