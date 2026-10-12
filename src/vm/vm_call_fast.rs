@@ -95,10 +95,12 @@ impl Interpreter {
         // Only a body that names lexicals by string needs the root forced: the
         // rest may run in the caller's env as before, unmarked.
         let forced_root = outer_is_unit && cf.code.static_name_lookup;
-        // A body that touches `$/` needs a root to own it (`env::routine_owned`).
+        // A body that touches `$/`, `$!` or `$_` needs a root to own them
+        // (`env::routine_owned`).
         let use_scoped = (forced_root
             || has_locals
-            || (cf.code.is_routine && (cf.code.has_env_writes || cf.code.uses_routine_state)))
+            || (cf.code.is_routine
+                && (cf.code.has_env_writes || cf.code.uses_routine_state || cf.code.reads_topic)))
             && !cf.has_inner_subs;
         let caller_env: Option<Env> = if use_scoped {
             // Chain a child over the whole caller env (itself possibly scoped):
@@ -146,17 +148,9 @@ impl Interpreter {
         // `BlockScope` frame and be reverted at the caller's block exit.
         let saved_block_declared_vars = self.lexicals.block_declared_vars.push_frame();
 
-        // Raku: routines get their own $_ initialized to (Any).
-        let saved_topic = if cf.code.is_routine {
-            let old = self.env().get_sym(crate::symbol::wk::topic()).cloned();
-            self.env_mut().insert_sym(
-                crate::symbol::wk::topic(),
-                Value::package(crate::symbol::wk::any()),
-            );
-            old
-        } else {
-            None
-        };
+        // Raku: routines get their own $_ initialized to (Any). A body that
+        // reads it (or holds a block that does) runs under a root that answers
+        // it (`env::routine_owned`); one that does not cannot observe it.
         // ...and that fresh `$_` is WRITABLE, whatever the caller's topic was:
         // `readonly_vars` is keyed by bare name, so a caller that marked its own
         // topic immutable (`for 1, 2 { f() }`, `(1, 2).map({ f() })`) would
@@ -433,20 +427,6 @@ impl Interpreter {
             if cf.code.has_env_writes {}
         }
 
-        // Restore caller's $_ after routine call. In the scoped path the caller
-        // env already retains its own `_` (the callee's `_` lived in the dropped
-        // overlay and is skipped by the merge above), so this only runs for the
-        // non-scoped clone path.
-        if cf.code.is_routine && !use_scoped {
-            match saved_topic {
-                Some(v) => {
-                    self.env_mut().insert_sym(crate::symbol::wk::topic(), v);
-                }
-                None => {
-                    self.env_mut().remove_sym(crate::symbol::wk::topic());
-                }
-            }
-        }
         // The readonly marking is not env-scoped, so it is restored on both the
         // scoped and the clone path.
         if let Some(kind) = saved_topic_readonly {

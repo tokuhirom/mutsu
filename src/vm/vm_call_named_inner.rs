@@ -298,8 +298,10 @@ impl Interpreter {
 
         // Raku: $! is scoped per routine — fresh Nil on entry.
         // Only insert if $! isn't already Nil, to avoid triggering
-        // Arc::make_mut deep clone on the CoW env.
-        if !fn_name.is_empty() {
+        // Arc::make_mut deep clone on the CoW env. A routine's frame root owns
+        // its `$!` and `$_` (`env::routine_owned`): a lookup that misses the
+        // frame answers `Nil` and `Any` there, so it needs neither reset.
+        if !fn_name.is_empty() && !cf.code.is_routine {
             let needs_reset = self
                 .env()
                 .get_sym(crate::symbol::wk::error_var())
@@ -308,14 +310,6 @@ impl Interpreter {
                 self.env_mut()
                     .insert_sym(crate::symbol::wk::error_var(), Value::NIL);
             }
-        }
-
-        // Raku: routines get their own $_ initialized to (Any).
-        if cf.code.is_routine && !cf.param_defs.iter().any(|pd| pd.name == "_") {
-            self.env_mut().insert_sym(
-                crate::symbol::wk::topic(),
-                Value::package(crate::symbol::wk::any()),
-            );
         }
 
         self.locals.refill_slots(cf.code.locals.len());
