@@ -64,7 +64,7 @@ impl Interpreter {
     /// `bare_name_packages_syms()`, which is scope-sensitive, so a name-only
     /// key let one package's answer leak into every other package's (#7539) —
     /// see the doc comment on [`ResolutionCaches::multi_candidates_cache`](crate::runtime::resolution_caches::ResolutionCaches::multi_candidates_cache).
-    pub(super) fn has_multi_candidates_cached_sym(&mut self, sym: Symbol) -> bool {
+    pub(crate) fn has_multi_candidates_cached_sym(&mut self, sym: Symbol) -> bool {
         // A scoped family's answer depends on the executing compunit, which
         // the key does not carry (#11004, `runtime/unit_multi_scope.rs`).
         if self.operator_has_import_scope_sym(sym) {

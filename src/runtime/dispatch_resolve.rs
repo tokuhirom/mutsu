@@ -82,19 +82,27 @@ impl Interpreter {
     /// twice, from the two packages. Truncating the walk after the innermost
     /// package that declares its own proto restores the shadow while leaving
     /// the no-proto case merging exactly as before.
-    fn candidate_search_packages(&self, name: &str) -> Vec<String> {
-        let pkgs = self.bare_name_packages();
+    ///
+    /// The answer is the memoized package chain itself (an `Arc` clone) unless
+    /// a package on it really does own a proto: a program with no `proto` at
+    /// all skips the per-package probe entirely, and none of this allocates a
+    /// `String` per package as it did when every bare-name multi call built
+    /// the list afresh (#10111).
+    // Cost: O(1) with no proto registered; else O(p), p = enclosing packages.
+    fn candidate_search_packages(&self, name: &str) -> crate::runtime::BareNamePackages {
+        let pkgs = self.bare_name_packages_syms();
         let registry = self.registry();
-        let mut out = Vec::with_capacity(pkgs.len());
-        for pkg in pkgs {
-            let owns_proto = dispatch_key::qualified_lookup(&pkg, name)
-                .is_some_and(|key| registry.proto_functions.contains_key(&key));
-            out.push(pkg);
-            if owns_proto {
-                break;
-            }
+        if registry.proto_functions.is_empty() {
+            return pkgs;
         }
-        out
+        let owner = pkgs.iter().position(|pkg| {
+            dispatch_key::qualified_lookup(pkg.as_str(), name)
+                .is_some_and(|key| registry.proto_functions.contains_key(&key))
+        });
+        match owner {
+            Some(idx) if idx + 1 < pkgs.len() => pkgs[..=idx].into(),
+            _ => pkgs,
+        }
     }
 
     /// Whether ANY registered function key carries `name`'s base name — a
@@ -507,9 +515,9 @@ impl Interpreter {
         // when nothing typed matched (`resolve_function_with_arity` ->
         // `resolve_function`), so a real "the multis exist but none of them
         // apply" case is unaffected in the common (no collision) case.
-        if !self.has_multi_candidates(name) {
-            for pkg in &search_pkgs {
-                if let Some((qkey, def)) = dispatch_key::qualified_lookup(pkg, name)
+        if !self.has_multi_candidates_cached_sym(name_sym) {
+            for pkg in search_pkgs.iter() {
+                if let Some((qkey, def)) = dispatch_key::qualified_lookup(pkg.as_str(), name)
                     .filter(|&key| self.module_routine_visible_here(key))
                     .and_then(|key| Some((key, self.registry().functions.get(&key).cloned()?)))
                     .and_then(|(key, def)| Some((key, self.visible_operator_def(name, def)?)))
@@ -552,7 +560,7 @@ impl Interpreter {
             .filter(|_| crate::qualified::is_qualified(name_sym))
         {
             Some(pkg) => (
-                vec![pkg.as_str().to_string()],
+                crate::runtime::BareNamePackages::from([pkg]),
                 crate::qualified::unqualified_part(name_sym).as_str(),
             ),
             None => (self.candidate_search_packages(name), name),
