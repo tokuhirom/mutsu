@@ -191,13 +191,18 @@ impl Interpreter {
     /// the by-name resolver's own ranking, so narrowness, `where` tie-breaks
     /// and `X::Multi::Ambiguous` follow the same rules as a by-name call
     /// rather than declaration order. `Ok(None)` when none applies.
+    ///
+    /// With the winner comes its deferral chain: the other captured
+    /// candidates that accept `args`, narrowest first, which `callsame` /
+    /// `nextsame` walk (a block's `multi` called through its binding after the
+    /// block exited, ADR-12529 phase 2).
     // Cost: O(c * a + c log c), c = captured candidates, a = parameters per candidate.
     pub(super) fn pick_captured_multi_candidate(
         &mut self,
         family: &str,
         candidates: &[Value],
         args: &[Value],
-    ) -> Result<Option<Value>, RuntimeError> {
+    ) -> Result<Option<(Value, super::MultiRemaining)>, RuntimeError> {
         // One declared `multi` can be captured more than once (it sits under
         // several registry keys), each copy a distinct Sub value: keep the
         // first copy of each declaration, as the by-name gather's dedup does.
@@ -221,8 +226,71 @@ impl Interpreter {
                 Some((family.to_string(), std::sync::Arc::new(def)))
             })
             .collect();
-        Ok(self
-            .choose_best_matching_candidate(family, args, rows)?
-            .and_then(|def| def.dispatchee.clone()))
+        let mut ordered = rows.clone();
+        let Some(winner) = self.choose_best_matching_candidate(family, args, rows)? else {
+            return Ok(None);
+        };
+        let Some(code) = winner.dispatchee.clone() else {
+            return Ok(None);
+        };
+        self.sort_candidates_by_specificity(&mut ordered);
+        let winner_fp = winner.body_fingerprint();
+        let mut remaining = Vec::new();
+        for (_, cand) in ordered {
+            if cand.body_fingerprint() != winner_fp
+                && self.args_match_multi_candidate_in_scope(args, &cand)
+            {
+                remaining.push(cand);
+            }
+        }
+        Ok(Some((code, super::MultiRemaining::from_vec(remaining, None))))
+    }
+
+    /// Run `candidate`, the winner [`Self::pick_captured_multi_candidate`]
+    /// chose from a dispatcher value's captured `family` candidates, as a
+    /// dispatch: inside a multi-dispatch frame over `remaining` (so
+    /// `callsame`/`nextsame` defer to the next captured candidate) and a
+    /// samewith context that re-dispatches through `dispatcher` itself, since
+    /// no name reaches the family from here.
+    // Cost: O(1) around the call.
+    pub(super) fn call_captured_multi_winner(
+        &mut self,
+        family: &str,
+        candidate: Value,
+        remaining: super::MultiRemaining,
+        args: Vec<Value>,
+        dispatcher: Value,
+    ) -> Result<Value, RuntimeError> {
+        let rw_params = match candidate.view() {
+            ValueView::Sub(data) => {
+                super::builtins_dispatch_next::rw_scalar_positional_params(&data.param_defs)
+            }
+            _ => Vec::new(),
+        };
+        let dispatch_token = self.next_dispatch_token();
+        self.dispatch.multi_dispatch_stack.push((
+            family.to_string(),
+            remaining,
+            args.clone(),
+            rw_params,
+            dispatch_token,
+        ));
+        self.push_samewith_callable_context(dispatcher);
+        let result = self.call_sub_value(candidate, args, false);
+        self.pop_samewith_context();
+        self.dispatch.multi_dispatch_stack.pop();
+        result
+    }
+
+    /// Whether the innermost samewith context re-dispatches through a multi
+    /// dispatcher value of the family `name` (pushed by
+    /// `call_captured_multi_winner` around one of its candidates).
+    // Cost: O(1), one env probe of the context's dispatcher.
+    pub(crate) fn samewith_context_is_family_of(&self, name: Symbol) -> bool {
+        self.dispatch
+            .samewith_context_stack
+            .last()
+            .and_then(|ctx| ctx.callable.as_ref())
+            .is_some_and(|c| name.with_str(|n| !n.is_empty() && Self::is_family_dispatcher_of(c, n)))
     }
 }

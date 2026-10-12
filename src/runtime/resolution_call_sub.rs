@@ -689,13 +689,19 @@ impl Interpreter {
                 }
                 // Candidates are out of scope -- dispatch through captured
                 // Subs, ranked as a by-name call ranks them (#12474).
-                if let Some(candidate) = self.pick_captured_multi_candidate(
+                if let Some((candidate, remaining)) = self.pick_captured_multi_candidate(
                     family_name.as_deref().unwrap_or(""),
                     &candidates,
                     &call_args,
                 )? {
                     let candidate = Self::bind_family_dispatcher(&candidate, family_name.as_deref(), &func_for_family);
-                    return self.call_sub_value(candidate, call_args, false);
+                    return self.call_captured_multi_winner(
+                        family_name.as_deref().unwrap_or(""),
+                        candidate,
+                        remaining,
+                        call_args,
+                        func_for_family,
+                    );
                 }
                 // Slurpy catch-all
                 for candidate in &candidates {
