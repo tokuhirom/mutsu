@@ -10,7 +10,7 @@
 //! `raku_value` (its `gist` is its `raku` in Rakudo).
 
 use super::{Handler, MethodRow, RowFlags};
-use crate::builtins::methods_0arg::which::{has_value_identity, which_of};
+use crate::builtins::methods_0arg::which::which_of;
 use crate::value::gist::setbagmix_gist;
 use crate::value::raku_repr::{raku_value, setbagmix_raku};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -56,27 +56,14 @@ fn collection_gist(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     crate::builtins::methods_0arg::collection_gist::collection_gist(target)?
 }
 
-/// `.WHICH` of a collection or a range.
+/// `.WHICH` of a collection or a range, and of an instance of a user
+/// subclass of one, which reaches this row through `answer_shapeless`'s MRO
+/// walk: `which_of`, the one identity routine.
 // Cost: O(1) for an `Array`, `Hash` and `Pair` (a per-container id); O(n) for
 // a quant hash (n = elements, hashed) and a `Range` (n = chars of the
 // rendering).
 fn which(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    match target.view() {
-        ValueView::Array(..)
-        | ValueView::Hash(..)
-        | ValueView::Set(..)
-        | ValueView::Bag(..)
-        | ValueView::Mix(..)
-        | ValueView::Capture { .. } => Some(Ok(which_of(target))),
-        // A Pair holding a container or a reference type has no stable
-        // identity string (`which_of` mints a fresh id per call), so only a
-        // value-identified Pair is a pure answer; the cascade keeps the rest.
-        ValueView::Pair(..) | ValueView::ValuePair(..) if has_value_identity(target) => {
-            Some(Ok(which_of(target)))
-        }
-        _ if target.is_range() => Some(Ok(which_of(target))),
-        _ => None,
-    }
+    Some(Ok(which_of(target)))
 }
 
 /// Whether a quant hash holds an element that may carry a user-defined

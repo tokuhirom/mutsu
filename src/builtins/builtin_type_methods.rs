@@ -104,6 +104,17 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
             arities |= 1 << arity;
         }
     }
+    // Every receiver reaches `Mu`'s audited rows (ADR-11276 §9.81, §9.91); an
+    // instance through its MRO, which `shapeless_row` reads only from the
+    // interpreter it is not given here.
+    if crate::value::MU_FOR_CLOSED_SHAPES.contains(&method_name) {
+        let mu = Symbol::intern("Mu");
+        for arity in 0..=2u8 {
+            if crate::builtins::method_table::owner_row(mu, sym, usize::from(arity)).is_some() {
+                arities |= 1 << arity;
+            }
+        }
+    }
     // A few 1/2-arg native methods inspect the argument type before recognizing
     // the call (e.g. `index`/`indices` want a Str), so a single dummy can miss
     // them. Try a small spread of representative arguments — recognition just

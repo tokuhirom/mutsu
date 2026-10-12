@@ -86,19 +86,11 @@ pub(crate) fn raku(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     }
 }
 
-/// `.WHICH`: the object identity.
+/// `.WHICH`: the object identity, `which_of`, the one identity routine; an
+/// instance of a user subclass of the type reaches this row through
+/// `answer_shapeless`'s MRO walk.
 // Cost: O(1) for a scalar except a `Str` (O(1), the invocant is shared and
 // rendered only when read) and a big number (O(n), n = digits).
 pub(crate) fn which(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    match target.view() {
-        ValueView::Str(_)
-        | ValueView::Bool(_)
-        | ValueView::Int(_)
-        | ValueView::BigInt(_)
-        | ValueView::Num(_)
-        | ValueView::Rat(..)
-        | ValueView::BigRat(..)
-        | ValueView::Complex(..) => Some(Ok(which_of(target))),
-        _ => None,
-    }
+    Some(Ok(which_of(target)))
 }
