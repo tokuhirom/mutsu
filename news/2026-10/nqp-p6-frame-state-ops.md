@@ -2,7 +2,7 @@
 
 Rakudo has nine `p6*` ops that read state a MoarVM frame keeps and mutsu does not: the
 call's arguments, its signature binding, the first run of its `state` variables, the `FIRST`
-and `PRE` flags, and the static outer. ADR-11505 (Proposed) decides each one from what `raku`
+and `PRE` flags, and the static outer. ADR-11505 decides each one from what `raku`
 actually answers, and six of them are implemented (#11505). That takes the category from 17 / 26 to 23 / 26
 in `docs/nqp-op-coverage.md`.
 
@@ -24,4 +24,4 @@ The work found a bug. A one-expression routine such as `sub f($a, $b) { nqp::use
 ran on the TRIR fast path, which records no capture, so it answered an empty one. TRIR now
 declines routines that read their capture.
 
-`p6setfirstflag`, `p6takefirstflag` and `p6staticouter` are proposed in the ADR and come next.
+`p6setfirstflag`, `p6takefirstflag` and `p6staticouter` are decided in the ADR and come next.
