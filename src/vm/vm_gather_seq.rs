@@ -62,7 +62,8 @@ impl Interpreter {
     /// Whether `value` is a plain gather `Seq` still pulling its coroutine.
     // Cost: O(1).
     pub(crate) fn is_gather_seq(value: &Value) -> bool {
-        value.is_seq_value() && matches!(value.view(), ValueView::Seq(body) if body.is_gather_source())
+        value.is_seq_value()
+            && matches!(value.view(), ValueView::Seq(body) if body.is_gather_source())
     }
 
     /// [`Self::shared_gather_list`] over a builtin's argument list, borrowing

@@ -284,7 +284,9 @@ impl Interpreter {
         };
         // A plain gather becomes a List that keeps pulling its coroutine.
         if let Some(view) = body.take_gather_as_list() {
-            *self.stack.last_mut().expect("checked above") = Value::seq_body(view);
+            if let Some(top) = self.stack.last_mut() {
+                *top = Value::seq_body(view);
+            }
             return Ok(());
         }
         let (items, outcome) = self.take_seq_body(&body)?;
