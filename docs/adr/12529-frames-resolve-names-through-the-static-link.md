@@ -1,7 +1,8 @@
 # ADR-12529: A frame resolves names through its lexical outer, not its caller — separating the static link from the dynamic link
 
 - **Status**: Accepted (2026-10-10, by tokuhirom; Proposed earlier the same
-  day). No phase implemented yet; record each phase's progress in §3.
+  day). Phase 0 is done and phases 1-3 are in progress; record each phase's
+  progress in §3.
 - **Date**: 2026-10-10
 - **Related**: [ADR-0018](0018-slot-addressed-lexical-capture-and-env-sync.md)
   (locals are slot-addressed; escaping mutable lexicals are cells — this ADR
@@ -588,6 +589,44 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    it. And a closure's frame is not linked: its capture is a snapshot below
    the caller chain, so moving it above the chain needs the capture to share
    cells with the creating frame first (the closure EVAL pins).
+
+   **Slice 9 done** (`fix/12692-block-nested-sub-activation`, #12692): a
+   named sub's code object closes over the activation that declared it, as
+   rakudo's `capturelex` re-closures a sub on every entry of its block. A
+   sub declared in a loop body or a `.map` callback read its free variables
+   through the stores keyed by its *name* -- ADR-0024's unit-lexical
+   buckets, mutsu#9111's aliases (which only a routine body binds per
+   activation), TRIR's outer bindings -- so every `&g` taken in an earlier
+   iteration answered with the latest iteration's lexicals.
+
+   - A `&g` read in the code that declares `g` boxes `g`'s free variables
+     that are locals of that code into shared cells, in place, binds them in
+     the code object's capture and marks it (`Env::mark_activation_capture`,
+     `vm/vm_lexsub_capture.rs`).
+   - Calling such a code object links the frame capture-first through the
+     static link, and the link itself carries the capture
+     (`StaticLink::UnitOuter::activation`), so a flattening of the frame's
+     chain (`.map` and other method calls flatten the running frame) keeps it
+     in its record.
+   - The per-name stores ask `Env::frame_capture_holds` and step aside for
+     every name the activation binds: `unit_lexical_slot` and its `_mut` and
+     container-cell twins, the closure-capture injections, and TRIR's
+     `trir_declared_binding`; TRIR caches no outer binding in such a frame.
+   - A closure created in such a frame closes over the same activation (its
+     capture is marked too), so `sub g { (1, 2).map({ $q + $_ }) }` reads its
+     own iteration's `$q`.
+
+   Nothing looks through the caller chain to find the activation. A by-name
+   call `g()` inside the block still resolves through the routine registry
+   and the latest activation's cells, which is the current activation as
+   long as the block is not re-entered recursively; that is phase 2's
+   routine-as-lexical-binding step, which also covers what is left of the
+   shape: a `&g` taken from a closure nested in the declaring block is not
+   an activation capture (#12851), and a closure that calls `g()` by name
+   after the block exited finds no registry entry (#12850).
+   Release-build Ir against the merge base: `bench-fib` -0.00%,
+   `bench-tak` -0.00%, `method-call` -0.09%, `poly-call` -0.03%,
+   `bench-ctor` +0.03%, `bench-multi-dispatch` -0.32%.
 4. **Retire the dynamic-chain machinery.** Delete `layered_capture`,
    `CaptureView`, the capture fallback, `flatten_scoped_env`,
    `MAX_OVERLAY_DEPTH` and the `filtered_flat_capture` family; mark ADR-0092,
@@ -680,6 +719,7 @@ the issue's original local remedy.
 | [#10419](https://github.com/tokuhirom/mutsu/issues/10419) | a block-scoped `use` import leaks into a later `EVAL` because the alias and the module's own definition share a global registry key | 2: an imported routine is a lexical binding, so it has no registry key to collide on. Reconcile with the ADR-0081 amendment its re-triage asks for |
 | [#9171](https://github.com/tokuhirom/mutsu/issues/9171) | pseudo-stash reads (`GLOBAL::`, `DYNAMIC::`, `PROCESS::`, a whole `P::`) and `PackageScope` still build or diff the whole env | 1 for package stashes (a real symbol table), 3 for `DYNAMIC::` (the call-frame stack) |
 | [#7817](https://github.com/tokuhirom/mutsu/issues/7817) | ADR-0084's tracker | 1 (see phase 1) |
+| [#12692](https://github.com/tokuhirom/mutsu/issues/12692) | a named `sub` declared in a loop body or `.map` callback closes over the last iteration's lexicals (the per-name stores are keyed by the sub, not the activation) | 3 (slice 9 closes) |
 | [#12526](https://github.com/tokuhirom/mutsu/issues/12526) | an `@x` parameter costs ~12x a `$x` one (generic binder + copy-out writeback) | partly 3: the writeback becomes unnecessary (§2.3). The binder half is independent and can land first |
 
 **Out of scope.** [#12204](https://github.com/tokuhirom/mutsu/issues/12204)

@@ -39,9 +39,14 @@ impl Interpreter {
         // routine's own only when it has one (`trir_body_package`); a
         // binding resolved under one package is not another's.
         let pkg = self.current_package_sym();
+        // Running in a sub frame linked to its declaring activation (#12692):
+        // its free variables are that activation's cells, so a binding
+        // resolved here belongs to this activation only and is never cached.
+        let activation = self.env().runs_in_activation_frame();
         // One probe on the hot path. The frame stacks borrow nothing from the
         // cache, so the entry can stay borrowed while the values are pushed.
-        if let Some((g, p, bindings)) = self.trir_outer_cache.get(&key)
+        if !activation
+            && let Some((g, p, bindings)) = self.trir_outer_cache.get(&key)
             && *g == cache_gen
             && *p == pkg
         {
@@ -73,7 +78,8 @@ impl Interpreter {
         // soon as a named sub reads it, so this is the uncommon shape.)
         // A routine-nested sub's aliases are per activation of its declaring
         // routine (mutsu#9111): a cell from one call is not the next call's.
-        if all_stable && !self.lexicals.lexsub_free_aliases.contains_key(&chunk.name) {
+        if all_stable && !activation && !self.lexicals.lexsub_free_aliases.contains_key(&chunk.name)
+        {
             self.trir_outer_cache
                 .insert(key, (cache_gen, pkg, bindings));
         }
@@ -92,7 +98,8 @@ impl Interpreter {
         }
         let base = frame.outer_base as usize;
         let key = chunk.id;
-        if let Some((g, p, bindings)) = self.trir_outer_cache.get(&key)
+        if !self.env().runs_in_activation_frame()
+            && let Some((g, p, bindings)) = self.trir_outer_cache.get(&key)
             && *g == self.lexicals.unit_lexical_gen
             && *p == self.current_package_sym()
         {
@@ -148,6 +155,11 @@ impl Interpreter {
     /// binding one of the declaration-scoped stores holds for `name`.
     // Cost: O(d), d = package nesting depth walked.
     fn trir_declared_binding(&self, chunk: &TrChunk, name: &str) -> Option<(Value, bool)> {
+        // The declaring activation's capture binds it (#12692); the env
+        // resolves it there.
+        if self.env().frame_capture_holds_name(name, None) {
+            return None;
+        }
         let callee = chunk.name;
         let celled = |v: Value| {
             let stable = v.is_container_ref();

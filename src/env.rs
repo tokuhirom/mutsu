@@ -21,6 +21,8 @@ use crate::value::ValueMap;
 /// actually holds.
 pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
+mod activation_capture;
+mod outer_scope;
 mod rebind;
 pub(crate) mod static_link;
 pub(crate) use static_link::{OuterScope, with_static_links_suppressed};

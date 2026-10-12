@@ -638,6 +638,11 @@ impl Interpreter {
         // (no mainline sub captured a file-scope `my`) cannot have a cell here,
         // and this runs on EVERY element store and delete. Without it those
         // stores paid two SipHash string lookups plus a name scan each.
+        // A sub frame linked to its declaring activation holds the cell in
+        // its capture (#12692), which the env resolves.
+        if self.env().frame_capture_holds_name(name, None) {
+            return None;
+        }
         if let Some(ValueView::ContainerRef(arc)) = self.lexsub_alias_slot(name).map(Value::view) {
             return Some(crate::gc::Gc::clone(&arc));
         }
@@ -817,6 +822,11 @@ impl Interpreter {
     /// for it. Asking the symbol whether the name is qualified is a memoized
     /// flag read.
     pub(crate) fn unit_lexical_slot(&self, name: &str, name_sym: Option<Symbol>) -> Option<&Value> {
+        // A sub called through the code object its declaring activation
+        // made reads that activation's cells from its capture (#12692).
+        if self.env().frame_capture_holds_name(name, name_sym) {
+            return None;
+        }
         // mutsu#9111: a routine-nested sub's own binding of its free variable.
         if let Some(found) = self.lexsub_alias_slot(name) {
             return Some(found);
@@ -937,6 +947,9 @@ impl Interpreter {
         name: &str,
         name_sym: Option<Symbol>,
     ) -> Option<&mut Value> {
+        if self.env().frame_capture_holds_name(name, name_sym) {
+            return None;
+        }
         if self.lexsub_alias_frame_active() && self.lexsub_alias_slot(name).is_some() {
             return self.lexsub_alias_slot_mut(name);
         }

@@ -102,6 +102,11 @@ pub(crate) struct Tier {
     /// closure's lexical outer is the program scope, which the closure's frame
     /// then links to (ADR-12529 phase 3).
     program_scope_capture: bool,
+    /// On a named sub's code object: the capture holds the cells of the
+    /// activation that declared the sub (rakudo's `capturelex`), so the sub's
+    /// frame resolves those names there first, past its callers and the
+    /// per-name routine stores (ADR-12529 phase 3, #12692).
+    activation_capture: bool,
 }
 
 /// What a closure capture takes from one wide env tier, built once per
@@ -133,6 +138,7 @@ impl Clone for Tier {
             capture_sys: self.capture_sys.clone(),
             static_link: self.static_link.clone(),
             program_scope_capture: self.program_scope_capture,
+            activation_capture: self.activation_capture,
         }
     }
 }
@@ -246,6 +252,7 @@ impl Tier {
             capture_sys: OnceLock::new(),
             static_link: None,
             program_scope_capture: false,
+            activation_capture: false,
         }
     }
 
@@ -260,6 +267,19 @@ impl Tier {
     // Cost: O(1).
     pub(crate) fn mark_program_scope_capture(&mut self) {
         self.program_scope_capture = true;
+    }
+
+    /// See the `activation_capture` field.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_activation_capture(&self) -> bool {
+        self.activation_capture
+    }
+
+    /// Mark this tier as a named sub's capture of its declaring activation.
+    // Cost: O(1).
+    pub(crate) fn mark_activation_capture(&mut self) {
+        self.activation_capture = true;
     }
 
     /// This tier's frame-root static link, if it has one.

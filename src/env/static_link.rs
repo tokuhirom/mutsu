@@ -30,6 +30,7 @@
 //! merged back yet is in exactly such a tier).
 
 use super::Env;
+pub(crate) use super::outer_scope::OuterScope;
 use crate::symbol::Symbol;
 use crate::value::Value;
 use std::cell::Cell;
@@ -46,43 +47,14 @@ pub(crate) enum StaticLink {
     UnitOuter {
         target: Arc<Env>,
         capture_first: bool,
+        /// The frame's capture when it is a named sub's declaring activation
+        /// ([`Env::mark_activation_capture`]) or a closure's created in such
+        /// a frame: it binds names the per-routine stores also key, and wins
+        /// over them ([`Env::frame_capture_holds`]). Kept on the link, not
+        /// only as the root's fallback, so a flattening of the frame's chain
+        /// records it too ([`Env::flattened_recording_program_scope`]).
+        activation: Option<Arc<crate::env_capture_view::CaptureView>>,
     },
-}
-
-/// One scope enclosing a running frame, as `nqp::ctxouter` and a computed
-/// `nqp::getlexouter` see it.
-#[derive(Clone)]
-pub(crate) enum OuterScope {
-    /// The program scope (or another env): its tiers, callers excluded.
-    Env(Env),
-    /// A closure's capture: the scope that created it.
-    Capture(Arc<crate::env_capture_view::CaptureView>),
-}
-
-impl OuterScope {
-    /// The scope as a flat env.
-    // Cost: O(n), n = entries visible in the scope.
-    pub(crate) fn to_env(&self) -> Env {
-        match self {
-            OuterScope::Env(env) => env.flattened(),
-            OuterScope::Capture(view) => {
-                let mut env = Env::default();
-                for (k, v) in view.iter() {
-                    env.insert_sym(*k, v.clone());
-                }
-                env
-            }
-        }
-    }
-
-    /// A lexical by its env key, `None` when the scope has no such name.
-    // Cost: O(d), d = chain tiers (an env) or capture layers.
-    pub(crate) fn get(&self, key: &str) -> Option<Value> {
-        match self {
-            OuterScope::Env(env) => env.get(key).cloned(),
-            OuterScope::Capture(view) => view.get(&Symbol::intern(key)).cloned(),
-        }
-    }
 }
 
 thread_local! {
@@ -120,7 +92,7 @@ pub(crate) fn with_static_links_suppressed<R>(f: impl FnOnce() -> R) -> R {
 /// table, not the frame.
 // Cost: O(1) for a plain user lexical or an attribute (memoized flags);
 // O(|key|) otherwise.
-fn lexically_scoped(key: Symbol) -> bool {
+pub(super) fn lexically_scoped(key: Symbol) -> bool {
     key.is_plain_user_lexical()
         || key.is_attr_twigil_env_key()
         || key.with_str(|s| {
@@ -139,7 +111,12 @@ impl Env {
     // Cost: O(d), d = tiers of the caller chain walked to its deepest frame
     // root (bounded by MAX_OVERLAY_DEPTH); O(1) when the nearest caller frame
     // is linked already.
-    pub(crate) fn link_static_outer_to_unit(&mut self, capture_first: bool) {
+    pub(crate) fn link_static_outer_to_unit(&mut self, capture_first: bool, activation: bool) {
+        let activation = if activation {
+            self.fallback.clone()
+        } else {
+            None
+        };
         debug_assert!(self.frame_root, "only a frame root has a static link");
         let Some(parent) = &self.parent else {
             return;
@@ -174,6 +151,7 @@ impl Env {
             .set_static_link(Arc::new(StaticLink::UnitOuter {
                 target: seg,
                 capture_first,
+                activation,
             }));
         self.chain_has_static_link = true;
     }
@@ -211,6 +189,18 @@ impl Env {
             // A chain whose frames hold nothing collapses to the program
             // scope itself, which needs no record of itself.
             if !Arc::ptr_eq(&flat.inner, &target.inner) {
+                // An activation's capture stays observable to the per-name
+                // store checks (`frame_capture_holds`), which the chain flag
+                // lets in.
+                if matches!(
+                    &*record,
+                    StaticLink::UnitOuter {
+                        activation: Some(_),
+                        ..
+                    }
+                ) {
+                    flat.chain_has_static_link = true;
+                }
                 flat.cow_mut().set_static_link(record);
             }
         }
@@ -233,10 +223,14 @@ impl Env {
     /// `link_static_outer_to_unit`, the next flattening).
     // Cost: O(d), d = chain tiers.
     fn flattened_program_scope(&self) -> Option<Arc<StaticLink>> {
+        // The running frame's declaring activation, if any, survives the
+        // flattening with the record.
+        let activation = self.frame_activation().cloned();
         let unit = |target: &Arc<Env>| {
             Arc::new(StaticLink::UnitOuter {
                 target: Arc::clone(target),
                 capture_first: false,
+                activation: activation.clone(),
             })
         };
         let mut seg: Option<&Arc<Env>> = None;
@@ -342,6 +336,7 @@ impl Env {
         } else if let Some(StaticLink::UnitOuter {
             target,
             capture_first,
+            ..
         }) = root.inner.static_link()
         {
             if *capture_first && let Some(fb) = &root.fallback {
