@@ -98,7 +98,10 @@ sub run-sh($script, :$out, :$err, :$permit-out, :$permit-err, :$kill, :$cwd, :$e
 }
 
 {
-    my ($, $events) = run-sh('pwd; echo $FOO', :out, :permit-out(-1), :cwd</>, :env<bar>);
+    # One write for both lines: `pwd; echo` is two writes, and a reader
+    # scheduled between them (likely under `prove -j`) sees two `out` chunks
+    # (#12931).
+    my ($, $events) = run-sh('printf "%s\n%s\n" "$(pwd)" "$FOO"', :out, :permit-out(-1), :cwd</>, :env<bar>);
     my @events = @$events;
     ok @events (cont) 'out:0|Buf[uint8]="/\nbar\n"|null', 'the child gets the cwd and environment given';
 }
