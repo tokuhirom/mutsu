@@ -1,7 +1,33 @@
 use super::*;
 use crate::symbol::Symbol;
 
+
 impl Interpreter {
+    /// `my Array enum E (:a[1, 2])`: a member is also an instance of the base
+    /// type, so the base's collection methods answer. The base value when `target`
+    /// is such a member and `method` is one of those methods.
+    // Cost: O(1).
+    pub(crate) fn enum_aggregate_base(target: &Value, method: &str) -> Option<Value> {
+        if !matches!(
+            method,
+            "elems" | "end" | "list" | "List" | "Array" | "max" | "min" | "map" | "grep" | "first"
+                | "flat" | "join" | "reverse" | "sort" | "keys" | "values" | "head" | "tail" | "sum"
+                | "pairs" | "iterator" | "AT-POS" | "EXISTS-POS" | "Seq" | "rotate" | "batch"
+                | "produce" | "reduce" | "unique" | "squish" | "pick" | "roll"
+        ) {
+            return None;
+        }
+        let ValueView::Enum {
+            value: EnumValue::Generic(inner),
+            ..
+        } = target.view()
+        else {
+            return None;
+        };
+        matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(_))
+            .then(|| inner.as_ref().clone())
+    }
+
     /// Dispatch methods on Enum values.
     /// Returns Some(result) if handled, None if not an enum method.
     pub(super) fn dispatch_enum_method(
@@ -19,6 +45,9 @@ impl Interpreter {
         else {
             return None;
         };
+        if let Some(base) = Self::enum_aggregate_base(target, method) {
+            return Some(self.call_method_with_values(base, method, args.to_vec()));
+        }
 
         match method {
             "key" => Some(Ok(Value::str(key.resolve()))),

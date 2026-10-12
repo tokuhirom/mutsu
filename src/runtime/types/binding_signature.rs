@@ -268,7 +268,15 @@ impl Interpreter {
         let Some(where_expr) = &pd.where_constraint else {
             return Ok(());
         };
-        if skip {
+        // A `where m/.../` of the winning multi candidate is re-run, though
+        // resolution just ran it: the match sets `$/` for the candidate's body
+        // (`$0`), and resolution ran it in a scope that discarded that. A regex
+        // match has no side effects, so running it twice is unobservable.
+        let regex_where = matches!(
+            where_expr.as_ref(),
+            Expr::MatchRegex(_) | Expr::MatchRegexTree { .. } | Expr::MatchRegexDynamicAdverbs { .. }
+        );
+        if skip && !regex_where {
             return Ok(());
         }
         let saved_param = if pd.name.is_empty() {

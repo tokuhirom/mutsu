@@ -34,6 +34,8 @@ impl Interpreter {
         // `|$_` where the topic is an itemized Seq element must expand the Seq's
         // values (`($seq,).map(|*)`), not wrap the Seq as a single slip item.
         let val = val.into_deref().into_descalarized();
+        // `|$member` of a `my Array enum` slips its base value's elements.
+        let val = Self::enum_aggregate_base(&val, "list").unwrap_or(val);
         // `|$obj` is `$obj.Slip`, which `Any` derives from `self.list`: an
         // instance whose class supplies `list` (and no `Slip` of its own)
         // slips that list's elements, not itself as one item.
