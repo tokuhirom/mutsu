@@ -1,6 +1,6 @@
-/// Miscellaneous methods: tclc, wordcase, succ, pred, Rat, FatRat, tree, encode,
-/// sink, item, race/hyper, NFC/NFD/NFKC/NFKD. (The transcendental math methods
-/// are rows of `builtins::method_table::scalars::math`.)
+/// Miscellaneous methods: Rat, FatRat, tree. (The transcendental math methods
+/// are rows of `builtins::method_table::scalars::math`; succ, pred, sink, item,
+/// race and hyper are rows too, ADR-11276 §9.82.)
 use crate::value::{RuntimeError, Value, ValueView, make_rat};
 
 use crate::builtins::method_table::str_numeric::{fat_rat_of_str, rat_of_str};
@@ -70,18 +70,6 @@ pub(super) fn dispatch(
     method: &str,
 ) -> Option<Option<Result<Value, RuntimeError>>> {
     match method {
-        // Cost: O(1) for a numeric invocant; O(n) for a Str, n = chars (the string
-        // is rebuilt around the incremented segment).
-        "succ" => Some(match target.view() {
-            ValueView::Enum { .. } | ValueView::Instance { .. } => None,
-            _ => Some(crate::builtins::method_table::succ_pred::succ(target, &[])),
-        }),
-        // Cost: O(1) for a numeric invocant; O(n) for a Str, n = chars (the string
-        // is rebuilt around the decremented segment).
-        "pred" => Some(match target.view() {
-            ValueView::Enum { .. } | ValueView::Instance { .. } => None,
-            _ => Some(crate::builtins::method_table::succ_pred::pred(target, &[])),
-        }),
         // A number: the numeric types' `Rat` rows' implementation
         // (`method_table::numeric_coerce`).
         "Rat" if let Some(rat) = crate::builtins::method_table::numeric_coerce::rat_of(target) => {
@@ -244,53 +232,6 @@ pub(super) fn dispatch(
             target,
             usize::MAX,
         )))),
-        "sink" => {
-            crate::builtins::method_table::list::sink(target, &[])
-                .map(Some)
-                .or_else(|| {
-                    Some(match target.view() {
-                        ValueView::Instance {
-                            class_name,
-                            attributes,
-                            ..
-                        } if class_name == "Failure" => {
-                            // Sinking a *handled* Failure is a no-op; only an unhandled
-                            // Failure throws its exception when sunk.
-                            if target.is_failure_handled() {
-                                Some(Ok(Value::NIL))
-                            } else if let Some(ex) = attributes.as_map().get("exception") {
-                                let mut err = RuntimeError::new(ex.to_string_value());
-                                err.exception = Some(Box::new(ex.clone()));
-                                Some(Err(err))
-                            } else {
-                                Some(Ok(Value::NIL))
-                            }
-                        }
-                        ValueView::Seq(body) => {
-                            // If there's a deferred source and `.cache` was not requested,
-                            // fall through to the runtime, which can actually pull it.
-                            if body.has_deferred_source() && !body.is_cached() {
-                                return Some(None); // fall through to runtime
-                            }
-                            // No pull to run here (already reified/cache-requested/taken):
-                            // `sink`'s pull closure is unreachable on this branch.
-                            let _ = body.sink_explicit(|_| {
-                    unreachable!("sink() only pulls a deferred, non-cached source, excluded above")
-                });
-                            Some(Ok(Value::NIL))
-                        }
-                        // The runtime owns LazyList forcing. In particular, a gather body
-                        // may run compiled code and must run before `.sink` returns.
-                        ValueView::LazyList(_) => None,
-                        _ => Some(Ok(Value::NIL)),
-                    })
-                })
-        }
-        // The `item` rows' implementation (`method_table::lazy`).
-        "item" => Some(crate::builtins::method_table::lazy::item(target, &[])),
-        // The `race`/`hyper` rows' implementation (`method_table::lazy`).
-        "race" => Some(crate::builtins::method_table::lazy::race(target, &[])),
-        "hyper" => Some(crate::builtins::method_table::lazy::hyper(target, &[])),
         _ => None,
     }
 }

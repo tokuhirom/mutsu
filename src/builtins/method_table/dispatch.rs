@@ -330,7 +330,7 @@ fn dispatch(
 /// the built-in class it is a form of ([`answer_shapeless`]): Rakudo declares
 /// them on `List`, `Seq` and `Map`, not on `Any` (`5.lazy` is
 /// `X::Method::NotFound`).
-const ITERABLE_FOR_SHAPELESS: [&str; 1] = ["lazy"];
+const ITERABLE_FOR_SHAPELESS: [&str; 3] = ["lazy", "race", "hyper"];
 
 /// Answer a call the cascades declined from the row `Mu`, `Cool`, `Any`,
 /// `List` or `Seq` declares, for a receiver with no shape (ADR-11276 §9.79,
@@ -407,6 +407,10 @@ pub(crate) fn shapeless_row(
             Symbol::intern("Seq")
         }
         ValueView::Array(..) | ValueView::Slip(_) if iterable => Symbol::intern("List"),
+        // The `Iterable` role's type object lists as itself, as Rakudo's
+        // `Iterable.hyper` does (the `hyperize` dist reads
+        // `Iterable.hyper.configuration`).
+        ValueView::Package(name) if iterable && name == "Iterable" => Symbol::intern("List"),
         _ if iterable => return None,
         // `Mu`'s answers reach a `Failure` too: asking its truth handles it.
         ValueView::Instance { class_name, .. } if mu && class_name == "Failure" => mu_owner,

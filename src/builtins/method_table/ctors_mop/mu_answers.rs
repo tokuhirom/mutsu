@@ -1,7 +1,7 @@
-//! `Mu.so`, `Mu.not` and `Mu.is-lazy` (ADR-11276 slice 5, §9.81): the answers
-//! every receiver reaches by name.
+//! `Mu.so`, `Mu.not`, `Mu.is-lazy` (ADR-11276 slice 5, §9.81), `Mu.item` and
+//! `Mu.sink` (§9.82): the answers every receiver reaches by name.
 //!
-//! Rakudo declares the three on `Mu`, so a type object, a `Junction`, a code
+//! Rakudo declares them on `Mu`, so a type object, a `Junction`, a code
 //! object and a closed shape answer them as well as a value: `Int.so` is
 //! `False`, `(sub {}).is-lazy` is `False`. A shape whose own type declares one
 //! (`Match.not`, `List.is-lazy`, `Seq.is-lazy`, `Range.is-lazy`) answers its own
@@ -32,6 +32,11 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("so", Handler::Pure(so)),
     row!("not", Handler::Pure(not)),
     row!("is-lazy", Handler::Narrow(is_lazy)),
+    row!(
+        "item",
+        Handler::Narrow(crate::builtins::method_table::lazy::item)
+    ),
+    row!("sink", Handler::Narrow(sink)),
 ];
 
 /// Asking a `Failure` for its truth handles it (Rakudo's `Failure.Bool` sets
@@ -91,5 +96,48 @@ pub(crate) fn is_lazy(target: &Value, _args: &[Value]) -> Option<Result<Value, R
         _ => Some(Ok(Value::truth(
             crate::builtins::methods_0arg::is_value_lazy(target),
         ))),
+    }
+}
+
+/// `Mu.sink`: evaluate the receiver for its effects and answer `Nil`. A plain
+/// array has nothing to run; an unhandled `Failure` throws its exception (a
+/// handled one is a no-op); a `Seq` whose source is already settled marks itself
+/// consumed. A `Seq` with a deferred source or a `LazyList` declines: the
+/// interpreter pulls it, since its producer may run compiled code.
+// Cost: O(1), except a reified `Seq`'s O(e) consumption mark, e = elements.
+pub(crate) fn sink(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if let Some(answer) = crate::builtins::method_table::list::sink(target, args) {
+        return Some(answer);
+    }
+    match target.view() {
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Failure" => {
+            if target.is_failure_handled() {
+                return Some(Ok(Value::NIL));
+            }
+            match attributes.as_map().get("exception") {
+                Some(ex) => {
+                    let mut err = RuntimeError::new(ex.to_string_value());
+                    err.exception = Some(Box::new(ex.clone()));
+                    Some(Err(err))
+                }
+                None => Some(Ok(Value::NIL)),
+            }
+        }
+        ValueView::Seq(body) => {
+            if body.has_deferred_source() && !body.is_cached() {
+                return None;
+            }
+            // No pull to run here (already reified, cache-requested or taken).
+            let _ = body.sink_explicit(|_| {
+                unreachable!("sink() only pulls a deferred, non-cached source, excluded above")
+            });
+            Some(Ok(Value::NIL))
+        }
+        ValueView::LazyList(_) => None,
+        _ => Some(Ok(Value::NIL)),
     }
 }

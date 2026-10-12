@@ -41,10 +41,25 @@ pub(super) static COOL_ROWS: &[MethodRow] = &[
     },
 ];
 
-/// `Bool` declares `succ` and `pred` itself: `True` and `False`.
+/// `Bool` declares `succ` and `pred` itself: `True` and `False`, for the type
+/// object too (`Bool.succ` is `True`).
 pub(super) static BOOL_ROWS: &[MethodRow] = &[
-    row!("Bool", "succ", bool_succ),
-    row!("Bool", "pred", bool_pred),
+    MethodRow {
+        owner: "Bool",
+        name: "succ",
+        arity: 0,
+        handler: Handler::Pure(bool_succ),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
+    MethodRow {
+        owner: "Bool",
+        name: "pred",
+        arity: 0,
+        handler: Handler::Pure(bool_pred),
+        flags: RowFlags::TYPE_OBJECT_OK,
+        named: &[],
+    },
 ];
 
 /// A numeric method of the numified receiver. `f` answers a numeric view and

@@ -34,8 +34,7 @@ pub(super) static RAT_ROWS: &[MethodRow] = rows!("Rat");
 pub(super) static FAT_RAT_ROWS: &[MethodRow] = rows!("FatRat");
 pub(super) static COMPLEX_ROWS: &[MethodRow] = rows!("Complex");
 
-/// Successor for a built-in scalar. The cascade still uses this for receiver
-/// shapes outside the row table.
+/// Successor for a built-in scalar.
 // Cost: O(1) for word-sized numbers; O(n^2) for big numbers and O(n) for
 // strings, n = the receiver's bit length or character count.
 pub(crate) fn succ(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
