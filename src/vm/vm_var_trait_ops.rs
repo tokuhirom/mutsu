@@ -749,6 +749,16 @@ impl Interpreter {
                 }
                 let name_str = name.to_string();
                 self.vm_set_var_type_constraint(&name_str, Some(et));
+                // The registration re-tags `env`'s value only (see the quant
+                // hash trait above); the slot must carry the element type too,
+                // because `Array.of` reads the descriptor the value carries.
+                if let Some(tagged) = self.env().get(&name_str).cloned()
+                    && !tagged.is_container_ref()
+                    && let Some(s) = self.resolve_local_slot(code, eff_slot, &name_str)
+                    && !self.locals[s].is_container_ref()
+                {
+                    self.locals[s] = tagged;
+                }
                 return Ok(());
             }
         }
