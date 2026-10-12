@@ -43,7 +43,12 @@ impl Interpreter {
                 // lexicals are visible, and recording them as body statics
                 // injected the caller's `$c` into a later method call's
                 // caller frame (upstream NativeCall's `-> |c` body, #11203).
-                if !declared.contains(bare.as_str()) {
+                // A sigil-less `my constant H` is declared as `H` but lives in
+                // the env under its term key (`\H`).
+                let declared_name = bare
+                    .strip_prefix(crate::term_names::TERM_PREFIX)
+                    .unwrap_or(bare.as_str());
+                if !declared.contains(declared_name) {
                     return None;
                 }
                 if crate::qualified::is_qualified_str(&bare)

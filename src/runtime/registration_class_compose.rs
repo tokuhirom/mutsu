@@ -655,6 +655,7 @@ impl Interpreter {
                 &role_arg_values,
             )?;
             self.run_composed_role_ancestor_bodies(base_role_name, cx.name)?;
+            self.run_sibling_candidate_body(base_role_name, &role, cx.name)?;
         } else {
             let compose_key = format!("class:{}:{resolved_parent_name}", cx.name);
             if self
@@ -686,6 +687,7 @@ impl Interpreter {
                     // methods already transit into the class below; only the
                     // bodies were missing.
                     self.run_composed_role_ancestor_bodies(base_role_name, cx.name)?;
+                    self.run_sibling_candidate_body(base_role_name, &role, cx.name)?;
                     // A MOP-built role's body is a block, not deferred ops.
                     self.run_role_body_block(
                         base_role_name,
