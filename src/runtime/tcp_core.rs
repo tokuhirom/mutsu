@@ -59,7 +59,7 @@ pub(crate) type OnEnd = Box<dyn FnOnce(AcceptEnd) + Send>;
 ///
 /// On Unix the socket reactor watches the listener (#12968), so an idle one
 /// costs no thread and no wake-ups. Elsewhere a thread named `thread_name`
-/// runs [`accept_loop`].
+/// runs `accept_loop`.
 // Cost: O(1) to register; O(c) over the listener's life, c = connections.
 pub(crate) fn serve_listener(
     thread_name: &str,
