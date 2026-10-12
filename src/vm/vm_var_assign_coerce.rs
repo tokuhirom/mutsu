@@ -824,6 +824,14 @@ impl Interpreter {
         needed: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
         let needed_i64 = needed as i64;
+        // A plain gather RHS runs its body only as far as the assignment can
+        // consume (ADR-11678).
+        if let ValueView::Seq(body) = val.view()
+            && body.is_gather_source()
+        {
+            let body = std::sync::Arc::clone(&body);
+            body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n))?;
+        }
         Ok(match val.view() {
             ValueView::Array(v, ..) => v.as_ref().clone().into_items(),
             ValueView::Seq(v) => v.iter().cloned().collect(),

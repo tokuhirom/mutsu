@@ -255,6 +255,7 @@ impl Interpreter {
                     let mut flat_items = Vec::new();
                     for item in items {
                         self.reify_map_grep_seq(&item)?;
+                        self.reify_gather_seq(&item)?;
                         match item.view() {
                             ValueView::Array(sub_items, _) => {
                                 flat_items.extend(sub_items.iter().cloned());
