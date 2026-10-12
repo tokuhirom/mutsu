@@ -542,3 +542,15 @@ ordinary execution path, which previously flattened dimensions into a comma
 slice and wrote to the wrong row. `t/rakuast/rakuast-index-bind.t` pins both
 source shapes and round-trip execution; `t/routines/dispatch/indexed-multidim-bind.t`
 pins ordinary leaf selection and aliasing.
+
+### 6.10 S10: callable and starred list assignment (2026-10-12)
+
+Callable lvalue assignment retains the complete target expression through the
+RakuAST call form, including indexed values, method objects and adverb-bearing
+subscripts. Parenthesized declarations retain their `Circumfix::Parentheses`
+source node and lower through the parser's callable-lvalue assignment path.
+The one-array/one-Whatever assignment form reconstructs its written list
+target from the parser's RHS offset helper, preserving the skipped RHS prefix
+and the target position. `t/rakuast/rakuast-callable-lvalue.t` pins declaration
+and star-target structure; the existing callable-lvalue and star-list tests
+exercise execution in round-trip mode.

@@ -2563,6 +2563,9 @@ fn call_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeError> {
         let value = lower_expr(named_child(node, "right")?)?;
         return Ok(Some(match inner {
             Expr::ArrayLiteral(items) => crate::parser::paren_list_assign_expr(items, value),
+            target @ Expr::DoStmt(_) if matches!(&target, Expr::DoStmt(stmt) if matches!(stmt.as_ref(), Stmt::VarDecl { .. })) => {
+                crate::parser::callable_lvalue_assign_expr(target, Vec::new(), value)
+            }
             // `(COND ?? $a !! $b) = v`, `($a || $b) = v`, `nqp::op(..) = v`
             // write through the selected lvalue at run time.
             target @ (Expr::Ternary { .. } | Expr::Binary { .. } | Expr::Call { .. }) => {
