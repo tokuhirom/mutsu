@@ -216,6 +216,14 @@ impl LazyList {
             && self.lazy_pipe.is_none()
     }
 
+    /// Whether this list's gather coroutine has run to completion.
+    // Cost: O(1), one lock read.
+    pub(crate) fn gather_finished(&self) -> bool {
+        self.coroutine
+            .as_ref()
+            .is_some_and(|c| c.lock().unwrap_or_else(|e| e.into_inner()).finished)
+    }
+
     /// A closure sequence can have a concrete endpoint while still requiring
     /// incremental evaluation to discover it. Unlike `... *`, such a sequence
     /// is safe for strict consumers to reify to completion.

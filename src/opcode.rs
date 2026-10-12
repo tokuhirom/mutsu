@@ -767,6 +767,15 @@ pub(crate) enum LoopExitGuardField {
     End,
 }
 
+/// What an [`OpCode::MakeGather`] builds (ADR-11678 §2.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+pub(crate) enum GatherMode {
+    /// A plain `gather`: a `Seq` over `SeqSource::Gather`.
+    Seq,
+    /// `lazy for`: the coroutine `LazyList` itself, still lazy.
+    LazyList,
+}
+
 /// Bytecode operations for the VM.
 /// [`OpCode::PackageScope`]'s `lexicals_idx` for a body with no lexicals to
 /// re-bind.
@@ -2821,8 +2830,8 @@ pub(crate) enum OpCode {
     /// (`surface_stashed_body_free_vars`): exec boxes the captured-and-mutated
     /// lexicals it names (`box_captured_lexicals`) BEFORE snapshotting the env,
     /// so a lazy pull after the frame moves on reads the live cell, not a stale
-    /// by-value copy.
-    MakeGather(u32, Option<u32>),
+    /// by-value copy. `.2` is what the gather becomes (ADR-11678 §2.3).
+    MakeGather(u32, Option<u32>, GatherMode),
     /// Force eager evaluation of the top-of-stack value (LazyList → Array)
     Eager,
     /// Call a computed callee: `$f(1)`, `$f.(1)`, `{ ... }(7)`, `%h<k>()`.
@@ -4820,7 +4829,7 @@ mod const_pool_dedup {
         gather_body.free_var_parent_slots.push(Some(0));
         code.closure_compiled_codes
             .push(std::sync::Arc::new(gather_body));
-        code.ops.push(OpCode::MakeGather(0, Some(0)));
+        code.ops.push(OpCode::MakeGather(0, Some(0), GatherMode::Seq));
         code.compute_needs_env_sync();
 
         assert_eq!(code.env_consumer_slots.gather, vec![true, false]);
@@ -9003,11 +9012,11 @@ impl CompiledCode {
                         &mut block_local_scope_slots,
                     );
                 }
-                OpCode::MakeGather(_, Some(cc_idx)) => {
+                OpCode::MakeGather(_, Some(cc_idx), _) => {
                     has_gather = true;
                     self.mark_closure_parent_slots(*cc_idx, &mut gather_slots);
                 }
-                OpCode::MakeGather(_, None) => has_gather = true,
+                OpCode::MakeGather(_, None, _) => has_gather = true,
                 OpCode::PackageScope { body_end, .. } => {
                     has_package_scope = true;
                     self.mark_name_access_slots(
@@ -10055,7 +10064,7 @@ impl CompiledCode {
             | OpCode::MakeAnonSubParams(_, cc, _)
             | OpCode::MakeLambda(_, cc, _)
             | OpCode::MakeBlockClosure(_, cc)
-            | OpCode::MakeGather(_, cc) => (*cc, &[]),
+            | OpCode::MakeGather(_, cc, _) => (*cc, &[]),
             OpCode::WheneverScope {
                 body_cc_idx,
                 phasers,

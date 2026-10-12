@@ -34,6 +34,27 @@ impl Interpreter {
             // Cost: the callback runs over the source elements from `pos` on
             // (see `pull_map_grep_rest`).
             SeqSource::MapGrep { .. } => self.pull_map_grep_rest(source),
+            // Cost: runs the gather body to completion (ADR-11678).
+            SeqSource::Gather(list) => match list.view() {
+                ValueView::LazyList(ll) => self.force_lazy_list_vm(&ll),
+                _ => Ok(Vec::new()),
+            },
+        }
+    }
+
+    /// The first `needed` elements of a gather's inner coroutine list
+    /// (fewer when it finishes first), running the body only as far as
+    /// that takes. The prefix half of [`SeqSource::Gather`]'s pull.
+    // Cost: O(needed) for the copy, plus running the body to its
+    // `needed`-th `take`.
+    pub(crate) fn pull_gather_prefix(
+        &mut self,
+        list: &Value,
+        needed: usize,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        match list.view() {
+            ValueView::LazyList(ll) => self.force_lazy_list_vm_n(&ll, needed),
+            _ => Ok(Vec::new()),
         }
     }
 
@@ -220,6 +241,9 @@ impl Interpreter {
         // no finalizer to close it when the Seq is dropped.
         // TODO: close the handle when its Seq is dropped, then pull a
         // bounded prefix here too.
+        if body.is_gather_source() {
+            return body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n));
+        }
         let private_io = body
             .peek_io_lines_parts()
             .is_some_and(|(handle, _, _)| self.is_seq_private_handle(&handle));
@@ -342,6 +366,12 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if !value.is_seq_value() {
             return Ok(());
+        }
+        if let ValueView::Seq(body) = value.view()
+            && body.is_gather_source()
+        {
+            let body = Arc::clone(&body);
+            return body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n));
         }
         if let ValueView::Seq(body) = value.view()
             && body.is_map_grep_source()
@@ -538,6 +568,14 @@ impl Interpreter {
             fresh.mark_lazy();
             return Ok(Value::seq_body(fresh));
         }
+        // `.lazy`, `.map` and `.grep` on a plain gather consume the Seq, as
+        // Rakudo's do, and stream its coroutine: hand the inner gather list on
+        // to the `LazyList` paths that drive it (ADR-11678 §2.3).
+        if matches!(method, "lazy" | "map" | "grep")
+            && let Some(list) = body.take_gather_source()
+        {
+            return Ok(list);
+        }
         // `.map`/`.grep` on a not-yet-run `.map`/`.grep` Seq chains onto its
         // source (`MapGrepItems::Chain`, #11176) instead of running the
         // upstream callback over everything first: `dispatch_map_method` /
@@ -666,6 +704,11 @@ impl Interpreter {
         if method == "iterator" {
             if let Some(iterator) = body.take_iterator_source()? {
                 return Ok(iterator);
+            }
+            // A plain gather: the iterator resumes the coroutine per
+            // `pull-one` (ADR-11678 §2.4).
+            if let Some(list) = body.take_gather_source() {
+                return self.dispatch_iterator_method(list);
             }
             // A not-yet-finished `.map`/`.grep`: the iterator streams the
             // source, running the callback once per element it hands out
@@ -1050,6 +1093,8 @@ impl Interpreter {
                 items.truncate(n);
                 items
             }
+            // A plain gather runs its body only to the `n`-th `take`.
+            Some(crate::value::PrefixSource::Gather(list)) => self.pull_gather_prefix(&list, n)?,
             None => return Ok(None),
         };
         Ok(Some(Value::seq(items)))

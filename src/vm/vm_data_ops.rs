@@ -161,8 +161,12 @@ impl Interpreter {
             }
             // Reify a not-yet-read Seq source (deferred Iterator or
             // IO::Handle.lines — ADR-0034) into an eager array element.
+            // A plain gather in a List literal stays an unread Seq element: it
+            // may be infinite, and Rakudo does not run it until it is read
+            // (ADR-11678).
             let val = if let ValueView::Seq(body) = val.view()
                 && body.needs_touch()
+                && (is_real_array || !body.is_gather_source())
             {
                 let body = std::sync::Arc::clone(&body);
                 match self.reify_seq_body(&body) {

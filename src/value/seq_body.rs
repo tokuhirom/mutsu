@@ -23,6 +23,7 @@ use super::{RuntimeError, Value};
 use crate::value::{MapGrepItems, PureCursor};
 use std::sync::{Arc, Mutex};
 
+mod gather_source;
 mod map_grep_stream;
 
 /// Which deferred `.map`/`.grep` shape a [`SeqSource::MapGrep`] body carries.
@@ -115,6 +116,13 @@ pub(crate) enum SeqSource {
     /// it unread, and takes just that prefix ([`SeqBody::take_prefix_source`]),
     /// the way Rakudo's `.head` pulls `n` times from the Seq's iterator.
     Pure(PureCursor),
+    /// A plain `gather` body not yet run to completion: the gather's
+    /// `Gc<LazyList>` coroutine, held as one `Value` edge
+    /// (docs/adr/11678-gather-is-a-deferred-seq-source.md). The coroutine, its
+    /// GC tracing and its resume machinery stay in `LazyList`; the inner list
+    /// is private to this body and never handed to user code except by a
+    /// steal that consumes the Seq ([`SeqBody::take_gather_source`]).
+    Gather(Value),
     /// The source was handed away by a consuming method (`.iterator`,
     /// `.list`, ...). A later attempt to reify or take again throws
     /// `X::Seq::Consumed`.
@@ -193,6 +201,9 @@ pub(crate) enum PrefixSource {
     /// A deferred `.map`/`.grep` ([`SeqSource::MapGrep`]), whose callback
     /// runs over only as much of the source as the prefix needs.
     MapGrep(SeqSource),
+    /// A plain `gather` ([`SeqSource::Gather`]): its inner coroutine list,
+    /// run only until it has taken the prefix.
+    Gather(Value),
 }
 
 /// Outcome of [`SeqBody::take`]: whether the caller may treat the Seq as
@@ -466,10 +477,13 @@ impl SeqBody {
         self.settle_pure_source();
         let source = {
             let mut state = self.core.state.lock().unwrap();
-            if matches!(state.source, SeqSource::Reified) {
-                return Ok(());
+            match &state.source {
+                SeqSource::Reified => return Ok(()),
+                // A gather keeps its source while it runs (ADR-11678 §2.2
+                // invariant 3): its body may re-enter this Seq.
+                SeqSource::Gather(list) => SeqSource::Gather(list.clone()),
+                _ => std::mem::replace(&mut state.source, SeqSource::Taken),
             }
-            std::mem::replace(&mut state.source, SeqSource::Taken)
         };
         let items = match pull_source(&source, pull) {
             Ok(rest) => self.after_pulled_prefix(&source, rest),
@@ -551,6 +565,8 @@ impl SeqBody {
                 items.extend(rest);
                 items
             }
+            // A gather's driver answers everything the coroutine has taken,
+            // the prefix a subscript stored included.
             _ => rest,
         }
     }
@@ -643,6 +659,7 @@ impl SeqBody {
                 | SeqSource::IoLines { kv: false, .. }
                 | SeqSource::Iterator(_)
                 | SeqSource::MapGrep { .. }
+                | SeqSource::Gather(_)
         );
         if !granular || state.cache_requested || !self.live_generation().is_empty() {
             return None;
@@ -657,6 +674,7 @@ impl SeqBody {
             }
             SeqSource::Iterator(iterator) => Some(PrefixSource::Iterator(iterator)),
             source @ SeqSource::MapGrep { .. } => Some(PrefixSource::MapGrep(source)),
+            SeqSource::Gather(list) => Some(PrefixSource::Gather(list)),
             // `granular` above admits only the shapes matched here.
             other => {
                 state.source = other;
@@ -864,7 +882,10 @@ impl SeqBody {
         };
         if matches!(
             source,
-            SeqSource::Iterator(_) | SeqSource::IoLines { .. } | SeqSource::MapGrep { .. }
+            SeqSource::Iterator(_)
+                | SeqSource::IoLines { .. }
+                | SeqSource::MapGrep { .. }
+                | SeqSource::Gather(_)
         ) {
             without_pull_progress(pull(&source))?;
         }
@@ -1011,7 +1032,10 @@ impl SeqBody {
     pub(crate) fn awaits_vm_reify(&self) -> bool {
         matches!(
             self.core.state.lock().unwrap().source,
-            SeqSource::MapGrep { .. } | SeqSource::Iterator(_) | SeqSource::IoLines { .. }
+            SeqSource::MapGrep { .. }
+                | SeqSource::Iterator(_)
+                | SeqSource::IoLines { .. }
+                | SeqSource::Gather(_)
         )
     }
 
@@ -1267,7 +1291,7 @@ impl SeqSource {
     /// upstream source through this too).
     pub(crate) fn trace_edges(&self, visit: &mut dyn FnMut(&crate::gc::ErasedGc)) {
         match self {
-            SeqSource::Iterator(v) => v.gc_trace(visit),
+            SeqSource::Iterator(v) | SeqSource::Gather(v) => v.gc_trace(visit),
             SeqSource::IoLines { handle, .. } => handle.gc_trace(visit),
             SeqSource::MapGrep {
                 items, func, mode, ..

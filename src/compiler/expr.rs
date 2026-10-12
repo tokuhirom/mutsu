@@ -922,7 +922,11 @@ impl Compiler {
                     // Lazy body: cell-promote captured-and-mutated lexicals, as
                     // for Expr::Gather below.
                     let cc_idx = self.surface_stashed_body_free_vars(&[], &gather_block);
-                    self.code.emit(OpCode::MakeGather(idx, Some(cc_idx)));
+                    self.code.emit(OpCode::MakeGather(
+                        idx,
+                        Some(cc_idx),
+                        crate::opcode::GatherMode::LazyList,
+                    ));
                 } else {
                     self.compile_expr_method_generic(target, name, args, &None, false);
                 }
@@ -1347,7 +1351,11 @@ impl Compiler {
                     // gather { take $x }; $x = 2` must take 2, not 1). See
                     // surface_stashed_body_free_vars for the mechanism.
                     let cc_idx = self.surface_stashed_body_free_vars(&[], body);
-                    self.code.emit(OpCode::MakeGather(idx, Some(cc_idx)));
+                    self.code.emit(OpCode::MakeGather(
+                        idx,
+                        Some(cc_idx),
+                        crate::opcode::GatherMode::Seq,
+                    ));
                 }
             }
             // ADR-0048 Phase 2: `eager {}` does not take a signature in raku.
