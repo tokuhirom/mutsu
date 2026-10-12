@@ -68,10 +68,13 @@ impl Interpreter {
         // `my subset SI2 of S-Int` refines the `S-Int` visible HERE: a lexical
         // base lives under its declaration-site storage name (ADR-0047), so
         // record that identity rather than the spelling.
-        let predicate_inline = predicate
+        let inline_predicate = predicate
             .as_ref()
-            .and_then(crate::runtime::types::subset_inline_predicate)
-            .is_some();
+            .and_then(crate::runtime::types::subset_inline_predicate);
+        let predicate_inline = inline_predicate.is_some();
+        let predicate_int_compare = inline_predicate.and_then(|(body, bind)| {
+            crate::predicate_shape::TopicIntCompare::of_body(body, bind)
+        });
         // Shared: a type check reads the definition on every call, and a
         // deep clone of it (predicate AST included) was part of that cost.
         let def = std::sync::Arc::new(SubsetDef {
@@ -80,6 +83,7 @@ impl Interpreter {
             version: version.to_string(),
             decl_package_sym: crate::symbol::Symbol::intern(&pkg),
             predicate_inline,
+            predicate_int_compare,
             predicate_closure,
             refinement,
         });

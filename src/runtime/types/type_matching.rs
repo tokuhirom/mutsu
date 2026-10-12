@@ -1415,6 +1415,14 @@ impl Interpreter {
             // A rejection reported by an earlier check (the base's own subset)
             // is superseded by this predicate's verdict.
             *why = None;
+            // `where * < 100`: one comparison against a literal, answered
+            // without a nested run of the body (`crate::predicate_shape`).
+            if subset.predicate_closure.is_none()
+                && let Some(cmp) = subset.predicate_int_compare
+                && let Some(ok) = self.topic_int_compare_holds(cmp, &predicate_value)
+            {
+                return ok;
+            }
             // NOTE: the predicate's env effects must SURVIVE this check —
             // roast S12-subset/subtypes.t counts `$*call1++` side effects in
             // `where` blocks across `~~` checks. Do NOT snapshot/restore the

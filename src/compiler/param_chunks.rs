@@ -80,6 +80,9 @@ impl Compiler {
                     .and_then(Self::inline_where_predicate_body);
                 pd.code.fill(|| crate::ast::ParamChunks {
                     where_inline_predicate: inline_where.is_some(),
+                    where_int_compare: inline_where.as_deref().and_then(|body| {
+                        crate::predicate_shape::TopicIntCompare::of_body(body, "_")
+                    }),
                     where_chunk: pd.where_constraint.as_deref().map(|w| {
                         let body = inline_where
                             .clone()

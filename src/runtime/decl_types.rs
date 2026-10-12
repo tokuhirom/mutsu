@@ -165,6 +165,10 @@ pub(crate) struct SubsetDef {
     /// (see `type_matches_value`). A property of the predicate alone, so it
     /// is decided here instead of by an AST walk on every check.
     pub(crate) predicate_inline: bool,
+    /// The inline predicate's body when it is one comparison of the value
+    /// against an integer literal (`where * < 100`), which a type check
+    /// answers without running the body (`crate::predicate_shape`).
+    pub(crate) predicate_int_compare: Option<crate::predicate_shape::TopicIntCompare>,
     /// The predicate as a closure built at the declaration site, when it
     /// refers to outer lexicals (`my $n; subset C where { $n++; True }`).
     /// Such a predicate must run over its declaring scope's variables: run

@@ -175,6 +175,10 @@ pub(crate) struct ParamChunks {
     /// has already bound `$_` to the value under test, so the chunk's result
     /// is the predicate's answer, with no closure built or called per check.
     pub(crate) where_inline_predicate: bool,
+    /// When the inline predicate is one comparison of `$_` against an
+    /// integer literal (`where * < 100`), that comparison: the binder answers
+    /// it without running `where_chunk` (`crate::predicate_shape`).
+    pub(crate) where_int_compare: Option<crate::predicate_shape::TopicIntCompare>,
     /// A default expression that is not an immutable scalar literal.
     pub(crate) default_chunk: Option<crate::opcode::CompiledDeclExpr>,
     /// One entry per `shape_constraints` element; `None` for a `*` or literal
