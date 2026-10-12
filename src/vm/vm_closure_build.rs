@@ -223,10 +223,12 @@ impl Interpreter {
         if !block_uses_match || self.env().get("/").is_some_and(Value::is_container_ref) {
             return;
         }
+        // The frame's `$/` is its local slot when it binds one (a
+        // `method m($/)` parameter, `my $/`), as `frame_match_topic` reads it:
+        // a nested `.subst` may have left another value in the env entry.
         let slash = self
-            .env()
-            .get("/")
-            .cloned()
+            .locals_get_by_name(code, "/")
+            .or_else(|| self.env().get("/").cloned())
             .unwrap_or(Value::NIL)
             .into_container_ref();
         self.env_mut().insert("/".to_string(), slash.clone());
