@@ -840,8 +840,7 @@ impl Interpreter {
         self.request_call_capture(cc.uses_capture, None);
         // A capture-reading body needs the general binder, which records the
         // call's capture with the caller's containers.
-        let light_bound =
-            !cc.uses_capture && self.closure_light_bind(data, param_name_syms, &args);
+        let light_bound = !cc.uses_capture && self.closure_light_bind(data, param_name_syms, &args);
         let mut rw_bindings = if light_bound {
             // No rw binding can arise from a plain positional `$` parameter:
             // it is a readonly item binding with no caller container behind it.
