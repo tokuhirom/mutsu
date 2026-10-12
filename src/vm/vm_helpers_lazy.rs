@@ -784,6 +784,14 @@ impl Interpreter {
         }
         // `.List` on a plain gather: a List that keeps pulling its coroutine
         // (ADR-11678 §2.4).
+        // `.AT-POS` / `.EXISTS-POS` on a gather pull only the prefix the index
+        // needs, as `[i]` does: they answer from the shared coroutine list,
+        // whose `LazyList` arm forces just that far. Non-consuming.
+        if matches!(method, "AT-POS" | "EXISTS-POS")
+            && let Some(list) = body.gather_source()
+        {
+            return Ok(list);
+        }
         // `.Bool` / `.so` / `.not` on a gather run its body to the first `take`
         // only, as Rakudo's do (and as `?$g` does).
         if matches!(method, "Bool" | "so" | "not") && body.is_gather_source() {
