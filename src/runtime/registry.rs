@@ -2098,6 +2098,45 @@ impl std::ops::DerefMut for RegistryWriteGuard<'_> {
 mod tests {
     use super::*;
 
+    /// A thread clone shares its parent's `Arc<Registry>`, and its first write
+    /// (an inner `my sub` re-installed on every call) copies the `Registry`.
+    /// The role and class-sub tables must survive that copy as shared
+    /// refcounts: when they were plain maps, each such clone deep-copied every
+    /// role definition and kept it, ~10 MB per Cro keep-alive connection
+    /// (#12981).
+    #[test]
+    fn copying_the_registry_shares_role_tables_until_they_are_written() {
+        let mut parent = Registry::default();
+        parent
+            .role_candidates
+            .insert("R".to_string(), Vec::new());
+        parent.class_subs.insert("C".to_string(), HashMap::default());
+        parent
+            .class_role_param_bindings
+            .insert("C".to_string(), HashMap::default());
+        let shared = Arc::new(parent);
+        let mut child_arc = Arc::clone(&shared);
+        let child = Arc::make_mut(&mut child_arc);
+        child.functions_mut().insert(
+            Symbol::intern("GLOBAL::inner"),
+            Arc::new(dummy_proto_def("GLOBAL", "inner")),
+        );
+        assert!(child.roles.shares_with(&shared.roles));
+        assert!(child.role_candidates.shares_with(&shared.role_candidates));
+        assert!(child.class_subs.shares_with(&shared.class_subs));
+        assert!(
+            child
+                .class_role_param_bindings
+                .shares_with(&shared.class_role_param_bindings)
+        );
+        child
+            .class_subs
+            .insert("D".to_string(), HashMap::default());
+        assert!(!child.class_subs.shares_with(&shared.class_subs));
+        assert!(!shared.class_subs.contains_key("D"));
+        assert!(child.roles.shares_with(&shared.roles));
+    }
+
     /// The three scope-snapshotted routine tables are copy-on-write: taking a
     /// snapshot is a refcount bump, and the copy happens on the next write --
     /// which must not reach the snapshot. This is what lets
