@@ -19,7 +19,9 @@ use crate::runtime::Interpreter;
 use crate::runtime::regex::regex_dynparams::{
     ANY_DYNAMIC_TOKEN_PARAM, SavedDynParams, regex_args_have_opaque,
 };
-use crate::runtime::regex::regex_helpers::{grammar_dynvar_scope_pop, grammar_dynvar_scope_push};
+use crate::runtime::regex::regex_helpers::{
+    grammar_dynvar_scope_pop, grammar_dynvar_scope_push, strip_marks_pattern,
+};
 use crate::runtime::regex_types::{NamedAtom, RegexAtom, RegexCaptures};
 use crate::symbol::Symbol;
 use crate::value::Value;
@@ -55,6 +57,12 @@ pub(super) enum CallTarget {
     /// One plain rule: its program and the package its body matches in (a rule
     /// is matched in the package that defines it).
     Plain(Arc<RxProgram>, Symbol),
+    /// A single plain `:m` rule: the program of its mark-stripped pattern, the
+    /// package, and the candidates. Over a subject that has no marks `:m`
+    /// changes nothing, so the call is a [`CallTarget::Plain`] frame
+    /// (`rx_call_resolve` turns it into one); otherwise it is evaluated
+    /// eagerly over the stripped subject, as any `:m` callee is.
+    PlainMarkless(Arc<RxProgram>, Symbol, Arc<TokenCandidates>),
     /// A proto: the `:sym<…>` candidates, ranked at the call by the walk's own
     /// LTM measurement (ADR-0046), of which the first that matches wins.
     Proto(Arc<TokenCandidates>),
@@ -85,6 +93,18 @@ pub(super) enum CallTarget {
     CustomHow(Arc<TokenCandidates>),
 }
 
+/// Whether stripping marks leaves `chars` as they are, so a `:m` pattern
+/// matches over exactly this subject. Only the published match target answers
+/// (its stripped view is built once per match); a subject that is not it, or a
+/// slice of it, is treated as having marks.
+// Cost: O(1) once the target's stripped view exists; O(n) to build it on the
+// first `:m` use of a match, n = subject chars.
+fn subject_has_no_marks(chars: &[char]) -> bool {
+    crate::runtime::regex::regex_helpers::current_match_target().is_some_and(|target| {
+        target.chars().len() == chars.len() && target.stripped().is_unchanged()
+    })
+}
+
 impl Interpreter {
     /// Resolve the `<subrule>` call `name` made from `pkg` at a position where
     /// the caller's captures are `caps`. A call with arguments evaluates them
@@ -111,6 +131,7 @@ impl Interpreter {
         pkg: Symbol,
         ic: bool,
         caps: &crate::runtime::regex_types::RegexCaptures,
+        chars: &[char],
     ) -> Option<ResolvedCall> {
         let spec = name.spec();
         let args = if spec.arg_exprs.is_empty() {
@@ -137,6 +158,16 @@ impl Interpreter {
                     self.call_target_from_candidates(name, pkg, ic, candidates)
                 }
             }
+        };
+        let verdict = match verdict {
+            CallTarget::PlainMarkless(program, sub_pkg, candidates) => {
+                if subject_has_no_marks(chars) {
+                    CallTarget::Plain(program, sub_pkg)
+                } else {
+                    CallTarget::Eager(candidates, "ignoremark-callee")
+                }
+            }
+            verdict => verdict,
         };
         // An evaluation of this name is live (a growing-seed loop further up):
         // this call may be its re-entry, which the loop's bookkeeping answers.
@@ -343,8 +374,17 @@ impl Interpreter {
             return CallTarget::Single;
         }
         // `:m` remaps positions across the whole result set, which the all-ends
-        // entry does over the mark-stripped subject.
+        // entry does over the mark-stripped subject. A single plain rule that
+        // could be a frame is offered one over a mark-free subject
+        // (`PlainMarkless`), because a frame enters its ends lazily.
         if candidates.iter().any(|(parsed, _, _)| parsed.ignore_mark) {
+            if let [(parsed, sub_pkg, None)] = &candidates[..]
+                && self.subrule_cannot_left_reenter(spec.lookup_sym, pkg)
+                && let stripped = strip_marks_pattern(parsed)
+                && let Some(program) = program_for(&stripped)
+            {
+                return CallTarget::PlainMarkless(Arc::clone(program), *sub_pkg, candidates.clone());
+            }
             return CallTarget::Eager(candidates, "ignoremark-callee");
         }
         // Several candidates without a proto (multi rules) dedup their ends
