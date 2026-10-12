@@ -563,3 +563,14 @@ writeback rules. Dotty assignment accepts a quoted method call as its right
 side, including method arguments, and lowers it through the shared `.=`
 expansion. `t/rakuast/rakuast-callable-lvalue.t` pins both node shapes; the
 method-lvalue and dotty RMW suites pass in round-trip mode.
+
+### 6.12 S10: supply statement source forms (2026-10-12)
+
+`supply STATEMENT` and `supply whenever ...` now retain the written body in
+the same `SupplyBlock` source record as `supply { ... }`. Conversion therefore
+renders the source-level `StatementPrefix::Supply` rather than exposing the
+generated on-demand emitter lambda, and lowering reuses the shared supply
+expansion. The existing seven first-refusal supply tests pass in RakuAST mode;
+`t/rakuast/rakuast-supply-block.t` pins both node shape and execution. The
+frontend ratchet now passes 6938 of 7259 files, with 6941 entries including
+retained prior results.
