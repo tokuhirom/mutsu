@@ -12,6 +12,7 @@ mod pub_shims;
 pub(super) mod simple;
 pub(crate) mod simple_expr_stmt;
 mod stmtlist;
+mod unit_use_hoist;
 pub(crate) mod sub;
 pub(crate) mod sub_param;
 pub(in crate::parser) mod trace;

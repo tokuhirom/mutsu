@@ -374,22 +374,6 @@ impl ParamDef {
         }
     }
 
-    /// Whether the `where` clause is a regex match (`where m/.../`), whose
-    /// match is the `$/` the routine's body sees (`$0`). Such a clause runs
-    /// at bind time even when multi resolution already verified it, because
-    /// resolution ran it in a scope that discarded `$/`.
-    // Cost: O(1).
-    pub(crate) fn where_is_regex_match(&self) -> bool {
-        self.where_constraint.as_deref().is_some_and(|expr| {
-            matches!(
-                expr,
-                Expr::MatchRegex(_)
-                    | Expr::MatchRegexTree { .. }
-                    | Expr::MatchRegexDynamicAdverbs { .. }
-            )
-        })
-    }
-
     /// The type constraint to register in the **assignment-time** lane when this
     /// parameter binds (`Interpreter::bind_param_type_constraint`).
     ///
@@ -2858,6 +2842,7 @@ pub(crate) mod sigilless_decl;
 pub(crate) mod signature_decl;
 pub(crate) mod spelled;
 pub(crate) mod stable_hash;
+mod where_match;
 pub(crate) mod stub;
 pub(crate) mod subscript_adverb;
 pub(crate) mod temporize;
