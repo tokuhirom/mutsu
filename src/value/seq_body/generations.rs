@@ -33,7 +33,7 @@
 use super::{SeqCore, SeqState};
 use crate::value::Value;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::ThreadId;
 
 /// One element buffer; see the module docs. The allocation is a `Vec<Value>`
@@ -111,10 +111,10 @@ impl Drop for Generation {
 
 /// Append-only store of a Seq body's generations; see the module docs.
 pub(super) struct Generations {
-    /// The newest generation, pointing into a `Box` the graveyard owns, or
+    /// The newest generation, pointing into an `Arc` the graveyard owns, or
     /// null while nothing was published yet (an unpulled deferred body).
     live: AtomicPtr<Generation>,
-    graveyard: Mutex<Vec<Box<Generation>>>,
+    graveyard: Mutex<Vec<Arc<Generation>>>,
 }
 
 impl Generations {
@@ -142,7 +142,7 @@ impl Generations {
         if ptr.is_null() {
             return &[];
         }
-        // SAFETY: `ptr` came from a `Box` the graveyard keeps until `self` is
+        // SAFETY: `ptr` came from an `Arc` the graveyard keeps until `self` is
         // dropped, so it outlives the `&self` borrow this reference is tied
         // to, and the `Acquire` load pairs with the `Release` store in
         // `install`, so the generation is fully constructed.
@@ -150,7 +150,7 @@ impl Generations {
     }
 
     // Cost: O(1) amortized.
-    fn graveyard(&self) -> MutexGuard<'_, Vec<Box<Generation>>> {
+    fn graveyard(&self) -> MutexGuard<'_, Vec<Arc<Generation>>> {
         self.graveyard
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -160,9 +160,11 @@ impl Generations {
     /// publishers' stores land in the order of their pushes: `live` is always
     /// the last entry.
     // Cost: O(1) amortized.
-    fn install(&self, graveyard: &mut Vec<Box<Generation>>, generation: Generation) {
-        let generation = Box::new(generation);
-        let ptr = std::ptr::from_ref::<Generation>(&generation).cast_mut();
+    fn install(&self, graveyard: &mut Vec<Arc<Generation>>, generation: Generation) {
+        // An `Arc` (not the `Generation` itself) so the graveyard `Vec`
+        // can reallocate without moving a generation `live` points at.
+        let generation = Arc::new(generation);
+        let ptr = Arc::as_ptr(&generation).cast_mut();
         graveyard.push(generation);
         self.live.store(ptr, Ordering::Release);
     }
