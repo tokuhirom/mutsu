@@ -2487,6 +2487,7 @@ t/modules/compunit/cur-resolve-compunit.t
 t/modules/compunit/distribution-meta-version.t
 t/modules/compunit/distribution-resource-split.t
 t/modules/compunit/distribution.t
+t/modules/compunit/eval-compunit-introspection.t
 t/modules/compunit/eval-context-caller-compunit.t
 t/modules/compunit/hyper-assign-list-target-distribution.t
 t/modules/compunit/installation-install-distribution-type-check.t
@@ -2578,6 +2579,7 @@ t/modules/import-export/export-own-subs-with-reexported-stash.t
 t/modules/import-export/export-stash-keyed-multi-loop.t
 t/modules/import-export/export-stash-manual-our-proto.t
 t/modules/import-export/export-stash-manual-our-sub.t
+t/modules/import-export/export-stash-named-keyed-assign.t
 t/modules/import-export/export-stash-our-bind-computed.t
 t/modules/import-export/export-stash-our-bind-literal.t
 t/modules/import-export/export-stash-our-var.t
@@ -2879,6 +2881,7 @@ t/modules/package-constant-alias-qualified-sub.t
 t/modules/package-hash-subscript-vivify.t
 t/modules/package-lexical-rebind-keeps-alias.t
 t/modules/package-lexical-subrule.t
+t/modules/package-lookup.t
 t/modules/package-main-lexical-capture.t
 t/modules/package-module-how.t
 t/modules/package-nested-type-name.t
@@ -4581,6 +4584,7 @@ t/rakuast/rakuast-pre-post-phasers.t
 t/rakuast/rakuast-prefix-bitwise-negation.t
 t/rakuast/rakuast-proto-onlystar-coercion.t
 t/rakuast/rakuast-qualified-decl-name.t
+t/rakuast/rakuast-qualified-variable-declaration.t
 t/rakuast/rakuast-quoted-method.t
 t/rakuast/rakuast-react-whenever-done.t
 t/rakuast/rakuast-reduction.t
@@ -6838,6 +6842,7 @@ t/vm/is-rw-bare-tail-returns-container.t
 t/vm/is-rw-lvalue-container-return.t
 t/vm/known-type-constraint-registry-gaps.t
 t/vm/name-bareword-type-object-memo.t
+t/vm/name-null.t
 t/vm/named-call-env-dirty.t
 t/vm/named-sub-bounded-env-sync.t
 t/vm/nested-frame-container-mutation-reaches-owner.t
@@ -6993,6 +6998,7 @@ t/vm/scope/my-6e-fixes.t
 t/vm/scope/my-class-shadows-outer-constant.t
 t/vm/scope/my-decl-severs-prior-bind.t
 t/vm/scope/my-dynamic-err-scope.t
+t/vm/scope/my-illegal-varname.t
 t/vm/scope/my-list-assign-result.t
 t/vm/scope/my-reserved-shape.t
 t/vm/scope/named-sub-block-lexical-shadow.t

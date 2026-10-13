@@ -362,6 +362,18 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                         self.0.insert(composed.resolve(), DeclaredKind::Term);
                     }
                 }
+                // `my $pkg::x` creates the stub package `pkg`, which a later
+                // bareword (`OUR::pkg`) names as a type (measured on 2026.09).
+                Stmt::VarDecl { name, .. }
+                    if crate::qualified::is_qualified_str(
+                        name.trim_start_matches(['@', '%', '&', '*']),
+                    ) =>
+                {
+                    let bare = Symbol::intern(name.trim_start_matches(['@', '%', '&', '*']));
+                    for stub in crate::qualified::package_ancestors(bare).skip(1) {
+                        self.0.entry(stub.resolve()).or_insert(DeclaredKind::Type);
+                    }
+                }
                 // An `our sub` of a package is reached by its qualified name.
                 Stmt::SubDecl {
                     name,
@@ -518,6 +530,20 @@ pub(super) fn convert(name: &str) -> Option<RakuAstNode> {
             RakuAstClass::TermName => return Some(term_name(name)),
             _ => {}
         }
+    }
+    // `OUR::A` / `MY::A` over a name that resolves: a `Term::Name` of the
+    // qualified name, whether `A` is a type or a term (measured on 2026.09).
+    if let Some(rest) = name
+        .strip_prefix("OUR::")
+        .or_else(|| name.strip_prefix("MY::"))
+        && convert(rest).is_some_and(|node| {
+            matches!(
+                node.class,
+                RakuAstClass::TypeSimple | RakuAstClass::TermName
+            )
+        })
+    {
+        return Some(term_name(name));
     }
     // A name a `use` brought in, which the unit's own declarations do not
     // list: what the parse's scope tables resolved it to.
