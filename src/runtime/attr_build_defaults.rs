@@ -41,7 +41,7 @@ use crate::value::{AttrMap, Value, ValueView};
 #[derive(Clone, Copy, Default)]
 pub(crate) struct AttrDeclScope<'a> {
     /// Lexicals captured where a role attribute default was declared.
-    pub(crate) env: Option<&'a ValueMap>,
+    pub(crate) env: Option<&'a crate::env_capture_view::CapturedScope>,
     /// Compunit whose imports were visible at the declaration.
     pub(crate) unit: Option<Symbol>,
     /// The class or role body the declaration appears in.
@@ -52,7 +52,7 @@ impl<'a> AttrDeclScope<'a> {
     /// The scope one registered attribute declaration carries.
     pub(crate) fn of(attr: &'a crate::runtime::ClassAttributeDef) -> Self {
         Self {
-            env: attr.captured_env.as_deref(),
+            env: attr.captured_env.as_ref(),
             unit: attr.captured_unit,
             package: attr.declaring_package.map(|p| p.as_str()),
         }
@@ -66,7 +66,7 @@ pub(crate) struct DeferredAttrDefault {
     /// The `has $.x = <expr>` initializer, when the attribute has one.
     pub(crate) default: Option<DeclTraitArg>,
     /// Lexicals captured where a role-composed attribute default was declared.
-    pub(crate) captured_env: Option<std::sync::Arc<ValueMap>>,
+    pub(crate) captured_env: Option<crate::env_capture_view::CapturedScope>,
     /// Compunit whose imports were visible where that default was declared.
     pub(crate) captured_unit: Option<crate::symbol::Symbol>,
     /// The class or role body that default was declared in (#8842).
@@ -183,7 +183,7 @@ impl Interpreter {
                         inv,
                         &attrs,
                         AttrDeclScope {
-                            env: d.captured_env.as_deref(),
+                            env: d.captured_env.as_ref(),
                             unit: d.captured_unit,
                             package: d.declaring_package.map(|p| p.as_str()),
                         },
@@ -497,23 +497,72 @@ impl Interpreter {
     /// Evaluate a declaration expression with names captured where a role
     /// attribute default was declared. Names already visible in the consuming
     /// class remain authoritative; role-only names are scoped to this eval.
+    ///
+    /// The captured scope is not copied into the env: the expression runs over
+    /// a block tier whose capture fallback is that scope, so a name the running
+    /// scope lacks resolves through it, below everything already visible --
+    /// the precedence the per-key insertion this replaces built by hand, at
+    /// O(1) instead of O(captured scope) env writes per evaluation (#13018).
+    /// What the expression writes by name lands in the tier and is merged
+    /// back afterwards, except a write to a role-only name: as before, that
+    /// stays scoped to this evaluation.
+    // Cost: O(w), w = names the expression writes by name.
     pub(crate) fn eval_decl_trait_arg_with_captured_env(
         &mut self,
         arg: &DeclTraitArg,
-        captured_env: Option<&ValueMap>,
+        captured_env: Option<&crate::env_capture_view::CapturedScope>,
+    ) -> Result<Value, RuntimeError> {
+        let Some(captured) = captured_env else {
+            return self.eval_decl_trait_arg(arg);
+        };
+        use crate::vm::vm_block_env::{BlockEnvSave, ClosedBlockEnv};
+        let save = match self.open_block_env_tier() {
+            save @ BlockEnvSave::Tier(_) => save,
+            // The chain is at its depth cap and no tier could be opened.
+            // TODO: this rare path still inserts the captured names one by
+            // one; it goes away once the default is compiled as a closure
+            // over the role body's scope (ADR-12529 static link).
+            BlockEnvSave::Whole(_) => return self.eval_decl_trait_arg_inserting_scope(arg, captured),
+        };
+        self.env_mut().set_capture_fallback(captured.clone());
+        let result = self.eval_decl_trait_arg(arg);
+        self.env_mut().clear_capture_fallback();
+        let ClosedBlockEnv {
+            mut base,
+            writes,
+            removed,
+        } = self.close_block_env_tier(save);
+        for (key, value) in writes.iter() {
+            if base.contains_key_sym(*key) || captured.get(key).is_none() {
+                base.insert_sym(*key, value.clone());
+            }
+        }
+        for key in removed.into_iter().flatten() {
+            base.remove_sym(key);
+        }
+        *self.env_mut() = base;
+        result
+    }
+
+    /// [`Self::eval_decl_trait_arg_with_captured_env`] when no block tier can
+    /// be opened: every captured name the running scope lacks is inserted for
+    /// the evaluation and removed again.
+    // Cost: O(c), c = names in the captured scope.
+    fn eval_decl_trait_arg_inserting_scope(
+        &mut self,
+        arg: &DeclTraitArg,
+        captured: &crate::env_capture_view::CapturedScope,
     ) -> Result<Value, RuntimeError> {
         let mut inserted = Vec::new();
-        if let Some(captured_env) = captured_env {
-            for (key, value) in captured_env {
-                if !self.env.contains_key(key) {
-                    self.env.insert(key.clone(), value.clone());
-                    inserted.push(key.clone());
-                }
+        for (key, value) in captured.iter() {
+            if !self.env.contains_key_sym(*key) {
+                self.env.insert_sym(*key, value.clone());
+                inserted.push(*key);
             }
         }
         let result = self.eval_decl_trait_arg(arg);
         for key in inserted {
-            self.env.remove(&key);
+            self.env.remove_sym(key);
         }
         result
     }
@@ -521,7 +570,7 @@ impl Interpreter {
     pub(crate) fn eval_decl_trait_arg_with_captured_context(
         &mut self,
         arg: &DeclTraitArg,
-        captured_env: Option<&ValueMap>,
+        captured_env: Option<&crate::env_capture_view::CapturedScope>,
         captured_unit: Option<crate::symbol::Symbol>,
     ) -> Result<Value, RuntimeError> {
         let saved_unit = self.current_unit;

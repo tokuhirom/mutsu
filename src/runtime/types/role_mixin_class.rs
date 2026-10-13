@@ -365,8 +365,8 @@ impl Interpreter {
                 let saved_env = role.captured_env.as_ref().map(|captured| {
                     let saved = self.env.clone();
                     for (k, v) in captured.iter() {
-                        if !self.env.contains_key(k) {
-                            self.env.insert(k.clone(), v.clone());
+                        if !self.env.contains_key_sym(*k) {
+                            self.env.insert_sym(*k, v.clone());
                         }
                     }
                     saved

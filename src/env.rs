@@ -1781,6 +1781,20 @@ impl Env {
         }
     }
 
+    /// Remove a fallback [`Self::set_capture_fallback`] installed on a block
+    /// tier, so the tier can be closed ([`Self::close_block_tier`] refuses one
+    /// that still has a fallback) and its overlay read back as the block's own
+    /// writes.
+    // Cost: O(1).
+    pub(crate) fn clear_capture_fallback(&mut self) {
+        if self.fallback.take().is_none() {
+            return;
+        }
+        self.chain_has_fallback = self.parent.as_ref().is_some_and(|p| p.chain_has_fallback);
+        self.capture_merged = OnceLock::new();
+        self.refresh_file_sym();
+    }
+
     /// This env viewed as a closure capture, for installing it as a closure
     /// frame's [`fallback`](Self::fallback): its own overlay over the layers
     /// of its own fallback, if it has one.

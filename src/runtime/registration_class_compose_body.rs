@@ -395,12 +395,12 @@ impl Interpreter {
         }
         // Names from the role's declaring scope that the composer's scope
         // lacks are visible to the body only while it runs.
-        let mut borrowed: Vec<String> = Vec::new();
+        let mut borrowed: Vec<Symbol> = Vec::new();
         if let Some(captured) = role.captured_env.as_ref() {
             for (k, v) in captured.iter() {
-                if !self.env.contains_key(k) {
-                    self.env.insert(k.clone(), v.clone());
-                    borrowed.push(k.clone());
+                if !self.env.contains_key_sym(*k) {
+                    self.env.insert_sym(*k, v.clone());
+                    borrowed.push(*k);
                 }
             }
         }
@@ -415,7 +415,7 @@ impl Interpreter {
             ),
         };
         for k in &borrowed {
-            self.env.remove(k);
+            self.env.remove_sym(*k);
         }
         for key in &trait_keys {
             self.registry_mut().class_attribute_trait_objects.remove(key);
