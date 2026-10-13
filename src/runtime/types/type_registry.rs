@@ -1133,6 +1133,23 @@ impl Interpreter {
         if name.is_empty() {
             return name;
         }
+        // A parameterization (`Blob[uint8]`) resolves its base name and keeps
+        // its arguments. Probing the whole spelling against the owner chain
+        // matched `Foo::IO::Blob[uint8]` inside `class Foo::IO::Str` through
+        // the compound-declared `class Foo::IO::Blob`, bypassing the guard
+        // that keeps a compound name's segments from acting as scopes
+        // (PDF's `has Blob[uint8] $!ords`, #12907).
+        if let Some(open) = name.find('[')
+            && open > 0
+            && name.ends_with(']')
+        {
+            let base = &name[..open];
+            let resolved = self.resolve_type_name_for_owner(owner, base.to_string());
+            if resolved == base {
+                return name;
+            }
+            return format!("{resolved}{}", &name[open..]);
+        }
         let name_sym = crate::symbol::Symbol::intern(&name);
         if crate::qualified::is_qualified(name_sym) {
             return name;

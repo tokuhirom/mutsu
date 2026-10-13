@@ -48,14 +48,22 @@ impl Interpreter {
         // binds the original argument and reads it again -- cannot tell. Any
         // other `Proxy` is read once by the parameter that binds it (a bound
         // `Mu $test` of `grep`), and a bind keeps the container.
+        // A shared scalar cell (`ContainerRef`) is read the same way: a spread
+        // capture keeps the containers of its positionals (`|\($p, 2)`, or the
+        // `|c` a `method subbuf(|c) { $.ords.subbuf(|c) }` forwards), and a
+        // native row refuses a container argument (#12907).
         // Cost: O(n) tag probes, n = arguments; no allocation unless one is a reference.
-        if args.iter().any(|a| a.is_proxy_value())
+        if args
+            .iter()
+            .any(|a| a.is_proxy_value() || a.is_container_ref())
             && !method_sym.as_str().starts_with("BIND")
             && !method_sym.as_str().starts_with("bind")
         {
             let mut fetched = Vec::with_capacity(args.len());
             for arg in args {
-                if arg.is_proxy_value() {
+                if arg.is_container_ref() {
+                    fetched.push(arg.deref_container());
+                } else if arg.is_proxy_value() {
                     match self.auto_fetch_proxy(arg) {
                         Ok(value) => fetched.push(value),
                         Err(e) => return Some(Err(e)),
