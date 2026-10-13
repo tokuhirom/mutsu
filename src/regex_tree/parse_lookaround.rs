@@ -144,7 +144,7 @@ impl Parser {
                     self.pos = start;
                     return None;
                 };
-                name = format!("{name}::{part}");
+                name = crate::qualified::qualified_text(name.as_str(), part.as_str()).to_string();
             }
             if !self.consume_if('>') {
                 self.pos = start;
