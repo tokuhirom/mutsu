@@ -1116,17 +1116,30 @@ impl Interpreter {
                         // The object may arrive wrapped in a Scalar container
                         // (a `$`-bound alias of the instance); read through it.
                         let obj = obj.clone().deref_container();
+                        let attr_name = attributes
+                            .as_map()
+                            .get("__mutsu_attr_name")
+                            .map(|v| v.to_string_value())
+                            .unwrap_or_default();
+                        // An attribute a mixed-in role declares lives in the
+                        // mixin's own role cell, not in the wrapped object.
+                        if let ValueView::Mixin(_, mixins) = obj.view() {
+                            let owner = attributes
+                                .as_map()
+                                .get("__mutsu_attr_owner")
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            let bare = attr_name.trim_start_matches(['$', '@', '%', '&', '!', '.']);
+                            if let Some(v) = mixins.role_attribute(&owner, bare) {
+                                return Ok(v.deref_container());
+                            }
+                        }
                         // A `$obj but Role` mixin keeps the object's attributes
                         // on the value it wraps.
                         let obj = match obj.view() {
                             ValueView::Mixin(inner, _) => Value::clone(inner),
                             _ => obj.clone(),
                         };
-                        let attr_name = attributes
-                            .as_map()
-                            .get("__mutsu_attr_name")
-                            .map(|v| v.to_string_value())
-                            .unwrap_or_default();
                         if let ValueView::Instance {
                             attributes: obj_attrs,
                             ..
@@ -1166,6 +1179,21 @@ impl Interpreter {
                         // object's methods read (a silent no-op here loses e.g.
                         // OO::Monitors' lock installation).
                         let obj = args[0].clone().deref_container();
+                        // An attribute a mixed-in role declares lives in the
+                        // mixin's own role cell, not in the wrapped object.
+                        if let ValueView::Mixin(_, mixins) = obj.view() {
+                            let owner = attributes
+                                .as_map()
+                                .get("__mutsu_attr_owner")
+                                .map(|v| v.to_string_value())
+                                .unwrap_or_default();
+                            let bare = attr_name.trim_start_matches(['$', '@', '%', '&', '!', '.']);
+                            if mixins.role_attribute(&owner, bare).is_some()
+                                && mixins.set_role_attribute(&owner, bare, new_val.clone())
+                            {
+                                return Ok(new_val);
+                            }
+                        }
                         let obj = match obj.view() {
                             ValueView::Mixin(inner, _) => Value::clone(inner),
                             _ => obj.clone(),

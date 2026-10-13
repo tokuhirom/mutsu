@@ -36,7 +36,14 @@ impl Interpreter {
                 _ => class_name,
             };
             let method_name = args[1].to_string_value();
-            let method_value = unwrap_method_instance_callable(&args[2]);
+            // A method with a role mixed in (`anon method {...} but Tag[$x]`)
+            // is installed by its callable; the mixin rides on the wrapper.
+            // TODO: keep the mixed-in roles on `^find_method`'s answer too.
+            let method_arg = match args[2].view() {
+                ValueView::Mixin(inner, _) => Value::clone(inner),
+                _ => args[2].clone(),
+            };
+            let method_value = unwrap_method_instance_callable(&method_arg);
             if let ValueView::Routine {
                 package,
                 name,

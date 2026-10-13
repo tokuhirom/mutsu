@@ -100,6 +100,20 @@ impl Interpreter {
         name
     }
 
+    /// Attribute objects for the attributes declared by the role `role`, as a
+    /// run-time mixin of it exposes them.
+    // Cost: O(a), a = attributes declared on the role.
+    pub(super) fn role_mixin_attribute_objects(&self, role: &str) -> Vec<Value> {
+        match self.registry().roles.get(role) {
+            Some(role_def) => role_def
+                .attributes
+                .iter()
+                .map(|attr| self.make_attribute_object(attr, role))
+                .collect(),
+            None => Vec::new(),
+        }
+    }
+
     fn make_attribute_object(&self, attr: &super::ClassAttributeDef, owner: &str) -> Value {
         let attr_name = &attr.name;
         let is_public = attr.is_public;
@@ -441,6 +455,21 @@ impl Interpreter {
     /// invoking it inline: `run_class_body` drains it once the whole class
     /// body has registered (#8845).
     pub(super) fn apply_attribute_traits(
+        &mut self,
+        decl: &crate::opcode::CompiledAttrDecl,
+        attr_name_str: &str,
+        owner: &str,
+        pending_composes: &mut Vec<PendingAttrCompose>,
+    ) -> Result<AttrCoreTraitEffects, RuntimeError> {
+        // A trait handler sees the package being declared as `$*PACKAGE`
+        // (AttrX::Mooish reads `$*PACKAGE.HOW`), as a method trait's does.
+        let saved_package_var = self.bind_trait_package(owner);
+        let result = self.apply_attribute_traits_inner(decl, attr_name_str, owner, pending_composes);
+        self.restore_trait_package(saved_package_var);
+        result
+    }
+
+    fn apply_attribute_traits_inner(
         &mut self,
         decl: &crate::opcode::CompiledAttrDecl,
         attr_name_str: &str,
