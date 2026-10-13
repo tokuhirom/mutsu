@@ -871,6 +871,16 @@ the converter's declared-name table and the module export scan share; an
 `our` enum's values are also declared under the enclosing packages
 (`module M { enum E <a> }; M::a`).
 
+### 6.35 S10: hyper prefix operators (2026-10-13)
+
+`-« @a`, `++<< @a` and the other hyper prefixes are, on rakudo 2026.09, an
+`ApplyPrefix` whose `prefix` is a `MetaPrefix::Hyper` over the plain
+`Prefix`. The parser spells the operation as the call
+`__mutsu_hyper_prefix("-", arg)` the runtime executes; that call is the
+lowered form, so the converter reads it as the node and lowering builds it
+back (`src/rakuast/hyper_prefix.rs`), the way the atomic operators map to
+`ast::atomic_op`'s calls.
+
 ### 6.36 S10: package-qualified constants of a loaded module (2026-10-13)
 
 A `use`d module's `our constant NAME` is installed in its package, so

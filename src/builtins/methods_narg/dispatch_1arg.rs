@@ -327,40 +327,6 @@ fn native_method_1arg_cascade(
             // Default: just stringify
             Some(Ok(Value::str(target.to_string_value())))
         }
-        // Cost: O(n), n = chars of the invocant.
-        "chop" => {
-            // Type objects (Package) should throw
-            if let ValueView::Package(type_name) = target.view() {
-                return Some(Err(RuntimeError::new(format!(
-                    "Cannot resolve caller chop({}:U)",
-                    type_name,
-                ))));
-            }
-            let s = target.to_string_value();
-            let n = match arg.view() {
-                ValueView::Int(i) => i.max(0) as usize,
-                ValueView::BigInt(bi) => {
-                    use num_traits::ToPrimitive;
-                    bi.to_usize().unwrap_or(usize::MAX)
-                }
-                // A plain string coerces like `.Int` (parse an integer literal).
-                ValueView::Str(_) => arg.to_string_value().parse::<usize>().unwrap_or(1),
-                // Any other numeric (Num/Rat/FatRat/allomorph) coerces like `.Int`,
-                // truncating toward zero: `.chop(3.6)` chops 3.
-                _ => {
-                    let f = arg.to_f64();
-                    if f.is_finite() && f > 0.0 {
-                        f.trunc() as usize
-                    } else {
-                        0
-                    }
-                }
-            };
-            let char_count = s.chars().count();
-            let keep = char_count.saturating_sub(n);
-            let result: String = s.chars().take(keep).collect();
-            Some(Ok(Value::str(result)))
-        }
         // Cost: O(n + L * s), n = chars of the invocant, L = lines, s = |steps|.
         // A Capture's positional part: the `Capture` row's implementation
         // (`method_table::capture`).
@@ -509,56 +475,6 @@ fn native_method_1arg_cascade(
             }
             None
         }
-        // Cost: O(n), n = chars in a string bound/value for comparison and error rendering.
-        // The `Range.in-range` row's implementation (`method_table::range`).
-        "in-range" => {
-            crate::builtins::method_table::range::in_range_value(target, std::slice::from_ref(arg))
-        }
-        // Cost: O(1) for the Seq forms, a lazy Seq over the invocant
-        // (`crate::value::StrIterSpec`) that `$limit` caps; `:count` is O(n),
-        // n = bytes of the invocant, and builds no line.
-        "lines" => {
-            if let ValueView::Instance { class_name, .. } = target.view()
-                && class_name == "Supply"
-            {
-                return None;
-            }
-            use crate::value::{StrIterMode, str_iter_seq};
-            if let ValueView::Pair(key, value) = arg.view() {
-                if key == "chomp" {
-                    let mode = StrIterMode::Lines {
-                        chomp: value.truthy(),
-                    };
-                    return Some(Ok(str_iter_seq(target, mode, None)));
-                }
-                // `.lines(:count)` returns the number of lines instead of the list.
-                if key == "count" {
-                    let mode = StrIterMode::Lines { chomp: true };
-                    if value.truthy() {
-                        let n = crate::value::str_iter_count(target, mode, None);
-                        return Some(Ok(Value::int(n as i64)));
-                    }
-                    return Some(Ok(str_iter_seq(target, mode, None)));
-                }
-                return None;
-            }
-            let limit = crate::value::str_iter_limit(arg)?;
-            Some(Ok(str_iter_seq(
-                target,
-                StrIterMode::Lines { chomp: true },
-                limit,
-            )))
-        }
-        // Cost: O(1), a lazy Seq over the invocant (`crate::value::StrIterSpec`)
-        // that `$limit` caps.
-        "words" => {
-            let limit = crate::value::str_iter_limit(arg)?;
-            Some(Ok(crate::value::str_iter_seq(
-                target,
-                crate::value::StrIterMode::Words,
-                limit,
-            )))
-        }
         "flat" => {
             if is_hammer_pair(arg) {
                 return Some(Ok(
@@ -583,10 +499,6 @@ fn native_method_1arg_cascade(
             let fmt = target.to_string_value();
             let rendered = runtime::format_zprintf(&fmt, Some(arg));
             Some(Ok(Value::str(rendered)))
-        }
-        // Cost: see `parse_base` (src/builtins/parse_base.rs).
-        "parse-base" => {
-            crate::builtins::method_table::str_args::parse_base(target, std::slice::from_ref(arg))
         }
         // A number: the numeric types' `base` rows' implementation
         // (`method_table::numeric_base`).

@@ -23,7 +23,9 @@ use Test;
 plan 10;
 
 # --- a desugared construct throws rather than rendering a fake node ---------
-throws-like { Q[-<<@a].AST }, Exception,
+# The hyper prefix used to be on that list too; it now renders as raku's
+# `MetaPrefix::Hyper`, and the temporary call must not appear in the output.
+nok Q[my @a; -<<@a].AST.gist.contains('__mutsu_hyper_prefix'),
     'hyper prefix does not render an internal __mutsu_hyper_prefix call';
 
 throws-like { Q[my @a; @a Z= @a].AST }, Exception,
