@@ -41,6 +41,7 @@ pub(crate) const BODY_ATTR: &str = "__mutsu_cstruct_body";
 /// first argument, and when that argument was a temporary (`f(Foo.new)`) the
 /// handle would otherwise outlive the block that owns the memory.
 // Cost: O(a), a = number of arguments.
+#[cfg(feature = "libffi")]
 pub(crate) fn share_arg_body(handle: &Value, args: &[Value], addr: usize) {
     let ValueView::Instance { attributes: out, .. } = handle.view() else {
         return;
