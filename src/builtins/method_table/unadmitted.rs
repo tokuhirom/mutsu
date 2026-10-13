@@ -46,8 +46,8 @@ fn is_builtin_value_argument(arg: &Value) -> bool {
 }
 
 /// Answer `method` from the [`RowFlags::ANY_ARGS`] row the receiver's shape
-/// resolves, with arguments the guard step did not admit. `None` when the
-/// receiver has no shape, no such row exists, or an argument is not a
+/// (or, for an allomorph, the part it reads) resolves, with arguments the
+/// guard step did not admit. `None` when the receiver has no shape, no such row exists, or an argument is not a
 /// built-in value ([`is_builtin_value_argument`]): a named argument (split by
 /// the guard step), a `Junction` (which autothreads), a `Failure` (which may
 /// explode) or a user object.
@@ -69,10 +69,17 @@ pub(crate) fn invoke_unadmitted(
     {
         return None;
     }
-    let id = resolve(Receiver::of_settled(target)?, method, args.len())?;
+    // An allomorph receiver is answered on the part the row reads (§9.101).
+    let (part, id) = match Receiver::of_settled(target) {
+        Some(receiver) => (None, resolve(receiver, method, args.len())?),
+        None => {
+            let (part, id) = super::allomorph::redirect(target, method, args.len())?;
+            (Some(part), id)
+        }
+    };
     if !row(id).flags.contains(RowFlags::ANY_ARGS) {
         return None;
     }
     let args: Vec<Value> = args.iter().map(|arg| arg.descalarize().clone()).collect();
-    invoke_in(id, interp, target, &args)
+    invoke_in(id, interp, part.as_ref().unwrap_or(target), &args)
 }
