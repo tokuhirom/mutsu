@@ -2495,6 +2495,38 @@ Not changed: `Set` has no `Int`/`Numeric` (#13281), so `(1..5).AT-POS(set(1, 2))
 `method-rows-report.py --arms`: pure cascades 121 -> 116 arms (`dispatch_1arg.rs` 13 -> 8; the report counts the three guarded
 `ACCEPTS` arms once). Pinned in `t/collections/subscript/at-pos-index-arg-rows.t` and `t/oo/method/accepts-method-rows.t`.
 
+### 9.106 Slice 5: `Any`'s subscript protocol is a row (2026-10-13)
+
+`refactor/11276-any-subscript-rows`, on §9.105's `INDEX_ARG`. The generic `AT-POS`, `EXISTS-POS`, `AT-KEY` and `EXISTS-KEY` arms
+of `methods_narg/dispatch_1arg.rs` answered every receiver no row took: a `Str`, a `Match`, an instance, a value that is not
+`Positional` (`is_one_element_under_positional_subscript`), the `Any`/`Mu` type objects and any other value failing the associative
+subscript. Probed: forty receiver × argument pairs (scalars, type objects, user instances and their type objects, `Hash`, `Set`,
+`Pair`, a `Match`, a lazy `Seq`, a shaped array, `Nil`, a buffer, `IO::Path::Parts`) on `raku`, the binary before the slice and the
+new one. Decisions:
+
+1. **Four `Any` rows** (`collections/any_subscript.rs`, `TYPE_OBJECT_OK`; the recognition table gains them): `AT-POS(Int:D)` is the
+   receiver at 0 and an `X::OutOfRange` failure (`0..0`) elsewhere; `EXISTS-POS(Int:D)` is `pos == 0` for a defined receiver and
+   `False` for a type object; `AT-KEY` fails the associative subscript for a defined receiver (naming an instance's class) and is
+   `Any` for a type object; `EXISTS-KEY` is `False`. The positional pair is `INDEX_ARG`, so `index_arg` binds any other index, and
+   now also for a receiver with no shape (through `shapeless_row`) and a type object (`Int.EXISTS-POS("0")` is `False`).
+2. **Reach**: the open shapes by their MRO; the closed ones through `ANY_LIST_FOR_CLOSED_SHAPES` (a `Hash`, a quant hash, a `Pair`
+   are not `Positional`), except `Blob`/`Buf`, which are and keep their cascade arms until their rows land; a receiver with no shape
+   through `answer_shapeless` (an instance by its MRO, a type object, an enum, a code object), except a list with no settled shape (a
+   lazy or shaped array, a `Seq`, a `Slip`, a buffer storage), which indexes its elements through the interpreter but still reaches the
+   associative pair, and a `Junction`, a `Proxy` and `Nil`.
+3. **A `Match` reaches `Capture`'s `AT-POS`/`EXISTS-POS`** (`CAPTURE_FOR_MATCH`): the handlers read its positional captures, and an
+   optional group that did not match does not exist. The `Match` branch of the cascade arm goes.
+4. **The associative rows of the collections take a user-object key** (`OBJECT_ARGS` on `subscript.rs`'s rows); their delegation
+   from the cascade arm goes.
+
+Behaviour changes toward Rakudo: `Int.AT-POS(0)`, `C.AT-POS(0)`, `Int.EXISTS-POS(0)`, `Int.AT-KEY("x")`, `C.AT-KEY("x")`,
+`C.new.EXISTS-POS(0)`, `C.new.AT-KEY("x")` and `C.new.EXISTS-KEY("x")` answer (all were `X::Method::NotFound`); `5.AT-POS(N.new)`
+reads the index's `.Int` (was `Nil`); `5.EXISTS-POS("0")` is `True`; `5.AT-POS(-1)` names `0..0`. Not changed: `Nil.EXISTS-POS` and
+`Nil.EXISTS-KEY` answer `Nil` (Rakudo: `False`; the interpreter answers a method on `Nil` before the table); `Buf.EXISTS-POS` is still
+missing (#13294, with the `Nil` answers); `%h.AT-KEY($obj)` keys a `Str`-keyed hash by the object's own string form, not its `.Str` (#13293). The arms stay
+counted by `method-rows-report.py`: what is left of them is the list, buffer-instance, `IO::Path::Parts` and `Nil` branches. Pinned in
+`t/collections/subscript/any-subscript-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
