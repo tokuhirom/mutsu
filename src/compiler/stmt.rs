@@ -1859,8 +1859,11 @@ impl Compiler {
                     // initializer whether it is spelled `=` or `:=`
                     // (`my UInt \x = $o`); its right-hand side reaches the
                     // check wrapped in a VarRef, which only the bind check
-                    // looks through.
-                    if sigilless_bind_vardecl {
+                    // looks through. A sigilless name in a list declaration
+                    // (`my (\b where "x") = ...`) is assigned, not bound.
+                    if sigilless_bind_vardecl
+                        || custom_traits.iter().any(|(t, _)| t == "__sigilless_decl")
+                    {
                         self.code
                             .emit(OpCode::TypeCheckBind(tc_idx, Some(var_name_idx)));
                     } else if scalar_bind_decont && !name.starts_with('@') && !name.starts_with('%')
