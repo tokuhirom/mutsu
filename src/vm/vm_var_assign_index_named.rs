@@ -659,9 +659,19 @@ impl Interpreter {
                 ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
                 _ => idx.clone(),
             };
+            // A user ASSIGN-KEY/ASSIGN-POS (declared or role-composed) owns
+            // the assignment instead: Rakudo's `postcircumfix:<{ }>` calls
+            // `ASSIGN-KEY`, and only the default one assigns through
+            // `AT-KEY` (#13088, PDF's `PDF::COS::Tie::Hash`).
+            let assign_method = if is_positional {
+                "ASSIGN-POS"
+            } else {
+                "ASSIGN-KEY"
+            };
             if self
                 .resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))
                 .is_some_and(|(_, def)| def.is_rw)
+                && !self.has_user_method_including_role(&cls, assign_method)
                 && !matches!(
                     self.stack.last().map(Value::view),
                     Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
