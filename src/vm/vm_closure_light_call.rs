@@ -29,8 +29,8 @@
 //! makes for a `Nil` or a container. Anything else declines, and the caller
 //! takes the untyped entry.
 
-use super::*;
 use super::vm_closure_light_def_bind::light_def_arg_is_plain_value;
+use super::*;
 
 /// A closure body the light call can run, and what the call must supply.
 #[derive(Debug, Clone)]
@@ -163,7 +163,9 @@ impl Interpreter {
         args: &[Value],
         compiled_fns: &CompiledFns,
     ) -> Option<Result<Value, RuntimeError>> {
-        let shape = cc.light_closure_shape.get_or_init(|| LightClosureShape::of(cc));
+        let shape = cc
+            .light_closure_shape
+            .get_or_init(|| LightClosureShape::of(cc));
         let shape = shape.as_ref()?;
         let param_syms = data.param_name_syms();
         let sources_any = self.pending_call_arg_sources().is_some_and(|sources| {
@@ -193,7 +195,9 @@ impl Interpreter {
             return None;
         };
         let cc = data.compiled_code.as_ref()?;
-        let shape = cc.light_closure_shape.get_or_init(|| LightClosureShape::of(cc));
+        let shape = cc
+            .light_closure_shape
+            .get_or_init(|| LightClosureShape::of(cc));
         shape.as_ref()?;
         let (data, cc) = (data.clone(), cc.clone());
         let shape = cc.light_closure_shape.get()?.as_ref()?;
@@ -226,9 +230,7 @@ impl Interpreter {
             &self.stack[start..],
             sources_any,
         )?;
-        let base = self.bind_closure_light(bind, arity, |me, i| {
-            me.stack[start + i].clone()
-        })?;
+        let base = self.bind_closure_light(bind, arity, |me, i| me.stack[start + i].clone())?;
         self.stack.truncate(start - 1);
         // The closure entry's own unit switch (`call_compiled_closure_with_topic`)
         // and `use fatal` scope (`call_compiled_closure_at`).
@@ -239,10 +241,12 @@ impl Interpreter {
         guard.module.lexical_fatal_mode = data.captured_fatal_mode;
         let result = guard.run_closure_light(&data, &cc, shape, base, compiled_fns);
         let result = if guard.module.fatal_mode {
-            result.and_then(|val| match guard.failure_to_runtime_error_if_unhandled(&val) {
-                Some(err) => Err(err),
-                None => Ok(val),
-            })
+            result.and_then(
+                |val| match guard.failure_to_runtime_error_if_unhandled(&val) {
+                    Some(err) => Err(err),
+                    None => Ok(val),
+                },
+            )
         } else {
             result
         };

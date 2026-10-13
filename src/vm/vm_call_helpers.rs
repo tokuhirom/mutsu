@@ -353,7 +353,9 @@ impl Interpreter {
                     .first()
                     .is_some_and(|marker| matches!(marker.view(), ValueView::Bool(false))) =>
             {
-                items.get(1).is_some_and(Self::arg_source_entry_names_source)
+                items
+                    .get(1)
+                    .is_some_and(Self::arg_source_entry_names_source)
             }
             _ => false,
         }
