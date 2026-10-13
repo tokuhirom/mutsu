@@ -805,6 +805,11 @@ impl Interpreter {
             (Some(_), None) | (None, Some(_)) => return Ok(Value::FALSE),
             (None, None) => {}
         }
+        // Both walks below run user code (a Proxy FETCH, an element's `eqv`)
+        // over the operands, so a shared Array/Hash is compared as a snapshot
+        // (ADR-0068 §20).
+        let left = crate::value::container_read::read_operand(left);
+        let right = crate::value::container_read::read_operand(right);
         if let Some(answer) = self.eqv_arrays_lockstep(&left, &right)? {
             return Ok(Value::truth(answer));
         }

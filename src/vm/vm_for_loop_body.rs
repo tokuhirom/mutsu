@@ -703,7 +703,7 @@ impl Interpreter {
         // copy taken under its stripe instead (ADR-0068 §16, #13016): its
         // probes walk the items with no lock held.
         let live_items = live.and_then(|array| {
-            let array = crate::value::container_lock::shared_snapshot(array)
+            let array = crate::value::container_read::shared_snapshot(array)
                 .unwrap_or_else(|| array.clone());
             match array.view() {
                 ValueView::Array(items, _) => Some(items.clone()),

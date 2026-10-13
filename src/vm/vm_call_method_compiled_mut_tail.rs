@@ -177,24 +177,38 @@ impl Interpreter {
         // `native_lever_a_user_override`'s doc comment (mut path twin of the
         // non-mut guard in `try_compiled_method_or_interpret_inner`).
         let lever_a_blocked = self.native_lever_a_user_override_sym(&target, method_sym);
+        // ADR-0068 §20: the native readers below walk the receiver with nothing
+        // held, so a shared Array/Hash receiver is read through a snapshot. The
+        // fallback at the end keeps the live receiver: it may write back.
+        let snapshot = crate::value::container_read::snapshot_read_receiver(method, &target);
+        let native_target = snapshot.as_ref().unwrap_or(&target);
         // Native `.subst` over a Str with a simple pattern/replacement (lever A).
-        if !lever_a_blocked && let Some(result) = self.try_native_subst(&target, method, &args) {
+        if !lever_a_blocked
+            && let Some(result) = self.try_native_subst(native_target, method, &args)
+        {
             return result;
         }
         // Native `.sort` over a plain array with no/simple comparator (lever A).
-        if !lever_a_blocked && let Some(result) = self.try_native_sort(&target, method, &args) {
+        if !lever_a_blocked && let Some(result) = self.try_native_sort(native_target, method, &args)
+        {
             return result;
         }
         // Native `.min` / `.max` over a plain list, including `:by` blocks.
-        if !lever_a_blocked && let Some(result) = self.try_native_extrema(&target, method, &args) {
+        if !lever_a_blocked
+            && let Some(result) = self.try_native_extrema(native_target, method, &args)
+        {
             return result;
         }
         // Native `.minmax` over a plain list, including `:by` blocks.
-        if !lever_a_blocked && let Some(result) = self.try_native_minmax(&target, method, &args) {
+        if !lever_a_blocked
+            && let Some(result) = self.try_native_minmax(native_target, method, &args)
+        {
             return result;
         }
         // Native `.first` over a plain list (no-adverb forms), including blocks.
-        if !lever_a_blocked && let Some(result) = self.try_native_first(&target, method, &args) {
+        if !lever_a_blocked
+            && let Some(result) = self.try_native_first(native_target, method, &args)
+        {
             return result;
         }
         // Native QuantHash coercion `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/
@@ -206,7 +220,7 @@ impl Interpreter {
         // path's native dispatch. Instance/Package receivers fall through.
         if !lever_a_blocked
             && args.is_empty()
-            && let Some(result) = self.try_native_quanthash_coerce(&target, method)
+            && let Some(result) = self.try_native_quanthash_coerce(native_target, method)
         {
             return result;
         }
@@ -214,7 +228,7 @@ impl Interpreter {
         // `@a.Hash`) — same pure value op as the non-mut path, no writeback.
         if !lever_a_blocked
             && args.is_empty()
-            && let Some(result) = Self::try_native_map_hash_coerce(&target, method)
+            && let Some(result) = Self::try_native_map_hash_coerce(native_target, method)
         {
             return result;
         }
@@ -224,8 +238,8 @@ impl Interpreter {
         if !lever_a_blocked
             && args.is_empty()
             && method == "Seq"
-            && !self.native_lever_a_user_override_sym(&target, method_sym)
-            && let Some(result) = self.try_element_container_producer(&target, method, &args)
+            && !self.native_lever_a_user_override_sym(native_target, method_sym)
+            && let Some(result) = self.try_element_container_producer(native_target, method, &args)
         {
             return Ok(result);
         }
@@ -233,7 +247,7 @@ impl Interpreter {
         if !lever_a_blocked
             && args.is_empty()
             && method == "Seq"
-            && let Some(result) = crate::builtins::seq_coerce::to_seq_structural(&target)
+            && let Some(result) = crate::builtins::seq_coerce::to_seq_structural(native_target)
         {
             return Ok(result);
         }
@@ -241,7 +255,7 @@ impl Interpreter {
         // (`$s.IO`) — builds a *new* IO::Path and never mutates the receiver, so no
         // writeback. Instance / non-IO Package / aggregate receivers fall through.
         if !lever_a_blocked
-            && let Some(result) = self.try_native_io_coercion(&target, method, &args)
+            && let Some(result) = self.try_native_io_coercion(native_target, method, &args)
         {
             return result;
         }
@@ -249,7 +263,7 @@ impl Interpreter {
         // variable receivers (`$s.encode("utf-16")`) — same pure transformation as
         // the non-mut path; returns a *new* Buf/Str, no writeback.
         if !lever_a_blocked
-            && let Some(result) = self.try_native_encode_decode(&target, method, &args)
+            && let Some(result) = self.try_native_encode_decode(native_target, method, &args)
         {
             return result;
         }

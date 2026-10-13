@@ -34,14 +34,14 @@ fn call(
     // A no-op (one relaxed load) until a second VM mutator thread exists, and
     // for a receiver that is no `Hash`/`Array`.
     let _read_exclusion = if crate::value::container_lock::multi_mutator_threads_live()
-        && crate::value::container_lock::is_leaf_structure_read(row.name)
+        && crate::value::container_read::is_leaf_structure_read(row.name)
     {
         crate::value::container_lock::ContainerStructGuard::acquire_for(None, target)
     } else {
         None
     };
     // #12456: user code runs over the elements, so run on a snapshot instead.
-    let snapshot = crate::value::container_lock::snapshot_read_receiver(row.name, target);
+    let snapshot = crate::value::container_read::snapshot_read_receiver(row.name, target);
     let target = snapshot.as_ref().unwrap_or(target);
     let answer = match row.handler {
         Handler::Pure(f) => Some((f(target, positional), rerunnable)),

@@ -1072,3 +1072,82 @@ extended the same way (`tmp`-only, not landed), still crashes in the general sub
 options: a guard inside the node accessor or `gc_contents_mut`, or a closure-based
 `with_items`) remains #13079's goal. It is also #13078's prerequisite: an in-place celled push
 is safe only once no reader walks a shared node unguarded.
+
+## 20. A read of a shared container runs on a snapshot by default (2026-10-13, #13079)
+
+Resolves §19.1 for arrays. The array harness, widened to the `%h` file's 44-family shape,
+crashed in 22 families on a debug build (`range start index N out of range for slice of length
+0`, nanbox `classify` panics, a `sort_by` total-order panic). Backtraces put the 22 behind
+about fifteen different readers, reached through four method entries and seven VM ops, so a
+guard per funnel was not going to converge.
+
+§18.1's two structural options were both measured against the code and rejected for this slice:
+
+- **A guard inside the node accessor or `gc_contents_mut`.** `ArrayData` dereferences to
+  `[Value]`, and readers index, iterate and `len()` that slice directly (`items.iter()`,
+  `items[i]`) at far more sites than the 87 explicit `items()` calls. No lock taken inside the
+  accessor can cover a borrow the caller keeps, and a guard in `gc_contents_mut` excludes
+  writers from each other, which the stripe already does; the hazard is the unguarded reader.
+- **A closure accessor `with_items(|s| ..)`.** Correct, but it means rewriting every one of
+  those borrowing sites at once. It stays the long-term shape if the reader side ever needs to
+  be complete by construction.
+
+Decided instead: invert the default. `value::container_read` (split out of `container_lock`)
+owns the reader policy, and every method funnel asks it the same question:
+
+- `reads_live_receiver(method)` names the methods that run on the LIVE receiver: the mutators
+  (`is_container_mutator`, held under the stripe as before), the leaf reads
+  (`is_leaf_structure_read`, under the stripe), the identity answers (`.self`, `.item`,
+  `.cache`, `.eager`, `.VAR`, `.Hash`/`.Map`; `.list` is a leaf read), metadata reads that touch
+  no element (`.WHAT`, `.defined`, `.of`, ...), and the four methods that write through the
+  receiver while running user code (`BIND-POS`, `BIND-KEY`, `classify-list`, `categorize-list`).
+- Every other method on a shared `Array`/`Hash` receiver runs on a `shared_snapshot`, except
+  `.map`/`.grep` on a non-shaped Array (§16.1). Before this slice that was an allowlist of 18
+  names; a reader added later is now safe without being listed.
+
+The funnels that apply it: `method_table::dispatch::call` and `call_method_with_values` (as
+before), plus the two that bypassed them: the cascades under `try_native_method`
+(`try_native_method_raw`) and the lever-A natives in the compiled mut-call tail
+(`compiled_mut_resolved_dispatch`: `.first`, `.min`/`.max`, `.Set`/`.Bag`, `.Seq`, ...). The
+mut tail's fallback keeps the live receiver, because it may write the receiver back.
+
+The readers that are not method calls are guarded at the primitive or the op:
+
+| Reader | Guard |
+| --- | --- |
+| `ListGen::pull_one` (the lazy `.kv`/`.pairs`/`.values`/`.keys`/`.batch`/`.flat`/`.tree` views) | node stripe per pull; the views keep handing out live element containers |
+| `value_to_list` (both copies) | node stripe around the copy |
+| `eqv_values` | `read_operand` (snapshot) after the user-candidate and laziness checks |
+| `pop_set_operands` (every set operator) | `read_operand` |
+| `Z` / `X` | `read_operand` |
+| a hyper operator (not an assigning one) | `read_operand` |
+| `resolve_bound_array_elements` (list-assignment source, `say`, `~`) | `read_operand` |
+| `:exists` probe | node stripe |
+| the general subscript path's Array arms | node stripe, or a snapshot when a `WhateverCode` index runs user code in the arm |
+
+`read_operand` is used only by ops that are already linear in the operand, so the copy does
+not change their order. `.sort` also decontainerizes each element once before sorting: a bound
+element cell written by another thread mid-sort made the comparator inconsistent, which Rust's
+`sort_by` answers with a panic.
+
+The trade-off is §16's, widened: once a thread exists, a method that hands out element
+containers of a snapshot (`.first`, `.head`, `.reverse`) can lose an aliasing write that races
+another thread. Measured, the single-threaded-after-a-`start` aliasing shapes (`@a.first(*>1) =
+9`, `@a.head = 0`, `$_ *= 2 for @a.values`, `.kv` with `is rw`, `.pairs`, `for @a`) still
+answer as raku does; the test file pins `.values`/`.kv` and `.list` identity.
+
+Measured, debug build, 4 runs of each family alone (`main` -> this slice): 22 of 44 families
+crashing -> 0 of 44. The release build passes both reader-family files 3 of 3. The
+single-threaded cost is the gate's relaxed load: `scripts/bench-det.sh` instruction counts
+(release, `main` / this slice) are bench-fib 3,114,353,509 / 3,114,344,808, bench-tak
+2,998,892,430 / 2,998,879,791 and bench-array 220,278,415 / 220,236,190, with identical
+allocation counts; the JIT-on rows agree to the same digits.
+
+### 20.1 Still open
+
+- The reader side is complete only by convention: a new reader that walks an `ArrayData`
+  outside these funnels (a new VM op, a new `ListGen` variant) is unguarded until a harness
+  finds it. A `with_items` accessor would make that impossible, at the cost of rewriting the
+  borrowing sites.
+- #13078 (the in-place celled push) can now be reconsidered: the reader-family harnesses no
+  longer find an unguarded walk of a shared node.

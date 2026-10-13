@@ -130,7 +130,22 @@ pub(crate) fn sort(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
             {
                 crate::runtime::utils::shaped_array_leaves(target)
             } else {
-                (**items).clone().into_items()
+                // Each element is read once, before the sort: a bound element
+                // cell that another thread writes to mid-sort would otherwise
+                // compare differently on each visit, which `sort_by` may
+                // answer with a panic (ADR-0068 §20). `.sort` answers values.
+                (**items)
+                    .clone()
+                    .into_items()
+                    .into_iter()
+                    .map(|v| {
+                        if v.is_container_ref() {
+                            v.deref_container()
+                        } else {
+                            v
+                        }
+                    })
+                    .collect()
             };
             sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
             Some(Ok(Value::seq(sorted)))

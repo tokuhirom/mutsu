@@ -109,6 +109,20 @@ impl Interpreter {
         if let Some(result) = self.cool_type_object_string_method(target, method_sym.as_str()) {
             return Some(result);
         }
+        // ADR-0068 §20: the cascades read a shared Array/Hash receiver with
+        // nothing held, as the table's own entry (`dispatch::call`) would not:
+        // a leaf read holds the node's stripe, any other read runs on a
+        // snapshot.
+        let method_name = method_sym.as_str();
+        let _read = if crate::value::container_lock::multi_mutator_threads_live()
+            && crate::value::container_read::is_leaf_structure_read(method_name)
+        {
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, target)
+        } else {
+            None
+        };
+        let snapshot = crate::value::container_read::snapshot_read_receiver(method_name, target);
+        let target = snapshot.as_ref().unwrap_or(target);
         let result = self.try_native_method_raw(target, method_sym, args)?;
         Some(self.settle_native_warning(result))
     }
