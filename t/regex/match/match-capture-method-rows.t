@@ -5,7 +5,7 @@ use Test;
 # rows flatten a list or array value in `values` and `kv`, as Rakudo does for a
 # plain `Capture` too. The answers below are Rakudo's.
 
-plan 18;
+plan 19;
 
 my $m = "ab" ~~ /(\w)* $<n>=[b]?/;
 is-deeply $m.keys, (0, 'n').Seq, 'Match.keys';
@@ -20,6 +20,7 @@ is $m.hash.keys, ('n',), 'Match.hash';
 isa-ok $m.hash, Map, '... is a Map';
 is $m.elems, 1, 'Match.elems counts the positional captures';
 isa-ok $m.Hash, Hash, 'Match.Hash is a Hash';
+isa-ok $m.serial, Match, 'Match.serial is the match (Any.serial)';
 
 grammar G { token TOP { <a> <b> }; token a { \w }; token b { \d } }
 my $p = G.parse("x1");
