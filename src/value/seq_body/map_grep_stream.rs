@@ -39,7 +39,7 @@ impl SeqBody {
             return None;
         }
         let source = std::mem::replace(&mut state.source, SeqSource::Taken);
-        Some((self.live_generation().clone(), source))
+        Some((self.live_generation().to_vec(), source))
     }
 
     /// Whether [`SeqBody::take_map_grep_stream_source`] would hand this
@@ -97,7 +97,7 @@ impl SeqBody {
             return None;
         }
         let source = std::mem::replace(&mut state.source, SeqSource::Taken);
-        Some((self.live_generation().clone(), source))
+        Some((self.live_generation().to_vec(), source))
     }
 
     /// Hand a streamed source back after the loop: `items` is every element
