@@ -83,7 +83,40 @@ pub(super) fn renamed_static_decl(static_decl: &Stmt, cell_name: &str) -> Stmt {
     decl
 }
 
-/// The variable's declaration, initialized from its cell.
+/// A cell for a variable whose type constraint names a type of an inner scope
+/// (`my K $v`), which does not exist at the unit's level where the cell is
+/// declared. The cell drops the constraint (and any `where`). A scalar cell
+/// defaults to `Nil` (`is default(Nil)`), so a cell nothing has stored into
+/// hands the variable `Nil`, which resets it to its own default, the type
+/// object, as the typed cell would have.
+pub(super) fn untyped_cell_decl(mut decl: Stmt) -> Stmt {
+    if let Stmt::VarDecl {
+        name,
+        expr,
+        type_constraint,
+        where_constraint,
+        custom_traits,
+        ..
+    } = &mut decl
+    {
+        *type_constraint = None;
+        *where_constraint = None;
+        if sigil_of(name).is_empty() {
+            *expr = Expr::Literal(crate::value::Value::NIL);
+            custom_traits.retain(|(t, _)| t != crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT);
+            custom_traits.push((
+                "default".to_string(),
+                Some(Expr::Literal(crate::value::Value::NIL)),
+            ));
+        }
+    }
+    decl
+}
+
+/// The variable's declaration, initialized from its cell. A `:D` variable's
+/// static state is its nominal type object, which an untyped cell
+/// ([`untyped_cell_decl`]) does not hold until something is stored into it, so
+/// it falls back to that.
 pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str) -> Stmt {
     let mut decl = static_decl.clone();
     if let Stmt::VarDecl {
@@ -92,7 +125,17 @@ pub(super) fn decl_from_cell(static_decl: &Stmt, cell_name: &str) -> Stmt {
         ..
     } = &mut decl
     {
-        *expr = read_var(cell_name);
+        let definite = crate::runtime::phasers::BEGIN_STATIC_DEFINITE_TRAIT;
+        *expr = if custom_traits.iter().any(|(t, _)| t == definite) {
+            Expr::Binary {
+                left: Box::new(read_var(cell_name)),
+                op: crate::token_kind::TokenKind::SlashSlash,
+                right: Box::new(expr.clone()),
+                form: crate::ast::BinaryForm::Infix,
+            }
+        } else {
+            read_var(cell_name)
+        };
         let mut traits = without_initializer_markers(custom_traits);
         traits.push(("__has_initializer".to_string(), None));
         traits.push((

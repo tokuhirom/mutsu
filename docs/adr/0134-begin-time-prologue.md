@@ -447,7 +447,8 @@ of a nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/decls.rs`,
     (`t/vm/scope/lexical-class-refines-builtin.t`).
   - A BEGIN that reads an inner variable whose type constraint names an inner
     type (`my K $v`): the variable's static cell is declared at the unit's
-    level, where the type does not exist.
+    level, where the type does not exist (lifted since: see the follow-up on
+    a variable typed by an inner type).
   - An operator code variable or a pragma declared ahead (lifted since: see
     the next follow-up), and `class ::($name)`, which has no static name.
 
@@ -528,6 +529,46 @@ dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
   neither one of the scope's nor a core one. `Lifted::halted` is unchanged.
   `t/control/begin-time-region-unwind.t` now uses a `my token` to keep its
   BEGIN on the in-place path.
+
+**Slice 2 follow-up — a variable typed by an inner type, implemented**
+(`src/runtime/begin_prologue/nested/cell_ast.rs`,
+`t/control/begin-prologue-inner-typed-vars.t`; #10471).
+
+- **The gap.** A BEGIN reading an inner variable whose type constraint names a
+  type of an inner scope (`sub g { my class K { }; my K $v; BEGIN say $v.raku }`)
+  was not lifted: the variable's static cell is declared at the unit's level,
+  where `K` does not exist.
+- **The mechanism.** Such a cell is untyped (`untyped_cell_decl`): it drops the
+  type and `where` constraints, and a scalar cell is `is default(Nil)` and
+  starts from `Nil`. Assigning that `Nil` to the variable resets it to its own
+  default, the type object, so the variable starts where a typed cell would have
+  put it, and a value the BEGIN stores passes through unchanged. A `:D`
+  variable's copy reads `$cell // K`, its nominal type object, which a typed
+  cell held from the start. The variable keeps its constraint everywhere.
+- The copy-in declaration in the lifted block names the type, so the type's
+  declaration is repeated in its scope's block like any other type the body
+  names (and the lift is refused when it cannot be).
+- The in-place declaration starts from the cell as before, but stays at its own
+  position instead of moving to the scope's head, which would put it ahead of
+  the type it names.
+
+**Slice 2 follow-up — a role whose body runs code, and nested types, implemented**
+(`src/runtime/begin_prologue/nested/decls.rs`,
+`t/control/begin-prologue-inner-decls.t`; #10471).
+
+- A role's body runs when the role is composed (or punned), not when it is
+  declared, so declaring it once more in the lifted block runs none of it. A
+  role without a user trait is repeated whole, whatever its body holds. A
+  BEGIN that composes it there (`1 but R`) runs the body at BEGIN time, as on
+  rakudo.
+- mutsu runs a role's body on `R.^name` and `R.WHAT` (#13103), so a lifted
+  `BEGIN say R.^name` prints the body's output first. That is the meta-method
+  bug, not the lift: the same happens at the unit's top level.
+- **Nested types.** A class's shell reduces a nested class to its shell the
+  same way and keeps a nested role whole (`Shelling`, a `VisitMut` pass, so
+  the recursion is the visitor's rather than a hand-rolled walker). A nested
+  type of any other kind that runs code, or a user trait at any level, still
+  keeps the BEGIN in place.
 
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,
