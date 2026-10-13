@@ -108,11 +108,23 @@ impl Scan {
 /// Any other routine might: an imported one (`throws-like 'helper()'`) or a
 /// unit's own (`sub run-it($code) { EVAL $code }`) evaluates its argument where
 /// it was called from.
-/// A proto's `{*}` is a call too, which dispatches to the candidates in scope.
+/// A proto's `{*}` is a call too, which dispatches to the candidates in scope,
+/// and so is a re-dispatcher (`callsame`, `nextwith`, ...), which the RakuAST
+/// frontend lowers to a call where the parser leaves a bare word.
 pub(super) fn is_core_routine(name: crate::symbol::Symbol) -> bool {
     !crate::qualified::is_qualified(name)
         && (crate::runtime::Interpreter::is_builtin_function(name.as_str())
-            || name.as_str() == crate::ast::ONLYSTAR_DISPATCH)
+            || matches!(
+                name.as_str(),
+                crate::ast::ONLYSTAR_DISPATCH
+                    | "callsame"
+                    | "callwith"
+                    | "nextsame"
+                    | "nextwith"
+                    | "samewith"
+                    | "nextcallee"
+                    | "lastcall"
+            ))
 }
 
 /// Whether a called name is qualified by a pseudo-package (`MY::helper`,

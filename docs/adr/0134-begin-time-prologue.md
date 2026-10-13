@@ -640,6 +640,11 @@ dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
   plain routine's `&h.wrap(...)` is not lost — the lifted BEGIN's wrap reaches
   the real routine, as on rakudo — so plain routines keep being lifted
   whatever the body does with `&h`.
+- A re-dispatcher (`callsame`, `nextwith`, `samewith`, ...) counts as a core
+  call. The parser leaves one as a bare word, but the RakuAST frontend lowers
+  it to a call, which the scan took for an unknown routine and so refused the
+  lift (`sub f { sub h { }; BEGIN { -> { callsame } } }` was lifted only under
+  the default frontend).
 
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,
