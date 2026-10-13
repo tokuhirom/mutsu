@@ -434,6 +434,11 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         {
             super::temporize::lower(node)
         }
+        RakuAstClass::VarDeclarationSimple
+            if node.fields.iter().any(super::attribute_group::is_metadata) =>
+        {
+            super::attribute_group::lower_colon(node)
+        }
         RakuAstClass::VarDeclarationSimple => lower_var_decl(node),
         RakuAstClass::VarDeclarationConstant => lower_constant(node),
         RakuAstClass::VarDeclarationTerm => lower_term_declaration(node),
@@ -537,6 +542,11 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementCatch => Ok(Stmt::Catch(lower_block(named_child(node, "body")?)?)),
         RakuAstClass::StatementControl => {
             Ok(Stmt::Control(lower_block(named_child(node, "body")?)?))
+        }
+        RakuAstClass::VarDeclarationSignature
+            if node.fields.iter().any(super::attribute_group::is_metadata) =>
+        {
+            super::attribute_group::lower(node)
         }
         RakuAstClass::VarDeclarationSignature => super::signature_decl::lower(node),
         // `use` / `no` statements (see `use_stmt`).

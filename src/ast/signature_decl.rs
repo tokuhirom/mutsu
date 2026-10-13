@@ -33,6 +33,13 @@ pub(crate) enum SourceForm {
     /// Traits written on a routine, in source order; opens its body.
     RoutineTraits(Vec<super::routine_trait::RoutineTrait>),
     SignatureDecl(SignatureDecl),
+    /// `has Type ($.a, $.b)`: one visible RakuAST signature declaration,
+    /// whose parser expansion installs each listed attribute separately.
+    AttributeGroup(Vec<Stmt>),
+    /// A declaration parsed inside a public attribute's colon argument list.
+    /// The nested declarations execute, but Rakudo's RakuAST gist displays the
+    /// declaration that introduced the colon list.
+    AttributeColonArglist(Vec<Stmt>),
     MethodAssignDecl(super::method_assign_decl::MethodAssignDecl),
     /// `supply { BODY }`: the body as written, before the expansion rewrites
     /// its `emit` / `done` onto the on-demand emitter. It opens the emitter
@@ -72,6 +79,31 @@ pub(crate) enum SourceForm {
     /// opens a one-statement expansion whose second statement is the phaser;
     /// only a spelling-keeping parse builds it.
     BarePhaser,
+}
+
+/// Open the parser expansion of one parenthesized `has` declaration with its
+/// source declarations. The marker lets RakuAST keep the single signature
+/// declaration that Rakudo exposes while the compiler still installs each
+/// attribute separately.
+// Cost: O(a), a = total size of the grouped declarations and their expressions.
+pub(crate) fn attribute_group_expansion(attributes: Vec<Stmt>) -> Stmt {
+    let mut statements = Vec::with_capacity(attributes.len() + 1);
+    statements.push(Stmt::SourceForm(Box::new(SourceForm::AttributeGroup(
+        attributes.clone(),
+    ))));
+    statements.extend(attributes);
+    Stmt::SyntheticBlock(statements)
+}
+
+/// Open the class-body expansion produced by a colon argument list.
+// Cost: O(a), a = total size of the nested declarations and their expressions.
+pub(crate) fn attribute_colon_expansion(attributes: Vec<Stmt>) -> Stmt {
+    let mut statements = Vec::with_capacity(attributes.len() + 1);
+    statements.push(Stmt::SourceForm(Box::new(
+        SourceForm::AttributeColonArglist(attributes.clone()),
+    )));
+    statements.extend(attributes);
+    Stmt::SyntheticBlock(statements)
 }
 
 #[derive(Debug, Clone, Copy, Hash, serde::Serialize, serde::Deserialize)]

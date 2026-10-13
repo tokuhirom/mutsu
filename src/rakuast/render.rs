@@ -250,6 +250,7 @@ fn rendered_fields(node: &RakuAstNode) -> Vec<&RakuAstField> {
         .filter(|field| {
             !(super::origin::is_origin(field)
                 || super::parameter_signature::is_metadata(field)
+                || super::attribute_group::is_metadata(field)
                 || super::declared_routines::is_user_call_field(field)
                 || super::postfix_grouping::is_source_field(field)
                 || super::compound_stmt::is_source_field(field)
