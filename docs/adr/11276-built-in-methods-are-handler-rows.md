@@ -2286,6 +2286,31 @@ Not done: `UInt.Range` (`0..^Inf` in Rakudo) stays `X::Method::NotFound`, becaus
 `Int`'s (#13178). `method-rows-report.py --arms` is unchanged (the block was `if` chains, which it does not count). Pinned in
 `t/types/numeric/numeric-type-object-range-rows.t`.
 
+### 9.98 Slice 5: a `Match` answers `Any`'s `self.list.METHOD` methods on its positional captures (2026-10-13)
+
+`refactor/11276-match-positional`, with #13161. After §9.96 the `Match` block of `methods_0arg/mod.rs` still answered the
+positional coercions (`Array`, `List`, `Slip`, `Seq`, `flat`, `cache`, `eager`, `reverse`) on the positional captures and `Hash` on
+the named ones, while `min`, `max`, `minmax`, `unique`, `squish`, `combinations`, `permutations`, `chrs`, `Set`/`Bag`/`Mix` and the
+rest of `Any`'s list methods answered on the `Match` as one element (#13161). The interpreter path carried a twin
+(`is_capture_list_method` in `call_method_with_values`) for `grep`/`map`/`first`/`head`/`tail`/`sort`/`pick`/`roll`. Decisions:
+
+1. **One receiver rewrite, not rows.** Rakudo declares these on `Any` as `self.list.METHOD` (`Cool.chrs` too), and `Capture.list`
+   is the positional captures, so the answer is the *list's* method, not an `Any` handler reading a `Match`. Both native entries
+   (`try_native_method` and `call_method_with_values`) swap the receiver for its positional list
+   (`Interpreter::match_list_receiver`, over `Value::match_list_receiver` and `match_view::is_capture_list_method`) before
+   anything answers the call, as they already do for a user subclass of `IO::Path` (#12149) and an `Array` enum's base. A
+   grammar that declares the method keeps its own (the memoized `has_user_method` probe). `Hash` reads the named captures
+   (`self.hash`), and `List` answers the list itself, so an unbound capture's hole is not read as `Nil` by `List.List`.
+2. **The `Match` shape still reaches only `join`, `end` and `serial` of `Any`'s rows** (§9.96): the rewrite runs first, so no
+   call-site lane caches a `Match` for the other names.
+3. **`minpairs`/`maxpairs` are not in the set**: Rakudo reads them through `self.pairs`, named captures included.
+
+The two quoted-name arms of the block are gone; what is left of it is the `match_owner_row` call for a match with no shape.
+`method-rows-report.py --arms`: the pure arity cascades go from 140 to 138 arms. Pinned in
+`t/regex/match/match-any-list-methods.t`. The remaining differences from Rakudo are `List`'s own over a list of `Match`es
+(#13195): `minmax` and `sum` do not numify the elements, `chrs` does not refuse them, `minpairs`/`maxpairs` answer a `Seq`, and
+`iterator`/`batch()`/`rotor()` differ.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

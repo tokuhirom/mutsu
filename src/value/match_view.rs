@@ -50,28 +50,61 @@ pub(crate) const CURSOR_REGEXSUB_ATTR: &str = "__cursor_regexsub__";
 /// `Capture`, and `Any`'s list coercions and iteration methods are all
 /// `self.list.<method>`, where `Capture.list` is the positional part (raku:
 /// `('ab' ~~ /(.)(.)/).grep(*.so)` is the two sub-Matches, never the whole
-/// match or its `.Str`). `.list`/`.elems`/`.keys`/`.values`/`.kv`/`.pairs`
-/// have Capture-specific answers and are not in this set.
+/// match or its `.Str`; a grammar match with only named captures lists as
+/// `()`, so its `.min` is `Inf`). `Cool.chrs` is `self.list.chrs` too.
+/// `.list`/`.elems`/`.keys`/`.values`/`.kv`/`.pairs` are `Capture`'s own
+/// rows, `join`/`end`/`serial` are `Any` rows whose handlers read a
+/// `Match`'s captures, and `minpairs`/`maxpairs` read `self.pairs` (named
+/// captures included), so none of them is in this set.
+// Cost: O(1), one string match.
 pub(crate) fn is_capture_list_method(method: &str) -> bool {
     matches!(
         method,
-        "grep"
-            | "map"
-            | "first"
-            | "sort"
-            | "reverse"
-            | "head"
-            | "tail"
-            | "flat"
+        "Array"
             | "List"
             | "Slip"
             | "Seq"
+            | "flat"
             | "cache"
             | "eager"
-            | "Array"
-            | "iterator"
+            | "reverse"
+            | "sort"
+            | "unique"
+            | "repeated"
+            | "squish"
+            | "min"
+            | "max"
+            | "minmax"
+            | "combinations"
+            | "permutations"
+            | "head"
+            | "tail"
+            | "skip"
             | "pick"
             | "roll"
+            | "first"
+            | "grep"
+            | "map"
+            | "iterator"
+            | "sum"
+            | "rotor"
+            | "batch"
+            | "produce"
+            | "reduce"
+            | "classify"
+            | "categorize"
+            | "pairup"
+            | "all"
+            | "any"
+            | "one"
+            | "none"
+            | "Set"
+            | "Bag"
+            | "Mix"
+            | "SetHash"
+            | "BagHash"
+            | "MixHash"
+            | "chrs"
     )
 }
 
@@ -231,6 +264,31 @@ impl Value {
             }
             _ => list,
         }
+    }
+
+    /// The value a `Match` answers `method` on in place of itself, when
+    /// Rakudo's candidate for it is `self.list.METHOD` or `self.hash.METHOD`:
+    /// its positional captures for [`is_capture_list_method`], its named
+    /// captures for `Hash` (`Any.Hash` reads `Capture.hash`). `None` for any
+    /// other method or receiver. The caller dispatches `method` on the answer
+    /// (ADR-11276 §9.98), after checking that the grammar does not declare
+    /// the method itself.
+    // Cost: O(1) for a non-Match or another name; O(p) to copy the p
+    // positional captures (or one map clone for `Hash`).
+    pub(crate) fn match_list_receiver(&self, method: &str) -> Option<Value> {
+        if method == "Hash" {
+            if !self.is_match_instance() {
+                return None;
+            }
+            return Some(
+                self.match_named()
+                    .unwrap_or_else(|| Value::hash(crate::value::ValueMap::default())),
+            );
+        }
+        if !is_capture_list_method(method) || !self.is_match_instance() {
+            return None;
+        }
+        Some(self.match_positional_list(method == "Array"))
     }
 
     /// The positional captures as the list `Any`'s iteration methods walk:
