@@ -1281,10 +1281,7 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             // (#9180), `.join` joins its positional captures, `.item` is the
             // Match itself.
             _ if crate::value::DispatchShape::Match.reaches_audited_ancestor(method) => {}
-            _ => {
-                let str_val = Value::str(target.to_string_value());
-                return native_method_0arg(&str_val, Symbol::intern(method));
-            }
+            _ => return None,
         }
     }
 
