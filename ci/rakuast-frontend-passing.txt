@@ -500,6 +500,7 @@ t/collections/range-pair/range-gist.t
 t/collections/range-pair/range-i64-bounds.t
 t/collections/range-pair/range-in-named-scalar-subscript-indexes.t
 t/collections/range-pair/range-in-range-label-reverse.t
+t/collections/range-pair/range-in-range-rows.t
 t/collections/range-pair/range-index-exists.t
 t/collections/range-pair/range-index-overflow-no-panic.t
 t/collections/range-pair/range-inf-nan-edge.t
@@ -922,6 +923,7 @@ t/concurrency/concurrent-map-grep-rw-writes-reach-live-container.t
 t/concurrency/concurrent-nested-subscript-store.t
 t/concurrency/concurrent-param-array-reader-families.t
 t/concurrency/concurrent-param-container-mutation.t
+t/concurrency/concurrent-param-hash-reader-families.t
 t/concurrency/concurrent-role-mixin-visibility.t
 t/concurrency/concurrent-shared-cell.t
 t/concurrency/concurrent-state-var.t
@@ -1567,6 +1569,7 @@ t/exceptions/catch-resume-across-jit-frame.t
 t/exceptions/catch-resume-subscript-assign-writeback.t
 t/exceptions/catch-return-past-typed-method.t
 t/exceptions/catch-runs-at-throw-point.t
+t/exceptions/coerce-method-exception-propagates.t
 t/exceptions/coercion-method-error-propagates.t
 t/exceptions/comment-embedded-exception-class.t
 t/exceptions/comp-group-block-gobbled.t
@@ -1663,6 +1666,7 @@ t/exceptions/proto-without-candidates-error.t
 t/exceptions/readonly-assign-exception-taxonomy.t
 t/exceptions/repeat-call-backtrace-frame.t
 t/exceptions/resumable-control-signal-indirect-call.t
+t/exceptions/resume-after-binding-failure.t
 t/exceptions/resume.t
 t/exceptions/return-exception.t
 t/exceptions/return-from-catch-in-method.t
@@ -1687,6 +1691,7 @@ t/exceptions/top-level-catch.t
 t/exceptions/trusts-undeclared.t
 t/exceptions/try-backtrace-throw-site.t
 t/exceptions/try-block-implicit-use-fatal.t
+t/exceptions/try-catch-handled-sets-error-var.t
 t/exceptions/try-catch-tail-statement-sink.t
 t/exceptions/try-declaration-initializer-reset.t
 t/exceptions/try-does-not-recatch-a-handled-failure.t
@@ -2536,6 +2541,7 @@ t/modules/compunit/signature-literal-precomp-bytecode-hit.t
 t/modules/compunit/signature-literal-precomp-warm-cache.t
 t/modules/compunit/trait-mod-candidate-is-compunit-scoped.t
 t/modules/constant-package-alias-container-store.t
+t/modules/constant-package-alias-qualified-type.t
 t/modules/constant-package-alias-variable.t
 t/modules/core-skip-list.t
 t/modules/cross-module-short-name-types.t
@@ -2570,6 +2576,7 @@ t/modules/import-export/custom-export-sub-wraps-same-name.t
 t/modules/import-export/custom-export-tagged-stash-pairs.t
 t/modules/import-export/custom-export-use-args-not-tags.t
 t/modules/import-export/enum-export-space-and-slip.t
+t/modules/import-export/enum-export-tag.t
 t/modules/import-export/eval-use-export-hook-term.t
 t/modules/import-export/export-alias-resolution-cache.t
 t/modules/import-export/export-bareword-tag-undeclared.t
@@ -2626,6 +2633,7 @@ t/modules/import-export/exported-multi-lexical-role-param.t
 t/modules/import-export/exported-my-class-remains-visible.t
 t/modules/import-export/exported-our-proto-alias-dispatch.t
 t/modules/import-export/exported-proto-multi-family.t
+t/modules/import-export/exported-qualified-enum-shadows-builtin-endian.t
 t/modules/import-export/exported-subset-when-matcher.t
 t/modules/import-export/exported-term-sub.t
 t/modules/import-export/exported-wrapper-same-name-imported-proto.t
@@ -2668,6 +2676,7 @@ t/modules/import-export/inline-module-is-export.t
 t/modules/import-export/inline-module-lexical-class-export.t
 t/modules/import-export/is-export.t
 t/modules/import-export/l10n-use.t
+t/modules/import-export/manual-export-stash-var.t
 t/modules/import-export/module-code-var-closure-sees-exported-write.t
 t/modules/import-export/module-export-import.t
 t/modules/import-export/module-export-routine-multi-scope.t
@@ -2681,6 +2690,7 @@ t/modules/import-export/module-tagged-export-internal-visibility.t
 t/modules/import-export/module-tagged-export-nested.t
 t/modules/import-export/multi-export-rerun-dispatches-by-args.t
 t/modules/import-export/multi-exported-lexical-type-narrowness.t
+t/modules/import-export/need-after-load-export-stash.t
 t/modules/import-export/need-bare-module-multi-not-imported.t
 t/modules/import-export/need-bare-module-plain-sub-not-imported.t
 t/modules/import-export/need-hides-dependency-export-constant.t
@@ -2737,6 +2747,7 @@ t/modules/import-export/unit-class-constant-isolation.t
 t/modules/import-export/unit-class-is-export.t
 t/modules/import-export/unit-class-parent-use-import-scope.t
 t/modules/import-export/unit-class-role-and-composition.t
+t/modules/import-export/unit-class-short-name-not-in-scope.t
 t/modules/import-export/unit-class-use-before-decl-operator.t
 t/modules/import-export/unit-module-bare-is-trait.t
 t/modules/import-export/unit-module-compound-subset-qualified-name.t
@@ -2756,6 +2767,7 @@ t/modules/import-export/unit-package-class-export.t
 t/modules/import-export/unit-package-relative-class-lookup.t
 t/modules/import-export/unit-package-self-named-role.t
 t/modules/import-export/unit-role-body-use-before-also-does.t
+t/modules/import-export/unit-role-export-short-name-and-imported-parent.t
 t/modules/import-export/unit-role-module-is-export.t
 t/modules/import-export/unit-stash-lexical-routines.t
 t/modules/import-export/unit-stash-lists-lexical-types.t
@@ -3602,6 +3614,7 @@ t/oo/method/add-method-sub-can-signature.t
 t/oo/method/add-method-sub-keeps-outer-self.t
 t/oo/method/addmethod-multi-alias.t
 t/oo/method/aggregate-complex-version-method-rows.t
+t/oo/method/allomorph-method-rows.t
 t/oo/method/anon-method-sigilless-invocant.t
 t/oo/method/anon-method-undeclared-attr.t
 t/oo/method/any-collection-method-rows.t
@@ -4604,6 +4617,7 @@ t/rakuast/rakuast-method-literal.t
 t/rakuast/rakuast-method-lvalue-assign.t
 t/rakuast/rakuast-method-modifier.t
 t/rakuast/rakuast-method-return-type.t
+t/rakuast/rakuast-module-names.t
 t/rakuast/rakuast-multidim-delete.t
 t/rakuast/rakuast-name-part-empty.t
 t/rakuast/rakuast-named-anon-declarations.t
@@ -5896,6 +5910,7 @@ t/routines/signature/is-rw-traits.t
 t/routines/signature/issue-7774-typed-container-param.t
 t/routines/signature/lazy-array-param-pull.t
 t/routines/signature/lexical-amp-param-shadow.t
+t/routines/signature/light-aggregate-param-binding.t
 t/routines/signature/list-destructuring-param-traits.t
 t/routines/signature/literal-param-enforced-at-call.t
 t/routines/signature/literal-param-return-arrow.t
@@ -6101,6 +6116,7 @@ t/routines/signature/typecheck-binding-parameter-object.t
 t/routines/signature/typed-aggregate-param-constraint.t
 t/routines/signature/typed-array-param-seq-argument-reported-as-seq.t
 t/routines/signature/typed-container-param-accepts-parametric-type-object.t
+t/routines/signature/uint-param-int-subtypes.t
 t/routines/signature/unicode-named-param-alias.t
 t/routines/signature/unset-parameterised-param-binds-type-object.t
 t/routines/signature/value-constant-as-param-constraint.t
@@ -6591,6 +6607,7 @@ t/types/string/str-accepts-user-stringify.t
 t/types/string/str-arith-failure.t
 t/types/string/str-bitwise-compound-assign.t
 t/types/string/str-complex-string-coercion.t
+t/types/string/str-count-arg-rows.t
 t/types/string/str-date-coercion.t
 t/types/string/str-decode-utf16-strict.t
 t/types/string/str-encode-normalization-form.t
@@ -6608,6 +6625,7 @@ t/types/string/str-numeric-marker.t
 t/types/string/str-numeric-op-failure.t
 t/types/string/str-numify-decimal-rat.t
 t/types/string/str-operator-forms-parity.t
+t/types/string/str-parse-base-rows.t
 t/types/string/str-per-call-bounds.t
 t/types/string/str-positional-grapheme-index.t
 t/types/string/str-positioned-search-graphemes.t
