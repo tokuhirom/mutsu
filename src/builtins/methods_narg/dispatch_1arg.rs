@@ -1,6 +1,5 @@
 use super::allomorph::allomorph_accepts;
 
-use super::fmt_contains::fmt_value_needs_coercion;
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -441,20 +440,6 @@ fn native_method_1arg_cascade(
                 return Some(Ok(Value::truth(idx == 0)));
             }
             None
-        }
-        // Cost: O(k) on Array/List, k = selected elements; O(e) otherwise,
-        // e = receiver elements materialized before selecting a window.
-        "zprintf" => {
-            // Method form: '%f'.zprintf(value) — like sprintf but with zprintf
-            // semantics. Mirrors the "sprintf" arm above: an Instance/Package/
-            // mixin arg needs interpreter-aware coercion, so defer to the
-            // slow-path `zprintf` arm (routes through `builtin_sprintf(.., true)`).
-            if fmt_value_needs_coercion(arg) {
-                return None;
-            }
-            let fmt = target.to_string_value();
-            let rendered = runtime::format_zprintf(&fmt, Some(arg));
-            Some(Ok(Value::str(rendered)))
         }
         // A number: the numeric types' `base` rows' implementation
         // (`method_table::numeric_base`).
