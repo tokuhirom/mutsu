@@ -1621,11 +1621,21 @@ impl Interpreter {
             }
         }
 
+        // A quoted pseudo-method skips the native answer only when the class
+        // declares a method of that name, as the `CallMethod` twin does
+        // (`vm_call_method_ops.rs`): `$x."WHICH"()` on an `Int` is `Int|5`
+        // (#13055). `VAR` always skips.
         let mut skip_native = quoted
-            && matches!(
-                method,
-                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
-            );
+            && (method == "VAR"
+                || matches!(
+                    method,
+                    "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE"
+                ) && match target.view() {
+                    ValueView::Instance { class_name, .. } | ValueView::Package(class_name) => {
+                        self.grammar_has_user_method_memo(class_name, Symbol::intern(method))
+                    }
+                    _ => false,
+                });
         let is_junction_target = match target.view() {
             ValueView::Junction { .. } => true,
             ValueView::Scalar(inner) => matches!(inner.view(), ValueView::Junction { .. }),
