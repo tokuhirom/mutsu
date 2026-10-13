@@ -270,38 +270,6 @@ fn native_method_1arg_cascade(
             // Instance args need the interpreter to call .Numeric, so return None
             allomorph_accepts(target, arg).map(|result| Ok(Value::truth(result)))
         }
-        // ACCEPTS for Set/Bag/Mix types: equality check (the quant hashes'
-        // rows' implementation, `method_table::subscript`).
-        "ACCEPTS"
-            if matches!(
-                target.view(),
-                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
-            ) =>
-        {
-            crate::builtins::method_table::subscript::accepts_quant(
-                target,
-                std::slice::from_ref(arg),
-            )
-        }
-        // ACCEPTS for Pair: checks if the argument has the matching key->value
-        // (the `Pair` row's implementation, `method_table::subscript`).
-        "ACCEPTS"
-            if matches!(
-                target.view(),
-                ValueView::Pair(..) | ValueView::ValuePair(..)
-            ) =>
-        {
-            crate::builtins::method_table::subscript::accepts_pair(
-                target,
-                std::slice::from_ref(arg),
-            )
-        }
-        // ACCEPTS for Range: value ~~ Range containment, Range ~~ Range subset
-        // (the `Range` row's implementation, `method_table::subscript`).
-        "ACCEPTS" if target.is_range() => crate::builtins::method_table::subscript::accepts_range(
-            target,
-            std::slice::from_ref(arg),
-        ),
         "AT-POS" => {
             // The index a Str, Rat or Num stands for (the `AT-POS` rows'
             // implementation, `method_table::positional`).

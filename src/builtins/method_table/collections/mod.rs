@@ -7,6 +7,7 @@
 
 use super::{Handler, MethodRow, RowFlags};
 
+mod accepts;
 pub(crate) mod any_collection;
 mod any_interp;
 pub(crate) mod any_list_hash;
@@ -72,6 +73,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     pair::ROWS,
     quanthash::ROWS,
     subscript::ROWS,
+    accepts::ROWS,
     range::ROWS,
     sampling::BOOL_ROWS,
     sampling::PICK_ROWS,

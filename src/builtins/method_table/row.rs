@@ -147,6 +147,12 @@ impl RowFlags {
     /// `Capture`), so every argument, a type object included, is coerced
     /// through its `.Int` and handed to the row.
     pub(crate) const INDEX_COERCES: RowFlags = RowFlags(1 << 9);
+    /// The row binds `Mu \topic`: any argument, a user object included, which
+    /// its [`Handler::Interp`] handler reads through the object's own methods
+    /// (`Pair.ACCEPTS` calls the method its key names). The guard step hands it
+    /// the arguments [`Self::ANY_ARGS`] admits; `invoke_unadmitted` hands it
+    /// every other one but a `Junction`, a `Failure` and a named argument.
+    pub(crate) const OBJECT_ARGS: RowFlags = RowFlags(1 << 10);
 
     /// The flags of both.
     // Cost: O(1).
