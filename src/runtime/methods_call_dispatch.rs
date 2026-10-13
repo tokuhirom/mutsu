@@ -651,29 +651,6 @@ impl Interpreter {
             let matched = self.smart_match(&args[0], &target);
             return Ok(Value::truth(matched));
         }
-        // `Mu.ACCEPTS`: every value can be smart-matched against, and `$x.ACCEPTS($y)` is
-        // just `$y ~~ $x`. The builtins carry their own ACCEPTS for the container types
-        // (Range, Set, Bag, Pair, ...) and a user class may define one, so this only backs
-        // the plain scalars, which otherwise threw X::Method::NotFound.
-        if method == "ACCEPTS"
-            && args.len() == 1
-            && (matches!(
-                target.view(),
-                ValueView::Int(_)
-                    | ValueView::Num(_)
-                    | ValueView::Rat(..)
-                    | ValueView::Complex(..)
-                    | ValueView::Str(_)
-                    | ValueView::Bool(_)
-            )
-            // A Blob/Buf too: `Blob.ACCEPTS` compares element-wise (ed25519's
-            // `method ACCEPTS { self.blob.ACCEPTS(.blob) }`).
-            || matches!(target.view(), ValueView::Instance { attributes, .. }
-                if crate::value::value_buf::has_buf_elems(&attributes)))
-        {
-            let matched = self.smart_match(&args[0], &target);
-            return Ok(Value::truth(matched));
-        }
         // `Int.ACCEPTS(5)` / `(Int:D).ACCEPTS(5)` — a TYPE OBJECT's `.ACCEPTS`
         // is the type check `$y ~~ $x`, smiley included. The smartmatch operator
         // already implements it; only the explicit method spelling threw

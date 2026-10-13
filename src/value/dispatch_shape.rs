@@ -337,6 +337,7 @@ impl DispatchShape {
             // A `Match` joins its positional captures, counts them for `end`
             // and is its own `serial`; the others' handlers do not read a
             // `Match`'s captures (ADR-11276 §9.96).
+            _ if const_str_eq(method, "ACCEPTS") => matches!(self, DispatchShape::Capture),
             DispatchShape::Match => {
                 const_str_eq(method, "join")
                     || const_str_eq(method, "serial")
@@ -473,7 +474,7 @@ impl DispatchShape {
 /// type methods `of`/`keyof` (§9.86), which read nothing but the receiver's
 /// type and its container descriptor; a role gaining another row is audited
 /// for every composing shape first.
-pub(crate) const ROLES_WITH_ROWS: [&str; 7] = [
+pub(crate) const ROLES_WITH_ROWS: [&str; 8] = [
     "Positional",
     "Associative",
     "Callable",
@@ -481,6 +482,9 @@ pub(crate) const ROLES_WITH_ROWS: [&str; 7] = [
     "Setty",
     "Mixy",
     "QuantHash",
+    // `Numeric.ACCEPTS` (§9.108), the smartmatch every numeric shape agrees
+    // with.
+    "Numeric",
 ];
 
 /// The `Cool` numeric methods a `Range` or `Seq` reaches
@@ -579,7 +583,7 @@ const COOL_COERCE_FOR_MATCH: [&str; 6] =
 /// through `value_to_list_for_receiver` (§9.100). `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
 /// (`method_table::collections::join`). `serial` is the receiver itself.
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 21] = [
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 22] = [
     "flat",
     "sort",
     "unique",
@@ -603,6 +607,9 @@ pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 21] = [
     "EXISTS-POS",
     "AT-KEY",
     "EXISTS-KEY",
+    // `Any.ACCEPTS` (`self === topic`, §9.108) reaches a `Capture` alone: the
+    // other closed shapes declare their own or are not audited for it.
+    "ACCEPTS",
 ];
 
 /// The `Capture` rows a `Match` reaches ([`DispatchShape::reaches_audited`];
