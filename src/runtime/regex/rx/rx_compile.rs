@@ -96,9 +96,10 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
 /// ops whose every character test goes through a consuming atom are covered,
 /// a look-around whose body compiles markless in turn, and a backreference or
 /// capture marker (`CapAtom`: rakudo compares a backreference exactly, marks
-/// included, which the subject's own positions give). A construct that reads
-/// the subject another way (`<.ws>`, an interpolation or a nested `:m` group)
-/// declines, and the call keeps the eager `:m` path.
+/// included, which the subject's own positions give), and `<.ws>` (a call,
+/// which does not inherit `:m`: it runs over the subject's own text). A
+/// construct that reads the subject another way (an interpolation or a nested
+/// `:m` group) declines, and the call keeps the eager `:m` path.
 // Cost: O(t), t = the number of tokens in the pattern tree.
 pub(in crate::runtime::regex) fn compile_markless(
     pattern: &RegexPattern,
@@ -113,8 +114,7 @@ pub(in crate::runtime::regex) fn compile_markless(
         ),
         op => !matches!(
             op,
-            RxOp::Ws
-                | RxOp::InterpEnds(_)
+            RxOp::InterpEnds(_)
                 | RxOp::GroupEnds(_)
                 | RxOp::ConjTail { .. }
         ),
