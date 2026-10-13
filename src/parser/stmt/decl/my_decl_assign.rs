@@ -125,7 +125,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             || after_unspace.starts_with(".{")
             || after_unspace.starts_with(".<")
         {
-            let base = Expr::Var(s.name.clone());
+            let base = declared_var_expr(&s.name);
             let (r2, lhs) = super::super::super::expr::postfix_expr_continue(rest, base)?;
             let (r2, _) = ws(r2)?;
             let decl_expr = default_decl_expr(
@@ -180,7 +180,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                 .next()
                 .is_some_and(|c| c.is_alphabetic() || c == '_')
         {
-            let base = Expr::Var(s.name.clone());
+            let base = declared_var_expr(&s.name);
             let (r2, call_expr) =
                 super::super::super::expr::postfix_expr_continue(after_unspace, base)?;
             let decl_expr = default_decl_expr(
@@ -975,4 +975,17 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
     Ok((rest, stmt))
+}
+
+/// The expression that reads the variable a declaration named `name` (the
+/// parser's spelling: `x`, `@a`, `%h`, `&f`) declares, as the parser builds it
+/// for the same variable written on its own.
+// Cost: O(k), k = length of the name.
+fn declared_var_expr(name: &str) -> Expr {
+    match name.split_at_checked(1) {
+        Some(("@", rest)) => Expr::ArrayVar(rest.to_string()),
+        Some(("%", rest)) => Expr::HashVar(rest.to_string()),
+        Some(("&", rest)) => Expr::CodeVar(rest.to_string()),
+        _ => Expr::Var(name.to_string()),
+    }
 }

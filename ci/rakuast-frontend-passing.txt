@@ -3817,6 +3817,7 @@ t/oo/method/multi-method.t
 t/oo/method/mut-method-receiver-writeback-coherence.t
 t/oo/method/mutating-method-colon.t
 t/oo/method/my-class-method-captures-own-type.t
+t/oo/method/my-decl-bare-dot-method-call.t
 t/oo/method/my-multi-method.t
 t/oo/method/named-method-expression-position.t
 t/oo/method/nested-block-method-capture-persists.t
@@ -4457,6 +4458,7 @@ t/rakuast/rakuast-control-words.t
 t/rakuast/rakuast-control.t
 t/rakuast/rakuast-core-type-names.t
 t/rakuast/rakuast-decl-default-trait.t
+t/rakuast/rakuast-decl-postfix-tail.t
 t/rakuast/rakuast-declaration-compound-assign.t
 t/rakuast/rakuast-declaration-headers.t
 t/rakuast/rakuast-declaration-loose-tail.t
@@ -7020,6 +7022,7 @@ t/vm/scope/lexical-type-scope-suppression.t
 t/vm/scope/monkey-typing-lexical.t
 t/vm/scope/my-6e-fixes.t
 t/vm/scope/my-class-shadows-outer-constant.t
+t/vm/scope/my-decl-dotted-postcircumfix.t
 t/vm/scope/my-decl-severs-prior-bind.t
 t/vm/scope/my-dynamic-err-scope.t
 t/vm/scope/my-illegal-varname.t
