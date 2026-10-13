@@ -495,3 +495,40 @@ far an infinite gather's body runs. The remaining hand-off is `gather_operand`
 for the zip/cross metaoperators and reductions. The streaming builtins of §8.2
 and the §2.3 method steals also use it; those consume the Seq, as invariant 1
 allows.
+
+### 8.5 Reduction and zip/cross operands (#13026, first `gather_operand` slice)
+
+A reduction no longer takes a gather operand as its inner list.
+`reduction_operand` (`src/vm/vm_gather_seq.rs`) reads the operand through
+`iterated_operand`, which is what Rakudo's iterating operators do with any
+`Seq`, measured against `raku`:
+
+- An uncached `Seq` (a gather, a `.map`, a `$`-itemized one under a
+  reduction) is pulled whole through `take_seq_body` and consumed: `[+] s;
+  s.elems` raises `X::Seq::Consumed`. Before this a reduction consumed only a
+  gather, and only through the steal.
+- A consumed `Seq` raises `X::Seq::Consumed` at once (`s.List; [+] s`, and
+  `s.List; s Z 1`). Before this the reduction re-read it.
+- `[max]` / `[min]` cache the Seq instead (`[max] s; s.elems` answers):
+  Rakudo calls the operator's list candidate, whose `+args` binding caches it.
+  `[\max]` consumes like every other triangle form.
+- The triangle form, and the zip and cross metaoperators, still stream a
+  gather through `gather_operand`, consuming the Seq: `([\+] gather { loop
+  {...} })[^5]` and `(gather { loop {...} }) Z 1..3` must not pull the whole
+  gather. The zip and cross metaoperators now consume a `.map` Seq too.
+- `$s Z 1` and `$s X 1` read an itemized Seq as one element, as Rakudo does
+  for an itemized Array; it is not consumed.
+
+`t/collections/lazy-seq/gather-operator-operands.t` pins the rows. Rakudo
+2026.09 dies on a triangle reduction over a *finite* gather (`[\+] gather {
+take 1 }`: "continuationreset requires a continuation"), so no row pins that
+shape.
+
+`gather_operand` still has three callers that stream: the triangle form, the
+zip and cross metaoperators, and the §8.2 Stream class. Retiring it needs a
+`LazyList` pipe that pulls a `SeqBody` instead of the coroutine list. Pulling
+a gather body one element at a time through `extend_gather_prefix` is
+quadratic today: every pull publishes a whole new generation, and the
+generation store keeps every superseded one (`seq_body/generations.rs`). So
+the pipe needs an append-only generation first, or a chunked pull that does
+not run the gather body ahead of what the consumer asked for.

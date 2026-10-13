@@ -46,10 +46,10 @@ impl Interpreter {
             let thunks: Vec<Value> = runtime::value_to_list(&list_value);
             return self.exec_scan_shortcircuit_reduction(base_op, negate, scan, thunks);
         }
-        // A plain gather operand folds through its coroutine list (ADR-11678),
-        // which the lazy scan below streams.
+        // A Seq operand is iterated, consuming it; a gather under the
+        // triangle form streams its coroutine list (ADR-11678).
         let list_value = self.stack.pop().unwrap_or(Value::NIL);
-        let list_value = self.gather_operand(list_value);
+        let list_value = self.reduction_operand(list_value, base_op, scan)?;
         // ADR-0058: `[+] (2..N).map({...})` folds over the mapped elements, so
         // a still-deferred `.map` operand has to run its callback first.
         self.reify_map_grep_seq(&list_value)?;

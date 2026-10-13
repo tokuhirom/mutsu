@@ -43,6 +43,92 @@ impl Interpreter {
         }
     }
 
+    /// The operand of a reduction `[op] value`, read as
+    /// [`Self::iterated_operand`] reads it: the triangle form (`scan`)
+    /// streams a gather, so `([\+] gather { loop {...} })[^5]` answers, and
+    /// the plain form pulls it whole through the body. `[max]` / `[min]`
+    /// differ: they call the operator's list candidate, whose `+args`
+    /// binding caches a Seq instead of consuming it (`[max] s; s.elems`
+    /// answers in Rakudo), while a consumed one still raises.
+    // Cost: as `iterated_operand`, or pulling the whole Seq for `[max]` /
+    // `[min]`.
+    pub(crate) fn reduction_operand(
+        &mut self,
+        value: Value,
+        op: &str,
+        scan: bool,
+    ) -> Result<Value, RuntimeError> {
+        if !scan
+            && matches!(op, "max" | "min")
+            && let Some(body) = Self::plain_seq_body(&value, true)
+        {
+            self.reify_seq_body(&body)?;
+            return Ok(value);
+        }
+        self.iterated_operand(value, scan, true)
+    }
+
+    /// An operand an operator iterates (a reduction, the zip and cross
+    /// metaoperators), read the way Rakudo's iterating operators read it: an
+    /// uncached `Seq` is consumed (`[+] s; s.elems` and `s Z 1; s.elems`
+    /// raise `X::Seq::Consumed`) and a consumed one raises at once. A plain
+    /// gather is pulled whole through its body like any other Seq, so the
+    /// inner coroutine list stays private (ADR-11678 §2.2), unless `stream`
+    /// is set: then it is handed over as its coroutine list through
+    /// [`Self::gather_operand`] (consuming the Seq), for the consumers that
+    /// pull an infinite gather on demand. A lazy non-gather Seq
+    /// (`Seq.new($iterator)`) and every non-`Seq` value are returned
+    /// unchanged, for the lazy paths below. A `$`-itemized Seq is iterated
+    /// only when `item` is set; otherwise it is one element, left alone.
+    // Cost: O(1) for a non-Seq, a lazy Seq or a streamed gather; pulling the
+    // whole Seq otherwise.
+    pub(crate) fn iterated_operand(
+        &mut self,
+        value: Value,
+        stream: bool,
+        item: bool,
+    ) -> Result<Value, RuntimeError> {
+        use crate::value::SeqTaken;
+        let Some(body) = Self::plain_seq_body(&value, item) else {
+            return Ok(value);
+        };
+        if body.is_consumed() {
+            return Err(crate::value::seq_consumed_error());
+        }
+        if body.is_gather_source() {
+            if stream {
+                return Ok(self.gather_operand(value));
+            }
+        } else if body.is_lazy() {
+            return Ok(value);
+        }
+        let (items, outcome) = self.take_seq_body(&body)?;
+        Ok(match outcome {
+            SeqTaken::Taken => Value::seq(items),
+            SeqTaken::Served => value,
+        })
+    }
+
+    /// The body of a `Seq` read as a sequence: a plain view, or a
+    /// `$`-itemized one when `item` is set (a reduction iterates `[+] $s`,
+    /// while `$s Z 1` zips it as one element). Never a `.List` view.
+    // Cost: O(1).
+    fn plain_seq_body(value: &Value, item: bool) -> Option<std::sync::Arc<crate::value::SeqBody>> {
+        use crate::value::SeqView;
+        if !value.is_seq_value() {
+            return None;
+        }
+        match value.view() {
+            ValueView::Seq(body)
+                if matches!(body.view(), SeqView::Seq)
+                    || (item && matches!(body.view(), SeqView::ItemSeq)) =>
+            {
+                Some(std::sync::Arc::clone(&body))
+            }
+            _ => None,
+        }
+    }
+
     /// The arguments of builtin routine `name` with every plain gather `Seq`
     /// read the way Rakudo's routine reads it ([`builtin_gather_read`]):
     /// a streaming routine steals the coroutine and consumes the Seq, an
