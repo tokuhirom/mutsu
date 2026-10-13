@@ -278,7 +278,7 @@ impl Interpreter {
         // `OUR::c` at file scope names the `our`-scoped sigil-less constant `c`
         // of the unit, stored under its term key like a `GLOBAL::` one.
         if let Some(bare) = name.strip_prefix("OUR::")
-            && !bare.contains("::")
+            && !crate::qualified::is_qualified_str(bare)
             && crate::qualified::is_global_package(self.current_package_sym())
             && let Some(v) = self.term_binding(bare)
         {
@@ -287,7 +287,7 @@ impl Interpreter {
         }
         // Inside `package M`, `OUR::k` is `M::k` when `M` declared an `our` constant `k`.
         if let Some(bare) = name.strip_prefix("OUR::")
-            && !bare.contains("::")
+            && !crate::qualified::is_qualified_str(bare)
             && !crate::qualified::is_global_package(self.current_package_sym())
         {
             let real =
