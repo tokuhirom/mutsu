@@ -29,7 +29,8 @@ pub(crate) use token_body::{
 
 // Shared declarator helpers used across submodules.
 pub(crate) use class_decl::{
-    EXPORT_TYPE_MARKER, LEADING_COLONS_TRAIT, export_type_marker, meta_setter_stmt,
+    DECLARE_HOW_TRAIT, EXPORT_TYPE_MARKER, LEADING_COLONS_TRAIT, declare_how_keyword,
+    declare_how_marker, export_type_marker, meta_setter_stmt,
     parse_bracket_arg_exprs, parse_declarator_traits, parse_optional_bracket_suffix,
     reject_trailing_postfix,
 };

@@ -1246,18 +1246,23 @@ pub(super) struct PackageHead {
     pub colons: bool,
     /// Written `class ::Name`: the name's leading empty part.
     pub leading_colons: bool,
+    /// Written with a registered `EXPORTHOW::DECLARE` declarator: the
+    /// parser's marker for its keyword (`declare_how`).
+    pub declarator: Option<(String, Option<Expr>)>,
 }
 
 impl PackageHead {
     /// The `custom_traits` the head asks the declaration to carry.
     pub(super) fn custom_traits(&self) -> Vec<(String, Option<Expr>)> {
-        if self.colons {
+        let mut traits = if self.colons {
             vec![(crate::parser::ANON_COLONS_TRAIT.to_string(), None)]
         } else if self.leading_colons {
             vec![(crate::parser::LEADING_COLONS_TRAIT.to_string(), None)]
         } else {
             Vec::new()
-        }
+        };
+        traits.extend(self.declarator.clone());
+        traits
     }
 }
 
@@ -1278,6 +1283,7 @@ pub(super) fn package_head(
                 is_unit: false,
                 colons: true,
                 leading_colons: false,
+                declarator: super::declare_how::marker(node)?,
             }),
             _ => Err(unsupported(node)),
         },
@@ -1301,6 +1307,7 @@ pub(super) fn package_head(
                     ),
                     _ => false,
                 }),
+            declarator: super::declare_how::marker(node)?,
         }),
         Some(_) => Err(unsupported(node)),
     }

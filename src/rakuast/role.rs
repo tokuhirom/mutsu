@@ -49,6 +49,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             t != MY_SCOPED
                 && t != crate::parser::ANON_COLONS_TRAIT
                 && t != crate::parser::LEADING_COLONS_TRAIT
+                && t != crate::parser::DECLARE_HOW_TRAIT
         })
         .cloned()
         .collect();
@@ -134,6 +135,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
         is_lexical.then_some("my"),
         is_colons_package(role.custom_traits),
     );
+    super::declare_how::add_field(&mut fields, role.custom_traits);
     if !traits.is_empty() {
         fields.push(RakuAstField {
             name: Some("traits"),

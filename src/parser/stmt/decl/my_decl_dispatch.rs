@@ -7,7 +7,7 @@ use super::{
     class_decl_body, method_decl_body, method_decl_body_my, module_decl, package_decl_my,
     parse_statement_modifier, role_decl, sub_decl_body,
 };
-use crate::ast::{Expr, Stmt};
+use crate::ast::Stmt;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -338,10 +338,7 @@ pub(super) fn try_keyword_dispatch(
         let (r, _) = ws1(r)?;
         let (r, mut stmt) = class_decl_body(r, !is_our)?;
         if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push((
-                "__mutsu_declare_how".to_string(),
-                Some(Expr::Literal(Value::str(kw))),
-            ));
+            custom_traits.push(crate::parser::declare_how_marker(kw));
         }
         return Ok(Some((r, stmt)));
     }

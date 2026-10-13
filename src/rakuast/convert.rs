@@ -1311,7 +1311,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             if has_leading_colons(custom_traits) {
                 name_parts::with_leading_empty(&mut fields);
             }
-            // Field order matches raku: scope, name, repr, traits, body.
+            super::declare_how::add_field(&mut fields, custom_traits);
+            // Field order matches raku: scope, parsed-declarator, name, repr,
+            // traits, body.
             if let Some(r) = repr {
                 fields.push(leaf_field(Some("repr"), Value::str(r.clone())));
             }
@@ -2650,6 +2652,7 @@ pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bo
         t != crate::parser::ANON_COLONS_TRAIT
             && t != crate::parser::EXPORT_TYPE_MARKER
             && t != crate::parser::LEADING_COLONS_TRAIT
+            && t != crate::parser::DECLARE_HOW_TRAIT
             && !decl_traits::is_class_trait(t)
     })
 }

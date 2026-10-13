@@ -747,3 +747,17 @@ is a parse error), so the string is the smiley's own record rather than a
 lost distinction. Conversion renders the colonpair, and lowering turns the
 colonpair, which the generic `use` lowering would read as an import tag,
 back into that argument.
+
+### 6.27 S10: EXPORTHOW::DECLARE declarators (2026-10-13)
+
+A `use`d module can register a class-like keyword through
+`EXPORTHOW::DECLARE` (`monitor Name { }`, `shouter Name { }`). Measured on
+rakudo 2026.09, the declaration is the ordinary `RakuAST::Class` (or
+`RakuAST::Role`, for a role HOW) with a `parsed-declarator` field holding the
+keyword, after `scope` and before `name`. The resolved HOW is an attribute of
+the node but not part of its rendered tree, and `.parsed-declarator` answers
+the built-in keyword (`class`, `role`, `grammar`) otherwise. The parser's
+`DECLARE_HOW_TRAIT` marker already holds that keyword, so it is the field's
+record: conversion renders it (`rakuast::declare_how`), lowering hands it back
+through the package head, and registration resolves the HOW from the keyword
+exactly as for a parsed declaration. Nothing has to encode the metaobject.
