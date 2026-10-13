@@ -118,6 +118,14 @@ pub(crate) fn end(target: &Value, _args: &[Value]) -> Option<Result<Value, Runti
     if crate::builtins::methods_0arg::is_lazy_count_source(target) {
         return Some(Ok(crate::runtime::utils::cannot_lazy_failure("elems")));
     }
+    // A `Match` is `self.list.end`: its positional captures (ADR-11276 §9.96).
+    if target.is_match_instance() {
+        let list = target.match_list();
+        return last(match list.as_ref().map(Value::view) {
+            Some(ValueView::Array(items, _)) => items.len(),
+            _ => 0,
+        });
+    }
     if let Some(items) = target.as_list_items() {
         return last(items.len());
     }

@@ -1,6 +1,7 @@
 //! `Str`'s and `Cool`'s conversions to a number: `Str.Numeric`, `Str.Int`,
-//! `Str.Num`, and `Cool.Num`, `Cool.Rat`, `Cool.UInt` (ADR-11276 §9.71) and
-//! `Cool.Complex` (§9.72). `Cool.Int` has
+//! `Str.Num`, and `Cool.Num`, `Cool.Rat`, `Cool.UInt` (ADR-11276 §9.71),
+//! `Cool.Complex` (§9.72), and `Cool.FatRat` and `Cool.AST` of a `Str` or a
+//! `Match` (§9.96). `Cool.Int` has
 //! no row: `List`, `Map`, `Str` and the numeric shapes all declare their own `Int`, so
 //! no shape would reach it (`every_row_is_reached_and_answers`).
 //!
@@ -68,6 +69,8 @@ pub(super) static COOL_ROWS: &[MethodRow] = &[
         named: &[],
     },
     narrow!("Cool", "Rat", cool_rat),
+    narrow!("Cool", "FatRat", cool_fat_rat),
+    narrow!("Cool", "AST", cool_ast),
     MethodRow {
         owner: "Cool",
         name: "UInt",
@@ -232,6 +235,31 @@ fn cool_rat(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
         Ok(number) => super::numeric_coerce::rat_of(&number?).map(Ok),
         Err(failure) => Some(Ok(failure)),
     }
+}
+
+/// The text a `Cool` row that parses reads: a `Str`, or a `Match`'s matched
+/// text (`Match.Str`). `None` for any other receiver, which the cascade keeps.
+// Cost: O(n), n = chars of a Match's text (copied); O(1) for a Str.
+fn parsed_text(target: &Value) -> Option<String> {
+    match target.view() {
+        ValueView::Str(s) => Some(s.to_string()),
+        _ if target.is_match_instance() => Some(target.to_string_value()),
+        _ => None,
+    }
+}
+
+/// `Cool.FatRat` of a `Str` or a `Match` (ADR-11276 §9.96): as `Cool.Rat`, the
+/// text's number. The cascade keeps the other receivers.
+// Cost: as `fat_rat_of_str`.
+fn cool_fat_rat(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    fat_rat_of_str(&parsed_text(target)?).map(Ok)
+}
+
+/// `Cool.AST` of a `Str` or a `Match`: the text parsed as Raku source, a
+/// RakuAST tree (ADR-0010; ADR-11276 §9.96).
+// Cost: O(n), n = chars of the source (one parse).
+fn cool_ast(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    Some(crate::rakuast::str_dot_ast(&parsed_text(target)?))
 }
 
 /// `Cool.UInt`: `.Int`, then the range check. An interpreter row: a `Complex`

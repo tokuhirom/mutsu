@@ -24,6 +24,15 @@ pub(crate) fn numify(target: &Value) -> Result<Cow<'_, Value>, Value> {
             None => Err(crate::builtins::methods_0arg::str_numeric_failure(&s)),
         };
     }
+    // A `Match` numifies its matched text (`Match.Numeric` is
+    // `self.Str.Numeric`), never its captures.
+    if target.is_match_instance() {
+        let s = target.to_string_value();
+        return match numify_str(&s) {
+            Some(number) => Ok(Cow::Owned(number)),
+            None => Err(crate::builtins::methods_0arg::str_numeric_failure(&s)),
+        };
+    }
     if let Some(seconds) = temporal_seconds(target) {
         return Ok(Cow::Owned(seconds));
     }

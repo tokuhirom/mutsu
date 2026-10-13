@@ -1276,12 +1276,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 // Match.Capture returns self
                 return Some(Ok(target.clone()));
             }
-            // A row of `Mu` or `Any` a Match reaches answers on the Match, not
-            // on its matched string: `.so` of a zero-width match is True
-            // (#9180), `.join` joins its positional captures, `.item` is the
-            // Match itself.
-            _ if crate::value::DispatchShape::Match.reaches_audited_ancestor(method) => {}
-            _ => return None,
+            // Every other name is answered on the Match itself, never on its
+            // matched string (ADR-11276 §9.96): a row of `Mu`, `Any`, `Capture`
+            // or `Cool` it reaches, or the generic arms below. `.so` of a
+            // zero-width match is True (#9180), `.head` is its first positional
+            // capture, and a name Rakudo's `Match` lacks is
+            // `X::Method::NotFound`.
+            _ => {}
         }
     }
 
