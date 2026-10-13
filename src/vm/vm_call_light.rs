@@ -700,7 +700,13 @@ impl Interpreter {
                     && cf.param_defs[param_idx].name.starts_with(['@', '%'])
                 {
                     let val = val.deitemize_for_sigil_bind();
-                    self.note_param_bound_aggregate(&cf.param_defs[param_idx].name, &val);
+                    let name = &cf.param_defs[param_idx].name;
+                    self.note_param_bound_aggregate(name, &val);
+                    let sym = match cf.param_name_syms.get(param_idx) {
+                        Some(&sym) => sym,
+                        None => Symbol::intern(name),
+                    };
+                    self.bind_light_aggregate_constraint(name, sym, &val);
                     val
                 } else {
                     // Whether this parameter itemizes its bound value depends

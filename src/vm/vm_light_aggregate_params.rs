@@ -17,18 +17,19 @@ use super::*;
 impl Interpreter {
     /// Whether every plain `@x`/`%x` positional parameter
     /// ([`crate::opcode::FastParamCheck::light_aggregate_sigil`]) receives, at
-    /// THIS call, an argument the light bind can take as it is: an untyped
-    /// `Array`/`List` for `@`, an untyped `Hash` for `%`. The light bind then
+    /// THIS call, an argument the light bind can take as it is: an
+    /// `Array`/`List` for `@`, a `Hash` for `%`. The light bind then
     /// shares that container with the caller, which is all the general binder
     /// achieves with its exit-time writeback, since assignment to a mutsu
     /// `Array`/`Hash` stores in place.
     ///
     /// Everything else declines to the general binder, unchanged: a `Seq`
     /// (bound through `PositionalBindFailover`), a `Pair`/`Map`/`Set` or other
-    /// Associative, a shaped or lazy array, a container carrying element/key
-    /// type metadata (`my Int @a`, whose constraint the binder re-registers
-    /// under the parameter's name), a type object (an arity/type error the
-    /// binder reports), and a missing argument. Like
+    /// Associative, a shaped or lazy array, a type object (an arity/type
+    /// error the binder reports), and a missing argument. A container that
+    /// carries element/key type metadata (`my Int @a`) is admitted: the light
+    /// bind registers its constraint under the parameter's name exactly as
+    /// the binder does ([`Self::bind_light_aggregate_constraint`]). Like
     /// [`Self::positional_light_rw_args_admitted`] it is re-derived per call,
     /// because one routine is called with every shape; the flag check keeps a
     /// routine with no such parameter free of it.
@@ -60,9 +61,9 @@ impl Interpreter {
                 matches!(
                     kind,
                     ArrayKind::Array | ArrayKind::List | ArrayKind::ItemArray | ArrayKind::ItemList
-                ) && !items.has_type_meta()
+                )
             }
-            ('%', ValueView::Hash(map)) => !map.has_type_meta(),
+            ('%', ValueView::Hash(_)) => true,
             _ => false,
         }
     }
@@ -117,5 +118,25 @@ impl Interpreter {
             }
         }
         true
+    }
+
+    /// Register the constraint a light-bound plain `@x`/`%x` parameter
+    /// carries in the callee's scope, as the general binder does for it: the
+    /// argument container's own element (and key) type when it has one
+    /// (`my Int %h` passed to `sub f(%p)` keeps rejecting `%p = (a => 'x')`),
+    /// and none otherwise, which shadows a same-named typed variable of an
+    /// outer scope (`my Int %p` around `sub f(%p)` must not constrain it).
+    /// Must run once the callee's env is in place.
+    // Cost: O(1) for an untyped container; O(t) for a typed one, t = the
+    // length of its type's spelling.
+    pub(super) fn bind_light_aggregate_constraint(&mut self, name: &str, sym: Symbol, val: &Value) {
+        let typed = self
+            .container_type_metadata(val)
+            .filter(|info| !info.value_type.is_empty())
+            .map(|info| match info.key_type {
+                Some(kt) => format!("{}{{{}}}", info.value_type, kt),
+                None => info.value_type,
+            });
+        self.bind_param_type_constraint_sym(name, sym, typed.as_deref());
     }
 }

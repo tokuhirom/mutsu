@@ -2056,6 +2056,9 @@ impl Interpreter {
         // (name, interned name, value): the name for matching against the
         // body's local names, the symbol for the env insert.
         let mut param_values: Vec<(&str, Symbol, Value)> = Vec::new();
+        // Indices into `param_values` of the plain `@x`/`%x` parameters bound
+        // below, whose constraint is registered once the callee's env exists.
+        let mut light_aggregate_binds: Vec<usize> = Vec::new();
         // (name, is-readonly) for a sigilless raw invocant, applied once the
         // param values are installed below.
         let mut raw_invocant_readonly: Option<(&str, bool)> = None;
@@ -2178,6 +2181,7 @@ impl Interpreter {
                     val =
                         crate::runtime::types::unwrap_varref_value(val).deitemize_for_sigil_bind();
                     self.note_param_bound_aggregate(&pd.name, &val);
+                    light_aggregate_binds.push(param_values.len());
                     param_values.push((binding_name, binding_sym, val));
                     arg_idx += 1;
                     continue;
@@ -2352,6 +2356,13 @@ impl Interpreter {
             // so a closure capturing this env resolves `@!a`/`%!h` through the
             // captured `self` instead of a stale env snapshot.
             Self::insert_fast_param_values(env, &param_values);
+        }
+        // A light-bound plain `@x`/`%x` carries its constraint in the callee's
+        // scope, which exists only now.
+        for &i in &light_aggregate_binds {
+            let (name, sym, ref val) = param_values[i];
+            let val = val.clone();
+            self.bind_light_aggregate_constraint(name, sym, &val);
         }
         self.request_call_capture(cc.uses_capture, Some(&base));
         self.finish_call_capture(&args);

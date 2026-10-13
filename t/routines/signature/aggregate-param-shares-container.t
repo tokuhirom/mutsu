@@ -7,7 +7,7 @@ use Test;
 # an untyped Array/Hash argument this way directly (#12917); every other
 # argument shape keeps the general binder. Both must agree.
 
-plan 22;
+plan 27;
 
 # Subs (positional-light path).
 sub h-store(%p) { %p<k> = 1; %p<y>:delete }
@@ -53,6 +53,23 @@ is pair-arg((a => 1)), 'Pair', 'sub: a Pair binds as itself';
 my Int %typed;
 sub typed-store(%h) { %h<x> = 'no' }
 dies-ok { typed-store(%typed) }, "sub: a typed hash keeps its value type";
+sub typed-assign(%p) { %p = (a => 'b') }
+throws-like { typed-assign(%typed) }, X::TypeCheck::Assignment,
+    'sub: whole assignment to a typed hash is still checked';
+my Int @typed-a;
+sub typed-push(@q) { @q.push('s') }
+throws-like { typed-push(@typed-a) }, X::TypeCheck::Assignment,
+    'sub: a typed array keeps its element type';
+{
+    # An outer same-named typed variable does not constrain the parameter.
+    my Int %p;
+    my Int @q;
+    sub shadow-h(%p) { %p = (a => 'x'); %p<b> = 'y'; %p }
+    sub shadow-a(@q) { @q = ('s',); @q.push('t'); @q }
+    my %free; my @free;
+    is-deeply shadow-h(%free), {a => 'x', b => 'y'}, 'sub: no constraint leaks into %p';
+    is-deeply shadow-a(@free), ['s', 't'], 'sub: no constraint leaks into @q';
+}
 my $not-positional = 42;
 throws-like { a-push($not-positional) }, X::TypeCheck::Binding::Parameter, 'sub: a non-Positional is rejected';
 
@@ -85,4 +102,7 @@ is-deeply %anchors, {a => 1}, 'method: the hash parameter was shared';
 my Int @typed-arr;
 class D { method push-str(@q) { @q.push('s') }; method j(@q) { @q.join(',') } }
 is D.j((1..3).map(* + 1)), '2,3,4', 'method: a Seq binds through PositionalBindFailover';
+class E { method store(%p) { %p<x> = 'no' } }
+throws-like { E.store(%typed) }, X::TypeCheck::Assignment,
+    'method: a typed hash keeps its value type';
 dies-ok { D.push-str(@typed-arr) }, 'method: a typed array keeps its element type';
