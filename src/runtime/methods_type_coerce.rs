@@ -46,6 +46,15 @@ impl Interpreter {
                     };
                 Value::seq(values)
             }
+            // `.Seq` never iterates a genuinely lazy source: it is the identity on a
+            // lazy `Seq` and re-tags a lazy `.List`/`.Array` view as a `Seq`.
+            ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
+                if ll.in_list_context() || ll.in_array_context() {
+                    Value::lazy_list(crate::gc::Gc::new(ll.with_seq_context()))
+                } else {
+                    target.clone()
+                }
+            }
             ValueView::LazyList(ll) => {
                 let items = self.force_lazy_list_bridge(&ll)?;
                 Value::seq(items)
