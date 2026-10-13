@@ -136,6 +136,20 @@ pub(super) fn convert(extension: &RegexExtension) -> Result<RakuAstNode, Runtime
                 ),
             ],
         },
+        RegexExtension::Placeholder { name, sequential } => RakuAstNode {
+            class: RakuAstClass::RegexInterpolation,
+            fields: vec![
+                leaf_field(Some("sequential"), Value::truth(*sequential)),
+                node_field(
+                    Some("var"),
+                    super::placeholder::placeholder_node(
+                        RakuAstClass::VarDeclarationPlaceholderPositional,
+                        "$",
+                        name,
+                    ),
+                ),
+            ],
+        },
         RegexExtension::Alias { alias, assertion } => RakuAstNode {
             class: RakuAstClass::RegexAssertionAlias,
             fields: vec![
@@ -204,7 +218,9 @@ pub(super) fn lower(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError
         RakuAstClass::RegexSequentialConjunction => {
             lower_branches(node).map(RegexExtension::SequentialConjunction)
         }
-        RakuAstClass::RegexInterpolation => return lower_contextualized(node),
+        RakuAstClass::RegexInterpolation => {
+            return lower_contextualized(node).or_else(|| lower_placeholder(node));
+        }
         RakuAstClass::RegexAssertionAlias => return lower_alias(node),
         RakuAstClass::RegexBacktrackModifiedAtom => lower_backtrack_modified(node),
         _ => return None,
@@ -364,6 +380,21 @@ fn lower_contextualized(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeE
                 }),
             },
         ))
+    })())
+}
+
+/// `$^a`: an interpolated placeholder parameter.
+fn lower_placeholder(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeError>> {
+    let var = super::lower::named_child(node, "var").ok()?;
+    if var.class != RakuAstClass::VarDeclarationPlaceholderPositional {
+        return None;
+    }
+    Some((|| match super::placeholder::spelling(var)? {
+        ('$', name) => Ok(RegexNode::Extension(RegexExtension::Placeholder {
+            name,
+            sequential: super::lower::bool_field(node, "sequential")?,
+        })),
+        _ => Err(super::lower::unsupported(node)),
     })())
 }
 

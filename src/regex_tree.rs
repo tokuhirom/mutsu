@@ -2574,6 +2574,17 @@ impl Parser {
             } else {
                 match ch {
                     '\\' => end += 1,
+                    // A character class of a nested regex (`$( rx/<["']>/ )`):
+                    // its quote characters are members, not string quotes.
+                    '<' if self.chars.get(end + 1) == Some(&'[') => {
+                        end += 2;
+                        while let Some(&inner) = self.chars.get(end) {
+                            if inner == ']' {
+                                break;
+                            }
+                            end += if inner == '\\' { 2 } else { 1 };
+                        }
+                    }
                     '\'' | '"' => quote = Some(ch),
                     '(' | '[' | '{' => depth += 1,
                     ')' | ']' | '}' => {
@@ -2698,6 +2709,9 @@ impl Parser {
         let mut depth = 0usize;
         let mut quote = None;
         let mut end = start + 1;
+        // A declaration whose block ends its line (`:my token T { \d }`
+        // then a newline) needs no `;`, as a statement in code does not.
+        let mut block_end = false;
         while let Some(&ch) = self.chars.get(end) {
             if let Some(closer) = quote {
                 if ch == '\\' {
@@ -2710,6 +2724,16 @@ impl Parser {
                     '\\' => end += 1,
                     '\'' | '"' => quote = Some(ch),
                     '(' | '[' | '{' => depth += 1,
+                    '}' if depth == 1
+                        && self.chars[end + 1..]
+                            .iter()
+                            .find(|c| !matches!(c, ' ' | '\t'))
+                            .is_some_and(|c| *c == '\n') =>
+                    {
+                        end += 1;
+                        block_end = true;
+                        break;
+                    }
                     ')' | ']' | '}' => depth = depth.checked_sub(1)?,
                     ';' if depth == 0 => break,
                     _ => {}
@@ -2717,7 +2741,7 @@ impl Parser {
             }
             end += 1;
         }
-        if self.chars.get(end) != Some(&';') {
+        if !block_end && self.chars.get(end) != Some(&';') {
             return None;
         }
         let code: String = self.chars[start + 1..end].iter().collect();
@@ -2739,7 +2763,14 @@ impl Parser {
         if statements != 1 {
             return None;
         }
-        self.pos = end + 1;
+        self.pos = if block_end { end } else { end + 1 };
+        // The line break that ends such a declaration is its terminator,
+        // not whitespace after it (rakudo wraps no `WithWhitespace`).
+        if block_end {
+            while self.chars.get(self.pos).is_some_and(|c| c.is_whitespace()) {
+                self.pos += 1;
+            }
+        }
         Some(RegexNode::Extension(RegexExtension::Statement(Box::new(
             RegexCode { code, body },
         ))))
