@@ -26,7 +26,7 @@ fn is_builtin_value_argument(arg: &Value) -> bool {
     match arg.view() {
         // An itemized value read out of a variable (`$k` holding `1..2`): the
         // row is handed the value itself.
-        ValueView::Scalar(inner) => is_builtin_value_argument(&inner),
+        ValueView::Scalar(inner) => is_builtin_value_argument(inner),
         ValueView::Mixin(inner, mixins) => {
             mixins.contains_key("Str")
                 && matches!(
