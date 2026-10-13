@@ -146,5 +146,5 @@ request in:
 - With the GC off, `stw_aware_wait` on the adopter thread waits in `POLL` steps rather than
   untimed, so `await`, `receive` and the waits above see the request without another wake-up.
 
-Still in the gap: a long native computation that never polls, a native read, an `act_loop`
+Still in the gap (#13092): a long native computation that never polls, a native read, an `act_loop`
 completion wait and a `Proc` wait.
