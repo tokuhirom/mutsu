@@ -2193,6 +2193,29 @@ Found, not fixed: an allomorph's `.Stringy` is a plain `Str` (#13108) and `Signa
 
 Left in `dispatch_core_coerce.rs`: the `Buf`/`Blob` reinterpret block, `Complex.Complex` and the `Any.serial` arm.
 
+### 9.94 Slice 5: `Complex.Complex`, `Any.serial` and the buffer reinterpretations; `dispatch_core_coerce.rs` has no arm left (2026-10-13)
+
+`refactor/11276-coerce-tail`. After §9.93 the file's `dispatch` kept three blocks. Deleting them and probing `Buf`/`Blob`/`Complex`/`serial`
+over 38 receivers (buffers of every width, their type objects, numbers, collections, code, a `Promise`, a lazy list) showed what each was
+still the only answer for:
+
+1. **`Complex.Complex` of the type object** (`method Complex() { self }`). The `Complex.Complex` row becomes `TYPE_OBJECT_OK` with a handler
+   that answers a type object itself (`numeric_coerce::complex_self`).
+2. **`serial` of almost everything.** The `Any.serial` row was reached only by receivers the cascade did not already answer. It becomes
+   `TYPE_OBJECT_OK` and joins `ANY_LIST_FOR_CLOSED_SHAPES`, so every closed shape and every receiver with no shape reaches it; `Mu.serial`
+   is `X::Method::NotFound`, as in Rakudo (`shapeless_row` refuses `Mu` for `Any`'s methods).
+3. **`.Blob` of a `Blob`, a `utf8` or a `blobN`.** Rakudo's `Blob` declares `Buf` but not `Blob` (`Buf` declares both; §9.86's
+   `COERCE_ROWS`), so the block answered calls Rakudo refuses. With it gone they are `X::Method::NotFound`; `.Buf` of every buffer and
+   `.Blob` of a `Buf` still answer from the rows. `t/vm/codegen/create-slots-resources-buf-strict-escape.t` pinned the old answer for
+   `"ab".encode.Blob` and now pins Rakudo's.
+
+The `dispatch` function and its `try_dispatch!` entry are deleted; the file keeps the exception builders the coercion rows share
+(`X::Str::Numeric`, `X::Numeric::Real`). `method-rows-report.py --arms`: the pure arity cascades go from 148 to 147 arms. Pinned in
+`t/oo/method/coerce-tail-method-rows.t`.
+
+Found, not fixed: `.Buf`/`.Blob` of a wide buffer drop its element type (#13115); `.Complex` of a non-`Cool` receiver, a concrete-only
+type object or a lazy list answers `0+0i` (#13116).
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
