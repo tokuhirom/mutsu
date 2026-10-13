@@ -67,15 +67,26 @@ pub(super) fn convert_use(
         }
         return Err(super::convert::unsupported("language version argument"));
     }
-    // The smiley pragmas (`use variables :D`) are parsed into a `":D"` string
-    // argument rather than a colonpair; rakudo's node is
-    // `Pragma(argument => ColonPair::True("D"))`. Refuse until the parser keeps
-    // the colonpair.
-    if matches!(
-        module,
-        "variables" | "attributes" | "parameters" | "invocant"
-    ) {
-        return Err(super::convert::unsupported("smiley pragma"));
+    // The smiley pragmas (`use variables :D`): the parser keeps the smiley as
+    // a `":D"` string argument, which only the colonpair spelling produces (a
+    // written string is a parse error), and rakudo's node is
+    // `Pragma(argument => ColonPair::True("D"))`.
+    if is_smiley_pragma(module) {
+        let smiley = match arg {
+            Some(Expr::Literal(value)) if tags.is_empty() && condition.is_none() => value
+                .as_str()
+                .and_then(|text| text.strip_prefix(':'))
+                .filter(|smiley| matches!(*smiley, "D" | "U" | "_"))
+                .map(str::to_string),
+            _ => None,
+        };
+        let Some(smiley) = smiley else {
+            return Err(super::convert::unsupported("smiley pragma"));
+        };
+        let mut node = pragma_node(module);
+        node.fields
+            .push(node_field(Some("argument"), colonpair_true(&smiley)));
+        return Ok(node);
     }
     let argument = use_argument(arg, tags)?;
     let mut node = if is_pragma_name(module) {
@@ -273,14 +284,31 @@ fn colonpair_true(tag: &str) -> RakuAstNode {
     }
 }
 
+/// The pragmas whose argument is a type smiley (`use variables :D`).
+// Cost: O(1).
+fn is_smiley_pragma(name: &str) -> bool {
+    matches!(name, "variables" | "attributes" | "parameters" | "invocant")
+}
+
 /// `RakuAST::Pragma` -> `Stmt::Use`, or `Stmt::No` when it is switched off.
 pub(super) fn lower_pragma(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let module = leaf_str(node, "name")?;
     let off = node.fields.iter().any(|f| {
         f.name == Some("off") && matches!(&f.value, RakuAstFieldValue::Node(v) if v.truthy())
     });
-    let (arg, tags) = lower_argument(node)?;
+    let (mut arg, mut tags) = lower_argument(node)?;
     let (condition, if_imports) = lower_source_if(node)?;
+    // `use variables :D`: the parser's `":D"` argument, not an import tag.
+    if is_smiley_pragma(&module) {
+        let [smiley] = tags.as_slice() else {
+            return Err(super::lower::unsupported(node));
+        };
+        if off || arg.is_some() || !matches!(smiley.as_str(), "D" | "U" | "_") {
+            return Err(super::lower::unsupported(node));
+        }
+        arg = Some(Expr::Literal(Value::str(format!(":{smiley}"))));
+        tags.clear();
+    }
     if off {
         if arg.is_some() || !tags.is_empty() || condition.is_some() || !if_imports.is_empty() {
             return Err(super::lower::unsupported(node));

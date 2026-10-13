@@ -1301,6 +1301,7 @@ t/control/begin-phaser-begintime.t
 t/control/begin-prologue-binding-declaration.t
 t/control/begin-prologue-inner-calls.t
 t/control/begin-prologue-inner-decls.t
+t/control/begin-prologue-inner-pragmas.t
 t/control/begin-prologue-inner-subs.t
 t/control/begin-prologue-inner-typed-vars.t
 t/control/begin-prologue-nested-positions.t
@@ -1689,6 +1690,7 @@ t/exceptions/try-tail-assign-value.t
 t/exceptions/two-terms-in-a-row-initializer-listop.t
 t/exceptions/two-terms-in-a-row-reports-position.t
 t/exceptions/two-terms-in-a-row-undeclared-word-infix.t
+t/exceptions/typed-exception-attributes.t
 t/exceptions/typed-exception-class-of-compile-errors.t
 t/exceptions/typed-exceptions-misc.t
 t/exceptions/typed-exceptions.t
@@ -2719,6 +2721,7 @@ t/modules/import-export/unit-role-body-use-before-also-does.t
 t/modules/import-export/unit-role-module-is-export.t
 t/modules/import-export/unit-stash-lexical-routines.t
 t/modules/import-export/unit-stash-lists-lexical-types.t
+t/modules/import-export/use-attributes-is-lexical.t
 t/modules/import-export/use-bareword-import-undeclared.t
 t/modules/import-export/use-before-unit-import-not-leaked.t
 t/modules/import-export/use-block-scope-reimport.t
@@ -4589,6 +4592,7 @@ t/rakuast/rakuast-signature-members.t
 t/rakuast/rakuast-signature-type-cohort.t
 t/rakuast/rakuast-slurpy-marker-type-object.t
 t/rakuast/rakuast-smartmatch.t
+t/rakuast/rakuast-smiley-pragma.t
 t/rakuast/rakuast-source-forms.t
 t/rakuast/rakuast-statement-origin.t
 t/rakuast/rakuast-statement-prefix-binding.t
@@ -7026,6 +7030,7 @@ t/vm/scope/temp-scope-restore.t
 t/vm/scope/temp-snapshot-depth.t
 t/vm/scope/undefine-shadow-slot.t
 t/vm/scope/uppercase-mainline-lexical-named-sub.t
+t/vm/scope/variables-pragma-lexical-scope.t
 t/vm/scope/where-constraint-caller-lexicals.t
 t/vm/scope/where-constraint-lexical-scope.t
 t/vm/scope/who-stash.t
