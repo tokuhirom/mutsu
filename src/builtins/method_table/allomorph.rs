@@ -29,8 +29,8 @@ use crate::value::{DispatchShape, Value, ValueView};
 /// The names `Allomorph` declares to read the numeric part, although `Str`
 /// declares them too: the numeric coercions, truth and the increments.
 const ALLOMORPH_NUMERIC: [&str; 12] = [
-    "Bool", "Numeric", "Real", "Int", "Num", "Rat", "FatRat", "Complex", "Bridge", "succ",
-    "pred", "narrow",
+    "Bool", "Numeric", "Real", "Int", "Num", "Rat", "FatRat", "Complex", "Bridge", "succ", "pred",
+    "narrow",
 ];
 
 /// The names an allomorph answers about itself, which neither part can: its

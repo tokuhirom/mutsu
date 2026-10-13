@@ -81,8 +81,11 @@ fn native_method_1arg_cascade(
     // A plain allomorph's method with a row is the row's, on the part it reads
     // (§9.101): `<65>.uniprop("Script")` is `Common`, the script of "6".
     // Cost: O(1), a tag probe, one map lookup and at most two table lookups.
-    if crate::builtins::method_table::allomorph::answers(target, method_sym, std::slice::from_ref(arg))
-    {
+    if crate::builtins::method_table::allomorph::answers(
+        target,
+        method_sym,
+        std::slice::from_ref(arg),
+    ) {
         return None;
     }
     // Cost: O(n), n = bytes of the invocant.
