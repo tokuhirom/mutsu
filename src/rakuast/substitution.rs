@@ -29,13 +29,11 @@
 
 use super::convert::{
     convert_expr, leaf_field, node_field, plain_infix, quoted_string, regex_node,
-    statement_expression,
-    unsupported as unsupported_what,
+    statement_expression, unsupported as unsupported_what,
 };
 use super::lower::{
     bool_field, leaf_str, list_field, lower_expr, lower_regex_node, named_child,
-    named_child_or_positional, positional_leaf,
-    rakuast_node_of, unsupported,
+    named_child_or_positional, positional_leaf, rakuast_node_of, unsupported,
 };
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::ast::{Expr, SubstThunk};
