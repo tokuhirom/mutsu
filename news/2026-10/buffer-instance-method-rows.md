@@ -10,4 +10,5 @@ Behaviour moved toward Rakudo on the way: `B.new(...).Str` raises `X::Buf::AsStr
 such an instance, `Blob.subbuf-rw` is gone while `Buf.subbuf-rw(1)` answers, `subbuf(1^..^4)` excludes both ends and
 `subbuf(1..*)` no longer panics, `Blob.new(1,2).AT-POS(5)` raises `X::OutOfRange`, `Buf.EXISTS-POS` exists,
 `read-ubits` reports Rakudo's out-of-range messages, the `read-*` methods refuse a non-`Endian` byte order, and
-`buf16.new(1).Blob` keeps its element type.
+`buf16.new(1).Blob` keeps its element type while `Buf.Buf` on the type object raises
+`X::Parameter::InvalidConcreteness` (#13115).

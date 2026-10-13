@@ -56,14 +56,15 @@ pub(super) static ROWS: &[MethodRow] = rows! {
     "Stringy" => stringy_of,
 };
 
-/// `Blob` declares `Buf` but not `Blob`; `Buf` declares both.
+/// `Blob` declares `Buf` but not `Blob`; `Buf` declares both. On a type
+/// object they are `Blob:D`'s refusal.
 pub(super) static COERCE_ROWS: &[MethodRow] = &[
     MethodRow {
         owner: "Blob",
         name: "Buf",
         arity: 0,
         handler: Handler::Narrow(to_buf),
-        flags: RowFlags::NONE,
+        flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
     MethodRow {
@@ -71,7 +72,7 @@ pub(super) static COERCE_ROWS: &[MethodRow] = &[
         name: "Buf",
         arity: 0,
         handler: Handler::Narrow(to_buf),
-        flags: RowFlags::NONE,
+        flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
     MethodRow {
@@ -79,7 +80,7 @@ pub(super) static COERCE_ROWS: &[MethodRow] = &[
         name: "Blob",
         arity: 0,
         handler: Handler::Narrow(to_blob),
-        flags: RowFlags::NONE,
+        flags: RowFlags::TYPE_OBJECT_OK,
         named: &[],
     },
 ];
@@ -90,21 +91,37 @@ pub(super) static COERCE_ROWS: &[MethodRow] = &[
 /// storage-backed buffer carrying the user's class name, which every handler
 /// here keeps (`B.new(1, 2).subbuf(1)` is a `B`), so the instance itself is
 /// the invocant. The user's own methods never get here: the native entry is
-/// bypassed when the class declares the method. `None` for every other
+/// bypassed when the class declares the method. The type object of such a
+/// class, or of a buffer type with no shape of its own (`buf16`,
+/// `Blob[uint32]`), is the shape's type object. `None` for every other
 /// receiver. [`super::super::Receiver::of_settled`] asks it.
-// Cost: O(1) (one relaxed load; a hash lookup once any buffer class exists).
+// Cost: O(1) (one relaxed load; a hash lookup once any buffer class exists),
+// O(n) for a type object, n = the length of its name.
 pub(crate) fn user_buffer_receiver(target: &Value) -> Option<super::super::Receiver> {
-    let ValueView::Instance { class_name, .. } = target.view() else {
-        return None;
-    };
-    let buffer_type = crate::value::value_buf::buffer_class_type(class_name.as_str())?;
-    Some(super::super::Receiver::instance(
-        if buffer_type.starts_with("Buf") {
+    let shape_of = |mutable: bool| {
+        if mutable {
             crate::value::DispatchShape::Buf
         } else {
             crate::value::DispatchShape::Blob
-        },
-    ))
+        }
+    };
+    match target.view() {
+        ValueView::Instance { class_name, .. } => {
+            let buffer_type = crate::value::value_buf::buffer_class_type(class_name.as_str())?;
+            Some(super::super::Receiver::instance(shape_of(
+                buffer_type.starts_with("Buf"),
+            )))
+        }
+        ValueView::Package(name) => {
+            let name = name.resolve();
+            crate::runtime::utils::is_buf_or_blob_class(&name).then(|| {
+                super::super::Receiver::type_object(shape_of(
+                    crate::runtime::utils::is_buf_like_class(&name),
+                ))
+            })
+        }
+        _ => None,
+    }
 }
 
 /// The class name of a buffer receiver, when it is a plain buffer instance.
@@ -308,15 +325,38 @@ fn str_or_stringy(target: &Value, method: &str) -> Option<Result<Value, RuntimeE
     )))
 }
 
+/// The `X::Parameter::InvalidConcreteness` of a `Blob:D` method called on a
+/// buffer type object.
+// Cost: O(1).
+fn type_object_refusal(target: &Value, method: &str) -> Option<RuntimeError> {
+    let ValueView::Package(name) = target.view() else {
+        return None;
+    };
+    Some(RuntimeError::parameter_invalid_concreteness(
+        "Blob",
+        &name.resolve(),
+        method,
+        "self",
+        true,
+        true,
+    ))
+}
+
 /// `.Blob`: a `Blob` over the same bytes.
 // Cost: O(1), the storage is shared.
 pub(crate) fn to_blob(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if let Some(refusal) = type_object_refusal(target, "Blob") {
+        return Some(Err(refusal));
+    }
     reinterpret(target, "Blob")
 }
 
 /// `.Buf`: a `Buf` over the same bytes.
 // Cost: O(1), the storage is shared.
 pub(crate) fn to_buf(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if let Some(refusal) = type_object_refusal(target, "Buf") {
+        return Some(Err(refusal));
+    }
     reinterpret(target, "Buf")
 }
 

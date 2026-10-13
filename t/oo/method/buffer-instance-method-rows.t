@@ -5,7 +5,7 @@ use Test;
 # `subbuf`, `subbuf-rw`, `read-*`, `read-ubits`/`read-bits`, `AT-POS` and
 # `EXISTS-POS` bind their arguments as Rakudo's candidates do.
 
-plan 53;
+plan 60;
 
 sub err(&code) {
     my $r = try code();
@@ -109,5 +109,12 @@ is $buf.EXISTS-POS(5), False, 'EXISTS-POS past the end';
 is $buf.EXISTS-POS("0"), True, 'a Str index is `Any`\'s: .Int == 0';
 is Buf.EXISTS-POS(0), False, 'a type object has no elements';
 
-# The coercions keep the element type.
+# The coercions keep the element type (#13115), and refuse a type object.
 is buf16.new(1, 2).Blob.raku, 'Blob[uint16].new(1,2)', 'buf16.Blob';
+is blob16.new(1).Buf.^name, 'Buf[uint16]', 'blob16.Buf';
+is Buf[uint16].new(4).Buf.^name, 'Buf[uint16]', 'Buf[uint16].Buf';
+is Blob[int8].new(-1).Buf[0], -1, 'a signed element type survives';
+like err({ Buf.Buf }), /^'X::Parameter::InvalidConcreteness'/, 'Buf.Buf on the type object';
+like err({ buf16.Blob }), /^'X::Parameter::InvalidConcreteness'/, 'buf16.Blob on the type object';
+like err({ B.Buf }), /^'X::Parameter::InvalidConcreteness'/, 'a user buffer class type object';
+like err({ Blob.Blob }), /^'X::Method::NotFound'/, 'Blob declares no Blob';

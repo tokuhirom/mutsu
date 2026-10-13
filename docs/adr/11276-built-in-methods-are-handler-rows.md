@@ -2570,7 +2570,10 @@ each method's argument edge cases, on `raku`, the binary before the slice and th
    `Buf` reads `0` past its end, a `Blob` (and `utf8`, `blob16`) raises `X::OutOfRange` (it read `0`), a negative position is
    out of range `0..elems-1` (it named `0..^Inf`), a big integer raises the unboxing error, and `EXISTS-POS` answers (it was
    missing, #13294's `Buf` half). The cascade's `AT-POS` branch keeps the native-backed `CArray` only.
-6. **`.Blob`/`.Buf` keep the element type** (`buf16.new(1).Blob` is a `Blob[uint16]`; it was a `Blob`).
+6. **`.Blob`/`.Buf` keep the element type** (`buf16.new(1).Blob` is a `Blob[uint16]`; it was a `Blob`, #13115), and refuse a
+   type object with `X::Parameter::InvalidConcreteness` (they were `X::Method::NotFound`). For that, `user_buffer_receiver` also
+   answers a buffer type object with no shape of its own (`buf16`, `Blob[uint32]`, a user buffer class) with its shape's type
+   object, so it reaches the `TYPE_OBJECT_OK` rows (`of`, the coercions, `Any`'s and `Mu`'s).
 7. The 0-arg cascade's buffer branches for `gist`/`raku`, `bytes` and `list` are deleted (the rows answer every buffer now);
    `perl` (Mu's, which Rakudo's `Blob` does not declare) and `values` (`Any`'s `self.list`) keep a one-line branch each.
 
