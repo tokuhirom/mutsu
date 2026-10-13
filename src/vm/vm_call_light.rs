@@ -702,7 +702,7 @@ impl Interpreter {
                 // through, with an untyped Array/Hash argument) binds the
                 // caller's container itself, de-itemized like the general
                 // binder's `@`/`%` bind.
-                if cf.has_aggregate_positional_param
+                if cf.aggregate_positional_params != 0
                     && cf.param_defs[param_idx].name.starts_with(['@', '%'])
                 {
                     // The caller's variable, when the argument names one
@@ -848,7 +848,7 @@ impl Interpreter {
             // caller's container, which the body may store into (`%h<k> = v`,
             // `@a = ...`), and the general binder never marks one readonly.
             let writable = is_rw_param
-                || (cf.has_aggregate_positional_param && param_name.starts_with(['@', '%']));
+                || (cf.aggregate_positional_params != 0 && param_name.starts_with(['@', '%']));
             match cf.param_name_syms.get(param_idx) {
                 Some(sym) if writable => self.unmark_readonly_sym(*sym),
                 Some(sym) => self.mark_readonly_sym(*sym),

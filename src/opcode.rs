@@ -8941,11 +8941,13 @@ impl CompiledCode {
             matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num")
                 || crate::native_types::is_native_int_type(s.as_str()))
         });
-        self.names_var_method = self
-            .constants
-            .iter()
-            .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "VAR"))
-            || self.closure_compiled_codes.iter().any(|c| c.names_var_method);
+        self.names_var_method =
+            self.constants.iter().any(
+                |c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "VAR"),
+            ) || self
+                .closure_compiled_codes
+                .iter()
+                .any(|c| c.names_var_method);
         (self.uses_routine_state, self.sets_routine_state) = self.scan_routine_state();
         self.compute_const_syms();
         self.compute_locals_sym();
@@ -13144,13 +13146,15 @@ pub(crate) struct CompiledFunction {
     /// no `is rw` parameter — the overwhelming majority — pays no per-call
     /// scan for one. Computed once in `precompute_param_name_syms`.
     pub(crate) has_rw_positional_param: bool,
-    /// True when at least one positional parameter is a plain `@x`/`%x`
-    /// the positional-light paths may bind
-    /// ([`FastParamCheck::light_aggregate_sigil`]). Gates the per-call argument
-    /// shape check (`positional_light_aggregate_args_admitted`) so a routine
-    /// without one pays nothing for it. Computed once in
-    /// `precompute_param_name_syms`.
-    pub(crate) has_aggregate_positional_param: bool,
+    /// Bit `i` is set when parameter `i` is a plain `@x`/`%x` the
+    /// positional-light paths may bind
+    /// ([`FastParamCheck::light_aggregate_sigil`]), so neither the eligibility
+    /// test nor the per-call argument shape check
+    /// (`positional_light_aggregate_args_admitted`) re-derives it per call
+    /// (#12526); zero means a routine pays nothing for the check. A plain
+    /// aggregate past index 63 sets no bit and keeps the general binder.
+    /// Computed once in `precompute_param_name_syms`.
+    pub(crate) aggregate_positional_params: u64,
     /// Pre-computed mapping from positional parameter index to locals slot index.
     /// Used by the positional light call fast path to avoid name-based lookup per call.
     pub(crate) param_local_slots: Option<Vec<usize>>,
@@ -13764,10 +13768,13 @@ impl CompiledFunction {
             .param_defs
             .iter()
             .any(|pd| !pd.named && pd.traits.iter().any(|t| t == "rw"));
-        self.has_aggregate_positional_param = self
+        self.aggregate_positional_params = self
             .param_defs
             .iter()
-            .any(|pd| FastParamCheck::light_aggregate_sigil(pd).is_some());
+            .take(64)
+            .enumerate()
+            .filter(|(_, pd)| FastParamCheck::light_aggregate_sigil(pd).is_some())
+            .fold(0, |mask, (i, _)| mask | (1u64 << i));
     }
 
     /// True if `sym` names a *callee-local* of this function — a parameter, a
@@ -13883,7 +13890,7 @@ mod compiled_fns_identity {
             is_raw: false,
             uses_return_rw: false,
             has_rw_positional_param: false,
-            has_aggregate_positional_param: false,
+            aggregate_positional_params: 0,
             param_local_slots: None,
             params_fill_frame: false,
             has_inner_subs: false,

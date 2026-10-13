@@ -33,24 +33,29 @@ impl Interpreter {
     /// [`Self::positional_light_rw_args_admitted`] it is re-derived per call,
     /// because one routine is called with every shape; the flag check keeps a
     /// routine with no such parameter free of it.
-    // Cost: O(p), p = positional parameters.
+    // Cost: O(k), k = plain `@`/`%` positional parameters.
     #[inline]
     pub(super) fn positional_light_aggregate_args_admitted(
         cf: &CompiledFunction,
         args: &[Value],
     ) -> bool {
-        if !cf.has_aggregate_positional_param {
-            return true;
-        }
-        cf.param_defs.iter().enumerate().all(|(i, pd)| {
-            let Some(sigil) = crate::opcode::FastParamCheck::light_aggregate_sigil(pd) else {
-                return true;
-            };
+        let mut mask = cf.aggregate_positional_params;
+        while mask != 0 {
+            let i = mask.trailing_zeros() as usize;
+            mask &= mask - 1;
             let Some(arg) = args.get(i) else {
                 return false;
             };
-            Self::light_aggregate_arg_admitted(sigil, arg)
-        })
+            let sigil = if cf.param_defs[i].name.starts_with('@') {
+                '@'
+            } else {
+                '%'
+            };
+            if !Self::light_aggregate_arg_admitted(sigil, arg) {
+                return false;
+            }
+        }
+        true
     }
 
     /// One argument of [`Self::positional_light_aggregate_args_admitted`].
