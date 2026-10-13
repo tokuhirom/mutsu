@@ -2,6 +2,7 @@
 //! #12389 item 4). Each handler is the one body the cascade's arm calls too.
 
 use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::Named;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -21,6 +22,15 @@ pub(super) static ROWS: &[MethodRow] = &[
         handler: Handler::Narrow(batch),
         flags: RowFlags::LIVE_VIEW,
         named: &[],
+    },
+    // `batch(:$elems!)`, Rakudo's named candidate (ADR-11276 §9.100).
+    MethodRow {
+        owner: "Any",
+        name: "batch",
+        arity: 0,
+        handler: Handler::Named(batch_elems),
+        flags: RowFlags::LIVE_VIEW,
+        named: &["elems"],
     },
     MethodRow {
         owner: "List",
@@ -121,6 +131,22 @@ pub(crate) fn batch(target: &Value, args: &[Value]) -> Option<Result<Value, Runt
         .map(|chunk| Value::array(chunk.to_vec()))
         .collect();
     Some(Ok(Value::seq(batches)))
+}
+
+/// `Any.batch(:$elems!)`: as [`batch`] with the named size. Without `:elems`
+/// no candidate binds (`.batch()` is `X::Multi::NoMatch` in Rakudo).
+// Cost: as `batch`.
+fn batch_elems(
+    target: &Value,
+    _args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let Some(elems) = named.get("elems") else {
+        return Some(Err(
+            crate::runtime::methods_signature_errors::make_multi_no_match_error("batch"),
+        ));
+    };
+    batch(target, &[Value::pair("elems".to_string(), elems.clone())])
 }
 
 /// `List.Supply`: a (non-live) `Supply` that emits the invocant's elements.

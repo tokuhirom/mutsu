@@ -452,6 +452,8 @@ pub(crate) fn shapeless_row(
                     | "roll"
                     | "head"
                     | "tail"
+                    | "combinations"
+                    | "batch"
                     | "uniprop"
                     | "uniprops"
                     | "unimatch"
