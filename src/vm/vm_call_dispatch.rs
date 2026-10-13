@@ -387,6 +387,7 @@ impl Interpreter {
             is_raw: def.is_raw,
             uses_return_rw: crate::opcode::body_uses_return_rw(&def.body),
             has_rw_positional_param: false,
+            has_aggregate_positional_param: false,
             is_cached: def.is_cached,
             param_local_slots: None,
             params_fill_frame: false,

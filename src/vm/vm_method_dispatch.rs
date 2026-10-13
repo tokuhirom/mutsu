@@ -163,18 +163,26 @@ impl Interpreter {
         // `cc.has_env_writes` can be false while the container still changed).
         // Subs already route through their writeback; only the method fast path
         // dropped this. Excludes slurpy/named/`is copy`/attr-twigil params.
-        let has_aliasable_container_params = method_def.param_defs.iter().any(|pd| {
-            !pd.is_invocant
-                && !pd.traits.iter().any(|t| t == "invocant")
-                && !pd.slurpy
-                && !pd.double_slurpy
-                && !pd.named
-                && !pd.traits.iter().any(|t| t == "copy")
-                && pd.sub_signature.is_none()
-                && pd.name.len() > 1
-                && (pd.name.starts_with('@') || pd.name.starts_with('%'))
-                && !pd.name[1..].starts_with(['!', '.'])
-        });
+        //
+        // A plain `@x`/`%x` (`FastParamCheck::light_aggregate_sigil`) handed an
+        // untyped Array/Hash is the exception: assignment to a mutsu container
+        // stores in place, so binding the caller's container itself already
+        // propagates every one of those mutations, and the fast binder does
+        // that (`method_aggregate_args_light`).
+        let light_aggregates = Self::method_aggregate_args_light(method_def, &args);
+        let has_aliasable_container_params = !light_aggregates
+            && method_def.param_defs.iter().any(|pd| {
+                !pd.is_invocant
+                    && !pd.traits.iter().any(|t| t == "invocant")
+                    && !pd.slurpy
+                    && !pd.double_slurpy
+                    && !pd.named
+                    && !pd.traits.iter().any(|t| t == "copy")
+                    && pd.sub_signature.is_none()
+                    && pd.name.len() > 1
+                    && (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                    && !pd.name[1..].starts_with(['!', '.'])
+            });
         // Slice 2d (method follow-up): an array/hash variable passed into a
         // plain readonly scalar `$` param shares the caller's container in Raku
         // (`method m($n) { $n.push }` mutates the caller's `@z`). The promotion
@@ -2161,6 +2169,19 @@ impl Interpreter {
             }
             if arg_idx < args.len() {
                 let mut val = args[arg_idx].clone();
+                // A plain `@x`/`%x` binds the caller's container itself
+                // (admitted per call by `method_aggregate_args_light`),
+                // de-itemized like the general binder's `@`/`%` bind.
+                if let Some(pd) = pd
+                    .filter(|pd| crate::opcode::FastParamCheck::light_aggregate_sigil(pd).is_some())
+                {
+                    val =
+                        crate::runtime::types::unwrap_varref_value(val).deitemize_for_sigil_bind();
+                    self.note_param_bound_aggregate(&pd.name, &val);
+                    param_values.push((binding_name, binding_sym, val));
+                    arg_idx += 1;
+                    continue;
+                }
                 // `is copy` container param owns a DISTINCT container: element
                 // mutations write through the shared backing node (container
                 // identity §3), so an undetached copy would leak `@a.push`

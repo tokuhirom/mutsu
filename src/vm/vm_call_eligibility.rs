@@ -495,6 +495,7 @@ impl Interpreter {
             // no `is rw` positional parameter at all (`has_rw_positional_param`).
             && (!cf.has_rw_positional_param
                 || (caller_code.is_some() && Self::positional_light_rw_args_admitted(cf, args)))
+            && Self::positional_light_aggregate_args_admitted(cf, args)
             && cf.param_defs.iter().all(|pd| {
                 !pd.named
                     && (pd.where_constraint.is_none()
@@ -536,8 +537,13 @@ impl Interpreter {
                     // it out forced every `sub f(&c)` call through full
                     // name/type resolution, even when `c` was never invoked.
                     // Code-signature params remain excluded above.
-                    && !pd.name.starts_with('@')
-                    && !pd.name.starts_with('%')
+                    // A plain `@x`/`%x` binds the caller's container itself
+                    // (`light_aggregate_sigil`); every other `@`/`%` shape --
+                    // typed, defaulted, twigilled, `is copy` -- keeps the
+                    // general binder, as do arguments the per-call
+                    // `positional_light_aggregate_args_admitted` gate refuses.
+                    && (!pd.name.starts_with(['@', '%'])
+                        || crate::opcode::FastParamCheck::light_aggregate_sigil(pd).is_some())
                     // Exclude internal/anonymous params (__ANON_STATE__, __type_only__, etc.)
                     && !pd.name.starts_with("__")
                     // Exclude dynamic variable params ($*var)

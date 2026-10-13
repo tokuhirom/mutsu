@@ -291,6 +291,7 @@ impl Compiler {
             is_raw: false,
             uses_return_rw: crate::opcode::body_uses_return_rw(body),
             has_rw_positional_param: false,
+            has_aggregate_positional_param: false,
             is_cached: false,
             param_local_slots: None,
             params_fill_frame: false,

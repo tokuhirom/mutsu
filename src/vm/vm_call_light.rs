@@ -692,11 +692,24 @@ impl Interpreter {
                 // original.
                 let val = std::mem::replace(&mut self.stack[args_base + param_idx], Value::NIL);
                 let val = crate::runtime::types::unwrap_varref_value(val);
-                // Whether this parameter itemizes its bound value depends only
-                // on its declaration, so it was settled at registration time
-                // (`param_itemize_on_bind`). Re-deriving it per bind scanned the
-                // parameter's `traits: Vec<String>` twice with string compares.
-                Self::bind_itemize_param(cf, param_idx, val)
+                // A plain `@x`/`%x` (the only `@`/`%` shape eligibility lets
+                // through, with an untyped Array/Hash argument) binds the
+                // caller's container itself, de-itemized like the general
+                // binder's `@`/`%` bind.
+                if cf.has_aggregate_positional_param
+                    && cf.param_defs[param_idx].name.starts_with(['@', '%'])
+                {
+                    let val = val.deitemize_for_sigil_bind();
+                    self.note_param_bound_aggregate(&cf.param_defs[param_idx].name, &val);
+                    val
+                } else {
+                    // Whether this parameter itemizes its bound value depends
+                    // only on its declaration, so it was settled at
+                    // registration time (`param_itemize_on_bind`). Re-deriving
+                    // it per bind scanned the parameter's `traits:
+                    // Vec<String>` twice with string compares.
+                    Self::bind_itemize_param(cf, param_idx, val)
+                }
             } else {
                 // Omitted: bind the constant the precompute reduced this
                 // parameter's default (or bare `?`) to. `required_count` above
@@ -722,8 +735,11 @@ impl Interpreter {
                 }
             };
             let param_name = &cf.param_defs[param_idx].name;
+            // A plain `@x`/`%x` is always mirrored: a mutating method call on
+            // it (`@a.push`) resolves its target by name.
             let needs_env = write_all_params
                 || val.is_nil()
+                || (cf.has_aggregate_positional_param && param_name.starts_with(['@', '%']))
                 || cf.code.needs_env_sync.get(*slot).copied().unwrap_or(true);
             if needs_env {
                 // The env mirror is keyed by the pre-interned param name
@@ -798,10 +814,16 @@ impl Interpreter {
             // same way the general binder's `check_and_bind_signature` does;
             // the surrounding call path restores whatever was marked before
             // this call once it returns.
+            //
+            // A plain `@x`/`%x` stays writable for the same reason: it is the
+            // caller's container, which the body may store into (`%h<k> = v`,
+            // `@a = ...`), and the general binder never marks one readonly.
+            let writable = is_rw_param
+                || (cf.has_aggregate_positional_param && param_name.starts_with(['@', '%']));
             match cf.param_name_syms.get(param_idx) {
-                Some(sym) if is_rw_param => self.unmark_readonly_sym(*sym),
+                Some(sym) if writable => self.unmark_readonly_sym(*sym),
                 Some(sym) => self.mark_readonly_sym(*sym),
-                None if is_rw_param => self.unmark_readonly(&cf.param_defs[param_idx].name),
+                None if writable => self.unmark_readonly(&cf.param_defs[param_idx].name),
                 None => self.mark_readonly(&cf.param_defs[param_idx].name),
             }
         }
