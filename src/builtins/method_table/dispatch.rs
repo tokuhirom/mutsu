@@ -504,8 +504,15 @@ pub(crate) fn shapeless_row(
                     | "EXISTS-POS"
                     | "AT-KEY"
                     | "EXISTS-KEY"
+                    | "ACCEPTS"
             ))
     {
+        return None;
+    }
+    // `Any.ACCEPTS` answers an instance whose MRO declares nothing closer
+    // (§9.108). A code object, a regex, an enum or a mixin has its own
+    // `ACCEPTS`, which the interpreter answers.
+    if method == "ACCEPTS" && !matches!(target.view(), ValueView::Instance { .. }) {
         return None;
     }
     // `Any`'s subscript protocol answers a value that is not `Positional`; a
