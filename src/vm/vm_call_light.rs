@@ -749,11 +749,11 @@ impl Interpreter {
                 }
             };
             let param_name = &cf.param_defs[param_idx].name;
-            // A plain `@x`/`%x` is always mirrored: a mutating method call on
-            // it (`@a.push`) resolves its target by name.
+            // A plain `@x`/`%x` is mirrored like a scalar: only when the body
+            // reads it by name, which includes a method call on it (`@a.push`)
+            // and a named element store (`compute_needs_env_sync`, #12526).
             let needs_env = write_all_params
                 || val.is_nil()
-                || (cf.has_aggregate_positional_param && param_name.starts_with(['@', '%']))
                 || cf.code.needs_env_sync.get(*slot).copied().unwrap_or(true);
             if needs_env {
                 // The env mirror is keyed by the pre-interned param name

@@ -9182,6 +9182,24 @@ impl CompiledCode {
             {
                 self.needs_env_sync[slot] = true;
             }
+            // An op that resolves a `@`/`%` container by name to store into it
+            // or call a method on it (`@x.push`, `%h{$k} = v`, `@a[$i]++`)
+            // reads that name from env (#12526). Only aggregates: a scalar
+            // `$x.method` target is read from its slot.
+            let container_idx = match op {
+                OpCode::CallMethodMut {
+                    target_name_idx, ..
+                } => Some(*target_name_idx),
+                _ => self.op_container_mutate_const_idx(op),
+            };
+            if let Some(idx) = container_idx
+                && let Some(ValueView::Str(name)) =
+                    self.constants.get(idx as usize).map(Value::view)
+                && name.starts_with(['@', '%'])
+                && let Some(&slot) = locals_map.get(name.as_str())
+            {
+                self.needs_env_sync[slot] = true;
+            }
         }
         // `(B)` per-store env-write gate — closure-capture cluster fold.
         // A nested closure normally reads its free variables straight from this
