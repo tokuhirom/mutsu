@@ -487,21 +487,31 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         let (rest, key_expr) = expression(after_paren)?;
         let (rest, _) = ws(rest)?;
         let (rest, _) = parse_char(rest, ')')?;
+        let key = key_expr.clone();
         let combined = Expr::Binary {
             left: Box::new(Expr::Literal(Value::str(format!("{head}::")))),
             op: crate::token_kind::TokenKind::Tilde,
             right: Box::new(key_expr),
             form: Default::default(),
         };
-        let (rest, combined) =
+        let (after, combined) =
             crate::parser::primary::var::parse_symbolic_deref_segments(rest, combined)?;
-        return Ok((
-            rest,
-            Expr::SymbolicDeref {
-                sigil: String::new(),
-                expr: Box::new(combined),
-            },
-        ));
+        let deref = Expr::SymbolicDeref {
+            sigil: String::new(),
+            expr: Box::new(combined),
+        };
+        // A lookup with no further `::(…)` / `::name` segments keeps its
+        // package and key apart for RakuAST.
+        if after.len() == rest.len() {
+            return Ok((
+                after,
+                Expr::spelled(deref, || crate::ast::spelled::Spelling::PackageIndirect {
+                    package: head.into(),
+                    key: Box::new(key),
+                }),
+            ));
+        }
+        return Ok((after, deref));
     }
     let (rest, name) = crate::parser::stmt::parse_raku_ident(input)?;
     let mut name = normalize_raku_identifier(name);

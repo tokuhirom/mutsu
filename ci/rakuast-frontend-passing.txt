@@ -2455,6 +2455,7 @@ t/modules/backtrace-module-file.t
 t/modules/bare-module-multi-family-scope.t
 t/modules/bare-module-private-lexical.t
 t/modules/bare-package-id-metamethods.t
+t/modules/bare-package-symbolic-deref.t
 t/modules/bare-type-name-under-a-package.t
 t/modules/batteries/cro-http-battery.t
 t/modules/batteries/crypt-random-battery.t
@@ -4639,6 +4640,7 @@ t/rakuast/rakuast-nqp-terms.t
 t/rakuast/rakuast-object-hash.t
 t/rakuast/rakuast-operator-name-colonpairs.t
 t/rakuast/rakuast-operators.t
+t/rakuast/rakuast-package-indirect-lookup.t
 t/rakuast/rakuast-parameter-optional-traits.t
 t/rakuast/rakuast-paren-list-assign.t
 t/rakuast/rakuast-parser-decisions-kept.t
@@ -6914,6 +6916,7 @@ t/vm/fast-0arg-table.t
 t/vm/frames/caller-not-dynamic.t
 t/vm/frames/caller-our-stash-writable.t
 t/vm/frames/callers-dynamic-var-repeated-call.t
+t/vm/frames/callers-indirect-sigiled-name.t
 t/vm/frames/callframe-annotations-map.t
 t/vm/frames/callframe-file-line-same-frame.t
 t/vm/frames/callframe-for-block-code-defined.t

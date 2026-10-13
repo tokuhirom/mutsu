@@ -130,3 +130,84 @@ pub(super) fn lower_assign(node: &RakuAstNode) -> Result<Option<Expr>, RuntimeEr
         _ => Ok(None),
     }
 }
+
+/// The pseudo-packages rakudo 2026.09 resolves lexically: a lookup qualified
+/// by one (`MY::(EXPR)`) renders as a `Term::Name`. `GLOBAL`, `PROCESS`,
+/// `EXPORT` and a user package render as a `Call::Name` over the same name.
+fn is_lexical_pseudo_package(segment: &str) -> bool {
+    matches!(
+        segment,
+        "MY" | "OUR"
+            | "CORE"
+            | "SETTING"
+            | "UNIT"
+            | "OUTER"
+            | "OUTERS"
+            | "CALLER"
+            | "CALLERS"
+            | "DYNAMIC"
+            | "LEXICAL"
+            | "CLIENT"
+    )
+}
+
+/// `MY::(EXPR)` / `GLOBAL::(EXPR)`: the package's parts, then the key as a
+/// `Name::Part::Expression`.
+// Cost: O(n), n = nodes of the key, plus the package's segments.
+pub(super) fn convert_package_indirect(
+    package: &str,
+    key: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut parts: Vec<Value> = name_parts::identifier_segments(package)
+        .map(name_parts::simple_part)
+        .collect();
+    parts.push(Value::rakuast(Box::new(RakuAstNode {
+        class: RakuAstClass::NamePartExpression,
+        fields: vec![node_field(None, convert_expr(key)?)],
+    })));
+    let name = name_parts::name_from_parts(parts);
+    let lexical = name_parts::identifier_segments(package)
+        .next()
+        .is_some_and(is_lexical_pseudo_package);
+    Ok(if lexical {
+        RakuAstNode {
+            class: RakuAstClass::TermName,
+            fields: vec![node_field(None, name)],
+        }
+    } else {
+        RakuAstNode {
+            class: RakuAstClass::CallName,
+            fields: vec![node_field(Some("name"), name)],
+        }
+    })
+}
+
+/// The package and key of a `Term::Name` / `Call::Name` (without arguments)
+/// over `Name(Part::Simple…, Part::Expression(EXPR))`, or `None`.
+// Cost: O(p), p = parts of the name.
+pub(super) fn package_indirect(node: &RakuAstNode) -> Option<(String, &RakuAstNode)> {
+    let name = match node.class {
+        RakuAstClass::TermName => super::lower::named_child_or_positional(node).ok()?,
+        RakuAstClass::CallName if !node.fields.iter().any(|f| f.name == Some("args")) => {
+            named_child(node, "name").ok()?
+        }
+        _ => return None,
+    };
+    name_parts::package_and_expression(name)
+}
+
+/// [`package_indirect`] as the parser's lookup: the symbolic dereference of
+/// `"PKG::" ~ EXPR`.
+// Cost: O(n), n = nodes of the key.
+pub(super) fn lower_package_indirect(node: &RakuAstNode) -> Option<Result<Expr, RuntimeError>> {
+    let (package, key) = package_indirect(node)?;
+    Some(lower_expr(key).map(|key| Expr::SymbolicDeref {
+        sigil: String::new(),
+        expr: Box::new(Expr::Binary {
+            left: Box::new(Expr::Literal(Value::str(format!("{package}::")))),
+            op: crate::token_kind::TokenKind::Tilde,
+            right: Box::new(key),
+            form: Default::default(),
+        }),
+    }))
+}

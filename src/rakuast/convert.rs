@@ -3013,6 +3013,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             } => Ok(word_quote_with(*quotewords, *val, text)),
             Spelling::InterpolatingWords { val, text } => super::word_quote::convert(*val, text),
             Spelling::BareStatement => super::bare_prefix::bare_statement_node(&spelled.expr),
+            Spelling::PackageIndirect { package, key } => {
+                super::symbolic_deref::convert_package_indirect(package, key)
+            }
             Spelling::NamedSubscript { .. } | Spelling::ConflictingSubscript { .. } => {
                 Err(unsupported("subscript adverb source form"))
             }
