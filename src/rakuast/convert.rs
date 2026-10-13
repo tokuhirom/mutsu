@@ -371,6 +371,12 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => Ok(Some(statement_expression(
                 super::signature_decl::convert(decl)?,
             ))),
+            Some(crate::ast::SourceForm::AttributeGroup(attributes)) => Ok(Some(
+                statement_expression(super::attribute_group::to_signature(attributes)?),
+            )),
+            Some(crate::ast::SourceForm::AttributeColonArglist(attributes)) => Ok(Some(
+                statement_expression(super::attribute_group::convert_colon(attributes)?),
+            )),
             Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => Ok(Some(statement_expression(
                 super::method_assign_decl::convert(decl)?,
             ))),
@@ -3343,6 +3349,12 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }) => declaration_modifier_node(declaration, condition, *kind),
             Some(crate::ast::SourceForm::SignatureDecl(decl)) => {
                 super::signature_decl::convert(decl)
+            }
+            Some(crate::ast::SourceForm::AttributeGroup(attributes)) => {
+                super::attribute_group::to_signature(attributes)
+            }
+            Some(crate::ast::SourceForm::AttributeColonArglist(attributes)) => {
+                super::attribute_group::convert_colon(attributes)
             }
             Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => {
                 super::method_assign_decl::convert(decl)

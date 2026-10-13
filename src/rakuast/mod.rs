@@ -14,6 +14,7 @@ mod anon_state;
 mod atomic_op;
 mod attribute;
 mod attribute_decl;
+mod attribute_group;
 mod bare_prefix;
 mod bareword;
 mod callable_context;

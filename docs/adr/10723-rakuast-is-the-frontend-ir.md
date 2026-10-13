@@ -662,3 +662,14 @@ Conversion renders the source declaration with its `condition-modifier`
 instead of inspecting the generated modifier statements. The focused RakuAST
 test pins `when` and `if` structure, the required-attribute behavior, and one
 condition evaluation during class composition.
+
+### 6.21 S10: grouped and colon-arglist attributes (2026-10-13)
+
+Parenthesized `has Type ($.a, $.b)` declarations convert to Rakudo's single
+`VarDeclaration::Signature`, while hidden model metadata retains each
+attribute's traits and defaults for lowering through the parser's shared
+class-body expansion. For `has $.a: has $.b`, conversion displays the
+initiating declaration as Rakudo does and retains declarations from its colon
+argument list as hidden model metadata. The RakuAST round-trip tests cover
+typed groups, `is rw`, typed defaults, nested colon declarations, and chained
+colon lists. The refreshed frontend ratchet passes 7,101 of 7,389 files.

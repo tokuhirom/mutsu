@@ -188,7 +188,10 @@ fn has_decl_list(
     }
 
     let (rest, _) = opt_char(rest, ';');
-    Ok((rest, Stmt::SyntheticBlock(stmts)))
+    Ok((
+        rest,
+        crate::ast::signature_decl::attribute_group_expansion(stmts),
+    ))
 }
 
 /// Detect `<scope> <declaration>` combinations that are illegal in Raku, e.g.
@@ -1449,7 +1452,14 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // nested declaration comes first: rakudo finishes it while still parsing
     // this one's arglist, so it is the earlier attribute in `.^attributes`.
     let mut stmts = match tail {
-        Some(Stmt::SyntheticBlock(v)) => v,
+        Some(Stmt::SyntheticBlock(v)) => match v.first() {
+            Some(Stmt::SourceForm(form)) => match form.as_ref() {
+                crate::ast::SourceForm::AttributeGroup(attributes)
+                | crate::ast::SourceForm::AttributeColonArglist(attributes) => attributes.clone(),
+                _ => v,
+            },
+            _ => v,
+        },
         Some(s) => vec![s],
         None => Vec::new(),
     };
@@ -1457,7 +1467,10 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         Stmt::SyntheticBlock(v) => stmts.extend(v),
         s => stmts.push(s),
     }
-    Ok((colon_rest, Stmt::SyntheticBlock(stmts)))
+    Ok((
+        colon_rest,
+        crate::ast::signature_decl::attribute_colon_expansion(stmts),
+    ))
 }
 
 /// `has $.x: ARGLIST` -- rakudo's `variable` token lets a `.`-twigil variable
