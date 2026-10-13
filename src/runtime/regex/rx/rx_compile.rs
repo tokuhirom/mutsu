@@ -94,9 +94,11 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
 /// Compile the mark-stripped body of a whole-`:m` rule (`strip_marks_pattern`)
 /// as a markless program ([`RxProgram::markless`]), or say why not. Only the
 /// ops whose every character test goes through a consuming atom are covered,
-/// and a look-around whose body compiles markless in turn; a construct that
-/// reads the subject another way (a backreference, `<.ws>`, an interpolation
-/// or a nested `:m` group) declines, and the call keeps the eager `:m` path.
+/// a look-around whose body compiles markless in turn, and a backreference or
+/// capture marker (`CapAtom`: rakudo compares a backreference exactly, marks
+/// included, which the subject's own positions give). A construct that reads
+/// the subject another way (`<.ws>`, an interpolation or a nested `:m` group)
+/// declines, and the call keeps the eager `:m` path.
 // Cost: O(t), t = the number of tokens in the pattern tree.
 pub(in crate::runtime::regex) fn compile_markless(
     pattern: &RegexPattern,
@@ -112,7 +114,6 @@ pub(in crate::runtime::regex) fn compile_markless(
         op => !matches!(
             op,
             RxOp::Ws
-                | RxOp::CapAtom(_)
                 | RxOp::InterpEnds(_)
                 | RxOp::GroupEnds(_)
                 | RxOp::ConjTail { .. }
