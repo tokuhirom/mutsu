@@ -344,6 +344,7 @@ t/collections/lazy-seq/lazy-seq-raku-prefix.t
 t/collections/lazy-seq/lazy-seq-single-pass-consumption.t
 t/collections/lazy-seq/lazylist-element-store-refuses-defined-value.t
 t/collections/lazy-seq/list-literal-slipped-lazy-tail.t
+t/collections/lazy-seq/list-new-seq-arg-one-element.t
 t/collections/lazy-seq/loop-while-as-lazy-seq.t
 t/collections/lazy-seq/magic-vars-lazy-materialize.t
 t/collections/lazy-seq/nested-deferred-map-seq-is-pulled.t
@@ -540,6 +541,7 @@ t/collections/set-bag-mix/baghash-add-remove.t
 t/collections/set-bag-mix/baghash-mutator-rows.t
 t/collections/set-bag-mix/baghash-subclass-add-remove.t
 t/collections/set-bag-mix/mix-binding-and-coercion.t
+t/collections/set-bag-mix/mix-numeric-total-exact.t
 t/collections/set-bag-mix/mix-rat-weights.t
 t/collections/set-bag-mix/mix-weight-exact-accumulation.t
 t/collections/set-bag-mix/mix-weight-numeric-tower.t
@@ -603,6 +605,7 @@ t/collections/subscript/angle-subscript-interpolation.t
 t/collections/subscript/angle-subscript-not-type-generic-args.t
 t/collections/subscript/angle-subscript-parens.t
 t/collections/subscript/angle-subscript-word-chars.t
+t/collections/subscript/any-subscript-rows.t
 t/collections/subscript/array-empty-semicolon-slices.t
 t/collections/subscript/array-slice-exclusive-start-range.t
 t/collections/subscript/array-slice-oob.t
@@ -2609,6 +2612,7 @@ t/modules/import-export/export-hook-body-scope.t
 t/modules/import-export/export-hook-caller-method-lexical.t
 t/modules/import-export/export-hook-exportable-trait.t
 t/modules/import-export/export-hook-hands-over-main.t
+t/modules/import-export/export-hook-local-operator-reduction.t
 t/modules/import-export/export-hook-local-prefix-operator.t
 t/modules/import-export/export-hook-multi-named-args.t
 t/modules/import-export/export-hook-raw-param-container.t
@@ -2915,6 +2919,7 @@ t/modules/our-multi-in-a-package-body.t
 t/modules/our-package-qualified-shared-cell.t
 t/modules/our-proto-multi.t
 t/modules/our-proto-package-stash.t
+t/modules/our-pseudo-package-constant.t
 t/modules/our-scalar-bare-name-resolution.t
 t/modules/our-scalar-nil-initializer-resets-container.t
 t/modules/our-sub-block-lexical-capture.t
@@ -4769,6 +4774,7 @@ t/rakuast/rakuast-type-objects.t
 t/rakuast/rakuast-type-parameterized.t
 t/rakuast/rakuast-type-shape-cohort.t
 t/rakuast/rakuast-typed-container-attribute.t
+t/rakuast/rakuast-underscore-operator-name.t
 t/rakuast/rakuast-uninitialized-decl-default.t
 t/rakuast/rakuast-unless.t
 t/rakuast/rakuast-unresolved-qualified-name.t
@@ -6823,6 +6829,7 @@ t/vm/binding/bind-to-declaration-shares-container.t
 t/vm/binding/bind-to-whatever-index.t
 t/vm/binding/bound-array-for-rw.t
 t/vm/binding/bound-container-pair-writethrough.t
+t/vm/binding/bound-hash-elem-push-autoviv.t
 t/vm/binding/bound-hash-for-values-rw.t
 t/vm/binding/bound-hash-whole-reassign.t
 t/vm/binding/const-fold-infix-override.t
