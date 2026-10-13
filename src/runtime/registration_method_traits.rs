@@ -64,9 +64,19 @@ impl Interpreter {
     // Cost: O(1).
     pub(super) fn bind_trait_package(&mut self, pkg: &str) -> Option<Value> {
         let saved = self.env.get("*PACKAGE").cloned();
-        let package_name = match self.registry().declaring_role_ids.get(pkg) {
-            Some(role_id) => crate::runtime::types::role_candidate_type_name(pkg, *role_id),
-            None => pkg.to_string(),
+        // A role's attribute traits run at its first composition, after the
+        // declaration: its own definition then names the candidate.
+        let package_name = {
+            let registry = self.registry();
+            match registry.declaring_role_ids.get(pkg) {
+                Some(role_id) => crate::runtime::types::role_candidate_type_name(pkg, *role_id),
+                None => match registry.roles.get(pkg) {
+                    Some(role_def) if !registry.classes.contains_key(pkg) => {
+                        crate::runtime::types::role_candidate_type_name(pkg, role_def.role_id)
+                    }
+                    _ => pkg.to_string(),
+                },
+            }
         };
         self.env.insert(
             "*PACKAGE".to_string(),
