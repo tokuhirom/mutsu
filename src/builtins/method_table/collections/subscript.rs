@@ -20,7 +20,8 @@ macro_rules! row {
             name: $name,
             arity: 1,
             handler: Handler::Narrow($handler),
-            flags: RowFlags::ANY_ARGS,
+            // A key may be any object, a user object included.
+            flags: RowFlags::ANY_ARGS.or(RowFlags::OBJECT_ARGS),
             named: &[],
         }
     };

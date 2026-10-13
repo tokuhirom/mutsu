@@ -288,9 +288,7 @@ pub(crate) fn elems(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
 /// failure for a negative index.
 // Cost: O(1) for an Int index; O(d) to parse a Str one, d = chars.
 pub(crate) fn at_pos(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    let ValueView::Capture { positional, .. } = target.view() else {
-        return None;
-    };
+    let positional = positionals(target)?;
     let idx = index_of(&args[0])?;
     if idx < 0 {
         return Some(Ok(RuntimeError::out_of_range_failure(
@@ -309,9 +307,7 @@ pub(crate) fn at_pos(target: &Value, args: &[Value]) -> Option<Result<Value, Run
 /// `pos`; a negative index is out of range.
 // Cost: O(1) for an Int index; O(d) to parse a Str one, d = chars.
 pub(crate) fn exists_pos(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    let ValueView::Capture { positional, .. } = target.view() else {
-        return None;
-    };
+    let positional = positionals(target)?;
     let idx = index_of(&args[0])?;
     if idx < 0 {
         return Some(Err(RuntimeError::out_of_range(
@@ -320,7 +316,29 @@ pub(crate) fn exists_pos(target: &Value, args: &[Value]) -> Option<Result<Value,
             "0..^Inf",
         )));
     }
-    Some(Ok(Value::truth((idx as usize) < positional.len())))
+    // A `Match`'s optional group that did not match is no capture (`Nil`).
+    let is_match = target.is_match_instance();
+    Some(Ok(Value::truth(
+        positional
+            .get(idx as usize)
+            .is_some_and(|v| !(is_match && v.is_nil())),
+    )))
+}
+
+/// The positional part of a `Capture`, or a `Match`'s positional captures
+/// (one that did not match is `Nil`), which `AT-POS`/`EXISTS-POS` index.
+// Cost: O(n), n = positional parts (copied).
+fn positionals(target: &Value) -> Option<Vec<Value>> {
+    if target.is_match_instance() {
+        return Some(match target.match_list().as_ref().map(Value::view) {
+            Some(ValueView::Array(items, _)) => items.to_vec(),
+            _ => Vec::new(),
+        });
+    }
+    match target.view() {
+        ValueView::Capture { positional, .. } => Some(positional.to_vec()),
+        _ => None,
+    }
 }
 
 /// The integer a positional index argument stands for, or `None` for an
