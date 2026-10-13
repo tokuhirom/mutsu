@@ -98,6 +98,9 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
             | "chrs"
             // `Nil` is `Cool`: `Nil.IO` is the `IO::Path` type object.
             | "IO"
+            // `Any:U`'s subscript existence tests: `Nil.EXISTS-POS(0)` is `False`.
+            | "EXISTS-POS"
+            | "EXISTS-KEY"
     )
     // NOTE: the numify-to-0 Real methods (abs/floor/ceiling/round/truncate/sign)
     // are deliberately NOT listed above. Their warn+resume handling lives only in
@@ -2307,6 +2310,11 @@ impl Interpreter {
                         // is the `IO::Path` type object (#9495). Mirrors
                         // `nil_absorbs_method` above.
                         "IO" if args.is_empty() => {
+                            // Fall through to normal dispatch
+                        }
+                        // `Any:U`'s `EXISTS-POS`/`EXISTS-KEY` answer `False`
+                        // (#13294). Mirrors `nil_absorbs_method` above.
+                        "EXISTS-POS" | "EXISTS-KEY" => {
                             // Fall through to normal dispatch
                         }
                         _ => {
