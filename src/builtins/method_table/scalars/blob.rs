@@ -91,37 +91,36 @@ pub(super) static COERCE_ROWS: &[MethodRow] = &[
 /// storage-backed buffer carrying the user's class name, which every handler
 /// here keeps (`B.new(1, 2).subbuf(1)` is a `B`), so the instance itself is
 /// the invocant. The user's own methods never get here: the native entry is
-/// bypassed when the class declares the method. The type object of such a
-/// class, or of a buffer type with no shape of its own (`buf16`,
-/// `Blob[uint32]`), is the shape's type object. `None` for every other
+/// bypassed when the class declares the method. A built-in buffer under an
+/// alias class name (`blob8.allocate(4)` is a `blob8`) is answered the same
+/// way, and the type object of such a class, or of a buffer type with no
+/// shape of its own (`buf16`, `Blob[uint32]`), is the shape's type object. `None` for every other
 /// receiver. [`super::super::Receiver::of_settled`] asks it.
-// Cost: O(1) (one relaxed load; a hash lookup once any buffer class exists),
-// O(n) for a type object, n = the length of its name.
+// Cost: O(1): a compare against the alias names and two prefixes, then one
+// relaxed load (a hash lookup once any user buffer class exists).
 pub(crate) fn user_buffer_receiver(target: &Value) -> Option<super::super::Receiver> {
-    let shape_of = |mutable: bool| {
-        if mutable {
-            crate::value::DispatchShape::Buf
-        } else {
-            crate::value::DispatchShape::Blob
-        }
+    let (name, type_object) = match target.view() {
+        ValueView::Instance { class_name, .. } => (class_name.as_str(), false),
+        ValueView::Package(name) => (name.as_str(), true),
+        _ => return None,
     };
-    match target.view() {
-        ValueView::Instance { class_name, .. } => {
-            let buffer_type = crate::value::value_buf::buffer_class_type(class_name.as_str())?;
-            Some(super::super::Receiver::instance(shape_of(
-                buffer_type.starts_with("Buf"),
-            )))
-        }
-        ValueView::Package(name) => {
-            let name = name.resolve();
-            crate::runtime::utils::is_buf_or_blob_class(&name).then(|| {
-                super::super::Receiver::type_object(shape_of(
-                    crate::runtime::utils::is_buf_like_class(&name),
-                ))
-            })
-        }
-        _ => None,
-    }
+    let mutable = match name {
+        "buf8" | "buf16" | "buf32" | "buf64" => true,
+        "blob8" | "blob16" | "blob32" | "blob64" | "utf8" | "utf16" | "utf32" => false,
+        _ if name.starts_with("Buf[") => true,
+        _ if name.starts_with("Blob[") => false,
+        _ => crate::value::value_buf::buffer_class_type(name)?.starts_with("Buf"),
+    };
+    let shape = if mutable {
+        crate::value::DispatchShape::Buf
+    } else {
+        crate::value::DispatchShape::Blob
+    };
+    Some(if type_object {
+        super::super::Receiver::type_object(shape)
+    } else {
+        super::super::Receiver::instance(shape)
+    })
 }
 
 /// The class name of a buffer receiver, when it is a plain buffer instance.

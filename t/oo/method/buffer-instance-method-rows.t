@@ -5,7 +5,7 @@ use Test;
 # `subbuf`, `subbuf-rw`, `read-*`, `read-ubits`/`read-bits`, `AT-POS` and
 # `EXISTS-POS` bind their arguments as Rakudo's candidates do.
 
-plan 60;
+plan 63;
 
 sub err(&code) {
     my $r = try code();
@@ -37,6 +37,15 @@ is err({ $b.AT-POS(5) }), 'X::OutOfRange: Index out of range. Is: 5, should be i
 is $c.AT-POS(9), 0, 'AT-POS past the end of a Buf-composing class';
 is O.new(1, 2).subbuf("x"), 'own subbuf x', 'a method of the class answers its own candidate';
 is O.new(1, 2).subbuf(1).raku, 'O.new(2)', 'and the row the others';
+
+# A buffer made under an alias class name (`blob8.allocate` makes a `blob8`)
+# reaches the same rows (OpenSSL's `sha1` returns one).
+{
+    my $d := blob8.allocate(3);
+    is $d.raku, 'Blob[uint8].new(0,0,0)', 'blob8.allocate renders as Blob[uint8]';
+    is $d.bytes, 3, 'and has its bytes';
+    is buf8.allocate(2).subbuf(1).raku, 'Buf[uint8].new(0)', 'buf8.allocate reaches subbuf';
+}
 
 # subbuf binds like Rakudo's candidates.
 my $buf = Buf.new(1, 2, 3, 4, 250);
