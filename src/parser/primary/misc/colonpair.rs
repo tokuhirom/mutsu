@@ -602,7 +602,12 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
         let mut trailing_comma = false;
         let mut r = r;
         while !r.starts_with(']') {
-            let (r2, item) = expression(r)?;
+            // A run of adjacent colonpairs (`:name[:a :b]`) holds every pair, as
+            // in a plain `[:a :b]`; `expression` would read `:b` as an adverb.
+            let (r2, item) = match crate::parser::primary::container::colonpair_run_item(r, ']') {
+                Some(parsed) => parsed,
+                None => expression(r)?,
+            };
             items.push(item);
             let (r2, _) = ws(r2)?;
             if r2.starts_with(',') {

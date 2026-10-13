@@ -372,7 +372,11 @@ fn parse_colon_pair_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
         let mut trailing_comma = false;
         let mut r = r;
         while !r.starts_with(']') {
-            let (r2, item) = expression(r)?;
+            // Adjacent colonpairs (`:name[:a :b]`) are separate items, not adverbs.
+            let (r2, item) = match crate::parser::primary::container::colonpair_run_item(r, ']') {
+                Some(parsed) => parsed,
+                None => expression(r)?,
+            };
             items.push(item);
             let (r2, _) = ws_inner(r2);
             if r2.starts_with(',') {
