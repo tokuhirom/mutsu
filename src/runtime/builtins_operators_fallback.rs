@@ -632,7 +632,21 @@ impl Interpreter {
             // (for callsame/nextsame) and the is-raw/rw Proxy tail stay here.
             if Self::def_module_single_sig_body_ok_ignoring_state(&def) {
                 let fold_is_rw = !Self::routine_is_rw_capable(&def);
+                // #13183: a multi winner's `where` clauses and subset
+                // predicates already ran against these exact arguments to make
+                // it the winner (a value-dependent candidate is never served
+                // from a type-keyed cache), so its bind may trust that verdict,
+                // as `dispatch_func_call_inner` does (#8697). A lone sub's
+                // resolution runs no candidate matching, so it is not armed.
+                self.pending_skip_constraint_recheck = pushed_dispatch
+                    && def
+                        .param_defs
+                        .iter()
+                        .any(|pd| self.param_runs_constraint_predicate(pd));
                 let result = self.call_routine_def(&def, args.to_vec());
+                // Not consumed (no general bind ran): it must not reach an
+                // unrelated later bind.
+                self.pending_skip_constraint_recheck = false;
                 self.pop_samewith_context();
                 if pushed_dispatch {
                     self.dispatch.multi_dispatch_stack.pop();
