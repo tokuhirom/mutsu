@@ -643,6 +643,28 @@ implemented** (`src/runtime/begin_prologue/nested/mentions.rs`,
   already lifted and fails the same way on both; `GLOBAL::h()` reaches an
   `our` routine of the scope on both.
 
+**Slice 2 follow-up — a multi read as `&name` without changing it, implemented**
+(`src/runtime/begin_prologue/nested/code_uses.rs`,
+`t/control/begin-prologue-inner-calls.t`; #13096).
+
+- A body (or copied routine) that reads a multi as `&name` was never lifted,
+  since it may change the proto object and a change to the copy would be lost.
+  Now the AST says how each `&name` is used (`CodeUses`): a method from a
+  read-only list (`.candidates`, `.signature`, `.name`, `.assuming`, ...) or a
+  call through it (`&p(...)`, `&p.(...)`) changes nothing, and the body is
+  lifted. Any other use (another method, a `.^` metamethod, handing `&p` on
+  as an argument or binding it) still keeps the BEGIN in place.
+- Measured on the way: `&p.add_dispatchee(...)` on a lifted copy is really
+  lost (the real proto never sees the candidate), so the rule is needed. A
+  plain routine's `&h.wrap(...)` is not lost — the lifted BEGIN's wrap reaches
+  the real routine, as on rakudo — so plain routines keep being lifted
+  whatever the body does with `&h`.
+- A re-dispatcher (`callsame`, `nextwith`, `samewith`, ...) counts as a core
+  call. The parser leaves one as a bare word, but the RakuAST frontend lowers
+  it to a call, which the scan took for an unknown routine and so refused the
+  lift (`sub f { sub h { }; BEGIN { -> { callsame } } }` was lifted only under
+  the default frontend).
+
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,
 `t/modules/import-export/use-if-begin-time.t`,

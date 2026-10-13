@@ -1,6 +1,6 @@
 use Test;
 
-plan 23;
+plan 28;
 
 # A BEGIN nested in a routine runs at compile time (ADR-0134, slice 2), even
 # when it calls a routine of its scope that is a multi, an `our` or exported
@@ -134,3 +134,41 @@ is $pseudo-my, 'failed', 'a MY-qualified call finds no routine, as on rakudo';
 
 sub after-pseudo { BEGIN $after-pseudo = 'lifted' }
 is $after-pseudo, 'lifted', 'a pseudo-package call no longer keeps later BEGINs in place';
+
+# A BEGIN reading a multi as `&name` through a read-only method or a call is
+# lifted (#13096); one that may change the proto object (`add_dispatchee`, or
+# handing `&name` on) still runs in place, since a change to the lifted copy
+# would be lost; that halts every later nested BEGIN, so it comes last.
+my ($multi-candidates, $multi-call, $after-multi-read, $wrap-lifted);
+sub reads-multi-candidates {
+    proto sub mc(|) {*}
+    multi sub mc(Int) { 1 }
+    multi sub mc(Str) { 2 }
+    BEGIN $multi-candidates = &mc.candidates.elems;
+}
+is $multi-candidates, 2, 'a multi read through .candidates';
+
+sub calls-multi-code {
+    proto sub mk(|) {*}
+    multi sub mk(Int $x) { $x * 2 }
+    BEGIN $multi-call = &mk(21) ~ ' ' ~ &mk.signature.raku;
+}
+is $multi-call, '42 :(|)', 'a multi called through its code object';
+
+sub after-multi-read { BEGIN $after-multi-read = 'lifted' }
+is $after-multi-read, 'lifted', 'a read-only multi read no longer keeps later BEGINs in place';
+
+sub wraps-plain {
+    sub wp { 'p' }
+    BEGIN { &wp.wrap(-> { 'w' ~ callsame }); $wrap-lifted = 'lifted' }
+    wp()
+}
+is $wrap-lifted ~ ' ' ~ wraps-plain(), 'lifted wp', 'a BEGIN wrapping a plain routine is lifted and keeps the wrap';
+
+sub changes-multi {
+    proto sub ad(|) {*}
+    multi sub ad(Int) { 'int' }
+    BEGIN &ad.add_dispatchee(sub (Str $) { 'str' });
+    ad('x') ~ ad(1)
+}
+is changes-multi(), 'strint', 'a BEGIN adding a dispatchee changes the real proto';
