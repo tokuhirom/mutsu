@@ -112,7 +112,10 @@ pub(super) fn apply(node: &RakuAstNode, header: &Header) -> Result<RakuAstNode, 
 /// `node` without the adverbs and the `is export` it carries, and what they
 /// said.
 // Cost: O(n), n = size of the node's field list and traits.
-pub(super) fn strip(node: &RakuAstNode) -> Result<(RakuAstNode, Header), RuntimeError> {
+pub(super) fn strip(
+    node: &RakuAstNode,
+    strip_export: bool,
+) -> Result<(RakuAstNode, Header), RuntimeError> {
     let mut header = Header::default();
     let mut stripped = node.clone();
     // The adverbs of the name.
@@ -153,10 +156,11 @@ pub(super) fn strip(node: &RakuAstNode) -> Result<(RakuAstNode, Header), Runtime
         *field = node_field(Some("name"), bare);
     }
     // `is export`, which the parser keeps as a registration, not a trait.
-    if let Some(field) = stripped
-        .fields
-        .iter_mut()
-        .find(|f| f.name == Some("traits"))
+    if strip_export
+        && let Some(field) = stripped
+            .fields
+            .iter_mut()
+            .find(|f| f.name == Some("traits"))
         && let RakuAstFieldValue::List(list) = &mut field.value
     {
         let mut kept = Vec::new();
@@ -212,7 +216,7 @@ pub(super) fn lower_with_header(
     lower: impl FnOnce(&RakuAstNode) -> Result<crate::ast::Stmt, RuntimeError>,
 ) -> Result<crate::ast::Stmt, RuntimeError> {
     use crate::ast::Stmt;
-    let (stripped, mut header) = strip(node)?;
+    let (stripped, mut header) = strip(node, node.class != RakuAstClass::Role)?;
     let mut stmt = lower(&stripped)?;
     let name = match &stmt {
         Stmt::ClassDecl { name, .. } | Stmt::Package { name, .. } | Stmt::RoleDecl { name, .. } => {
@@ -278,7 +282,7 @@ pub(super) fn strip_scope_and_export(
             _ => return Err(super::lower::unsupported(node)),
         },
     };
-    let (stripped, header) = strip(node)?;
+    let (stripped, header) = strip(node, true)?;
     let (is_export, tags) = match header.export_tags {
         None => (false, Vec::new()),
         // The parser keeps a bare `is export` as an empty tag list.
