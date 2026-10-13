@@ -552,7 +552,7 @@ dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
   position instead of moving to the scope's head, which would put it ahead of
   the type it names.
 
-**Slice 2 follow-up — a role whose body runs code, implemented**
+**Slice 2 follow-up — a role whose body runs code, and nested types, implemented**
 (`src/runtime/begin_prologue/nested/decls.rs`,
 `t/control/begin-prologue-inner-decls.t`; #10471).
 
@@ -564,8 +564,11 @@ dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
 - mutsu runs a role's body on `R.^name` and `R.WHAT` (#13103), so a lifted
   `BEGIN say R.^name` prints the body's output first. That is the meta-method
   bug, not the lift: the same happens at the unit's top level.
-- **Still not lifted**: a class whose nested type runs code (the shell does not
-  recurse; see #10471).
+- **Nested types.** A class's shell reduces a nested class to its shell the
+  same way and keeps a nested role whole (`Shelling`, a `VisitMut` pass, so
+  the recursion is the visitor's rather than a hand-rolled walker). A nested
+  type of any other kind that runs code, or a user trait at any level, still
+  keeps the BEGIN in place.
 
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,

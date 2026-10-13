@@ -41,6 +41,7 @@ use super::routines::{Access, Dependencies, FrameBlock};
 pub(super) use super::mentions::Mentions;
 use super::{BindingKind, Walker};
 use crate::ast::{Expr, Stmt};
+use crate::ast_visit::{VisitMut, walk_stmt_mut};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A type or package declared in an inner scope.
@@ -122,32 +123,66 @@ fn declaration_copy(decl: &Stmt) -> Option<Stmt> {
     if let Stmt::RoleDecl { custom_traits, .. } = decl {
         return (!has_user_trait(custom_traits)).then(|| decl.clone());
     }
-    let Stmt::ClassDecl {
-        body,
-        custom_traits,
-        ..
-    } = decl
-    else {
+    if !matches!(decl, Stmt::ClassDecl { .. }) {
         return None;
-    };
-    if has_user_trait(custom_traits) {
-        return None;
-    }
-    let mut members = Vec::with_capacity(body.len());
-    for member in body {
-        if is_pure_member(member) {
-            members.push(member.clone());
-        } else if declared_names(member).is_some() {
-            // A nested type that runs code is not shelled: the scope is left
-            // to the in-place handling.
-            return None;
-        }
     }
     let mut shell = decl.clone();
-    if let Stmt::ClassDecl { body, .. } = &mut shell {
-        *body = members;
+    let mut shelling = Shelling { possible: true };
+    shelling.visit_stmt_mut(&mut shell);
+    shelling.possible.then_some(shell)
+}
+
+/// Reduces a class declaration to its declaration-only shell
+/// ([`declaration_copy`]): the run-time statements of its body are dropped,
+/// and a nested class is reduced the same way. A nested role is kept whole (its
+/// body runs only when it is composed). The shell is not `possible` when a
+/// class has a user trait or a nested type that can be neither.
+struct Shelling {
+    possible: bool,
+}
+
+impl VisitMut for Shelling {
+    // Cost: O(n), n = size of the declaration's body.
+    fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
+        let Stmt::ClassDecl {
+            body,
+            custom_traits,
+            ..
+        } = stmt
+        else {
+            return;
+        };
+        if has_user_trait(custom_traits) {
+            self.possible = false;
+            return;
+        }
+        body.retain(|member| {
+            if is_pure_member(member) {
+                return true;
+            }
+            match member {
+                Stmt::ClassDecl { .. } => true,
+                Stmt::RoleDecl { custom_traits, .. } => {
+                    self.possible &= !has_user_trait(custom_traits);
+                    true
+                }
+                // Any other nested type that runs code is not shelled: the
+                // scope is left to the in-place handling.
+                _ if declared_names(member).is_some() => {
+                    self.possible = false;
+                    true
+                }
+                // A run-time statement of the body runs in place.
+                _ => false,
+            }
+        });
+        // Reduce the nested classes the same way.
+        walk_stmt_mut(self, stmt);
     }
-    Some(shell)
+
+    /// An expression of a kept member (an attribute default, a trait
+    /// argument) is kept as written.
+    fn visit_expr_mut(&mut self, _expr: &mut Expr) {}
 }
 
 /// A trait a user declared (`is foo`), which runs a `trait_mod` when the

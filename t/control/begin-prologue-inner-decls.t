@@ -6,7 +6,7 @@ use Test;
 # scope ever runs. A type it names is the type the scope declares, and an
 # import it relies on is in effect.
 
-BEGIN plan 20;
+BEGIN plan 22;
 
 my @log;
 
@@ -91,3 +91,14 @@ my $role-named;
 sub names-role { my role R { @role-body.push('body') }; BEGIN $role-named = R.raku }
 is $role-named, 'R', 'a BEGIN that names a role whose body runs code is lifted';
 is @role-body.elems, 0, 'naming the role does not run its body';
+
+# A class whose nested class runs code is declared again as a shell of both:
+# the run-time statements of every level stay in place.
+my @nested-body;
+my $nested-named;
+sub names-nested {
+    my class K { my class L { @nested-body.push('L'); method m { 7 } }; method l { L.m } }
+    BEGIN $nested-named = K.l;
+}
+is $nested-named, 7, 'a BEGIN that names a class whose nested class runs code is lifted';
+is @nested-body.elems, 0, 'the nested class body does not run at BEGIN time';
