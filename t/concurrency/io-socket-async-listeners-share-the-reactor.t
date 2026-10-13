@@ -7,7 +7,12 @@ use Test;
 plan 5;
 
 my $task-dir = '/proc/self/task'.IO;
-sub thread-count() { $task-dir.dir.elems }
+# The scheduler's `pool` workers grow lazily (the `await`s below run on the
+# pool), so they are not counted: a listener must add no thread of its own
+# (#13089).
+sub thread-count() {
+    $task-dir.dir.grep({ (try .add('comm').slurp.chomp) ne 'pool' }).elems
+}
 
 my @taps;
 my @ports;
