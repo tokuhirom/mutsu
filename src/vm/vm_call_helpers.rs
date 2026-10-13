@@ -330,6 +330,37 @@ impl Interpreter {
     /// Decode the source half of an argument descriptor. Named arguments use
     /// `[FALSE, source]` so this helper keeps their source name/slot visible
     /// to rw writeback and container-sharing checks.
+    /// Whether any argument of the call site names a source variable, which is
+    /// what `decode_arg_sources` would report as a `Some` -- answered from the
+    /// descriptor without decoding (allocating) the names.
+    // Cost: O(a), a = arguments of the call site.
+    pub(super) fn arg_sources_name_any(code: &CompiledCode, arg_sources_idx: Option<u32>) -> bool {
+        let Some(idx) = arg_sources_idx else {
+            return false;
+        };
+        let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
+            return false;
+        };
+        items.iter().any(Self::arg_source_entry_names_source)
+    }
+
+    /// [`Self::decode_arg_source_entry`]'s `is_some()`, without the decode.
+    fn arg_source_entry_names_source(item: &Value) -> bool {
+        match item.view() {
+            ValueView::Str(_) | ValueView::Pair(..) => true,
+            ValueView::Array(items, ..)
+                if items
+                    .first()
+                    .is_some_and(|marker| matches!(marker.view(), ValueView::Bool(false))) =>
+            {
+                items
+                    .get(1)
+                    .is_some_and(Self::arg_source_entry_names_source)
+            }
+            _ => false,
+        }
+    }
+
     fn decode_arg_source_entry(item: &Value) -> Option<(String, Option<u32>)> {
         match item.view() {
             ValueView::Str(name) => Some((name.to_string(), None)),

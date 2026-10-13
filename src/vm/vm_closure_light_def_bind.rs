@@ -51,6 +51,16 @@ pub(crate) struct LightDefParam {
 /// destructured exhaustively so a new `ParamDef` field has to be classified
 /// here before this compiles.
 // Cost: O(p + t), p = parameter count, t = the parameters' total trait count.
+impl LightDefParam {
+    pub(super) fn sym(&self) -> Symbol {
+        self.sym
+    }
+
+    pub(super) fn bind(&self) -> ScalarParamBind {
+        self.bind
+    }
+}
+
 pub(crate) fn light_def_params(param_defs: &[ParamDef]) -> Option<Box<[LightDefParam]>> {
     if param_defs.is_empty() {
         return None;
@@ -229,7 +239,7 @@ impl Interpreter {
 /// parameter the same way whatever the parameter's traits — see
 /// [`Interpreter::closure_light_def_bind`] for each refused kind.
 // Cost: O(1).
-fn light_def_arg_is_plain_value(arg: &Value) -> bool {
+pub(super) fn light_def_arg_is_plain_value(arg: &Value) -> bool {
     !arg.is_varref()
         && matches!(
             arg.view(),

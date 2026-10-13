@@ -306,6 +306,13 @@ impl Interpreter {
         // inherit the carrier's raw-binding-error request.
         let suppress_bind_enhance =
             std::mem::take(&mut self.dispatch.suppress_binding_error_enhance);
+        // A body that can observe nothing below runs light (#8335).
+        if explicit_topic.is_none()
+            && !capture_rw_topic
+            && let Some(out) = self.try_call_closure_light(data, cc, &args, compiled_fns)
+        {
+            return out;
+        }
         // What the call site knew about the argument (see [`TopicArgSite`]).
         let topic_arg_is_bare = site.bare;
         let topic_alias_source = site

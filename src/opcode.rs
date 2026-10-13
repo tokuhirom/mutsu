@@ -7605,6 +7605,10 @@ pub(crate) struct CompiledCode {
     /// EVERY closure creation — see `capture_free_var_set` / `capture_local_set`.
     pub(crate) free_var_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
+    /// Whether the light closure call can run this body, and what it needs
+    /// (#8335, `light_closure_shape`); settled on the first call.
+    pub(crate) light_closure_shape:
+        std::sync::OnceLock<Option<crate::light_closure_shape::LightClosureShape>>,
     /// Memo of [`Self::capture_hidden_set`].
     pub(crate) capture_hidden_set: std::sync::OnceLock<Option<Arc<rustc_hash::FxHashSet<Symbol>>>>,
     /// Lazily-built list of the env keys a closure capture probes by name
@@ -8166,6 +8170,7 @@ impl CompiledCode {
             free_var_rebinds: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
+            light_closure_shape: std::sync::OnceLock::new(),
             capture_hidden_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
             free_enum_bare_keys: std::sync::OnceLock::new(),

@@ -1708,6 +1708,16 @@ impl Interpreter {
             ));
         }
         let start = self.stack.len() - arity;
+        // A closure body made of pure value ops runs light, straight off the
+        // stack (#8335).
+        if let Some(result) =
+            self.try_value_call_closure_light(code, start, arg_sources_idx, compiled_fns)
+        {
+            let result = result?;
+            self.apply_pending_rw_writeback(code);
+            self.stack.push(result);
+            return Ok(());
+        }
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
         // ADR-0054 S2: spread only the `|EXPR` positions, decided by
         // call-site syntax rather than a value's runtime Slip-shape.
