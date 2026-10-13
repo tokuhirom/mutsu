@@ -4798,6 +4798,7 @@ t/rakuast/rakuast-whatever-code.t
 t/rakuast/rakuast-when-modifier.t
 t/rakuast/rakuast-where-parameter.t
 t/rakuast/rakuast-while-until-modifier.t
+t/rakuast/rakuast-will-trait.t
 t/rakuast/rakuast-with-pointy-block.t
 t/rakuast/rakuast-with-without-block.t
 t/rakuast/rakuast-with-without-modifier.t
@@ -7296,6 +7297,7 @@ t/vm/walk-orderings.t
 t/vm/which-identity-is-never-reused.t
 t/vm/which-why-user-override.t
 t/vm/whole-container-bind.t
+t/vm/will-begin-container.t
 t/vm/writeback/aggregate-self-writeback.t
 t/vm/writeback/caller-frame-write-slot-coherence.t
 t/vm/writeback/caller-writeback-drain-coherence.t

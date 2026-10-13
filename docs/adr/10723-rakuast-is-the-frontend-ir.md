@@ -1109,3 +1109,18 @@ alias attribute (`SourceForm::DeclarationCompoundAssign`, the assignment's
 `HasDecl`. The expansion lives in `parser::attribute_compound_assign`, which
 both the parser and the lowering call. A public `$.g` writes through its
 accessor (`Expr::AssignExpr`) and keeps no record, so it stays the boundary.
+
+### 6.51 S10: `will PHASE` traits on a variable (2026-10-13)
+
+`my $x will begin { ... }` runs the block in its phase with `$_` bound to the
+container. The parser expands each trait into a phaser after the declaration
+(`parser::wrap_with_will_phasers`: a `Phaser` whose body is a `given` of the
+container or, for a compile-time phase, of the initial value). Rakudo 2026.09
+keeps them on the declaration: `VarDeclaration::Simple(traits =>
+(Trait::Will(phase => "begin", block => Block),))`, the block marked
+`may-have-signature`. `RakuAST::Trait::Will` is a new model class;
+`ast::var_will` reads the expansion back and holds the one phase-name table
+the parser also uses, and lowering strips the traits and hands the phasers to
+`wrap_with_will_phasers`. The parser reads `is` traits both before and after
+`will` ones without recording their order, so a declaration with both stays
+the boundary rather than render a guessed order.

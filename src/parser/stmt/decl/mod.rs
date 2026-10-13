@@ -71,7 +71,7 @@ fn parse_decl_type_constraint(input: &str) -> Option<(&str, String)> {
 /// variable's initial expression rather than the variable reference.
 /// This ensures the correct type is available even before runtime
 /// initialization (e.g. `@a` has type `Array`, not `Nil`, at BEGIN time).
-fn wrap_with_will_leave(
+pub(crate) fn wrap_with_will_phasers(
     stmt: Stmt,
     var_name: &str,
     will_phasers: Vec<(PhaserKind, Vec<Stmt>)>,

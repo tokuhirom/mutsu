@@ -2863,6 +2863,7 @@ pub(crate) mod stub;
 pub(crate) mod subscript_adverb;
 pub(crate) mod temporize;
 pub(crate) mod var_does;
+pub(crate) mod var_will;
 mod where_match;
 pub(crate) use signature_decl::{
     ControlPointyKind, ParamTrait, SignatureDecl, SignatureInit, SignatureVar, SourceForm,

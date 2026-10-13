@@ -569,6 +569,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             let decl = crate::ast::sigilless_decl::declaration(stmt).expect("just checked");
             Ok(Some(statement_expression(term_declaration(&decl)?)))
         }
+        // `my $x will begin { ... }`: the declaration with `Trait::Will`s.
+        Stmt::SyntheticBlock(_) if crate::ast::var_will::recognize(stmt).is_some() => {
+            super::var_will::convert(stmt).map(Some)
+        }
         // `my %h does R = EXPR`: one declaration with a `Trait::Does`.
         Stmt::SyntheticBlock(_) if crate::ast::var_does::recognize(stmt).is_some() => {
             let (decl, role, init) = crate::ast::var_does::recognize(stmt).expect("just checked");
