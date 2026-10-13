@@ -2123,6 +2123,41 @@ a `Channel` and an unhandled `Failure`. `Version` is answered by rows already: d
 Found, not fixed: a quoted call of `WHICH`/`WHERE`/`DEFINITE`/`WHAT` on a variable (`$x."WHICH"()`) answers
 `X::Method::NotFound` (#13055).
 
+### 9.92 Slice 5: `Cool.Real`, `Cool.Num`, `Cool.UInt`, `Mu.Int` and `Mu.Numeric` answer the receivers the coercion arms did (2026-10-13)
+
+`refactor/11276-coerce-numeric-rows`. The numeric coercion arms of `dispatch_core_coerce.rs` (`Int`, `UInt`, `Version`, `Num`,
+`Real`, `Numeric`, and the `Range`, lazy-count and `Int.Int`/`Num.Num` blocks in front of them) were the only implementation for the
+receivers §9.91 lists, and the interpreter's slow path does not answer those names (deleting an arm made `"a".Real` warn about a "type
+a" and `[1,2].Real` throw `X::Method::NotFound`). Each moved to the owner Rakudo declares it on:
+
+1. **`Cool.Real`** (`scalars::cool_coerce`, `TYPE_OBJECT_OK`): a `Str` parses, an aggregate, a `Seq` or a `Range` is its count, a lazy
+   list fails with `X::Cannot::Lazy`, a numeric type object warns and is its type's zero, a `Complex` declines to
+   `dispatch_complex_to_real`. `Mu` gains its `Real` recognition row, without which the `Any`/`Mu` Cool-only gate
+   (`any_cool_method_gate`) refused `Any.Real`.
+2. **`Cool.Num`** takes the arm's type objects (`Num.Num` is `Num`; `Int`, `Str`, `Complex`, `Rat`, `FatRat` and `UInt` throw
+   `X::Parameter::InvalidConcreteness`) and the lazy failure, and becomes `TYPE_OBJECT_OK`. **`Cool.UInt`** takes the lazy failure and a
+   `Match`'s matched text; it stays an interpreter row (a `Complex` reads `$*TOLERANCE`), so `dispatch_complex_to_real` now asks the
+   table with the interpreter for the `Num` it converts to.
+3. **`Mu.Int` and `Mu.Numeric`** (`ctors_mop::mu_numeric`, `TYPE_OBJECT_OK`) carry the arms' bodies: `Int.Int`/`UInt.Int` are the type
+   object, a concrete-only type object throws, `.Numeric` of a numeric type object warns and is its zero, a `Range` is its count, a
+   `FatRat` keeps its type, a `Blob`/`Buf` is its length, a `StrDistance` its edit distance, a `Stash` its symbol count. A built-in
+   class with a shape and none of its own (`DateTime.Int`, `IO::Handle.Numeric`, which reach `Mu` through their MRO) is Rakudo's
+   `X::Multi::NoMatch`; every other instance declines to `Interpreter::mu_numeric_coercion`.
+4. **Reach.** `Range` and `Seq` reach `Cool.Real`/`Num` through `COOL_NUMERIC_FOR_COLLECTIONS`; a `Match` reaches `Cool.UInt`; a `Range`
+   reaches `Mu.Int` and a `Blob`/`Buf` both `Mu` rows through a per-name audit (`DispatchShape::reaches_mu_numeric`). A receiver with no
+   shape reaches all five through `answer_shapeless`'s `COOL_COERCE_FOR_SHAPELESS`: an enum, a lazy or shaped array, an unsettled `Seq`
+   or `Slip`, an instance (its MRO walk falls back to `Cool`, then to `Mu` for `Int`/`Numeric`, whose handlers decline what they do not
+   know) and a `Cool` type object with no shape (`RatStr`, `IntStr`; `UInt` reads as `Int`). That branch hands the interpreter to
+   these rows too, for `Cool.UInt`.
+
+`method-rows-report.py --arms`: the pure arity cascades go from 167 to 149 arms. The probe (§9.91's 15 names over 95 receivers) changed
+only toward Rakudo: `(1..Inf).UInt` is the `X::Numeric::CannotConvert` `Failure` (was `X::AdHoc`) and `slip(1,2).UInt` is `2` (was
+`X::Method::NotFound`). Pinned in `t/oo/method/coercion-method-rows.t`.
+
+Left in `dispatch_core_coerce.rs`: `Str`/`Stringy` (a deletion probe lost only `Stringy` of a `Hash` subclass, a `Promise`, a `Channel` and
+an unhandled `Failure`, but `Str` is the most common method there is, so it wants its own slice and a full debug run), the
+`Buf`/`Blob` reinterpret block (the `Blob`/`Buf` rows' implementation, reached by a buffer class with no shape) and `Complex.Complex`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

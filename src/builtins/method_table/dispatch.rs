@@ -361,6 +361,12 @@ fn dispatch(
 /// `X::Method::NotFound`).
 const ITERABLE_FOR_SHAPELESS: [&str; 3] = ["lazy", "race", "hyper"];
 
+/// `Cool`'s coercions a receiver with no shape reaches ([`answer_shapeless`];
+/// ADR-11276 §9.92): an enum, a lazy or shaped array, an unsettled `Seq`, an
+/// instance whose MRO reaches `Cool` with no built-in class declaring the name
+/// first, and a `Cool` type object with no shape.
+const COOL_COERCE_FOR_SHAPELESS: [&str; 5] = ["Real", "Num", "UInt", "Int", "Numeric"];
+
 /// Answer a call the cascades declined from the row `Mu`, `Cool`, `Any`,
 /// `List` or `Seq` declares, for a receiver with no shape (ADR-11276 §9.79,
 /// §9.80, §9.81).
@@ -404,9 +410,11 @@ pub(crate) fn answer_shapeless(
     }
     let mut interp = interp;
     let id = shapeless_row(interp.as_deref_mut(), target, method, args.len())?;
-    // `Mu.WHERE` reads the class registry for a NativeCall handle (§9.91); the
-    // other rows found here are pure.
-    let interp = interp.filter(|_| row(id).owner == "Mu");
+    // `Mu.WHERE` reads the class registry for a NativeCall handle (§9.91) and
+    // `Cool.UInt` reads `$*TOLERANCE` for a `Complex` (§9.92); the other rows
+    // found here are pure.
+    let interp = interp
+        .filter(|_| row(id).owner == "Mu" || COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str()));
     call(row(id), interp, target, args, Named::NONE).map(|(result, _)| result)
 }
 
@@ -446,6 +454,8 @@ pub(crate) fn shapeless_row(
     let list = crate::value::ANY_LIST_FOR_CLOSED_SHAPES.contains(&method.as_str());
     let mu = crate::value::MU_FOR_CLOSED_SHAPES.contains(&method.as_str());
     let iterable = ITERABLE_FOR_SHAPELESS.contains(&method.as_str());
+    let coerce = COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str());
+    let text = text || coerce;
     if !(text || list || mu || iterable) || Receiver::of_settled(target).is_some() {
         return None;
     }
@@ -510,9 +520,29 @@ pub(crate) fn shapeless_row(
                     break;
                 }
             }
-            owner?
+            // A coercion falls back to the `Cool`/`Mu` rows, which answer the
+            // instances they know (a `StrDistance`, a `Stash`) and decline the
+            // rest to the interpreter.
+            if coerce {
+                owner.unwrap_or(cool)
+            } else {
+                owner?
+            }
         }
         ValueView::Instance { .. } => return None,
+        // A lazy or shaped array coerces as the `Array` it is; a type object
+        // with no shape (`RatStr`, `IntStr`) as the `Cool` its catalog MRO
+        // reaches.
+        ValueView::Array(..) if coerce => cool,
+        ValueView::Package(name) if coerce => {
+            // `UInt`, the one built-in subset, is not in the catalog: it is
+            // an `Int`.
+            let name = name.resolve();
+            let class = if name == "UInt" { "Int" } else { name.as_ref() };
+            crate::builtin_types::catalog::builtin_type_mro_strs(class)?
+                .contains(&"Cool")
+                .then_some(cool)?
+        }
         // `Mu` is no `Any`: `Mu.flat` and `Mu.pick` have no candidate.
         ValueView::Package(name) if name == "Mu" => return None,
         // Every other receiver the cascades declined (a code object, a regex,
@@ -521,7 +551,12 @@ pub(crate) fn shapeless_row(
         _ if list => any,
         _ => return None,
     };
-    super::owner_row(owner, method, arity)
+    // `Int` and `Numeric` are `Mu`'s, not `Cool`'s (§9.92).
+    super::owner_row(owner, method, arity).or_else(|| {
+        coerce
+            .then(|| super::owner_row(mu_owner, method, arity))
+            .flatten()
+    })
 }
 
 /// Whether the named argument `pair` is one `row` binds.

@@ -1859,6 +1859,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Cool", "encode", 1, 24),
     ("Cool", "UInt", 1, 24),
     ("Cool", "Version", 1, 57),
+    ("Cool", "Real", 1, 25),
     // ADR-0019 E11 slice 2 (2026-08-14, follow-up): the native-int-coercion
     // method family (`42.int8`, `"42".byte`, ...), genuinely dispatched via
     // `target.isa_check("Cool")` for the eleven real coercion names,
@@ -1983,6 +1984,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // carry dispatch rows, but their inherited names come from Mu on :all.
     ("Mu", "Int", 8, 28),
     ("Mu", "Numeric", 8, 28),
+    ("Mu", "Real", 8, 28),
     ("Mu", "is-lazy", 1, 24),
     ("Mu", "item", 1, 24),
     ("Mu", "sink", 1, 24),
