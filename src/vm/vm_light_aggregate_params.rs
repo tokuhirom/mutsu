@@ -46,7 +46,7 @@ impl Interpreter {
 
     /// The argument walk of [`Self::positional_light_aggregate_args_admitted`].
     // Cost: O(k), k = plain `@`/`%` positional parameters.
-    #[inline(never)]
+    #[inline]
     fn aggregate_args_admitted_masked(cf: &CompiledFunction, args: &[Value]) -> bool {
         let mut mask = cf.aggregate_positional_params;
         while mask != 0 {
