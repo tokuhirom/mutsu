@@ -55,15 +55,16 @@ impl Compiler {
     }
 
     /// The name of a declaration a closure may read as a lexical binding: a
-    /// single (not `multi`) `sub` with a plain identifier name that no builtin
-    /// answers to, not `our`-scoped, exported, `is rw`/`is raw`, or carrying
-    /// a user trait or alternate signatures. Anything else keeps the by-name
-    /// dispatch.
+    /// `sub` or `multi` with a plain identifier name that no builtin answers
+    /// to, not `our`-scoped, exported, `is rw`/`is raw`, or carrying a user
+    /// trait or alternate signatures. Anything else keeps the by-name
+    /// dispatch. A `multi`'s binding is its family's dispatcher value, which
+    /// holds every candidate visible at the block, an outer scope's included
+    /// (`sub_value_from_multi_candidates`; ADR-12529 phase 2, slice 6).
     fn plain_lexsub_name(stmt: &Stmt) -> Option<Symbol> {
         let Stmt::SubDecl {
             name,
             name_expr: None,
-            multi: false,
             is_rw: false,
             is_raw: false,
             is_export: false,

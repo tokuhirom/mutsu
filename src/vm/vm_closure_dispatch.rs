@@ -1259,7 +1259,13 @@ impl Interpreter {
         // callable value for the duration of this routine frame. Bare and
         // pointy blocks are not routine boundaries: their `samewith` belongs
         // to the enclosing routine, as it does in Rakudo.
-        let pushed_samewith_context = cc.is_routine && !cc.is_pointy_block && !data.is_bare_block;
+        // A multi candidate run by its family's dispatcher value keeps the
+        // dispatcher's context (`call_captured_multi_winner`): its `samewith`
+        // re-dispatches the family, not this one candidate.
+        let pushed_samewith_context = cc.is_routine
+            && !cc.is_pointy_block
+            && !data.is_bare_block
+            && !self.samewith_context_is_family_of(data.name);
         if pushed_samewith_context {
             self.push_samewith_callable_context(Value::sub_value(data.clone()));
         }
