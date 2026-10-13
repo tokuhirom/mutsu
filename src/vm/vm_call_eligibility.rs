@@ -496,7 +496,7 @@ impl Interpreter {
             && (!cf.has_rw_positional_param
                 || (caller_code.is_some() && Self::positional_light_rw_args_admitted(cf, args)))
             && Self::positional_light_aggregate_args_admitted(cf, args)
-            && cf.param_defs.iter().all(|pd| {
+            && cf.param_defs.iter().enumerate().all(|(i, pd)| {
                 !pd.named
                     && (pd.where_constraint.is_none()
                         || (where_verified && !pd.where_is_regex_match()))
@@ -543,7 +543,7 @@ impl Interpreter {
                     // general binder, as do arguments the per-call
                     // `positional_light_aggregate_args_admitted` gate refuses.
                     && (!pd.name.starts_with(['@', '%'])
-                        || crate::opcode::FastParamCheck::light_aggregate_sigil(pd).is_some())
+                        || (i < 64 && cf.aggregate_positional_params & (1u64 << i) != 0))
                     // Exclude internal/anonymous params (__ANON_STATE__, __type_only__, etc.)
                     && !pd.name.starts_with("__")
                     // Exclude dynamic variable params ($*var)

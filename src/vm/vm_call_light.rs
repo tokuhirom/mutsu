@@ -475,7 +475,14 @@ impl Interpreter {
         // journaled by the readonly frame, so it is restored on return — before
         // the param loop below, which re-marks `_` if the routine has an
         // explicit (readonly) `$_` parameter.
-        if cf.code.is_routine {
+        //
+        // A body that never names `$_` cannot observe the mark, and the
+        // readonly frame restores it on return, so the unmark (and its journal
+        // replay on every call from inside a caller's `for`) is skipped there
+        // (#12526).
+        if cf.code.is_routine
+            && (cf.code.reads_topic || crate::opcode::reflective_name_access_possible())
+        {
             self.unmark_readonly_topic();
         }
         // Bind params to slots. Also write the param into the overlay when a
@@ -695,7 +702,7 @@ impl Interpreter {
                 // through, with an untyped Array/Hash argument) binds the
                 // caller's container itself, de-itemized like the general
                 // binder's `@`/`%` bind.
-                if cf.has_aggregate_positional_param
+                if cf.aggregate_positional_params != 0
                     && cf.param_defs[param_idx].name.starts_with(['@', '%'])
                 {
                     // The caller's variable, when the argument names one
@@ -707,13 +714,25 @@ impl Interpreter {
                     let val = crate::runtime::types::unwrap_varref_value(val);
                     let val = val.deitemize_for_sigil_bind();
                     let name = &cf.param_defs[param_idx].name;
-                    self.note_param_bound_aggregate(name, &val);
+                    // Read when a thread spawns from a block this frame made
+                    // (`clone_for_thread_for_block`, even the first spawn,
+                    // before any thread exists), and while threads share
+                    // names (`container_name_is_redeclared`). A body that
+                    // makes no closure, outside a threaded run, has no reader
+                    // (#12526).
+                    if !cf.code.closure_compiled_codes.is_empty() || self.threads.shared_vars_active
+                    {
+                        self.note_param_bound_aggregate(name, &val);
+                    }
                     let sym = match cf.param_name_syms.get(param_idx) {
                         Some(&sym) => sym,
                         None => Symbol::intern(name),
                     };
                     self.bind_light_aggregate_constraint(name, sym, &val);
-                    self.bind_light_aggregate_source(sym, source.map(|s| s.as_str()));
+                    // `.VAR.name` is the record's only reader (#12526).
+                    if cf.code.names_var_method || write_all_params {
+                        self.bind_light_aggregate_source(sym, source.map(|s| s.as_str()));
+                    }
                     val
                 } else {
                     let val = crate::runtime::types::unwrap_varref_value(val);
@@ -749,11 +768,11 @@ impl Interpreter {
                 }
             };
             let param_name = &cf.param_defs[param_idx].name;
-            // A plain `@x`/`%x` is always mirrored: a mutating method call on
-            // it (`@a.push`) resolves its target by name.
+            // A plain `@x`/`%x` is mirrored like a scalar: only when the body
+            // reads it by name, which includes a method call on it (`@a.push`)
+            // and a named element store (`compute_needs_env_sync`, #12526).
             let needs_env = write_all_params
                 || val.is_nil()
-                || (cf.has_aggregate_positional_param && param_name.starts_with(['@', '%']))
                 || cf.code.needs_env_sync.get(*slot).copied().unwrap_or(true);
             if needs_env {
                 // The env mirror is keyed by the pre-interned param name
@@ -833,7 +852,7 @@ impl Interpreter {
             // caller's container, which the body may store into (`%h<k> = v`,
             // `@a = ...`), and the general binder never marks one readonly.
             let writable = is_rw_param
-                || (cf.has_aggregate_positional_param && param_name.starts_with(['@', '%']));
+                || (cf.aggregate_positional_params != 0 && param_name.starts_with(['@', '%']));
             match cf.param_name_syms.get(param_idx) {
                 Some(sym) if writable => self.unmark_readonly_sym(*sym),
                 Some(sym) => self.mark_readonly_sym(*sym),

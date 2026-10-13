@@ -891,6 +891,17 @@ spelling as a call and the round trip looked up `&NAME`. The scan now also
 collects an `our` constant under its package path (a `my` constant stays
 lexical to the module), the way it already did for an `our` enum's values.
 
+### 6.37 S10: `$.name OP= EXPR` as a statement (2026-10-13)
+
+The statement parser spells `$.n += 100` as a method compound assignment on
+`__ANON_STATE__`, the bare-`$` carrier the VM resolves to `self`; the
+expression parser spells `($.n += 100)` over `Var(".n")`. Rakudo 2026.09
+builds one node for both: `ApplyInfix(left => Var::Attribute::Public("$.n"),
+infix => MetaInfix::Assign(Infix("+")))`. The converter now reads the
+statement spelling as that node, and lowering keeps producing the expression
+spelling, which computes the same thing (an `is rw` accessor assigns; a
+read-only one assigns into a throwaway container).
+
 ### 6.38 S10: loop controls with a value or a slip (2026-10-13)
 
 Rakudo 2026.09 renders every loop control as a bare
