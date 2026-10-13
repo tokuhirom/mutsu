@@ -1884,7 +1884,7 @@ impl SubData {
                     .iter()
                     .zip(self.params.iter())
                     .all(|(pd, p)| pd.name == *p)
-                && crate::vm::placeholder_defs_are_plain(&self.param_defs)
+                && crate::light_closure_shape::placeholder_defs_are_plain(&self.param_defs)
             {
                 Some(LightCallLegacy::Placeholders)
             } else {
