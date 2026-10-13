@@ -78,17 +78,12 @@ fn native_method_1arg_cascade(
     {
         return Some(result);
     }
-    // An allomorph's text methods read its `Str` part, as the 0-arg cascade's
-    // allomorph block does (`<65>.uniprop("Script")` is `Common`, the script
-    // of "6", not of the codepoint 65).
-    // Cost: O(1), a tag probe and one map lookup.
-    if matches!(
-        method,
-        "uniprop" | "uniprops" | "unimatch" | "samemark" | "samecase" | "indent"
-    ) && let ValueView::Mixin(_, mixins) = target.view()
-        && let Some(str_val) = mixins.get("Str")
+    // A plain allomorph's method with a row is the row's, on the part it reads
+    // (§9.101): `<65>.uniprop("Script")` is `Common`, the script of "6".
+    // Cost: O(1), a tag probe, one map lookup and at most two table lookups.
+    if crate::builtins::method_table::allomorph::answers(target, method_sym, std::slice::from_ref(arg))
     {
-        return native_method_1arg(str_val, method_sym, arg);
+        return None;
     }
     // Cost: O(n), n = bytes of the invocant.
     if method == "naive-word-wrapper" {

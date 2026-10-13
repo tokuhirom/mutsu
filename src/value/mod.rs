@@ -555,7 +555,7 @@ pub(crate) mod container_read;
 mod dispatch_shape;
 pub(crate) mod render_guard;
 pub(crate) use dispatch_shape::{
-    ANY_LIST_FOR_CLOSED_SHAPES, COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, MU_FOR_CLOSED_SHAPES,
+    ANY_LIST_FOR_CLOSED_SHAPES, cool_numeric_method, COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, MU_FOR_CLOSED_SHAPES,
     ROLES_WITH_ROWS, const_str_eq,
 };
 mod display;
