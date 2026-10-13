@@ -499,7 +499,7 @@ impl Interpreter {
             // own attributes and methods, as before.
             let declare_how_keyword = custom_traits
                 .iter()
-                .find(|(trait_name, _)| trait_name == "__mutsu_declare_how")
+                .find(|(trait_name, _)| trait_name == crate::parser::DECLARE_HOW_TRAIT)
                 .and_then(|(_, arg)| arg.as_ref())
                 .and_then(crate::opcode::DeclTraitArg::literal)
                 .map(|kw| kw.to_string_value());

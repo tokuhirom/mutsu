@@ -168,6 +168,31 @@ pub(crate) const EXPORT_TYPE_MARKER: &str = "__mutsu_export_type";
 /// does. Internal (`__`-prefixed), so never dispatched as a trait.
 pub(crate) const LEADING_COLONS_TRAIT: &str = "__leading_colons";
 
+/// The `custom_traits` marker of a declaration written with a declarator a
+/// `use`d module registered through `EXPORTHOW::DECLARE` (`monitor Name { }`).
+/// Its argument is the keyword; registration resolves the HOW from it, and the
+/// RakuAST layer renders it as the package's `parsed-declarator`.
+pub(crate) const DECLARE_HOW_TRAIT: &str = "__mutsu_declare_how";
+
+/// The [`DECLARE_HOW_TRAIT`] entry for the declarator keyword `kw`.
+// Cost: O(1).
+pub(crate) fn declare_how_marker(kw: String) -> (String, Option<Expr>) {
+    (
+        DECLARE_HOW_TRAIT.to_string(),
+        Some(Expr::Literal(Value::str(kw))),
+    )
+}
+
+/// The declarator keyword a [`DECLARE_HOW_TRAIT`] entry in `custom_traits`
+/// names, if there is one.
+// Cost: O(t), t = number of custom traits.
+pub(crate) fn declare_how_keyword(custom_traits: &[(String, Option<Expr>)]) -> Option<String> {
+    custom_traits.iter().find_map(|(name, arg)| match arg {
+        Some(Expr::Literal(kw)) if name == DECLARE_HOW_TRAIT => Some(kw.to_string_value()),
+        _ => None,
+    })
+}
+
 pub(crate) fn export_type_marker(tags: &[String]) -> (String, Option<Expr>) {
     let tags = tags
         .iter()
@@ -260,10 +285,7 @@ pub(crate) fn declare_decl(input: &str) -> PResult<'_, Stmt> {
         let (rest, _) = ws1(rest)?;
         let (rest, mut stmt) = class_decl_body(rest, false)?;
         if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
-            custom_traits.push((
-                "__mutsu_declare_how".to_string(),
-                Some(Expr::Literal(Value::str(kw))),
-            ));
+            custom_traits.push(declare_how_marker(kw));
         }
         return Ok((rest, stmt));
     }
