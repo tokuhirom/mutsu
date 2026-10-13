@@ -159,6 +159,17 @@ impl Interpreter {
         // the string-keyed `Env::get` re-interned each literal per call -- three
         // thread-local string hashes for a probe that misses for every ordinary
         // block (#8302).
+        //
+        // A WhateverCode's callable type is `WhateverCode`, never the `Method`
+        // a dispatcher value carries; its compiled code says so without the
+        // env probes and string compare below (#13286).
+        if data
+            .compiled_code
+            .as_ref()
+            .is_some_and(|cc| cc.is_whatever_code)
+        {
+            return None;
+        }
         if data
             .env
             .get_sym(crate::symbol::well_known::lookup_candidate_idx())

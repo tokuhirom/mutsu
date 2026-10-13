@@ -114,11 +114,7 @@ impl Interpreter {
             || data
                 .env
                 .contains_key_sym(crate::symbol::well_known::multi_dispatch_candidates())
-            // A WhateverCode's callable type is `WhateverCode`, never the
-            // `Method` a multi-method dispatcher value carries.
-            || (arity > 0
-                && !cc.is_whatever_code
-                && Self::sub_multi_method_dispatcher_name(&data).is_some())
+            || (arity > 0 && Self::sub_multi_method_dispatcher_name(&data).is_some())
         {
             return None;
         }
