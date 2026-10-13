@@ -107,7 +107,8 @@ fn is_pure_declaration(decl: &Stmt) -> bool {
 }
 
 /// What the prologue repeats for `decl`: the declaration itself when running
-/// it once more is unobservable, otherwise (a class whose body runs code) its
+/// it once more is unobservable (a role's body runs only when it is composed),
+/// otherwise (a class whose body runs code) its
 /// declaration-only shell. The shell registers the same lexical type as the
 /// in-place declaration (they share a `decl_id`, hence a storage name), which
 /// later runs the body for real (#10471). `None` when neither is possible.
@@ -115,6 +116,11 @@ fn is_pure_declaration(decl: &Stmt) -> bool {
 fn declaration_copy(decl: &Stmt) -> Option<Stmt> {
     if is_pure_declaration(decl) {
         return Some(decl.clone());
+    }
+    // A role's body runs when the role is composed, not when it is declared,
+    // so declaring it once more runs none of it.
+    if let Stmt::RoleDecl { custom_traits, .. } = decl {
+        return (!has_user_trait(custom_traits)).then(|| decl.clone());
     }
     let Stmt::ClassDecl {
         body,

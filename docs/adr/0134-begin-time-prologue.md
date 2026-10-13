@@ -552,6 +552,21 @@ dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
   position instead of moving to the scope's head, which would put it ahead of
   the type it names.
 
+**Slice 2 follow-up — a role whose body runs code, implemented**
+(`src/runtime/begin_prologue/nested/decls.rs`,
+`t/control/begin-prologue-inner-decls.t`; #10471).
+
+- A role's body runs when the role is composed (or punned), not when it is
+  declared, so declaring it once more in the lifted block runs none of it. A
+  role without a user trait is repeated whole, whatever its body holds. A
+  BEGIN that composes it there (`1 but R`) runs the body at BEGIN time, as on
+  rakudo.
+- mutsu runs a role's body on `R.^name` and `R.WHAT` (#13103), so a lifted
+  `BEGIN say R.^name` prints the body's output first. That is the meta-method
+  bug, not the lift: the same happens at the unit's top level.
+- **Still not lifted**: a class whose nested type runs code (the shell does not
+  recurse; see #10471).
+
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,
 `t/modules/import-export/use-if-begin-time.t`,
