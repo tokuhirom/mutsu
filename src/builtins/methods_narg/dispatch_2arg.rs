@@ -3,7 +3,6 @@ use super::buf::{
     make_buf_from_int_items, out_of_range_error, read_ubits_from_bytes, resolve_buf_index,
     resolve_buf_len,
 };
-use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
@@ -44,23 +43,6 @@ pub(crate) fn native_method_2arg(
     ) {
         return Some(answer);
     }
-    if method == "flat" {
-        let (depth, hammer) = if let Some(depth) = parse_flat_depth(arg1) {
-            (Some(depth), is_hammer_pair(arg2))
-        } else if let Some(depth) = parse_flat_depth(arg2) {
-            (Some(depth), is_hammer_pair(arg1))
-        } else {
-            (None, false)
-        };
-        if let Some(depth) = depth {
-            if hammer {
-                return Some(Ok(flatten_target(target, Some(depth), true)));
-            }
-            return Some(Ok(flatten_target(target, Some(depth), false)));
-        }
-        return None;
-    }
-
     // `.substr-eq($needle, $pos)` with a plain non-negative Int position is a
     // pure substring comparison on a Str receiver. Whatever / negative /
     // out-of-range positions and the case-/mark-insensitive named-arg forms

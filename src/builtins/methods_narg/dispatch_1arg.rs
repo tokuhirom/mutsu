@@ -1,6 +1,5 @@
 use super::allomorph::allomorph_accepts;
 
-use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
 use super::fmt_contains::fmt_value_needs_coercion;
 use super::numeric::{int_to_subscript, int_to_superscript};
 use crate::runtime;
@@ -472,17 +471,6 @@ fn native_method_1arg_cascade(
             // class declaring its own EXISTS-POS is never shadowed by this.
             if target.is_one_element_under_positional_subscript() {
                 return Some(Ok(Value::truth(idx == 0)));
-            }
-            None
-        }
-        "flat" => {
-            if is_hammer_pair(arg) {
-                return Some(Ok(
-                    crate::builtins::method_table::list_transform::flat_hammer(target),
-                ));
-            }
-            if let Some(depth) = parse_flat_depth(arg) {
-                return Some(Ok(flatten_target(target, Some(depth), false)));
             }
             None
         }

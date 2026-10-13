@@ -55,6 +55,98 @@ pub(super) const fn flat_row(owner: &'static str) -> MethodRow {
     }
 }
 
+/// `flat($levels, :hammer)`: Rakudo declares it on `Iterable` (and again on
+/// `Array`); `Any` and `Range` declare only the form with no level, so a
+/// number, a string or a `Range` has no row for it.
+pub(super) static FLAT_LEVELS_ROWS: &[MethodRow] = &[
+    flat_levels_row("List"),
+    flat_levels_row("Array"),
+    flat_levels_row("Seq"),
+    flat_levels_row("Map"),
+];
+
+const fn flat_levels_row(owner: &'static str) -> MethodRow {
+    MethodRow {
+        owner,
+        name: "flat",
+        arity: 1,
+        handler: Handler::Named(flat_levels),
+        // `$levels` is `.Int`-coerced, so a `Str`, a `Rat` or a `Whatever`
+        // binds as well as an `Int`.
+        flags: RowFlags::ANY_ARGS,
+        named: &["hammer"],
+    }
+}
+
+/// `flat($levels, :hammer)`: flatten `$levels` levels of nested lists (every
+/// level for a negative count, `Inf` or `*`); `:hammer` descends into
+/// itemized arrays too. An `Array`'s own elements are items, so without
+/// `:hammer` the level changes nothing. A `Hash` flattens as its pairs.
+// Cost: O(t), t = leaves reached within `$levels` levels (`flatten_target`
+// walks eagerly); O(n) more for a Str level, n = chars (the parse).
+fn flat_levels(
+    target: &Value,
+    args: &[Value],
+    named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let hammer = named.get("hammer").is_some_and(Value::truthy);
+    // `Array.flat($levels)` without `:hammer` never reads the level.
+    if !hammer
+        && matches!(
+            target.view(),
+            ValueView::Array(
+                _,
+                crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray
+            )
+        )
+    {
+        return flat(target, &[]);
+    }
+    let levels = match flat_levels_of(args.first()?)? {
+        Ok(levels) => levels,
+        Err(err) => return Some(Err(err)),
+    };
+    match target.view() {
+        // A list still being produced may be infinite: the eager walk below
+        // would not end.
+        ValueView::LazyList(_) => None,
+        ValueView::Hash(_) => {
+            let pairs = Value::array(crate::runtime::utils::value_to_list_for_receiver(target));
+            Some(Ok(crate::builtins::methods_narg::flatten::flatten_target(
+                &pairs, levels, hammer,
+            )))
+        }
+        _ => Some(Ok(crate::builtins::methods_narg::flatten::flatten_target(
+            target, levels, hammer,
+        ))),
+    }
+}
+
+/// The level count `$levels.Int` stands for: `None` for every level (a
+/// negative count, `Inf`, `*`). A non-numeric `Str` dies as its `.Int` does;
+/// a value with no plain number declines.
+// Cost: O(n) for a Str, n = chars; O(1) otherwise.
+fn flat_levels_of(arg: &Value) -> Option<Result<Option<usize>, RuntimeError>> {
+    let count = |n: i64| Some(Ok(usize::try_from(n).ok()));
+    match arg.view() {
+        ValueView::Whatever => Some(Ok(None)),
+        ValueView::Int(n) => count(n),
+        ValueView::Bool(b) => count(i64::from(b)),
+        ValueView::Num(f) if f.is_nan() => None,
+        // `Inf` and `-Inf` both mean every level (a negative count does).
+        ValueView::Num(f) if f.is_infinite() => Some(Ok(None)),
+        ValueView::Num(f) => count(f.trunc() as i64),
+        ValueView::Rat(0, 0) => None,
+        ValueView::Rat(_, 0) => Some(Ok(None)),
+        ValueView::Rat(n, d) => count(n / d),
+        ValueView::Str(s) => match crate::builtins::method_table::numify::numify_str(&s) {
+            Some(number) => flat_levels_of(&number),
+            None => Some(Err(crate::builtins::methods_0arg::str_numeric_error(&s))),
+        },
+        _ => None,
+    }
+}
+
 /// `flat` and `flat(:hammer)`. A false `:hammer` is outside the row's
 /// signature (it binds the adverb only when set), so it takes the cascades.
 // Cost: O(1) for `flat` itself (see [`flat`]); O(t) for `:hammer`, t = leaves
@@ -71,11 +163,14 @@ fn flat_named(
     }
 }
 
-/// `flat(:hammer)`: flatten every level, arrays included. The native
-/// cascade's one-argument `flat` arm calls this for receivers the table does
-/// not cover.
+/// `flat(:hammer)`: flatten every level, arrays included.
 // Cost: O(t), t = leaves of the receiver.
-pub(crate) fn flat_hammer(target: &Value) -> Value {
+fn flat_hammer(target: &Value) -> Value {
+    // A `Hash` flattens as its pairs (`%h.flat(:hammer)` is `%h.flat`).
+    if let ValueView::Hash(_) = target.view() {
+        let pairs = Value::array(crate::runtime::utils::value_to_list_for_receiver(target));
+        return crate::builtins::methods_narg::flatten::flatten_target(&pairs, None, true);
+    }
     crate::builtins::methods_narg::flatten::flatten_target(target, None, true)
 }
 

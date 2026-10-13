@@ -751,7 +751,16 @@ impl Interpreter {
         }
         let mut result =
             if args.len() == 2 {
-                crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
+                crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1]).or_else(
+                    || {
+                        crate::builtins::method_table::answer_shapeless(
+                            Some(self),
+                            target,
+                            method_sym,
+                            args,
+                        )
+                    },
+                )
             } else if args.len() == 1 {
                 crate::builtins::native_method_1arg_without_table(target, method_sym, &args[0])
                     .or_else(|| {

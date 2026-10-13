@@ -3195,7 +3195,15 @@ impl Interpreter {
                             )
                         },
                     ),
-                    [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b),
+                    [a, b] => crate::builtins::native_method_2arg(&target, method_sym, a, b)
+                        .or_else(|| {
+                            crate::builtins::method_table::answer_shapeless(
+                                Some(self),
+                                &target,
+                                method_sym,
+                                cascade_args,
+                            )
+                        }),
                     _ => None,
                 }
             }
