@@ -293,22 +293,6 @@ fn native_method_1arg_cascade(
                 match target.view() {
                     // `Nil` answers every method with itself.
                     ValueView::Nil => Some(Ok(Value::NIL)),
-                    // `Any.AT-POS` for an instance read by the subscript
-                    // opcode, which has no interpreter for `Any`'s row: an
-                    // instance without a positional protocol is the
-                    // one-element list holding itself.
-                    // TODO: the subscript opcode should
-                    // reach `Any`'s row (`any_subscript::at_pos`) through
-                    // `answer_shapeless` with its interpreter, as a method
-                    // call does, and this branch go.
-                    ValueView::Instance { attributes, .. }
-                        if !attributes.contains_key("__mutsu_array_storage") =>
-                    {
-                        crate::builtins::method_table::any_subscript_at_pos(
-                            target,
-                            &[Value::int(idx as i64)],
-                        )
-                    }
                     ValueView::Instance {
                         class_name,
                         attributes,
@@ -344,6 +328,22 @@ fn native_method_1arg_cascade(
                                 Value::value_pair(Value::str((*key).to_string()), v)
                             })
                             .unwrap_or(Value::NIL)))
+                    }
+                    // `Any.AT-POS` for an instance read by the subscript
+                    // opcode, which has no interpreter for `Any`'s row: an
+                    // instance without a positional protocol is the
+                    // one-element list holding itself.
+                    // TODO: the subscript opcode should
+                    // reach `Any`'s row (`any_subscript::at_pos`) through
+                    // `answer_shapeless` with its interpreter, as a method
+                    // call does, and this branch go.
+                    ValueView::Instance { attributes, .. }
+                        if !attributes.contains_key("__mutsu_array_storage") =>
+                    {
+                        crate::builtins::method_table::any_subscript_at_pos(
+                            target,
+                            &[Value::int(idx as i64)],
+                        )
                     }
                     _ => None,
                 }
