@@ -32,10 +32,11 @@ use std::cell::RefCell;
 use std::collections::HashSet;
 
 /// Whether `name` is a real infix: the parser also uses `InfixFunc` as a
-/// vehicle for the class-trait `is` and for its own `__*` helpers.
+/// vehicle for the class-trait `is` and for `§`. A `__` prefix is a legal
+/// user operator name (`infix:<__>`), not a parser helper.
 // Cost: O(1).
 fn is_operator_name(name: &str) -> bool {
-    !name.is_empty() && name != "is" && name != "\u{a7}" && !name.starts_with("__")
+    !name.is_empty() && name != "is" && name != "\u{a7}"
 }
 
 /// Whether `name` is one of the flip-flop operators, which rakudo gives a

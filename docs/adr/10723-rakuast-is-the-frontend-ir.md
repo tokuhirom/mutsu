@@ -1051,3 +1051,13 @@ adverbs stays the boundary), and lowering appends them to the `InfixFunc`
 call again. An application with adverbs is always a routine call, also for a
 core operator the unit declares (`infix:</>`), whose plain application keeps
 the native layer; one whose operator the unit does not declare is refused.
+
+### 6.47 S10: user operators named with a `__` prefix (2026-10-13)
+
+The converter refused an `Expr::InfixFunc` whose name starts with `__`,
+assuming the parser used such names for its own helpers. No parser path
+builds one: the only non-operator `InfixFunc` names are the class trait `is`
+and `§`. A user operator may be named `__` (`infix:<__>`, exported from an
+`EXPORT` sub in Understitch's style); rakudo 2026.09 renders it as an
+ordinary `ApplyInfix(Infix("__"))`, and `[__]` as a `Term::Reduce`. The
+prefix test is gone.
