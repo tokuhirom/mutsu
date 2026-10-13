@@ -305,8 +305,9 @@ impl Walker<'_> {
                 }
             }
             // A proto of a multi a lifted BEGIN calls is copied with its
-            // candidates.
-            Stmt::ProtoDecl { is_method: false, .. } if !self.directly_in_package() => {
+            // candidates; so is a method outside a package, when it is lexical
+            // (`my method`).
+            Stmt::ProtoDecl { .. } | Stmt::MethodDecl { .. } if !self.directly_in_package() => {
                 self.declare_routine(stmt)
             }
             Stmt::ProtoDecl { .. }
