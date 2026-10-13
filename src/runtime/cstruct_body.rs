@@ -39,9 +39,7 @@ pub(crate) const BODY_ATTR: &str = "__mutsu_cstruct_body";
 /// Make a struct handle a native call just returned share the body of the
 /// argument it points into: C functions such as `g_value_init` return their
 /// first argument, and when that argument was a temporary (`f(Foo.new)`) the
-/// handle would otherwise outlive the block that owns the memory. Rakudo's
-/// returned object does not own the memory either, but its GC frees a body only
-/// after the object is unreachable, which here is the temporary's scope end.
+/// handle would otherwise outlive the block that owns the memory.
 // Cost: O(a), a = number of arguments.
 pub(crate) fn share_arg_body(handle: &Value, args: &[Value], addr: usize) {
     let ValueView::Instance { attributes: out, .. } = handle.view() else {
