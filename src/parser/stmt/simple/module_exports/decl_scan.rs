@@ -162,16 +162,10 @@ impl DeclScan {
         is_export: bool,
         export_tags: &[String],
     ) {
-        let mut names: Vec<String> = variants
-            .iter()
-            .map(|(name, _)| name.clone())
-            .filter(|name| name != "__DYNAMIC__" && !name.is_empty())
+        let names: Vec<String> = crate::parser::enum_value_names(variants)
+            .into_iter()
+            .filter(|name| !name.is_empty())
             .collect();
-        if let [(name, Some(body))] = variants
-            && name == "__DYNAMIC__"
-        {
-            crate::parser::stmt::decl::collect_dynamic_enum_value_names(body, &mut names);
-        }
         if is_export && !super::enum_values::exported_by_default(export_tags) {
             self.out
                 .tagged_enum_values
