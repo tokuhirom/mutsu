@@ -5,7 +5,7 @@ use Test;
 # candidate used to be evaluated eagerly (every end computed up front), which
 # fired the action of the unreached `<any-args>` branch.
 
-plan 3;
+plan 5;
 
 my @called;
 
@@ -28,3 +28,8 @@ is @called.elems, 0, 'the unreached || branch fires no action under :i';
 @called = ();
 G.subparse('rgb(10)', :rule<outside-i>, :actions(A.new));
 is @called.elems, 0, 'same without :i';
+
+# And the caller's :i is not lent to the candidate's body (rakudo).
+grammar P { proto token t {*}; token t:sym<a> { 'a''b' }; token TOP { :i <t> } }
+nok P.parse('aB'), ':i is not lent to a proto candidate';
+ok P.parse('ab'), 'the candidate itself still matches';

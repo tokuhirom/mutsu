@@ -8,7 +8,6 @@
 //! the same position* (`subrule_cannot_left_reenter`), because a frame, unlike
 //! the walk's stream, needs no left-recursion activation to stay sound.
 
-use crate::runtime::RegexPattern;
 use std::sync::Arc;
 
 use super::super::regex_lr_state::lr_name_active;
@@ -28,11 +27,11 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 use crate::vm::vm_stats_regex_vm::record_regex_eager;
 
-/// (rule, caller package, caller `:i`) → (token generation, the call's target).
-type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol, bool), (u64, CallTarget)>;
+/// (rule, caller package) → (token generation, the call's target).
+type TargetCache = rustc_hash::FxHashMap<(Symbol, Symbol), (u64, CallTarget)>;
 
 thread_local! {
-    /// The verdict for a call, per (rule, caller package, caller `:i`),
+    /// The verdict for a call, per (rule, caller package),
     /// stamped with the token generation it was reached under — the inline
     /// cache of ADR-0135 D3. Kept only for a rule whose candidates the
     /// argument-less memo holds (a fully static one); anything else is
@@ -137,7 +136,6 @@ impl Interpreter {
         &mut self,
         name: &NamedAtom,
         pkg: Symbol,
-        ic: bool,
         caps: &crate::runtime::regex_types::RegexCaptures,
         chars: &[char],
     ) -> Option<ResolvedCall> {
@@ -149,7 +147,7 @@ impl Interpreter {
         };
         let window = self.rx_call_window(name, pkg, args.as_deref().unwrap_or(&[]));
         let verdict = match &args {
-            None => self.rx_call_target_checked(name, pkg, ic),
+            None => self.rx_call_target_checked(name, pkg),
             Some(args) => {
                 let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, args);
                 // No candidate for these arguments: a grammar method runs with
@@ -163,7 +161,7 @@ impl Interpreter {
                         CallTarget::Single
                     }
                 } else {
-                    self.call_target_from_candidates(name, pkg, ic, candidates)
+                    self.call_target_from_candidates(name, pkg, candidates)
                 }
             }
         };
@@ -309,21 +307,20 @@ impl Interpreter {
         })
     }
 
-    /// The shape `<name>` called from `pkg` runs as. `ic` is the caller's
-    /// `:i`, which is scoped over a proto candidate's body.
+    /// The shape `<name>` called from `pkg` runs as.
     // Cost: O(1) expected: one memoized candidate probe, plus the memoized
     // call-graph verdicts for the rule, per call; O(c) more for a proto of c
     // candidates (a program probe each).
-    fn rx_call_target(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallTarget {
+    fn rx_call_target(&mut self, name: &NamedAtom, pkg: Symbol) -> CallTarget {
         let spec = name.spec();
         // `<&r>` may name a lexical Regex, a value of this call's scope: never
         // cached.
         if Self::may_name_lexical_regex(spec) {
-            return self.resolve_call_target(name, pkg, ic);
+            return self.resolve_call_target(name, pkg);
         }
         let generation =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
-        let key = (spec.lookup_sym, pkg, ic);
+        let key = (spec.lookup_sym, pkg);
         if let Some(hit) = TARGETS.with(|c| {
             c.borrow()
                 .get(&key)
@@ -332,7 +329,7 @@ impl Interpreter {
         }) {
             return hit;
         }
-        let target = self.resolve_call_target(name, pkg, ic);
+        let target = self.resolve_call_target(name, pkg);
         if Self::parsed_candidates_are_memoized(spec.lookup_sym, pkg) {
             TARGETS.with(|c| {
                 c.borrow_mut().insert(key, (generation, target.clone()));
@@ -345,8 +342,8 @@ impl Interpreter {
     /// change, and so is never cached: a call with no rule of its name that
     /// names a plain grammar METHOD calls the method.
     // Cost: O(1) expected.
-    fn rx_call_target_checked(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallTarget {
-        let target = self.rx_call_target(name, pkg, ic);
+    fn rx_call_target_checked(&mut self, name: &NamedAtom, pkg: Symbol) -> CallTarget {
+        let target = self.rx_call_target(name, pkg);
         if matches!(target, CallTarget::Single) && self.subrule_names_user_method(name.spec(), pkg)
         {
             return CallTarget::Method;
@@ -356,13 +353,13 @@ impl Interpreter {
 
     /// [`Self::rx_call_target`]'s cache miss: resolve the rule's candidates and
     /// decide the shape of the call.
-    fn resolve_call_target(&mut self, name: &NamedAtom, pkg: Symbol, ic: bool) -> CallTarget {
+    fn resolve_call_target(&mut self, name: &NamedAtom, pkg: Symbol) -> CallTarget {
         let spec = name.spec();
         let (candidates, raw_empty) = self.parsed_subrule_candidates(spec, pkg, &[]);
         if raw_empty {
             return CallTarget::Single;
         }
-        self.call_target_from_candidates(name, pkg, ic, candidates)
+        self.call_target_from_candidates(name, pkg, candidates)
     }
 
     /// The shape of a call to the resolved `candidates`: a plain rule, a proto,
@@ -371,7 +368,6 @@ impl Interpreter {
         &mut self,
         name: &NamedAtom,
         pkg: Symbol,
-        ic: bool,
         candidates: Arc<TokenCandidates>,
     ) -> CallTarget {
         let spec = name.spec();
@@ -423,37 +419,12 @@ impl Interpreter {
         {
             return CallTarget::Eager(candidates, "wrapped-candidate");
         }
-        // The caller's `:i` is scoped over a proto candidate's body
-        // (`subrule_candidate_ends`), which needs the body compiled under it.
-        // A plain call does not inherit `:i` — and neither does rakudo. The
-        // candidates are re-scoped here, once per cached target, so the call
-        // stays a lazily-entered frame: evaluating it eagerly computed every
-        // end of the body up front, firing the actions of `||` branches the
-        // match never reaches.
-        let candidates = if proto && ic && candidates.iter().any(|(parsed, _, _)| !parsed.ignore_case)
-        {
-            let scoped = candidates
-                .iter()
-                .map(|(parsed, sub_pkg, sym)| {
-                    let parsed = if parsed.ignore_case {
-                        Arc::clone(parsed)
-                    } else {
-                        Arc::new(RegexPattern {
-                            tokens: parsed.tokens.clone(),
-                            anchor_start: parsed.anchor_start,
-                            anchor_end: parsed.anchor_end,
-                            ignore_case: true,
-                            ignore_mark: parsed.ignore_mark,
-                            derived: Default::default(),
-                        })
-                    };
-                    (parsed, *sub_pkg, sym.clone())
-                })
-                .collect();
-            Arc::new(TokenCandidates::new(scoped))
-        } else {
-            candidates
-        };
+        // The caller's `:i` is NOT lent to a proto candidate's body, any more
+        // than to a plain callee (rakudo: `token TOP { :i <t> }` over
+        // `token t:sym<a> { a b }` does not match "aB"). Entering the candidates
+        // as lazy frames also keeps the actions of `||` branches the match never
+        // reaches from firing: an eager call computed every end of the body up
+        // front.
         if !self.subrule_cannot_left_reenter(spec.lookup_sym, pkg) {
             return CallTarget::Eager(candidates, "lr-seed");
         }

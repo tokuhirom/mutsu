@@ -11,8 +11,8 @@ Gaps that kept `CSS::Module`'s own suite from running:
   the bare tail of the qualified name).
 - A `rule` with `:i` calling a proto rule evaluated the candidate eagerly,
   computing every end of its body up front and firing the action of `||`
-  branches the match never reached. The candidates are now re-scoped under
-  `:i` once and entered as lazy frames.
+  branches the match never reached. The proto's candidates are now always
+  entered as lazy frames; the caller's `:i` is (as in rakudo) not lent to them.
 - `<alias=.Pkg::rule>` dispatched the action under the package-qualified name,
   so the callee's action never ran; it now runs under the rule's own name.
 - A `use` inside a method body is a BEGIN-time load for the whole unit, like one
