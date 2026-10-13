@@ -334,11 +334,13 @@ fn lower_contextualized(node: &RakuAstNode) -> Option<Result<RegexNode, RuntimeE
                             .chars()
                             .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-')) =>
                 {
-                    Ok(RegexNode::Extension(RegexExtension::ContextualizedVariable {
-                        sigil,
-                        name: name[1..].to_string(),
-                        sequential,
-                    }))
+                    Ok(RegexNode::Extension(
+                        RegexExtension::ContextualizedVariable {
+                            sigil,
+                            name: name[1..].to_string(),
+                            sequential,
+                        },
+                    ))
                 }
                 _ => Err(super::lower::unsupported(node)),
             };
