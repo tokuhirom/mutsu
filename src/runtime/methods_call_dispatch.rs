@@ -120,8 +120,9 @@ impl Interpreter {
         &mut self,
         target: Value,
         method: &str,
-        args: Vec<Value>,
+        mut args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        self.coerce_assoc_key_arg(&target, method, &mut args)?;
         // Tagging the whole call, body included, is deliberate and costs
         // nothing in accuracy: a tick that fires while the method's *bytecode*
         // runs is consumed by that bytecode's own poll long before this guard

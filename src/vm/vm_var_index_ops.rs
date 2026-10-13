@@ -988,6 +988,11 @@ impl Interpreter {
             }
             matches!(probe.descalarize().view(), ValueView::Hash(arc) if arc.has_typed_keys())
         };
+        // A `Str`-keyed hash coerces a user object key through its own `.Str`
+        // (#13293); an object hash keys by identity and is left alone.
+        if !is_positional && !target_is_object_hash {
+            index = self.hash_key_through_user_str(&target, index)?;
+        }
         if let ValueView::Junction { kind, values } = index.view()
             && !target_is_object_hash
         {

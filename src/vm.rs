@@ -394,6 +394,7 @@ mod vm_var_deferred_token;
 mod vm_var_delete_ops;
 mod vm_var_elem_mutate;
 mod vm_var_exists_ops;
+mod vm_hash_key_user_str;
 mod vm_var_get_ops;
 mod vm_var_index_ops;
 mod vm_var_index_tracking;

@@ -158,6 +158,9 @@ impl Interpreter {
                 ValueView::ContainerRef(_) => target.deref_container(),
                 _ => target,
             };
+            if kind != SubscriptKind::Positional {
+                idx = self.hash_key_through_user_str(&target, idx)?;
+            }
             // A nested single-dim slice (`@a[(3, (30, (5,)))]:exists`) preserves
             // its index-tree shape in the result, so it recurses rather than
             // walking a flat pair list. Distinct from a multidim `@a[1;2]` walk.
