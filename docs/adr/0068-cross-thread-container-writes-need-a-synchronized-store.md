@@ -1015,7 +1015,8 @@ Measured on a debug build, `main` → this slice:
   it. Each leaf reader of a shared live array is still a funnel of its own, and the harness
   is what finds the next one. The issue's design note still applies: only a guard inside
   `gc_contents_mut`, or an owner check once `MULTI_MUTATOR_THREADS` is set, cannot miss a
-  shape.
+  shape. Tracked as #13079.
 - The topic writeback (`write_back_for_topic_item`) and the rw parameter writeback still
   rebuild a copy of the source and store it whole. Under a concurrent writer that loses the
-  other thread's update. It is no longer a crash, but it is still a wrong answer.
+  other thread's update. It is no longer a crash, but it is still a wrong answer. Tracked as
+  #13078.
