@@ -806,6 +806,9 @@ impl Interpreter {
             None => target,
         };
         let target = self.reify_or_consume_seq_target(target, method)?;
+        // A plain gather argument of a built-in method is read the way
+        // Rakudo's method reads it (ADR-11678 §8.3).
+        let args = self.method_gather_args(&target, method, args)?;
         // A raw `VMArray`/`VMHash` has no methods (ADR-12666).
         if crate::runtime::boot_collection::is_boot_collection_invocant(&target)
             && let Some(result) = Interpreter::vm_collection_method(&target, method)
