@@ -124,6 +124,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     numeric_base::INT_ROWS,
     numeric_base::NUM_ROWS,
     numeric_base::RAT_ROWS,
+    numeric_base::FAT_RAT_ROWS,
     numeric_polymod::ROWS,
     numeric_range::ROWS,
     complex_real::ROWS,

@@ -1,5 +1,5 @@
-//! The numeric types' radix methods: `base` on `Int`, `Num` and `Rat`, and
-//! `base-repeating` on `Rat` (ADR-11276 §9.70).
+//! The numeric types' radix methods: `base` on `Int`, `Num`, `Rat` and
+//! `FatRat`, and `base-repeating` on `Rat` (ADR-11276 §9.70, §9.104).
 //!
 //! `base($radix)` and `base($radix, $digits)` are two arities of one routine,
 //! [`base_of`]. A bad radix is the `X::OutOfRange` `Failure` Rakudo answers. The
@@ -40,6 +40,8 @@ macro_rules! base_rows {
 
 pub(super) static INT_ROWS: &[MethodRow] = base_rows!("Int");
 pub(super) static NUM_ROWS: &[MethodRow] = base_rows!("Num");
+/// Rakudo declares `base` on `Rational`, which `FatRat` composes too.
+pub(super) static FAT_RAT_ROWS: &[MethodRow] = base_rows!("FatRat");
 pub(super) static RAT_ROWS: &[MethodRow] = &[
     MethodRow {
         owner: "Rat",

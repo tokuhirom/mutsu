@@ -441,21 +441,6 @@ fn native_method_1arg_cascade(
             }
             None
         }
-        // A number: the numeric types' `base` rows' implementation
-        // (`method_table::numeric_base`).
-        "base"
-            if matches!(
-                target.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Bool(_)
-                    | ValueView::Num(_)
-                    | ValueView::Rat(..)
-                    | ValueView::FatRat(..)
-            ) =>
-        {
-            crate::builtins::method_table::numeric_base::base_of(target, arg, None)
-        }
         // Buf/Blob `read-*` (1 arg: offset, native byte order): the rows'
         // implementation (`method_table::blob_read`).
         "read-num32" | "read-num64" | "read-uint8" | "read-int8" | "read-uint16" | "read-int16"
