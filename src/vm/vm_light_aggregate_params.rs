@@ -25,7 +25,7 @@ impl Interpreter {
     ///
     /// Everything else declines to the general binder, unchanged: a `Seq`
     /// (bound through `PositionalBindFailover`), a `Pair`/`Map`/`Set` or other
-    /// Associative, a shaped or lazy array, a type object (an arity/type
+    /// Associative, an object hash, a shaped or lazy array, a type object (an arity/type
     /// error the binder reports), and a missing argument. A container that
     /// carries element/key type metadata (`my Int @a`) is admitted: the light
     /// bind registers its constraint under the parameter's name exactly as
@@ -63,7 +63,10 @@ impl Interpreter {
                     ArrayKind::Array | ArrayKind::List | ArrayKind::ItemArray | ArrayKind::ItemList
                 )
             }
-            ('%', ValueView::Hash(_)) => true,
+            // An object hash (`my %h{Mu}`) keeps the binder: its keyed
+            // stores are not in place, so the caller only sees them through
+            // the binder's writeback (Cro's `%connection-state{$type}`).
+            ('%', ValueView::Hash(map)) => map.key_type.is_none(),
             _ => false,
         }
     }

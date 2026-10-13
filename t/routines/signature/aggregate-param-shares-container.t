@@ -7,7 +7,7 @@ use Test;
 # an untyped Array/Hash argument this way directly (#12917); every other
 # argument shape keeps the general binder. Both must agree.
 
-plan 31;
+plan 33;
 
 # Subs (positional-light path).
 sub h-store(%p) { %p<k> = 1; %p<y>:delete }
@@ -76,10 +76,20 @@ sub var-name(@q) { @q.VAR.name }
 my @named-arr = 1, 2;
 is var-name(@named-arr), '@named-arr', 'sub: .VAR.name is the caller variable';
 is var-name([1, 2]), 'element', 'sub: .VAR.name of a literal is "element"';
-class VN { method name-of(%p) { %p.VAR.name } }
+class VN { method name-of(%p) { %p.VAR.name }; method arr-name-of(@q) { @q.VAR.name } }
 my %named-hash = a => 1;
 is VN.name-of(%named-hash), '%named-hash', 'method: .VAR.name is the caller variable';
-is VN.name-of({:a}), 'element', 'method: .VAR.name of a literal is "element"';
+is VN.arr-name-of([1]), 'element', 'method: .VAR.name of a literal is "element"';
+# An object hash keeps keying by the object through a parameter.
+class KeyA {}
+class OH { method bump(%s) { %s{KeyA}++; %s.elems } }
+my %object-hash{Mu};
+OH.bump(%object-hash) for ^2;
+is %object-hash{KeyA}, 2, 'method: an object-hash parameter stores by object';
+sub oh-bump(%p) { %p{KeyA}++ }
+my %object-hash2{Mu};
+oh-bump(%object-hash2) for ^3;
+is %object-hash2{KeyA}, 3, 'sub: an object-hash parameter stores by object';
 my $not-positional = 42;
 throws-like { a-push($not-positional) }, X::TypeCheck::Binding::Parameter, 'sub: a non-Positional is rejected';
 
