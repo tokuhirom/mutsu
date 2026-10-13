@@ -243,20 +243,12 @@ impl Interpreter {
         } else {
             self.env_mut().remove("_");
         }
-        // A handled exception (a matching `when`/`default`) leaves `$!` at
-        // its pre-`try` value. When nothing matched, `$!` keeps the
-        // exception: an explicit CATCH re-throws (below), and an implicit
-        // `try` trap swallows it with the exception left in `$!`.
-        if when_handled {
-            self.env_mut()
-                .assign_error_var(prior_bang.unwrap_or(Value::NIL));
-        } else {
-            // Nothing matched: the exception is still live, so publish it in
-            // the enclosing `$!` now that the handler (which saw `Nil`) is
-            // done. An explicit CATCH re-throws just below; an implicit
-            // `try` trap swallows it with the exception left in `$!`.
-            self.env_mut().assign_error_var(err_val);
-        }
+        // Handled or not, the exception is published in the enclosing `$!` now
+        // that the handler (which saw `Nil`) is done: rakudo's `try` sets `$!`
+        // to a handled exception too (#12904). When nothing matched, an
+        // explicit CATCH re-throws just below and an implicit `try` trap
+        // swallows it with the exception left in `$!`.
+        self.env_mut().assign_error_var(err_val);
         // Nothing matched, so the exception is still live. Only a
         // genuine `try` without a CATCH swallows it into `$!`: an
         // explicit CATCH re-throws what it did not handle, and an
