@@ -676,7 +676,7 @@ pub(crate) fn code_var(input: &str) -> PResult<'_, Expr> {
             );
             return Err(PError::fatal_with_exception(message, Box::new(exception)));
         }
-        let full_name = format!("infix:<{}>", op_name);
+        let full_name = format!("infix:<{}>", unbracketed_meta_op(op_name));
         return Ok((rest, Expr::CodeVar(full_name)));
     }
     // Handle &Pkg::...::("name") — a package-qualified symbolic code deref, e.g.
@@ -1065,4 +1065,22 @@ pub(crate) fn is_known_word_infix(name: &str) -> bool {
             | "le"
             | "ge"
     )
+}
+
+/// `R[~~]` / `Z[+]` / `X[,]` name the same operator as `R~~` / `Z+` / `X,`:
+/// the brackets only group the inner operator. The runtime resolves the
+/// unbracketed spelling, so `&[R[~~]]` is rewritten to `&[R~~]` here.
+// Cost: O(n), n = the operator's length.
+fn unbracketed_meta_op(op: &str) -> std::borrow::Cow<'_, str> {
+    let mut chars = op.chars();
+    if let Some(meta @ ('R' | 'Z' | 'X')) = chars.next()
+        && let Some(inner) = chars
+            .as_str()
+            .strip_prefix('[')
+            .and_then(|r| r.strip_suffix(']'))
+        && !inner.is_empty()
+    {
+        return std::borrow::Cow::Owned(format!("{meta}{}", unbracketed_meta_op(inner)));
+    }
+    std::borrow::Cow::Borrowed(op)
 }
