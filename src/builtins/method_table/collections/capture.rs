@@ -94,13 +94,16 @@ fn to_capture(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeEr
     ))
 }
 
+/// A capture's positional values and its `(name, value)` pairs.
+type Parts = (Vec<Value>, Vec<(String, Value)>);
+
 /// The positional and named parts of a `Capture`, or of a `Match`: its
 /// positional captures (an unbound one as `Mu`) and its named captures in key
 /// order. A `Match` is asked first, so a lazy one (a grammar cursor) is read
 /// from its capture node without materializing it.
 // Cost: O(n), n = positional plus named parts (each cloned once); plus
 // O(k log k) to order a `Match`'s k named captures.
-fn parts(target: &Value) -> Option<(Vec<Value>, Vec<(String, Value)>)> {
+fn parts(target: &Value) -> Option<Parts> {
     if target.is_match_instance() {
         let list = target.match_list();
         let positional = match list.as_ref().map(Value::view) {
