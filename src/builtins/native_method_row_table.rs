@@ -891,6 +891,10 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Set", "List", 1, 0),
     ("Set", "Array", 1, 0),
     ("Set", "total", 1, 48),
+    ("Set", "Int", 1, 48),
+    ("Set", "Numeric", 1, 48),
+    ("Set", "Real", 1, 48),
+    ("Set", "Num", 1, 48),
     // Immutable `Set`'s `grab` IS recognized by the pure cascade
     // (`dispatch_core_range.rs`'s `ValueView::Set(_, false)` arm) -- it
     // always errors ("Cannot call .grab on an immutable Set"), but `Some`
@@ -926,6 +930,10 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("SetHash", "List", 1, 0),
     ("SetHash", "Array", 1, 0),
     ("SetHash", "total", 1, 48),
+    ("SetHash", "Int", 1, 48),
+    ("SetHash", "Numeric", 1, 48),
+    ("SetHash", "Real", 1, 48),
+    ("SetHash", "Num", 1, 48),
     ("SetHash", "pick", 3, 16),
     ("SetHash", "roll", 3, 16),
     ("SetHash", "WHICH", 1, 0),
@@ -957,6 +965,9 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Bag", "List", 1, 0),
     ("Bag", "Array", 1, 0),
     ("Bag", "total", 1, 48),
+    ("Bag", "Int", 1, 48),
+    ("Bag", "Real", 1, 48),
+    ("Bag", "Num", 1, 48),
     ("Bag", "Numeric", 1, 48),
     ("Bag", "grab", 8, 18),
     ("Bag", "pick", 3, 16),
@@ -988,6 +999,9 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("BagHash", "List", 1, 0),
     ("BagHash", "Array", 1, 0),
     ("BagHash", "total", 1, 48),
+    ("BagHash", "Int", 1, 48),
+    ("BagHash", "Real", 1, 48),
+    ("BagHash", "Num", 1, 48),
     ("BagHash", "Numeric", 1, 48),
     // `grab` on the *mutable* `BagHash`/`MixHash` variant is served by the
     // `&mut self` slow path (`methods_mut_dispatch.rs`), not the pure
@@ -1032,6 +1046,9 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Mix", "List", 1, 0),
     ("Mix", "Array", 1, 0),
     ("Mix", "total", 1, 48),
+    ("Mix", "Int", 1, 48),
+    ("Mix", "Real", 1, 48),
+    ("Mix", "Num", 1, 48),
     ("Mix", "Numeric", 1, 48),
     ("Mix", "grab", 8, 18),
     ("Mix", "pick", 3, 16),
@@ -1063,6 +1080,9 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("MixHash", "List", 1, 0),
     ("MixHash", "Array", 1, 0),
     ("MixHash", "total", 1, 48),
+    ("MixHash", "Int", 1, 48),
+    ("MixHash", "Real", 1, 48),
+    ("MixHash", "Num", 1, 48),
     ("MixHash", "Numeric", 1, 48),
     // Same as `BagHash`'s `grab` above: the mutable `MixHash` variant's
     // `grab` is slow-path-only, not pure-cascade-recognized.

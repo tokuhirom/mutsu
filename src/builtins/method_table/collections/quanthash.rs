@@ -71,10 +71,32 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("BagHash", "total", total),
     row!("Mix", "total", total),
     row!("MixHash", "total", total),
+    // `QuantHash`'s numeric coercions, composed into each: the total, as
+    // the type each coercion names.
+    row!("Set", "Numeric", total),
+    row!("SetHash", "Numeric", total),
     row!("Bag", "Numeric", total),
     row!("BagHash", "Numeric", total),
     row!("Mix", "Numeric", total),
     row!("MixHash", "Numeric", total),
+    row!("Set", "Real", total),
+    row!("SetHash", "Real", total),
+    row!("Bag", "Real", total),
+    row!("BagHash", "Real", total),
+    row!("Mix", "Real", total),
+    row!("MixHash", "Real", total),
+    row!("Set", "Int", total_int),
+    row!("SetHash", "Int", total_int),
+    row!("Bag", "Int", total_int),
+    row!("BagHash", "Int", total_int),
+    row!("Mix", "Int", total_int),
+    row!("MixHash", "Int", total_int),
+    row!("Set", "Num", total_num),
+    row!("SetHash", "Num", total_num),
+    row!("Bag", "Num", total_num),
+    row!("BagHash", "Num", total_num),
+    row!("Mix", "Num", total_num),
+    row!("MixHash", "Num", total_num),
     row!("Set", "elems", elems),
     row!("SetHash", "elems", elems),
     row!("Bag", "elems", elems),
@@ -245,6 +267,20 @@ pub(crate) fn total(target: &Value, _args: &[Value]) -> Option<Result<Value, Run
         }
         _ => return None,
     }))
+}
+
+/// `QuantHash.Int`: the total, truncated (`(a => 1.5).Mix.Int` is `1`).
+// Cost: O(e), e = elements (the total).
+pub(crate) fn total_int(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let total = total(target, args)?.ok()?;
+    crate::builtins::method_table::scalars::coerce::int_of(&total).map(Ok)
+}
+
+/// `QuantHash.Num`: the total as a `Num`.
+// Cost: O(e), e = elements (the total).
+pub(crate) fn total_num(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    let total = total(target, args)?.ok()?;
+    Some(Ok(Value::num(total.to_f64())))
 }
 
 /// `.elems`: the number of distinct elements.
