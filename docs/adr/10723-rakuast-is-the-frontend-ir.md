@@ -1039,3 +1039,15 @@ gives the ordinary colonpair `Binary`, so a round-tripped bare colonpair
 statement words its sink warning like a fatarrow. `:7a` had no form of its
 own and rendered as `FatArrow`; it is now `BinaryForm::ColonPairNumber`,
 rendered as `ColonPair::Number(key, value)` and lowered back to the same form.
+
+### 6.46 S10: adverbs on a user-declared infix (2026-10-13)
+
+`1 foo 3 :round` passes `:round` to `infix:<foo>`. The parser appends the
+trailing colonpairs to the `Expr::InfixFunc` operands
+(`attach_trailing_adverbs`); rakudo 2026.09 renders them as the
+`ApplyInfix`'s `colonpairs`. The converter splits the trailing adverbs off
+the operands (a two-operand application only; a list-associative chain with
+adverbs stays the boundary), and lowering appends them to the `InfixFunc`
+call again. An application with adverbs is always a routine call, also for a
+core operator the unit declares (`infix:</>`), whose plain application keeps
+the native layer; one whose operator the unit does not declare is refused.
