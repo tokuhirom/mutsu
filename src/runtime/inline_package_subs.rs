@@ -384,6 +384,8 @@ struct InlinePackageSubCollector {
     nested: bool,
     /// Inside a class body: only exported routines are collected.
     exports_only: bool,
+    /// Inside the body of a `sub` or `proto`.
+    in_routine: bool,
     out: Vec<InlinePackageDecl>,
 }
 
@@ -411,11 +413,15 @@ impl InlinePackageSubCollector {
 
     fn collect(&mut self, stmt: &Stmt, is_our: bool, is_export: bool) {
         let Some((package, outer)) = self.packages.split_last() else {
-            // Outside every package, an `our` routine nested in a routine or
-            // block of the mainline installs into the unit's own package
-            // (`GLOBAL`, or an EVAL's caller's package) (#13091). One directly
-            // in the unit's statement list is registered by the unit itself.
-            if self.nested && is_our {
+            // Outside every package, an `our` routine nested in a routine
+            // body installs into the unit's own package (`GLOBAL`, or an
+            // EVAL's caller's package) (#13091). One directly in the unit's
+            // statement list is registered by the unit itself, and one in a
+            // bare block when the block runs, which binds the block's escaping
+            // lexicals (`escaped_our_lexical_cells`). An `our multi` needs its
+            // `our proto` registered first, which is left to the routine.
+            let multi = matches!(stmt, Stmt::SubDecl { multi: true, .. });
+            if self.in_routine && is_our && !multi {
                 self.out.push(InlinePackageDecl {
                     package: None,
                     stmt: stmt.clone(),
@@ -517,7 +523,9 @@ impl<'ast> Visit<'ast> for InlinePackageSubCollector {
             } => {
                 let is_our = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
                 self.collect(stmt, is_our, *is_export);
+                let saved = std::mem::replace(&mut self.in_routine, true);
                 self.walk_nested(stmt);
+                self.in_routine = saved;
             }
             Stmt::ProtoDecl {
                 is_our, is_export, ..
