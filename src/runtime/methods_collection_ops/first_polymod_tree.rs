@@ -348,6 +348,22 @@ impl Interpreter {
                         divisors.extend(self.force_lazy_list_bridge(&ll)?);
                     }
                 }
+                // A plain gather (ADR-11678) may be infinite: it is pulled
+                // through its cached body only as far as the decomposition
+                // can reach (the bound above), as Rakudo reads it lazily. One
+                // that ends first is a finite divisor list.
+                _ if Self::is_gather_seq(arg) => {
+                    let needed = polymod_digit_bound(target);
+                    let mut pulled = 0;
+                    while pulled < needed {
+                        match self.pull_source_element(arg, pulled)? {
+                            Some(d) => divisors.push(d),
+                            None => break,
+                        }
+                        pulled += 1;
+                    }
+                    has_infinite |= pulled == needed;
+                }
                 ValueView::Array(..) | ValueView::Seq(_) => {
                     divisors.extend(flatten_to_list(arg));
                 }

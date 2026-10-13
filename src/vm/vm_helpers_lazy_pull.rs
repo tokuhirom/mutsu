@@ -493,6 +493,10 @@ impl Interpreter {
                         crate::value::IndexTransform::Kv => vec![idx, elem],
                         crate::value::IndexTransform::Identity => vec![elem],
                         crate::value::IndexTransform::Flat => {
+                            // `flat_val` is pure and sees a deferred Seq (a
+                            // nested gather, a `.map`) as empty: pull what it
+                            // will descend into first.
+                            self.touch_flat_operand(&elem)?;
                             let mut out = Vec::new();
                             crate::builtins::flat_val(&elem, &mut out, true);
                             out

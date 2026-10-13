@@ -1162,6 +1162,14 @@ impl Interpreter {
             }
             // A plain gather runs its body only to the `n`-th `take`.
             Some(crate::value::PrefixSource::Gather(list)) => self.pull_gather_prefix(&list, n)?,
+            // A cached gather (`.cache`, a subscript read) is re-readable:
+            // pull only the prefix into its body and leave it in place, so
+            // `$g.cache.head(3)` answers on an infinite gather.
+            None if body.is_gather_source() => {
+                let body = Arc::clone(&body);
+                self.reify_seq_body_prefix(&body, n)?;
+                body.iter().take(n).cloned().collect()
+            }
             None => return Ok(None),
         };
         Ok(Some(Value::seq(items)))
