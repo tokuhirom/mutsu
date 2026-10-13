@@ -4,9 +4,9 @@
 //! Rakudo declares `isa(Mu \type)` and `isa(Str:D $name)` on `Mu`, so every
 //! receiver reaches the row: a shape through its owners or the audited `Mu`
 //! answers, a receiver with no shape through
-//! [`crate::builtins::method_table::answer_shapeless`]. An instance, a type
-//! object and a mixin over an instance decline: a user class hierarchy, a role
-//! and a subset are the interpreter's to read.
+//! [`crate::builtins::method_table::answer_shapeless`]. An instance of a
+//! class with no shape, a type object and a mixin over an instance decline: a
+//! user class hierarchy, a role and a subset are the interpreter's to read.
 
 use crate::builtins::method_table::{Handler, MethodRow, RowFlags};
 use crate::value::{RuntimeError, Value, ValueView};
@@ -28,7 +28,9 @@ pub(super) static ROWS: &[MethodRow] = &[MethodRow {
 // parameterized name, n = chars.
 fn isa(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
-        ValueView::Instance { .. } | ValueView::Package(_) => return None,
+        // A built-in class with a shape (`Date`) knows its own type chain.
+        ValueView::Instance { .. } if target.dispatch_shape().is_none() => return None,
+        ValueView::Package(_) => return None,
         ValueView::Mixin(inner, _) if matches!(inner.view(), ValueView::Instance { .. }) => {
             return None;
         }
