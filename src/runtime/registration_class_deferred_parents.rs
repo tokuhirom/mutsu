@@ -80,11 +80,9 @@ impl Interpreter {
             let short = crate::qualified::last_segment(crate::qualified::known_symbol(&user_facing))
                 .as_str()
                 .to_string();
-            parent
-                .strip_prefix(short.as_str())
-                .and_then(|rest| rest.strip_prefix("::"))
-                .filter(|rest| !rest.is_empty())
-                .map(|rest| {
+            crate::qualified::split_first(crate::qualified::known_symbol(parent))
+                .filter(|(head, rest)| *head == short.as_str() && !rest.is_empty())
+                .map(|(_, rest)| {
                     crate::qualified::qualified_text(&user_facing, rest)
                         .as_str()
                         .to_string()

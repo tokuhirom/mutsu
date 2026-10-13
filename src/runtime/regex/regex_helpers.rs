@@ -1081,14 +1081,16 @@ pub(crate) struct NamedRegexLookupSpec {
 }
 
 /// The rule name an action is dispatched under for a call spelled
-/// `lookup_name`: `Pkg::rule:sym<x>` reduces as `rule:sym<x>`, since the action
-/// belongs to the rule, not to the package the call reached it through.
+/// `lookup_name`: `Pkg::rule` reduces as `rule`, since the action belongs to the
+/// rule, not to the package the call reached it through.
 // Cost: O(n), n = the length of the name.
 pub(crate) fn action_rule_symbol(lookup_name: &str) -> crate::symbol::Symbol {
-    let head_end = lookup_name.find('<').unwrap_or(lookup_name.len());
-    match lookup_name[..head_end].rfind("::") {
-        Some(at) => crate::symbol::Symbol::intern(&lookup_name[at + 2..]),
-        None => crate::symbol::Symbol::intern(lookup_name),
+    let sym = crate::symbol::Symbol::intern(lookup_name);
+    // A `:sym<..>` suffix may itself hold `::`, which is not a package split.
+    if lookup_name.contains('<') {
+        sym
+    } else {
+        crate::qualified::unqualified_part(sym)
     }
 }
 
