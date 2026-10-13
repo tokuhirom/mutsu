@@ -384,7 +384,8 @@ code does where §2 left a choice, and where it deviates:
   gather) and a second identity reachable inside those builtins. Retiring the
   boundaries one consumer at a time is follow-up work (#13026).
 - **Builtin routines no longer share the inner list** (#13026 step 1, §8.2),
-  nor do the methods of built-in receivers (step 2, §8.3).
+  nor do the methods of built-in receivers (step 2, §8.3) or `.AT-POS` /
+  `.EXISTS-POS` (step 3, §8.4).
 - **Pure renderers.** `say`/`put`/`print`/`note`, a `--> Array(...)`-style
   return coercion, slurpy binding and `.flatmap`'s flattening run a gather
   whole first (`reify_gather_seq`), as Rakudo's do; nested gathers are run by
@@ -478,3 +479,19 @@ type object receive the Seq unchanged. `shared_gather_list` /
 before this change too, and still does (a `Cache` read pulls the whole gather).
 `t/collections/lazy-seq/gather-receiver-args.t` pins the rows. The remaining
 hand-offs are `.AT-POS` / `.EXISTS-POS` and `gather_operand`.
+
+### 8.4 `.AT-POS` / `.EXISTS-POS` (#13026 step 3)
+
+`reify_or_consume_seq_target` no longer answers `.AT-POS` / `.EXISTS-POS` on a
+gather with the shared inner list. `pull_pos_method_gather_prefix` pulls the
+prefix the index needs into the Seq's body, through `reify_seq_body_prefix`
+with the bound `$g[$i]` uses (`seq_subscript_needed_count`), and caches the
+Seq. An index with no static bound pulls the whole gather. The method then
+reads the body's stored elements, as for any other reified Seq. The call runs
+from `take_seq_prefix` on the `CallMethod` / `CallMethodMut` paths and before
+`call_method_with_values`' single authoritative Seq touch.
+`t/collections/lazy-seq/gather-at-pos-prefix.t` pins the rows, including how
+far an infinite gather's body runs. The remaining hand-off is `gather_operand`
+for the zip/cross metaoperators and reductions. The streaming builtins of §8.2
+and the §2.3 method steals also use it; those consume the Seq, as invariant 1
+allows.
