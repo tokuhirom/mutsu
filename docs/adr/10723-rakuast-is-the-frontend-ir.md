@@ -774,3 +774,20 @@ expression and its written source; execution stays on the runtime parser path
 (the matcher resolves the name from the regex text, as before), and lowering
 rebuilds the source with `expression_source`, which now also renders an
 interpolated string.
+
+### 6.29 S10: named `anon` declarations (2026-10-13)
+
+`anon sub g { }`, `anon class Foo { }`, `anon role R { }` and
+`anon grammar G { }` build a routine or type that keeps its name but is not
+installed under it. Measured on rakudo 2026.09, each is the ordinary `Sub` /
+`Class` / `Role` / `Grammar` with `scope => "anon"` before the name (a
+nameless `anon class { }` has the scope and no name). The parser's
+`ANON_DECL_TRAIT` marker is that scope: conversion renders it, and lowering
+marks the declaration again (`mark_anon_package_stmt`, which also gives a
+package's registry name its site suffix). A statement-level `anon sub` lowers
+back to the parser's expression statement, which declares nothing.
+
+A statement-level `anon class C { }` was a second mechanism: it registered
+`C` and then removed it again with a `__MUTSU_UNREGISTER_CLASS__` call. It
+now parses to the expression form's marked declaration, so there is one
+mechanism; the builtin and the compiler's special case for its block are gone.

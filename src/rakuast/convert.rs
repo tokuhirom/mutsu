@@ -1056,6 +1056,7 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                         t.starts_with("__")
                             && !is_return_spelling_marker(t)
                             && t != OUR_SCOPED
+                            && t != crate::parser::ANON_DECL_TRAIT
                             // The operator-precedence record the parser derives
                             // from `is assoc` / `is tighter`; lowering rebuilds it.
                             && t != OP_PREC_TRAIT
@@ -1081,9 +1082,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             )?;
             if super::routine_source::apply(&mut node, body)? {
                 routine_traits::add_flags(&mut node, *multi, false, &Default::default())?;
-                if custom_traits.iter().any(|(t, _)| t == OUR_SCOPED) {
+                if let Some(scope) = sub_scope(custom_traits) {
                     node.fields
-                        .insert(0, leaf_field(Some("scope"), Value::str_from("our")));
+                        .insert(0, leaf_field(Some("scope"), Value::str_from(scope)));
                 }
                 return Ok(Some(statement_expression(node)));
             }
@@ -1096,11 +1097,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             .with_precedence(associativity.as_ref(), precedence_trait.as_ref())?;
             routine_traits::add_flags(&mut node, *multi, false, &flags)?;
             routine_traits::add_custom(&mut node, custom_traits, !flags.nodes().is_empty())?;
-            if custom_traits.iter().any(|(t, _)| t == OUR_SCOPED) {
-                // `scope => "our"` leads the node; `my` is the default scope
-                // and renders no field.
+            if let Some(scope) = sub_scope(custom_traits) {
+                // `scope => "our"` / `"anon"` leads the node; `my` is the
+                // default scope and renders no field.
                 node.fields
-                    .insert(0, leaf_field(Some("scope"), Value::str_from("our")));
+                    .insert(0, leaf_field(Some("scope"), Value::str_from(scope)));
             }
             Ok(Some(statement_expression(node)))
         }
@@ -1247,7 +1248,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 }
                 let mut fields = package_header_fields(
                     *name,
-                    package_scope(*is_lexical, *is_unit),
+                    if is_anon_package(custom_traits) {
+                        Some("anon")
+                    } else {
+                        package_scope(*is_lexical, *is_unit)
+                    },
                     is_colons_package(custom_traits),
                 );
                 // The implicit `Grammar` parent is not a written trait.
@@ -1305,7 +1310,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             }
             let mut fields = package_header_fields(
                 *name,
-                package_scope(*is_lexical, *is_unit),
+                if is_anon_package(custom_traits) {
+                    Some("anon")
+                } else {
+                    package_scope(*is_lexical, *is_unit)
+                },
                 is_colons_package(custom_traits),
             );
             if has_leading_colons(custom_traits) {
@@ -2639,9 +2648,27 @@ pub(super) fn package_header_fields(
         .collect();
     let name = name.resolve();
     if !crate::value::is_internal_anon_type_name(&name) {
-        fields.push(node_field(Some("name"), name_from_identifier(&name)));
+        // A named `anon` package's registry name carries a site suffix.
+        let name = name.split('\u{0}').next().unwrap_or_default();
+        fields.push(node_field(Some("name"), name_from_identifier(name)));
     }
     fields
+}
+
+/// The scope a named sub's `custom_traits` mark it with, when it is not the
+/// default `my`: `our sub f`, or `anon sub g` (built but not installed).
+// Cost: O(t), t = number of custom traits.
+fn sub_scope(custom_traits: &[(String, Option<Expr>)]) -> Option<&'static str> {
+    if custom_traits.iter().any(|(t, _)| t == OUR_SCOPED) {
+        Some("our")
+    } else if custom_traits
+        .iter()
+        .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT)
+    {
+        Some("anon")
+    } else {
+        None
+    }
 }
 
 /// Whether a package declaration's `custom_traits` hold anything but the
@@ -2653,6 +2680,7 @@ pub(super) fn has_package_traits(custom_traits: &[(String, Option<Expr>)]) -> bo
             && t != crate::parser::EXPORT_TYPE_MARKER
             && t != crate::parser::LEADING_COLONS_TRAIT
             && t != crate::parser::DECLARE_HOW_TRAIT
+            && t != crate::parser::ANON_DECL_TRAIT
             && !decl_traits::is_class_trait(t)
     })
 }
@@ -2670,6 +2698,15 @@ pub(super) fn expression_of(statement: &RakuAstNode) -> Option<RakuAstNode> {
             },
             _ => None,
         })
+}
+
+/// Whether a package was declared `anon class Name` (the parser's
+/// `ANON_DECL_TRAIT`; the registry name carries a site suffix).
+// Cost: O(t), t = number of custom traits.
+pub(super) fn is_anon_package(custom_traits: &[(String, Option<Expr>)]) -> bool {
+    custom_traits
+        .iter()
+        .any(|(t, _)| t == crate::parser::ANON_DECL_TRAIT)
 }
 
 /// Whether a class was declared as `class ::Name`.

@@ -314,8 +314,8 @@ impl Interpreter {
         // classes.extend(current)` merge below -- computed now, before that
         // merge consumes `classes_snapshot`. `extend` makes `current` win
         // for every key `current` has, so the merge's only real effect is
-        // *resurrecting* keys the EVAL removed (`withdraw_role_pun`,
-        // `__MUTSU_UNREGISTER_CLASS__`, ...); every other class's
+        // *resurrecting* keys the EVAL removed (`withdraw_role_pun`, ...);
+        // every other class's
         // `method_entries` rows are already correct, kept in sync live by
         // whatever ran during the EVAL itself.
         let resurrected_classes: Vec<String> = classes_snapshot

@@ -385,9 +385,8 @@ pub(crate) fn augment_class_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse `anon class Name { ... }` declaration.
-/// The class is created but not installed in the lexical scope.
-/// Emits a ClassDecl (registered under the real name) followed by a call to
-/// `__MUTSU_UNREGISTER_CLASS__` to remove the name from the scope.
+/// The class is created but not installed in the lexical scope: it is the
+/// expression form's declaration (`mark_anon_package_decl`) as a statement.
 pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("anon", input).ok_or_else(|| PError::expected("anon class declaration"))?;
     let (rest, _) = ws1(rest)?;
@@ -450,13 +449,11 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         parent_args: Vec::new(),
         body_parents: Vec::new(),
     };
-    // Emit the class registration followed by unregistering the name from the scope
-    let unregister = Stmt::Expr(Expr::Call {
-        name: Symbol::intern("__MUTSU_UNREGISTER_CLASS__"),
-        args: vec![Expr::Literal(Value::str(user_name))],
-        listop: false,
-    });
-    Ok((rest, Stmt::Block(vec![class_decl, unregister])))
+    // The same declaration `anon class Name { }` is as an expression: the
+    // name gets a site suffix, so nothing can look the class up by it.
+    let mut class_decl = class_decl;
+    crate::parser::mark_anon_package_stmt(&mut class_decl);
+    Ok((rest, Stmt::Expr(Expr::DoStmt(Box::new(class_decl)))))
 }
 
 /// Parse the body of a class declaration (after `class` keyword and whitespace).

@@ -387,13 +387,24 @@ fn colons_marker(colons: bool) -> Vec<(String, Option<Expr>)> {
 /// scope would not collide in that check even without the marker.
 pub(crate) fn mark_anon_package_decl(expr: &mut Expr) {
     let Expr::DoStmt(stmt) = expr else { return };
-    match stmt.as_mut() {
+    mark_anon_package_stmt(stmt);
+}
+
+/// The `custom_traits` marker of an `anon`-scoped declaration (`anon sub g`,
+/// `anon class Foo`): it is built but not installed under its name.
+pub(crate) const ANON_DECL_TRAIT: &str = "__anon_decl";
+
+/// [`mark_anon_package_decl`] on the declaration itself; the RakuAST lowering
+/// of an `anon`-scoped package calls it too.
+// Cost: O(k), k = length of the name.
+pub(crate) fn mark_anon_package_stmt(stmt: &mut Stmt) {
+    match stmt {
         Stmt::ClassDecl {
             name,
             custom_traits,
             ..
         } => {
-            custom_traits.push(("__anon_decl".to_string(), None));
+            custom_traits.push((ANON_DECL_TRAIT.to_string(), None));
             mangle_named_anon_decl(name);
         }
         Stmt::RoleDecl {
@@ -401,7 +412,7 @@ pub(crate) fn mark_anon_package_decl(expr: &mut Expr) {
             custom_traits,
             ..
         } => {
-            custom_traits.push(("__anon_decl".to_string(), None));
+            custom_traits.push((ANON_DECL_TRAIT.to_string(), None));
             mangle_named_anon_decl(name);
         }
         Stmt::Package { name, .. } => {

@@ -50,6 +50,7 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
                 && t != crate::parser::ANON_COLONS_TRAIT
                 && t != crate::parser::LEADING_COLONS_TRAIT
                 && t != crate::parser::DECLARE_HOW_TRAIT
+                && t != crate::parser::ANON_DECL_TRAIT
         })
         .cloned()
         .collect();
@@ -130,11 +131,12 @@ pub(super) fn convert(role: RoleDecl<'_>) -> Result<RakuAstNode, RuntimeError> {
             .map(|t| Value::rakuast(Box::new(t))),
     );
     traits.extend(super::decl_traits::class_custom_traits(&user_traits)?);
-    let mut fields = package_header_fields(
-        role.name,
-        is_lexical.then_some("my"),
-        is_colons_package(role.custom_traits),
-    );
+    let scope = if super::convert::is_anon_package(role.custom_traits) {
+        Some("anon")
+    } else {
+        is_lexical.then_some("my")
+    };
+    let mut fields = package_header_fields(role.name, scope, is_colons_package(role.custom_traits));
     super::declare_how::add_field(&mut fields, role.custom_traits);
     if !traits.is_empty() {
         fields.push(RakuAstField {
@@ -236,7 +238,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         Ok(sig) => lower_signature_parameters(sig, node)?,
         Err(_) => Vec::new(),
     };
-    Ok(Stmt::RoleDecl {
+    Ok(head.finish(Stmt::RoleDecl {
         name: Symbol::intern(&head.name),
         type_params: crate::parser::role_type_param_names(&type_param_defs),
         type_param_defs,
@@ -247,7 +249,7 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         language_version: crate::parser::current_language_version(),
         custom_traits,
         decl_id: crate::ast::next_class_decl_id(),
-    })
+    }))
 }
 
 /// `also does R;` -> `Statement::Also(traits => (Trait::Does(R),))`.
