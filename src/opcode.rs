@@ -7607,7 +7607,8 @@ pub(crate) struct CompiledCode {
     pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     /// Whether the light closure call can run this body, and what it needs
     /// (#8335, `light_closure_shape`); settled on the first call.
-    pub(crate) light_closure_shape: std::sync::OnceLock<Option<crate::light_closure_shape::LightClosureShape>>,
+    pub(crate) light_closure_shape:
+        std::sync::OnceLock<Option<crate::light_closure_shape::LightClosureShape>>,
     /// Memo of [`Self::capture_hidden_set`].
     pub(crate) capture_hidden_set: std::sync::OnceLock<Option<Arc<rustc_hash::FxHashSet<Symbol>>>>,
     /// Lazily-built list of the env keys a closure capture probes by name
