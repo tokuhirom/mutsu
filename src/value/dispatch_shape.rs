@@ -307,6 +307,7 @@ impl DispatchShape {
                 | DispatchShape::IoPath
                 | DispatchShape::Match
         ) && const_str_eq(owner, "Cool"))
+            || (matches!(self, DispatchShape::Match) && const_str_eq(owner, "Capture"))
             || (self.reaches_audited_any() && const_str_eq(owner, "Any"))
             || (!self.inherits() && const_str_eq(owner, "Mu"))
     }
@@ -341,8 +342,9 @@ impl DispatchShape {
         }
         match self {
             // A `Match` answers the others on its matched string (`methods_0arg`'s
-            // `Match` delegation), but joins its positional captures.
-            DispatchShape::Match => const_str_eq(method, "join"),
+            // `Match` delegation), but joins its positional captures and is
+            // its own `serial`.
+            DispatchShape::Match => const_str_eq(method, "join") || const_str_eq(method, "serial"),
             _ if const_str_eq(method, "sort") => false,
             // `min`/`max` read a `Pair` as its one element; the other closed
             // shapes take the interpreter's extremum walk.
@@ -389,6 +391,9 @@ impl DispatchShape {
         if const_str_eq(owner, "Mu") {
             return const_list_contains(&MU_FOR_CLOSED_SHAPES, method)
                 || self.reaches_mu_numeric(method);
+        }
+        if const_str_eq(owner, "Capture") {
+            return const_list_contains(&CAPTURE_FOR_MATCH, method);
         }
         if matches!(self, DispatchShape::Match) {
             return const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
@@ -561,6 +566,22 @@ const COOL_TEXT_FOR_MATCH: [&str; 12] = [
 pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 15] = [
     "flat", "sort", "unique", "repeated", "reverse", "end", "join", "pick", "roll", "minmax",
     "head", "tail", "min", "max", "serial",
+];
+
+/// The `Capture` rows a `Match` reaches ([`DispatchShape::reaches_audited`];
+/// ADR-11276 §9.95): Rakudo's `Match` is a `Capture` and declares none of
+/// them, and their handlers (`method_table::collections::capture`) read a
+/// `Match`'s captures as its parts. `list` and `Hash` stay `Match`'s own
+/// answers in `methods_0arg` (a live view of the positional captures, a
+/// mutable `Hash`).
+pub(crate) const CAPTURE_FOR_MATCH: [&str; 7] = [
+    "keys",
+    "values",
+    "kv",
+    "pairs",
+    "antipairs",
+    "hash",
+    "elems",
 ];
 
 /// The `Mu` methods every closed shape reaches ([`DispatchShape::reaches_audited`])

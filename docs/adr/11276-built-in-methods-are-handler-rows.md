@@ -2216,6 +2216,29 @@ The `dispatch` function and its `try_dispatch!` entry are deleted; the file keep
 Found, not fixed: `.Buf`/`.Blob` of a wide buffer drop its element type (#13115); `.Complex` of a non-`Cool` receiver, a concrete-only
 type object or a lazy list answers `0+0i` (#13116).
 
+### 9.95 Slice 5: a `Match` reaches `Capture`'s rows (2026-10-13)
+
+`refactor/11276-match-0arg`. The `Match` block of `methods_0arg/mod.rs` answered `keys`, `values`, `kv`, `pairs`, `hash` and `elems`
+by name, and every other name it did not know on the matched string, so `Match.antipairs` was `"ab".antipairs` and `Match.serial`
+a `Str`. Rakudo's `Match` is a `Capture` and declares none of them. Decisions:
+
+1. **The `Match` shape reaches `Capture`'s rows per name** (`CAPTURE_FOR_MATCH`: `keys`, `values`, `kv`, `pairs`, `antipairs`,
+   `hash`, `elems`; `may_reach_audited` admits the `Capture` owner for `Match`), and `Any.serial` (§9.94) next to `join`.
+2. **The `Capture` handlers read a `Match`** through one `parts` reader: its positional captures (an unbound one as `Mu`) and its
+   named captures in key order. A `Match` is asked first, so a lazy one (a grammar cursor, reached through `match_owner_row`) is
+   read from its capture node. `elems` counts the positional captures without collecting them.
+3. **`values` and `kv` flatten a list or array value** that is not itemized, which the `Match` block did for a quantified capture
+   and Rakudo does for a plain `Capture` too (`\([1, 2], 3).values` is `(1, 2, 3)`; `\($[1, 2]).values` keeps it whole). The
+   `Capture` rows did not; they now do, a behaviour change toward Rakudo.
+4. The guard test `a_new_shape_reaches_only_its_own_rows` allowed only a closed shape's own `elems`; it now allows an audited
+   ancestor's, still never `Any`'s.
+
+Left in the block: `list` (a live view of the positional captures), the positional coercions (`Array`, `List`, `Slip`, `Seq`, `flat`,
+`cache`, `eager`, `reverse`), `Hash`, `Capture` and the fallback that answers any other name on the matched string. That fallback is
+the next remainder: each name it serves is a `Cool` method Rakudo reaches through `Match`'s `Str` coercion only where `Cool`
+declares it, and the audit lists (`COOL_TEXT_FOR_MATCH`) already name most of them. `method-rows-report.py --arms`: the pure arity
+cascades go from 147 to 142 arms. Pinned in `t/regex/match/match-capture-method-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
