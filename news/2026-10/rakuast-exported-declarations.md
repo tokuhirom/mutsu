@@ -10,6 +10,6 @@ The importer's module scan also learned three ways a module exports a type
 name that it used to miss -- a nested `my class X is export`, a
 `class GLOBAL::X`, and the short name of an exported qualified class -- so
 those bare type names resolve at parse time and convert as `Type::Simple`.
-Six `t/modules/` files move into the RakuAST frontend ratchet;
+Nine `t/modules/` files move into the RakuAST frontend ratchet;
 `t/rakuast/rakuast-exported-declarations.t` pins the node shape and the
 round trip.
