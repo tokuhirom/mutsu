@@ -8437,9 +8437,11 @@ impl CompiledCode {
                     continue;
                 }
                 keys.push(sym);
-                for prefix in crate::symbol::SHADOW_META_PREFIXES {
-                    keys.push(sym.with_str(|name| Symbol::intern(&format!("{prefix}{name}"))));
-                }
+                sym.with_str(|name| {
+                    for prefix in crate::symbol::shadow_meta_prefixes_for(name) {
+                        keys.push(Symbol::intern(&format!("{prefix}{name}")));
+                    }
+                });
             }
             keys.into_boxed_slice()
         })
@@ -8483,11 +8485,11 @@ impl CompiledCode {
                         continue;
                     }
                     hidden.insert(sym);
-                    for prefix in crate::symbol::SHADOW_META_PREFIXES {
-                        hidden.insert(
-                            sym.with_str(|name| Symbol::intern(&format!("{prefix}{name}"))),
-                        );
-                    }
+                    sym.with_str(|name| {
+                        for prefix in crate::symbol::shadow_meta_prefixes_for(name) {
+                            hidden.insert(Symbol::intern(&format!("{prefix}{name}")));
+                        }
+                    });
                 }
                 (!hidden.is_empty()).then(|| Arc::new(hidden))
             })
