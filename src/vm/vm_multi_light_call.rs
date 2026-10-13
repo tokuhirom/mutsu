@@ -181,4 +181,33 @@ impl Interpreter {
             );
         self.caches.multi_light_cache.insert(generation, key, entry);
     }
+
+    /// Whether the closure's captured `&name` binding (upvalue `index`) is a
+    /// multi dispatcher of the family `name` whose candidate set is the one a
+    /// by-name call of `name` resolves right now: built under the current
+    /// registry generation (the declaring block is still live, or its exact
+    /// map is back) for the running package. Such a `&name(...)` call
+    /// (ADR-12529 phase 2, slice 6) then takes the `CallFunc` path, whose
+    /// call-site caches the dispatcher value's own call path lacks.
+    // Cost: O(1): one upvalue read and two env probes of the dispatcher.
+    pub(super) fn family_dispatcher_is_current(
+        &self,
+        code: &CompiledCode,
+        name_idx: u32,
+        index: u32,
+    ) -> bool {
+        let Some(Some(value)) = self.upvalues.get(index as usize) else {
+            return false;
+        };
+        let value = value.clone().into_deref();
+        let ValueView::Sub(data) = value.view() else {
+            return false;
+        };
+        data.package == self.current_package_sym()
+            && matches!(
+                data.env.get("__mutsu_multi_dispatch_gen").map(Value::view),
+                Some(ValueView::Int(g)) if g == self.caches.fn_resolve_gen as i64
+            )
+            && Self::is_family_dispatcher_of(&value, Self::const_str(code, name_idx))
+    }
 }

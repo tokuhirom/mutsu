@@ -334,6 +334,8 @@ impl Interpreter {
         let mut items: Vec<Value> = captured.iter().cloned().collect();
         items.push(member.clone());
         let mut next: crate::value::SubData = (**disp).clone();
+        // The candidate set is no longer the by-name family's.
+        next.env.remove("__mutsu_multi_dispatch_gen");
         next.env.insert(
             "__mutsu_multi_dispatch_candidates".to_string(),
             Value::array_with_kind(
@@ -392,6 +394,15 @@ impl Interpreter {
         dispatcher_env.insert(
             "__mutsu_multi_dispatch_name".to_string(),
             Value::str(name.to_string()),
+        );
+        // The registry generation the candidates were gathered under: while
+        // it is current, the by-name family is exactly this candidate set
+        // (`fn_resolve_gen` names the functions map's content), so a call
+        // through the value may take the by-name call path and its caches
+        // (`Interpreter::family_dispatcher_is_current`).
+        dispatcher_env.insert(
+            "__mutsu_multi_dispatch_gen".to_string(),
+            Value::int(self.caches.fn_resolve_gen as i64),
         );
         let dispatcher = Value::make_sub(
             candidates
