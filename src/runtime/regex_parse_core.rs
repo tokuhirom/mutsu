@@ -3389,6 +3389,21 @@ impl Interpreter {
                                                         inner.push('\\');
                                                         if let Some(n) = chars.next() {
                                                             inner.push(n);
+                                                            // `\x[22]` / `\c[NAME]`: the
+                                                            // escape's own brackets do not
+                                                            // close the class.
+                                                            if matches!(
+                                                                n,
+                                                                'x' | 'X' | 'c' | 'C' | 'o' | 'O'
+                                                            ) && chars.peek() == Some(&'[')
+                                                            {
+                                                                for c3 in chars.by_ref() {
+                                                                    inner.push(c3);
+                                                                    if c3 == ']' {
+                                                                        break;
+                                                                    }
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                     Some(']') => {
@@ -3403,27 +3418,50 @@ impl Interpreter {
                                             // `+[` / `-[` / `[` continue a compound
                                             // class. Anything else falls back to the
                                             // outer loop.
+                                            // Whitespace between the parts
+                                            // (`<[0..9] + [x]>`) is insignificant.
                                             let mut la = chars.clone();
-                                            match la.next() {
+                                            let mut skip = 0usize;
+                                            let mut next = la.next();
+                                            while next.is_some_and(char::is_whitespace) {
+                                                skip += 1;
+                                                next = la.next();
+                                            }
+                                            let mut op_skip = 0usize;
+                                            let mut after_op = la.next();
+                                            while after_op.is_some_and(char::is_whitespace) {
+                                                op_skip += 1;
+                                                after_op = la.next();
+                                            }
+                                            let continues = match next {
                                                 Some('>') => {
-                                                    chars.next();
+                                                    for _ in 0..=skip {
+                                                        chars.next();
+                                                    }
                                                     inner.push('>');
                                                     break 'char_class;
                                                 }
-                                                Some(p @ ('+' | '-')) if la.next() == Some('[') => {
-                                                    chars.next();
-                                                    chars.next();
-                                                    inner.push(p);
-                                                    inner.push('[');
-                                                    continue 'char_class;
-                                                }
-                                                Some('[') => {
-                                                    chars.next();
-                                                    inner.push('[');
-                                                    continue 'char_class;
-                                                }
-                                                _ => break 'char_class,
+                                                Some('+' | '-') => after_op == Some('['),
+                                                Some('[') => true,
+                                                _ => false,
+                                            };
+                                            if !continues {
+                                                break 'char_class;
                                             }
+                                            for _ in 0..skip {
+                                                chars.next();
+                                            }
+                                            inner.push(' ');
+                                            if let Some(p @ ('+' | '-')) = next {
+                                                chars.next();
+                                                for _ in 0..op_skip {
+                                                    chars.next();
+                                                }
+                                                inner.push(p);
+                                            }
+                                            chars.next();
+                                            inner.push('[');
+                                            continue 'char_class;
                                         }
                                     } else if ch == '<' {
                                         angle_depth += 1;
@@ -5140,13 +5178,22 @@ impl Interpreter {
             // is a (possibly unrecognized) modifier such as `:11` — not a ratchet
             // control — so leave it for the `:` handler at the loop top to report
             // (reproduces the validator's `/00:11:22/` -> UnrecognizedModifier).
-            let colon_is_modifier =
-                mode == RegexParseMode::Validate && chars.peek() == Some(&':') && {
-                    let mut la = chars.clone();
-                    la.next();
+            // In any mode, a recognized inline modifier written right after
+            // an atom (`/x:i<[ab]>/`) is that modifier, as in rakudo.
+            let colon_is_modifier = chars.peek() == Some(&':') && {
+                let mut la = chars.clone();
+                la.next();
+                if mode == RegexParseMode::Validate {
                     la.peek()
                         .is_some_and(|ch| ch.is_alphanumeric() || *ch == '_')
-                };
+                } else {
+                    let rest: String = la.collect();
+                    let (mut r, mut i, mut m, mut s) = (ratchet, ignore_case, ignore_mark, sigspace);
+                    rest.starts_with(|ch: char| ch.is_alphanumeric() || ch == '!')
+                        && Self::try_parse_inline_modifier(&rest, &mut r, &mut i, &mut m, &mut s)
+                            .is_some()
+                }
+            };
             let token_ratchet = if !colon_is_modifier && chars.peek() == Some(&':') {
                 chars.next();
                 match chars.peek() {
