@@ -314,23 +314,6 @@ pub(super) fn dispatch(
             };
             Some(Some(Ok(result)))
         }
-        // `.Int`, then the range check (the `Cool.UInt` row's implementation,
-        // `method_table::str_numeric`).
-        "UInt" => {
-            // A Complex coerces to UInt like `.Int` (`(5+0i).UInt` is 5): the
-            // runtime checks its imaginary part against `$*TOLERANCE`. A type
-            // object is the runtime's.
-            if matches!(
-                target.view(),
-                ValueView::Complex(..) | ValueView::Package(_)
-            ) {
-                return Some(None);
-            }
-            let Some(int) = dispatch(target, "Int") else {
-                return Some(None);
-            };
-            Some(int.map(|r| r.map(crate::builtins::method_table::str_numeric::uint_of_int)))
-        }
         "Numeric" => {
             // Calling .Numeric on a type object (Package) should warn and return zero
             if let ValueView::Package(name) = target.view() {
