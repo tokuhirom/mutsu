@@ -880,3 +880,13 @@ the converter's declared-name table and the module export scan share; an
 lowered form, so the converter reads it as the node and lowering builds it
 back (`src/rakuast/hyper_prefix.rs`), the way the atomic operators map to
 `ast::atomic_op`'s calls.
+
+### 6.36 S10: package-qualified constants of a loaded module (2026-10-13)
+
+A `use`d module's `our constant NAME` is installed in its package, so
+rakudo 2026.09 renders `Pkg::NAME` in the importer as a `Term::Name`; only a
+name it cannot resolve is a `Call::Name`. The module export scan collected
+constants by their bare name only, so the converter rendered the qualified
+spelling as a call and the round trip looked up `&NAME`. The scan now also
+collects an `our` constant under its package path (a `my` constant stays
+lexical to the module), the way it already did for an `our` enum's values.
