@@ -98,8 +98,8 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
         } => {
             v.visit_name(pattern, NameKind::Source);
             v.visit_name(replacement, NameKind::Source);
-            if let Some(e) = replacement_thunk {
-                v.visit_expr(e);
+            if let Some(t) = replacement_thunk {
+                v.visit_expr(&t.expr);
             }
         }
         // The two character tables are data.

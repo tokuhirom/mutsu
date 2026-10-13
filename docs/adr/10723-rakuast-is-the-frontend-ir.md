@@ -996,3 +996,17 @@ written `::("MY::" ~ $k)`, so the lookup records the two parts as a spelling
 (`Spelling::PackageIndirect`) and lowering builds the concatenation back
 (`src/rakuast/symbolic_deref.rs`). A lookup with further `::(…)` / `::name`
 segments after the first keeps the old boundary.
+
+### 6.43 S10: compound-assignment substitutions (2026-10-13)
+
+`s[PAT] OP= EXPR` replaces each match by `$/ OP EXPR`. Rakudo 2026.09 renders
+it as `Substitution(infix => MetaInfix::Assign(Infix(OP)), replacement =>
+EXPR)`, the sibling of `s[PAT] = EXPR`'s `infix => Assignment`, and answers
+the Match (a List of them under `:g`). The parser used to desugar it to
+`$_ = $_.subst(rx, { $/ OP EXPR }, :g)`: no tree to show, only `:g` of its
+adverbs honoured, and a Str for its value. It is now an `Expr::Subst` whose
+`replacement_thunk` is an `ast::SubstThunk`: the per-match expression
+(`$/ OP EXPR`, built by `parser::subst_compound_thunk` for both the parser and
+the lowering) with the written `OP` beside it (`SubstThunk::infix`), so the
+converter renders the written EXPR (`parser::subst_compound_rhs`) and the
+operator without reconstructing either. The `=` form is unchanged.

@@ -13,7 +13,7 @@ use super::adverbs::{
     MatchAdverbs, adverbs_need_value, apply_inline_match_adverbs, build_regex_with_adverbs,
     parse_match_adverbs,
 };
-use crate::ast::Expr;
+use crate::ast::{Expr, SubstThunk};
 use crate::regex_tree::{RegexAdverb, RegexTree};
 use crate::value::Value;
 
@@ -60,7 +60,7 @@ pub(super) fn subst_expr(
     pattern: String,
     replacement: String,
     adverbs: &MatchAdverbs,
-    thunk: Option<Box<Expr>>,
+    thunk: Option<Box<SubstThunk>>,
 ) -> Expr {
     let tree = subst_tree(raw, adverbs);
     let (samecase, sigspace, samemark, samespace) = (
