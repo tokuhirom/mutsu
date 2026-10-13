@@ -2412,6 +2412,20 @@ Behaviour changes toward Rakudo: a `Pair` (not a `Cool`) refuses `words`/`lines`
 is read as a named one (ADR-0021). `method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 24 to 21 arms. Pinned in
 `t/types/string/str-count-arg-rows.t`.
 
+### 9.103 Slice 5: the 1-arg `parse-base` and `in-range` arms are gone (2026-10-13)
+
+`refactor/11276-parse-base-in-range`, stacked on §9.102. Both arms called a row's handler (`str_args::parse_base`,
+`range::in_range_value`) for the receivers the table did not reach. After §9.101 an allomorph reaches `Str.parse-base` on its string,
+and `Range.in-range` is `ANY_ARGS`, so `invoke_unadmitted` hands it the arguments the guard step declines; probed on twelve receivers
+and two radixes against `raku`, only `parse-base` needed more:
+
+1. **`Str.parse-base` is `ANY_ARGS` and `TYPE_OBJECT_OK`**: an `IntStr` radix binds `Int:D` (`"ff".parse-base(<16>)` is 255; it was
+   `X::Multi::NoMatch`), and the `Str` type object raises Rakudo's `Cannot resolve caller parse-base(Str:U: Int:D)` (the arm answered
+   `X::Str::Numeric`). Any other argument is the bind failure the handler already raised.
+
+`method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 21 to 19 arms. Pinned in `t/types/string/str-parse-base-rows.t` and
+`t/collections/range-pair/range-in-range-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

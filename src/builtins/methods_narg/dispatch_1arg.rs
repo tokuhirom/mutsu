@@ -475,11 +475,6 @@ fn native_method_1arg_cascade(
             }
             None
         }
-        // Cost: O(n), n = chars in a string bound/value for comparison and error rendering.
-        // The `Range.in-range` row's implementation (`method_table::range`).
-        "in-range" => {
-            crate::builtins::method_table::range::in_range_value(target, std::slice::from_ref(arg))
-        }
         "flat" => {
             if is_hammer_pair(arg) {
                 return Some(Ok(
@@ -504,10 +499,6 @@ fn native_method_1arg_cascade(
             let fmt = target.to_string_value();
             let rendered = runtime::format_zprintf(&fmt, Some(arg));
             Some(Ok(Value::str(rendered)))
-        }
-        // Cost: see `parse_base` (src/builtins/parse_base.rs).
-        "parse-base" => {
-            crate::builtins::method_table::str_args::parse_base(target, std::slice::from_ref(arg))
         }
         // A number: the numeric types' `base` rows' implementation
         // (`method_table::numeric_base`).
