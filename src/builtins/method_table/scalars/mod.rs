@@ -8,7 +8,7 @@ use super::{Handler, MethodRow, Named, RowFlags};
 
 pub(crate) mod blob;
 pub(crate) mod blob_decode;
-mod blob_pos;
+pub(crate) mod blob_pos;
 pub(crate) mod blob_read;
 mod capture_none;
 pub(crate) mod coerce;
