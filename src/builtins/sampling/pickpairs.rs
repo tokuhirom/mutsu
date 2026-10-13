@@ -70,7 +70,12 @@ fn weighted_pairs(target: &Value) -> Option<Vec<(Value, Value)>> {
         ),
         ValueView::Mix(mix, _) => Some(
             mix.iter()
-                .map(|(k, w)| (mix.typed_key(k), crate::value::mix_weight_to_value(w.clone())))
+                .map(|(k, w)| {
+                    (
+                        mix.typed_key(k),
+                        crate::value::mix_weight_to_value(w.clone()),
+                    )
+                })
                 .collect(),
         ),
         _ => None,

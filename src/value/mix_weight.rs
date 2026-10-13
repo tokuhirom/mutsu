@@ -64,16 +64,14 @@ impl MixWeight {
             super::ValueView::Num(f) => Some(MixWeight::Num(f)),
             super::ValueView::Rat(..) => Some(MixWeight::Num(v.to_f64())),
             super::ValueView::BigInt(n) => Some(MixWeight::from_bigint(&n)),
-            super::ValueView::FatRat(n, d) if d != 0 => Some(MixWeight::Big(Box::new(
-                BigWeight::Fat(n.into(), d.into()),
-            ))),
-            super::ValueView::BigRat(n, d) => Some(MixWeight::Big(Box::new(
-                if v.is_bigfatrat() {
-                    BigWeight::Fat(n.clone(), d.clone())
-                } else {
-                    BigWeight::Rat(n.clone(), d.clone())
-                },
-            ))),
+            super::ValueView::FatRat(n, d) if d != 0 => {
+                Some(MixWeight::Big(Box::new(BigWeight::Fat(n.into(), d.into()))))
+            }
+            super::ValueView::BigRat(n, d) => Some(MixWeight::Big(Box::new(if v.is_bigfatrat() {
+                BigWeight::Fat(n.clone(), d.clone())
+            } else {
+                BigWeight::Rat(n.clone(), d.clone())
+            }))),
             _ => None,
         }
     }
@@ -118,9 +116,10 @@ impl MixWeight {
     /// The absolute value, keeping the type.
     pub fn abs(self) -> MixWeight {
         match self {
-            MixWeight::Int(i) => i
-                .checked_abs()
-                .map_or_else(|| MixWeight::from_bigint(&-num_bigint::BigInt::from(i)), MixWeight::Int),
+            MixWeight::Int(i) => i.checked_abs().map_or_else(
+                || MixWeight::from_bigint(&-num_bigint::BigInt::from(i)),
+                MixWeight::Int,
+            ),
             MixWeight::Rat(n, d) => n
                 .checked_abs()
                 .map_or(MixWeight::Num((n as f64 / d as f64).abs()), |n| {

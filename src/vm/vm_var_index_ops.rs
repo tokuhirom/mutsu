@@ -2850,9 +2850,11 @@ impl Interpreter {
                     .collect(),
             ),
             // `%mix{*}` returns all values (the element weights).
-            (ValueView::Mix(m, _), ValueView::Whatever) => {
-                Value::array(m.values().map(|w| Self::mix_weight_as_value(w.clone())).collect())
-            }
+            (ValueView::Mix(m, _), ValueView::Whatever) => Value::array(
+                m.values()
+                    .map(|w| Self::mix_weight_as_value(w.clone()))
+                    .collect(),
+            ),
             (ValueView::Mix(m, _), _) => {
                 let (key, _) = crate::runtime::utils::quanthash_elem_entry(&index);
                 Self::mix_weight_as_value(m.get(&key).cloned().unwrap_or_default())
