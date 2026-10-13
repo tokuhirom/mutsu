@@ -841,3 +841,14 @@ over a `Var::Package`. A `:my token T { … }` statement whose block ends its
 line needs no `;` and takes no `WithWhitespace` wrapper, and the quotes in
 the character class of a regex nested in `$( … )` no longer open a string
 in the contextualizer's scanner.
+### 6.33 S10: a declaration followed by a postfix (2026-10-13)
+
+`my @a.[2] = 42`, `my %h.<k> = 1`, `my @a.push(1)` and `my Int $x.say`
+declare the variable and apply the postfix to it. Measured on rakudo 2026.09,
+each is one `ApplyPostfix` whose operand is the `VarDeclaration::Simple` --
+the node `(my @a)[2] = 42` builds too, since rakudo drops the parentheses of
+a postfix's operand. The two compute the same thing, so the converter now
+puts the declaration back under a postfix of the parser's declaration tail
+(`decl_tail`), and lowering keeps reading that node the parenthesized way.
+The parser's tail read the declared array or hash as `Var("@a")` rather than
+the `ArrayVar` / `HashVar` a written `@a` is; it now builds the same node.
