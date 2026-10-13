@@ -6,7 +6,7 @@ use Test;
 # what the full closure entry answers, for each thing the entry has to get
 # right, and that the shapes it declines still work.
 
-plan 54;
+plan 58;
 
 # Plain results through a value call, a `.map` and a `.sort`.
 {
@@ -160,4 +160,18 @@ plan 54;
     is { $^a + 1 }(1|2).^name, 'Junction', 'a Junction argument';
     my @F = (* + 1, { $^a * $^b }, * - *);
     is "{@F[0](1)} {@F[1](2, 3)} {@F[2](10, 4)}", '2 6 6', 'a list of WhateverCode and placeholder blocks';
+}
+
+# Variable arguments: a plain parameter takes the value, an `is raw` one the
+# variable (#13286).
+{
+    my Int $x = 3;
+    my $y = 4;
+    is (-> $a, $b { $a + $b })($x, $y), 7, 'variable arguments to a two-parameter block';
+    is { $^a * $^b }($x, $y), 12, 'variable arguments to a placeholder block';
+    is (* - *)($y, $x), 1, 'variable arguments to a two-star WhateverCode';
+    my $s = 0;
+    my $f = -> $a, $b { $a + $b };
+    $s = $f($s, 1) for ^10;
+    is $s, 10, 'the accumulator passed back in';
 }

@@ -41,8 +41,8 @@ enum LightBind<'a> {
     Legacy,
     /// A plain `ParamDef` signature: `closure_light_def_bind`'s.
     Def(&'a [crate::vm::LightDefParam]),
-    /// `$^name` placeholders: the general binder's legacy arm, which itemizes
-    /// each like a bare identifier (#13286).
+    /// `$^name` placeholders: the general binder's `ParamDef` path, which
+    /// itemizes each as a plain `$x` (#13286).
     Placeholders,
     /// A single-`*` WhateverCode's topic parameter `_`, bound as the argument
     /// is (#13286).
@@ -230,11 +230,26 @@ impl Interpreter {
             }
         }
         let admitted = match bind {
-            // `closure_light_def_bind`'s argument gate.
-            LightBind::Def(_) => args.iter().all(light_def_arg_is_plain_value) && !sources_any,
-            // `closure_light_bind`'s. A placeholder block is a block too, so
-            // a Junction binds whole there as well.
-            LightBind::Legacy | LightBind::Placeholders => !args.iter().any(|a| {
+            // `closure_light_def_bind`'s argument gate, less its source-name
+            // half for a plain parameter: a source hands a plain parameter
+            // the caller variable's type constraint, which only an assignment
+            // reads, and the body assigns nothing. An `is raw` parameter
+            // aliases the variable itself, which a callee the body reaches
+            // (a user `infix:<+>`) could write between two reads.
+            LightBind::Def(params) => {
+                args.iter().all(light_def_arg_is_plain_value)
+                    && !(sources_any
+                        && params
+                            .iter()
+                            .any(|p| p.bind() == crate::vm::ScalarParamBind::Keep))
+            }
+            // A placeholder takes the general binder's `ParamDef` path, as
+            // a plain `$` parameter does above (a block's `Mu` parameter, so
+            // a Junction binds whole and declines here only as a non-plain
+            // value).
+            LightBind::Placeholders => args.iter().all(light_def_arg_is_plain_value),
+            // `closure_light_bind`'s. A Junction binds whole there as well.
+            LightBind::Legacy => !args.iter().any(|a| {
                 matches!(
                     a.unwrap_varref().view(),
                     ValueView::Pair(..) | ValueView::ValuePair(..)
@@ -266,7 +281,8 @@ impl Interpreter {
             let arg = arg_at(self, i);
             let val = match bind {
                 LightBind::Def(params) => Self::apply_scalar_param_bind(params[i].bind(), arg),
-                LightBind::Legacy | LightBind::Placeholders => Self::itemize_scalar_store_value(
+                LightBind::Placeholders => Self::itemize_scalar_store_value(arg),
+                LightBind::Legacy => Self::itemize_scalar_store_value(
                     crate::runtime::types::unwrap_varref_value(arg).hllize_vm_collection(),
                 ),
                 LightBind::Topic => {
