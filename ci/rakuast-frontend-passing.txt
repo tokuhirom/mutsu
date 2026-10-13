@@ -1426,6 +1426,7 @@ t/control/init-check-lift-positions.t
 t/control/keep-undo-leave-order.t
 t/control/keep-undo-loop-last-next.t
 t/control/keep-undo.t
+t/control/label-first-class.t
 t/control/labeled-c-style-loop.t
 t/control/labeled-loop.t
 t/control/labeled-repeat-loop-control.t
@@ -1437,6 +1438,8 @@ t/control/leave-return-prioritization.t
 t/control/leave-statement.t
 t/control/line-ending-block-statement.t
 t/control/loop-body-let-resolution.t
+t/control/loop-control-args-6d.t
+t/control/loop-control-values-6e.t
 t/control/loop-control-without-loop.t
 t/control/loop-declaration-reset-observers.t
 t/control/loop-exit-phasers-positions.t
@@ -4588,6 +4591,7 @@ t/rakuast/rakuast-leaf-accessors.t
 t/rakuast/rakuast-lexical-package.t
 t/rakuast/rakuast-list-infix.t
 t/rakuast/rakuast-listinfix-bind.t
+t/rakuast/rakuast-loop-control-value.t
 t/rakuast/rakuast-loop-label.t
 t/rakuast/rakuast-loop.t
 t/rakuast/rakuast-lowering-semantics.t

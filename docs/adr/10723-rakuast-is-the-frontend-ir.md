@@ -901,3 +901,16 @@ infix => MetaInfix::Assign(Infix("+")))`. The converter now reads the
 statement spelling as that node, and lowering keeps producing the expression
 spelling, which computes the same thing (an `is rw` accessor assigns; a
 read-only one assigns into a throwaway container).
+
+### 6.38 S10: loop controls with a value or a slip (2026-10-13)
+
+Rakudo 2026.09 renders every loop control as a bare
+`Call::Name::WithoutParentheses` over its argument, whether that is a label
+(`next L`, a `Term::Name`), a v6.e value (`last $_ * 10`, `next Empty`) or a
+slip (`next |$c`). Statement lowering only accepted a label and refused the
+rest; a non-label argument now lowers to the expression form the parser keeps
+for it. Two parser rules are shared rather than restated: a bare word is a
+label when one of that name is in scope or by the parser's own
+`is_loop_control_label` (any word before v6.e, a declared or all-caps one
+from v6.e), and a slipped argument stays the call form in
+`loop_control_expr`, as `loop_control_call_form` parses it.

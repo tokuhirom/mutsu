@@ -706,9 +706,16 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
                 "return" => Ok(Stmt::Return(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
-                "last" => Ok(Stmt::Last(loop_label(node, args)?)),
-                "next" => Ok(Stmt::Next(loop_label(node, args)?)),
-                "redo" => Ok(Stmt::Redo(loop_label(node, args)?)),
+                // A value or a slip (`last $v`, `next |$c`) is not a label:
+                // the parser keeps that statement as the expression form.
+                "last" | "next" | "redo" => match loop_label(node, args) {
+                    Ok(label) => Ok(match name.as_str() {
+                        "last" => Stmt::Last(label),
+                        "next" => Stmt::Next(label),
+                        _ => Stmt::Redo(label),
+                    }),
+                    Err(_) => Ok(Stmt::Expr(lower_expr(node)?)),
+                },
                 "die" => Ok(Stmt::Die(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
