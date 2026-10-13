@@ -1010,6 +1010,7 @@ adverbs honoured, and a Str for its value. It is now an `Expr::Subst` whose
 the lowering) with the written `OP` beside it (`SubstThunk::infix`), so the
 converter renders the written EXPR (`parser::subst_compound_rhs`) and the
 operator without reconstructing either. The `=` form is unchanged.
+
 ### 6.44 S10: `handles` on a method (2026-10-13)
 
 `method NAME handles TERM { … }` makes the method a delegation source.
