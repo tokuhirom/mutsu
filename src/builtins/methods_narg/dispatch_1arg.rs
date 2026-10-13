@@ -363,69 +363,6 @@ fn native_method_1arg_cascade(
             let result: String = s.chars().take(keep).collect();
             Some(Ok(Value::str(result)))
         }
-        // An allomorph (`IntStr`/`RatStr`/`NumStr`) answers with its numeric
-        // inner value, so the epsilon binds exactly where it does for that type.
-        // Cost: O(1) plus the inner value's own `Rat`/`FatRat` cost.
-        "Rat" | "FatRat"
-            if matches!(target.view(), ValueView::Mixin(inner, _)
-            if matches!(inner.view(), ValueView::Int(_) | ValueView::Rat(..) | ValueView::Num(_))) =>
-        {
-            let ValueView::Mixin(inner, _) = target.view() else {
-                return None;
-            };
-            native_method_1arg(inner, method_sym, arg)
-        }
-        "Rat" => {
-            // .Rat(epsilon) -- the numeric types' `Rat` rows' implementation
-            // (`method_table::numeric_coerce`).
-            match target.view() {
-                // Whether the imaginary part is negligible is judged against
-                // `$*TOLERANCE`, which only the interpreter can read
-                // (`Interpreter::dispatch_complex_to_real`).
-                ValueView::Complex(..) => None,
-                // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
-                ValueView::Instance { class_name, .. }
-                    if class_name == "Instant" || class_name == "Duration" =>
-                {
-                    None
-                }
-                ValueView::Str(s) => {
-                    // `Str.Rat` takes no `Real` epsilon in Rakudo; the lenient
-                    // reading of whatever was passed is kept.
-                    Some(Ok(if let Ok(f) = s.parse::<f64>() {
-                        let epsilon = crate::builtins::method_table::numeric_coerce::epsilon_arg(
-                            arg, "epsilon",
-                        )
-                        .unwrap_or(1e-6);
-                        crate::builtins::num_to_rat_with_epsilon(f, epsilon)
-                    } else {
-                        Value::rat_raw(0, 1)
-                    }))
-                }
-                _ => crate::builtins::method_table::numeric_coerce::rat_with_epsilon(target, arg)
-                    .or_else(|| Some(Ok(Value::rat_raw(0, 1)))),
-            }
-        }
-        "FatRat" => {
-            // .FatRat(epsilon) -- a `Num` is rationalized with the epsilon as
-            // `.Rat(epsilon)` does (`3.14159e0.FatRat(0.01)` is `22/7`); the
-            // numeric types' `FatRat` rows' implementation
-            // (`method_table::numeric_coerce`).
-            match target.view() {
-                // As for `Rat` above: the interpreter judges the imaginary part.
-                ValueView::Complex(..) => None,
-                // `Instant` and `Duration` are the rows' (`method_table::instances::instant`).
-                ValueView::Instance { class_name, .. }
-                    if class_name == "Instant" || class_name == "Duration" =>
-                {
-                    None
-                }
-                _ => {
-                    crate::builtins::method_table::numeric_coerce::fat_rat_with_epsilon(target, arg)
-                        .or_else(|| Some(Ok(Value::fat_rat_raw(0, 1))))
-                }
-            }
-        }
         // Cost: O(n + L * s), n = chars of the invocant, L = lines, s = |steps|.
         // A Capture's positional part: the `Capture` row's implementation
         // (`method_table::capture`).
