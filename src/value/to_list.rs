@@ -113,7 +113,7 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             .map(|(k, v)| {
                 crate::value::quanthash_keys::quanthash_typed_pair(
                     items.typed_key(k),
-                    crate::value::mix_weight_to_value(*v),
+                    crate::value::mix_weight_to_value(v.clone()),
                 )
             })
             .collect(),

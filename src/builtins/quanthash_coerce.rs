@@ -643,7 +643,7 @@ fn mix_add_item_with_keys(
                 record_quanthash_original(original_keys, k, &m.typed_key(k));
                 // A Mix already stores f64 weights, so this fold is inherently
                 // f64-precision (there is no exact source to recover here).
-                mix_accum(weights, k.clone(), MixWeight::to_value(*v))?;
+                mix_accum(weights, k.clone(), MixWeight::to_value(v))?;
             }
         }
         _ => {

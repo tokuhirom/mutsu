@@ -304,7 +304,7 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
             m.iter().map(|(k, v)| {
                 (
                     k.clone(),
-                    crate::value::mix_weight_to_value(*v),
+                    crate::value::mix_weight_to_value(v.clone()),
                     m.typed_key(k),
                 )
             }),

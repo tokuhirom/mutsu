@@ -186,7 +186,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         ValueView::Mix(items, _) => {
             // Sort values before summing for deterministic results
             // regardless of HashMap iteration order.
-            let mut vals: Vec<crate::value::MixWeight> = items.values().copied().collect();
+            let mut vals: Vec<crate::value::MixWeight> = items.values().cloned().collect();
             vals.sort_by(|a, b| a.to_f64().total_cmp(&b.to_f64()));
             MixWeight::sum(vals).to_value()
         }

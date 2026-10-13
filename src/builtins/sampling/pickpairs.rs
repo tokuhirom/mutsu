@@ -45,7 +45,7 @@ pub(super) fn pickpairs_one(target: &Value) -> Option<Result<Value, RuntimeError
                 let (key, weight) = items.iter().nth(idx).expect("index in range");
                 Some(Ok(crate::runtime::utils::quanthash_typed_pair(
                     items.typed_key(key),
-                    crate::value::mix_weight_to_value(*weight),
+                    crate::value::mix_weight_to_value(weight.clone()),
                 )))
             }
         }
@@ -70,7 +70,7 @@ fn weighted_pairs(target: &Value) -> Option<Vec<(Value, Value)>> {
         ),
         ValueView::Mix(mix, _) => Some(
             mix.iter()
-                .map(|(k, w)| (mix.typed_key(k), crate::value::mix_weight_to_value(*w)))
+                .map(|(k, w)| (mix.typed_key(k), crate::value::mix_weight_to_value(w.clone())))
                 .collect(),
         ),
         _ => None,

@@ -87,7 +87,7 @@ impl Interpreter {
                 .map(|(k, v)| {
                     crate::runtime::utils::quanthash_typed_pair(
                         items.typed_key(k),
-                        crate::value::mix_weight_to_value(*v),
+                        crate::value::mix_weight_to_value(v.clone()),
                     )
                 })
                 .collect(),

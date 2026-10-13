@@ -60,12 +60,12 @@ pub(crate) fn set_sym_diff_multi(args: &[Value]) -> Value {
             for k in all_keys {
                 let mut weights: Vec<MixWeight> = maps
                     .iter()
-                    .map(|m| m.get(&k).copied().unwrap_or_default())
+                    .map(|m| m.get(&k).cloned().unwrap_or_default())
                     .collect();
                 weights.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
                 let diff = crate::builtins::mix_weight::sub(
-                    weights[0],
-                    weights.get(1).copied().unwrap_or_default(),
+                    weights[0].clone(),
+                    weights.get(1).cloned().unwrap_or_default(),
                 );
                 if diff != 0.0 {
                     result.insert(k, diff);

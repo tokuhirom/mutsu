@@ -7,63 +7,93 @@
 
 use super::{Value, make_rat};
 
-/// One Mix/MixHash weight: an `Int`, a `Rat` (reduced, `den > 0`) or a `Num`.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+/// A weight with no 64-bit form: a big `Int`, a `BigRat`, or a `FatRat` (which
+/// keeps its type however small it is). Boxed in [`MixWeight::Big`] so the
+/// common cases stay one word wide.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum BigWeight {
+    Int(num_bigint::BigInt),
+    /// A reduced `Rat` whose numerator or denominator exceeds 64 bits.
+    Rat(num_bigint::BigInt, num_bigint::BigInt),
+    Fat(num_bigint::BigInt, num_bigint::BigInt),
+}
+
+/// One Mix/MixHash weight: an `Int`, a `Rat` (reduced, `den > 0`), a `Num`, or
+/// a [`BigWeight`] for the rare value with no 64-bit form.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum MixWeight {
     Int(i64),
     Rat(i64, i64),
     Num(f64),
+    Big(Box<BigWeight>),
 }
 
 impl MixWeight {
     /// The weight as a double (for sorting, sampling and other float uses).
     // Cost: O(1).
-    pub fn to_f64(self) -> f64 {
+    pub fn to_f64(&self) -> f64 {
         match self {
-            MixWeight::Int(i) => i as f64,
-            MixWeight::Rat(n, d) => super::rat_to_f64(n, d),
-            MixWeight::Num(f) => f,
+            MixWeight::Int(i) => *i as f64,
+            MixWeight::Rat(n, d) => super::rat_to_f64(*n, *d),
+            MixWeight::Num(f) => *f,
+            MixWeight::Big(_) => self.to_value().to_f64(),
         }
     }
 
     /// The weight as the Raku value it stands for.
     // Cost: O(1).
-    pub fn to_value(self) -> Value {
+    pub fn to_value(&self) -> Value {
         match self {
-            MixWeight::Int(i) => Value::Int(i),
-            MixWeight::Rat(n, d) => make_rat(n, d),
-            MixWeight::Num(f) => Value::Num(f),
+            MixWeight::Int(i) => Value::Int(*i),
+            MixWeight::Rat(n, d) => make_rat(*n, *d),
+            MixWeight::Num(f) => Value::Num(*f),
+            MixWeight::Big(b) => match &**b {
+                BigWeight::Int(n) => Value::bigint(n.clone()),
+                BigWeight::Rat(n, d) => super::make_big_rat(n.clone(), d.clone()),
+                BigWeight::Fat(n, d) => super::make_big_fat_rat(n.clone(), d.clone()),
+            },
         }
     }
 
-    /// Store a numeric Raku value, keeping its type. `None` for a non-`Real`
-    /// (or a big value that has no 64-bit form; those degrade to a `Num`).
-    // Cost: O(1) for machine-sized values.
+    /// Store a numeric Raku value, keeping its type. `None` for a non-`Real`.
+    // Cost: O(1) for machine-sized values, O(b) for a big one, b = its bit length.
     pub fn from_value(v: &Value) -> Option<MixWeight> {
         match v.view() {
             super::ValueView::Int(i) => Some(MixWeight::Int(i)),
             super::ValueView::Rat(n, d) if d != 0 => Some(MixWeight::Rat(n, d)),
             super::ValueView::Num(f) => Some(MixWeight::Num(f)),
             super::ValueView::Rat(..) => Some(MixWeight::Num(v.to_f64())),
+            super::ValueView::BigInt(n) => Some(MixWeight::from_bigint(&n)),
+            super::ValueView::FatRat(n, d) if d != 0 => Some(MixWeight::Big(Box::new(
+                BigWeight::Fat(n.into(), d.into()),
+            ))),
+            super::ValueView::BigRat(n, d) => Some(MixWeight::Big(Box::new(
+                if v.is_bigfatrat() {
+                    BigWeight::Fat(n.clone(), d.clone())
+                } else {
+                    BigWeight::Rat(n.clone(), d.clone())
+                },
+            ))),
             _ => None,
         }
     }
 
-    /// A `Bag` count as a weight: `Int` when it fits, else the nearest `Num`.
+    /// A `Bag` count or big `Int` as a weight: `Int` when it fits, else a big `Int`.
     pub fn from_bigint(n: &num_bigint::BigInt) -> MixWeight {
         use num_traits::ToPrimitive;
         n.to_i64().map_or_else(
-            || MixWeight::Num(n.to_f64().unwrap_or(f64::INFINITY)),
+            || MixWeight::Big(Box::new(BigWeight::Int(n.clone()))),
             MixWeight::Int,
         )
     }
 
     /// Whether the weight is exactly 1 (printed as the bare key).
-    pub fn is_one(self) -> bool {
+    pub fn is_one(&self) -> bool {
         match self {
-            MixWeight::Int(i) => i == 1,
+            MixWeight::Int(i) => *i == 1,
             MixWeight::Rat(n, d) => n == d,
-            MixWeight::Num(f) => f == 1.0,
+            MixWeight::Num(f) => *f == 1.0,
+            MixWeight::Big(_) => false,
         }
     }
 }
@@ -90,18 +120,23 @@ impl MixWeight {
         match self {
             MixWeight::Int(i) => i
                 .checked_abs()
-                .map_or(MixWeight::Num((i as f64).abs()), MixWeight::Int),
+                .map_or_else(|| MixWeight::from_bigint(&-num_bigint::BigInt::from(i)), MixWeight::Int),
             MixWeight::Rat(n, d) => n
                 .checked_abs()
-                .map_or(MixWeight::Num(self.to_f64().abs()), |n| {
+                .map_or(MixWeight::Num((n as f64 / d as f64).abs()), |n| {
                     MixWeight::Rat(n, d)
                 }),
             MixWeight::Num(f) => MixWeight::Num(f.abs()),
+            MixWeight::Big(b) => MixWeight::Big(Box::new(match *b {
+                BigWeight::Int(n) => BigWeight::Int(num_traits::Signed::abs(&n)),
+                BigWeight::Rat(n, d) => BigWeight::Rat(num_traits::Signed::abs(&n), d),
+                BigWeight::Fat(n, d) => BigWeight::Fat(num_traits::Signed::abs(&n), d),
+            })),
         }
     }
 
     /// Whether the weight is a finite number (a `Num` may be NaN/Inf).
-    pub fn is_finite(self) -> bool {
+    pub fn is_finite(&self) -> bool {
         self.to_f64().is_finite()
     }
 }
@@ -209,11 +244,16 @@ impl MixWeight {
     /// (`(+)`, duplicate keys, `.total`) and `+$mix` all come through here.
     // Cost: O(1).
     pub fn add(self, other: MixWeight) -> MixWeight {
-        fn parts(w: MixWeight) -> Option<(i128, i128)> {
+        // A big operand has no i128 form: the numeric tower on `Value`s adds
+        // it exactly (and keeps `Int`/`Rat`/`FatRat` as Raku does).
+        if matches!(self, MixWeight::Big(_)) || matches!(other, MixWeight::Big(_)) {
+            return Self::add_exact(&self, &other);
+        }
+        fn parts(w: &MixWeight) -> Option<(i128, i128)> {
             match w {
-                MixWeight::Int(i) => Some((i as i128, 1)),
-                MixWeight::Rat(n, d) => Some((n as i128, d as i128)),
-                MixWeight::Num(_) => None,
+                MixWeight::Int(i) => Some((*i as i128, 1)),
+                MixWeight::Rat(n, d) => Some((*n as i128, *d as i128)),
+                MixWeight::Num(_) | MixWeight::Big(_) => None,
             }
         }
         fn gcd(a: i128, b: i128) -> i128 {
@@ -223,7 +263,7 @@ impl MixWeight {
             }
             a
         }
-        let (Some((an, ad)), Some((bn, bd))) = (parts(self), parts(other)) else {
+        let (Some((an, ad)), Some((bn, bd))) = (parts(&self), parts(&other)) else {
             return MixWeight::Num(self.to_f64() + other.to_f64());
         };
         let (mut n, mut d) = (an * bd + bn * ad, ad * bd);
@@ -234,7 +274,17 @@ impl MixWeight {
         match (i64::try_from(n), i64::try_from(d)) {
             (Ok(n), Ok(1)) if !rational => MixWeight::Int(n),
             (Ok(n), Ok(d)) => MixWeight::Rat(n, d),
-            _ => MixWeight::Num(n as f64 / d as f64),
+            // A total beyond 64 bits keeps its exactness as a big weight.
+            _ => Self::add_exact(&self, &other),
+        }
+    }
+
+    /// `a + b` through the numeric tower on `Value`s: exact for big operands.
+    // Cost: O(b), b = the bit length of the operands.
+    fn add_exact(a: &MixWeight, b: &MixWeight) -> MixWeight {
+        match crate::builtins::arith::arith_add(a.to_value(), b.to_value()) {
+            Ok(v) => MixWeight::from_value(&v).unwrap_or_else(|| MixWeight::Num(v.to_f64())),
+            Err(_) => MixWeight::Num(a.to_f64() + b.to_f64()),
         }
     }
 

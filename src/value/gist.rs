@@ -266,7 +266,7 @@ pub(crate) fn setbagmix_gist_named(value: &Value, type_override: Option<&str>) -
                 keys.iter()
                     .map(|(k, v)| {
                         let key = gist_value(&m.typed_key(k));
-                        match crate::value::mix_weight_render(**v) {
+                        match crate::value::mix_weight_render((**v).clone()) {
                             Some(w) => format!("{}({})", key, w),
                             None => key,
                         }

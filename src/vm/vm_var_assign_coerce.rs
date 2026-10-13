@@ -715,6 +715,9 @@ impl Interpreter {
             ValueView::Num(n) => Ok(MixWeight::Num(n)),
             ValueView::Rat(n, d) if d != 0 => Ok(MixWeight::Rat(n, d)),
             ValueView::Bool(flag) => Ok(MixWeight::Int(i64::from(flag))),
+            ValueView::BigInt(_) | ValueView::FatRat(..) | ValueView::BigRat(..) => {
+                Ok(MixWeight::from_value(value).unwrap_or_else(|| MixWeight::Num(value.to_f64())))
+            }
             ValueView::Str(s) => {
                 // Try to parse as numeric; throw X::Str::Numeric on failure
                 if let Ok(n) = s.parse::<f64>() {
