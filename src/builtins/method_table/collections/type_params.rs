@@ -113,6 +113,13 @@ pub(crate) fn type_object_row(
     if crate::runtime::utils::is_native_elems_class(&name) {
         return row_of("Blob");
     }
+    // A native integer type the catalog does not list (NativeCall's `long`,
+    // `size_t`) is an `Int`.
+    if crate::runtime::native_types::is_native_int_type(&name)
+        && builtin_type_mro_strs(&name).is_none()
+    {
+        return row_of("Int");
+    }
     let base = name.split_once('[').map_or(name.as_ref(), |(base, _)| base);
     if crate::value::ROLES_WITH_ROWS.contains(&base) {
         let parents = ROLE_PARENTS

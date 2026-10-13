@@ -1,7 +1,6 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, EnumValue, RuntimeError, Value, ValueView};
-use num_traits::ToPrimitive;
 
 pub(crate) mod coercion;
 pub(crate) mod collection;

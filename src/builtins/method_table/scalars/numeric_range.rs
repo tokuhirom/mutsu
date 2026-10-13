@@ -10,6 +10,7 @@
 //! (`method_table::collections::type_params::type_object_row`).
 
 use super::{Handler, MethodRow, RowFlags};
+use num_traits::ToPrimitive;
 use crate::value::{RuntimeError, Value, ValueView};
 
 macro_rules! row {
@@ -30,7 +31,16 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("Num", num_range),
     row!("Rat", rat_range),
     row!("FatRat", fat_rat_range),
-    row!("Rational", rational_range),
+    // No shape is the `Rational` role: its type object reaches the row through
+    // its owner (`type_object_row`), as `Callable.of` does.
+    MethodRow {
+        owner: "Rational",
+        name: "Range",
+        arity: 0,
+        handler: Handler::Narrow(rational_range),
+        flags: RowFlags::TYPE_OBJECT_OK.or(RowFlags::OWNER_ONLY),
+        named: &[],
+    },
 ];
 
 /// `-Inf..Inf`, or `-Inf^..^Inf` with both ends excluded.
