@@ -38,14 +38,21 @@ pub(super) fn add_field(fields: &mut Vec<RakuAstField>, custom_traits: &[(String
         return;
     };
     let at = usize::from(fields.first().is_some_and(|f| f.name == Some("scope")));
-    fields.insert(at, leaf_field(Some("parsed-declarator"), Value::str(keyword)));
+    fields.insert(
+        at,
+        leaf_field(Some("parsed-declarator"), Value::str(keyword)),
+    );
 }
 
 /// The parser's marker for a package node's `parsed-declarator`, or `None`
 /// when the node is written with its built-in declarator.
 // Cost: O(f), f = number of fields.
 pub(super) fn marker(node: &RakuAstNode) -> Result<Option<(String, Option<Expr>)>, RuntimeError> {
-    if !node.fields.iter().any(|f| f.name == Some("parsed-declarator")) {
+    if !node
+        .fields
+        .iter()
+        .any(|f| f.name == Some("parsed-declarator"))
+    {
         return Ok(None);
     }
     let keyword = leaf_str(node, "parsed-declarator")?;
