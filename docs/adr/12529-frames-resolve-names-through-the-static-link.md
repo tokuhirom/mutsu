@@ -527,6 +527,14 @@ regresses one of those rows is fixed on its branch, not landed with a note.
      of every other family. `for ^3000 { { multi g(Int) {...}; f($i) + g(1) } }`
      ran `f`'s full candidate walk 3000 times; it now runs it once
      (`tests/multi_family_generation.rs`).
+   - A hit reads through a shared lookup and clones the answer; the re-tag
+     takes the mutable lookup on a cold path. A first cut that took the
+     mutable lookup on every hit, and read the family generation on every
+     miss, cost `bench-multi-dispatch` +0.5% Ir.
+
+   Release-build Ir against the merge base: that repro -40.4%,
+   `bench-multi-dispatch` +0.02% (+0.10% with the JIT), a plain multi call
+   loop +0.10%.
 
    Left on the registry: the plain-routine memos (`fn_resolve_cache`,
    `plain_fn_resolve_memo`, the light-call caches) are still tagged with the
