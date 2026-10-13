@@ -1127,7 +1127,6 @@ impl Interpreter {
         {
             return c;
         }
-        let family = self.dispatch.fn_family_gens.of_name(name_sym);
         let candidates = self.resolve_all_multi_candidates_indexed(name);
         // The per-candidate rule lives in `dispatch_narrow.rs` because the
         // per-argument-type refinement there must narrow away exactly the
@@ -1149,7 +1148,13 @@ impl Interpreter {
         let cacheable = !candidates.is_empty() && !value_dependent;
         self.caches
             .func_multi_type_cacheable
-            .insert(generation, family, (pkg_sym, name_sym), cacheable);
+            .insert(
+                generation,
+                self.caches.fn_resolve_gen,
+                || self.dispatch.fn_family_gens.of_name(name_sym),
+                (pkg_sym, name_sym),
+                cacheable,
+            );
         cacheable
     }
 
@@ -1220,7 +1225,6 @@ impl Interpreter {
         {
             return Ok(hit.clone());
         }
-        let family = self.dispatch.fn_family_gens.of_name(name_sym);
         // A dispatch error (ambiguity, a `where` that died) must be raised on
         // every call, so only an answer is cached.
         let resolved = self.resolve_function_with_types_keyed(name, args, Some(&key.2))?;
@@ -1230,7 +1234,13 @@ impl Interpreter {
         debug_assert_eq!(generation, self.caches.fn_resolve_gen);
         self.caches
             .func_multi_resolve_cache
-            .insert(generation, family, key, resolved.clone());
+            .insert(
+                generation,
+                self.caches.fn_resolve_gen,
+                || self.dispatch.fn_family_gens.of_name(name_sym),
+                key,
+                resolved.clone(),
+            );
         Ok(resolved)
     }
 
@@ -1826,10 +1836,10 @@ mod func_multi_cache_generation_tests {
         let fam = i.dispatch.fn_family_gens.of_name(name);
         i.caches
             .func_multi_type_cacheable
-            .insert(base, fam, (pkg, name), true);
+            .insert(base, base, || fam, (pkg, name), true);
         i.caches
             .func_multi_resolve_cache
-            .insert(base, fam, key.clone(), None);
+            .insert(base, base, || fam, key.clone(), None);
         assert_eq!(
             i.caches
                 .func_multi_type_cacheable
@@ -1889,7 +1899,7 @@ mod func_multi_cache_generation_tests {
         let fam = i.dispatch.fn_family_gens.of_name(name);
         i.caches
             .func_multi_type_cacheable
-            .insert(base, fam, (pkg, name), true);
+            .insert(base, base, || fam, (pkg, name), true);
         i.dispatch.fn_family_gens.bump(name);
         i.caches.fn_resolve_gen += 1;
         // `f` has no registered candidates at all, so a fresh scan answers `false`

@@ -150,10 +150,33 @@ impl<K: Eq + Hash, V> FamilyGenCache<K, V> {
     }
 
     /// Record `value` as the answer for `key`, computed under map generation
-    /// `generation` and family generation `family`.
+    /// `generation`; `now` is the map generation at the time of the insert.
+    ///
+    /// The family generation is read here, not at the miss: most misses never
+    /// insert, and reading it per miss cost the multi dispatch benchmark 0.5%.
+    /// That is sound only while the map is the one the answer was computed
+    /// under: the same map version names the same content, so the family's
+    /// current generation describes the keys the answer saw. An answer whose
+    /// computation moved the map (`now != generation`) is not recorded.
+    // Cost: O(1) expected, plus one `family` call.
+    #[inline]
+    pub(crate) fn insert(
+        &mut self,
+        generation: u64,
+        now: u64,
+        family: impl FnOnce() -> u64,
+        key: K,
+        value: V,
+    ) {
+        if now != generation {
+            return;
+        }
+        self.insert_tagged(generation, family(), key, value);
+    }
+
     // Cost: O(1) expected.
     #[inline]
-    pub(crate) fn insert(&mut self, generation: u64, family: u64, key: K, value: V) {
+    fn insert_tagged(&mut self, generation: u64, family: u64, key: K, value: V) {
         use std::collections::hash_map::Entry;
         let tagged = Tagged {
             generation,
@@ -202,7 +225,7 @@ mod tests {
     #[test]
     fn served_under_its_map_generation_without_a_family_read() {
         let mut cache: FamilyGenCache<&str, u32> = FamilyGenCache::default();
-        cache.insert(7, 1, "f", 10);
+        cache.insert_tagged(7, 1, "f", 10);
         assert_eq!(
             cache.get(7, &"f", || panic!("family read on a hit")),
             Some(&10)
@@ -214,7 +237,7 @@ mod tests {
     #[test]
     fn an_unchanged_family_survives_a_map_generation_move() {
         let mut cache: FamilyGenCache<&str, u32> = FamilyGenCache::default();
-        cache.insert(7, 1, "f", 10);
+        cache.insert_tagged(7, 1, "f", 10);
         assert_eq!(cache.get(8, &"f", || 1), Some(&10));
         // Re-tagged: the next probe under 8 is a fast-path hit.
         assert_eq!(cache.get(8, &"f", || panic!("re-tag missed")), Some(&10));
@@ -223,7 +246,7 @@ mod tests {
     #[test]
     fn a_changed_family_is_not_served() {
         let mut cache: FamilyGenCache<&str, u32> = FamilyGenCache::default();
-        cache.insert(7, 1, "f", 10);
+        cache.insert_tagged(7, 1, "f", 10);
         assert_eq!(cache.get(8, &"f", || 2), None);
     }
 
@@ -232,14 +255,25 @@ mod tests {
     #[test]
     fn two_families_keep_their_answers() {
         let mut cache: FamilyGenCache<&str, u32> = FamilyGenCache::default();
-        cache.insert(7, 1, "f", 10);
-        cache.insert(8, 2, "f", 20);
+        cache.insert_tagged(7, 1, "f", 10);
+        cache.insert_tagged(8, 2, "f", 20);
         assert_eq!(cache.get(9, &"f", || 1), Some(&10));
         assert_eq!(cache.get(10, &"f", || 2), Some(&20));
-        cache.insert(11, 3, "f", 30);
+        cache.insert_tagged(11, 3, "f", 30);
         assert_eq!(cache.get(12, &"f", || 3), Some(&30));
         assert_eq!(cache.get(13, &"f", || 2), Some(&20));
         assert_eq!(cache.get(14, &"f", || 1), None);
+    }
+
+    /// An answer whose computation moved the map is not recorded, and the
+    /// family is read only for an answer that is.
+    #[test]
+    fn insert_records_only_under_an_unmoved_map() {
+        let mut cache: FamilyGenCache<&str, u32> = FamilyGenCache::default();
+        cache.insert(7, 8, || panic!("family read for a dropped insert"), "f", 10);
+        assert!(cache.is_empty());
+        cache.insert(7, 7, || 1, "f", 10);
+        assert_eq!(cache.get(9, &"f", || 1), Some(&10));
     }
 
     #[test]

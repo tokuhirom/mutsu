@@ -81,11 +81,14 @@ impl Interpreter {
         {
             return cached;
         }
-        let family = self.dispatch.fn_family_gens.of_name(sym);
         let result = self.has_multi_candidates(&sym.resolve());
-        self.caches
-            .multi_candidates_cache
-            .insert(generation, family, key, result);
+        self.caches.multi_candidates_cache.insert(
+            generation,
+            self.caches.fn_resolve_gen,
+            || self.dispatch.fn_family_gens.of_name(sym),
+            key,
+            result,
+        );
         result
     }
 

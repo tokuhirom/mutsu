@@ -139,15 +139,19 @@ impl Interpreter {
         {
             return plan.clone();
         }
-        let family = key.as_ref().map_or(0, |key| self.dispatch.fn_family_gens.of_name(key.name));
         let mut plan = self.build_bare_multi_plan(name, arg_values, search_pkgs);
         plan.keyed = key.is_some();
         let plan = Arc::new(plan);
         if let Some(key) = key {
             debug_assert_eq!(generation, self.caches.fn_resolve_gen);
-            self.caches
-                .bare_multi_plan_cache
-                .insert(generation, family, key, plan.clone());
+            let name = key.name;
+            self.caches.bare_multi_plan_cache.insert(
+                generation,
+                self.caches.fn_resolve_gen,
+                || self.dispatch.fn_family_gens.of_name(name),
+                key,
+                plan.clone(),
+            );
         }
         plan
     }

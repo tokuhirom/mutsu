@@ -173,7 +173,6 @@ impl Interpreter {
         {
             return;
         }
-        let family = self.dispatch.fn_family_gens.of_name(name_sym);
         let entry = compiled_fns
             .iter()
             .find(|(_, f)| std::ptr::eq(Arc::as_ptr(f), cf))
@@ -184,9 +183,13 @@ impl Interpreter {
                     fingerprint: cf.fingerprint,
                 },
             );
-        self.caches
-            .multi_light_cache
-            .insert(generation, family, key, entry);
+        self.caches.multi_light_cache.insert(
+            generation,
+            self.caches.fn_resolve_gen,
+            || self.dispatch.fn_family_gens.of_name(name_sym),
+            key,
+            entry,
+        );
     }
 
     /// Whether the closure's captured `&name` binding (upvalue `index`) is a
