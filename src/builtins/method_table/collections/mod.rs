@@ -65,6 +65,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     list_transform::ANY_ROWS,
     list_transform::LIST_ROWS,
     list_transform::FLAT_ROWS,
+    list_transform::FLAT_LEVELS_ROWS,
     map::ROWS,
     positional::ROWS,
     rotate::ROWS,

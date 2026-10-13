@@ -2426,6 +2426,40 @@ and two radixes against `raku`, only `parse-base` needed more:
 `method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 21 to 19 arms. Pinned in `t/types/string/str-parse-base-rows.t` and
 `t/collections/range-pair/range-in-range-rows.t`.
 
+### 9.104 Slice 5: `flat($levels)`, `Int.Str(:superscript)`, `Mu.isa` and `FatRat.base` are rows; five 1-arg arms are gone (2026-10-13)
+
+`refactor/11276-dispatch-1arg-rest`, one commit per family, each probed on receivers × arguments against `raku` and the binary
+before the slice:
+
+1. **`flat($levels, :hammer)`** is a `Named` row on `List`, `Array`, `Seq` and `Map` (Rakudo declares it on `Iterable` and again
+   on `Array`; `Any` and `Range` declare only `flat()`). A negative level, `Inf` and `*` flatten every level, a `Str` level
+   numifies (a non-numeric one dies), an `Array` without `:hammer` never reads the level, and a `Hash` flattens as its pairs (also
+   for `flat(:hammer)`, which answered `({...},)`). `5.flat(1)`, `"ab".flat(1)` and `(1..3).flat(1)` now die as in Rakudo (the
+   arm answered a one-element list). The 2-arg `flat` arm of `dispatch_2arg.rs` goes too. A `Slip` or an unsettled `Seq` reaches
+   the row through `answer_shapeless`, which now **splits named arguments for a row that declares them** and is asked for 2-arg
+   calls as well (both callers), so `$slip.flat(1, :hammer)` binds `:hammer` instead of reading it as a second positional.
+2. **`Int.Str(:superscript, :subscript)`** is a named row (a big `Int` too; `:superscript` wins). Every `Str` row takes `*%_`
+   (`ANY_NAMED`), as Rakudo's candidates do, so `1e3.Str(:superscript)`, `True.Str(:subscript)` and `"12".Str(:superscript)`
+   ignore the adverb (the arm rendered the numified receiver raised). `<5>.Str(:superscript)` still answers the `Int` part (#13259).
+3. **`zprintf` has no method form.** Rakudo declares neither the method nor the routine; the routine is a mutsu extension with its
+   own tests and stays, but the 1-arg cascade arm and the runtime's by-name arm (`methods_dispatch_match.rs`) are deleted.
+4. **`Mu.isa`** is a row (`ctors_mop/mu_isa.rs`), reached by every shape through its owners or `MU_FOR_CLOSED_SHAPES` and by a
+   shapeless receiver through `answer_shapeless`. An instance, a type object and a mixin over an instance decline to the
+   interpreter (user hierarchies, roles, subsets). No behaviour change (`Int.isa(3)` stays wrong: #13260).
+5. **`FatRat` has the `base` rows** (Rakudo declares `base` on `Rational`); the 1-arg `base` arm, which re-called the rows'
+   implementation, is deleted. A user object as the radix now has no candidate (`X::Method::NotFound`; Rakudo raises
+   `X::Multi::NoMatch`) where the arm answered a `Failure`. `FatRat.base-repeating` is still missing (#13258).
+
+**Not done, and why.** The `ACCEPTS` arms of the quant hashes, `Pair` and `Range` and the `AT-POS`/`EXISTS-POS` arms of `Uni` and
+`Capture` re-call their rows' handlers, but they also answer an argument the guard step does not admit (a user object): deleting
+them turned `set(1,2).ACCEPTS(P.new)` from `False` into `X::Method::NotFound`, and `\(1,2).AT-POS(1..2)` from an error into `Nil`
+(the generic `AT-POS` arm claims it). They go when a row can bind a user-object argument (an `Interp` handler that calls its
+`.Numeric`). `subbuf` and the `read-*` arms serve a user class composing a buffer role over a `VMArray` body, which has no shape;
+they go with the `Blob`/`Buf` user-instance mechanism (the same one `methods_narg/buf.rs`'s ten arms need).
+
+`method-rows-report.py --arms`: pure cascades 127 -> 121 arms (`dispatch_1arg.rs` 19 -> 13; `dispatch_2arg.rs` loses `flat`).
+Pinned in `t/oo/method/{flat-levels,int-str-script,mu-isa,fatrat-base}-method-rows.t` and `t/oo/method/zprintf-no-method.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

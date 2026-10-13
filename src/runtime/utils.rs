@@ -431,5 +431,4 @@ pub(crate) use zero_denominator::*;
 
 pub(crate) use super::sprintf::format_sprintf;
 pub(crate) use super::sprintf::format_sprintf_args;
-pub(crate) use super::sprintf::format_zprintf;
 pub(crate) use super::sprintf::sprintf_directive_count;

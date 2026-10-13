@@ -1,12 +1,8 @@
 use super::allomorph::allomorph_accepts;
 
-use super::flatten::{flatten_target, is_hammer_pair, parse_flat_depth};
-use super::fmt_contains::fmt_value_needs_coercion;
-use super::numeric::{int_to_subscript, int_to_superscript};
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{RuntimeError, Value, ValueView};
-use num_traits::ToPrimitive;
 
 /// A built-in method call with one argument: the row of the built-in method
 /// table (ADR-11276), then the cascade, then the row a receiver with no shape
@@ -297,36 +293,6 @@ fn native_method_1arg_cascade(
             target,
             std::slice::from_ref(arg),
         ),
-        "Str" => {
-            // Int.Str(:superscript) and Int.Str(:subscript)
-            if let ValueView::Pair(key, val) = arg.view()
-                && val.truthy()
-            {
-                let int_val = match target.view() {
-                    ValueView::Int(i) => Some(i),
-                    ValueView::BigInt(bi) => bi.to_i64(),
-                    ValueView::Num(f) => Some(f as i64),
-                    ValueView::Bool(b) => Some(if b { 1 } else { 0 }),
-                    _ => {
-                        let s = target.to_string_value();
-                        s.parse::<i64>().ok()
-                    }
-                };
-                if let Some(n) = int_val {
-                    match key.as_str() {
-                        "superscript" => {
-                            return Some(Ok(Value::str(int_to_superscript(n))));
-                        }
-                        "subscript" => {
-                            return Some(Ok(Value::str(int_to_subscript(n))));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-            // Default: just stringify
-            Some(Ok(Value::str(target.to_string_value())))
-        }
         // Cost: O(n + L * s), n = chars of the invocant, L = lines, s = |steps|.
         // A Capture's positional part: the `Capture` row's implementation
         // (`method_table::capture`).
@@ -475,46 +441,6 @@ fn native_method_1arg_cascade(
             }
             None
         }
-        "flat" => {
-            if is_hammer_pair(arg) {
-                return Some(Ok(
-                    crate::builtins::method_table::list_transform::flat_hammer(target),
-                ));
-            }
-            if let Some(depth) = parse_flat_depth(arg) {
-                return Some(Ok(flatten_target(target, Some(depth), false)));
-            }
-            None
-        }
-        // Cost: O(k) on Array/List, k = selected elements; O(e) otherwise,
-        // e = receiver elements materialized before selecting a window.
-        "zprintf" => {
-            // Method form: '%f'.zprintf(value) — like sprintf but with zprintf
-            // semantics. Mirrors the "sprintf" arm above: an Instance/Package/
-            // mixin arg needs interpreter-aware coercion, so defer to the
-            // slow-path `zprintf` arm (routes through `builtin_sprintf(.., true)`).
-            if fmt_value_needs_coercion(arg) {
-                return None;
-            }
-            let fmt = target.to_string_value();
-            let rendered = runtime::format_zprintf(&fmt, Some(arg));
-            Some(Ok(Value::str(rendered)))
-        }
-        // A number: the numeric types' `base` rows' implementation
-        // (`method_table::numeric_base`).
-        "base"
-            if matches!(
-                target.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Bool(_)
-                    | ValueView::Num(_)
-                    | ValueView::Rat(..)
-                    | ValueView::FatRat(..)
-            ) =>
-        {
-            crate::builtins::method_table::numeric_base::base_of(target, arg, None)
-        }
         // Buf/Blob `read-*` (1 arg: offset, native byte order): the rows'
         // implementation (`method_table::blob_read`).
         "read-num32" | "read-num64" | "read-uint8" | "read-int8" | "read-uint16" | "read-int16"
@@ -599,43 +525,6 @@ fn native_method_1arg_cascade(
         // `Blob` row's handler answers it and keeps its class.
         "subbuf" => {
             crate::builtins::method_table::blob_read::subbuf(target, std::slice::from_ref(arg))
-        }
-        "isa" => {
-            // Instance, Mixin(Instance), and Package values need interpreter
-            // access for user-defined class hierarchies, role checks, and
-            // subset type resolution, so fall through to the runtime handler.
-            let needs_interpreter = match target.view() {
-                ValueView::Instance { .. } | ValueView::Package(_) => true,
-                ValueView::Mixin(inner, _) => {
-                    matches!(inner.as_ref().view(), ValueView::Instance { .. })
-                }
-                _ => false,
-            };
-            if needs_interpreter {
-                return None;
-            }
-            let type_name = match arg.view() {
-                ValueView::Package(name) => name.resolve(),
-                ValueView::Str(name) => name.to_string(),
-                ValueView::Instance { class_name, .. } => class_name.resolve(),
-                _ => {
-                    // For defined values, extract the type name (e.g., 3.isa(4) checks Int)
-                    // This matches Raku's behavior where .isa on a defined value
-                    // uses the value's type, not its string representation.
-                    crate::value::types::what_type_name(arg)
-                }
-            };
-            // A parameterized type (`Array[Hash]`, `Hash[Int,Str]`) is the
-            // typed container's own type: `my Hash @a; @a.isa(Array[Hash])`.
-            // `isa_check` knows only nominal names, so compare the receiver's
-            // full type name.
-            if type_name.contains('[') {
-                return Some(Ok(Value::truth(
-                    crate::runtime::embedded_container_type_name(target).as_deref()
-                        == Some(type_name.as_str()),
-                )));
-            }
-            Some(Ok(Value::truth(target.isa_check(&type_name))))
         }
         _ => None,
     }

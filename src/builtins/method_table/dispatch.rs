@@ -402,9 +402,9 @@ const COOL_COERCE_FOR_SHAPELESS: [&str; 5] = ["Real", "Num", "UInt", "Int", "Num
 ///   `is-lazy`) answer every receiver, a `Failure` included (asking its truth
 ///   handles it); an instance answers from the first class in its MRO that
 ///   declares the method.
-/// - `Iterable`'s `lazy` ([`ITERABLE_FOR_SHAPELESS`]) answers a `LazyList`
-///   or unsettled `Seq` from `Seq`'s row and a lazy or shaped array or a
-///   `Slip` from `List`'s.
+/// - `Iterable`'s `lazy` ([`ITERABLE_FOR_SHAPELESS`]) and `flat($levels)`
+///   answer a `LazyList` or unsettled `Seq` from `Seq`'s row and a lazy or
+///   shaped array or a `Slip` from `List`'s.
 ///
 /// An instance walks its class's MRO and declines when a built-in class ahead
 /// of `Cool`/`Any` declares the method (`class MyPath is IO::Path` reads its
@@ -429,6 +429,28 @@ pub(crate) fn answer_shapeless(
         return call(row(id), interp, target, args, Named::NONE).map(|(result, _)| result);
     }
     let mut interp = interp;
+    // A row that declares named arguments (`flat($levels, :hammer)`) is
+    // handed them split from the positionals, as the guard step does; the
+    // other rows keep reading every argument as a positional.
+    let named_count = args.iter().filter(|arg| arg.is_string_pair_value()).count();
+    if named_count > 0
+        && let Some(id) = shapeless_row(
+            interp.as_deref_mut(),
+            target,
+            method,
+            args.len() - named_count,
+        )
+        && !row(id).named.is_empty()
+    {
+        let (named, positional): (Vec<Value>, Vec<Value>) = args
+            .iter()
+            .cloned()
+            .partition(|arg| arg.is_string_pair_value());
+        if named.iter().all(|pair| names_declared(row(id), pair)) {
+            return call(row(id), None, target, &positional, Named::new(&named))
+                .map(|(result, _)| result);
+        }
+    }
     let id = shapeless_row(interp.as_deref_mut(), target, method, args.len())?;
     // `Mu.WHERE` reads the class registry for a NativeCall handle (§9.91) and
     // `Cool.UInt` reads `$*TOLERANCE` for a `Complex` (§9.92); the other rows
@@ -472,6 +494,8 @@ pub(crate) fn shapeless_row(
                     | "words"
                     | "lines"
                     | "chop"
+                    | "flat"
+                    | "isa"
             ))
     {
         return None;
@@ -479,7 +503,9 @@ pub(crate) fn shapeless_row(
     let text = crate::value::COOL_TEXT_FOR_CLOSED_SHAPES.contains(&method.as_str());
     let list = crate::value::ANY_LIST_FOR_CLOSED_SHAPES.contains(&method.as_str());
     let mu = crate::value::MU_FOR_CLOSED_SHAPES.contains(&method.as_str());
-    let iterable = ITERABLE_FOR_SHAPELESS.contains(&method.as_str());
+    // `flat($levels)` is `Iterable`'s alone: `Any` declares only `flat()`.
+    let iterable =
+        ITERABLE_FOR_SHAPELESS.contains(&method.as_str()) || (arity == 1 && method == "flat");
     let coerce = COOL_COERCE_FOR_SHAPELESS.contains(&method.as_str());
     let text = text || coerce;
     if !(text || list || mu || iterable) || Receiver::of_settled(target).is_some() {
