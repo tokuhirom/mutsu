@@ -121,7 +121,35 @@ impl Interpreter {
         {
             return (set & (1u128 << c) != 0).then_some(pos + 1);
         }
-        self.match_consuming_atom(&program.atoms[i], chars, pos, pkg, program.atom_ic[i])
+        self.rx_consume_atom(program, i, chars, pos, pkg)
+    }
+
+    /// `program.atoms[i]` at `pos` past the ASCII fast path. In a markless
+    /// program the atom tests the grapheme's mark-stripped base and consumes
+    /// the whole grapheme: what `:m` compares, in the subject's own
+    /// positions (a one-character ASCII grapheme has no marks to strip).
+    // Cost: O(g) as `match_consuming_atom`; markless, plus stripping the
+    // grapheme, O(g) with one allocation, g = the grapheme's length.
+    fn rx_consume_atom(
+        &mut self,
+        program: &RxProgram,
+        i: usize,
+        chars: &[char],
+        pos: usize,
+        pkg: Symbol,
+    ) -> Option<usize> {
+        let atom = &program.atoms[i];
+        let ic = program.atom_ic[i];
+        if !program.markless || pos >= chars.len() {
+            return self.match_consuming_atom(atom, chars, pos, pkg, ic);
+        }
+        let end = super::super::regex_helpers::grapheme_end(chars, pos);
+        if end == pos + 1 && chars[pos].is_ascii() {
+            return self.match_consuming_atom(atom, chars, pos, pkg, ic);
+        }
+        let (base, _) = crate::value::regex_caps::strip_marks_text(&chars[pos..end]);
+        let consumed = self.match_consuming_atom(atom, &base, 0, pkg, ic)?;
+        (consumed == base.len()).then_some(end)
     }
 
     /// Match `program.atoms[i]` repeatedly from `pos`, at most `max` times,
@@ -168,7 +196,7 @@ impl Interpreter {
                 (Some(set), Some(c)) => (set & (1u128 << c) != 0).then_some(at + 1),
                 _ => {
                     plain = false;
-                    self.match_consuming_atom(&program.atoms[i], chars, at, pkg, program.atom_ic[i])
+                    self.rx_consume_atom(program, i, chars, at, pkg)
                 }
             };
             let Some(next) = next else { break };

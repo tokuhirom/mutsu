@@ -86,8 +86,40 @@ pub(in crate::runtime::regex) fn compile(pattern: &RegexPattern) -> Result<RxPro
         nregs: c.nregs,
         has_code: c.has_code,
         has_call: c.has_call,
+        markless: false,
         ascii: std::sync::OnceLock::new(),
     })
+}
+
+/// Compile the mark-stripped body of a whole-`:m` rule (`strip_marks_pattern`)
+/// as a markless program ([`RxProgram::markless`]), or say why not. Only the
+/// ops whose every character test goes through a consuming atom are covered;
+/// a construct that reads the subject another way (a look-around, a
+/// backreference, LTM, `<.ws>`, an interpolation, a nested `:m` group or an
+/// assertion) declines, and the call keeps the eager `:m` path.
+// Cost: O(t), t = the number of tokens in the pattern tree.
+pub(in crate::runtime::regex) fn compile_markless(
+    pattern: &RegexPattern,
+) -> Result<RxProgram, Decline> {
+    let mut program = compile(pattern)?;
+    let covered = program.ops.iter().all(|op| {
+        !matches!(
+            op,
+            RxOp::Ws
+                | RxOp::Assert(_)
+                | RxOp::Look(_)
+                | RxOp::CapAtom(_)
+                | RxOp::LtmAlt(_)
+                | RxOp::InterpEnds(_)
+                | RxOp::GroupEnds(_)
+                | RxOp::ConjTail { .. }
+        )
+    });
+    if !covered {
+        return Err("markless-uncovered");
+    }
+    program.markless = true;
+    Ok(program)
 }
 
 /// A set of capture names interned, in name order, so the order they are
