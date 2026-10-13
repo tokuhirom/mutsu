@@ -765,7 +765,7 @@ impl Interpreter {
             if let Some(elem_val) = elem
                 && let ValueView::ContainerRef(arc) = elem_val.view()
             {
-                let inner = arc.lock().unwrap().clone();
+                let inner = arc.load();
                 let effective = Self::normalize_incdec_source(inner);
                 let new_val = if increment {
                     self.increment_value_smart(&effective)?
@@ -820,13 +820,13 @@ impl Interpreter {
                 crate::value::container_lock::ContainerStructGuard::acquire(root_cell_addr);
             let mut arc = arc.clone();
             loop {
-                let held = arc.lock().unwrap().clone();
+                let held = arc.load();
                 match held.view() {
                     ValueView::ContainerRef(next) => arc = next.clone(),
                     _ => break,
                 }
             }
-            let inner = arc.lock().unwrap().clone();
+            let inner = arc.load();
             let current = match inner.view() {
                 ValueView::Hash(h) => h
                     .get(&key)
@@ -908,7 +908,7 @@ impl Interpreter {
             {
                 arr_result?;
             }
-            *arc.lock().unwrap() = updated;
+            arc.store(updated);
             self.stack
                 .push(if return_new { new_val } else { effective });
             return Ok(());

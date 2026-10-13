@@ -319,16 +319,16 @@ impl PartialEq for Value {
                 if crate::gc::Gc::ptr_eq(&a, &b) {
                     return true;
                 }
-                let a_val = a.lock().unwrap().clone();
-                let b_val = b.lock().unwrap().clone();
+                let a_val = a.load();
+                let b_val = b.load();
                 a_val == b_val
             }
             (ValueView::ContainerRef(a), _) => {
-                let a_val = a.lock().unwrap().clone();
+                let a_val = a.load();
                 &a_val == other
             }
             (_, ValueView::ContainerRef(a)) => {
-                let a_val = a.lock().unwrap().clone();
+                let a_val = a.load();
                 self == &a_val
             }
             _ => false,

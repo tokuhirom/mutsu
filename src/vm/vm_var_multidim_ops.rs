@@ -338,7 +338,7 @@ impl Interpreter {
         let is_slice = dims.iter().any(Self::dim_is_read_slice);
         if is_slice {
             let deref_target = match target.view() {
-                ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+                ValueView::ContainerRef(cell) => cell.load(),
                 ValueView::Scalar(inner) => inner.clone(),
                 _ => target.clone(),
             };
@@ -385,7 +385,7 @@ impl Interpreter {
             return None;
         }
         let mut cur = match target.view() {
-            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            ValueView::ContainerRef(cell) => cell.load(),
             ValueView::Scalar(inner) => inner.clone(),
             _ => target.clone(),
         };
@@ -601,7 +601,7 @@ impl Interpreter {
         // Read through a `ContainerRef` / `Scalar` wrapper while keeping the
         // shared `Arc`, so in-place promotions land in the real container.
         let mut cur = match target.view() {
-            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            ValueView::ContainerRef(cell) => cell.load(),
             ValueView::Scalar(inner) => inner.clone(),
             _ => target.clone(),
         };
@@ -672,7 +672,7 @@ impl Interpreter {
             }
             // Descend into the intermediate level (which already exists).
             cur = if let ValueView::ContainerRef(cell) = next.view() {
-                let inner = cell.lock().unwrap().clone();
+                let inner = cell.load();
                 match inner.view() {
                     ValueView::Array(..) | ValueView::Hash(..) => {}
                     _ => return Ok(None),
@@ -1357,7 +1357,7 @@ impl Interpreter {
             let mut contents = std::mem::replace(&mut *inner, Value::NIL);
             drop(inner);
             let r = f(self, &mut contents);
-            *cell.lock().unwrap() = contents;
+            cell.store(contents);
             return r;
         }
 

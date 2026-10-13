@@ -144,7 +144,7 @@ pub(crate) fn contains_cycle(value: &Value) -> bool {
             ValueView::Pair(_, val) => vec![val.clone()],
             ValueView::ValuePair(k, val) => vec![k.clone(), val.clone()],
             ValueView::Scalar(inner) => vec![inner.clone()],
-            ValueView::ContainerRef(cell) => vec![cell.lock().unwrap().clone()],
+            ValueView::ContainerRef(cell) => vec![cell.load()],
             // Only the rendered head of a list can loop back into the render.
             _ => match v.as_list_items() {
                 Some(items) => items.iter().take(GIST_ELEM_CAP).cloned().collect(),
@@ -424,7 +424,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
         // lock across the recursion would deadlock instead of reaching the cycle
         // detection above.
         ValueView::ContainerRef(cell) => {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             gist_value(&inner)
         }
         // An enum value gists as its KEY, even when the enum's base type makes

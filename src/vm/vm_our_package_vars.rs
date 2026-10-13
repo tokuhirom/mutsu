@@ -181,7 +181,7 @@ impl Interpreter {
     /// variable.
     pub(crate) fn our_package_scalar(&self, name: &str) -> Option<Value> {
         let (_, cell) = self.our_package_scalar_cell(name)?;
-        let val = cell.lock().unwrap().clone();
+        let val = cell.load();
         Some(val)
     }
 

@@ -717,6 +717,13 @@ impl Interpreter {
         if items.has_type_meta() || items.default.is_some() || items.has_native_backing() {
             return None;
         }
+        // Another thread's `push`/`shift` can be restructuring the node; read
+        // under its stripe (ADR-0068, #13016). One relaxed load until a second
+        // mutator thread exists.
+        let _structure = crate::value::container_lock::ContainerStructGuard::acquire_for(
+            None,
+            &self.stack[n - 2],
+        );
         let elem = items.get(i as usize)?;
         match elem.view() {
             // A deleted/never-assigned hole, a `:=`-bound element cell, and a
@@ -972,7 +979,7 @@ impl Interpreter {
             let mut probe = &target;
             let inner;
             if let ValueView::ContainerRef(cell) = probe.view() {
-                inner = cell.lock().unwrap().clone();
+                inner = cell.load();
                 probe = &inner;
             }
             matches!(probe.descalarize().view(), ValueView::Hash(arc) if arc.has_typed_keys())
@@ -1010,7 +1017,7 @@ impl Interpreter {
         // element (`$x<k>` where `$x<k>` resolves to a `ContainerRef`) sees the
         // shared, held container rather than the cell wrapper.
         if let ValueView::ContainerRef(cell) = target.view() {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             self.stack.push(inner);
             self.stack.push(index);
             return self.exec_index_op_with_positional(is_positional);

@@ -216,7 +216,7 @@ mod tests {
         // A top-level `our $x` holds its value in a container cell, so look
         // through it to reach the Sub itself.
         let eval_closure = match eval_closure.view() {
-            crate::value::ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            crate::value::ValueView::ContainerRef(cell) => cell.load(),
             _ => eval_closure,
         };
         let crate::value::ValueView::Sub(sub) = eval_closure.view() else {

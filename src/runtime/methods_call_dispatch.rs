@@ -2558,7 +2558,7 @@ impl Interpreter {
                     // recursing: `gist_item` holds this very lock across its own
                     // recursion, so a cell reached twice would deadlock.
                     ValueView::ContainerRef(cell) => {
-                        let inner = cell.lock().unwrap().clone();
+                        let inner = cell.load();
                         collection_contains_instance_seen(&inner, seen, depth + 1)
                     }
                     _ => false,
@@ -2611,7 +2611,7 @@ impl Interpreter {
                     // (`my @e; @e.push(@e)`), and holding the lock across the
                     // recursion deadlocks instead of recursing.
                     ValueView::ContainerRef(cell) => {
-                        let inner = cell.lock().unwrap().clone();
+                        let inner = cell.load();
                         gist_item(interp, &inner)
                     }
                     ValueView::Array(items, kind) => {

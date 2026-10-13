@@ -27,9 +27,10 @@ impl Interpreter {
             .gate_local_slot_value_at(code, slot, name)
             .or_else(|| self.env().get(name).cloned())?;
         match root.descalarize().view() {
-            ValueView::ContainerRef(cell) => {
-                ContainerStructGuard::acquire(crate::gc::Gc::as_ptr(&cell) as usize)
-            }
+            // Keyed on the cell AND the node it holds, as every writer through a
+            // cell is (ADR-0068 §17): a reader handed the array itself (an
+            // argument being bound) keys on the node alone (#13016).
+            ValueView::ContainerRef(cell) => ContainerStructGuard::acquire_for_celled(&cell),
             _ => ContainerStructGuard::acquire_for(None, &root),
         }
     }

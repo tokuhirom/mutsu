@@ -21,7 +21,7 @@ impl Interpreter {
             ))),
             ValueView::Scalar(inner) => self.normalize_delete_seq_index(inner),
             ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) => {
-                let inner = cell.lock().unwrap().clone();
+                let inner = cell.load();
                 self.normalize_delete_seq_index(&inner)
             }
             _ => Ok(None),
@@ -276,7 +276,7 @@ impl Interpreter {
         let unit_cell = self.unit_lexical_container_cell(&var_name);
         let saved_env_entry = unit_cell.as_ref().map(|cell| {
             let saved = self.env().get(&var_name).cloned();
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             self.env_mut().insert(var_name.clone(), inner);
             saved
         });
@@ -305,7 +305,7 @@ impl Interpreter {
             _ => None,
         };
         if let Some(ref cell) = bound_cell {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             self.env_mut().insert(var_name.clone(), inner);
         }
         // A for-bound scalar can retain both a shared cell and a Scalar
@@ -388,7 +388,7 @@ impl Interpreter {
         }
         if let Some(cell) = bound_cell {
             if let Some(mutated) = self.env().get(&var_name).cloned() {
-                *cell.lock().unwrap() = mutated;
+                cell.store(mutated);
             }
             let cell_val = Value::container_ref(cell);
             self.env_mut().insert(var_name.clone(), cell_val.clone());
@@ -412,7 +412,7 @@ impl Interpreter {
         }
         if let Some(cell) = unit_cell {
             if let Some(mutated) = self.env().get(&var_name).cloned() {
-                *cell.lock().unwrap() = mutated;
+                cell.store(mutated);
             }
             // `saved_env_entry` is `Some(_)` whenever `unit_cell` is (both
             // guarded by the same `if let Some(cell) = ...` above at seed

@@ -399,13 +399,13 @@ impl Interpreter {
     /// cannot tell a bound alias from a COW copy.
     fn write_back_hyper_target_var(&mut self, code: &CompiledCode, var: &str, new_val: Value) {
         if let Some(ValueView::ContainerRef(cell)) = self.env().get(var).map(Value::view) {
-            *cell.lock().unwrap() = new_val;
+            cell.store(new_val);
             return;
         }
         if let Some(slot) = self.find_local_slot(code, var)
             && let ValueView::ContainerRef(cell) = self.locals[slot].view()
         {
-            *cell.lock().unwrap() = new_val;
+            cell.store(new_val);
             return;
         }
         // ADR-0039 slice 2: otherwise write THROUGH the existing container
@@ -761,7 +761,7 @@ impl Interpreter {
                     "hypermethodcall",
                     "containerref-postfix",
                 );
-                let inner = cell.lock().unwrap().clone();
+                let inner = cell.load();
                 let new_val = if method == "postfix:<++>" {
                     self.increment_value_smart(&inner)?
                 } else {
@@ -782,7 +782,7 @@ impl Interpreter {
                 && let ValueView::ContainerRef(cell) = item.view()
             {
                 let cell = cell.clone();
-                *item = cell.lock().unwrap().clone();
+                *item = cell.load();
                 Some(cell)
             } else {
                 None

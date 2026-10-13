@@ -761,9 +761,9 @@ impl Interpreter {
                         _ => None,
                     };
                     if let Some(cell) = cell {
-                        let inner = cell.lock().unwrap().clone();
+                        let inner = cell.load();
                         let tagged = self.tag_container_metadata(inner, info);
-                        *cell.lock().unwrap() = tagged;
+                        cell.store(tagged);
                     } else if let Some(tagged) = self.env().get(&name_str).cloned()
                         && !tagged.is_container_ref()
                     {

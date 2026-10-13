@@ -969,7 +969,7 @@ impl Interpreter {
                 // aggregate (an element ADR-0040 itemized at the store) is a
                 // container of its own, so `.VAR` stays `Scalar` (#11111).
                 ValueView::ContainerRef(cell) => {
-                    let inner = cell.lock().unwrap().clone();
+                    let inner = cell.load();
                     !val.container_ref_is_itemized()
                         && match inner.view() {
                             ValueView::Array(_, k) => !k.is_itemized(),

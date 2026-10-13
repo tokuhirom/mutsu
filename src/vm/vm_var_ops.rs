@@ -97,7 +97,7 @@ impl Interpreter {
             .filter_map(|(key, value)| match value.view() {
                 // Decont a `:=`-bound shared cell: the resolved copy
                 // snapshots the current value (assignment semantics).
-                ValueView::ContainerRef(cell) => Some((key.clone(), cell.lock().unwrap().clone())),
+                ValueView::ContainerRef(cell) => Some((key.clone(), cell.load())),
                 _ => None,
             })
             .collect();

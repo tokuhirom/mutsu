@@ -48,9 +48,9 @@ impl Interpreter {
         // back INTO the cell, so every closure sharing it sees the write
         // (#9488).
         if let ValueView::ContainerRef(cell) = source_val.view() {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             if let Some(updated) = Self::quanthash_with_weight(&inner, key, elem, value)? {
-                *cell.lock().unwrap() = updated;
+                cell.store(updated);
             }
             return Ok(());
         }

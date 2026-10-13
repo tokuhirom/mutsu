@@ -179,6 +179,11 @@ impl Interpreter {
         } else {
             val
         };
+        // Rendering an Array/Hash walks it in several places (the stringifier
+        // probe, each element's `.Str`), some running user code, so once a
+        // second mutator thread exists it renders a snapshot taken under the
+        // stripe, as `.Str` does (ADR-0068 §16, #13016).
+        let val = crate::value::container_lock::shared_snapshot(&val).unwrap_or(val);
         // A user `^find_method` answers `.Stringy` (`find_method_intercept`).
         if let Some(r) = self.user_find_method_stringify(&val, "Stringy") {
             let caller_code = self.current_code;

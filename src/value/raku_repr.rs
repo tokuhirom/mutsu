@@ -459,7 +459,7 @@ pub(crate) fn raku_hash_value_repr(key: &str, value: &Value, repr: &str) -> Stri
 fn element_needs_trailing_comma(v: &Value) -> bool {
     match v.view() {
         ValueView::ContainerRef(cell) => {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             element_needs_trailing_comma(&inner)
         }
         ValueView::Scalar(inner) => element_needs_trailing_comma(inner),
@@ -552,7 +552,7 @@ pub(crate) fn itemize_scalar_repr(v: &Value, base: String) -> String {
     // aggregate it *holds* so it renders like a plain hash value — `{:a($[1, 2])}`,
     // not `{:a([1, 2])}` (Phase 5 leak hardening, `docs/element-element-bind-plan.md`).
     let effective = match v.view() {
-        ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+        ValueView::ContainerRef(cell) => cell.load(),
         _ => v.clone(),
     };
     match effective.view() {
@@ -642,7 +642,7 @@ fn raku_value_as_element(v: &Value) -> String {
         // `[${:p(1)}, {:q(2)}]` where raku renders `[{:p(1)}, {:q(2)}]`.
         // Pinned by `t/container-cell-raku-render.t`.
         ValueView::ContainerRef(cell) => {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             raku_value_as_element(&inner)
         }
         // An out-of-range `:=`-bound slice element is a deferred entry token.

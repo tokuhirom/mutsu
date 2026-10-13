@@ -41,7 +41,16 @@ impl ForItemIter<'_> {
                 let ValueView::Array(items, _) = array.view() else {
                     return None;
                 };
-                let item = items.get(*next)?.clone();
+                // A live source can be restructured by another thread between
+                // two steps (ADR-0068): read each item under the node's stripe,
+                // released before the body runs.
+                let item = {
+                    let _structure =
+                        crate::value::container_lock::ContainerStructGuard::acquire_for(
+                            None, array,
+                        );
+                    items.get(*next)?.clone()
+                };
                 if item.is_iteration_end() {
                     return None;
                 }

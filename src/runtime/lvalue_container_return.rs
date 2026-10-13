@@ -56,7 +56,7 @@ impl Interpreter {
                 // while `$attr = |$value` through its accessor stored an
                 // itemized Slip.
                 let value = Self::itemize_scalar_store_value(value);
-                *cell.lock().unwrap() = value.clone();
+                cell.store(value.clone());
                 Some(Ok(value))
             }
             ValueView::HashEntryRef { .. } => {

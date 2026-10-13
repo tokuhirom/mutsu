@@ -2793,7 +2793,7 @@ impl Env {
             if key == file_key() {
                 self.file_sym = file_sym_of(&value);
             }
-            *cell.lock().unwrap() = value;
+            cell.store(value);
             return;
         }
         self.insert_sym(key, value);

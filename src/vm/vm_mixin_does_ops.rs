@@ -472,9 +472,9 @@ impl Interpreter {
         // observes the mixin. The expression yields the container itself, so a
         // chained `.name` read/write keeps the container identity.
         if let ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) = left.view() {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             let result = self.vm_does_values(inner, right)?;
-            *cell.lock().unwrap() = result;
+            cell.store(result);
             self.stack.push(left);
             return Ok(());
         }

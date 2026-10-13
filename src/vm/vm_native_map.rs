@@ -140,7 +140,7 @@ impl Interpreter {
                     Ok(v) => v,
                     Err(e) => return Some(Err(e)),
                 };
-                source_after[i] = cell.lock().unwrap().clone();
+                source_after[i] = cell.load();
                 res.deref_container()
             } else {
                 // For a Pair element (arity == 1) the general call machinery

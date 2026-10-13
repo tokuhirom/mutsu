@@ -143,7 +143,7 @@ fn element_needs_method_dispatch_seen(
         return element_needs_method_dispatch_seen(inner, seen, depth + 1);
     }
     if let ValueView::ContainerRef(cell) = v.view() {
-        let inner = cell.lock().unwrap().clone();
+        let inner = cell.load();
         return element_needs_method_dispatch_seen(&inner, seen, depth + 1);
     }
     if let ValueView::ContainerView(_) = v.view() {

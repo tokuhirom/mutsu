@@ -146,7 +146,7 @@ pub(crate) fn regex_param_value_is_opaque(value: &Value) -> bool {
             regex_param_value_is_opaque(inner)
         }
         ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) => {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             regex_param_value_is_opaque(&inner)
         }
         ValueView::Capture { positional, named } => {

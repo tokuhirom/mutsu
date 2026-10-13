@@ -2536,7 +2536,7 @@ pub(crate) fn container_type_metadata_with(
         // its descriptor (`is Map`, element type, ...) is read through the
         // cell rather than lost behind it (#9488).
         ValueView::ContainerRef(cell) => {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             container_type_metadata_with(&inner, instance_meta)
         }
         _ => None,

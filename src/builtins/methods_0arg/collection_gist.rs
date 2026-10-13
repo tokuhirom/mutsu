@@ -173,7 +173,7 @@ fn gist_route(v: &Value) -> GistRoute {
                 // than recurse (which is exactly the shape this probe exists to
                 // divert).
                 ValueView::ContainerRef(cell) => {
-                    let inner = cell.lock().unwrap().clone();
+                    let inner = cell.load();
                     visit(&inner);
                 }
                 ValueView::Scalar(inner) => visit(inner),
@@ -204,7 +204,7 @@ fn gist_item(v: &Value) -> String {
         // (`my @e; @e.push(@e)`), and holding the lock across
         // the recursion deadlocks instead of recursing.
         ValueView::ContainerRef(cell) => {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             gist_item(&inner)
         }
         // `$(...)` itemized element: `.gist` drops the itemization

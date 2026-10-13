@@ -978,7 +978,7 @@ impl Value {
             ValueView::Hash(_) if self.hash_is_itemized() => self.with_hash_itemized(false),
             ValueView::Slip(_) if self.slip_is_itemized() => self.with_slip_itemized(false),
             ValueView::Scalar(inner) => (*inner).clone(),
-            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone().deitemize_element(),
+            ValueView::ContainerRef(cell) => cell.load().deitemize_element(),
             _ => self,
         }
     }
@@ -1128,7 +1128,7 @@ impl Value {
     /// owned variant of [`Value::descalarize`]. Single-level only (a nested
     /// `ContainerRef` is unwrapped one cell), and it does NOT force an inner
     /// `LazyThunk` nor strip an inner `Scalar` — matching the prior hand-rolled
-    /// `arc.lock().unwrap().clone()` reads it replaces. A chain of cells is
+    /// `arc.load()` reads it replaces. A chain of cells is
     /// collapsed to the value at its end, for the reason [`Value::with_deref`]
     /// gives.
     pub fn into_deref(self) -> Value {

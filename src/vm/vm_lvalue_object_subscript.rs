@@ -98,7 +98,7 @@ impl Interpreter {
     ) -> Option<Value> {
         match step.view() {
             ValueView::ContainerRef(cell) => {
-                let held = cell.lock().unwrap().clone();
+                let held = cell.load();
                 if let Some(container) = Self::held_container(&held) {
                     return Some(container);
                 }

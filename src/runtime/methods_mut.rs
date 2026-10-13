@@ -422,7 +422,7 @@ impl Interpreter {
             self.env.insert_sym(key, replacement.clone());
         }
         for cell in cells {
-            *cell.lock().unwrap() = replacement.clone();
+            cell.store(replacement.clone());
         }
     }
 
@@ -462,7 +462,7 @@ impl Interpreter {
             self.env.insert_sym(key, replacement.clone());
         }
         for cell in cells {
-            *cell.lock().unwrap() = replacement.clone();
+            cell.store(replacement.clone());
         }
     }
 

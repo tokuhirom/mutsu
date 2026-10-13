@@ -138,7 +138,7 @@ impl Interpreter {
         }
         match old.view() {
             ValueView::Scalar(inner) => inner.clone(),
-            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            ValueView::ContainerRef(cell) => cell.load(),
             _ => old.clone(),
         }
     }

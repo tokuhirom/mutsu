@@ -232,9 +232,21 @@ pub(crate) fn invoke_mut(
     // different nodes once `Gc::make_mut` copies an aliased one, so a
     // node-keyed lock here excluded nothing against `$c[$i] = v` (#13016).
     let _exclusion = if crate::value::container_lock::multi_mutator_threads_live() {
+        // The node is re-read under the stripes: another thread's row can
+        // re-seat the cell between the first read and the acquisition, and a
+        // stripe held for the old node excludes no reader of the new one.
         match place.binding_cell(interp) {
             Some((cell, held)) => {
-                crate::value::container_lock::ContainerStructGuard::acquire_for(Some(cell), &held)
+                let mut first = Some(held);
+                crate::value::container_lock::ContainerStructGuard::acquire_for_cell_holding(
+                    cell,
+                    || match first.take() {
+                        Some(held) => held,
+                        None => place
+                            .binding_cell(interp)
+                            .map_or(Value::NIL, |(_, held)| held),
+                    },
+                )
             }
             None => {
                 crate::value::container_lock::ContainerStructGuard::acquire_for(None, place.value())

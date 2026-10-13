@@ -194,7 +194,7 @@ impl Interpreter {
         };
         let cell = match existing_cell {
             Some(arc) => {
-                *arc.lock().unwrap() = val;
+                arc.store(val);
                 Value::container_ref(arc)
             }
             None => val.into_container_ref(),

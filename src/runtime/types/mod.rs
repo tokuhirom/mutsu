@@ -208,7 +208,7 @@ pub(crate) fn value_is_defined(value: &Value) -> bool {
                 // crash-safety backstop.
                 return true;
             }
-            let inner = arc.lock().unwrap().clone();
+            let inner = arc.load();
             let result = value_is_defined(&inner);
             IN_PROGRESS.with(|seen| {
                 seen.borrow_mut().pop();
@@ -746,7 +746,7 @@ impl Interpreter {
                             target_env.get(source_name).map(Value::view)
                             && !elem.is_container_ref()
                         {
-                            *arc.lock().unwrap() = elem.clone();
+                            arc.store(elem.clone());
                         } else {
                             target_env.insert(source_name.clone(), elem.clone());
                         }
@@ -797,12 +797,12 @@ impl Interpreter {
                         if crate::gc::Gc::ptr_eq(&arc, &incoming) {
                             continue;
                         }
-                        let inner = incoming.lock().unwrap().clone();
-                        *arc.lock().unwrap() = inner.clone();
+                        let inner = incoming.load();
+                        arc.store(inner.clone());
                         Self::mirror_twigil_alias_writeback(target_env, source_name, &inner);
                         continue;
                     }
-                    *arc.lock().unwrap() = updated.clone();
+                    arc.store(updated.clone());
                     Self::mirror_twigil_alias_writeback(target_env, source_name, &updated);
                     continue;
                 }
@@ -813,7 +813,7 @@ impl Interpreter {
                 if updated.container_ref_is_itemized()
                     && let ValueView::ContainerRef(incoming) = updated.view()
                 {
-                    let inner = incoming.lock().unwrap().clone();
+                    let inner = incoming.load();
                     target_env.insert(source_name.clone(), inner.clone());
                     Self::mirror_twigil_alias_writeback(target_env, source_name, &inner);
                     continue;
@@ -1507,7 +1507,7 @@ mod value_is_defined_tests {
             ValueView::ContainerRef(arc) => arc.clone(),
             _ => unreachable!("into_container_ref always returns a ContainerRef"),
         };
-        *arc.lock().unwrap() = cell_val.clone();
+        arc.store(cell_val.clone());
         assert!(value_is_defined(&cell_val));
     }
 }

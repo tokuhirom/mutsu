@@ -76,7 +76,7 @@ fn contains_dispatch_leaf_seen(
     match value.view() {
         ValueView::Scalar(inner) => contains_dispatch_leaf_seen(inner, seen, depth + 1),
         ValueView::ContainerRef(cell) => {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             contains_dispatch_leaf_seen(&inner, seen, depth + 1)
         }
         ValueView::Hash(map) => {
@@ -249,7 +249,7 @@ impl Interpreter {
                 Value::scalar(self.expand_raku_leaves(&inner, active, depth + 1))
             }
             ValueView::ContainerRef(cell) => {
-                let inner = cell.lock().unwrap().clone();
+                let inner = cell.load();
                 self.expand_raku_leaves(&inner, active, depth + 1)
             }
             ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) => {

@@ -276,6 +276,8 @@ impl Interpreter {
         items: &[Value],
     ) -> Option<Value> {
         let arr = self.resolve_for_source_array(code, source)?;
+        // A leaf read of the live node; see `for_element_alias`.
+        let structure = crate::value::container_lock::ContainerStructGuard::acquire_for(None, &arr);
         let (len, first) = match arr.view() {
             ValueView::Array(data, kind)
                 if !matches!(
@@ -289,6 +291,7 @@ impl Interpreter {
             }
             _ => return None,
         };
+        drop(structure);
         if items.len() != len || !Self::items_are_source_elements(items, first) {
             return None;
         }
@@ -414,6 +417,10 @@ impl Interpreter {
             ForElementAlias::None => None,
             ForElementAlias::ArrayIndex(source) => {
                 let arr = self.resolve_for_source_array(code, source)?;
+                // The aliasability probe and the slot promotion read and write
+                // the live node (ADR-0068, #13016); both are leaves.
+                let _structure =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for(None, &arr);
                 if !Self::array_is_aliasable(&arr, Some(idx)) {
                     return None;
                 }
@@ -423,6 +430,8 @@ impl Interpreter {
                 ))
             }
             ForElementAlias::ArrayValue(arr) => {
+                let _structure =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for(None, arr);
                 if !Self::array_is_aliasable(arr, Some(idx)) {
                     return None;
                 }

@@ -468,7 +468,7 @@ impl Interpreter {
             vec![Value::container_ref(cell.clone())],
             false,
         )?;
-        let new_val = cell.lock().unwrap().clone();
+        let new_val = cell.load();
         Ok((res.deref_container(), new_val))
     }
 

@@ -116,7 +116,7 @@ impl Interpreter {
                             vec![Value::container_ref(cell.clone())],
                             false,
                         )?;
-                        list_items[i] = cell.lock().unwrap().clone();
+                        list_items[i] = cell.load();
                         wrote_back.set(true);
                         res.deref_container()
                     } else {
@@ -304,7 +304,7 @@ impl Interpreter {
                         if let Some(cell) = &rw_cell {
                             // An explicit `is rw` param aliases the element
                             // regardless of where `$_` points.
-                            list_items[i] = cell.lock().unwrap().clone();
+                            list_items[i] = cell.load();
                             wrote_back.set(true);
                         } else if !keeps_outer_topic
                             && let Some(mutated) = vm.env().get_sym(topic_key).cloned()

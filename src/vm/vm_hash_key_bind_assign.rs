@@ -28,7 +28,7 @@ impl Interpreter {
         if crate::value::lookup_cell_constraint(&cell).is_none() && cell.default_value().is_none() {
             return Ok(());
         }
-        let current = cell.lock().unwrap().clone();
+        let current = cell.load();
         let is_aggregate = matches!(
             (current.deref_container().view(), positional),
             (ValueView::Array(..), true) | (ValueView::Hash(..), false)
@@ -41,7 +41,7 @@ impl Interpreter {
             })
             .itemize_for_element_store();
             let aggregate = self.element_store_through_cell(&cell, aggregate)?;
-            *cell.lock().unwrap() = aggregate;
+            cell.store(aggregate);
         }
         Ok(())
     }

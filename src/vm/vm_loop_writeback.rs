@@ -207,7 +207,7 @@ impl Interpreter {
         match v.view() {
             ValueView::Array(..) | ValueView::Hash(..) => true,
             ValueView::ContainerRef(cell) => {
-                let inner = cell.lock().unwrap().clone();
+                let inner = cell.load();
                 Self::is_writable_element_container(&inner)
             }
             _ => false,
@@ -299,7 +299,7 @@ impl Interpreter {
                 crate::gc::Gc::ptr_eq(&a, &b)
             }
             (_, ValueView::ContainerRef(cell)) => {
-                let inner = cell.lock().unwrap().clone();
+                let inner = cell.load();
                 Self::loop_var_unchanged(current, &inner)
             }
             _ => false,
@@ -455,6 +455,10 @@ impl Interpreter {
             } else {
                 idx
             };
+            // The probe and the copy read the live node; see the `@` path.
+            let structure = crate::value::container_lock::ContainerStructGuard::acquire(
+                crate::gc::Gc::as_ptr(&items) as usize,
+            );
             if actual_idx >= items.len()
                 || Self::loop_var_unchanged(&current_topic, &items[actual_idx])
                 // A Proxy element mediates its own STORE; replacing it with the
@@ -470,6 +474,7 @@ impl Interpreter {
             // `write_back_container_source` update env, the local slot, and a
             // `ContainerRef` cell uniformly.
             let mut new_data = (*items).clone();
+            drop(structure);
             new_data.live_mut()[actual_idx] = current_topic;
             let mut updated_value = Value::array_with_kind(crate::gc::Gc::new(new_data), kind);
             // Keep the scalar's itemization wrapper if it had one.
@@ -526,6 +531,12 @@ impl Interpreter {
         } else {
             idx
         };
+        // `items` is the source's live node, which another thread can be
+        // restructuring (ADR-0068, #13016): probe and copy it under its stripe.
+        // A leaf: nothing below runs user code until the store.
+        let structure = crate::value::container_lock::ContainerStructGuard::acquire(
+            crate::gc::Gc::as_ptr(&items) as usize,
+        );
         if actual_idx >= items.len() {
             return;
         }
@@ -545,6 +556,7 @@ impl Interpreter {
         // turning `array[int]` into a bare `Array` and breaking later `.WHAT`,
         // `.raku`, and shaped `:delete`-dies behaviour).
         let mut new_data = (*items).clone();
+        drop(structure);
         new_data.live_mut()[actual_idx] = current_topic;
         let updated_value = Value::array_with_kind(crate::gc::Gc::new(new_data), kind);
         self.write_back_container_source(code, source, source_slot, &raw_source, updated_value);

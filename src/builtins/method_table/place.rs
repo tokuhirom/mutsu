@@ -176,10 +176,21 @@ impl<'a> ReceiverPlace<'a> {
             return None;
         }
         let mut addr = None;
-        let held = interp
-            .env_root_descended_mut_tracked(name, &mut addr)
-            .map(|slot| slot.clone())?;
-        Some((addr?, held))
+        let slot = std::ptr::from_mut(interp.env_root_descended_mut_tracked(name, &mut addr)?);
+        let addr = addr?;
+        // The slot lives inside the cell and is written through this same kind
+        // of pointer by a thread holding the cell's stripe, so clone it under
+        // that stripe: unguarded, the clone can take a refcount on the node
+        // such a writer is dropping (#13016). Released before the caller takes
+        // the cell-and-node pair, so this thread waits on one stripe at a time.
+        let held = {
+            let _structure = crate::value::container_lock::ContainerStructGuard::acquire(addr);
+            // SAFETY: `slot` points into the cell's value, which the `Gc` the
+            // env entry holds keeps alive for this call; the stripe excludes
+            // every other thread's write through the cell (ADR-0068 §7.4).
+            unsafe { (*slot).clone() }
+        };
+        Some((addr, held))
     }
 
     /// Replace the value the receiver holds (a method that changes the value,
