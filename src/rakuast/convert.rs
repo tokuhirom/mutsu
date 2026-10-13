@@ -22,7 +22,7 @@ use super::{
 };
 use crate::ast::spelled::Spelling;
 use crate::ast::{
-    AssignOp, EnumVariantForm, Expr, ForMode, GivenWithKind, IMPLICIT_INVOCANT_TRAIT, ParamDef,
+    AssignOp, Expr, ForMode, GivenWithKind, IMPLICIT_INVOCANT_TRAIT, ParamDef,
     Stmt, WithBlockKind,
 };
 use crate::compiler::helpers_ops::token_kind_to_op_name;
@@ -1437,22 +1437,11 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             roles,
             ..
         } => {
-            if base_type.is_some()
-                || matches!(variant_form, EnumVariantForm::Computed)
-                || variants.is_empty()
-            {
-                return Err(unsupported(&format!(
-                    "enum with scope / traits / computed body (base {base_type:?}, roles {roles:?}, form {variant_form:?}, {} variants)",
-                    variants.len()
-                )));
+            if variants.is_empty() {
+                return Err(unsupported("enum without a body"));
             }
-            let term = match variant_form {
-                EnumVariantForm::Words => enum_quoted_string(variants, "words")?,
-                EnumVariantForm::QuoteWords => enum_quoted_string(variants, "quotewords")?,
-                EnumVariantForm::PairList => enum_pair_list(variants)?,
-                EnumVariantForm::Computed => unreachable!("checked above"),
-            };
-            // Field order matches raku: scope, name, traits, term.
+            let term = super::enum_term::enum_term_node(variants, *variant_form)?;
+            // Field order matches raku: scope, name, of, traits, term.
             let mut fields: Vec<RakuAstField> = super::package_header::my_scope_field(*is_my)
                 .into_iter()
                 .collect();
@@ -1460,6 +1449,9 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
                 Some("name"),
                 name_from_identifier(&name.resolve()),
             ));
+            if let Some(base) = base_type {
+                fields.push(node_field(Some("of"), build_type_node(base)?));
+            }
             let mut traits = Vec::new();
             for role in roles {
                 traits.push(Value::rakuast(Box::new(RakuAstNode {
@@ -6535,84 +6527,6 @@ pub(super) fn quoted_string(str_value: Value) -> RakuAstNode {
             value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(seg))]),
         }],
     }
-}
-
-/// The unevaluated word-list term of an enum declaration. `processors` is part
-/// of the RakuAST contract: omitting it would turn `Red Green` into one enum
-/// member named "Red Green" when the node is evaluated.
-fn enum_quoted_string(
-    variants: &[(String, Option<Expr>)],
-    processor: &'static str,
-) -> Result<RakuAstNode, RuntimeError> {
-    if variants.iter().any(|(_, value)| value.is_some()) {
-        return Err(unsupported("word-quoted enum with explicit values"));
-    }
-    let text = variants
-        .iter()
-        .map(|(name, _)| name.as_str())
-        .collect::<Vec<_>>()
-        .join(" ");
-    let segment = RakuAstNode {
-        class: RakuAstClass::StrLiteral,
-        fields: vec![leaf_field(None, Value::str(text))],
-    };
-    Ok(RakuAstNode {
-        class: RakuAstClass::QuotedString,
-        fields: vec![
-            RakuAstField {
-                name: Some("processors"),
-                value: RakuAstFieldValue::List(vec![
-                    Value::str(processor.to_string()),
-                    Value::str("val".to_string()),
-                ]),
-            },
-            RakuAstField {
-                name: Some("segments"),
-                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(segment))]),
-            },
-        ],
-    })
-}
-
-/// The parenthesized pair-list term of an enum declaration.
-fn enum_pair_list(variants: &[(String, Option<Expr>)]) -> Result<RakuAstNode, RuntimeError> {
-    let operands = variants
-        .iter()
-        .map(|(name, value)| {
-            let value = match value {
-                Some(value) => convert_expr(value)?,
-                None => RakuAstNode {
-                    class: RakuAstClass::TermEnum,
-                    fields: vec![leaf_field(None, Value::str("True".to_string()))],
-                },
-            };
-            Ok(Value::rakuast(Box::new(RakuAstNode {
-                class: RakuAstClass::FatArrow,
-                fields: vec![
-                    leaf_field(Some("key"), Value::str(name.clone())),
-                    node_field(Some("value"), value),
-                ],
-            })))
-        })
-        .collect::<Result<Vec<_>, RuntimeError>>()?;
-    let list = RakuAstNode {
-        class: RakuAstClass::ApplyListInfix,
-        fields: vec![
-            node_field(Some("infix"), plain_infix(",")),
-            RakuAstField {
-                name: Some("operands"),
-                value: RakuAstFieldValue::List(operands),
-            },
-        ],
-    };
-    let semilist = RakuAstNode {
-        class: RakuAstClass::SemiList,
-        fields: vec![node_field(None, statement_expression(list))],
-    };
-    Ok(RakuAstNode {
-        class: RakuAstClass::CircumfixParentheses,
-        fields: vec![node_field(None, semilist)],
-    })
 }
 
 /// A listop `say EXPR` — `Call::Name::WithoutParentheses`.

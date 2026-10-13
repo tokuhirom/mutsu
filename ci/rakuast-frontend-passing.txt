@@ -7,6 +7,7 @@ t/collections/array/array-agnostic.t
 t/collections/array/array-append-itemized-hash.t
 t/collections/array/array-append-range.t
 t/collections/array/array-assign-bound-iterable.t
+t/collections/array/array-based-enum-acts-as-its-base.t
 t/collections/array/array-bind-cell.t
 t/collections/array/array-bind-to-item-container.t
 t/collections/array/array-clone-decouples-element-cells.t
@@ -912,6 +913,7 @@ t/concurrency/concurrent-attr-hash-writes-do-not-corrupt.t
 t/concurrency/concurrent-attribute-element-store.t
 t/concurrency/concurrent-cell-writeback-coherence.t
 t/concurrency/concurrent-celled-container-store.t
+t/concurrency/concurrent-celled-push-is-not-lost.t
 t/concurrency/concurrent-compound-assign.t
 t/concurrency/concurrent-hash-assign.t
 t/concurrency/concurrent-lane-decline-routes.t
@@ -1302,6 +1304,7 @@ t/control/begin-lift-names-inner-type-with-body.t
 t/control/begin-nested-block.t
 t/control/begin-phaser-begintime.t
 t/control/begin-prologue-binding-declaration.t
+t/control/begin-prologue-eval-type.t
 t/control/begin-prologue-inner-calls.t
 t/control/begin-prologue-inner-decls.t
 t/control/begin-prologue-inner-pragmas.t
@@ -1866,6 +1869,7 @@ t/grammar/grammarhow-new-type-add-regex-method.t
 t/grammar/ipv6-mapped-dotted-decimal.t
 t/grammar/match-of-x-namespaced-grammar-is-not-an-exception.t
 t/grammar/multi-token-protoless-dispatch.t
+t/grammar/multi-token-start-rule-arity.t
 t/grammar/multiple-proto-regex.t
 t/grammar/my-token-scope-after-match.t
 t/grammar/my-token-visible-from-methods.t
@@ -2303,6 +2307,7 @@ t/lang/parsing/bareword-assign-expr.t
 t/lang/parsing/bareword-core-type-objects.t
 t/lang/parsing/bom-stripping.t
 t/lang/parsing/bracket-metaop-assign-indexed.t
+t/lang/parsing/bracketed-meta-op-code-ref.t
 t/lang/parsing/comma-list-precedence.t
 t/lang/parsing/paren-adjacent-colonpairs.t
 t/lang/parsing/paren-cross-arg-boundary.t
@@ -2312,6 +2317,7 @@ t/lang/parsing/paren-index-bind-positional.t
 t/lang/parsing/paren-list-assign-expr-position.t
 t/lang/parsing/paren-prefix-op-requires-declaration.t
 t/lang/parsing/paren-scalar-list-target.t
+t/lang/parsing/paren-semicolon-statement-list.t
 t/lang/parsing/paren-star-list-target.t
 t/lang/parsing/paren-trailing-comma.t
 t/lang/parsing/parser-anonymous-constant.t
@@ -2321,6 +2327,7 @@ t/lang/parsing/parser-batch4.t
 t/lang/parsing/parser-expression-gaps.t
 t/lang/parsing/parser-lowercase-type-smiley-union.t
 t/lang/parsing/parser-modifier-key-after-comma.t
+t/lang/parsing/parser-nesting-limit.t
 t/lang/parsing/parser-pipe-prefixed-declaration.t
 t/lang/parsing/semicolon-list-literal.t
 t/lang/parsing/slang-l10n-vocabulary.t
@@ -2533,6 +2540,7 @@ t/modules/dynamic-var-not-package-qualified.t
 t/modules/end-phaser-module-order.t
 t/modules/enum-attr-default-cross-module.t
 t/modules/enum-member-nested-module-load.t
+t/modules/enum-param-in-package.t
 t/modules/eval-context-package.t
 t/modules/eval-module-lexical-subs.t
 t/modules/eval-package-enum-result.t
@@ -2556,6 +2564,7 @@ t/modules/import-export/custom-export-sub-lexical-stash.t
 t/modules/import-export/custom-export-sub-wraps-same-name.t
 t/modules/import-export/custom-export-tagged-stash-pairs.t
 t/modules/import-export/custom-export-use-args-not-tags.t
+t/modules/import-export/enum-export-space-and-slip.t
 t/modules/import-export/eval-use-export-hook-term.t
 t/modules/import-export/export-alias-resolution-cache.t
 t/modules/import-export/export-bareword-tag-undeclared.t
@@ -2721,6 +2730,7 @@ t/modules/import-export/unit-class-also-is.t
 t/modules/import-export/unit-class-code-static-assignment.t
 t/modules/import-export/unit-class-constant-isolation.t
 t/modules/import-export/unit-class-is-export.t
+t/modules/import-export/unit-class-parent-use-import-scope.t
 t/modules/import-export/unit-class-role-and-composition.t
 t/modules/import-export/unit-class-use-before-decl-operator.t
 t/modules/import-export/unit-module-bare-is-trait.t
@@ -2999,6 +3009,7 @@ t/nativecall/io-handle-stdout-stderr-native.t
 t/nativecall/io-socket-async-native-descriptor.t
 t/nativecall/is-repr-angle-bracket-trait.t
 t/nativecall/issue-7754-native-integer-wrap.t
+t/nativecall/light-call-native-scalar-params.t
 t/nativecall/map-native-multiarity.t
 t/nativecall/map-native-pairs.t
 t/nativecall/map-native-rw-param.t
@@ -3178,6 +3189,7 @@ t/nativecall/nqp-nativecall-boxes-return-type.t
 t/nativecall/nqp-ordat-and-native-int-coerce.t
 t/nativecall/qualified-native-ancestor-method.t
 t/nativecall/quoted-dynamic-user-native-method.t
+t/nativecall/repr-pseudo-method-skips-fallback.t
 t/nativecall/repr-reports-declared-representation.t
 t/nativecall/repr-residues-2.t
 t/nativecall/repr-uninstantiable.t
@@ -3317,6 +3329,7 @@ t/oo/attribute/class-attributes-first-by-name.t
 t/oo/attribute/class-level-attribute-bind.t
 t/oo/attribute/class-level-attribute-list-initializer.t
 t/oo/attribute/class-level-attribute-of.t
+t/oo/attribute/class-scoped-accessor-shadows-builtin.t
 t/oo/attribute/classhow-can-attribute-accessor-rw.t
 t/oo/attribute/datetime-attributes-unmarshal.t
 t/oo/attribute/dollar-dot-underscore-accessor.t
@@ -3573,6 +3586,7 @@ t/oo/method/add-method-operator-with-user-multi.t
 t/oo/method/add-method-pointy-invocant.t
 t/oo/method/add-method-qualified-and-invocant.t
 t/oo/method/add-method-sub-can-signature.t
+t/oo/method/add-method-sub-keeps-outer-self.t
 t/oo/method/addmethod-multi-alias.t
 t/oo/method/aggregate-complex-version-method-rows.t
 t/oo/method/anon-method-sigilless-invocant.t
@@ -4150,6 +4164,7 @@ t/oo/role/role-body-bind-group.t
 t/oo/role/role-body-class-is-composing-class.t
 t/oo/role/role-body-composition-timing.t
 t/oo/role/role-body-constant-per-role.t
+t/oo/role/role-body-enclosing-enum-type.t
 t/oo/role/role-body-guard-parameterisation.t
 t/oo/role/role-body-lexicals-sub-parameterised.t
 t/oo/role/role-body-qualified-incdec-from-routine.t
@@ -4247,6 +4262,7 @@ t/oo/role/role-pun-bindings-do-not-shadow-composed-class.t
 t/oo/role/role-pun-build-tweak.t
 t/oo/role/role-pun-class-parent.t
 t/oo/role/role-pun-dispatches-on-type-object.t
+t/oo/role/role-pun-is-pun.t
 t/oo/role/role-pun-metamethod-identity.t
 t/oo/role/role-pun-method-call-runs-body-once.t
 t/oo/role/role-pun-private-attribute.t
@@ -4271,6 +4287,7 @@ t/oo/role/role-submethod-runtime-does-compiled.t
 t/oo/role/role-submethods-6e.t
 t/oo/role/role-type-arg-reparse-no-sink-warning.t
 t/oo/role/role-type-capture-smiley-transitive-load.t
+t/oo/role/role-type-object-multi-rank.t
 t/oo/role/role-type-object-repr.t
 t/oo/role/role-type-object-stringify-skips-pun.t
 t/oo/role/role-type-param-smiley.t
@@ -4472,6 +4489,7 @@ t/rakuast/rakuast-declared-sub-bareword.t
 t/rakuast/rakuast-desugar-boundary.t
 t/rakuast/rakuast-do-whenever.t
 t/rakuast/rakuast-elsif.t
+t/rakuast/rakuast-enum-term.t
 t/rakuast/rakuast-enum.t
 t/rakuast/rakuast-eval-andthen.t
 t/rakuast/rakuast-eval-anonsub.t
@@ -4925,6 +4943,7 @@ t/regex/regex-declarative-modifiers.t
 t/regex/regex-declarator-block-comment.t
 t/regex/regex-dq-atom-qq-interpolation.t
 t/regex/regex-dq-hex-escape.t
+t/regex/regex-dynamic-var-interpolation.t
 t/regex/regex-embedded-code-blocks.t
 t/regex/regex-embedded-code-fragments-repeated.t
 t/regex/regex-embedded-comment-brackets.t
@@ -4938,6 +4957,7 @@ t/regex/regex-group-escaped-bracket.t
 t/regex/regex-group-separator-strict.t
 t/regex/regex-horiz-space-and-spacing-mark.t
 t/regex/regex-ignorecase-named-builtin-no-fold.t
+t/regex/regex-ignoremark-backref.t
 t/regex/regex-ignoremark-callee-lazy.t
 t/regex/regex-ignoremark-group-compiled.t
 t/regex/regex-ignoremark-scaling.t
@@ -5439,6 +5459,7 @@ t/routines/dispatch/assoc-multidim-lvalue-edges.t
 t/routines/dispatch/begin-selective-import-proto-multi.t
 t/routines/dispatch/block-local-sub-dispatch.t
 t/routines/dispatch/block-multi-call-after-exit.t
+t/routines/dispatch/block-multi-where-runs-once.t
 t/routines/dispatch/block-scoped-use-main-not-dispatched.t
 t/routines/dispatch/block-tail-assign-and-main-dispatch.t
 t/routines/dispatch/buf-range-slice-and-multidim-list-assign.t
@@ -5484,6 +5505,7 @@ t/routines/dispatch/multi-candidate-ranking.t
 t/routines/dispatch/multi-candidate-search-packages.t
 t/routines/dispatch/multi-candidate-state-otf.t
 t/routines/dispatch/multi-candidate-term-value.t
+t/routines/dispatch/multi-candidate-where-binds-slash.t
 t/routines/dispatch/multi-candidates-declaration-order.t
 t/routines/dispatch/multi-chained-named-alias-dispatch.t
 t/routines/dispatch/multi-default-otf-dispatch.t
@@ -5912,6 +5934,7 @@ t/routines/signature/nested-sub-by-name-ignores-callers-readonly-param.t
 t/routines/signature/nonconst-param-default-full-arity-light.t
 t/routines/signature/not-parametric.t
 t/routines/signature/object-hash-param-binding.t
+t/routines/signature/omitted-named-unpack-param-inner-defaults.t
 t/routines/signature/optional-named-empty-list-comparison.t
 t/routines/signature/optional-param-seed.t
 t/routines/signature/optional-param-where-runs-when-omitted.t
@@ -6044,6 +6067,7 @@ t/routines/signature/smiley-params.t
 t/routines/signature/star-array-flattens-hash.t
 t/routines/signature/start-body-param-compiled.t
 t/routines/signature/sub-signature-array-param-iterable.t
+t/routines/signature/sub-signature-default-multi-dispatch.t
 t/routines/signature/sub-signature-where-clause.t
 t/routines/signature/subsig-destructure-through-itemization.t
 t/routines/signature/subsig-destructure-varref.t
@@ -6157,6 +6181,7 @@ t/tooling/testing-is-approx.t
 t/tooling/vendored-real-test-module.t
 t/types/angle-list-numeric-words.t
 t/types/any-are.t
+t/types/any-combinations-batch-rows.t
 t/types/any-first-min-max-rows.t
 t/types/any-head-tail-rows.t
 t/types/any-list-derived-methods-use-user-list.t
@@ -6210,9 +6235,11 @@ t/types/coercion/bool-but-bool-stringify.t
 t/types/coercion/buf-bare-coercion.t
 t/types/coercion/builtin-subclass-type-identity.t
 t/types/coercion/coerce-nonnumeric-str-failure.t
+t/types/coercion/coerce-rat-epsilon-rows.t
 t/types/coercion/coerce-real-numeric.t
 t/types/coercion/coercion-already-target-type.t
 t/types/coercion/coercion-fallback-new-context-type.t
+t/types/coercion/coercion-type-object-source-assign.t
 t/types/coercion/coercion-type-regressions.t
 t/types/coercion/coercion-type-str-numeric-failure.t
 t/types/coercion/coercion-typed-attr-ctor.t
@@ -6323,17 +6350,26 @@ t/types/enum-subset/definite-type-object.t
 t/types/enum-subset/enum-bare-key-sub-scope.t
 t/types/enum-subset/enum-coerce-from-str-value.t
 t/types/enum-subset/enum-decl-statement-value.t
+t/types/enum-subset/enum-declared-base-type.t
+t/types/enum-subset/enum-double-angle-colonpair.t
+t/types/enum-subset/enum-double-angle.t
 t/types/enum-subset/enum-expr-semicolon.t
+t/types/enum-subset/enum-in-class-body-scoped.t
 t/types/enum-subset/enum-int-overflow.t
+t/types/enum-subset/enum-key-class-body-scope.t
+t/types/enum-subset/enum-key-vs-same-named-scalar.t
+t/types/enum-subset/enum-member-shadows-math-constant.t
 t/types/enum-subset/enum-name-not-leaked-to-foreign-code.t
 t/types/enum-subset/enum-namespaced.t
 t/types/enum-subset/enum-paren-bareword-undeclared.t
 t/types/enum-subset/enum-rat-num-value-numeric-coercion.t
 t/types/enum-subset/enum-rational-value-lookup.t
+t/types/enum-subset/enum-same-short-name-distinct-types.t
 t/types/enum-subset/enum-string-value-coerce.t
 t/types/enum-subset/enum-type-object-coercion.t
 t/types/enum-subset/enum-uint-subset.t
 t/types/enum-subset/enum-value-as-positional-index.t
+t/types/enum-subset/enum-value-call-coercion.t
 t/types/enum-subset/enum-value-caret-name.t
 t/types/enum-subset/enum-value-class-redeclaration.t
 t/types/enum-subset/enum-value-how-metaclass.t
@@ -6542,6 +6578,7 @@ t/types/string/str-decode-utf16-strict.t
 t/types/string/str-encode-normalization-form.t
 t/types/string/str-encode-strict-adverb-false.t
 t/types/string/str-enum-numeric-comparison-failure.t
+t/types/string/str-enum-pair-raku.t
 t/types/string/str-indent-huge-count.t
 t/types/string/str-int-radix-coerce.t
 t/types/string/str-mutator-rows.t

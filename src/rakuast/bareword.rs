@@ -155,8 +155,8 @@ impl BlockScope {
             match stmt {
                 Stmt::EnumDecl { name, variants, .. } => {
                     own.insert(name.resolve(), DeclaredKind::Type);
-                    for (variant, _) in variants {
-                        own.insert(variant.clone(), DeclaredKind::Term);
+                    for variant in crate::parser::enum_value_names(variants) {
+                        own.insert(variant, DeclaredKind::Term);
                     }
                 }
                 Stmt::ClassDecl { name, .. }
@@ -293,13 +293,31 @@ fn collect_declared_names(stmts: &[Stmt], out: &mut HashMap<String, DeclaredKind
                     label: Some(name), ..
                 } => insert_term(self.0, name.clone()),
                 // An enum's values are terms of their own, bare and qualified
-                // by the enum's name (`Red`, `Color::Red`).
-                Stmt::EnumDecl { name, variants, .. } => {
+                // by the enum's name (`Red`, `Color::Red`). An `our` enum also
+                // installs them in the enclosing packages (`module M { enum E
+                // <a> }; M::a`).
+                Stmt::EnumDecl {
+                    name,
+                    variants,
+                    is_my,
+                    ..
+                } => {
+                    if !is_my {
+                        for variant in crate::parser::enum_value_names(variants) {
+                            for composed in
+                                self.compositions(Symbol::intern(&variant)).into_iter().skip(1)
+                            {
+                                self.0
+                                    .entry(composed.resolve())
+                                    .or_insert(DeclaredKind::Term);
+                            }
+                        }
+                    }
                     for composed in self.compositions(*name) {
                         insert_declared_type(composed, self.0);
-                        for (variant, _) in variants {
-                            self.0.entry(variant.clone()).or_insert(DeclaredKind::Term);
-                            let qualified = qualified(composed, Symbol::intern(variant));
+                        for variant in crate::parser::enum_value_names(variants) {
+                            let qualified = qualified(composed, Symbol::intern(&variant));
+                            self.0.entry(variant).or_insert(DeclaredKind::Term);
                             self.0
                                 .entry(qualified.resolve())
                                 .or_insert(DeclaredKind::Term);

@@ -29,7 +29,7 @@ fn register_enum_values(variants: &[(String, Option<Expr>)]) {
 /// parenthesized enum body. The runtime still evaluates the complete body, but
 /// the parser needs these names before the following statements are parsed so
 /// they are treated as complete enum-value terms.
-pub(in crate::parser::stmt) fn collect_dynamic_enum_value_names(
+fn collect_dynamic_enum_value_names(
     body: &Expr,
     out: &mut Vec<String>,
 ) {
@@ -46,6 +46,29 @@ pub(in crate::parser::stmt) fn collect_dynamic_enum_value_names(
         for arg in args {
             collect_literal_enum_value_names(arg, out);
         }
+    }
+}
+
+/// The value names an enum declaration's variants introduce. A computed
+/// (`__DYNAMIC__`) body yields what can be read without evaluating it: the
+/// names of its static `name => value` / `:name(value)` elements and the
+/// literal words of its top-level `slip` entries.
+// Cost: O(v), v = variants (elements of a computed body).
+pub(crate) fn enum_value_names(variants: &[(String, Option<Expr>)]) -> Vec<String> {
+    match variants {
+        [(name, Some(body))] if name == "__DYNAMIC__" => {
+            let mut names = Vec::new();
+            if let Expr::ArrayLiteral(items) = body.peel_parens() {
+                for item in items {
+                    if let Some((name, _)) = enum_variant_from_expr(item.clone()) {
+                        names.push(name);
+                    }
+                }
+            }
+            collect_dynamic_enum_value_names(body, &mut names);
+            names
+        }
+        _ => variants.iter().map(|(name, _)| name.clone()).collect(),
     }
 }
 
@@ -314,7 +337,7 @@ fn enum_variant_from_expr(expr: Expr) -> Option<(String, Option<Expr>)> {
 /// Decompose a parsed `(...)` enum body into static variants, or `None` when at
 /// least one element is not a static name/pair (the caller then keeps the body
 /// as a computed expression).
-fn enum_variants_from_body(body: &Expr) -> Option<Vec<(String, Option<Expr>)>> {
+pub(crate) fn enum_variants_from_body(body: &Expr) -> Option<Vec<(String, Option<Expr>)>> {
     // `enum (a => 5, b => 10)` arrives parenthesized, and the parser records
     // that; the variant list is what is inside.
     match body.peel_parens() {
