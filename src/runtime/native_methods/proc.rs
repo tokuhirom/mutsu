@@ -233,7 +233,11 @@ impl Interpreter {
                 } else {
                     None
                 };
-                let (exitcode, signal): (i64, i64) = match state.child.wait() {
+                let (exitcode, signal): (i64, i64) = match crate::runtime::builtins_system_proc_wait::wait_child(&mut state.child)
+                    // A pending worker `exit` (#13092): the interpreter is
+                    // halted and unwinds; the status read here is discarded.
+                    .unwrap_or_else(|_| Err(std::io::Error::other("exit pending")))
+                {
                     Ok(status) => super::super::builtins_system::exit_status_parts(&status),
                     Err(_) => (-1i64, 0i64),
                 };
