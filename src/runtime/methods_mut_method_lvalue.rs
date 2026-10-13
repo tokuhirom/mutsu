@@ -447,8 +447,9 @@ impl Interpreter {
             if let Some(cn) = class_name_for_lookup
                 && self.has_class_level_attr(&cn, method)
             {
-                self.set_class_level_attr(&cn, method, value.clone());
-                return Ok(value);
+                let stored = self.class_scoped_attr_store_value(&cn, method, value)?;
+                self.set_class_level_attr(&cn, method, stored.clone());
+                return Ok(stored);
             }
         }
         // Failure.handled = value: set the handled state via global registry

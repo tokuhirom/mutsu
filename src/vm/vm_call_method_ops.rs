@@ -1451,12 +1451,16 @@ impl Interpreter {
                     ValueView::Package(_) => {
                         self.grammar_has_user_method_memo(cn, method_sym)
                             || self.package_has_applicable_user_method(&target, method, &args)
+                            // A class-scoped `my @.list` accessor shadows the
+                            // `Any` method of that name.
+                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
                     }
                     // A quoted or run-time name reaches a generated accessor
                     // (`$obj."$n"()` with `$n = "hash"` and `has %.hash`).
                     _ => {
                         self.grammar_has_user_method_memo(cn, method_sym)
                             || (quoted && self.has_public_accessor(&cn.resolve(), method))
+                            || self.class_scoped_accessor_shadows(&cn.resolve(), method, &args)
                     }
                 }
             {
