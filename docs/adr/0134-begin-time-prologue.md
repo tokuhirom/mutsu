@@ -625,6 +625,28 @@ implemented** (`src/runtime/begin_prologue/nested/mentions.rs`,
   supplied as before: the compiled body is still reflective, so it gets the
   whole of its scopes.
 
+**Slice 2 follow-up — a literal computed name, a lexical method and a
+method-level proto outside a package, implemented**
+(`src/runtime/begin_prologue/nested/routine_copy.rs`,
+`t/control/begin-prologue-computed-sub-name.t`; #13096).
+
+- These declarations blocked their scope, so a BEGIN of it, and every later
+  nested BEGIN, kept its place. Each is now copied into the lifted block like a
+  `my sub`:
+  - a routine whose computed name is a string literal (`sub ::("h") { }`),
+    which the parser already takes as its name; any other computed name still
+    blocks (rakudo needs it at compile time, and a scan cannot know it);
+  - a lexical method outside a package (`my method m { }`, `my multi
+    method`), reached as `$x.&m`; a has-scoped `method` there belongs to no
+    package and still blocks;
+  - a method-level proto outside a package (`my proto method p(|) {*}`),
+    copied like a sub-level proto.
+- Compared against `raku`: `sub f { sub ::("helper") { 'h' }; BEGIN say
+  helper() }`, `sub f { my method mm() { }; BEGIN say "a" }` and `sub f { my
+  proto method pm(|) {*}; BEGIN say "a" }` followed by `sub g { BEGIN say "b"
+  }; say "m"` print the BEGINs' output before `m` on both now.
+- Left: a `supersede` routine (rakudo: `"supersede" not yet implemented`).
+
 **Slice 2 follow-up — a pseudo-package qualified call, implemented**
 (`src/runtime/begin_prologue/nested/routines.rs`,
 `t/control/begin-prologue-inner-calls.t`; #13096).
