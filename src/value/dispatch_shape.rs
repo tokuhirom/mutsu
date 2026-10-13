@@ -343,6 +343,13 @@ impl DispatchShape {
                     || const_str_eq(method, "end")
             }
             _ if const_str_eq(method, "sort") => false,
+            // A buffer is `Positional`: its own `AT-POS`/`EXISTS-POS` stay in
+            // the cascade until the `Blob`/`Buf` rows land.
+            DispatchShape::Blob | DispatchShape::Buf
+                if const_str_eq(method, "AT-POS") || const_str_eq(method, "EXISTS-POS") =>
+            {
+                false
+            }
             // `min`/`max` read a `Pair` as its one element; the other closed
             // shapes take the interpreter's extremum walk.
             _ if const_str_eq(method, "min") || const_str_eq(method, "max") => {
@@ -579,7 +586,7 @@ const COOL_COERCE_FOR_MATCH: [&str; 6] =
 /// through `value_to_list_for_receiver` (§9.100). `join` (`self.list.join`) reads a `Pair` as its
 /// `.Str`, a `Capture` as its positionals and a quant hash as its pairs
 /// (`method_table::collections::join`). `serial` is the receiver itself.
-pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 17] = [
+pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 21] = [
     "flat",
     "sort",
     "unique",
@@ -597,6 +604,12 @@ pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 17] = [
     "serial",
     "combinations",
     "batch",
+    // `Any`'s subscript protocol (§9.106): a value that is not `Positional`
+    // is the one-element list holding itself, and has no keys.
+    "AT-POS",
+    "EXISTS-POS",
+    "AT-KEY",
+    "EXISTS-KEY",
 ];
 
 /// The `Capture` rows a `Match` reaches ([`DispatchShape::reaches_audited`];
@@ -604,7 +617,7 @@ pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 17] = [
 /// them, and their handlers (`method_table::collections::capture`) read a
 /// `Match`'s captures as its parts, `list` as a live view of its positional
 /// captures and `Capture` as the `Match` itself (§9.96).
-pub(crate) const CAPTURE_FOR_MATCH: [&str; 9] = [
+pub(crate) const CAPTURE_FOR_MATCH: [&str; 11] = [
     "keys",
     "values",
     "kv",
@@ -614,6 +627,8 @@ pub(crate) const CAPTURE_FOR_MATCH: [&str; 9] = [
     "elems",
     "list",
     "Capture",
+    "AT-POS",
+    "EXISTS-POS",
 ];
 
 /// The `Mu` methods every closed shape reaches ([`DispatchShape::reaches_audited`])

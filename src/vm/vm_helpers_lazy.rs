@@ -209,7 +209,8 @@ impl Interpreter {
     /// Indexed-read special case (ADR-0034, `vm_var_index_ops.rs`): reify
     /// only enough of `body` to serve a subscript up to `needed` — a full
     /// [`Self::reify_seq_body`] for every source EXCEPT one that can be
-    /// pulled a prefix at a time: a not-yet-exhausted `IoLines` read, which
+    /// pulled a prefix at a time: a deferred `.map`/`.grep` (its callback runs
+    /// only up to the element read), a not-yet-exhausted `IoLines` read, which
     /// reads just the missing prefix so `:close`'s close-on-exhaust only
     /// fires when the read genuinely reaches EOF, or a `Str.comb` / `.lines`
     /// / `.words` cursor, which cuts just the missing prefix.
@@ -227,6 +228,17 @@ impl Interpreter {
         // bounded prefix here too.
         if body.is_gather_source() {
             return body.extend_gather_prefix(needed, |list, n| self.pull_gather_prefix(list, n));
+        }
+        // A deferred `.map`/`.grep` runs its callback over only as much of
+        // its source as the subscript reaches (`$s[5]` runs it six times).
+        if body.is_map_grep_source() {
+            let have = body.len();
+            if have < needed {
+                body.extend_map_grep_prefix(|source| {
+                    self.pull_map_grep_prefix(source, needed - have)
+                })?;
+            }
+            return Ok(());
         }
         let private_io = body
             .peek_io_lines_parts()

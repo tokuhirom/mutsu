@@ -694,6 +694,10 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // `any_second_batch_universal_rows_are_backed_by_the_cascade` in
     // `native_method_row.rs`.
     ("Any", "self", 1, 0),
+    ("Any", "AT-POS", 2, 16),
+    ("Any", "EXISTS-POS", 2, 16),
+    ("Any", "AT-KEY", 2, 16),
+    ("Any", "EXISTS-KEY", 2, 16),
     ("Any", "clone", 1, 0),
     ("Any", "WHICH", 1, 0),
     ("Any", "sink", 1, 0),

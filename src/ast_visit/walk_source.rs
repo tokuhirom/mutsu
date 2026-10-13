@@ -115,6 +115,7 @@ pub(crate) fn walk_source_form<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, form: &
                     RoutineTrait::Returns(name) | RoutineTrait::Of(name) => {
                         v.visit_name(name, NameKind::Type)
                     }
+                    RoutineTrait::Handles(term) => v.visit_expr(term),
                     RoutineTrait::Unsupported(source) => v.visit_name(source, NameKind::Source),
                 }
             }

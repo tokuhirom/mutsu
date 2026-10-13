@@ -82,6 +82,7 @@ pub(crate) use scalars::{
     real_misc, str, str_args, str_numeric, str_search, truth, uni, unicode,
 };
 
+pub(crate) use collections::any_subscript::at_pos as any_subscript_at_pos;
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
 pub(crate) use dispatch::{
     admits, answer, answer_as, answer_shapeless, invoke, invoke_base, invoke_in, invoke_mut,

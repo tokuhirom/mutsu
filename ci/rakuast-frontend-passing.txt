@@ -4406,6 +4406,7 @@ t/oo/trait/anon-param-trait.t
 t/oo/trait/anon-sub-custom-trait-arguments.t
 t/oo/trait/anon-sub-return-trait.t
 t/oo/trait/augment-method-custom-trait-typed-method-param.t
+t/oo/trait/augment-method-handles-forwarder.t
 t/oo/trait/cached-trait.t
 t/oo/trait/callable-trait-closure-capture.t
 t/oo/trait/class-body-trait-multi.t
@@ -4428,6 +4429,7 @@ t/oo/trait/handles-fat-arrow-rename.t
 t/oo/trait/handles-paren-strings.t
 t/oo/trait/handles-proto-dispatch-mut-invocant.t
 t/oo/trait/handles-quoted-fat-arrow-rename.t
+t/oo/trait/handles-wildcard-builtin-methods.t
 t/oo/trait/handles-wildcard-lvalue-assign.t
 t/oo/trait/inline-container-trait-expression.t
 t/oo/trait/is-implementation-detail-trait.t
@@ -4438,6 +4440,7 @@ t/oo/trait/list-trait-readonly.t
 t/oo/trait/list-trait-smiley.t
 t/oo/trait/map-variable-trait-keeps-list-values-bare.t
 t/oo/trait/method-custom-trait-typed-method-param.t
+t/oo/trait/method-handles-no-space.t
 t/oo/trait/named-sub-hoist-custom-param-trait.t
 t/oo/trait/namespaced-trait-import.t
 t/oo/trait/nested-class-custom-trait-compile-time.t
@@ -4648,6 +4651,7 @@ t/rakuast/rakuast-members-traits.t
 t/rakuast/rakuast-meta-assignment-forms.t
 t/rakuast/rakuast-method-call-assign.t
 t/rakuast/rakuast-method-flags.t
+t/rakuast/rakuast-method-handles.t
 t/rakuast/rakuast-method-literal.t
 t/rakuast/rakuast-method-lvalue-assign.t
 t/rakuast/rakuast-method-modifier.t

@@ -500,7 +500,44 @@ pub(crate) fn shapeless_row(
                     | "chop"
                     | "flat"
                     | "isa"
+                    | "AT-POS"
+                    | "EXISTS-POS"
+                    | "AT-KEY"
+                    | "EXISTS-KEY"
             ))
+    {
+        return None;
+    }
+    // `Any`'s subscript protocol answers a value that is not `Positional`; a
+    // list with no settled shape (lazy, shaped, a `Seq`, a `Slip`, a buffer)
+    // indexes its elements through the interpreter, though it has no keys
+    // either (§9.106).
+    let positional = matches!(method.as_str(), "AT-POS" | "EXISTS-POS");
+    if (positional || matches!(method.as_str(), "AT-KEY" | "EXISTS-KEY"))
+        && match target.descalarize().view() {
+            ValueView::Array(..)
+            | ValueView::BufStorage(..)
+            | ValueView::Seq(..)
+            | ValueView::HyperSeq(..)
+            | ValueView::RaceSeq(..)
+            | ValueView::Slip(..)
+            | ValueView::LazyList(..) => positional,
+            // A mixin delegates to the value it wraps (`%h but R`).
+            ValueView::Junction { .. }
+            | ValueView::Proxy { .. }
+            | ValueView::Nil
+            | ValueView::Mixin(..) => true,
+            // A package's stash is `Associative` (`CORE::<&say>`), and an
+            // instance's `{ }` subscript may be a user `postcircumfix:<{ }>`
+            // or a tied store, which the interpreter resolves first.
+            ValueView::Package(_) | ValueView::Instance { .. } => !positional,
+            // A hash with no settled shape (a `Map` subclass's raw storage)
+            // is `Associative`: the interpreter reads its keys.
+            ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                !positional
+            }
+            _ => false,
+        }
     {
         return None;
     }
@@ -575,9 +612,23 @@ pub(crate) fn shapeless_row(
         }
         ValueView::Instance { class_name, .. } if class_name != "Failure" => {
             let mut owner = None;
+            let subscript = matches!(
+                method.as_str(),
+                "AT-POS" | "EXISTS-POS" | "AT-KEY" | "EXISTS-KEY"
+            );
             for &class in interp?.class_mro(class_name.as_str()).iter() {
                 if (class == cool && text) || (class == any && list) {
                     owner = Some(class);
+                    break;
+                }
+                // A subclass of a built-in class (`is Map`, `is Array`) keeps
+                // its storage's subscript protocol, which the interpreter
+                // answers (§9.106).
+                if subscript
+                    && class != cool
+                    && crate::builtin_types::catalog::builtin_type_mro_strs(class.as_str())
+                        .is_some()
+                {
                     break;
                 }
                 if super::owner_row(class, method, arity).is_some() {
