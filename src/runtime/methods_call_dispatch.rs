@@ -182,6 +182,16 @@ impl Interpreter {
         if let Some(err) = super::any_cool_method_gate::cool_method_not_found(&target, method) {
             return Err(err);
         }
+        // A buffer is not a `Cool` either (#13313): the by-name text
+        // dispatchers would stringify it (`Buf.new(1).contains(1)`).
+        if let Some(type_name) =
+            super::any_cool_method_gate::buffer_refuses_cool_method(&target, method)
+            && !self.buffer_class_answers(&target, method)
+        {
+            return Err(super::methods_signature_errors::make_method_not_found_error(
+                method, &type_name, false,
+            ));
+        }
         // The `Cool`-subtype sibling: `Str.comb` / `Int.uc` refuse the
         // undefined invocant, `Str.uc` answers `""` with a warning (#9772).
         if let Some(result) = self.cool_type_object_string_method(&target, method) {

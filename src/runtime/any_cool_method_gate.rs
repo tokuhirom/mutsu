@@ -125,6 +125,30 @@ fn undefined_owner(target: &Value) -> Option<&'static str> {
     }
 }
 
+/// The `Cool` names Rakudo's `Blob` role declares for itself: `chars` and
+/// `codes` raise `X::Buf::AsStr` (verified against rakudo v2026.07: of the
+/// `Cool`-only names, a `Buf` or `Blob` `.can` these two alone, 2026-10-13).
+const BLOB_DECLARED_COOL_NAMES: &[&str] = &["chars", "codes"];
+
+/// The type name to report a `Cool`-only method under when `target` is a
+/// buffer (a `Blob`/`Buf` instance or type object, an alias such as `utf8`, a
+/// user class composing a buffer role), which is not `Cool` and so does not
+/// answer `contains`, `starts-with`, `substr`, ... (#13313). `None` for any
+/// other receiver or method. The caller still lets a method the receiver's
+/// own class declares (or its `FALLBACK`) answer first.
+// Cost: O(|method|) for the name lookups, O(1) for the shape probe.
+pub(crate) fn buffer_refuses_cool_method(target: &Value, method: &str) -> Option<String> {
+    if !is_cool_only_method(method) || BLOB_DECLARED_COOL_NAMES.contains(&method) {
+        return None;
+    }
+    let receiver = crate::builtins::method_table::Receiver::of_settled(target)?;
+    matches!(
+        receiver.shape,
+        crate::value::DispatchShape::Blob | crate::value::DispatchShape::Buf
+    )
+    .then(|| crate::value::types::what_type_name(target))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

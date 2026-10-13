@@ -344,6 +344,22 @@ impl Interpreter {
         has_wildcard || self.has_user_method(class_name, "FALLBACK")
     }
 
+    /// Whether the class of the buffer `target` (an instance or a type object)
+    /// answers `method` itself: a method it or a role it does declares (an
+    /// `augment` of `Buf` included), a `handles *` or a `FALLBACK`. Read by the
+    /// gate that refuses a `Cool`-only method on a buffer
+    /// (`any_cool_method_gate::buffer_refuses_cool_method`, #13313).
+    // Cost: O(m), m = classes in the receiver's MRO.
+    pub(crate) fn buffer_class_answers(&mut self, target: &Value, method: &str) -> bool {
+        let class_name = match target.view() {
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            ValueView::Package(name) => name.resolve(),
+            _ => return false,
+        };
+        self.has_user_method_including_role(&class_name, method)
+            || self.class_has_wildcard_handles_or_fallback(&class_name)
+    }
+
     /// Determine whether to bypass the native method fast path.
     pub(super) fn should_bypass_native_fastpath(
         &mut self,
