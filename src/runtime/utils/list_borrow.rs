@@ -20,9 +20,7 @@ use crate::value::{Value, ValueView};
 pub(crate) fn with_list_items<R>(val: &Value, f: impl FnOnce(&[Value]) -> R) -> R {
     match val.view() {
         ValueView::Array(items, kind) if !kind.is_itemized() => f(items.as_slice()),
-        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-            f(items.as_slice())
-        }
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => f(&items),
         _ => f(&value_to_list(val)),
     }
 }
@@ -38,9 +36,7 @@ pub(crate) fn with_receiver_items<R>(val: &Value, f: impl FnOnce(&[Value]) -> R)
     let bare = val.descalarize();
     match bare.view() {
         ValueView::Array(items, _) => f(items.as_slice()),
-        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-            f(items.as_slice())
-        }
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => f(&items),
         _ => f(&value_to_list_for_receiver(val)),
     }
 }

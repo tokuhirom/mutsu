@@ -251,7 +251,7 @@ impl Interpreter {
         &mut self,
         body: &Arc<SeqBody>,
     ) -> Result<Vec<Value>, RuntimeError> {
-        Ok(body.reify(|source| self.pull_seq_source(source))?.clone())
+        Ok(body.reify(|source| self.pull_seq_source(source))?.to_vec())
     }
 
     /// rakudo's `.iterator`/`.list`/...: produce the elements, consuming the

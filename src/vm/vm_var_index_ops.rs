@@ -1206,6 +1206,30 @@ impl Interpreter {
                 return Err(crate::value::seq_consumed_error());
             }
             items.mark_cache_requested();
+            // A single non-negative position reads its element in place:
+            // normalizing to a List below copies the whole Seq, which made
+            // `$seq[$_] for ^$n` quadratic (#13023). It answers what the
+            // List's `resolve_array_entry` would: a bound cell's value, and
+            // `Nil` past the end.
+            if is_positional
+                && !items.has_element_containers()
+                && let ValueView::Int(i) = index.view()
+                && i >= 0
+            {
+                let elems: &[Value] = if prefix_pulled {
+                    items.live_generation()
+                } else {
+                    &items
+                };
+                let elem = match elems.get(i as usize) {
+                    Some(v) if v.is_container_ref() => v.deref_container(),
+                    Some(v) if v.is_hash_entry_ref_value() => v.hash_entry_read(),
+                    Some(v) => v.clone(),
+                    None => Value::NIL,
+                };
+                self.stack.push(elem);
+                return Ok(());
+            }
             if !items.has_element_containers() {
                 // After a bounded prefix pull, read just the pulled prefix:
                 // going through `Deref` would cut the rest of a `Str` cursor
