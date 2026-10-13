@@ -6,7 +6,7 @@ use Test;
 # `exit`: it stops its mainline wherever it is (sleeping, awaiting, receiving,
 # looping), runs END, and exits with the worker's status.
 
-plan 26;
+plan 30;
 
 sub run-code(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -112,5 +112,21 @@ sub run-code(Str $code) {
         ~ 'start { sleep 0.1; $l.protect: { $go = True; $cv.signal } }; '
         ~ '$l.protect: { $cv.wait until $go }; say "signalled"');
     is $out, "signalled\n", 'a condition-variable wait still wakes on its signal';
+    is $code, 0, '... and the program runs on';
+}
+
+# ... and so does waiting for a child process: `run` without capture, and
+# `.exitcode` of a `:out` run once its output is read (#13092).
+{
+    my ($out, $, $code) = run-code(
+        'END { say "end ran" }; start { sleep 0.2; exit 3 }; run "sleep", "3"; say "alive"');
+    is $out, "end ran\n", 'a run waiting for its child is interrupted';
+    is $code, 3, '... with the worker\'s status';
+}
+
+{
+    my ($out, $, $code) = run-code(
+        'my $p = run "sh", "-c", "sleep 0.1; exit 7"; say $p.exitcode');
+    is $out, "7\n", 'a run still reports its child\'s status';
     is $code, 0, '... and the program runs on';
 }

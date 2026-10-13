@@ -323,7 +323,7 @@ impl Interpreter {
                     } else {
                         (captured_err, captured_out)
                     };
-                match child.wait() {
+                match super::builtins_system_proc_wait::wait_child(&mut child)? {
                     Ok(status) => {
                         let (exitcode, signal) = super::builtins_system::exit_status_parts(&status);
                         Ok(Self::make_proc_instance_bin(
@@ -403,7 +403,7 @@ impl Interpreter {
                             } else {
                                 None
                             };
-                            return match child.wait() {
+                            return match super::builtins_system_proc_wait::wait_child(&mut child)? {
                                 Ok(status) => {
                                     let (exitcode, signal) =
                                         super::builtins_system::exit_status_parts(&status);
@@ -543,7 +543,7 @@ impl Interpreter {
                 } else {
                     None
                 };
-                match child.wait() {
+                match super::builtins_system_proc_wait::wait_child(&mut child)? {
                     Ok(status) => {
                         let (exitcode, signal) = super::builtins_system::exit_status_parts(&status);
                         Ok(Self::make_proc_instance(

@@ -146,5 +146,15 @@ request in:
 - With the GC off, `stw_aware_wait` on the adopter thread waits in `POLL` steps rather than
   untimed, so `await`, `receive` and the waits above see the request without another wake-up.
 
-Still in the gap (#13092): a long native computation that never polls, a native read, an `act_loop`
-completion wait and a `Proc` wait.
+Still in the gap: a long native computation that never polls, a native read (#13100), and a
+`Proc` wait (#13092, below).
+
+## Amendment (2026-10-13, #13092): child-process waits give up
+
+`run`/`shell` (when the output is not captured), `Proc.exitcode` and a piped handle's close wait
+for the child through `builtins_system_proc_wait::wait_child`. On the adopter thread it polls
+`try_wait` with the same 50 µs-to-`POLL` backoff as the `Thread.finish` join, and gives up on a
+pending request. The child keeps running, as it would after a Raku `exit`. An `act_loop`
+completion is waited for on the `Proc::Async` waiter thread, not on the adopter, so it was never
+part of this gap. The remaining gap is blocking reads: stdin, and the pipe a `run :out` reads
+(#13100).
