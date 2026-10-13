@@ -2841,6 +2841,7 @@ pub(crate) mod attribute_modifier;
 pub(crate) mod bind_decl;
 mod body_local_names;
 mod chains;
+pub(crate) mod decl_compound_assign;
 pub(crate) mod decl_modifier;
 pub(crate) mod decl_tail;
 pub(crate) mod dotty_assign;

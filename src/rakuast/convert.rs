@@ -380,6 +380,10 @@ pub(super) fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeEr
             Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => Ok(Some(statement_expression(
                 super::method_assign_decl::convert(decl)?,
             ))),
+            // `my $x OP= EXPR`: the declaration as the left operand.
+            Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
+                declaration_compound_assign_statement(stmt).map(Some)
+            }
             // `sub f { … }(ARGS)`: the routine as the operand of its call.
             Some(crate::ast::SourceForm::ImmediateCall) => super::immediate_call::convert(stmt)
                 .ok_or_else(|| unsupported("source form"))?
@@ -2048,6 +2052,59 @@ fn compound_assignment_infix(
     compound_assignment_with_left(convert_expr(target)?, op, rhs)
 }
 
+/// `my $x OP= EXPR` (`ast::decl_compound_assign`) -> `ApplyInfix(left =>
+/// VarDeclaration, infix => MetaInfix::Assign(OP), right => EXPR)`, as
+/// measured on rakudo 2026.09.
+// Cost: O(n), n = size of the declaration and the right-hand side.
+fn declaration_compound_assign(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    let (decl, op, rhs) =
+        crate::ast::decl_compound_assign::parts(stmt).ok_or_else(|| unsupported("source form"))?;
+    let statement = convert_stmt(decl)?.ok_or_else(|| unsupported("source form"))?;
+    let decl = expression_of(&statement).ok_or_else(|| unsupported("source form"))?;
+    compound_assignment_with_left(decl, op, rhs)
+}
+
+/// [`declaration_compound_assign`] as a statement, including the postfix `for`
+/// the parser hoisted the declaration out of: the loop renders as the
+/// assignment's statement with its `loop-modifier`, whose assignment then
+/// takes the declaration as its left operand.
+// Cost: O(n), n = size of the declaration, the loop and the right-hand side.
+fn declaration_compound_assign_statement(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
+    let Some((decl, loop_stmt)) = crate::ast::decl_compound_assign::for_modifier_parts(stmt) else {
+        return Ok(statement_expression(declaration_compound_assign(stmt)?));
+    };
+    let mut statement = convert_stmt(loop_stmt)?.ok_or_else(|| unsupported("source form"))?;
+    let decl_statement = convert_stmt(decl)?.ok_or_else(|| unsupported("source form"))?;
+    let decl = expression_of(&decl_statement).ok_or_else(|| unsupported("source form"))?;
+    let field = statement
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("expression"))
+        .ok_or_else(|| unsupported("source form"))?;
+    let RakuAstFieldValue::Node(value) = &field.value else {
+        return Err(unsupported("source form"));
+    };
+    let ValueView::RakuAst(assignment) = value.view() else {
+        return Err(unsupported("source form"));
+    };
+    let mut assignment = (*assignment).clone();
+    if assignment.class != RakuAstClass::ApplyInfix {
+        return Err(unsupported("source form"));
+    }
+    // The statement-assignment mark names the variable the loop body
+    // assigns; the declaration statement it now sits in is not one.
+    assignment
+        .fields
+        .retain(|f| !super::compound_stmt::is_source_field(f));
+    for f in assignment.fields.iter_mut() {
+        if f.name == Some("left") {
+            *f = node_field(Some("left"), decl.clone());
+        }
+    }
+    *field = node_field(Some("expression"), assignment);
+    Ok(statement)
+}
+
 /// [`compound_assignment_infix`] over an already converted left side.
 pub(super) fn compound_assignment_with_left(
     left: RakuAstNode,
@@ -3387,6 +3444,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             }
             Some(crate::ast::SourceForm::MethodAssignDecl(decl)) => {
                 super::method_assign_decl::convert(decl)
+            }
+            Some(crate::ast::SourceForm::DeclarationCompoundAssign) => {
+                declaration_compound_assign(stmt)
             }
             // `do sub f { … }(ARGS)`: the call statement under the prefix.
             Some(crate::ast::SourceForm::ImmediateCall) => {
