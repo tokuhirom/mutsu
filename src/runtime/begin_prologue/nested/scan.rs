@@ -115,7 +115,7 @@ pub(super) fn is_core_routine(name: crate::symbol::Symbol) -> bool {
 /// Whether a called name is qualified by a pseudo-package (`MY::helper`,
 /// `OUTER::helper`), which names a routine in a scope the bare-name scan does
 /// not look at.
-fn is_pseudo_qualified(name: crate::symbol::Symbol) -> bool {
+pub(super) fn is_pseudo_qualified(name: crate::symbol::Symbol) -> bool {
     crate::qualified::package_parent(name)
         .and_then(|pkg| crate::qualified::package_ancestors(pkg).last())
         .is_some_and(|head| crate::runtime::Interpreter::is_pseudo_package_name(head.as_str()))
