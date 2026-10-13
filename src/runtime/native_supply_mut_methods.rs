@@ -1044,8 +1044,12 @@ impl Interpreter {
                                 // call, matching the old cost.
                                 let (values, initial_quit) = match inner_supply.view() {
                                     ValueView::Instance { attributes, .. } => {
-                                        match self.supply_get_values(&attributes.as_map()) {
-                                            Ok(items) => (items, None),
+                                        let inner_map = attributes.as_map();
+                                        match self.supply_get_values(&inner_map) {
+                                            // A materialized supply that ends in a
+                                            // quit replays its values, then quits
+                                            // (the QUIT phaser sees the reason).
+                                            Ok(items) => (items, inner_map.get("quit_reason").cloned()),
                                             Err(err) => (
                                                 Vec::new(),
                                                 Some(
