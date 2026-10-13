@@ -44,6 +44,10 @@
 //! process-global counter, so a tag names one map state for the life of the
 //! process; an entry is returned only when its tag equals the generation the
 //! caller asks with.
+//!
+//! The multi family memos use [`super::family_gen_cache::FamilyGenCache`]
+//! instead, which also keeps an entry across a map change that did not touch
+//! its own family (ADR-12529 §2.4).
 
 use rustc_hash::FxHashMap;
 use std::hash::Hash;
