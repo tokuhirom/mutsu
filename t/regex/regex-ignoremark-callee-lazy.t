@@ -1,6 +1,6 @@
 use Test;
 
-plan 35;
+plan 41;
 
 # A `:m` (ignoremark) rule called as `<r>` runs as a frame, entering its ends
 # one at a time: a code block in the callee runs once per end entered, not once
@@ -103,3 +103,19 @@ my $p2 = P2.parse("a\x[301]bb\x[300]x");
 is ~$p2<r>, "bb\x[300]", 'capture markers over marked graphemes';
 is $p2<r>.from, 1, '... from the grapheme after the marked one';
 is @log.join(','), '3', '... entering one end';
+
+# `<.ws>` in a markless callee (here from `:s`) is a call, which does not
+# inherit `:m`: it decides over the subject's own text (#13176).
+grammar S1 { regex TOP { <r> 'x' }; regex r { :m :s [a ]+ { @log.push: $/.to } } }
+@log = ();
+is ~S1.parse("a\x[301] a\x[300] x")<r>, "a\x[301] a\x[300] ", ':s whitespace between marked graphemes';
+is @log.join(','), '4', '... entering one end';
+grammar S2 { regex TOP { <r> 'a' }; regex r { :m :s [a ]+ { @log.push: $/.to } } }
+@log = ();
+is ~S2.parse("a\x[301] a\x[300] a")<r>, "a\x[301] a\x[300] ", '... backtracking one iteration';
+is @log.join(','), '5,4', '... entering the ends it backtracks through, as rakudo does';
+grammar S3 { regex TOP { <r> .* }; regex r { :m a <.ws> { @log.push: $/.to } } }
+@log = ();
+nok S3.parse("a\x[301]e\x[301]"), '<.ws> fails between two marked word graphemes';
+@log = ();
+is ~S3.parse("a\x[301]-")<r>, "a\x[301]", '... and matches before a non-word grapheme';
