@@ -114,7 +114,6 @@ impl Interpreter {
                 let template = args.first().map(Value::to_string_value).unwrap_or_default();
                 Some(crate::builtins::pack::unpack(&bytes, &template))
             }
-            "subbuf" => self.dispatch_subbuf(&target, &args),
             // ADR-0051 §3 (#9948): this interceptor is receiver-blind (it
             // reads any value as a number), so a receiver whose ancestry
             // declares no `polymod` (`Str`, `Complex`, ...) falls through to
