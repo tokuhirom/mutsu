@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use crate::value::value_buf::{
-    buf_bytes_or_empty, buf_elems_or_empty, make_buf, set_buf_bytes, set_buf_elems, with_buf_elems,
+    buf_bytes_or_empty, set_buf_bytes, set_buf_elems, with_buf_elems,
 };
 
 impl Interpreter {
@@ -341,51 +341,6 @@ impl Interpreter {
             };
             let normalized = self.translate_newlines_for_decode(&decoded);
             return Some(Ok(Value::str(normalized)));
-        }
-        None
-    }
-
-    pub(super) fn dispatch_subbuf(
-        &self,
-        target: &Value,
-        args: &[Value],
-    ) -> Option<Result<Value, RuntimeError>> {
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = target.view()
-            && (class_name == "Buf" || class_name == "Blob")
-        {
-            let bytes = buf_elems_or_empty(&attributes);
-            let len = bytes.len();
-            let start_raw = args
-                .first()
-                .map(|v| match v.view() {
-                    ValueView::Int(i) => i,
-                    ValueView::Num(n) => n as i64,
-                    _ => v.to_f64() as i64,
-                })
-                .unwrap_or(0);
-            let start = if start_raw < 0 {
-                len.saturating_sub(start_raw.unsigned_abs() as usize)
-            } else {
-                (start_raw as usize).min(len)
-            };
-            let end = if let Some(length_raw) = args.get(1).map(|v| match v.view() {
-                ValueView::Int(i) => i,
-                ValueView::Num(n) => n as i64,
-                _ => v.to_f64() as i64,
-            }) {
-                if length_raw <= 0 {
-                    start
-                } else {
-                    start.saturating_add(length_raw as usize).min(len)
-                }
-            } else {
-                len
-            };
-            return Some(Ok(make_buf(class_name, bytes[start..end].to_vec())));
         }
         None
     }

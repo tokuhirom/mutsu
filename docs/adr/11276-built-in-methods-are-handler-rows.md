@@ -2534,6 +2534,51 @@ missing (#13294, with the `Nil` answers); `C.AT-KEY("x")`, `C.new.AT-KEY("x")` a
 counted by `method-rows-report.py`: what is left of them is the list, buffer-instance, `IO::Path::Parts` and `Nil` branches. Pinned in
 `t/collections/subscript/any-subscript-rows.t`.
 
+### 9.107 Slice 5: a user class over a buffer reaches the `Blob`/`Buf` rows; the buffer arms are gone (2026-10-13)
+
+`refactor/11276-buffer-instance-rows`. `subbuf`, the `read-*` arms (1- and 2-arg), `read-ubits`/`read-bits`, `subbuf-rw`, the
+buffer branch of the `AT-POS` arm and `methods_narg/buf.rs`'s name table (`read_int_method_info`, ten quoted names) served a
+receiver no row took: a user class composing a buffer role over a `VMArray` body (`class B does Blob[uint8] is repr('VMArray')`,
+#9438), which has no shape. Probed: six receivers (two user classes, `Buf`, `buf8`, `blob8`, `utf8`) × thirty-eight calls, then
+each method's argument edge cases, on `raku`, the binary before the slice and the new one. Decisions:
+
+1. **`Receiver::of_settled` answers such an instance with the shape of the buffer type it composes**
+   (`blob::user_buffer_receiver`: the buffer-class registry names `Blob[..]` or `Buf[..]`). The instance stays the invocant;
+   every handler keeps its class (`B.new(1, 2).subbuf(1)` is a `B`). The entries that read `of_settled` run after the user's own
+   methods were looked up, so a method the class declares still answers first; the call-site lane reads `Receiver::of` and does
+   not see it. Every `Blob`/`Buf` row now answers it: `Str` raises `X::Buf::AsStr` (it rendered the gist), `of`, `Blob`/`Buf`
+   and `join` answer (all were `X::Method::NotFound` or the gist).
+2. **`read-ubits`/`read-bits` are rows** on the `buf_bits::read_bits` implementation (the cascade's second copy is deleted, and
+   so is the runtime's by-name arm in `methods_mut_dispatch.rs`); they bind `int $pos, uint $bits` and raise Rakudo's messages
+   (`Can only read 1..N bits from position P in buffer, you tried: B`, without the receiver's variable name, which a method does
+   not know). The `read-*` rows take the width and signedness from their table (`Reads`), bind `int $offset` (a `Str`, `Num` or
+   `Rat` offset, a type object and a big integer raise Rakudo's unboxing errors; all were read through `.Int` or declined) and
+   `Endian $endian` (an `Int` is `X::TypeCheck::Binding::Parameter`; it was read as the enum's value), and report a negative
+   offset as given (`offset -1`; the message read `offset 0`).
+3. **`subbuf` binds Rakudo's candidates**: `Range:D` (integer bounds, else `Must specify a Range with integer bounds to subbuf`;
+   `1^..^4` excludes both ends, it answered the whole buffer, and `1..*` panicked), `Int:D`, `(Int:D, Int:D)`, `(\from,
+   Whatever)`, `(\from, Numeric)` (truncated), `&From`/`&End`, and `X::Multi::NoMatch` for anything else (a `Str` or `Rat`
+   start was read as a number); the out-of-range messages are Rakudo's (`"From argument to subbuf ...`, `Len element to subbuf
+   ...`). The rows are `Handler::Interp`: a `Callable` bound is called with the length by the handler
+   (`resolve_subbuf_callable_args`, no longer called by the two native entries before the cascade). The runtime's
+   `dispatch_subbuf` (a third copy, which clamped a negative start) is deleted.
+4. **`subbuf-rw` is `Buf`'s** (rows at arities 0-2 for its rvalue; the lvalue proxy is unchanged and now resolves a `Callable`
+   end as `subbuf`'s end index, not `substr`'s length): `Blob.new.subbuf-rw(...)` and `utf8`'s are `X::Method::NotFound` as in
+   Rakudo (the cascade arm answered them), `Buf.subbuf-rw(1)` and `subbuf-rw()` answer (they were `X::Method::NotFound`).
+5. **`AT-POS`/`EXISTS-POS` rows on `Blob` and `Buf`** (`blob_pos.rs`, `INDEX_ARG`), and `reaches_audited_any_method` no longer
+   withholds `Any`'s subscript rows from the two shapes, so a buffer type object answers `Any`'s (`Buf.AT-POS(0)` is `Buf`). A
+   `Buf` reads `0` past its end, a `Blob` (and `utf8`, `blob16`) raises `X::OutOfRange` (it read `0`), a negative position is
+   out of range `0..elems-1` (it named `0..^Inf`), a big integer raises the unboxing error, and `EXISTS-POS` answers (it was
+   missing, #13294's `Buf` half). The cascade's `AT-POS` branch keeps the native-backed `CArray` only.
+6. **`.Blob`/`.Buf` keep the element type** (`buf16.new(1).Blob` is a `Blob[uint16]`; it was a `Blob`).
+7. The 0-arg cascade's buffer branches for `gist`/`raku`, `bytes` and `list` are deleted (the rows answer every buffer now);
+   `perl` (Mu's, which Rakudo's `Blob` does not declare) and `values` (`Any`'s `self.list`) keep a one-line branch each.
+
+Not changed: `Blob.new(1, 2)[5]` (the subscript opcode's own read) answers `0` where Rakudo raises `X::OutOfRange`; a buffer
+answers `contains`/`starts-with` and the method form of `unpack` where Rakudo has none (see the PR's findings).
+`method-rows-report.py --arms`: pure cascades 116 -> 102 arms (`buf.rs` 10 -> 0, `dispatch_1arg.rs` 8 -> 7, `dispatch_2arg.rs`
+7 -> 4), runtime slow path 542 -> 541. Pinned in `t/oo/method/buffer-instance-method-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

@@ -84,6 +84,29 @@ pub(super) static COERCE_ROWS: &[MethodRow] = &[
     },
 ];
 
+/// What an instance of a user class composing a buffer role over a `VMArray`
+/// body (`class B does Blob[uint8] is repr('VMArray')`, #9438) is to the
+/// table: the shape of the buffer type it composes. Its value is an ordinary
+/// storage-backed buffer carrying the user's class name, which every handler
+/// here keeps (`B.new(1, 2).subbuf(1)` is a `B`), so the instance itself is
+/// the invocant. The user's own methods never get here: the native entry is
+/// bypassed when the class declares the method. `None` for every other
+/// receiver. [`super::super::Receiver::of_settled`] asks it.
+// Cost: O(1) (one relaxed load; a hash lookup once any buffer class exists).
+pub(crate) fn user_buffer_receiver(target: &Value) -> Option<super::super::Receiver> {
+    let ValueView::Instance { class_name, .. } = target.view() else {
+        return None;
+    };
+    let buffer_type = crate::value::value_buf::buffer_class_type(class_name.as_str())?;
+    Some(super::super::Receiver::instance(
+        if buffer_type.starts_with("Buf") {
+            crate::value::DispatchShape::Buf
+        } else {
+            crate::value::DispatchShape::Blob
+        },
+    ))
+}
+
 /// The class name of a buffer receiver, when it is a plain buffer instance.
 // Cost: O(1).
 fn class_of(target: &Value) -> Option<Symbol> {
@@ -301,13 +324,25 @@ pub(crate) fn to_buf(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
 /// carrying the same storage, so `"\r\n".encode.Buf` is a `Buf[uint8]`.
 // Cost: O(1), the storage is shared.
 pub(crate) fn reinterpret(target: &Value, class: &str) -> Option<Result<Value, RuntimeError>> {
-    let ValueView::Instance { attributes, .. } = target.view() else {
+    let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+    else {
         return None;
+    };
+    // The element type is kept: `buf16.new(1).Blob` is a `Blob[uint16]`.
+    let elem = buf_elem_type_name(&class_name.resolve());
+    let class = if elem == "uint8" {
+        class.to_string()
+    } else {
+        format!("{class}[{elem}]")
     };
     let mut attrs = crate::value::AttrMap::new();
     set_buf_storage(
         &mut attrs,
         buf_storage(&attributes.as_map()).unwrap_or_else(|| Value::array(Vec::new())),
     );
-    Some(Ok(Value::make_instance(Symbol::intern(class), attrs)))
+    Some(Ok(Value::make_instance(Symbol::intern(&class), attrs)))
 }

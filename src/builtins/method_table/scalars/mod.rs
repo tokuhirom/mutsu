@@ -8,6 +8,7 @@ use super::{Handler, MethodRow, Named, RowFlags};
 
 pub(crate) mod blob;
 pub(crate) mod blob_decode;
+mod blob_pos;
 pub(crate) mod blob_read;
 mod capture_none;
 pub(crate) mod coerce;
@@ -101,6 +102,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     blob_decode::ROWS,
     blob_read::READ_ROWS,
     blob_read::SUBBUF_ROWS,
+    blob_read::BITS_ROWS,
+    blob_pos::ROWS,
     math::INT_ROWS,
     math::NUM_ROWS,
     math::RAT_ROWS,

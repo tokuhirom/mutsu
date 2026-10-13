@@ -343,13 +343,6 @@ impl DispatchShape {
                     || const_str_eq(method, "end")
             }
             _ if const_str_eq(method, "sort") => false,
-            // A buffer is `Positional`: its own `AT-POS`/`EXISTS-POS` stay in
-            // the cascade until the `Blob`/`Buf` rows land.
-            DispatchShape::Blob | DispatchShape::Buf
-                if const_str_eq(method, "AT-POS") || const_str_eq(method, "EXISTS-POS") =>
-            {
-                false
-            }
             // `min`/`max` read a `Pair` as its one element; the other closed
             // shapes take the interpreter's extremum walk.
             _ if const_str_eq(method, "min") || const_str_eq(method, "max") => {

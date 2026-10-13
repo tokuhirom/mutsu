@@ -1022,9 +1022,8 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
     // table (`method_table::instances::instant`): `Instant.Instant`, `succ`/`pred`,
     // `to-posix`, `DateTime`, `Date`, `tai` and `narrow` have no arm here.
 
-    // Buf/Blob .values and .list return the byte values as integers
-    if (method == "values" || method == "list") && crate::runtime::Interpreter::is_buf_value(target)
-    {
+    // `Any.values` is `self.list`, and a buffer's `list` its `Blob` row's.
+    if method == "values" && crate::runtime::Interpreter::is_buf_value(target) {
         return crate::builtins::method_table::blob::list(target, &[]);
     }
 

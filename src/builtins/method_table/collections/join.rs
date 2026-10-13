@@ -107,13 +107,14 @@ fn join_core(target: &Value, sep: &str) -> Joined {
                 .join(sep);
             Joined::Done(Ok(Value::str(joined)))
         }
-        // A `Blob`/`Buf` lists as its elements: `Blob.new(1, 2).join(",")` is
-        // "1,2" (its own `Str` would throw `X::Buf::AsStr`).
+        // A `Blob`/`Buf` (or a user class over one) lists as its elements:
+        // `Blob.new(1, 2).join(",")` is "1,2" (its own `Str` would throw
+        // `X::Buf::AsStr`).
         ValueView::Instance { attributes, .. }
             if matches!(
                 target.dispatch_shape(),
                 Some(DispatchShape::Blob | DispatchShape::Buf)
-            ) =>
+            ) || crate::builtins::method_table::blob::user_buffer_receiver(target).is_some() =>
         {
             from_items(&crate::value::value_buf::buf_elems_or_empty(&attributes))
         }

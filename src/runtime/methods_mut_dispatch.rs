@@ -482,27 +482,6 @@ impl Interpreter {
         {
             let bytes = buf_raw_bytes_or_empty(&attributes);
 
-            if (method == "read-ubits" || method == "read-bits") && args.len() == 2 {
-                crate::vm::vm_stats::record_dispatch_entry_intercept(
-                    "callmethodmutwithvalues",
-                    "buf-read-bits",
-                );
-                let Some(from) = Self::value_to_non_negative_i64(&args[0]) else {
-                    return Err(RuntimeError::new("read-ubits/read-bits expects Int offset"));
-                };
-                let Some(bits) = Self::value_to_non_negative_i64(&args[1]) else {
-                    return Err(RuntimeError::new(
-                        "read-ubits/read-bits expects Int bit count",
-                    ));
-                };
-                return crate::builtins::buf_bits::read_bits(
-                    &bytes,
-                    from,
-                    bits,
-                    method == "read-bits",
-                );
-            }
-
             if (method == "write-ubits" || method == "write-bits") && args.len() == 3 {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
                     "callmethodmutwithvalues",

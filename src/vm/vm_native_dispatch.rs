@@ -739,10 +739,6 @@ impl Interpreter {
             return Some(result);
         }
         let args: &[Value] = stripped.as_deref().unwrap_or(args);
-        // `$buf.subbuf(*-2)`: the pure cascade cannot call a closure, so a
-        // Callable offset is resolved to an Int here (issue #10118).
-        let subbuf_args = self.resolve_subbuf_callable_args(target, method_name, args);
-        let args: &[Value] = subbuf_args.as_deref().unwrap_or(args);
         // The pure `unique`/`repeated`/`squish` compare elements by `.WHICH`
         // and cannot run a user `WHICH`, so deposit it first
         // (see `runtime::which_identity`).

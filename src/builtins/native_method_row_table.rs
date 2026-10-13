@@ -469,7 +469,15 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Blob", "splice", 8, 26),
     ("Blob", "reallocate", 8, 28),
     ("Blob", "subbuf", 6, 24),
-    ("Blob", "subbuf-rw", 4, 8),
+    // `Buf` declares `subbuf-rw` (folded owner, ADR-11276 §8.3); the rows
+    // answer its rvalue at arities 0-2 (§9.107).
+    ("Blob", "subbuf-rw", 7, 24),
+    // The `Blob` role declares the bit readers and its positional protocol
+    // for `Int` positions (§9.107).
+    ("Blob", "read-ubits", 4, 24),
+    ("Blob", "read-bits", 4, 24),
+    ("Blob", "AT-POS", 2, 24),
+    ("Blob", "EXISTS-POS", 2, 24),
     // `decode` is recognized at both A0 (default encoding) and A1 (explicit
     // encoding name, `dispatch_1arg.rs`) -- the A1 arm needs a real encoding
     // name (`"utf-8"`), not the generic empty-string dummy

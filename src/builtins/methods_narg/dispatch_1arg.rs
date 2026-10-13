@@ -293,12 +293,15 @@ fn native_method_1arg_cascade(
                 match target.view() {
                     // `Nil` answers every method with itself.
                     ValueView::Nil => Some(Ok(Value::NIL)),
+                    // A native-backed `CArray` (a buffer's elements are the
+                    // `Blob`/`Buf` rows', `method_table::blob_pos`).
                     ValueView::Instance {
                         class_name,
                         attributes,
                         ..
-                    } if crate::runtime::utils::is_native_elems_class(&class_name.resolve())
-                        && crate::value::value_buf::has_buf_elems(&attributes) =>
+                    } if crate::value::value_carray::is_native_carray_class(
+                        &class_name.resolve(),
+                    ) && crate::value::value_buf::has_buf_elems(&attributes) =>
                     {
                         if let Some(b) =
                             crate::value::value_buf::with_buf_elems(&attributes, |items| {
@@ -365,15 +368,6 @@ fn native_method_1arg_cascade(
             }
             None
         }
-        // Buf/Blob `read-*` (1 arg: offset, native byte order): the rows'
-        // implementation (`method_table::blob_read`).
-        "read-num32" | "read-num64" | "read-uint8" | "read-int8" | "read-uint16" | "read-int16"
-        | "read-uint32" | "read-int32" | "read-uint64" | "read-int64" | "read-uint128"
-        | "read-int128" => crate::builtins::method_table::blob_read::read(
-            method,
-            target,
-            std::slice::from_ref(arg),
-        ),
         // A value that is not `Associative` answers `Any`'s rows
         // (`method_table::collections::any_subscript`), a key of a hash or a
         // quant hash its own (`method_table::subscript`, which also take a
@@ -419,12 +413,6 @@ fn native_method_1arg_cascade(
             }
             _ => None,
         },
-        // A user class composing a buffer role over a VMArray body
-        // (`class B does Blob[uint8] is repr('VMArray')`) has no shape; the
-        // `Blob` row's handler answers it and keeps its class.
-        "subbuf" => {
-            crate::builtins::method_table::blob_read::subbuf(target, std::slice::from_ref(arg))
-        }
         _ => None,
     }
 }
