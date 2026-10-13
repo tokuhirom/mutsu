@@ -554,7 +554,13 @@ fn coerce_method_absent(err: &RuntimeError) -> bool {
     if let Some(ex) = err.exception.as_deref()
         && let ValueView::Instance { class_name, .. } = ex.view()
     {
-        return matches!(class_name.resolve().as_str(), "X::Method::NotFound");
+        // A binding failure is the COERCE call's own signature rejecting the
+        // value (a submethod `COERCE(Numeric:D $v)` given an Array): no
+        // acceptable candidate, not an exception the body threw.
+        return matches!(
+            class_name.resolve().as_str(),
+            "X::Method::NotFound" | "X::TypeCheck::Binding::Parameter"
+        );
     }
     err.message.contains("No such method")
 }

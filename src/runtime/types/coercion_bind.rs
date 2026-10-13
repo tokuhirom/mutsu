@@ -69,7 +69,8 @@ impl Interpreter {
         let ValueView::Instance { class_name, .. } = ex.view() else {
             return false;
         };
-        if class_name.resolve().starts_with("X::Coerce::") {
+        let class_name = class_name.resolve();
+        if class_name.starts_with("X::Coerce::") || class_name.starts_with("X::TypeCheck::Binding") {
             return false;
         }
         let target = self.lexical_env_remap_name(target);
