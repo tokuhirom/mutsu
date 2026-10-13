@@ -606,6 +606,25 @@ dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
   parameters, and a multi token. `t/control/begin-time-region-unwind.t` now
   uses a `:my` token as its in-place device.
 
+**Slice 2 follow-up — a literal `EVAL` in a scope that declares a type,
+implemented** (`src/runtime/begin_prologue/nested/mentions.rs`,
+`t/control/begin-prologue-eval-type.t`; #13096).
+
+- An `EVAL` counted as naming every type and as changing one through its
+  metaobject, so a body using one in a scope that declares a type was not
+  lifted (`sub f { my class K { }; BEGIN say EVAL q[K.^name] }`), and halted
+  every later nested BEGIN. When the text is a string literal (`EVAL '...'`,
+  `EVAL q[...]`, `q[...].EVAL`) that parses on its own, `Mentions` now reads
+  the names and metaobject calls from the parsed tree instead, recursively for
+  a literal `EVAL` inside it. A read-only metamethod (`.^name`) lifts; a
+  changing one (`.^add_method`) still keeps the BEGIN in place, as written
+  outside an `EVAL`.
+- Unchanged: a text that is not a literal, or that does not parse alone (it
+  uses an operator or slang of the scope), and `EVALFILE`, still count as
+  naming and changing every type. The body's routines and variables are
+  supplied as before: the compiled body is still reflective, so it gets the
+  whole of its scopes.
+
 **Slice 2 follow-up — a pseudo-package qualified call, implemented**
 (`src/runtime/begin_prologue/nested/routines.rs`,
 `t/control/begin-prologue-inner-calls.t`; #13096).

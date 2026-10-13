@@ -51,8 +51,12 @@ impl<'ast> Visit<'ast> for Mentions {
             }
         );
         self.changes_type |= matches!(stmt, Stmt::AugmentClass { .. });
-        if let Stmt::Call { name, .. } = stmt {
-            self.note_call(name.resolve().as_str());
+        if let Stmt::Call { name, args, .. } = stmt {
+            let source = match args.as_slice() {
+                [crate::ast::CallArg::Positional(arg)] => literal_str(arg),
+                _ => None,
+            };
+            self.note_call(name.resolve().as_str(), source);
         }
         walk_stmt(self, stmt);
     }
@@ -65,16 +69,29 @@ impl<'ast> Visit<'ast> for Mentions {
                 ..
             }
         );
-        if let Expr::MethodCall { name, modifier, .. } = expr {
+        if let Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier,
+            ..
+        } = expr
+        {
             let name = name.resolve();
             self.changes_type |= name == "HOW"
                 || (*modifier == Some('^') && !READ_ONLY_METAMETHODS.contains(&name.as_str()));
             if modifier.is_none() {
-                self.note_call(name.as_str());
+                // `q[...].EVAL`
+                let source = args.is_empty().then(|| literal_str(target)).flatten();
+                self.note_call(name.as_str(), source);
             }
         }
-        if let Expr::Call { name, .. } = expr {
-            self.note_call(name.resolve().as_str());
+        if let Expr::Call { name, args, .. } = expr {
+            let source = match args.as_slice() {
+                [arg] => literal_str(arg),
+                _ => None,
+            };
+            self.note_call(name.resolve().as_str(), source);
         }
         walk_expr(self, expr);
     }
@@ -87,11 +104,29 @@ impl<'ast> Visit<'ast> for Mentions {
 
 impl Mentions {
     /// An `EVAL` (`EVALFILE`) compiles source text the scan cannot read: it
-    /// may name any type, and do anything to one.
-    fn note_call(&mut self, name: &str) {
-        if matches!(name, "EVAL" | "EVALFILE") {
-            self.symbolic = true;
-            self.changes_type = true;
+    /// may name any type, and do anything to one. When the text is a literal
+    /// (`EVAL q[K.^name]`) that parses on its own, what it mentions is read
+    /// from its tree instead. One that does not parse alone (it uses an
+    /// operator of the scope, say) counts as unreadable.
+    fn note_call(&mut self, name: &str, source: Option<String>) {
+        if !matches!(name, "EVAL" | "EVALFILE") {
+            return;
+        }
+        let parsed = source
+            .filter(|_| name == "EVAL")
+            .and_then(|src| crate::parser::parse_program(&src).ok());
+        match parsed {
+            Some((stmts, _)) => {
+                let inner = Mentions::of(&stmts);
+                self.names.extend(inner.names);
+                self.symbolic |= inner.symbolic;
+                self.has_begin |= inner.has_begin;
+                self.changes_type |= inner.changes_type;
+            }
+            None => {
+                self.symbolic = true;
+                self.changes_type = true;
+            }
         }
     }
 
@@ -130,5 +165,17 @@ impl Mentions {
                 .names
                 .iter()
                 .any(|(name, _)| contains_word(name, declared))
+    }
+}
+
+/// The text of a string literal (`'...'`, `q[...]`, a `"..."` that
+/// interpolates nothing).
+fn literal_str(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Literal(value) => match value.view() {
+            crate::value::ValueView::Str(s) => Some(s.to_string()),
+            _ => None,
+        },
+        _ => None,
     }
 }
