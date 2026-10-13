@@ -2063,6 +2063,14 @@ impl Interpreter {
         {
             return self.native_io_special(&AttrMap::new(), "new", args);
         }
+        // A row that binds its own arguments (`Num.Rat($epsilon)` with an
+        // allomorph or a `Duration` as the epsilon): the table's own entry
+        // declined the argument, and no cascade arm answered it.
+        if let Some(result) =
+            crate::builtins::method_table::invoke_unadmitted(self, &target, method, &args)
+        {
+            return result;
+        }
         // `IO::Spec::*` class methods are rows of the method table. The table's
         // own entry declined this call (a named argument no row declares, an
         // argument it does not admit, a call with many arguments), so the row

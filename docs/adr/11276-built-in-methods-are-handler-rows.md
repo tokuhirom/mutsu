@@ -2323,6 +2323,11 @@ answers already has a row: `Int`/`Num`/`Rat` (`numeric_coerce`'s `with_epsilon` 
    mutsu raises `X::Method::NotFound` where Rakudo raises the bind failure; that is general to every built-in method called
    with too many positionals and is filed as #13203.
 2. **The recognition table follows**: `Str`, `Match` and `Cool`'s `Rat`/`FatRat` rows claim arity 0 only.
+3. **A declined argument reaches an `ANY_ARGS` row** (`method_table::invoke_unadmitted`). The arms also answered a number whose
+   epsilon the guard step does not admit (an allomorph `<1>`, a `Duration`), which `t/types/numeric/rat-fatrat-epsilon-real-check.t`
+   pins. A row flagged `ANY_ARGS` binds its own arguments, so `call_method_with_values`, once the cascades have declined, asks the
+   row the receiver's shape resolves with the arguments as they are, except a named argument, a `Junction` or a `Failure`. It is
+   the shape counterpart of `invoke_owner`, and it serves every `ANY_ARGS` row, not only these two.
 
 `method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 29 to 27 arms (the allomorph arm was a guarded `|` arm the report
 counts once with the `Rat` arm). Pinned in `t/types/coercion/coerce-rat-epsilon-rows.t`.
