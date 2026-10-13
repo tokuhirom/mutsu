@@ -683,7 +683,10 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         }
         // The listop I/O calls (`say`/`put`/`print`/`note`) are their own
         // statements in the internal AST.
-        RakuAstClass::CallName if call_name_stash(node).is_some() => {
+        RakuAstClass::CallName
+            if call_name_stash(node).is_some()
+                || super::symbolic_deref::package_indirect(node).is_some() =>
+        {
             Ok(Stmt::Expr(lower_expr(node)?))
         }
         // A routine the unit declares itself wins over the builtin of the same
@@ -4331,6 +4334,12 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 return Err(unsupported(node));
             }
             Ok(Expr::Literal(value))
+        }
+        // `MY::(EXPR)` / `GLOBAL::(EXPR)`: a package-qualified symbolic lookup.
+        RakuAstClass::TermName | RakuAstClass::CallName
+            if let Some(lookup) = super::symbolic_deref::lower_package_indirect(node) =>
+        {
+            lookup
         }
         RakuAstClass::TermName => lower_term_name(named_child_or_positional(node)?),
         // `.method(...)` on the topic: the same method call `$_.method(...)`

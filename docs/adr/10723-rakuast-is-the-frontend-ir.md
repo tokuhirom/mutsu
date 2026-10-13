@@ -961,3 +961,18 @@ innermost operand of the chain's `ApplyPostfix`, and lowering rebuilds the
 form with the chain over the declared variable. The shape is source-only: the
 parser's call already builds the container (`my @c[2;2] .= new(:shape(2,2),
 …)`), so the expansion is unchanged.
+
+### 6.42 S10: package-qualified symbolic lookups (2026-10-13)
+
+`MY::(q[$x])`, `CALLERS::('$_')` and `GLOBAL::('Int')` look a symbol up
+under a written package. Rakudo 2026.09 keeps the package and the key apart:
+`Name(Part::Simple("MY"), Part::Expression(EXPR))`, under a `Term::Name`
+when the first segment is a lexical pseudo-package (`MY`, `OUR`, `CORE`,
+`SETTING`, `UNIT`, `OUTER(S)`, `CALLER(S)`, `DYNAMIC`, `LEXICAL`, `CLIENT`)
+and under a `Call::Name` otherwise (`GLOBAL`, `PROCESS`, `EXPORT`, a user
+package). The parser concatenates `"PKG::" ~ EXPR` into the symbolic
+dereference the runtime performs, which a converter cannot tell from a
+written `::("MY::" ~ $k)`, so the lookup records the two parts as a spelling
+(`Spelling::PackageIndirect`) and lowering builds the concatenation back
+(`src/rakuast/symbolic_deref.rs`). A lookup with further `::(…)` / `::name`
+segments after the first keeps the old boundary.

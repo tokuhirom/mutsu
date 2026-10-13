@@ -61,6 +61,10 @@ pub(crate) enum Spelling {
         subscript: Box<Expr>,
         pairs: Vec<Expr>,
     },
+    /// `MY::(EXPR)`, `GLOBAL::('Int')`: a symbolic lookup qualified by a
+    /// written package. The parser concatenates `"PKG::" ~ EXPR`; RakuAST
+    /// keeps the package parts and the key expression apart.
+    PackageIndirect { package: Box<str>, key: Box<Expr> },
     /// Conflicting built-in subscript adverbs lower to an error call, which
     /// otherwise loses both the index and the colonpair source forms.
     ConflictingSubscript {
