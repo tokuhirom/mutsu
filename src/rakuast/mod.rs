@@ -41,6 +41,7 @@ mod fields;
 mod formatter;
 pub(crate) mod frontend;
 mod hash_literal;
+mod hyper_prefix;
 mod immediate_call;
 mod infix_func;
 mod inherited_fields;
@@ -277,6 +278,8 @@ pub enum RakuAstClass {
     CallQuotedMethod,
     // Phase 2 slice 26: hyper method calls.
     MetaPostfixHyper,
+    // Hyper prefix operators (`-« @a`).
+    MetaPrefixHyper,
     // Hyper infix operators (`@a >>+<< @b`).
     MetaInfixHyper,
     // Phase 2 slice 3: blocks & pointy blocks.
@@ -636,6 +639,7 @@ impl RakuAstClass {
             CallMethod => "RakuAST::Call::Method",
             CallQuotedMethod => "RakuAST::Call::QuotedMethod",
             MetaPostfixHyper => "RakuAST::MetaPostfix::Hyper",
+            MetaPrefixHyper => "RakuAST::MetaPrefix::Hyper",
             MetaInfixHyper => "RakuAST::MetaInfix::Hyper",
             Block => "RakuAST::Block",
             Blockoid => "RakuAST::Blockoid",
@@ -1348,6 +1352,8 @@ pub(crate) fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::StatementModifier::Loop"
             | "RakuAST::StatementPrefix"
             | "RakuAST::MetaPostfix"
+            | "RakuAST::MetaPrefix"
+            | "RakuAST::Prefixish"
             | "RakuAST::MetaInfix"
             | "RakuAST::Regex"
             | "RakuAST::Regex::Atom"
@@ -1514,6 +1520,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CallMethod,
     RakuAstClass::CallQuotedMethod,
     RakuAstClass::MetaPostfixHyper,
+    RakuAstClass::MetaPrefixHyper,
     RakuAstClass::MetaInfixHyper,
     RakuAstClass::Block,
     RakuAstClass::Blockoid,

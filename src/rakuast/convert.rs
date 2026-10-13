@@ -3080,6 +3080,9 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if let Some(atomic) = super::atomic_op::convert(name.as_str(), args) {
                 return atomic;
             }
+            if let Some(hyper) = super::hyper_prefix::convert(name.as_str(), args) {
+                return hyper;
+            }
             if is_desugar_marker(name.as_str()) {
                 if name.as_str() == "__mutsu_assign_callable_lvalue"
                     && let [Expr::DoStmt(stmt), Expr::ArrayLiteral(call_args), value] =

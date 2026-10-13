@@ -852,3 +852,13 @@ puts the declaration back under a postfix of the parser's declaration tail
 (`decl_tail`), and lowering keeps reading that node the parenthesized way.
 The parser's tail read the declared array or hash as `Var("@a")` rather than
 the `ArrayVar` / `HashVar` a written `@a` is; it now builds the same node.
+
+### 6.35 S10: hyper prefix operators (2026-10-13)
+
+`-« @a`, `++<< @a` and the other hyper prefixes are, on rakudo 2026.09, an
+`ApplyPrefix` whose `prefix` is a `MetaPrefix::Hyper` over the plain
+`Prefix`. The parser spells the operation as the call
+`__mutsu_hyper_prefix("-", arg)` the runtime executes; that call is the
+lowered form, so the converter reads it as the node and lowering builds it
+back (`src/rakuast/hyper_prefix.rs`), the way the atomic operators map to
+`ast::atomic_op`'s calls.

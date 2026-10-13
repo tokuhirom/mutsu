@@ -4869,6 +4869,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             if let Some(chain) = super::chain::lower_chain(node)? {
                 return Ok(chain);
             }
+            if let Some(hyper) = super::hyper_prefix::lower(node) {
+                return hyper;
+            }
             let operand = lower_expr(named_child(node, "operand")?)?;
             let prefix = named_child(node, "prefix")?;
             // `so EXPR` / `not EXPR`: the loose word prefixes, which the parser

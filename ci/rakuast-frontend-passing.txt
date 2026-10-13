@@ -436,6 +436,7 @@ t/collections/listop-block-arg-trailing-comma.t
 t/collections/listop-bool-prefix-arg.t
 t/collections/listop-classify-whatevercode-topic.t
 t/collections/listop-heredoc-and-angle-hash-key.t
+t/collections/listop-hyper-prefix-arg.t
 t/collections/listop-loose-bool-prefix-arg.t
 t/collections/listop-map-defers.t
 t/collections/listop-math-functions.t
@@ -2197,6 +2198,7 @@ t/lang/operators/hyper-postfix-dotted-wordy.t
 t/lang/operators/hyper-postfix-metamethod.t
 t/lang/operators/hyper-postfix-quanthash.t
 t/lang/operators/hyper-precedence-deep.t
+t/lang/operators/hyper-prefix-metaop.t
 t/lang/operators/hyper-prefix-postfix-autogen.t
 t/lang/operators/hyper-quanthash-operands.t
 t/lang/operators/hyper-race-panic-boundary.t
@@ -4536,6 +4538,7 @@ t/rakuast/rakuast-heredoc-spelling.t
 t/rakuast/rakuast-hyper-function-infix.t
 t/rakuast/rakuast-hyper-infix.t
 t/rakuast/rakuast-hyper-method.t
+t/rakuast/rakuast-hyper-prefix.t
 t/rakuast/rakuast-hyper-whatever-term.t
 t/rakuast/rakuast-identity.t
 t/rakuast/rakuast-if-pointy-block.t
@@ -7189,6 +7192,7 @@ t/vm/writeback/dynamic-var-writeback-coherence.t
 t/vm/writeback/env-dirty-reconcile-coherence.t
 t/vm/writeback/eval-carrier-precise-writeback.t
 t/vm/writeback/eval-carrier-scalar-writeback-coherence.t
+t/vm/writeback/hyper-autoincr-writeback.t
 t/vm/writeback/hyper-func-op-writeback.t
 t/vm/writeback/hyper-metaop-writeback.t
 t/vm/writeback/immutable-lvalue-assignment-gaps.t
