@@ -201,3 +201,47 @@ pub(crate) fn mix_weight_render(w: MixWeight) -> Option<String> {
         Some(w.to_value().to_string_value())
     }
 }
+
+impl MixWeight {
+    /// `self + other` under the numeric tower, keeping the type: `Int` + `Rat`
+    /// is an exact `Rat`, and only a `Num` operand (or a total with no 64-bit
+    /// form) makes a `Num`. The one weight addition: `builtins::mix_weight`
+    /// (`(+)`, duplicate keys, `.total`) and `+$mix` all come through here.
+    // Cost: O(1).
+    pub fn add(self, other: MixWeight) -> MixWeight {
+        fn parts(w: MixWeight) -> Option<(i128, i128)> {
+            match w {
+                MixWeight::Int(i) => Some((i as i128, 1)),
+                MixWeight::Rat(n, d) => Some((n as i128, d as i128)),
+                MixWeight::Num(_) => None,
+            }
+        }
+        fn gcd(a: i128, b: i128) -> i128 {
+            let (mut a, mut b) = (a.abs(), b.abs());
+            while b != 0 {
+                (a, b) = (b, a % b);
+            }
+            a
+        }
+        let (Some((an, ad)), Some((bn, bd))) = (parts(self), parts(other)) else {
+            return MixWeight::Num(self.to_f64() + other.to_f64());
+        };
+        let (mut n, mut d) = (an * bd + bn * ad, ad * bd);
+        let g = gcd(n, d).max(1);
+        (n, d) = (n / g, d / g);
+        // Either operand a `Rat` keeps the result a `Rat` (`1/3 + 2/3` is `1.0`).
+        let rational = matches!(self, MixWeight::Rat(..)) || matches!(other, MixWeight::Rat(..));
+        match (i64::try_from(n), i64::try_from(d)) {
+            (Ok(n), Ok(1)) if !rational => MixWeight::Int(n),
+            (Ok(n), Ok(d)) => MixWeight::Rat(n, d),
+            _ => MixWeight::Num(n as f64 / d as f64),
+        }
+    }
+
+    /// Sum weights left to right with [`MixWeight::add`]; the caller orders
+    /// them first so a `Num` operand cannot make the total depend on hash order.
+    // Cost: O(n), n = the number of weights.
+    pub fn sum(weights: impl IntoIterator<Item = MixWeight>) -> MixWeight {
+        weights.into_iter().fold(MixWeight::Int(0), MixWeight::add)
+    }
+}

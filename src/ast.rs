@@ -1081,6 +1081,19 @@ impl ContextKind {
     }
 }
 
+/// The per-match replacement of an assignment-form substitution
+/// (`Expr::Subst::replacement_thunk`).
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SubstThunk {
+    /// What each match is replaced by, evaluated with `$/` bound to it: the
+    /// written EXPR of `s[pat] = EXPR`, or `$/ OP EXPR` for `s[pat] OP= EXPR`.
+    pub(crate) expr: Expr,
+    /// The `OP` of `s[pat] OP= EXPR` as written (`+`, `x`, `~`, a user
+    /// operator's name); `None` for a plain `=`. What the RakuAST boundary
+    /// shows as `MetaInfix::Assign(Infix(OP))`.
+    pub(crate) infix: Option<Box<str>>,
+}
+
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::enum_variant_names, dead_code)]
 pub(crate) enum Expr {
@@ -1224,7 +1237,9 @@ pub(crate) enum Expr {
         /// placeholder or an anonymous `state` (`$++`) in it belongs to the
         /// enclosing block, and `replacement` is empty. `None` for the quote
         /// forms (`s/pat/repl/`), whose `replacement` is a `qq` source.
-        replacement_thunk: Option<Box<Expr>>,
+        /// `s[pat] OP= EXPR` carries the per-match `$/ OP EXPR` here too, with
+        /// the written `OP` beside it ([`SubstThunk::infix`]).
+        replacement_thunk: Option<Box<SubstThunk>>,
         /// The pattern as a source tree, with the adverbs as written in
         /// `tree.adverbs` (their spelling and order, arguments included): what
         /// the RakuAST boundary shows. Execution reads the fields above, never
@@ -1250,7 +1265,7 @@ pub(crate) enum Expr {
         /// placeholder or an anonymous `state` (`$++`) in it belongs to the
         /// enclosing block, and `replacement` is empty. `None` for the quote
         /// forms (`s/pat/repl/`), whose `replacement` is a `qq` source.
-        replacement_thunk: Option<Box<Expr>>,
+        replacement_thunk: Option<Box<SubstThunk>>,
         /// See [`Expr::Subst::tree`](Expr::Subst).
         tree: Option<Box<crate::regex_tree::RegexTree>>,
     },
