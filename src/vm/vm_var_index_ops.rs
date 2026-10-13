@@ -3587,7 +3587,7 @@ impl Interpreter {
     /// Range, a Whatever, an object subscript, ...), so the caller must fall
     /// back to a full reify. Used only by the `IoLines`-source bounded-read
     /// special case (`reify_seq_body_prefix`) — see the call site.
-    fn seq_subscript_needed_count(index: &Value) -> Option<usize> {
+    pub(super) fn seq_subscript_needed_count(index: &Value) -> Option<usize> {
         match index.view() {
             ValueView::Int(i) if i >= 0 => Some((i as usize).saturating_add(1)),
             // Positional subscripts numify Rat/FatRat values by truncating

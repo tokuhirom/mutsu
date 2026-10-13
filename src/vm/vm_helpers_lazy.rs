@@ -790,12 +790,10 @@ impl Interpreter {
         // `.List` on a plain gather: a List that keeps pulling its coroutine
         // (ADR-11678 §2.4).
         // `.AT-POS` / `.EXISTS-POS` on a gather pull only the prefix the index
-        // needs, as `[i]` does: they answer from the shared coroutine list,
-        // whose `LazyList` arm forces just that far. Non-consuming.
-        if matches!(method, "AT-POS" | "EXISTS-POS")
-            && let Some(list) = body.gather_source()
-        {
-            return Ok(list);
+        // needs, as `[i]` does: `pos_method_seq_target` already did that where
+        // the index is known. Non-consuming.
+        if matches!(method, "AT-POS" | "EXISTS-POS") && body.is_gather_source() {
+            return Ok(target);
         }
         // `.Bool` / `.so` / `.not` on a gather run its body to the first `take`
         // only, as Rakudo's do (and as `?$g` does).
@@ -1074,6 +1072,32 @@ impl Interpreter {
         )
     }
 
+    /// `.AT-POS($i)` / `.EXISTS-POS($i)` on a plain gather pull only the
+    /// prefix the index needs, as `$g[$i]` does (the same bound,
+    /// `seq_subscript_needed_count`), and cache the Seq; an index with no
+    /// static bound pulls the whole gather. The method then reads the body's
+    /// stored elements. A no-op for any other call (ADR-11678 §8.4).
+    // Cost: running the gather body to its `needed`-th `take`, plus a copy of
+    // that prefix.
+    pub(crate) fn pull_pos_method_gather_prefix(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Result<(), RuntimeError> {
+        if !matches!(method, "AT-POS" | "EXISTS-POS") || !Self::is_gather_seq(target) {
+            return Ok(());
+        }
+        let ValueView::Seq(body) = target.view() else {
+            return Ok(());
+        };
+        let body = Arc::clone(&body);
+        match args.first().and_then(Self::seq_subscript_needed_count) {
+            Some(needed) => self.reify_seq_body_prefix(&body, needed),
+            None => self.reify_seq_body(&body).map(|_| ()),
+        }
+    }
+
     /// For `.head` on a gather-sourced `LazyList`, return how many leading
     /// elements need to be produced (so an infinite gather is pulled lazily via
     /// [`Self::force_lazy_list_vm_n`] instead of forced to completion).
@@ -1094,6 +1118,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
+        self.pull_pos_method_gather_prefix(target, method, args)?;
         let n = match method {
             "first" if args.is_empty() => 1,
             _ => match Self::gather_head_bound(method, args) {

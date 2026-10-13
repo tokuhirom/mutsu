@@ -314,6 +314,9 @@ impl Interpreter {
         let pre_reify = !target.is_lazy_match_value()
             && matches!(target.view(), ValueView::Seq(_))
             && (method != "sink" || args.is_empty());
+        if pre_reify {
+            self.pull_pos_method_gather_prefix(&target, method, &args)?;
+        }
         let (target, reify_seq) = if pre_reify {
             (
                 self.reify_or_consume_seq_target_authoritative(target, method)?,
