@@ -1,7 +1,6 @@
 use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::{ArrayKind, EnumValue, RuntimeError, Value, ValueView};
-use num_traits::ToPrimitive;
 
 pub(crate) mod coercion;
 pub(crate) mod collection;
@@ -1280,57 +1279,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
         }
     }
 
-    // Numeric type object .Range methods
-    if let ValueView::Package(name) = target.view()
-        && method == "Range"
-        && matches!(
-            name.resolve().as_str(),
-            "Real" | "Num" | "Rational" | "Rat" | "FatRat" | "BigRat"
-        )
-    {
-        return Some(Ok(Value::generic_range(
-            Value::num(f64::NEG_INFINITY),
-            Value::num(f64::INFINITY),
-            false,
-            false,
-        )));
-    }
-    if let ValueView::Package(name) = target.view()
-        && name.resolve() == "Int"
-        && method == "Range"
-    {
-        return Some(Ok(Value::generic_range(
-            Value::num(f64::NEG_INFINITY),
-            Value::num(f64::INFINITY),
-            true,
-            true,
-        )));
-    }
-    if let ValueView::Package(name) = target.view()
-        && crate::runtime::native_types::is_native_int_type(&name.resolve())
-        && method == "Range"
-        && let Some((min_big, max_big)) =
-            crate::runtime::native_types::native_int_bounds(&name.resolve())
-    {
-        let min_i64 = min_big.to_i64();
-        let max_i64 = max_big.to_i64();
-        // `Value::range` reads `i64::MIN` / `i64::MAX` as the -Inf / Inf
-        // sentinels, so the full 64-bit range needs the generic form.
-        if let (Some(min_v), Some(max_v)) = (min_i64, max_i64)
-            && min_v != i64::MIN
-            && max_v != i64::MAX
-        {
-            return Some(Ok(Value::range(min_v, max_v)));
-        } else {
-            let min_val = min_i64
-                .map(Value::int)
-                .unwrap_or_else(|| Value::bigint(min_big));
-            let max_val = max_i64
-                .map(Value::int)
-                .unwrap_or_else(|| Value::bigint(max_big));
-            return Some(Ok(Value::generic_range(min_val, max_val, false, false)));
-        }
-    }
     // Kernel type object methods
     // `Kernel.hostname` works on the type object (Sys::Hostname does exactly this).
     // Cost: O(1), reads the process-cached uname(2) result.

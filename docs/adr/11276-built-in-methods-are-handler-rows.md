@@ -2266,6 +2266,26 @@ which are `Any`'s methods in Rakudo and have no `Any` row yet. Found and filed: 
 wrong on the string before too). `method-rows-report.py --arms`: the pure arity cascades go from 142 to 140 arms. Pinned in
 `t/regex/match/match-cool-method-rows.t`.
 
+### 9.97 Slice 5: the numeric type objects' `.Range` are rows (2026-10-13)
+
+`refactor/11276-type-object-range`. The block after the `Match` block of `methods_0arg/mod.rs` answered `.Range` for the type objects
+`Real`, `Num`, `Rational`, `Rat`, `FatRat` and `BigRat` (`-Inf..Inf`), `Int` (`-Inf^..^Inf`) and the native integer types (their
+bounds) by name. Rakudo declares `Range` on `Int` (native integer types inherit it, and its body reads their bounds), on `Num` and on
+the `Rational` role, which `Rat` and `FatRat` compose. Decisions:
+
+1. **Five rows** (`scalars::numeric_range`, `TYPE_OBJECT_OK`): `Int`, `Num`, `Rat`, `FatRat` and `Rational`. The recognition table
+   gains `Int`, `Num`, `Rat` (declared `only`) and `Rational` (a role, like `Positional`). `Rational`'s row is `OWNER_ONLY`: no shape is
+   the role, so only its type object reaches it, as `Callable.of` does.
+2. **The type-object walk (`type_object_row`) answers `Range`**: a native integer type object (`int8`) walks its catalog MRO to `Int`.
+   A native integer type the catalog does not list (NativeCall's `long`) is an `Int`. A role with no catalog MRO (`Rational`) answers
+   its own rows.
+3. **Behaviour changes toward Rakudo**: `Real.Range` is `X::Method::NotFound` (the block answered it). An instance's `.Range`
+   (`5.Range`, `2.5.Range`) throws `X::Parameter::InvalidConcreteness` naming its type, where it was `X::Method::NotFound`.
+
+Not done: `UInt.Range` (`0..^Inf` in Rakudo) stays `X::Method::NotFound`, because the catalog gives `UInt` the MRO `(UInt Any Mu)`, not
+`Int`'s (#13178). `method-rows-report.py --arms` is unchanged (the block was `if` chains, which it does not count). Pinned in
+`t/types/numeric/numeric-type-object-range-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4

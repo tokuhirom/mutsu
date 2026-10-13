@@ -1863,6 +1863,10 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Cool", "Real", 1, 25),
     ("Cool", "FatRat", 3, 57),
     ("Cool", "AST", 1, 57),
+    ("Int", "Range", 1, 57),
+    ("Num", "Range", 1, 57),
+    ("Rat", "Range", 1, 57),
+    ("Rational", "Range", 1, 25),
     // ADR-0019 E11 slice 2 (2026-08-14, follow-up): the native-int-coercion
     // method family (`42.int8`, `"42".byte`, ...), genuinely dispatched via
     // `target.isa_check("Cool")` for the eleven real coercion names,

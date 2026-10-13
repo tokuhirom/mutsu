@@ -22,6 +22,7 @@ mod num;
 pub(crate) mod numeric_base;
 pub(crate) mod numeric_coerce;
 pub(crate) mod numeric_polymod;
+mod numeric_range;
 pub(crate) mod numify;
 mod rational;
 pub(crate) mod real;
@@ -123,6 +124,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     numeric_base::NUM_ROWS,
     numeric_base::RAT_ROWS,
     numeric_polymod::ROWS,
+    numeric_range::ROWS,
     complex_real::ROWS,
     unicode::STR_ROWS,
     unicode::COOL_ROWS,
