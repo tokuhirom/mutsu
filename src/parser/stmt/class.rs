@@ -17,7 +17,7 @@ pub(crate) mod token_body;
 // Shared attribute / body validation helpers used across submodules.
 pub(crate) use attr_checks::{
     null_regex_error, push_also_is_parent, reject_no_self_in_attr_where, reject_no_self_in_subs,
-    reject_no_twigil_attr_at_body_level, stmt_also_is_parent, stmt_is_also_is_rw,
+    nested_type_names, reject_no_twigil_attr_at_body_level, stmt_also_is_parent, stmt_is_also_is_rw,
 };
 
 // Shared token / braced-body helpers used across submodules.

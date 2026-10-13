@@ -1057,6 +1057,10 @@ pub(crate) struct NamedRegexLookupSpec {
     /// every subrule call at every position
     /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
     pub(crate) lookup_sym: crate::symbol::Symbol,
+    /// The name grammar actions are dispatched under: the called rule's own
+    /// name, without the package a qualified call (`<.Pkg::rule>`) names it
+    /// through.
+    pub(crate) action_sym: crate::symbol::Symbol,
     /// The hidden capture key a silent call (`<.rule>`) files its node under
     /// (`SILENT_ACTION_MARKER_PREFIX` + [`Self::lookup_name`]), interned with
     /// the spec so no subrule call has to `format!` and re-intern it
@@ -1074,6 +1078,18 @@ pub(crate) struct NamedRegexLookupSpec {
     /// When true, the alias replaces the original capture name (dot-call alias).
     /// `<foo=.alpha>` sets this to true; `<foo=alpha>` leaves it false.
     pub(crate) alias_replaces_original: bool,
+}
+
+/// The rule name an action is dispatched under for a call spelled
+/// `lookup_name`: `Pkg::rule:sym<x>` reduces as `rule:sym<x>`, since the action
+/// belongs to the rule, not to the package the call reached it through.
+// Cost: O(n), n = the length of the name.
+pub(crate) fn action_rule_symbol(lookup_name: &str) -> crate::symbol::Symbol {
+    let head_end = lookup_name.find('<').unwrap_or(lookup_name.len());
+    match lookup_name[..head_end].rfind("::") {
+        Some(at) => crate::symbol::Symbol::intern(&lookup_name[at + 2..]),
+        None => crate::symbol::Symbol::intern(lookup_name),
+    }
 }
 
 /// Check if a character is a "word" character for word boundary purposes.

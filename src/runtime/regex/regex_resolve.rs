@@ -668,6 +668,7 @@ impl Interpreter {
                             lookup_name
                         )),
                         lookup_name,
+                        action_sym: lookup_sym,
                         lookup_sym,
                         capture_sym: Some(crate::symbol::Symbol::intern(lhs)),
                         capture_name: Some(lhs.to_string()),
@@ -705,6 +706,7 @@ impl Interpreter {
         NamedRegexLookupSpec {
             silent,
             token_lookup,
+            action_sym: super::regex_helpers::action_rule_symbol(&lookup_name),
             lookup_name,
             lookup_sym,
             silent_marker_sym,

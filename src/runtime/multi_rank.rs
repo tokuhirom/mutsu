@@ -561,6 +561,10 @@ pub(crate) fn needs_named_bind_check(params: &[&ParamDef]) -> bool {
         || params
             .iter()
             .any(|p| p.is_variadic() && p.where_constraint.is_some())
+        // A destructuring sub-signature on a positional (`% (:$op!)`,
+        // `($a, $b)`) is checked by trial binding too: a tie with a candidate
+        // that lacks one runs the first declared instead of being ambiguous.
+        || params.iter().any(|p| !p.named && p.sub_signature.is_some())
 }
 
 /// `(positional count, required positional count)` of a candidate's

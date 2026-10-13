@@ -79,6 +79,11 @@ impl Compiler {
         // imported `infix:<**>` must reach `method m { 2 ** 3 }`, #9944).
         method_compiler.fold_ctx = std::sync::Arc::clone(&self.fold_ctx);
         method_compiler.fold_root = false;
+        // So does the unit's `use` record: a `use` inside a method body is a
+        // BEGIN-time load for the whole unit (GH-8201), which is how a module
+        // reachable only through a method (CSS::Module's
+        // `AtFontFace.module`) still gets its classes registered.
+        method_compiler.unit_use_ctx = std::sync::Arc::clone(&self.unit_use_ctx);
         method_compiler.set_current_package(package_name.to_string());
         method_compiler.current_distribution = self.current_distribution.clone();
         method_compiler.lexically_in_method = true;

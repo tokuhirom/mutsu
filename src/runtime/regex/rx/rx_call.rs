@@ -8,6 +8,7 @@
 //! the same position* (`subrule_cannot_left_reenter`), because a frame, unlike
 //! the walk's stream, needs no left-recursion activation to stay sound.
 
+use crate::runtime::RegexPattern;
 use std::sync::Arc;
 
 use super::super::regex_lr_state::lr_name_active;
@@ -423,12 +424,36 @@ impl Interpreter {
             return CallTarget::Eager(candidates, "wrapped-candidate");
         }
         // The caller's `:i` is scoped over a proto candidate's body
-        // (`subrule_candidate_ends`), which needs the body compiled under it:
-        // the growing-seed loop evaluates such a call. A plain call does not
-        // inherit `:i` — and neither does rakudo.
-        if proto && ic && candidates.iter().any(|(parsed, _, _)| !parsed.ignore_case) {
-            return CallTarget::Eager(candidates, "proto-inherited-i");
-        }
+        // (`subrule_candidate_ends`), which needs the body compiled under it.
+        // A plain call does not inherit `:i` — and neither does rakudo. The
+        // candidates are re-scoped here, once per cached target, so the call
+        // stays a lazily-entered frame: evaluating it eagerly computed every
+        // end of the body up front, firing the actions of `||` branches the
+        // match never reaches.
+        let candidates = if proto && ic && candidates.iter().any(|(parsed, _, _)| !parsed.ignore_case)
+        {
+            let scoped = candidates
+                .iter()
+                .map(|(parsed, sub_pkg, sym)| {
+                    let parsed = if parsed.ignore_case {
+                        Arc::clone(parsed)
+                    } else {
+                        Arc::new(RegexPattern {
+                            tokens: parsed.tokens.clone(),
+                            anchor_start: parsed.anchor_start,
+                            anchor_end: parsed.anchor_end,
+                            ignore_case: true,
+                            ignore_mark: parsed.ignore_mark,
+                            derived: Default::default(),
+                        })
+                    };
+                    (parsed, *sub_pkg, sym.clone())
+                })
+                .collect();
+            Arc::new(TokenCandidates::new(scoped))
+        } else {
+            candidates
+        };
         if !self.subrule_cannot_left_reenter(spec.lookup_sym, pkg) {
             return CallTarget::Eager(candidates, "lr-seed");
         }

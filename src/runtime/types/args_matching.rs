@@ -430,7 +430,12 @@ impl Interpreter {
                                         | ValueView::GenericRange { .. }
                                         | ValueView::Seq(..)
                                         | ValueView::Slip(..)
-                                ) {
+                                ) || (matches!(arg.view(), ValueView::Hash(..))
+                                    && !arg.hash_is_itemized())
+                                {
+                                    // A non-itemized Hash flattens into its Pairs
+                                    // like the binder does, so a sub-signature on
+                                    // the slurpy sees the same list in dispatch.
                                     flatten_into_slurpy(&[arg], &mut items);
                                     continue;
                                 }
