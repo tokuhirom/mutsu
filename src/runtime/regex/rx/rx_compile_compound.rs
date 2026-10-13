@@ -192,7 +192,19 @@ impl Compiler {
             self.ops.push(RxOp::SepBase(base));
             self.ops.push(open_side);
         }
-        self.pattern(inner)?;
+        let prior_goal_inner_source_order = self.goal_inner_source_order;
+        self.goal_inner_source_order |= token.ratchet;
+        let inner_result = self.pattern(inner);
+        self.goal_inner_source_order = prior_goal_inner_source_order;
+        inner_result?;
+        if let Some(h) = height {
+            // A token's `~` commits the inner pattern before testing its goal:
+            // the goal may not make a later LTM branch win retroactively.
+            // Rules leave these choices live so a failed goal can backtrack
+            // into the inner pattern, as `rule-goal-inner-alternation-backtrack`
+            // pins.
+            self.ops.push(RxOp::Cut(h));
+        }
         if base.is_some() {
             self.ops.push(RxOp::Collect { sep: false });
         }
