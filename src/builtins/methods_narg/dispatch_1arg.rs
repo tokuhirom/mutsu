@@ -293,6 +293,22 @@ fn native_method_1arg_cascade(
                 match target.view() {
                     // `Nil` answers every method with itself.
                     ValueView::Nil => Some(Ok(Value::NIL)),
+                    // `Any.AT-POS` for an instance read by the subscript
+                    // opcode, which has no interpreter for `Any`'s row: an
+                    // instance without a positional protocol is the
+                    // one-element list holding itself.
+                    // TODO: the subscript opcode should
+                    // reach `Any`'s row (`any_subscript::at_pos`) through
+                    // `answer_shapeless` with its interpreter, as a method
+                    // call does, and this branch go.
+                    ValueView::Instance { attributes, .. }
+                        if !attributes.contains_key("__mutsu_array_storage") =>
+                    {
+                        crate::builtins::method_table::any_subscript_at_pos(
+                            target,
+                            &[Value::int(idx as i64)],
+                        )
+                    }
                     ValueView::Instance {
                         class_name,
                         attributes,
@@ -363,6 +379,11 @@ fn native_method_1arg_cascade(
         // quant hash its own (`method_table::subscript`, which also take a
         // user-object key through `invoke_unadmitted`).
         "AT-KEY" => match target.view() {
+            // A hash or a quant hash with no settled shape (a `Map`
+            // subclass's raw storage): the associative rows' implementation.
+            ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                crate::builtins::method_table::subscript::at_key(target, std::slice::from_ref(arg))
+            }
             // IO::Path::Parts does Associative: `$parts<volume>` returns the part.
             ValueView::Instance {
                 class_name,
@@ -378,9 +399,26 @@ fn native_method_1arg_cascade(
             }
             // `Nil` answers every method with itself.
             ValueView::Nil => Some(Ok(Value::NIL)),
+            // A type object autovivifies; another package is a stash, which
+            // the interpreter looks up.
+            ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
+                Some(Ok(Value::package(crate::symbol::wk::any())))
+            }
             _ => None,
         },
-        "EXISTS-KEY" if matches!(target.view(), ValueView::Nil) => Some(Ok(Value::FALSE)),
+        "EXISTS-KEY" => match target.view() {
+            ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {
+                crate::builtins::method_table::subscript::exists_key(
+                    target,
+                    std::slice::from_ref(arg),
+                )
+            }
+            ValueView::Nil => Some(Ok(Value::FALSE)),
+            ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
+                Some(Ok(Value::FALSE))
+            }
+            _ => None,
+        },
         // A user class composing a buffer role over a VMArray body
         // (`class B does Blob[uint8] is repr('VMArray')`) has no shape; the
         // `Blob` row's handler answers it and keeps its class.

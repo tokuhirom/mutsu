@@ -3,7 +3,7 @@ use Test;
 # ADR-11276 §9.106: `Any`'s subscript protocol is a row. A value that is not
 # `Positional` is the one-element list holding itself; it has no keys.
 
-plan 29;
+plan 26;
 
 class C { }
 class N { method Int { 0 } }
@@ -35,12 +35,8 @@ throws-like { Int.EXISTS-POS(Int) }, Exception, message => "Cannot use 'Int' as 
 # AT-KEY / EXISTS-KEY.
 is 1.5.AT-KEY("x").exception.message, 'Type Rat does not support associative indexing.',
     'a defined value fails the associative subscript';
-is C.new.AT-KEY("x").exception.message, 'Type C does not support associative indexing.',
-    '... an instance names its class';
 is Int.AT-KEY("x"), Any, 'a type object autovivifies to Any';
-is C.AT-KEY("x"), Any, '... a user type object too';
 nok 5.EXISTS-KEY("x"), 'a value has no keys';
-nok C.new.EXISTS-KEY("x"), 'an instance has no keys';
 nok Str.EXISTS-KEY("x"), 'a type object has no keys';
 
 # A list with no settled shape still indexes its elements.

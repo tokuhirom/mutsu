@@ -29,8 +29,9 @@ macro_rules! row {
 
 pub(super) static ROWS: &[MethodRow] = &[
     row!("Hash", "AT-KEY", at_key),
-    // `Map.AT-KEY` has no row of its own: a Map value is a Hash value, and
-    // `Hash` declares `AT-KEY` itself, so no shape would reach it.
+    // A `Map` (a `Hash` value whose type is `Map` or a subclass of it) would
+    // otherwise reach `Any.AT-KEY` (§9.106).
+    row!("Map", "AT-KEY", at_key),
     row!("Set", "AT-KEY", at_key),
     row!("SetHash", "AT-KEY", at_key),
     row!("Bag", "AT-KEY", at_key),

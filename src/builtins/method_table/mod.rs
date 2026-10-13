@@ -67,7 +67,7 @@ pub(crate) use collections::{
     any_collection, any_list_hash as collection_any_list_hash, any_misc as collection_any_misc,
     capture, clone as collection_clone, lazy, list, list_aggregate, map, pair, positional,
     quanthash, range, render as collection_render, render_names as collection_render_names,
-    rotate as collection_rotate, seq, terminals,
+    rotate as collection_rotate, seq, subscript, terminals,
 };
 pub(crate) use instances::compunit_handle::owners_of as compunit_handle_owners_of;
 #[cfg(test)]
@@ -82,6 +82,7 @@ pub(crate) use scalars::{
     real_misc, str, str_args, str_numeric, str_search, truth, uni, unicode,
 };
 
+pub(crate) use collections::any_subscript::at_pos as any_subscript_at_pos;
 pub(crate) use ctors_mop::{MOP_OWNERS, mop_declares};
 pub(crate) use dispatch::{
     admits, answer, answer_as, answer_shapeless, invoke, invoke_base, invoke_in, invoke_mut,
