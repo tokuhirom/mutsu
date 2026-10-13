@@ -79,6 +79,10 @@ pub(crate) enum SourceForm {
     /// opens a one-statement expansion whose second statement is the phaser;
     /// only a spelling-keeping parse builds it.
     BarePhaser,
+    /// `sub foo { … }(ARGS)`: a routine declaration called on the spot. It
+    /// opens the expansion `immediate_call::expand` builds (the declaration,
+    /// then the call); only a spelling-keeping parse builds it.
+    ImmediateCall,
 }
 
 /// Open the parser expansion of one parenthesized `has` declaration with its

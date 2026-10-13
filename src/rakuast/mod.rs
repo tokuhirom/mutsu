@@ -39,6 +39,7 @@ mod fields;
 mod formatter;
 pub(crate) mod frontend;
 mod hash_literal;
+mod immediate_call;
 mod infix_func;
 mod inherited_fields;
 mod keyed_hash;
