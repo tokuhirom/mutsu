@@ -1529,7 +1529,9 @@ t/exceptions/accepts-exception-propagates.t
 t/exceptions/anon-multi-exception-class.t
 t/exceptions/assignment-error-source-line.t
 t/exceptions/backtrace-anonymous-pointy-frames.t
+t/exceptions/backtrace-block-frames.t
 t/exceptions/backtrace-frame-gist-raku.t
+t/exceptions/backtrace-frame.t
 t/exceptions/backtrace-introspection.t
 t/exceptions/backtrace-method-rows.t
 t/exceptions/backtrace-new-setting-frames.t
@@ -3519,6 +3521,7 @@ t/oo/fatal-mode-does-not-leak-into-callee.t
 t/oo/forward-declaration.t
 t/oo/free-var-bind-does-not-alias-caller-lexical.t
 t/oo/given-readonly-topic-does-not-leak-into-routine.t
+t/oo/grep-promotion-does-not-hide-frames.t
 t/oo/issue-7747-hash-mixin.t
 t/oo/issue-7771-unhandled-start.t
 t/oo/issue-7772-phantom-name.t
@@ -4488,6 +4491,7 @@ t/rakuast/rakuast-hyper-whatever-term.t
 t/rakuast/rakuast-identity.t
 t/rakuast/rakuast-if-pointy-block.t
 t/rakuast/rakuast-imaginary-literal.t
+t/rakuast/rakuast-immediate-sub-call.t
 t/rakuast/rakuast-imported-bareword-call.t
 t/rakuast/rakuast-index-assign.t
 t/rakuast/rakuast-index-bind.t
@@ -5990,6 +5994,7 @@ t/routines/sub-call-binding-failure-classes.t
 t/routines/sub-call-supertype-arg-runtime.t
 t/routines/sub-expression-name.t
 t/routines/sub-hoisted-free-var-before-declaration.t
+t/routines/sub-immediate-call.t
 t/routines/sub-rw-writeback-attr-source-no-leak.t
 t/routines/sub-trailing-decl-code-object.t
 t/routines/subdata-nested-sub-compiled-fns.t
