@@ -2214,7 +2214,11 @@ impl Interpreter {
                                 self.type_matches_value(&resolved_constraint, &val)
                             })
                     {
-                        param_values.push((binding_name, binding_sym, Self::itemize_fast_method_arg(pd, val)));
+                        param_values.push((
+                            binding_name,
+                            binding_sym,
+                            Self::itemize_fast_method_arg(pd, val),
+                        ));
                         arg_idx += 1;
                         continue;
                     }
@@ -2255,7 +2259,11 @@ impl Interpreter {
                         )
                         .with_parameter_object(pd.unwrap(), Some(&*self)));
                 }
-                param_values.push((binding_name, binding_sym, Self::itemize_fast_method_arg(pd, val)));
+                param_values.push((
+                    binding_name,
+                    binding_sym,
+                    Self::itemize_fast_method_arg(pd, val),
+                ));
                 arg_idx += 1;
             } else if let Some(pd) = pd.filter(|pd| pd.optional_marker) {
                 // An omitted optional's implicit default still has to satisfy
