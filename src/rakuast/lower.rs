@@ -4003,7 +4003,10 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
             {
                 let mut plain = node.clone();
                 plain.fields.retain(|f| f.name != Some("processors"));
-                return Ok(super::word_quote::lower_words_atom(lower_expr(&plain)?, val));
+                return Ok(super::word_quote::lower_words_atom(
+                    lower_expr(&plain)?,
+                    val,
+                ));
             }
             if let Some((quotewords, val, content)) = word_quote_content(node)? {
                 // `<…>` keeps its own lowering (a lone numeric word is a
