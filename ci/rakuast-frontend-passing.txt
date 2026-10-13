@@ -2411,6 +2411,8 @@ t/lang/zprintf-g-exponent.t
 t/lang/zprintf-g-strip-zeros.t
 t/modules/add-method-module-lexical-type.t
 t/modules/adr0110-trir-module-linkage.t
+t/modules/anon-package-decl-no-symbol.t
+t/modules/anon-package-expr.t
 t/modules/anon-type-name-in-package.t
 t/modules/attr-default-closure-module-imports.t
 t/modules/attr-default-closure-package.t
@@ -3373,6 +3375,7 @@ t/oo/class/also-is-body-position.t
 t/oo/class/also-is-body-use-composition.t
 t/oo/class/also-is-qualified-parent.t
 t/oo/class/anon-class-display-name.t
+t/oo/class/anon-class-name-undeclared.t
 t/oo/class/anon-class-what-gist.t
 t/oo/class/anon-class-what-identity.t
 t/oo/class/anon-class.t
@@ -4554,6 +4557,7 @@ t/rakuast/rakuast-method-modifier.t
 t/rakuast/rakuast-method-return-type.t
 t/rakuast/rakuast-multidim-delete.t
 t/rakuast/rakuast-name-part-empty.t
+t/rakuast/rakuast-named-anon-declarations.t
 t/rakuast/rakuast-named-parameters.t
 t/rakuast/rakuast-named-subscript-adverbs.t
 t/rakuast/rakuast-named-type-arguments.t
@@ -5280,11 +5284,14 @@ t/routines/callable-bracket-array-literal.t
 t/routines/callable-can-list.t
 t/routines/callable-set-subset-operators.t
 t/routines/closure/anon-container-cell-inplace-reassign.t
+t/routines/closure/anon-declarator-name-and-gist.t
 t/routines/closure/anon-enum-value-map.t
 t/routines/closure/anon-enum.t
+t/routines/closure/anon-named-sub-in-expression.t
 t/routines/closure/anon-optional-invocant.t
 t/routines/closure/anon-sigilless-proxy-store.t
 t/routines/closure/anon-state-per-routine-call.t
+t/routines/closure/anon-sub-name-gist.t
 t/routines/closure/anon-sub-raw-lvalue-return.t
 t/routines/closure/assuming-named-currying.t
 t/routines/closure/assuming-type-capture.t
@@ -5624,6 +5631,7 @@ t/routines/eval-mainline-placeholder.t
 t/routines/eval-named-sub-placeholder-arity.t
 t/routines/eval-return-target-needs-a-real-routine.t
 t/routines/eval-routine-magical-outside-routine.t
+t/routines/eval-routine-redeclaration.t
 t/routines/eval-sub-shadows-outer-routine.t
 t/routines/flat-routine-deferred-seqs.t
 t/routines/for-block-placeholders.t
