@@ -463,6 +463,9 @@ impl Interpreter {
     ) -> Result<AttrCoreTraitEffects, RuntimeError> {
         // A trait handler sees the package being declared as `$*PACKAGE`
         // (AttrX::Mooish reads `$*PACKAGE.HOW`), as a method trait's does.
+        if decl.unknown_traits.is_empty() {
+            return self.apply_attribute_traits_inner(decl, attr_name_str, owner, pending_composes);
+        }
         let saved_package_var = self.bind_trait_package(owner);
         let result = self.apply_attribute_traits_inner(decl, attr_name_str, owner, pending_composes);
         self.restore_trait_package(saved_package_var);
