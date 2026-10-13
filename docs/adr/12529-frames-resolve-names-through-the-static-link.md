@@ -240,7 +240,8 @@ candidate, an `EVAL`ed one or a `wrap` retires the entries as they retire
 `func_multi_resolve_cache`'s. The repro of #10109 went from 13.3k to 8.7k Ir
 per call, against 9.8k for the plain sub. Value-dependent families (`where`,
 subsets) still take the generic path; #9967's `BareMultiPlan` is their
-equivalent.
+equivalent. Since phase 2 slice 7 the family's own generation backs the
+registry generation: an entry survives another family's registration (§3).
 
 ### 2.5 Cost contract
 
@@ -504,6 +505,33 @@ regresses one of those rows is fixed on its branch, not landed with a note.
    Left on the registry: a multi family's generation is still the registry's
    `fn_resolve_gen`, a multi *method* call has no cache in front of the
    resolver, and value-dependent families take the generic path.
+
+   **Slice 7 done** (`perf/12529-multi-family-generation`): a multi family
+   has its own generation. The family memos (`multi_candidates_cache`,
+   `func_multi_type_cacheable`, `func_multi_argkey_cacheable`,
+   `func_multi_resolve_cache`, `multi_light_cache`, `bare_multi_plan_cache`)
+   are `FamilyGenCache`s (`runtime/family_gen_cache.rs`).
+
+   - Each base name of the functions map has a generation in
+     `DispatchState::fn_family_gens`, bumped by `evict_fn_keys_base`. That
+     eviction is the contract every functions-map write already keeps for the
+     key index, and the debug audit of the index catches a write that misses
+     it. A change that is not a key change (`wrap`, an import scope popping)
+     still goes through `invalidate_fn_resolution`, which clears the memos.
+   - An entry keeps `fn_resolve_gen` as its fast path, so a steady-state call
+     pays no family lookup. Only when the map generation moved does the probe
+     read the family's generation; an entry whose family is unchanged is
+     re-tagged with the running map generation and served.
+   - The case it fixes: a block that declares a routine of its own moves the
+     map generation on every entry and exit, which retired the multi caches
+     of every other family. `for ^3000 { { multi g(Int) {...}; f($i) + g(1) } }`
+     ran `f`'s full candidate walk 3000 times; it now runs it once
+     (`tests/multi_family_generation.rs`).
+
+   Left on the registry: the plain-routine memos (`fn_resolve_cache`,
+   `plain_fn_resolve_memo`, the light-call caches) are still tagged with the
+   map generation only; a multi *method* call has no cache in front of the
+   resolver; value-dependent families take the generic path.
 3. **The static link.** Frames carry the outer link; the reflective name view
    (§2.3) is built from it; dynamic variables and pseudo-packages use the
    call-frame stack; the return merge and the `scoped_child(caller)` overlay

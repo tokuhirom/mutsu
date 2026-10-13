@@ -73,10 +73,11 @@ impl Interpreter {
         if let Some(&c) = self
             .caches
             .func_multi_argkey_cacheable
-            .get(generation, &memo_key)
+            .get(generation, &memo_key, || self.dispatch.fn_family_gens.of_name(name_sym))
         {
             return c;
         }
+        let family = self.dispatch.fn_family_gens.of_name(name_sym);
         let candidates = self.resolve_all_multi_candidates_indexed(name);
         let mut cacheable = !candidates.is_empty();
         if cacheable {
@@ -92,7 +93,7 @@ impl Interpreter {
         }
         self.caches
             .func_multi_argkey_cacheable
-            .insert(generation, memo_key, cacheable);
+            .insert(generation, family, memo_key, cacheable);
         cacheable
     }
 

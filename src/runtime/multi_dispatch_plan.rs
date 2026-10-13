@@ -132,10 +132,14 @@ impl Interpreter {
         let key = self.bare_multi_plan_key(name, arg_values, arg_keys);
         let generation = self.caches.fn_resolve_gen;
         if let Some(key) = &key
-            && let Some(plan) = self.caches.bare_multi_plan_cache.get(generation, key)
+            && let Some(plan) = self
+                .caches
+                .bare_multi_plan_cache
+                .get(generation, key, || self.dispatch.fn_family_gens.of_name(key.name))
         {
             return plan.clone();
         }
+        let family = key.as_ref().map_or(0, |key| self.dispatch.fn_family_gens.of_name(key.name));
         let mut plan = self.build_bare_multi_plan(name, arg_values, search_pkgs);
         plan.keyed = key.is_some();
         let plan = Arc::new(plan);
@@ -143,7 +147,7 @@ impl Interpreter {
             debug_assert_eq!(generation, self.caches.fn_resolve_gen);
             self.caches
                 .bare_multi_plan_cache
-                .insert(generation, key, plan.clone());
+                .insert(generation, family, key, plan.clone());
         }
         plan
     }

@@ -82,6 +82,7 @@ use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, ReadonlyKind, Stmt};
 use crate::env::Env;
 use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction};
 use crate::parse_dispatch;
+use crate::runtime::family_gen_cache::FamilyGenCache;
 use crate::runtime::gen_cache::GenCache;
 use crate::value::ValueView;
 use crate::value::{

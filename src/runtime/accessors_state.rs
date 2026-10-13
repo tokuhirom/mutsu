@@ -1123,10 +1123,11 @@ impl Interpreter {
         if let Some(&c) = self
             .caches
             .func_multi_type_cacheable
-            .get(generation, &(pkg_sym, name_sym))
+            .get(generation, &(pkg_sym, name_sym), || self.dispatch.fn_family_gens.of_name(name_sym))
         {
             return c;
         }
+        let family = self.dispatch.fn_family_gens.of_name(name_sym);
         let candidates = self.resolve_all_multi_candidates_indexed(name);
         // The per-candidate rule lives in `dispatch_narrow.rs` because the
         // per-argument-type refinement there must narrow away exactly the
@@ -1148,7 +1149,7 @@ impl Interpreter {
         let cacheable = !candidates.is_empty() && !value_dependent;
         self.caches
             .func_multi_type_cacheable
-            .insert(generation, (pkg_sym, name_sym), cacheable);
+            .insert(generation, family, (pkg_sym, name_sym), cacheable);
         cacheable
     }
 
@@ -1212,9 +1213,14 @@ impl Interpreter {
         }
         let key = (pkg_sym, name_sym, arg_keys);
         let generation = self.caches.fn_resolve_gen;
-        if let Some(hit) = self.caches.func_multi_resolve_cache.get(generation, &key) {
+        if let Some(hit) = self
+            .caches
+            .func_multi_resolve_cache
+            .get(generation, &key, || self.dispatch.fn_family_gens.of_name(name_sym))
+        {
             return Ok(hit.clone());
         }
+        let family = self.dispatch.fn_family_gens.of_name(name_sym);
         // A dispatch error (ambiguity, a `where` that died) must be raised on
         // every call, so only an answer is cached.
         let resolved = self.resolve_function_with_types_keyed(name, args, Some(&key.2))?;
@@ -1224,7 +1230,7 @@ impl Interpreter {
         debug_assert_eq!(generation, self.caches.fn_resolve_gen);
         self.caches
             .func_multi_resolve_cache
-            .insert(generation, key, resolved.clone());
+            .insert(generation, family, key, resolved.clone());
         Ok(resolved)
     }
 
@@ -1807,47 +1813,68 @@ mod func_multi_cache_generation_tests {
     // which only ~7 of the ~20 `fn_resolve_gen`-bumping sites called -- a fresh multi-sub
     // candidate registered at one of the other sites (e.g. `require`, `EVAL`) could leave
     // a stale resolved candidate or a stale cacheable/uncacheable verdict cached under the
-    // old name. Every entry now carries the generation it was computed under, so a read
-    // under any other generation misses, independent of which site moved it (#9073).
+    // old name (#9073). Every entry now carries the map generation it was last confirmed
+    // under and the generation of its own family (ADR-12529 §2.4): a read under another
+    // map generation is served only while no key of the family's base name changed.
     #[test]
-    fn entries_are_not_served_under_another_generation() {
+    fn entries_are_served_only_while_their_family_is_unchanged() {
         let mut i = Interpreter::new();
         let pkg = Symbol::intern("GLOBAL");
         let name = Symbol::intern("f");
         let key = (pkg, name, vec![Symbol::intern("Int")]);
         let base = i.caches.fn_resolve_gen;
+        let fam = i.dispatch.fn_family_gens.of_name(name);
         i.caches
             .func_multi_type_cacheable
-            .insert(base, (pkg, name), true);
+            .insert(base, fam, (pkg, name), true);
         i.caches
             .func_multi_resolve_cache
-            .insert(base, key.clone(), None);
+            .insert(base, fam, key.clone(), None);
         assert_eq!(
-            i.caches.func_multi_type_cacheable.get(base, &(pkg, name)),
+            i.caches
+                .func_multi_type_cacheable
+                .get(base, &(pkg, name), || fam),
             Some(&true)
         );
-        assert!(i.caches.func_multi_resolve_cache.get(base, &key).is_some());
 
-        // A registration site that moves `fn_resolve_gen` without going through
-        // `invalidate_method_dispatch_caches` (e.g. `require`/`EVAL`).
+        // Another family's registration moves the map generation only.
+        i.dispatch.fn_family_gens.bump(Symbol::intern("g"));
         i.caches.fn_resolve_gen += 1;
         let moved = i.caches.fn_resolve_gen;
+        let fam_now = i.dispatch.fn_family_gens.of_name(name);
+        assert_eq!(fam_now, fam);
+        assert!(
+            i.caches
+                .func_multi_resolve_cache
+                .get(moved, &key, || fam_now)
+                .is_some()
+        );
+
+        // A candidate of `f` itself (e.g. `require`/`EVAL`) bumps its family.
+        i.dispatch.fn_family_gens.bump(name);
+        i.caches.fn_resolve_gen += 1;
+        let moved = i.caches.fn_resolve_gen;
+        let fam_now = i.dispatch.fn_family_gens.of_name(name);
         assert_eq!(
-            i.caches.func_multi_type_cacheable.get(moved, &(pkg, name)),
+            i.caches
+                .func_multi_type_cacheable
+                .get(moved, &(pkg, name), || fam_now),
             None
         );
-        assert!(i.caches.func_multi_resolve_cache.get(moved, &key).is_none());
-
-        // The map coming back to the version the entries name (a scope restore
-        // after a routine-local `my sub`) makes them live again.
-        assert!(i.caches.func_multi_resolve_cache.get(base, &key).is_some());
+        assert!(
+            i.caches
+                .func_multi_resolve_cache
+                .get(moved, &key, || fam_now)
+                .is_none()
+        );
 
         // The wholesale invalidation drops them for every generation.
         i.invalidate_fn_resolution();
-        assert!(i.caches.func_multi_resolve_cache.get(base, &key).is_none());
-        assert_eq!(
-            i.caches.func_multi_type_cacheable.get(base, &(pkg, name)),
-            None
+        assert!(
+            i.caches
+                .func_multi_resolve_cache
+                .get(base, &key, || fam)
+                .is_none()
         );
     }
 
@@ -1857,11 +1884,13 @@ mod func_multi_cache_generation_tests {
         let pkg = Symbol::intern("GLOBAL");
         let name = Symbol::intern("f");
         // Seed a wrong verdict directly (bypassing the real scan) to prove the
-        // read path clears it on a generation mismatch rather than trusting it.
+        // read path recomputes it once the family moved rather than trusting it.
         let base = i.caches.fn_resolve_gen;
+        let fam = i.dispatch.fn_family_gens.of_name(name);
         i.caches
             .func_multi_type_cacheable
-            .insert(base, (pkg, name), true);
+            .insert(base, fam, (pkg, name), true);
+        i.dispatch.fn_family_gens.bump(name);
         i.caches.fn_resolve_gen += 1;
         // `f` has no registered candidates at all, so a fresh scan answers `false`
         // (not multi). If the stale `true` entry survived, this would wrongly
