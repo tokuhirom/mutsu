@@ -61,9 +61,11 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("QuantHash", "keyof", quanthash_keyof),
 ];
 
-/// The names the rows of this module answer, for the type-object branch of
-/// `answer_shapeless`.
-const NAMES: [&str; 2] = ["of", "keyof"];
+/// The names whose rows answer a type object with no shape, for the
+/// type-object branch of `answer_shapeless`: this module's, and the numeric
+/// types' `Range` (`scalars::numeric_range`, ADR-11276 §9.97), which a native
+/// integer type object (`int8`) and the `Rational` role reach.
+const NAMES: [&str; 3] = ["of", "keyof", "Range"];
 
 /// The roles a role with rows does itself, for a role type object (`Baggy.keyof`
 /// is `QuantHash`'s). The catalog lists classes only.
@@ -121,7 +123,10 @@ pub(crate) fn type_object_row(
             .chain(parents.iter().copied())
             .find_map(row_of);
     }
-    let mro = builtin_type_mro_strs(base)?;
+    // A role the catalog lists no MRO for (`Rational`) answers its own rows.
+    let Some(mro) = builtin_type_mro_strs(base) else {
+        return row_of(base);
+    };
     mro.iter().enumerate().find_map(|(m, class)| {
         row_of(class).or_else(|| {
             builtin_type_roles_strs(class)
