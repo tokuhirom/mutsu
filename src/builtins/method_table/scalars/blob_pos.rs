@@ -3,8 +3,10 @@
 //! Rakudo declares both on the `Blob` role for `int`/`Int:D` positions, so
 //! every buffer class has them; any other index reaches `Any`'s candidates,
 //! which [`RowFlags::INDEX_ARG`] binds (`method_table::index_arg`). A `Buf`
-//! is resizable: a position past its end reads `0`, where a `Blob` raises
-//! `X::OutOfRange`. A negative position is out of range for both.
+//! is resizable: a position past its end reads `0`, where a `Blob` fails with
+//! `X::OutOfRange`. A negative position is out of range for both. The
+//! subscript opcode reads a buffer element through [`subscript_at`], so
+//! `$blob[$i]` and `$blob.AT-POS($i)` cannot drift apart (#13312).
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::value::value_buf::{buf_len_or_zero, with_buf_elems};
@@ -60,31 +62,57 @@ fn at_pos(
         Ok(pos) => pos,
         Err(e) => return Some(Err(e)),
     };
-    let elems = buf_len_or_zero(&attributes);
+    Some(Ok(element_at(&attributes, pos, past_end)))
+}
+
+/// The element at `pos` of the buffer storage `attributes`, `past_end`
+/// reading what a position after the last one holds; any other position is
+/// an `X::OutOfRange` failure, as Rakudo's `AT-POS` returns.
+// Cost: O(1).
+fn element_at(attributes: &crate::value::InstanceAttrs, pos: i64, past_end: Option<i64>) -> Value {
     if pos >= 0
         && let Some(item) =
-            with_buf_elems(&attributes, |items| items.get(pos as usize).cloned()).flatten()
+            with_buf_elems(attributes, |items| items.get(pos as usize).cloned()).flatten()
     {
-        return Some(Ok(item));
+        return item;
     }
     match past_end {
-        Some(fill) if pos >= 0 => Some(Ok(Value::int(fill))),
-        _ => Some(Err(RuntimeError::out_of_range(
+        Some(fill) if pos >= 0 => Value::int(fill),
+        _ => RuntimeError::out_of_range_failure(
             "Index",
             Value::int(pos),
-            &format!("0..{}", elems as i64 - 1),
-        ))),
+            &format!("0..{}", buf_len_or_zero(attributes) as i64 - 1),
+        ),
     }
 }
 
-/// `Blob.AT-POS`: the element, and `X::OutOfRange` outside the buffer.
+/// `$buffer[$pos]`: the `AT-POS` row's answer for a receiver whose shape is
+/// `Blob` or `Buf` (a built-in buffer, an alias class such as `blob8`, a user
+/// class composing a buffer role), or `None` for any other receiver.
+// Cost: O(1).
+pub(crate) fn subscript_at(target: &Value, pos: i64) -> Option<Value> {
+    use crate::value::DispatchShape;
+    let receiver = crate::builtins::method_table::Receiver::of_settled(target)?;
+    let past_end = match receiver.shape {
+        _ if receiver.type_object => return None,
+        DispatchShape::Buf => Some(0),
+        DispatchShape::Blob => None,
+        _ => return None,
+    };
+    let ValueView::Instance { attributes, .. } = target.view() else {
+        return None;
+    };
+    Some(element_at(&attributes, pos, past_end))
+}
+
+/// `Blob.AT-POS`: the element, and an `X::OutOfRange` failure outside the buffer.
 // Cost: O(1).
 fn blob_at_pos(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     at_pos(target, args, None)
 }
 
-/// `Buf.AT-POS`: the element, `0` past the end, and `X::OutOfRange` for a
-/// negative position.
+/// `Buf.AT-POS`: the element, `0` past the end, and an `X::OutOfRange`
+/// failure for a negative position.
 // Cost: O(1).
 fn buf_at_pos(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     at_pos(target, args, Some(0))

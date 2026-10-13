@@ -2149,11 +2149,8 @@ impl Interpreter {
             // — which re-resolves the parametrized MRO (`Blob[uint32]`) per
             // access — and `decode_elems`, which decodes the WHOLE buffer into a
             // fresh `Vec<Value>` per access (O(N) per read, O(N^2) for a loop).
-            // Same result as the dispatch_1arg AT-POS arm: in-range -> element,
-            // out-of-range (or storage-less) -> 0; a negative index falls out of
-            // AT-POS as Nil, which the generic arm below turns into the typed
-            // container default — reproduced here. Same name-is-authoritative
-            // trust as the `CArray[T]` native-handle arm above.
+            // Same name-is-authoritative trust as the `CArray[T]` native-handle
+            // arm above.
             (
                 ValueView::Instance {
                     class_name,
@@ -2164,7 +2161,14 @@ impl Interpreter {
             ) if crate::runtime::utils::is_native_elems_class(class_name.as_str())
                 && crate::value::value_buf::has_buf_elems(&attributes) =>
             {
-                if i < 0 {
+                // A `Blob`/`Buf` answers its `AT-POS` row's read (an
+                // `X::OutOfRange` failure past a `Blob`'s end, #13312); a
+                // Raku-side `CArray` reads `0` past its end.
+                if let Some(element) =
+                    crate::builtins::method_table::scalars::blob_pos::subscript_at(&target, i)
+                {
+                    element
+                } else if i < 0 {
                     self.typed_container_default(&target)
                 } else {
                     crate::value::value_buf::buf_elem_at(&attributes, i as usize)
