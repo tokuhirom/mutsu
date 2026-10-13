@@ -24,6 +24,7 @@
 
 use super::routine_copy::{copyable_routine, copyable_token};
 use super::scan::{Scan, is_core_routine};
+use super::token_reads::TokenReads;
 use super::{BindingKind, Walker};
 use crate::ast::Stmt;
 use crate::opcode::CompiledCode;
@@ -44,6 +45,20 @@ pub(super) struct Routine {
     /// Copied whether or not the body seems to use it: an operator or other
     /// category routine, or a token, which code reaches through syntax.
     pub(super) always: bool,
+    /// For a token, what its pattern reads, which the scan of its
+    /// declaration does not see.
+    pub(super) reads: Option<TokenReads>,
+}
+
+impl Routine {
+    /// What the routine reads and calls, as declared in its scope.
+    // Cost: O(n), n = the size of the declaration.
+    fn scan(&self) -> Scan {
+        match &self.reads {
+            Some(reads) => reads.scan(),
+            None => Scan::of(std::slice::from_ref(&self.decl)),
+        }
+    }
 }
 
 /// How the lifted body reaches one inner name.
@@ -113,6 +128,7 @@ impl Walker<'_> {
                 multi,
                 decl,
                 bindings: frame.bindings.len(),
+                reads: None,
             }),
             None => frame.blocked = true,
         }
@@ -126,12 +142,13 @@ impl Walker<'_> {
             return;
         };
         match copyable_token(decl) {
-            Some((name, decl)) => frame.routines.push(Routine {
+            Some((name, decl, reads)) => frame.routines.push(Routine {
                 name,
                 multi: false,
                 decl,
                 bindings: frame.bindings.len(),
                 always: true,
+                reads: Some(reads),
             }),
             None => frame.blocked = true,
         }
@@ -362,7 +379,7 @@ impl Walker<'_> {
                         frame,
                         bindings: routine.bindings,
                     };
-                    pending.push((Scan::of(std::slice::from_ref(&routine.decl)), Some(scope)));
+                    pending.push((routine.scan(), Some(scope)));
                 }
             }
         }
@@ -385,7 +402,7 @@ impl Walker<'_> {
                     frame,
                     bindings: routine.bindings,
                 };
-                pending.push((Scan::of(std::slice::from_ref(&routine.decl)), Some(scope)));
+                pending.push((routine.scan(), Some(scope)));
             }
         }
         !selected.is_empty()

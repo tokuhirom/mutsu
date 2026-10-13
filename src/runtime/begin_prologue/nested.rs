@@ -72,6 +72,7 @@ mod pragmas;
 mod routine_copy;
 mod routines;
 mod scan;
+mod token_reads;
 pub(super) mod var_traits;
 mod walk;
 

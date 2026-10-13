@@ -1,6 +1,7 @@
 //! Which routines of an inner scope a lifted BEGIN can declare again, and the
 //! declaration it repeats (ADR-0134, slice 2; [`super::routines`]).
 
+use super::token_reads::TokenReads;
 use crate::ast::Stmt;
 
 /// A routine a lifted BEGIN can declare again: the name a call spells, whether
@@ -93,15 +94,16 @@ fn is_category_routine(name: &str) -> bool {
     })
 }
 
-/// A `token`, `rule` or `regex` a lifted BEGIN can declare again, or `None`.
-/// Code uses one through a regex (`/<t>/`), which a scan of the called names
-/// need not see, so every one of the enclosing scopes is copied, as operators
-/// are. Only a pattern that runs no code and reads no variable is: a code
-/// block or an interpolation could read a lexical of the scope, which a scan
-/// of the compiled declaration does not see either. The copy is lexical only,
-/// like a routine's ([`copyable_routine`]).
+/// A `token`, `rule` or `regex` a lifted BEGIN can declare again, with what
+/// its pattern reads, or `None`. Code uses one through a regex (`/<t>/`),
+/// which a scan of the called names need not see, so every one of the
+/// enclosing scopes is copied, as operators are. A code block or an
+/// interpolation in the pattern reads the scope's lexicals, which a scan of
+/// the compiled declaration does not see, so they come from the pattern's
+/// regex tree ([`TokenReads`]); a pattern without a static tree is refused.
+/// The copy is lexical only, like a routine's ([`copyable_routine`]).
 // Cost: O(p), p = the length of the pattern.
-pub(super) fn copyable_token(decl: &Stmt) -> Option<(String, Stmt)> {
+pub(super) fn copyable_token(decl: &Stmt) -> Option<(String, Stmt, TokenReads)> {
     let (Stmt::TokenDecl {
         name,
         params,
@@ -125,14 +127,10 @@ pub(super) fn copyable_token(decl: &Stmt) -> Option<(String, Stmt)> {
     let crate::value::ValueView::Regex(pattern) = literal.view() else {
         return None;
     };
-    let runs_code = pattern
-        .chars()
-        .any(|c| matches!(c, '{' | '}' | '$' | '@' | '&' | '%'))
-        || pattern.contains(":my")
-        || pattern.contains(":our");
-    if !params.is_empty() || runs_code {
+    if !params.is_empty() {
         return None;
     }
+    let reads = TokenReads::of(&pattern)?;
     let mut copy = decl.clone();
     match &mut copy {
         Stmt::TokenDecl {
@@ -155,5 +153,5 @@ pub(super) fn copyable_token(decl: &Stmt) -> Option<(String, Stmt)> {
         }
         _ => {}
     }
-    Some((name.resolve(), copy))
+    Some((name.resolve(), copy, reads))
 }
