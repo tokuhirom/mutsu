@@ -20,6 +20,35 @@ impl Interpreter {
     }
 
     fn eval_eval_string_unit(&mut self, code: &str) -> Result<Value, RuntimeError> {
+        let trimmed = code.trim();
+        if trimmed == "<>" || trimmed == "<STDIN>" {
+            return Err(RuntimeError::obsolete(
+                trimmed,
+                "lines() to read input, ('') to represent a null string or () to \
+                 represent an empty list",
+            ));
+        }
+        self.isolated_eval_unit(|interp| interp.eval_eval_source(trimmed))
+    }
+
+    /// `EVAL` of an already lowered RakuAST tree (`RakuAST::Node.EVAL`): the
+    /// same compilation-unit isolation as a string `EVAL`, so the tree's
+    /// `my` declarations, subs and lexical types stay inside it (#13274).
+    pub(crate) fn eval_lowered_unit(&mut self, stmts: Vec<Stmt>) -> Result<Value, RuntimeError> {
+        self.with_eval_import_scope(|interp| {
+            interp.run_compunit(|interp| {
+                interp.isolated_eval_unit(|interp| interp.run_eval_unit_stmts(stmts))
+            })
+        })
+    }
+
+    /// Run `body` as an EVAL'd compilation unit: snapshot what the unit may
+    /// declare (routines, roles, classes, lexical code variables, pragmas,
+    /// the topic) and restore the caller's view afterwards.
+    fn isolated_eval_unit(
+        &mut self,
+        body: impl FnOnce(&mut Self) -> Result<Value, RuntimeError>,
+    ) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         // An EVAL'd `use` may load a module whose exported MAIN is recorded as
         // a module-owned GLOBAL routine.  The EVAL rollback deliberately
@@ -63,14 +92,6 @@ impl Interpreter {
         let env_snapshot = self.env.clone();
         let saved_topic = self.env.get("_").cloned();
         let saved_package = self.current_package();
-        let trimmed = code.trim();
-        if trimmed == "<>" || trimmed == "<STDIN>" {
-            return Err(RuntimeError::obsolete(
-                trimmed,
-                "lines() to read input, ('') to represent a null string or () to \
-                 represent an empty list",
-            ));
-        }
         let previous_pod = self.env.get("=pod").cloned();
         let previous_doc_comments = self.declarator_docs.doc_comments.clone();
         let previous_doc_comment_list = self.declarator_docs.doc_comment_list.clone();
@@ -141,69 +162,7 @@ impl Interpreter {
         );
         crate::runtime::registration_sub::push_eval_routine_depth(self.routine_stack.len());
         self.env.insert("__mutsu_in_eval".to_string(), Value::TRUE);
-        // A `:key<>` colonpair (empty angle brackets) in the EVAL'd source's Pod
-        // is a fatal compile error in Raku; short-circuit before evaluating.
-        let pod_err = self.collect_pod_blocks(trimmed).err();
-        let pod_failed = pod_err.is_some();
-        // Collect operator sub names so the parser recognizes them in EVAL context
-        let op_names = self.collect_operator_sub_names();
-        let op_assoc = self.collect_operator_assoc_map();
-        let bracketed_stmt_inner = unwrap_bracketed_statements(trimmed)
-            .filter(|inner| looks_like_bracketed_statement_list(inner));
-        // General case: parse and evaluate as Raku code
-        let mut result = if let Some(err) = pod_err {
-            Err(err)
-        } else if let Some(inner) = bracketed_stmt_inner {
-            // EVAL q[[ ... ]] can yield one wrapper [] around statement lists.
-            self.parse_and_eval_with_operators(inner, &op_names, &op_assoc)
-                .or_else(|_| self.parse_and_eval_with_operators(trimmed, &op_names, &op_assoc))
-        } else {
-            self.parse_and_eval_with_operators(trimmed, &op_names, &op_assoc)
-        };
-        self.emit_parse_warnings(crate::parser::take_parse_warnings());
-        // Fallback: parser still rejects forms like `~< foo bar >`.
-        // Rewrite to an equivalent parenthesized form and try again.
-        if !pod_failed
-            && result.is_err()
-            && let Some(rewritten) = rewrite_prefixed_angle_list(trimmed)
-        {
-            result = self.parse_and_eval_with_operators(&rewritten, &op_names, &op_assoc);
-        }
-        // Accept parenthesized statement lists like `(6;)` in EVAL.
-        if !pod_failed
-            && result.is_err()
-            && let Some(inner) = unwrap_parenthesized_statements(trimmed)
-        {
-            result = self.parse_and_eval_with_operators(inner, &op_names, &op_assoc);
-        }
-        // EVAL q[[ ... ]] sometimes carries one outer statement-list bracket pair.
-        if !pod_failed
-            && result.is_err()
-            && bracketed_stmt_inner.is_none()
-            && let Some(inner) = unwrap_bracketed_statements(trimmed)
-        {
-            result = self.parse_and_eval_with_operators(inner, &op_names, &op_assoc);
-        }
-        // EVAL should accept routine declarations in snippet context.
-        // If unit-scope parsing rejects a declaration, retry inside an implicit block.
-        if !pod_failed
-            && result.is_err()
-            && trimmed.contains("sub ")
-            && let Some(err) = result.as_ref().err()
-            && err.message.contains("X::UnitScope::Invalid")
-        {
-            let wrapped = format!("{{ {}; }}", trimmed);
-            let saved_wrapped_eval = self.env.get("__mutsu_eval_wrapped_decls").cloned();
-            self.env
-                .insert("__mutsu_eval_wrapped_decls".to_string(), Value::TRUE);
-            result = self.parse_and_eval_with_operators(&wrapped, &op_names, &op_assoc);
-            if let Some(saved) = saved_wrapped_eval {
-                self.env
-                    .insert("__mutsu_eval_wrapped_decls".to_string(), saved);
-            } else {
-                self.env.remove("__mutsu_eval_wrapped_decls");
-            }
-        }
+        let mut result = body(self);
         self.pop_eval_caller_frames();
         if let Some(saved) = previous_pod {
             self.env.insert("=pod".to_string(), saved);
@@ -443,6 +402,74 @@ impl Interpreter {
             && !err.message.starts_with("Unable to parse")
         {
             err.message = format!("Unable to parse expression; {}", err.message).into();
+        }
+        result
+    }
+    /// Parse and run the source of a string `EVAL`, retrying the snippet
+    /// shapes the parser rejects at unit scope.
+    fn eval_eval_source(&mut self, trimmed: &str) -> Result<Value, RuntimeError> {
+        // A `:key<>` colonpair (empty angle brackets) in the EVAL'd source's Pod
+        // is a fatal compile error in Raku; short-circuit before evaluating.
+        let pod_err = self.collect_pod_blocks(trimmed).err();
+        let pod_failed = pod_err.is_some();
+        // Collect operator sub names so the parser recognizes them in EVAL context
+        let op_names = self.collect_operator_sub_names();
+        let op_assoc = self.collect_operator_assoc_map();
+        let bracketed_stmt_inner = unwrap_bracketed_statements(trimmed)
+            .filter(|inner| looks_like_bracketed_statement_list(inner));
+        // General case: parse and evaluate as Raku code
+        let mut result = if let Some(err) = pod_err {
+            Err(err)
+        } else if let Some(inner) = bracketed_stmt_inner {
+            // EVAL q[[ ... ]] can yield one wrapper [] around statement lists.
+            self.parse_and_eval_with_operators(inner, &op_names, &op_assoc)
+                .or_else(|_| self.parse_and_eval_with_operators(trimmed, &op_names, &op_assoc))
+        } else {
+            self.parse_and_eval_with_operators(trimmed, &op_names, &op_assoc)
+        };
+        self.emit_parse_warnings(crate::parser::take_parse_warnings());
+        // Fallback: parser still rejects forms like `~< foo bar >`.
+        // Rewrite to an equivalent parenthesized form and try again.
+        if !pod_failed
+            && result.is_err()
+            && let Some(rewritten) = rewrite_prefixed_angle_list(trimmed)
+        {
+            result = self.parse_and_eval_with_operators(&rewritten, &op_names, &op_assoc);
+        }
+        // Accept parenthesized statement lists like `(6;)` in EVAL.
+        if !pod_failed
+            && result.is_err()
+            && let Some(inner) = unwrap_parenthesized_statements(trimmed)
+        {
+            result = self.parse_and_eval_with_operators(inner, &op_names, &op_assoc);
+        }
+        // EVAL q[[ ... ]] sometimes carries one outer statement-list bracket pair.
+        if !pod_failed
+            && result.is_err()
+            && bracketed_stmt_inner.is_none()
+            && let Some(inner) = unwrap_bracketed_statements(trimmed)
+        {
+            result = self.parse_and_eval_with_operators(inner, &op_names, &op_assoc);
+        }
+        // EVAL should accept routine declarations in snippet context.
+        // If unit-scope parsing rejects a declaration, retry inside an implicit block.
+        if !pod_failed
+            && result.is_err()
+            && trimmed.contains("sub ")
+            && let Some(err) = result.as_ref().err()
+            && err.message.contains("X::UnitScope::Invalid")
+        {
+            let wrapped = format!("{{ {}; }}", trimmed);
+            let saved_wrapped_eval = self.env.get("__mutsu_eval_wrapped_decls").cloned();
+            self.env
+                .insert("__mutsu_eval_wrapped_decls".to_string(), Value::TRUE);
+            result = self.parse_and_eval_with_operators(&wrapped, &op_names, &op_assoc);
+            if let Some(saved) = saved_wrapped_eval {
+                self.env
+                    .insert("__mutsu_eval_wrapped_decls".to_string(), saved);
+            } else {
+                self.env.remove("__mutsu_eval_wrapped_decls");
+            }
         }
         result
     }

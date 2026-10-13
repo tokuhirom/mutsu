@@ -349,13 +349,11 @@ impl Interpreter {
         if let Some(first_arg) = Self::positional_value(args, 0)
             && let ValueView::RakuAst(node) = first_arg.view()
         {
-            let mut stmts = crate::rakuast::lower(node)?;
-            // A lowered tree is an EVAL'd compilation unit, so its phasers need
-            // the same treatment the mainline pipeline gives them: BEGIN runs in
-            // the unit's prologue (ADR-0134), CHECK/INIT before the mainline,
-            // none of them in statement position.
-            crate::runtime::phasers::reorder_phasers_for_eval(&mut stmts);
-            return self.eval_block_value(&stmts);
+            // A lowered tree is an EVAL'd compilation unit: it runs through the
+            // string EVAL's unit pipeline (phaser reordering, ADR-0134, and the
+            // lexical isolation that keeps its `my` out of the caller, #13274).
+            let stmts = crate::rakuast::lower(node)?;
+            return self.eval_lowered_unit(stmts);
         }
         // EVAL only accepts strings (and Buf), not blocks
         if let Some(first_arg) = Self::positional_value(args, 0) {

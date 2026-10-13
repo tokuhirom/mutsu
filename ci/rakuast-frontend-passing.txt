@@ -4557,6 +4557,7 @@ t/rakuast/rakuast-eval-postfix.t
 t/rakuast/rakuast-eval-reduce-pointy.t
 t/rakuast/rakuast-eval-repeat.t
 t/rakuast/rakuast-eval-return.t
+t/rakuast/rakuast-eval-scope.t
 t/rakuast/rakuast-eval-slurpy.t
 t/rakuast/rakuast-eval-source-diagnostics.t
 t/rakuast/rakuast-eval-sub.t
