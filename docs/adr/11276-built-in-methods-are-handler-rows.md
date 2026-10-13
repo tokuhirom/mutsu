@@ -2327,7 +2327,7 @@ answers already has a row: `Int`/`Num`/`Rat` (`numeric_coerce`'s `with_epsilon` 
 3. **A declined argument reaches an `ANY_ARGS` row** (`method_table::invoke_unadmitted`). The arms also answered a number whose
    epsilon the guard step does not admit (an allomorph `<1>`, a `Duration`), which `t/types/numeric/rat-fatrat-epsilon-real-check.t`
    pins. A row flagged `ANY_ARGS` binds its own arguments, so `call_method_with_values`, once the cascades have declined, asks the
-   row the receiver's shape resolves with the arguments as they are, except a named argument, a `Junction` or a `Failure`. It is
+   row the receiver's shape resolves when every declined argument is a built-in value (an allomorph, a `Duration` or an `Instant`). A user object stays the slow path's (`"3".exp(NotComplex.new)` calls its `.Numeric`; `roast/S32-num/cool-num.t` caught a first version that admitted it), as do a named argument, a `Junction` and a `Failure`. It is
    the shape counterpart of `invoke_owner`, and it serves every `ANY_ARGS` row, not only these two.
 
 `method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 29 to 27 arms (the allomorph arm was a guarded `|` arm the report
