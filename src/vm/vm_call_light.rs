@@ -691,7 +691,6 @@ impl Interpreter {
                 // `Nil` left behind) rather than cloning it and dropping the
                 // original.
                 let val = std::mem::replace(&mut self.stack[args_base + param_idx], Value::NIL);
-                let val = crate::runtime::types::unwrap_varref_value(val);
                 // A plain `@x`/`%x` (the only `@`/`%` shape eligibility lets
                 // through, with an untyped Array/Hash argument) binds the
                 // caller's container itself, de-itemized like the general
@@ -699,6 +698,13 @@ impl Interpreter {
                 if cf.has_aggregate_positional_param
                     && cf.param_defs[param_idx].name.starts_with(['@', '%'])
                 {
+                    // The caller's variable, when the argument names one
+                    // (not an element of one): the container's `.VAR.name`.
+                    let source = val
+                        .as_varref()
+                        .filter(|(_, _, index)| index.is_none())
+                        .map(|(name, _, _)| name);
+                    let val = crate::runtime::types::unwrap_varref_value(val);
                     let val = val.deitemize_for_sigil_bind();
                     let name = &cf.param_defs[param_idx].name;
                     self.note_param_bound_aggregate(name, &val);
@@ -707,8 +713,10 @@ impl Interpreter {
                         None => Symbol::intern(name),
                     };
                     self.bind_light_aggregate_constraint(name, sym, &val);
+                    self.bind_light_aggregate_source(sym, source.map(|s| s.as_str()));
                     val
                 } else {
+                    let val = crate::runtime::types::unwrap_varref_value(val);
                     // Whether this parameter itemizes its bound value depends
                     // only on its declaration, so it was settled at
                     // registration time (`param_itemize_on_bind`). Re-deriving

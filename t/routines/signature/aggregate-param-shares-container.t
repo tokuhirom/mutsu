@@ -7,7 +7,7 @@ use Test;
 # an untyped Array/Hash argument this way directly (#12917); every other
 # argument shape keeps the general binder. Both must agree.
 
-plan 27;
+plan 31;
 
 # Subs (positional-light path).
 sub h-store(%p) { %p<k> = 1; %p<y>:delete }
@@ -70,6 +70,16 @@ throws-like { typed-push(@typed-a) }, X::TypeCheck::Assignment,
     is-deeply shadow-h(%free), {a => 'x', b => 'y'}, 'sub: no constraint leaks into %p';
     is-deeply shadow-a(@free), ['s', 't'], 'sub: no constraint leaks into @q';
 }
+# The container descriptor name (`.VAR.name`) is the caller's variable, or
+# "element" for a fresh (literal) container.
+sub var-name(@q) { @q.VAR.name }
+my @named-arr = 1, 2;
+is var-name(@named-arr), '@named-arr', 'sub: .VAR.name is the caller variable';
+is var-name([1, 2]), 'element', 'sub: .VAR.name of a literal is "element"';
+class VN { method name-of(%p) { %p.VAR.name } }
+my %named-hash = a => 1;
+is VN.name-of(%named-hash), '%named-hash', 'method: .VAR.name is the caller variable';
+is VN.name-of({:a}), 'element', 'method: .VAR.name of a literal is "element"';
 my $not-positional = 42;
 throws-like { a-push($not-positional) }, X::TypeCheck::Binding::Parameter, 'sub: a non-Positional is rejected';
 
