@@ -275,6 +275,16 @@ impl Interpreter {
             self.stack.push(v);
             return Ok(());
         }
+        // `OUR::c` at file scope names the `our`-scoped sigil-less constant `c`
+        // of the unit, stored under its term key like a `GLOBAL::` one.
+        if let Some(bare) = name.strip_prefix("OUR::")
+            && !bare.contains("::")
+            && crate::qualified::is_global_package(self.current_package_sym())
+            && let Some(v) = self.term_binding(bare)
+        {
+            self.stack.push(v);
+            return Ok(());
+        }
         // An imported routine may share its short spelling with a type
         // (`Time::localtime` exports `localtime`). Resolve a callable nullary
         // routine before the type-object paths below, so the bare term is
