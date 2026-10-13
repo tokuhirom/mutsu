@@ -1708,6 +1708,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     };
     let mut body = lower_routine_stmts(named_child_or_positional(named_child(node, "body")?)?)?;
     super::routine_source::retain(node, &mut body)?;
+    let handles = super::routine_source::handle_specs(&body).ok_or_else(|| unsupported(node))?;
     Ok(Stmt::MethodDecl {
         name: crate::symbol::Symbol::intern(&name),
         name_expr: None,
@@ -1727,7 +1728,7 @@ fn lower_method(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return_type,
         is_default_candidate,
         deprecated_message,
-        handles: Vec::new(),
+        handles,
         custom_traits,
         is_export: !is_traits.export_tags.is_empty(),
         export_tags: is_traits.export_tags,
@@ -1786,6 +1787,8 @@ pub(super) fn routine_return_type(
                     }
                     return Err(unsupported(node));
                 }
+                // A method's `handles TERM`: `routine_source::retain` keeps it.
+                RakuAstClass::TraitHandles if is_traits.is_some() => continue,
                 _ => return Err(unsupported(node)),
             };
             if via_trait.is_some() {
