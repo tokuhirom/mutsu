@@ -28,6 +28,10 @@ pub(crate) struct SigillessDecl<'a> {
     pub is_our: bool,
     /// Written `my \x = …` rather than `my \x := …`.
     pub assigned: bool,
+    /// The declaration the right-hand side was (`my \x = my $y = 3`): the
+    /// parser declares it first and binds `x` to its variable, which `expr`
+    /// then names.
+    pub declarator: Option<&'a Stmt>,
 }
 
 /// The sigilless declaration `stmt` is the parser's expansion of, if it is one.
@@ -36,6 +40,23 @@ pub(crate) fn declaration(stmt: &Stmt) -> Option<SigillessDecl<'_>> {
     let Stmt::SyntheticBlock(stmts) = stmt else {
         return None;
     };
+    // `my \x = my $y = 3`: the inner declaration, then the bind to `$y`.
+    if let [
+        declarator @ Stmt::VarDecl {
+            name: inner,
+            is_our: false,
+            is_dynamic: false,
+            ..
+        },
+        bind @ Stmt::SyntheticBlock(_),
+    ] = stmts.as_slice()
+    {
+        let decl = declaration(bind)?;
+        return (matches!(decl.expr, Expr::Var(v) if v == inner)).then_some(SigillessDecl {
+            declarator: Some(declarator),
+            ..decl
+        });
+    }
     let (decl, marked) = match stmts.as_slice() {
         [
             decl @ Stmt::VarDecl { .. },
@@ -81,5 +102,6 @@ pub(crate) fn declaration(stmt: &Stmt) -> Option<SigillessDecl<'_>> {
         is_state: *is_state,
         is_our: *is_our,
         assigned: assigned?,
+        declarator: None,
     })
 }

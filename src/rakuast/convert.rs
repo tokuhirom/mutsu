@@ -2499,11 +2499,13 @@ pub(super) fn var_declaration(
     will_build: Option<&Expr>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let (sigil, desigil) = split_sigil(name);
-    // `state $ = 0`: the parser names the anonymous scalar `__ANON_STATE__`;
-    // rakudo has no name.
+    // `state $ = 0` / `my $ = 0`: the parser names the anonymous scalar
+    // `__ANON_STATE__`; rakudo has no name. A `my` one keeps the default
+    // scope, which rakudo omits.
     if sigil == "$"
-        && (desigil == "__ANON_STATE__" || crate::ast::anon_state::is_scalar(desigil))
-        && scope == Some("state")
+        && ((scope == Some("state")
+            && (desigil == "__ANON_STATE__" || crate::ast::anon_state::is_scalar(desigil)))
+            || (scope.is_none() && desigil == "__ANON_STATE__"))
         && type_name.is_none()
         && twigil.is_none()
         && will_build.is_none()
@@ -2516,7 +2518,7 @@ pub(super) fn var_declaration(
             }),
             Some(_) => return Err(unsupported("anonymous state variable binding")),
         };
-        return Ok(anonymous_declaration("$", initializer));
+        return Ok(anonymous_declaration(scope, "$", initializer));
     }
     // Field order matches raku: scope, type, sigil, twigil, desigilname, traits,
     // initializer — each omitted when absent (scope defaults to `my`; twigil and
@@ -2618,13 +2620,34 @@ fn term_declaration(
             } else {
                 RakuAstClass::InitializerBind
             },
-            fields: vec![node_field(None, convert_expr(decl.expr)?)],
+            fields: vec![node_field(None, term_initializer(decl)?)],
         },
     ));
     Ok(RakuAstNode {
         class: RakuAstClass::VarDeclarationTerm,
         fields,
     })
+}
+
+/// The initializer of a sigilless declaration. One bound to a declarator
+/// (`my \x = my $y = 3`, `my \x = my $ = -3`) was split by the parser into the
+/// inner declaration and a bind to its variable; rakudo renders the inner
+/// declaration itself as the initializer. Its anonymous `$` gets back the name
+/// the parser renamed it from.
+// Cost: O(n), n = size of the initializer.
+fn term_initializer(
+    decl: &crate::ast::sigilless_decl::SigillessDecl<'_>,
+) -> Result<RakuAstNode, RuntimeError> {
+    let Some(declarator) = decl.declarator else {
+        return convert_expr(decl.expr);
+    };
+    let mut declarator = declarator.clone();
+    if let Stmt::VarDecl { name, .. } = &mut declarator
+        && crate::parser::is_anon_sigilless_source(name)
+    {
+        *name = "__ANON_STATE__".to_string();
+    }
+    convert_expr(&Expr::DoStmt(Box::new(declarator)))
 }
 
 /// Split a declaration name into `(sigil, desigilname)`. mutsu keeps the sigil
@@ -6149,14 +6172,19 @@ fn desugared(name: &str) -> RuntimeError {
     unsupported(&format!("desugared construct (internal name `{name}`)"))
 }
 
-/// `VarDeclaration::Anonymous(scope => "state", sigil, initializer?)`: a bare
-/// `$` / `@` / `%`, which is a `state` variable of its block. Rakudo gives it
-/// no name.
-fn anonymous_declaration(sigil: &str, initializer: Option<RakuAstNode>) -> RakuAstNode {
-    let mut fields = vec![
-        leaf_field(Some("scope"), Value::str_from("state")),
-        leaf_field(Some("sigil"), Value::str(sigil.to_string())),
-    ];
+/// `VarDeclaration::Anonymous(scope?, sigil, initializer?)`: a bare `$` / `@`
+/// / `%`, which is a `state` variable of its block, or a declared `my $`,
+/// whose default scope rakudo omits. Rakudo gives it no name.
+fn anonymous_declaration(
+    scope: Option<&'static str>,
+    sigil: &str,
+    initializer: Option<RakuAstNode>,
+) -> RakuAstNode {
+    let mut fields = Vec::new();
+    if let Some(scope) = scope {
+        fields.push(leaf_field(Some("scope"), Value::str_from(scope)));
+    }
+    fields.push(leaf_field(Some("sigil"), Value::str(sigil.to_string())));
     if let Some(initializer) = initializer {
         fields.push(node_field(Some("initializer"), initializer));
     }
@@ -6178,7 +6206,7 @@ pub(super) fn var_lexical(sigil: &str, name: &str) -> RakuAstNode {
         || (sigil == "@" && crate::ast::anon_state::is_array(name))
         || (sigil == "%" && crate::ast::anon_state::is_hash(name))
     {
-        return anonymous_declaration(sigil, None);
+        return anonymous_declaration(Some("state"), sigil, None);
     }
     // A `$!x` private attribute is a `Var::Attribute` of the whole spelling; a
     // `$.x` public one a `Var::Attribute::Public` whose `name` is the whole
