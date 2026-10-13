@@ -22,6 +22,7 @@
 
 use super::*;
 use crate::ast::{ParamDef, ReadonlyKind};
+use crate::light_closure_shape::{def_is_plain_positional, is_plain_scalar_param_name};
 
 /// One parameter of a signature [`light_def_params`] accepted, with the
 /// answers the general binder derives from its `ParamDef` on every call.
@@ -70,62 +71,12 @@ pub(crate) fn light_def_params(param_defs: &[ParamDef]) -> Option<Box<[LightDefP
 
 // Cost: O(t + n), t = the parameter's trait count, n = its name length.
 fn light_def_param(pd: &ParamDef) -> Option<LightDefParam> {
-    let ParamDef {
-        name,
-        default,
-        multi_invocant: _,
-        required: _,
-        named,
-        named_alias,
-        slurpy,
-        double_slurpy,
-        onearg,
-        sigilless,
-        type_constraint,
-        type_capture,
-        literal_value,
-        sub_signature,
-        where_constraint,
-        traits,
-        trait_args,
-        optional_marker,
-        outer_sub_signature,
-        code_signature,
-        is_invocant,
-        shape_constraints,
-        // Only the implicit nominal type of an *unpassed* optional depends on
-        // it, and an optional parameter is refused below.
-        block_param: _,
-        // The compiled `where` / default / shape chunks; their source
-        // expressions are refused below.
-        code: _,
-    } = pd;
-    let plain = !named
-        && !named_alias
-        && !slurpy
-        && !double_slurpy
-        && !onearg
-        && !sigilless
-        && !optional_marker
-        && !is_invocant
-        && default.is_none()
-        && type_constraint.is_none()
-        && type_capture.is_none()
-        && literal_value.is_none()
-        && sub_signature.is_none()
-        && where_constraint.is_none()
-        && outer_sub_signature.is_none()
-        && code_signature.is_none()
-        && shape_constraints.is_none()
-        && trait_args.is_empty()
-        && traits.iter().all(|t| t == "raw")
-        && is_plain_scalar_param_name(name);
-    if !plain {
+    if !def_is_plain_positional(pd) || !is_plain_scalar_param_name(&pd.name) {
         return None;
     }
-    let is_raw = !traits.is_empty();
+    let is_raw = !pd.traits.is_empty();
     Some(LightDefParam {
-        sym: Symbol::intern(name),
+        sym: Symbol::intern(&pd.name),
         bind: Interpreter::scalar_param_bind(pd),
         readonly: if is_raw {
             ReadonlyKind::Immutable
@@ -133,29 +84,6 @@ fn light_def_param(pd: &ParamDef) -> Option<LightDefParam> {
             ReadonlyKind::Alias
         },
     })
-}
-
-/// Whether a `ParamDef::name` is a plain `$` scalar's sigil-less name.
-///
-/// That rejects every sigil (`@x`, `%x`, `&x`) and twigil (`!x`, `.x`, `^x`,
-/// `:x`), the topic `_`, `self` (which the binder mirrors onto the reserved
-/// lexical key) and the parser's synthetic `__type_only__` / `__subsig__` /
-/// `__type_capture__…` names. A WhateverCode's `__wc_N` and other
-/// `_`-prefixed identifiers are accepted: their itemization (or exemption from
-/// it) is [`Interpreter::scalar_param_bind`]'s to decide.
-// Cost: O(n), n = the name's length.
-fn is_plain_scalar_param_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    match chars.next() {
-        Some(c) if c.is_alphabetic() || c == '_' => {}
-        _ => return false,
-    }
-    chars.all(|c| c.is_alphanumeric() || c == '_')
-        && name != "_"
-        && name != "self"
-        && name != "__type_only__"
-        && name != "__subsig__"
-        && !name.starts_with("__type_capture__")
 }
 
 impl Interpreter {

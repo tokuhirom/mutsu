@@ -22,6 +22,10 @@
 //! positional light call does — no frame of the closure's sits between them,
 //! since the body has nothing of its own to put in one.
 //!
+//! The bodies are those of pointy blocks, of WhateverCodes (`* + 1`, whose
+//! single `*` is the topic parameter `_`) and of placeholder blocks
+//! (`{ $^a + $^b }`) (#13286).
+//!
 //! The call itself is checked too ([`Interpreter::try_call_closure_light`]):
 //! the arguments must bind as the light binds (`closure_light_bind`,
 //! `closure_light_def_bind`) would bind them, and each bound value must be one
@@ -32,6 +36,7 @@
 use super::vm_closure_light_def_bind::light_def_arg_is_plain_value;
 use super::*;
 use crate::light_closure_shape::LightClosureShape;
+use crate::value::LightCallLegacy;
 
 /// How a qualifying call's arguments bind (`try_call_closure_light`).
 #[derive(Clone, Copy)]
@@ -40,6 +45,12 @@ enum LightBind<'a> {
     Legacy,
     /// A plain `ParamDef` signature: `closure_light_def_bind`'s.
     Def(&'a [crate::vm::LightDefParam]),
+    /// `$^name` placeholders: the general binder's `ParamDef` path, which
+    /// itemizes each as a plain `$x` (#13286).
+    Placeholders,
+    /// A single-`*` WhateverCode's topic parameter `_`, bound as the argument
+    /// is (#13286).
+    Topic,
 }
 
 impl Interpreter {
@@ -185,33 +196,75 @@ impl Interpreter {
         let bind = if param_syms.light_bindable {
             LightBind::Legacy
         } else {
-            LightBind::Def(param_syms.light_def_params.as_deref()?)
+            match param_syms.light_call_legacy {
+                Some(LightCallLegacy::Placeholders) => LightBind::Placeholders,
+                Some(LightCallLegacy::Topic) if cc.is_whatever_code => LightBind::Topic,
+                Some(LightCallLegacy::Topic) => return None,
+                None => LightBind::Def(param_syms.light_def_params.as_deref()?),
+            }
         };
         // The parameters are the frame, in order.
         let arity = match bind {
-            LightBind::Legacy => param_syms.params.len(),
             LightBind::Def(params) => params.len(),
+            _ => param_syms.params.len(),
         };
         if arity != args.len() {
             return None;
         }
         for i in 0..arity {
             let sym = match bind {
-                LightBind::Legacy => param_syms.params[i],
                 LightBind::Def(params) => params[i].sym(),
+                _ => param_syms.params[i],
             };
             if cc.local_sym(i) != Some(sym) {
                 return None;
             }
+            // The body runs on the caller's env overlay, so a container the
+            // caller holds under the parameter's name (a `for @a` loop's `$_`
+            // cell, under a WhateverCode's `_`) is one this frame's slot does
+            // not hold: the env/slot invariant `GetLocal` reads the slot under
+            // (ADR-0097 §15) would not hold.
+            if self.env().overlay_get_sym(sym).is_some_and(|v| {
+                matches!(
+                    v.view(),
+                    ValueView::ContainerRef(_) | ValueView::Proxy { .. }
+                )
+            }) {
+                return None;
+            }
         }
         let admitted = match bind {
-            // `closure_light_def_bind`'s argument gate.
-            LightBind::Def(_) => args.iter().all(light_def_arg_is_plain_value) && !sources_any,
-            // `closure_light_bind`'s.
+            // `closure_light_def_bind`'s argument gate, less its source-name
+            // half for a plain parameter: a source hands a plain parameter
+            // the caller variable's type constraint, which only an assignment
+            // reads, and the body assigns nothing. An `is raw` parameter
+            // aliases the variable itself, which a callee the body reaches
+            // (a user `infix:<+>`) could write between two reads.
+            LightBind::Def(params) => {
+                args.iter().all(light_def_arg_is_plain_value)
+                    && !(sources_any
+                        && params
+                            .iter()
+                            .any(|p| p.bind() == crate::vm::ScalarParamBind::Keep))
+            }
+            // A placeholder takes the general binder's `ParamDef` path, as
+            // a plain `$` parameter does above (a block's `Mu` parameter, so
+            // a Junction binds whole and declines here only as a non-plain
+            // value).
+            LightBind::Placeholders => args.iter().all(light_def_arg_is_plain_value),
+            // `closure_light_bind`'s. A Junction binds whole there as well.
             LightBind::Legacy => !args.iter().any(|a| {
                 matches!(
                     a.unwrap_varref().view(),
                     ValueView::Pair(..) | ValueView::ValuePair(..)
+                )
+            }),
+            // A WhateverCode's `_` is `Any`-typed: the full entry autothreads
+            // a Junction over the call, which the light call does not do.
+            LightBind::Topic => !args.iter().any(|a| {
+                matches!(
+                    a.unwrap_varref().view(),
+                    ValueView::Pair(..) | ValueView::ValuePair(..) | ValueView::Junction { .. }
                 )
             }),
         };
@@ -232,9 +285,13 @@ impl Interpreter {
             let arg = arg_at(self, i);
             let val = match bind {
                 LightBind::Def(params) => Self::apply_scalar_param_bind(params[i].bind(), arg),
+                LightBind::Placeholders => Self::itemize_scalar_store_value(arg),
                 LightBind::Legacy => Self::itemize_scalar_store_value(
                     crate::runtime::types::unwrap_varref_value(arg).hllize_vm_collection(),
                 ),
+                LightBind::Topic => {
+                    crate::runtime::types::unwrap_varref_value(arg).hllize_vm_collection()
+                }
             };
             if !val.is_plain_local_read() {
                 self.locals.pop_frame(base);
@@ -267,9 +324,16 @@ impl Interpreter {
         let saved_upvalues = (!shape.upvalues.is_empty())
             .then(|| std::mem::replace(&mut self.upvalues, data.upvalues.clone()));
         let routine_base = self.routine_stack_len();
+        // The frame the full entry pushes: a pointy block's carries the
+        // marker `&?ROUTINE` skips, a WhateverCode's its own name.
+        let frame_name = if cc.is_pointy_block {
+            crate::symbol::wk::pointy_block()
+        } else {
+            data.name
+        };
         self.push_block_routine_with_location(
             data.package,
-            crate::symbol::wk::pointy_block(),
+            frame_name,
             self.current_source_line(),
             self.executing_source_file_sym(),
             data.source_file_sym(),

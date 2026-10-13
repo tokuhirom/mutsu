@@ -1,11 +1,12 @@
 use Test;
 
 # A pointy block whose body is made of pure value ops runs through the light
-# closure call (#8335, `vm_closure_light_call.rs`). These pin that it answers
+# closure call (#8335, `vm_closure_light_call.rs`), and so do a WhateverCode
+# and a placeholder block with such a body (#13286). These pin that it answers
 # what the full closure entry answers, for each thing the entry has to get
 # right, and that the shapes it declines still work.
 
-plan 33;
+plan 58;
 
 # Plain results through a value call, a `.map` and a `.sort`.
 {
@@ -117,4 +118,60 @@ plan 33;
     my $bump = -> $n { $count += $n };
     $bump(3); $bump(4);
     is $count, 7, 'a body that writes a free variable still writes it back';
+}
+
+# A WhateverCode (#13286).
+{
+    my &f = * + 1;
+    my $s = 0;
+    for ^100 { $s = f($s) }
+    is $s, 100, 'a WhateverCode called by name in a loop';
+    is (1, 2, 3).map(* * 2).join(','), '2,4,6', 'a WhateverCode as a map callback';
+    is (* ~ '!')('hi'), 'hi!', 'a WhateverCode called as a value';
+    is (* + 1)(1|2).^name, 'Junction', 'a Junction argument autothreads';
+    is (* == 1)(any(1, 2)).^name, 'Junction', 'a comparison over a Junction';
+    my $off = 10;
+    my &g = * + $off;
+    is g(1), 11, 'a WhateverCode reads its capture';
+    $off = 20;
+    is g(1), 21, 'a later write to the captured variable is seen';
+    is (* + *)(3, 4), 7, 'a two-star WhateverCode';
+    sub wc-in-sub() { my &w = * + 1; w(1) }
+    is wc-in-sub(), 2, 'a WhateverCode created inside a sub';
+    throws-like { (* + 1)('abc') }, X::Str::Numeric, 'a failing coercion in the body dies';
+    my @t;
+    for 1, 2 { @t.push((* + 10)($_)) }
+    is @t.join(','), '11,12', 'called with the loop topic as its argument';
+    $_ = 5;
+    is (* + 1)(1), 2, 'the argument, not the caller topic, is the star';
+}
+
+# A placeholder block (#13286).
+{
+    my &p = { $^a + $^b };
+    is p(1, 2), 3, 'a placeholder block called by name';
+    is { $^b - $^a }(1, 5), 4, 'placeholders bind in sorted-name order';
+    is (3, 1, 2).sort({ $^b <=> $^a }).join(','), '3,2,1', 'a placeholder block as a sort comparator';
+    is (1..5).reduce({ $^a + $^b }), 15, 'a placeholder block as a reduce callback';
+    my @a = 1, 2, 3;
+    is { $^x }(@a).raku, '$[1, 2, 3]', 'a placeholder is an item binding';
+    throws-like { p(1) }, Exception, 'too few arguments dies';
+    throws-like { p(1, 2, 3) }, Exception, 'too many arguments dies';
+    is { $^a + 1 }(1|2).^name, 'Junction', 'a Junction argument';
+    my @F = (* + 1, { $^a * $^b }, * - *);
+    is "{@F[0](1)} {@F[1](2, 3)} {@F[2](10, 4)}", '2 6 6', 'a list of WhateverCode and placeholder blocks';
+}
+
+# Variable arguments: a plain parameter takes the value, an `is raw` one the
+# variable (#13286).
+{
+    my Int $x = 3;
+    my $y = 4;
+    is (-> $a, $b { $a + $b })($x, $y), 7, 'variable arguments to a two-parameter block';
+    is { $^a * $^b }($x, $y), 12, 'variable arguments to a placeholder block';
+    is (* - *)($y, $x), 1, 'variable arguments to a two-star WhateverCode';
+    my $s = 0;
+    my $f = -> $a, $b { $a + $b };
+    $s = $f($s, 1) for ^10;
+    is $s, 10, 'the accumulator passed back in';
 }
