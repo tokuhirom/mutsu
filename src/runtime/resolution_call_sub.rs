@@ -209,6 +209,9 @@ impl Interpreter {
 
     /// Whether `captured` -- the candidates a multi dispatcher code value
     /// carries -- are exactly the ones the family `name` resolves to right now.
+    /// A compiled candidate is the live one only when the bodies match too: a
+    /// later block's own `multi q(Int)` has the same package and name as the
+    /// one a closure captured from an earlier block, and is not its candidate.
     // Cost: O(c), c = candidates in the family.
     pub(crate) fn captured_candidates_are_live(&self, name: &str, captured: &[Value]) -> bool {
         let live = self.resolve_all_multi_candidates(name);
@@ -217,7 +220,12 @@ impl Interpreter {
                 matches!(
                     captured.view(),
                     ValueView::Sub(data)
-                        if data.package == live.package && data.name == live.name
+                        if data.package == live.package
+                            && data.name == live.name
+                            && match (&data.compiled_routine, live.compiled_fn()) {
+                                (Some(c), Some(l)) => c.fingerprint == l.fingerprint,
+                                _ => true,
+                            }
                 )
             })
     }

@@ -1757,6 +1757,22 @@ impl Interpreter {
         upvalue: Option<u32>,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        // A block's `multi` called through the closure's binding while its
+        // family is the live by-name one: the `CallFunc` path, with its
+        // call-site caches, dispatches exactly that candidate set.
+        if let Some(index) = upvalue
+            && self.family_dispatcher_is_current(code, name_idx, index)
+        {
+            return self.exec_call_func_op(
+                code,
+                name_idx,
+                arity,
+                arg_sources_idx,
+                0,
+                false,
+                compiled_fns,
+            );
+        }
         crate::vm::vm_stats::record_function_dispatch();
         // The callsite name as a string constant AND as its pre-interned
         // `const_syms` entry: the dispatch below wants the symbol, and

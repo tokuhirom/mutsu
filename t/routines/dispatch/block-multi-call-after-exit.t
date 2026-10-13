@@ -5,7 +5,7 @@ use Test;
 # bare name keeps working after the block exited, and sees the candidates
 # visible at the block, including an outer scope's.
 
-plan 9;
+plan 12;
 
 {
     my &c;
@@ -92,4 +92,25 @@ multi r(Int) { 'r-int-outer' }
         &c = -> { nm(1, :tag<t>) ~ ' / ' ~ nm(2) ~ ' / ' ~ nm('w') };
     }
     is c(), '1 t / 2 none / str w', 'named arguments through the binding';
+}
+
+{
+    my &c;
+    {
+        multi q7(Int) { 'a-int' }
+        &c = -> $v { q7($v) };
+        is c(1), 'a-int', 'the declaring block calls its own candidate';
+    }
+    {
+        multi q7(Int) { 'b-int' }
+        is c(1) ~ ' ' ~ q7(1), 'a-int b-int',
+            "a later block's same-named candidate is not the closure's";
+    }
+}
+
+class K { method m(&f) { f(1) } }
+{
+    multi q8(Int) { 'q8' }
+    my &d = -> $v { q8($v) };
+    is K.m(&d), 'q8', 'the closure called from a method of another package';
 }
