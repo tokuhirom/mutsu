@@ -375,9 +375,20 @@ pub(crate) fn stw_aware_wait<'a, T>(
 ) -> MutexGuard<'a, T> {
     if !super::gc_ptr::gc_enabled() {
         // GC off: a plain untimed wait loop — zero polling overhead, identical
-        // to the pre-STW behavior of the wrapped call sites.
+        // to the pre-STW behavior of the wrapped call sites. The thread that
+        // adopts a worker's `exit` re-checks every `exit_handover::POLL`
+        // instead: nothing notifies this condvar when the request arrives,
+        // and a `ready` that includes `interrupts_current_thread` would
+        // otherwise not see it until an unrelated wake-up (#13052).
+        let adopter = crate::exit_handover::is_adopter_thread();
         while !ready(&guard) {
-            guard = cvar.wait(guard).unwrap();
+            guard = if adopter {
+                cvar.wait_timeout(guard, crate::exit_handover::POLL)
+                    .unwrap()
+                    .0
+            } else {
+                cvar.wait(guard).unwrap()
+            };
         }
         return guard;
     }

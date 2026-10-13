@@ -192,9 +192,19 @@ impl Interpreter {
             // STW-aware: a thread blocked in `.finish`/join counts as quiescent
             // for the GC's cooperative stop-the-world (it cannot mutate the Gc
             // graph until the join returns).
-            crate::gc::block_quiescent(|| handle.join())
-                .map_err(|_| RuntimeError::new("Thread panicked"))?;
-            crate::runtime::thread_usage::note_thread_joined();
+            match crate::gc::block_quiescent(|| join_unless_exit_pending(handle)) {
+                Ok(joined) => {
+                    joined.map_err(|_| RuntimeError::new("Thread panicked"))?;
+                    crate::runtime::thread_usage::note_thread_joined();
+                }
+                // A worker's `exit` is waiting for this (the main program's)
+                // thread to adopt it, and the joined thread may be that very
+                // worker (ADR-11617, #13052). Keep its handle and unwind.
+                Err(handle) => {
+                    THREAD_HANDLES.lock().unwrap().insert(thread_id, handle);
+                    return Err(RuntimeError::exit_handover_pending());
+                }
+            }
         }
         // Sync shared variables back to env after thread completes
         self.sync_shared_vars_to_env();
@@ -206,4 +216,33 @@ impl Interpreter {
         self.drain_shared_thread_output();
         Ok(Value::TRUE)
     }
+}
+
+/// Join `handle`, or hand it back when this is the main program's thread and a
+/// worker's `exit` is waiting to be adopted (ADR-11617, #13052). A join cannot
+/// be woken, so the adopter thread polls `is_finished` instead, starting at
+/// 50 µs and doubling up to `exit_handover::POLL`, so a short-lived thread is
+/// joined about as promptly as by a blocking join. Every other thread joins as
+/// before.
+// Cost: O(1) plus the wait; the adopter wakes O(log(POLL / 50 µs)) times, then
+// once per POLL.
+fn join_unless_exit_pending<T>(
+    handle: crate::thread_compat::JoinHandle<T>,
+) -> Result<std::thread::Result<T>, crate::thread_compat::JoinHandle<T>> {
+    // The browser build has no worker threads, so no `exit` to wait for.
+    #[cfg(not(target_arch = "wasm32"))]
+    if crate::exit_handover::is_adopter_thread() {
+        let mut pause = std::time::Duration::from_micros(50);
+        loop {
+            if handle.is_finished() {
+                return Ok(handle.join());
+            }
+            if crate::exit_handover::requested() {
+                return Err(handle);
+            }
+            std::thread::park_timeout(pause);
+            pause = (pause * 2).min(crate::exit_handover::POLL);
+        }
+    }
+    Ok(handle.join())
 }

@@ -76,6 +76,18 @@ pub(crate) fn interrupts_current_thread() -> bool {
     requested() && ADOPTER.with(Cell::get)
 }
 
+/// Whether the calling thread is the one that adopts worker exits: its
+/// blocking waits must be able to notice [`requested`].
+// Cost: O(1).
+#[inline]
+pub(crate) fn is_adopter_thread() -> bool {
+    ADOPTER.with(Cell::get)
+}
+
+/// How often a wait that has no wake-up from [`request`] re-checks it on the
+/// adopter thread (a `Thread` join, a GC-off condvar wait).
+pub(crate) const POLL: std::time::Duration = std::time::Duration::from_millis(10);
+
 /// What [`request`] found.
 #[cfg(not(target_arch = "wasm32"))] // the browser build has no worker threads
 #[derive(Debug, PartialEq, Eq)]

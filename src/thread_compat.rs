@@ -27,6 +27,13 @@ impl<T> JoinHandle<T> {
     pub(crate) fn join(self) -> std::thread::Result<T> {
         self.inner.join()
     }
+
+    /// Whether the thread has finished, so a `join` would not block.
+    // Cost: O(1).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn is_finished(&self) -> bool {
+        self.inner.is_finished()
+    }
 }
 
 /// Spawn a native OS thread named `name` (truncated to 15 bytes on Linux —

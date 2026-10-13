@@ -129,3 +129,22 @@ iteration:
 The handover adds +0.42%. The cost is accepted for a correctness fix. If it ever matters, the
 check can move from `is_halted()` onto the poll network (back-edges and calls, ADR-0106), which
 gives up the per-op granularity.
+
+## Amendment (2026-10-13, #13052): more waits give up
+
+§4's first two gaps are narrowed. The main program's thread now also gives up on a pending
+request in:
+
+- `Thread.finish`. A join cannot be woken, so the adopter thread polls `is_finished`, starting
+  at 50 µs and doubling up to `exit_handover::POLL` (10 ms). A 200-join loop measures the same
+  as a blocking join. On a pending request it keeps the handle and unwinds.
+- `Lock` acquisition (`acquire_lock`, so `.lock` and `.protect`), `Semaphore.acquire` and
+  `Lock::ConditionVariable.wait`. The condition-variable wait re-checks every `POLL` and treats
+  a timeout as no signal. None of these returns a value that would let the caller go on as if
+  it held the lock. They raise `RuntimeError::exit_handover_pending()` instead. Since the
+  interpreter is halted, that only unwinds: it is not reported, and no `CATCH` runs.
+- With the GC off, `stw_aware_wait` on the adopter thread waits in `POLL` steps rather than
+  untimed, so `await`, `receive` and the waits above see the request without another wake-up.
+
+Still in the gap: a long native computation that never polls, a native read, an `act_loop`
+completion wait and a `Proc` wait.

@@ -5,6 +5,15 @@ use crate::value::ValueMap;
 use std::collections::HashMap;
 
 impl RuntimeError {
+    /// What a blocking wait on the main program's thread raises when it gives
+    /// up because a worker's `exit` is waiting to be adopted (ADR-11617,
+    /// #13052) and it cannot return a value that would let the caller go on
+    /// (a `Lock` it did not get). The interpreter is halted by then, so this
+    /// only unwinds; it is never reported.
+    pub(crate) fn exit_handover_pending() -> Self {
+        Self::new("exit pending: a worker thread's exit is being adopted")
+    }
+
     pub(crate) fn illegal_on_fixed_dimension_array(operation: &str) -> Self {
         let mut attrs = HashMap::new();
         attrs.insert("operation".to_string(), Value::str(operation.to_string()));

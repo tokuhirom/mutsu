@@ -6,7 +6,7 @@ use Test;
 # `exit`: it stops its mainline wherever it is (sleeping, awaiting, receiving,
 # looping), runs END, and exits with the worker's status.
 
-plan 16;
+plan 26;
 
 sub run-code(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -69,4 +69,48 @@ sub run-code(Str $code) {
     my ($out, $, $code) = run-code(
         'END { say "end ran"; exit 9 }; start { exit 3 }; sleep 1');
     is $code, 3, 'an exit in END does not override an adopted worker status';
+}
+
+# The main thread's other blocking waits give up on a pending worker `exit`
+# too (#13052): a `Thread` join, a `Lock` held by the exiting worker, a
+# `Semaphore`, and a condition-variable wait. Before, each one waited out the
+# 1 s grace period and the worker ended the process without END.
+{
+    my ($out, $, $code) = run-code(
+        'END { say "end ran" }; my $t = Thread.start({ exit 3 }); $t.finish; say "alive"');
+    is $out, "end ran\n", 'Thread.finish on the exiting thread is interrupted';
+    is $code, 3, '... with the worker\'s status';
+}
+
+{
+    my ($out, $, $code) = run-code(
+        'END { say "end ran" }; my $l = Lock.new; my $p = Promise.new; '
+        ~ 'start { $l.lock; $p.keep; sleep 0.2; exit 5 }; await $p; '
+        ~ 'try { $l.protect: { say "locked" }; CATCH { default { say "caught" } } }; say "alive"');
+    is $out, "end ran\n", 'a Lock held by the exiting worker is interrupted, without running the block or CATCH';
+    is $code, 5, '... with the worker\'s status';
+}
+
+{
+    my ($out, $, $code) = run-code(
+        'END { say "end ran" }; my $s = Semaphore.new(0); start { sleep 0.1; exit 6 }; $s.acquire; say "alive"');
+    is $out, "end ran\n", 'a Semaphore.acquire is interrupted';
+    is $code, 6, '... with the worker\'s status';
+}
+
+{
+    my ($out, $, $code) = run-code(
+        'END { say "end ran" }; my $l = Lock.new; my $cv = $l.condition; '
+        ~ 'start { sleep 0.1; exit 9 }; $l.protect: { $cv.wait; say "woke" }; say "alive"');
+    is $out, "end ran\n", 'a condition-variable wait is interrupted';
+    is $code, 9, '... with the worker\'s status';
+}
+
+{
+    my ($out, $, $code) = run-code(
+        'my $l = Lock.new; my $cv = $l.condition; my $go = False; '
+        ~ 'start { sleep 0.1; $l.protect: { $go = True; $cv.signal } }; '
+        ~ '$l.protect: { $cv.wait until $go }; say "signalled"');
+    is $out, "signalled\n", 'a condition-variable wait still wakes on its signal';
+    is $code, 0, '... and the program runs on';
 }

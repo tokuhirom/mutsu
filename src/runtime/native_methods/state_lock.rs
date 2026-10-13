@@ -206,13 +206,24 @@ pub(crate) fn acquire_lock(
                 // quiescent for the GC's cooperative stop-the-world. On wasm
                 // it pumps the cooperative scheduler instead, so the task
                 // holding the lock gets a chance to release it.
+                // On the main program's thread the wait also gives up when a
+                // worker's `exit` is waiting to be adopted (ADR-11617, #13052):
+                // the holder may be that very worker. The lock is not taken,
+                // so the caller must not run what it guards; it unwinds.
                 drop(state);
-                state =
-                    crate::gc::wait_until(&runtime.state, &runtime.lock_cv, |s| match s.owner {
-                        None => true,
-                        Some(owner) => owner == me,
-                    })
-                    .ok_or_else(|| RuntimeError::new(crate::gc::DEADLOCK_MESSAGE))?;
+                state = crate::gc::wait_until(&runtime.state, &runtime.lock_cv, |s| {
+                    crate::exit_handover::interrupts_current_thread()
+                        || match s.owner {
+                            None => true,
+                            Some(owner) => owner == me,
+                        }
+                })
+                .ok_or_else(|| RuntimeError::new(crate::gc::DEADLOCK_MESSAGE))?;
+                if crate::exit_handover::interrupts_current_thread()
+                    && state.owner.is_some_and(|owner| owner != me)
+                {
+                    return Err(RuntimeError::exit_handover_pending());
+                }
             }
         }
     }
@@ -369,8 +380,15 @@ pub(crate) fn semaphore_runtime_by_id(id: u64) -> Option<Arc<SemaphoreRuntime>> 
 pub(crate) fn semaphore_acquire(rt: &SemaphoreRuntime) -> Result<(), RuntimeError> {
     // STW-aware: blocked acquirers count as quiescent for the GC's
     // cooperative stop-the-world (and pump the scheduler on wasm).
-    let mut state = crate::gc::wait_until(&rt.state, &rt.cv, |s| *s > 0)
-        .ok_or_else(|| RuntimeError::new(crate::gc::DEADLOCK_MESSAGE))?;
+    // Interrupted on the main program's thread by a worker's pending `exit`,
+    // as `acquire_lock` is (#13052).
+    let mut state = crate::gc::wait_until(&rt.state, &rt.cv, |s| {
+        *s > 0 || crate::exit_handover::interrupts_current_thread()
+    })
+    .ok_or_else(|| RuntimeError::new(crate::gc::DEADLOCK_MESSAGE))?;
+    if *state == 0 {
+        return Err(RuntimeError::exit_handover_pending());
+    }
     *state -= 1;
     Ok(())
 }
