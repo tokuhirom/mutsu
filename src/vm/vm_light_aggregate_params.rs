@@ -57,7 +57,7 @@ impl Interpreter {
     // Cost: O(1).
     pub(super) fn light_aggregate_arg_admitted(sigil: char, arg: &Value) -> bool {
         match (sigil, arg.unwrap_varref().view()) {
-            ('@', ValueView::Array(items, kind)) => {
+            ('@', ValueView::Array(_, kind)) => {
                 matches!(
                     kind,
                     ArrayKind::Array | ArrayKind::List | ArrayKind::ItemArray | ArrayKind::ItemList
