@@ -294,7 +294,10 @@ pub(crate) fn destructure_binds(
                 word: false,
             };
             let capture_expr = Expr::CaptureLiteral(
-                vec![pipe(slice_expr), pipe(Expr::HashVar(named_tmp[1..].to_string()))],
+                vec![
+                    pipe(slice_expr),
+                    pipe(Expr::HashVar(named_tmp[1..].to_string())),
+                ],
                 true,
             );
             bind_stmts.push(bind_stmt(sub.name.clone(), capture_expr));
