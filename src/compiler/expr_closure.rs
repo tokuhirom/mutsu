@@ -488,7 +488,9 @@ impl Compiler {
         // mutation/identity reaches the caller's container (S02 "WhateverCode
         // parameters are rw"). Read-only bodies keep `_` by value (no param_defs),
         // which avoids a topic-`_` writeback leak in `for`/grep frames.
-        let wc_raw = is_whatever_code && param == "_" && crate::whatever_curry::body_mutates_placeholder(body, "_");
+        let wc_raw = is_whatever_code
+            && param == "_"
+            && crate::whatever_curry::body_mutates_placeholder(body, "_");
         let wc_param_defs: Vec<crate::ast::ParamDef> = if wc_raw {
             vec![crate::ast::ParamDef {
                 type_capture: None,

@@ -62,9 +62,7 @@ impl PlaceholderMutationScan<'_> {
 
 impl<'ast> Visit<'ast> for PlaceholderMutationScan<'_> {
     fn visit_expr(&mut self, e: &'ast Expr) {
-        if self.found
-            || (!self.enter_code_objects && crate::ast::scope_scan::is_code_object(e))
-        {
+        if self.found || (!self.enter_code_objects && crate::ast::scope_scan::is_code_object(e)) {
             return;
         }
         self.found = match e {
