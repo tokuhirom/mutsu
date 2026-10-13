@@ -12,6 +12,8 @@ pub(super) struct Scan {
     pub(super) free: Vec<crate::symbol::Symbol>,
     /// The routines called, qualified or not, or read as `&name`.
     pub(super) callees: HashSet<crate::symbol::Symbol>,
+    /// The routines among `callees` read as `&name` rather than only called.
+    pub(super) code_reads: HashSet<crate::symbol::Symbol>,
     /// The code can reach a name dynamically (`EVAL`, `CALLER::`, symbolic
     /// lookup), which neither of the sets above can bound.
     pub(super) reflective: bool,
@@ -33,6 +35,7 @@ impl Scan {
         let mut scan = Scan {
             free,
             callees: HashSet::new(),
+            code_reads: HashSet::new(),
             reflective: false,
         };
         scan.absorb_code(&code);
@@ -73,6 +76,9 @@ impl Scan {
         for op in &code.ops {
             let read = CompiledCode::op_code_var_read_const_idx(op);
             let called = CompiledCode::op_callee_name_const_idx(op);
+            if let Some(name) = read.and_then(const_str) {
+                self.code_reads.insert(crate::symbol::Symbol::intern(&name));
+            }
             for name in read.into_iter().chain(called).filter_map(const_str) {
                 let name = crate::symbol::Symbol::intern(&name);
                 // A call qualified by a pseudo-package (`MY::helper()`) names a

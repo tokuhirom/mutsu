@@ -155,6 +155,12 @@ impl Walker<'_> {
             for sym in &scan.free {
                 self.resolve_free_name(*sym, scope, &mut deps, &mut pending)?;
             }
+            // A multi read as `&name` is its proto object, which the code may
+            // change (`&p.add_dispatchee(...)`); a change to the copy would be
+            // lost, as for a type ([`super::decls`]).
+            if scan.code_reads.iter().any(|name| self.reads_multi(&name.resolve(), scope)) {
+                return None;
+            }
             for callee in &scan.callees {
                 let name = callee.resolve();
                 // `g()` calls a code variable `my &g` when that is the innermost
@@ -360,6 +366,14 @@ impl Walker<'_> {
             }
         }
         !selected.is_empty()
+    }
+
+    /// Whether `&name`, among the scopes `scope` sees, is a multi of them.
+    // Cost: O(r), r = the routines declared in the enclosing inner scopes.
+    fn reads_multi(&self, name: &str, scope: Option<Scope>) -> bool {
+        self.find_dispatchees(name, scope)
+            .iter()
+            .any(|&(f, r)| self.frames[f].routines[r].multi)
     }
 
     /// The routines a call to `name` can reach, among the scopes `scope` sees:

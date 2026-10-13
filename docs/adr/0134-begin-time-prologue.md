@@ -500,7 +500,10 @@ dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
   it can reach: those of the innermost scope that declares one, and of each
   scope further out, up to one that declares the name as a plain routine,
   which shadows the rest. The unit's own candidates are already declared by the
-  prologue. A proto's `{*}` counts as a core call.
+  prologue. A proto's `{*}` counts as a core call. A body that reads a multi as
+  `&name` (not only calls it) is not lifted: that is the proto object, which it
+  may change (`BEGIN &p.add_dispatchee(...)`), and a change to the copy would
+  be lost (`t/routines/dispatch/proto-add-dispatchee-closure.t`).
 - **`our` and exported routines.** The copy drops `our` and `is export`: it
   is lexical only, so the body reaches it by its bare name, and the in-place
   declaration still installs into the package and exports. The scope therefore
