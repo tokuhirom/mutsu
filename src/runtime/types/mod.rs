@@ -875,17 +875,7 @@ impl Interpreter {
         // `Sequence.new(:$elems)`, where `$elems` came out of a list-assignment
         // destructure).
         let value = if name.starts_with("@!") || name.starts_with("@.") {
-            // `:@!attr = Empty` / `= ()` initialises an `@` attribute, which is
-            // always an Array: a Slip or List left in the slot would make a
-            // later `self.attr = |@x` store a Slip.
-            let value = Self::normalize_positional_param_value(value);
-            match value.view() {
-                ValueView::Slip(items) => Value::real_array(items.to_vec()),
-                ValueView::Array(items, ArrayKind::List) => {
-                    Value::array_with_kind(items.clone(), ArrayKind::Array)
-                }
-                _ => value,
-            }
+            Self::attributive_array_param_value(value)
         } else if name.starts_with('@') {
             Self::normalize_positional_param_value(value)
         } else {
@@ -982,6 +972,25 @@ impl Interpreter {
             self.env.insert(format!("&{}", bare), value);
         } else if let Some(bare) = name.strip_prefix('^') {
             self.env.insert(bare.to_string(), value);
+        }
+    }
+
+    /// The value an attributive `@` parameter (`submethod BUILD(:@!elems)`)
+    /// writes to its attribute. It writes straight through, so a List handed to
+    /// it has to be re-homed into an Array first -- stored raw, `@!elems` ends
+    /// up holding the List itself and iterating the attribute yields that List
+    /// instead of its elements (YAMLish's `Sequence.new(:$elems)`). The
+    /// elements are fresh, writable containers whatever the argument was
+    /// (`@!attr = |$list`), so a body may assign to them (#12741). `= Empty` /
+    /// `= ()` initialises an `@` attribute, which is always an Array: a Slip or
+    /// List left in the slot would make a later `self.attr = |@x` store a Slip.
+    // Cost: O(n), n = the argument's element count (a List or Slip is copied).
+    pub(crate) fn attributive_array_param_value(value: Value) -> Value {
+        let value = Self::normalize_positional_param_value(value);
+        match value.view() {
+            ValueView::Slip(items) => Value::real_array(items.to_vec()),
+            ValueView::Array(items, ArrayKind::List) => Value::real_array(items.to_vec()),
+            _ => value,
         }
     }
 
