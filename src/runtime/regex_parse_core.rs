@@ -402,6 +402,11 @@ pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
         if chars[i] == '$' {
             let mut j = i + 1;
             let start = j;
+            // `$*dyn`: the twigil is part of the recorded name.
+            if chars.get(j) == Some(&'*') {
+                j += 1;
+            }
+            let name_start = j;
             while j < chars.len() {
                 let ch = chars[j];
                 let kebab = ch == '-'
@@ -414,7 +419,7 @@ pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
                     break;
                 }
             }
-            if j > start {
+            if j > name_start {
                 names.push(chars[start..j].iter().collect());
             }
             i = j;
@@ -2029,12 +2034,21 @@ impl Interpreter {
                 // outer-scope `$var` still goes through pre-substitution.
                 if mode == RegexParseMode::Match
                     && c == '$'
-                    && chars
-                        .peek()
-                        .is_some_and(|ch| ch.is_alphabetic() || *ch == '_')
+                    && {
+                        let mut look = chars.clone();
+                        let first = look.next();
+                        first.is_some_and(|ch| ch.is_alphabetic() || ch == '_')
+                            || (first == Some('*')
+                                && look.next().is_some_and(|n| n.is_alphabetic() || n == '_'))
+                    }
                 {
                     let mut probe = chars.clone();
                     let mut var_name = String::new();
+                    // `$*dyn`: the twigil is part of the name.
+                    if probe.peek() == Some(&'*') {
+                        var_name.push('*');
+                        probe.next();
+                    }
                     while let Some(&ch) = probe.peek() {
                         let kebab = ch == '-' && {
                             let mut after = probe.clone();
@@ -2048,7 +2062,9 @@ impl Interpreter {
                             break;
                         }
                     }
-                    if declared_regex_vars.contains(&var_name) {
+                    // A dynamic variable is read where the atom matches, whichever
+                    // rule or block bound it: its value is not the one visible now.
+                    if declared_regex_vars.contains(&var_name) || var_name.starts_with('*') {
                         chars = probe;
                         // Through the common atom tail, so a quantifier
                         // (`$q+`, `$r ** 2`) applies to the interpolation.
@@ -4101,6 +4117,17 @@ impl Interpreter {
                                         // yet, so it is read when the atom is matched
                                         // (#13029). Like any `<$var>`, it terminates
                                         // the declarative prefix.
+                                        runtime_value_atom = true;
+                                        RegexAtom::VarAssertion(var_name.to_string())
+                                    } else if let Some(var_name) = trimmed.strip_prefix('$')
+                                        && var_name.starts_with('*')
+                                    {
+                                        // <$*dyn>: a dynamic variable is read where the atom
+                                        // matches, not when the pattern is parsed, so an
+                                        // alternative that is never reached (`<?{
+                                        // $*dyn.defined }> <$*dyn>`) must not die for an
+                                        // unbound or still undefined one.
+                                        Self::note_regex_parse_ambient_read();
                                         runtime_value_atom = true;
                                         RegexAtom::VarAssertion(var_name.to_string())
                                     } else if let Some(var_name) = trimmed.strip_prefix('$') {
