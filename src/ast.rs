@@ -1020,6 +1020,8 @@ pub(crate) enum BinaryForm {
     ColonPairFalse,
     /// `:$a` / `:@a` / `:%a` / `:&a`: raku's `ColonPair::Variable`.
     ColonPairVariable,
+    /// `:7a`: raku's `ColonPair::Number`.
+    ColonPairNumber,
     /// `^EXPR`, the prefix spelling of the range `0 ..^ EXPR`.
     CaretPrefix,
 }

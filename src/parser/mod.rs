@@ -197,6 +197,19 @@ pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
     interpolate_qq_content(content)
 }
 
+/// The colonpair a statement-level constant pair was written as (`:a(7)`,
+/// `:a`, `:!a`, `:7a`), parsed again from the source text
+/// `wrap_colonpair_sink_source` kept for its sink warning: the RakuAST
+/// boundary shows the written `ColonPair` form, not the folded `Pair`.
+/// `None` when `source` is not exactly one colonpair.
+// Cost: O(n), n = length of `source`.
+pub(crate) fn colonpair_source_expr(source: &str) -> Option<crate::ast::Expr> {
+    match primary::colonpair_expr(source) {
+        Ok((rest, expr)) if rest.trim().is_empty() => Some(expr),
+        _ => None,
+    }
+}
+
 /// Slang activation surface for the runtime (ADR-0026): the runtime's
 /// `$*LANG.define_slang` maps overridden grammar-rule names onto these
 /// parser modes.
