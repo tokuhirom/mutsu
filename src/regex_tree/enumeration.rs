@@ -144,6 +144,12 @@ impl Parser {
     fn parse_char_class_elements(&mut self) -> Option<Vec<CharClassElement>> {
         self.pos += 1; // '<'
         let mut elements = Vec::new();
+        // A leading `.` is the implicit positive half of character-class
+        // arithmetic. Rakudo omits it from the RakuAST model; the following
+        // subtraction/union terms carry the source-level node structure.
+        if self.consume_if('.') {
+            self.skip_plain_whitespace();
+        }
         loop {
             self.skip_plain_whitespace();
             if self.consume_if('>') {
