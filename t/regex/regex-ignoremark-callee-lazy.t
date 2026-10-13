@@ -1,6 +1,6 @@
 use Test;
 
-plan 28;
+plan 35;
 
 # A `:m` (ignoremark) rule called as `<r>` runs as a frame, entering its ends
 # one at a time: a code block in the callee runs once per end entered, not once
@@ -84,4 +84,22 @@ is @log.join(','), '2', '... entering one end';
 grammar K5 { regex TOP { <r> .* }; regex r { :m .+ <?before 'é'> { @log.push: $/.to } } }
 @log = ();
 is ~K5.parse("abe\x[300]e")<r>, "abe\x[300]", 'a lookahead body compares bases';
+is @log.join(','), '3', '... entering one end';
+
+# A backreference in a markless callee compares the captured text exactly,
+# marks included, as rakudo does; a capture marker sets the subject's own
+# positions (#13176).
+grammar B1 { regex TOP { <r> 'x' }; regex r { :m (a+) $0 } }
+nok B1.parse("a\x[301]aa\x[300]ax"), 'a backreference does not ignore marks';
+grammar B2 { regex TOP { <r> 'x' }; regex r { :m $<k>=(<[ab]>) .* $<k> } }
+nok B2.parse("a\x[301]bba\x[302]x"), 'a named backreference does not either';
+grammar P1 { regex TOP { <r> 'x' }; regex r { :m (a+) { @log.push: $/.to } $0 } }
+@log = ();
+is ~P1.parse("a\x[301]a\x[301]x")<r>, "a\x[301]a\x[301]", 'a backreference with the same marks matches';
+is @log.join(','), '2,1', '... entering ends as it backtracks, as rakudo does';
+grammar P2 { regex TOP { <r> 'x' }; regex r { :m a <( b+ )> { @log.push: $/.to } } }
+@log = ();
+my $p2 = P2.parse("a\x[301]bb\x[300]x");
+is ~$p2<r>, "bb\x[300]", 'capture markers over marked graphemes';
+is $p2<r>.from, 1, '... from the grapheme after the marked one';
 is @log.join(','), '3', '... entering one end';
