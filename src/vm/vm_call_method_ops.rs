@@ -170,7 +170,11 @@ pub(crate) fn nil_predispatch_verdict(
                 .join(", ");
             Some(NilPredispatchVerdict::Error(
                 crate::runtime::methods_signature_errors::make_multi_no_match_error_detailed(
-                    method, "Nil", false, &profile, &[],
+                    method,
+                    "Nil",
+                    false,
+                    &profile,
+                    &[],
                 ),
             ))
         }
