@@ -2008,6 +2008,7 @@ t/io/io-path-raku-class-roundtrip.t
 t/io/io-path-raku-parent-unlink.t
 t/io/io-path-relative-abs2rel.t
 t/io/io-path-secure-resolve-link.t
+t/io/io-path-spec-cwd.t
 t/io/io-path-stat-chown-failure.t
 t/io/io-path-subclass-cool-methods.t
 t/io/io-path-subclass-new.t
@@ -2375,6 +2376,7 @@ t/lang/quoting/corner-quote-backslash.t
 t/lang/quoting/double-angle-quote-word-list.t
 t/lang/quoting/embedded-qqw-qw-escape.t
 t/lang/quoting/escaped-our-sub-incdec.t
+t/lang/quoting/forward-sub-quotewords.t
 t/lang/quoting/heredoc-imported-call-value.t
 t/lang/quoting/heredoc-newline-delimiter.t
 t/lang/quoting/heredoc-trailing-code-consumed-span.t
@@ -2399,6 +2401,7 @@ t/lang/quoting/q-heredoc-no-escapes.t
 t/lang/quoting/qq-after-do-if-block.t
 t/lang/quoting/qq-infix-continuation.t
 t/lang/quoting/qq-negated-adverbs.t
+t/lang/quoting/quote-alternate-delimiters.t
 t/lang/quoting/quote-brace-then-newline-infix.t
 t/lang/quoting/quote-doubled-delimiter-interpolation.t
 t/lang/quoting/quote-doubled-delimiter.t
@@ -2407,6 +2410,7 @@ t/lang/quoting/quote-op-hyphen-identifier.t
 t/lang/quoting/quote-op-name-fat-arrow-key.t
 t/lang/quoting/quoted-brace-before-interpolation.t
 t/lang/quoting/quoting.t
+t/lang/quoting/qw-word-list-is-not-a-list-call.t
 t/lang/quoting/qx-quote.t
 t/lang/quoting/slip-prefix-quote-word-list.t
 t/lang/quoting/string-interpolation-hyphen-boundary.t
@@ -4757,6 +4761,7 @@ t/rakuast/rakuast-with-without-block.t
 t/rakuast/rakuast-with-without-modifier.t
 t/rakuast/rakuast-word-list-spelling.t
 t/rakuast/rakuast-word-quotes.t
+t/rakuast/rakuast-words-processor-and-colonpair-words.t
 t/rakuast/rakuast-yada-stubs.t
 t/rakuast/rakuast-zen-slice-adverbs.t
 t/regex/anon-regex-declarator-signature.t
