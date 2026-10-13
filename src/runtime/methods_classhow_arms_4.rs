@@ -244,8 +244,36 @@ impl Interpreter {
                         .filter(|n| !n.is_empty() && n != "self")
                 })
                 .flatten();
-            let (method_body, method_compiled) = match named_invocant {
-                Some(inv_name) => {
+            // A `sub` (not a method) refers to the `self` of the scope that
+            // created it, never to the receiver it is later installed on:
+            // PDF::COS::Tie's `my &accessor = sub (\obj) is rw {
+            // obj.rw-accessor(self, :$key) }` passes the Attribute the
+            // accessor was made by. The method binder sets `self` to the
+            // receiver, so rebind the captured one at the head of the body.
+            // TODO: a declared routine (`&named-sub`) has no AST body to
+            // prepend to; its `self` is still the receiver.
+            let lexical_self = takes_positional_invocant
+                .then(|| sub_data.env.get("self").cloned())
+                .flatten()
+                .filter(|_| !sub_data.body.is_empty());
+            let (method_body, method_compiled) = match (named_invocant, lexical_self) {
+                (None, Some(outer_self)) => {
+                    let mut body = vec![crate::ast::Stmt::VarDecl {
+                        name: "self".to_string(),
+                        expr: crate::ast::Expr::Literal(outer_self),
+                        type_constraint: None,
+                        is_state: false,
+                        is_our: false,
+                        is_dynamic: false,
+                        is_export: false,
+                        export_tags: Vec::new(),
+                        custom_traits: Vec::new(),
+                        where_constraint: None,
+                    }];
+                    body.extend(sub_data.body.iter().cloned());
+                    (std::sync::Arc::new(body), None)
+                }
+                (Some(inv_name), _) => {
                     let mut body = vec![
                         crate::ast::Stmt::VarDecl {
                             name: inv_name.clone(),
@@ -264,7 +292,7 @@ impl Interpreter {
                     body.extend(sub_data.body.iter().cloned());
                     (std::sync::Arc::new(body), None)
                 }
-                None => (sub_data.body.clone(), sub_data.compiled_code.clone()),
+                (None, None) => (sub_data.body.clone(), sub_data.compiled_code.clone()),
             };
             // A Sub built from a DECLARED routine (`my method m() {...}`,
             // `my sub a() {...}`, `&foo` -- anything read back through

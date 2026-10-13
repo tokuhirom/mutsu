@@ -5,6 +5,7 @@
 //! and best-effort partial parsing for module loading. Re-exported from
 //! `mod.rs` at their original visibility.
 
+use super::unit_use_hoist::hoist_unit_uses;
 use super::*;
 use crate::parser::parse_result::PError;
 
@@ -445,17 +446,9 @@ pub(crate) fn stmt_list_with_mode(
                     // out of the body to before the declaration. They stay in the
                     // same compilation-unit scope, so imported symbols remain
                     // visible. (Diamond inheritance: roast/integration/diamond.t.)
+                    // The `use` also stays in the body (see `hoist_unit_uses`).
                     if !parents.is_empty() {
-                        let mut hoisted: Vec<Stmt> = Vec::new();
-                        tail_stmts.retain(|stmt| {
-                            if matches!(stmt, Stmt::Use { .. }) {
-                                hoisted.push(stmt.clone());
-                                false
-                            } else {
-                                true
-                            }
-                        });
-                        stmts.extend(hoisted);
+                        stmts.extend(hoist_unit_uses(&tail_stmts));
                     }
                     // A method declared in a nested block of the body is the
                     // class's too, as in the block form (`package_body_block`).
@@ -480,19 +473,7 @@ pub(crate) fn stmt_list_with_mode(
                         .any(|s| matches!(s, Stmt::DoesDecl { .. }))
                         || body.iter().any(|s| matches!(s, Stmt::DoesDecl { .. }));
                     if composes {
-                        let mut hoisted: Vec<Stmt> = Vec::new();
-                        tail_stmts.retain(|stmt| {
-                            if matches!(
-                                stmt,
-                                Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. }
-                            ) {
-                                hoisted.push(stmt.clone());
-                                false
-                            } else {
-                                true
-                            }
-                        });
-                        stmts.extend(hoisted);
+                        stmts.extend(hoist_unit_uses(&tail_stmts));
                     }
                     // The declarator may have already recorded `does Role`
                     // composition as leading `DoesDecl` statements in `body`
