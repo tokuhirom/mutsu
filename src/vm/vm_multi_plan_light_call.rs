@@ -116,29 +116,49 @@ impl Interpreter {
         cf: &CompiledFunction,
         compiled_fns: &CompiledFns,
     ) {
-        if self.is_unit_scoped_routine_name(name) {
-            return;
-        }
         let Some(keys) = self.multi_arg_type_keys(args) else {
             return;
         };
-        let Some((plan_key, plan)) = self.light_bare_multi_plan(name, args, &keys) else {
+        let key = (self.current_package_sym(), name_sym, keys);
+        let generation = self.caches.fn_resolve_gen;
+        // Recorded already, either way: a plan-light entry, or the negative
+        // `multi_light_cache` entry a family the light path cannot serve gets,
+        // so its calls stop re-deriving the plan key here (one allocation per
+        // call on `bench-multi-dispatch`'s subset family).
+        if self
+            .caches
+            .multi_light_cache
+            .get(generation, &key, || {
+                self.dispatch.fn_family_gens.of_name(name_sym)
+            })
+            .is_some()
+            || self
+                .caches
+                .multi_plan_light_cache
+                .get(generation, &key, || {
+                    self.dispatch.fn_family_gens.of_name(name_sym)
+                })
+                .is_some()
+        {
+            return;
+        }
+        let plan = if self.is_unit_scoped_routine_name(name) {
+            None
+        } else {
+            self.light_bare_multi_plan(name, args, &key.2)
+        };
+        let Some((plan_key, plan)) = plan else {
+            self.caches.multi_light_cache.insert(
+                generation,
+                self.caches.fn_resolve_gen,
+                || self.dispatch.fn_family_gens.of_name(name_sym),
+                key,
+                None,
+            );
             return;
         };
         let candidates = Self::plan_program_candidates(&plan);
         if !candidates.iter().any(|c| Arc::ptr_eq(c, winner)) {
-            return;
-        }
-        let key = (self.current_package_sym(), name_sym, keys);
-        let generation = self.caches.fn_resolve_gen;
-        if self
-            .caches
-            .multi_plan_light_cache
-            .get(generation, &key, || {
-                self.dispatch.fn_family_gens.of_name(name_sym)
-            })
-            .is_some_and(|entry| Arc::ptr_eq(&entry.plan, &plan))
-        {
             return;
         }
         // The winner's body is the one this call is about to run; every other
