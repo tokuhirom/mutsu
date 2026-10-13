@@ -46,6 +46,7 @@
 //! (`dispatch::debug_assert_matches_full_path`); CI's `debug-tap` job runs that
 //! over the whole TAP suite. `rows_are_declared_by_rakudo` checks each row's owner.
 
+pub(crate) mod allomorph;
 mod collections;
 mod ctors_mop;
 mod dispatch;

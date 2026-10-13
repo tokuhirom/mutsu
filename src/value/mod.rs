@@ -556,7 +556,7 @@ mod dispatch_shape;
 pub(crate) mod render_guard;
 pub(crate) use dispatch_shape::{
     ANY_LIST_FOR_CLOSED_SHAPES, COOL_TEXT_FOR_CLOSED_SHAPES, DispatchShape, MU_FOR_CLOSED_SHAPES,
-    ROLES_WITH_ROWS, const_str_eq,
+    ROLES_WITH_ROWS, const_str_eq, cool_numeric_method,
 };
 mod display;
 /// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).

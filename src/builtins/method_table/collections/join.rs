@@ -117,6 +117,13 @@ fn join_core(target: &Value, sep: &str) -> Joined {
         {
             from_items(&crate::value::value_buf::buf_elems_or_empty(&attributes))
         }
+        // An allomorph is a one-element list of itself, which stringifies to
+        // its `Str` part: `<1e0>.join` is "1e0" (ADR-11276 §9.101).
+        ValueView::Mixin(inner, mixins)
+            if crate::value::types::allomorph_type_name(inner, mixins).is_some() =>
+        {
+            Joined::Done(Ok(Value::str(target.to_string_value())))
+        }
         // A Pair is a one-element list, so the separator never appears: the
         // result is the Pair's own `.Str`, `key\tvalue`.
         ValueView::Pair(..) | ValueView::ValuePair(..) => {
