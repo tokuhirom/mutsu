@@ -39,6 +39,15 @@ impl Interpreter {
         cf: &CompiledFunction,
         args: &[Value],
     ) -> bool {
+        // Inlined down to this test, so a routine with no such parameter (the
+        // `fib` hot path) pays one branch and no call.
+        cf.aggregate_positional_params == 0 || Self::aggregate_args_admitted_masked(cf, args)
+    }
+
+    /// The argument walk of [`Self::positional_light_aggregate_args_admitted`].
+    // Cost: O(k), k = plain `@`/`%` positional parameters.
+    #[inline(never)]
+    fn aggregate_args_admitted_masked(cf: &CompiledFunction, args: &[Value]) -> bool {
         let mut mask = cf.aggregate_positional_params;
         while mask != 0 {
             let i = mask.trailing_zeros() as usize;
