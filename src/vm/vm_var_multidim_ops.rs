@@ -89,6 +89,11 @@ impl Interpreter {
             self.check_shaped_array_bounds(&target, &dims, 0)?;
         }
 
+        let target = if is_positional {
+            target
+        } else {
+            Self::assoc_walk_level(target)
+        };
         let mut result = self.multi_dim_index_read(&target, &dims)?;
         // Under 6.d and earlier an ASSOCIATIVE multi-dim subscript is a slice
         // even when every dimension is a single key: raku hands back a `List`
@@ -1072,6 +1077,18 @@ impl Interpreter {
     /// Read from a hash using one multi-dim dimension, recursing for the rest.
     /// The dimension may be a single key (scalar), a list of keys (slice), or
     /// `*` (all values). A missing key reads as `Nil`.
+    /// A Match under an ASSOCIATIVE multi-dim subscript (`$m{*;'c'}`) is its
+    /// named-capture hash; every other value is unchanged.
+    // Cost: O(c), c = named captures (the map is cloned).
+    fn assoc_walk_level(value: Value) -> Value {
+        if value.match_list().is_some()
+            && let Some(named) = value.match_named()
+        {
+            return named;
+        }
+        value
+    }
+
     fn multi_dim_hash_read(
         &mut self,
         map: &ValueMap,
@@ -1094,6 +1111,11 @@ impl Interpreter {
                         let inner = match v.view() {
                             ValueView::Scalar(b) => b.clone(),
                             _ => v.clone(),
+                        };
+                        let inner = if rest.is_empty() {
+                            inner
+                        } else {
+                            Self::assoc_walk_level(inner)
                         };
                         this.multi_dim_index_read(&inner, rest)
                     }
@@ -1119,6 +1141,11 @@ impl Interpreter {
                     let inner = match v.view() {
                         ValueView::Scalar(b) => b.clone(),
                         _ => v.clone(),
+                    };
+                    let inner = if rest.is_empty() {
+                        inner
+                    } else {
+                        Self::assoc_walk_level(inner)
                     };
                     let result = self.multi_dim_index_read(&inner, rest)?;
                     if has_more_multi && let ValueView::Array(items, ..) = result.view() {
