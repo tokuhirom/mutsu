@@ -69,11 +69,12 @@ impl Interpreter {
             return Ok(false);
         };
         let key = (self.current_package_sym(), name_sym, keys);
-        let Some(Some(hit)) = self
-            .caches
-            .multi_light_cache
-            .get(self.caches.fn_resolve_gen, &key)
-            .cloned()
+        let Some(Some(hit)) =
+            self.caches
+                .multi_light_cache
+                .get(self.caches.fn_resolve_gen, &key, || {
+                    self.dispatch.fn_family_gens.of_name(name_sym)
+                })
         else {
             return Ok(false);
         };
@@ -164,7 +165,9 @@ impl Interpreter {
         if self
             .caches
             .multi_light_cache
-            .get(generation, &key)
+            .get(generation, &key, || {
+                self.dispatch.fn_family_gens.of_name(name_sym)
+            })
             .is_some()
         {
             return;
@@ -179,7 +182,13 @@ impl Interpreter {
                     fingerprint: cf.fingerprint,
                 },
             );
-        self.caches.multi_light_cache.insert(generation, key, entry);
+        self.caches.multi_light_cache.insert(
+            generation,
+            self.caches.fn_resolve_gen,
+            || self.dispatch.fn_family_gens.of_name(name_sym),
+            key,
+            entry,
+        );
     }
 
     /// Whether the closure's captured `&name` binding (upvalue `index`) is a

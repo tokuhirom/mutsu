@@ -142,7 +142,7 @@ pub(crate) struct ResolutionCaches {
     /// positional light-call cache treat a genuine multi as a monomorphic
     /// function, caching whichever candidate resolved first and reusing it
     /// for every argument type thereafter (#7539).
-    pub(crate) multi_candidates_cache: GenCache<(Symbol, Option<Symbol>, Symbol), bool>,
+    pub(crate) multi_candidates_cache: FamilyGenCache<(Symbol, Option<Symbol>, Symbol), bool>,
     /// Memo for [`Interpreter::has_proto`], keyed by the full bare-name lookup
     /// context `(current_package, innermost lexical_package, name)` — the
     /// exact inputs `bare_name_packages()` derives the search list from — so
@@ -367,11 +367,11 @@ pub(crate) struct ResolutionCaches {
     /// are tagged the same way.
     #[allow(clippy::type_complexity)]
     pub(crate) func_multi_resolve_cache:
-        GenCache<(Symbol, Symbol, Vec<Symbol>), Option<Arc<FunctionDef>>>,
+        FamilyGenCache<(Symbol, Symbol, Vec<Symbol>), Option<Arc<FunctionDef>>>,
     /// Memoized `(package, name) -> is this multi sub's dispatch type+arity
     /// deterministic` (i.e. cacheable in `func_multi_resolve_cache`). The
     /// function analogue of `multi_type_cacheable`.
-    pub(crate) func_multi_type_cacheable: GenCache<(Symbol, Symbol), bool>,
+    pub(crate) func_multi_type_cacheable: FamilyGenCache<(Symbol, Symbol), bool>,
     /// Memoized `(package, name, argument type keys) -> may this ONE argument
     /// type key use `func_multi_resolve_cache` even though `func_multi_type_cacheable`
     /// said the family as a whole is value-dependent`.
@@ -382,19 +382,19 @@ pub(crate) struct ResolutionCaches {
     /// family whose value-dependent candidates are ALL excluded that way is
     /// type-deterministic for those argument types after all. See
     /// `dispatch_narrow.rs` for the soundness rules.
-    pub(crate) func_multi_argkey_cacheable: GenCache<FuncMultiResolveKey, bool>,
+    pub(crate) func_multi_argkey_cacheable: FamilyGenCache<FuncMultiResolveKey, bool>,
     /// A bare multi call's whole dispatch, keyed like `func_multi_resolve_cache`
     /// (package, name, argument type keys): the winner and its compiled body,
     /// filled when a call of a type-deterministic family took the positional
     /// light path, so a later call with the same argument types goes straight
     /// there (`try_multi_light_call`, #10109, ADR-12529 §2.4). `None` records
     /// a key whose winner has no body in the caller's compiled table.
-    pub(crate) multi_light_cache: GenCache<FuncMultiResolveKey, Option<MultiLightWinner>>,
+    pub(crate) multi_light_cache: FamilyGenCache<FuncMultiResolveKey, Option<MultiLightWinner>>,
     /// Type-keyed dispatch plans for bare-name multi calls: the gathered,
     /// ranked candidate passes, so a value-dependent family (`where`,
     /// `subset`) re-runs only its bind checks per call (#9967,
     /// `multi_dispatch_plan.rs`).
-    pub(crate) bare_multi_plan_cache: GenCache<
+    pub(crate) bare_multi_plan_cache: FamilyGenCache<
         crate::runtime::multi_dispatch_plan::BareMultiPlanKey,
         Arc<crate::runtime::multi_dispatch_plan::BareMultiPlan>,
     >,

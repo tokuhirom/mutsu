@@ -132,7 +132,10 @@ impl Interpreter {
         let key = self.bare_multi_plan_key(name, arg_values, arg_keys);
         let generation = self.caches.fn_resolve_gen;
         if let Some(key) = &key
-            && let Some(plan) = self.caches.bare_multi_plan_cache.get(generation, key)
+            && let Some(plan) = self
+                .caches
+                .bare_multi_plan_cache
+                .get(generation, key, || self.dispatch.fn_family_gens.of_name(key.name))
         {
             return plan.clone();
         }
@@ -141,9 +144,14 @@ impl Interpreter {
         let plan = Arc::new(plan);
         if let Some(key) = key {
             debug_assert_eq!(generation, self.caches.fn_resolve_gen);
-            self.caches
-                .bare_multi_plan_cache
-                .insert(generation, key, plan.clone());
+            let name = key.name;
+            self.caches.bare_multi_plan_cache.insert(
+                generation,
+                self.caches.fn_resolve_gen,
+                || self.dispatch.fn_family_gens.of_name(name),
+                key,
+                plan.clone(),
+            );
         }
         plan
     }

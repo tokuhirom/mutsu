@@ -70,10 +70,10 @@ impl Interpreter {
         // memo, so neither depends on the other having been consulted first.
         let generation = self.caches.fn_resolve_gen;
         let memo_key = (pkg_sym, name_sym, arg_keys.to_vec());
-        if let Some(&c) = self
+        if let Some(c) = self
             .caches
             .func_multi_argkey_cacheable
-            .get(generation, &memo_key)
+            .get(generation, &memo_key, || self.dispatch.fn_family_gens.of_name(name_sym))
         {
             return c;
         }
@@ -92,7 +92,13 @@ impl Interpreter {
         }
         self.caches
             .func_multi_argkey_cacheable
-            .insert(generation, memo_key, cacheable);
+            .insert(
+                generation,
+                self.caches.fn_resolve_gen,
+                || self.dispatch.fn_family_gens.of_name(name_sym),
+                memo_key,
+                cacheable,
+            );
         cacheable
     }
 
