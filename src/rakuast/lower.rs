@@ -3734,11 +3734,16 @@ pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeE
         RakuAstClass::RegexAssertionInterpolatedVar => {
             let sequential = bool_field(node, "sequential")?;
             let var = named_child(node, "var")?;
-            if !var.class.is_simple_variable() {
-                return Err(unsupported(node));
-            }
-            let name_value = positional_leaf(var)?;
-            let ValueView::Str(name) = name_value.view() else {
+            // `<@Pkg::name>`: a package variable keeps its qualified name.
+            let name = if var.class == RakuAstClass::VarPackage {
+                variable_spelling(var)?
+            } else if var.class.is_simple_variable() {
+                let name_value = positional_leaf(var)?;
+                let ValueView::Str(name) = name_value.view() else {
+                    return Err(unsupported(node));
+                };
+                name.to_string()
+            } else {
                 return Err(unsupported(node));
             };
             let Some(sigil) = name.chars().next() else {
@@ -3759,9 +3764,17 @@ pub(super) fn lower_regex_node(node: &RakuAstNode) -> Result<RegexNode, RuntimeE
         }
         RakuAstClass::RegexAssertionCallable => {
             let callee = named_child(node, "callee")?;
-            let callee = lower_expr(callee)?;
-            let Expr::CodeVar(name) = callee else {
-                return Err(unsupported(node));
+            let name = if callee.class == RakuAstClass::ContextualizerItem {
+                // `<&$var>`: the scalar the contextualizer holds.
+                match lower_expr(named_child_or_positional(callee)?)? {
+                    Expr::Var(name) => format!("${name}"),
+                    _ => return Err(unsupported(node)),
+                }
+            } else {
+                let Expr::CodeVar(name) = lower_expr(callee)? else {
+                    return Err(unsupported(node));
+                };
+                name
             };
             let args = match node.fields.iter().find(|f| f.name == Some("args")) {
                 Some(field) => {

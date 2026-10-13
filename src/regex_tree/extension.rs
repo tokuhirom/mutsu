@@ -25,6 +25,7 @@
 //! a & b      Regex::Conjunction(a, b)           a && b   Regex::SequentialConjunction(a, b)
 //! $(1+1)     Regex::Interpolation(sequential => False,
 //!                                 var => Contextualizer::Item(StatementSequence(...)))
+//! $^a        Regex::Interpolation(var => VarDeclaration::Placeholder::Positional("$a"))
 //! @$ref      Regex::Interpolation(sequential => False,
 //!                                 var => Contextualizer::List(Var::Lexical("$ref")))
 //! <rx=$r>    Assertion::Alias(name => "rx", assertion => Assertion::InterpolatedVar(...))
@@ -87,6 +88,8 @@ pub(crate) enum RegexExtension {
         sequential: bool,
         code: Box<RegexCode>,
     },
+    /// `$^a`: a placeholder parameter of the enclosing block, interpolated.
+    Placeholder { name: String, sequential: bool },
     /// `@$ref`: a variable interpolated in the context its sigil names.
     ContextualizedVariable {
         sigil: char,
@@ -119,7 +122,8 @@ impl RegexExtension {
             | Self::Recurse
             | Self::InterpolatedQuote { .. }
             | Self::ContextualizedInterpolation { .. }
-            | Self::ContextualizedVariable { .. } => Vec::new(),
+            | Self::ContextualizedVariable { .. }
+            | Self::Placeholder { .. } => Vec::new(),
         }
     }
 
@@ -140,7 +144,8 @@ impl RegexExtension {
             | Self::Recurse
             | Self::InterpolatedQuote { .. }
             | Self::ContextualizedInterpolation { .. }
-            | Self::ContextualizedVariable { .. } => Vec::new(),
+            | Self::ContextualizedVariable { .. }
+            | Self::Placeholder { .. } => Vec::new(),
         }
     }
 
@@ -234,6 +239,7 @@ impl RegexExtension {
                 format!("{sigil}({})", code.code)
             }
             Self::ContextualizedVariable { sigil, name, .. } => format!("{sigil}${name}"),
+            Self::Placeholder { name, .. } => format!("$^{name}"),
             Self::Alias { alias, assertion } => {
                 let inner = assertion.to_source();
                 format!("<{alias}={}", inner.strip_prefix('<').unwrap_or(&inner))
