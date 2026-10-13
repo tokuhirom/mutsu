@@ -11,7 +11,7 @@ src/compiler/const_fold.rs                           1  # const_operand_mode is 
 src/compiler/decl_plan.rs                            3  # code generation (sub/class/role declaration plans: compile-time op construction, recursing into nested declarations)
 src/compiler/expr_binary.rs                          3  # 3 value-path rewrites/spines (subst_topic_var, retarget_chain_rhs over andthen/orelse chains; native_int_operand_signedness): stay hand-rolled; the chain-root name is Expr::lvalue_root
 src/compiler/expr_call.rs                            1  # code generation (compile_expr_call_inner)
-src/compiler/expr_closure.rs                         3  # 2 codegen (compile_*) + expr_refs_topic, an operand spine (is this operand the topic?)
+src/compiler/expr_closure.rs                         2  # 2 codegen (compile_*)
 src/compiler/expr_helpers.rs                         2  # 2 spines/lowerings: subst pattern to text, container-name path
 src/compiler/expr_ops.rs                             1  # code generation (compile_expr_meta_op)
 src/compiler/helpers_ast_utils.rs                    3  # assign_expr_for_lvalue lowering, peel_compound_assign spine, type_decl_shell_body transform (the lvalue/index-chain spines are Expr::lvalue_root / Expr::index_path)
@@ -54,4 +54,5 @@ src/runtime/run.rs                                   2  # 2 statement-tail spine
 src/runtime/types/mod.rs                             1  # predicate_requires_defined recognizes one shape (`.defined` or a one-statement block of it): a spine, stays hand-rolled
 src/trir/compile/expr.rs                             3  # TRIR code generation (compile_expr / compile_expr_sink / compile_unary)
 src/whatever_curry/build.rs                          3  # build_closure is closure construction; count_whatever/contains_hyperwhatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled
+src/whatever_curry/mutation.rs                       1  # refs_placeholder, an operand spine (is this operand the placeholder?), moved from expr_closure.rs
 src/whatever_curry/replace.rs                        1  # the priming-scope spine (VisitMut): each operator hands on only its currying operands and every other node stops, by ADR-0033 design

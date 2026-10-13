@@ -488,7 +488,9 @@ impl Compiler {
         // mutation/identity reaches the caller's container (S02 "WhateverCode
         // parameters are rw"). Read-only bodies keep `_` by value (no param_defs),
         // which avoids a topic-`_` writeback leak in `for`/grep frames.
-        let wc_raw = is_whatever_code && param == "_" && whatever_lambda_body_mutates_topic(body);
+        let wc_raw = is_whatever_code
+            && param == "_"
+            && crate::whatever_curry::body_mutates_placeholder(body, "_");
         let wc_param_defs: Vec<crate::ast::ParamDef> = if wc_raw {
             vec![crate::ast::ParamDef {
                 type_capture: None,
@@ -1623,80 +1625,5 @@ impl Compiler {
             };
             self.compile_expr(&ro_call);
         }
-    }
-}
-
-/// Finds a mutation of the WhateverCode's placeholder (`$_` after lowering)
-/// anywhere in its body, or a use that depends on its container identity.
-/// A nested code object has a `$_` of its own and is not entered.
-#[derive(Default)]
-struct TopicMutationScan {
-    found: bool,
-}
-
-impl<'ast> crate::ast_visit::Visit<'ast> for TopicMutationScan {
-    fn visit_expr(&mut self, e: &'ast Expr) {
-        if self.found || crate::ast::scope_scan::is_code_object(e) {
-            return;
-        }
-        self.found = match e {
-            // `*++` / `*--` / `++*` / `--*`
-            Expr::PostfixOp {
-                op: TokenKind::PlusPlus | TokenKind::MinusMinus,
-                expr,
-            }
-            | Expr::Unary {
-                op: TokenKind::PlusPlus | TokenKind::MinusMinus,
-                expr,
-                ..
-            } => expr_refs_topic(expr),
-            // `* =:= $x` — container identity needs the same container.
-            Expr::Binary {
-                op: TokenKind::Ident(name),
-                left,
-                right,
-                ..
-            } if name == "=:=" => expr_refs_topic(left) || expr_refs_topic(right),
-            // `*.=foo` — mutating method-assign on the placeholder.
-            Expr::MethodCall {
-                target,
-                modifier: Some('='),
-                ..
-            } => expr_refs_topic(target),
-            _ => false,
-        };
-        if !self.found {
-            crate::ast_visit::walk_expr(self, e);
-        }
-    }
-}
-
-/// Whether a single-`*` WhateverCode body (the `*` already lowered to `Var("_")`)
-/// *mutates* its placeholder or depends on its container identity, requiring the
-/// `_` parameter to bind `is raw`: `*++`/`*--`/`++*`/`--*`, `* =:= $x`, `*.=foo`.
-// Cost: O(n), n = size of `body` outside nested code objects.
-fn whatever_lambda_body_mutates_topic(body: &[Stmt]) -> bool {
-    let mut scan = TopicMutationScan::default();
-    crate::ast_visit::walk_stmts(&mut scan, body);
-    scan.found
-}
-
-fn is_topic_var(e: &Expr) -> bool {
-    matches!(e, Expr::Var(name) if name == "_")
-}
-
-/// Whether `e` denotes the topic itself, seen through the operator chain that
-/// carries it (a prefix/postfix, an infix operand, a method-call invocant).
-/// A value-path spine, not a subtree search: an argument mentioning `$_` does
-/// not make the expression the topic.
-fn expr_refs_topic(e: &Expr) -> bool {
-    if is_topic_var(e) {
-        return true;
-    }
-    match e {
-        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => expr_refs_topic(expr),
-        Expr::Binary { left, right, .. } => expr_refs_topic(left) || expr_refs_topic(right),
-        Expr::MethodCall { target, .. } => expr_refs_topic(target),
-        _ => false,
     }
 }
