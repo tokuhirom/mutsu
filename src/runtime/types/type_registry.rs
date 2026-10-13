@@ -104,14 +104,27 @@ impl Interpreter {
         }
     }
 
-    /// True when `qualified` is only reachable through `pkg` because `pkg` was
-    /// re-derived by splitting a compound declared name — i.e. `pkg` is not a
-    /// real lexical scope for it. See
+    /// True when `qualified` (built as `pkg::<name>`) is only reachable through
+    /// `pkg` because `pkg` was re-derived by splitting a compound declared name
+    /// — i.e. `pkg` is not a real lexical scope for it. The package the
+    /// compound name was declared in is one: `module Core { role A::Item }`
+    /// is reached from `Core` by its relative name `A::Item`. See
     /// [`crate::runtime::Registry::compound_declared_types`].
-    fn compound_name_segment_is_not_a_scope(&self, qualified: &str) -> bool {
+    // Cost: O(1), one hash probe.
+    fn compound_name_segment_is_not_a_scope(&self, qualified: &str, pkg: Symbol) -> bool {
         self.registry()
             .compound_declared_types
-            .contains_key(qualified)
+            .get(qualified)
+            .is_some_and(|&enclosing| enclosing != pkg)
+    }
+
+    /// Whether `name` was declared with a compound name outside its own
+    /// parent prefix (see [`Self::note_compound_declared_type`]).
+    // Cost: O(1), one hash probe.
+    fn is_compound_declared_name(&self, name: &str) -> bool {
+        self.registry()
+            .compound_declared_types
+            .contains_key(name)
     }
 
     /// The scope a type lookup visits after `pkg` on its way outward: the
@@ -756,7 +769,7 @@ impl Interpreter {
                 // does not make `Test` a scope that owns a `Bool`: code
                 // running in `Test` must still see the core `Bool`.
                 if self.has_type_direct(qualified)
-                    && !self.compound_name_segment_is_not_a_scope(qualified)
+                    && !self.compound_name_segment_is_not_a_scope(qualified, pkg)
                 {
                     return Some(qualified);
                 }
@@ -1114,7 +1127,7 @@ impl Interpreter {
             // from inside `Foo` through its stash (`unit class Foo; use
             // Foo::Bar; Bar.new`).
             if (crate::qualified::is_qualified(name_sym)
-                || !(self.compound_name_segment_is_not_a_scope(qualified)
+                || !(self.compound_name_segment_is_not_a_scope(qualified, pkg)
                     && self.unshadowed_builtin_type_name(name_sym.as_str())))
                 && let Some(key) = self.resolve_lexical_type_key(qualified)
             {
@@ -1174,7 +1187,7 @@ impl Interpreter {
                 // not a declaration inside `Test`, so `Test`'s own `Bool` stays core.
                 if qualified != owner
                     && self.has_type_direct(qualified)
-                    && !self.compound_name_segment_is_not_a_scope(qualified)
+                    && !self.compound_name_segment_is_not_a_scope(qualified, pkg)
                 {
                     return qualified.to_string();
                 }
@@ -1202,7 +1215,7 @@ impl Interpreter {
             // `qualified` reconstructs the class's OWN full name and this loop
             // would "resolve" the attribute's `Supply` type constraint to the
             // enclosing class itself instead of the real core `Supply` type.
-            if !self.compound_name_segment_is_not_a_scope(qualified)
+            if !self.compound_name_segment_is_not_a_scope(qualified, pkg)
                 && let Some(key) = self.resolve_lexical_type_key(qualified)
             {
                 return key;
@@ -1273,7 +1286,7 @@ impl Interpreter {
         // exception: its `Grault` prefix is not a lexical scope, so bare
         // `Supply` inside the body still means the core type rather than the
         // class itself.
-        let is_compound_declared = self.compound_name_segment_is_not_a_scope(owner);
+        let is_compound_declared = self.is_compound_declared_name(owner);
         if !is_compound_declared
             && self.has_type_direct(owner)
             && (crate::qualified::split_qualified(Symbol::intern(owner))
