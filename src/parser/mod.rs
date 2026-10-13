@@ -112,6 +112,44 @@ pub(crate) mod term_boundary;
 mod whenever_scope;
 use std::sync::OnceLock;
 
+thread_local! {
+    static PARSER_NESTING: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Bound parser recursion on threads without an armed native stack floor, and
+/// use the real stack boundary where one is available.
+pub(in crate::parser) struct NestingGuard;
+
+impl NestingGuard {
+    pub(in crate::parser) fn enter(
+        input: &str,
+    ) -> Result<Self, crate::parser::parse_result::PError> {
+        const UNGUARDED_LIMIT: usize = 32;
+        let too_deep = if crate::native_stack::stack_floor_armed() {
+            crate::native_stack::headroom_exhausted()
+        } else {
+            PARSER_NESTING.with(|depth| depth.get() >= UNGUARDED_LIMIT)
+        };
+        if too_deep {
+            return Err(crate::parser::parse_result::PError::raw(
+                format!(
+                    "FATAL:X::AdHoc: {}",
+                    crate::native_stack::DEEP_RECURSION_MESSAGE
+                ),
+                Some(input.len()),
+            ));
+        }
+        PARSER_NESTING.with(|depth| depth.set(depth.get() + 1));
+        Ok(Self)
+    }
+}
+
+impl Drop for NestingGuard {
+    fn drop(&mut self) {
+        PARSER_NESTING.with(|depth| depth.set(depth.get() - 1));
+    }
+}
+
 /// Prefix of the emitter parameter `supply { … }` lowers to (see
 /// `primary::ident::supply::supply_method_call`). It is what identifies a
 /// supply-block body after parsing — both for the out-of-scope `whenever` check
@@ -1095,6 +1133,18 @@ mod tests {
         assert!(matches!(err.code(), Some(RuntimeErrorCode::ParseUnparsed)));
         assert_eq!(err.line(), Some(1));
         assert_eq!(err.column(), Some(1));
+    }
+
+    #[test]
+    fn unguarded_parser_thread_returns_a_catchable_nesting_error() {
+        let source = format!("{}1{}", "(".repeat(64), ")".repeat(64));
+        let err = std::thread::Builder::new()
+            .stack_size(64 * 1024 * 1024)
+            .spawn(move || parse_program(&source).unwrap_err())
+            .unwrap()
+            .join()
+            .unwrap();
+        assert!(err.message.contains("Too deep recursion"), "{err:?}");
     }
 
     #[test]

@@ -313,6 +313,7 @@ pub(crate) fn stmt_list_with_mode(
     allow_mainline_capture: bool,
     emit_setline: bool,
 ) -> PResult<'_, Vec<Stmt>> {
+    let _nesting = crate::parser::NestingGuard::enter(input)?;
     let mut stmts = Vec::new();
     let mut rest = input;
     let mut saw_compunit_declarator = false;
