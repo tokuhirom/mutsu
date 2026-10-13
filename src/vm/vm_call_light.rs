@@ -707,13 +707,21 @@ impl Interpreter {
                     let val = crate::runtime::types::unwrap_varref_value(val);
                     let val = val.deitemize_for_sigil_bind();
                     let name = &cf.param_defs[param_idx].name;
-                    self.note_param_bound_aggregate(name, &val);
+                    // Read only when a thread spawns from a block this frame
+                    // made (`clone_for_thread_for_block`), so a body that
+                    // makes no closure has no binding for it to find (#12526).
+                    if !cf.code.closure_compiled_codes.is_empty() {
+                        self.note_param_bound_aggregate(name, &val);
+                    }
                     let sym = match cf.param_name_syms.get(param_idx) {
                         Some(&sym) => sym,
                         None => Symbol::intern(name),
                     };
                     self.bind_light_aggregate_constraint(name, sym, &val);
-                    self.bind_light_aggregate_source(sym, source.map(|s| s.as_str()));
+                    // `.VAR.name` is the record's only reader (#12526).
+                    if cf.code.names_var_method || write_all_params {
+                        self.bind_light_aggregate_source(sym, source.map(|s| s.as_str()));
+                    }
                     val
                 } else {
                     let val = crate::runtime::types::unwrap_varref_value(val);

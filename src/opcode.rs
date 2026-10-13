@@ -6720,6 +6720,13 @@ pub(crate) struct CompiledCode {
     /// `reads_topic` one shadow write. Computed once in
     /// `compute_needs_env_sync`.
     pub(crate) mentions_native_scalar_type_name: bool,
+    /// Whether this body or a closure nested in it names the `.VAR` method,
+    /// the only reader of a parameter's `__mutsu_var_source_name::` record
+    /// (the container's `.VAR.name`). The light bind of a plain `@x`/`%x`
+    /// parameter writes that record only when this is set (#12526). A stray
+    /// `"VAR"` constant costs one harmless record. Computed once in
+    /// `compute_needs_env_sync`.
+    pub(crate) names_var_method: bool,
     /// Whether the body touches a routine-owned implicit (`$/`, `$0`,
     /// `$<name>`, `$!`): it sets one ([`Self::sets_routine_state`]), or its
     /// constant pool names one of those variables or `make` -- the sound
@@ -8063,6 +8070,7 @@ impl CompiledCode {
             uses_routine_state: false,
             sets_routine_state: false,
             mentions_native_scalar_type_name: false,
+            names_var_method: false,
             has_once: false,
             uses_callframe: false,
             uses_capture: false,
@@ -8933,6 +8941,11 @@ impl CompiledCode {
             matches!(c.view(), crate::value::ValueView::Str(s) if matches!(s.as_str(), "int" | "str" | "num")
                 || crate::native_types::is_native_int_type(s.as_str()))
         });
+        self.names_var_method = self
+            .constants
+            .iter()
+            .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "VAR"))
+            || self.closure_compiled_codes.iter().any(|c| c.names_var_method);
         (self.uses_routine_state, self.sets_routine_state) = self.scan_routine_state();
         self.compute_const_syms();
         self.compute_locals_sym();
