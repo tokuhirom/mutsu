@@ -183,23 +183,32 @@ impl Interpreter {
         let snapshot = crate::value::container_read::snapshot_read_receiver(method, &target);
         let native_target = snapshot.as_ref().unwrap_or(&target);
         // Native `.subst` over a Str with a simple pattern/replacement (lever A).
-        if !lever_a_blocked && let Some(result) = self.try_native_subst(native_target, method, &args) {
+        if !lever_a_blocked
+            && let Some(result) = self.try_native_subst(native_target, method, &args)
+        {
             return result;
         }
         // Native `.sort` over a plain array with no/simple comparator (lever A).
-        if !lever_a_blocked && let Some(result) = self.try_native_sort(native_target, method, &args) {
+        if !lever_a_blocked && let Some(result) = self.try_native_sort(native_target, method, &args)
+        {
             return result;
         }
         // Native `.min` / `.max` over a plain list, including `:by` blocks.
-        if !lever_a_blocked && let Some(result) = self.try_native_extrema(native_target, method, &args) {
+        if !lever_a_blocked
+            && let Some(result) = self.try_native_extrema(native_target, method, &args)
+        {
             return result;
         }
         // Native `.minmax` over a plain list, including `:by` blocks.
-        if !lever_a_blocked && let Some(result) = self.try_native_minmax(native_target, method, &args) {
+        if !lever_a_blocked
+            && let Some(result) = self.try_native_minmax(native_target, method, &args)
+        {
             return result;
         }
         // Native `.first` over a plain list (no-adverb forms), including blocks.
-        if !lever_a_blocked && let Some(result) = self.try_native_first(native_target, method, &args) {
+        if !lever_a_blocked
+            && let Some(result) = self.try_native_first(native_target, method, &args)
+        {
             return result;
         }
         // Native QuantHash coercion `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/

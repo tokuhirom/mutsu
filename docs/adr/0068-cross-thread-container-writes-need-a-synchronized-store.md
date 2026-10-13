@@ -1135,3 +1135,19 @@ containers of a snapshot (`.first`, `.head`, `.reverse`) can lose an aliasing wr
 another thread. Measured, the single-threaded-after-a-`start` aliasing shapes (`@a.first(*>1) =
 9`, `@a.head = 0`, `$_ *= 2 for @a.values`, `.kv` with `is rw`, `.pairs`, `for @a`) still
 answer as raku does; the test file pins `.values`/`.kv` and `.list` identity.
+
+Measured, debug build, 4 runs of each family alone (`main` -> this slice): 22 of 44 families
+crashing -> 0 of 44. The release build passes both reader-family files 3 of 3. The
+single-threaded cost is the gate's relaxed load: `scripts/bench-det.sh` instruction counts
+(release, `main` / this slice) are bench-fib 3,114,353,509 / 3,114,344,808, bench-tak
+2,998,892,430 / 2,998,879,791 and bench-array 220,278,415 / 220,236,190, with identical
+allocation counts; the JIT-on rows agree to the same digits.
+
+### 20.1 Still open
+
+- The reader side is complete only by convention: a new reader that walks an `ArrayData`
+  outside these funnels (a new VM op, a new `ListGen` variant) is unguarded until a harness
+  finds it. A `with_items` accessor would make that impossible, at the cost of rewriting the
+  borrowing sites.
+- #13078 (the in-place celled push) can now be reconsidered: the reader-family harnesses no
+  longer find an unguarded walk of a shared node.
