@@ -12,6 +12,7 @@ mod grammar;
 mod mu_answers;
 mod mu_base;
 mod mu_identity;
+mod mu_isa;
 mod mu_numeric;
 mod mu_str;
 
@@ -33,6 +34,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     mu_base::ROWS,
     mu_answers::ROWS,
     mu_identity::ROWS,
+    mu_isa::ROWS,
     mu_numeric::ROWS,
     mu_str::ROWS,
 ];

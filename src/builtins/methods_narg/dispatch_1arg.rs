@@ -541,43 +541,6 @@ fn native_method_1arg_cascade(
         "subbuf" => {
             crate::builtins::method_table::blob_read::subbuf(target, std::slice::from_ref(arg))
         }
-        "isa" => {
-            // Instance, Mixin(Instance), and Package values need interpreter
-            // access for user-defined class hierarchies, role checks, and
-            // subset type resolution, so fall through to the runtime handler.
-            let needs_interpreter = match target.view() {
-                ValueView::Instance { .. } | ValueView::Package(_) => true,
-                ValueView::Mixin(inner, _) => {
-                    matches!(inner.as_ref().view(), ValueView::Instance { .. })
-                }
-                _ => false,
-            };
-            if needs_interpreter {
-                return None;
-            }
-            let type_name = match arg.view() {
-                ValueView::Package(name) => name.resolve(),
-                ValueView::Str(name) => name.to_string(),
-                ValueView::Instance { class_name, .. } => class_name.resolve(),
-                _ => {
-                    // For defined values, extract the type name (e.g., 3.isa(4) checks Int)
-                    // This matches Raku's behavior where .isa on a defined value
-                    // uses the value's type, not its string representation.
-                    crate::value::types::what_type_name(arg)
-                }
-            };
-            // A parameterized type (`Array[Hash]`, `Hash[Int,Str]`) is the
-            // typed container's own type: `my Hash @a; @a.isa(Array[Hash])`.
-            // `isa_check` knows only nominal names, so compare the receiver's
-            // full type name.
-            if type_name.contains('[') {
-                return Some(Ok(Value::truth(
-                    crate::runtime::embedded_container_type_name(target).as_deref()
-                        == Some(type_name.as_str()),
-                )));
-            }
-            Some(Ok(Value::truth(target.isa_check(&type_name))))
-        }
         _ => None,
     }
 }

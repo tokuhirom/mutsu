@@ -495,6 +495,7 @@ pub(crate) fn shapeless_row(
                     | "lines"
                     | "chop"
                     | "flat"
+                    | "isa"
             ))
     {
         return None;
