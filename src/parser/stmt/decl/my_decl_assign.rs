@@ -721,7 +721,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         crate::parser::stmt::assign::parse_colon_args(rest)?
     } else if rest_ws.starts_with(':') && !rest_ws.starts_with("::") {
         // Fake-infix adverb form (space before ':'): .=method :key<val> :key2<val2>
-        parse_fake_infix_adverbs(rest_ws)?
+        super::helpers::parse_fake_infix_adverbs(rest_ws)?
     } else {
         (rest_ws, Vec::new())
     };
@@ -759,7 +759,7 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     {
         custom_traits.push(("__has_initializer".to_string(), None));
     }
-    let is_static_method = dynamic_name.is_none();
+    let source_callee = dynamic_name.clone();
     let source_args = args.clone();
     let expr = match dynamic_name {
         Some(name_expr) => Expr::DynamicMethodCall {
@@ -787,12 +787,14 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         .filter(|_| !s.name.starts_with(['@', '%', '&']));
     let (after_ws, _) = ws(rest)?;
     let has_trailing_comma = after_ws.starts_with(',') && !after_ws.starts_with(",,");
-    let stmt = if is_static_method
-        && s.apply_modifier
-        && s.shape_dims.is_none()
-        && chain_base.is_none()
-        && !has_trailing_comma
-    {
+    let (rest, chain) = match chain_base {
+        Some(base) => {
+            let (r, chained) = super::super::super::expr::postfix_expr_continue(rest, base)?;
+            (r, Some(chained))
+        }
+        None => (rest, None),
+    };
+    let stmt = if s.apply_modifier && !has_trailing_comma {
         crate::ast::method_assign_decl::expand(crate::ast::method_assign_decl::MethodAssignDecl {
             name: s.name,
             type_constraint: s.type_constraint,
@@ -804,11 +806,14 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             custom_traits: s.custom_traits,
             where_constraint: s.where_constraint,
             method: Symbol::intern(&method_name),
+            callee: source_callee.map(Box::new),
             args: source_args,
+            chain: chain.clone().map(Box::new),
+            shape: s.shape_dims.clone(),
             is_v6c: crate::parser::current_language_version_starts_with("6.c"),
         })
     } else {
-        Stmt::VarDecl {
+        let declaration = Stmt::VarDecl {
             name: s.name,
             expr,
             type_constraint: s.type_constraint,
@@ -819,15 +824,17 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             export_tags: s.export_tags.clone(),
             custom_traits,
             where_constraint: s.where_constraint.clone(),
+        };
+        match chain.clone() {
+            Some(chained) => Stmt::SyntheticBlock(vec![declaration, Stmt::Expr(chained)]),
+            None => declaration,
         }
     };
-    if let Some(base) = chain_base {
-        let (r, chained) = super::super::super::expr::postfix_expr_continue(rest, base)?;
-        let combined = Stmt::SyntheticBlock(vec![stmt, Stmt::Expr(chained)]);
+    if chain.is_some() {
         if s.apply_modifier {
-            return parse_statement_modifier(r, combined);
+            return parse_statement_modifier(rest, stmt);
         }
-        return Ok((r, combined));
+        return Ok((rest, stmt));
     }
     // Handle trailing comma list
     let (rest, _) = ws(rest)?;
@@ -870,22 +877,6 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         return parse_statement_modifier(rest, stmt);
     }
     Ok((rest, stmt))
-}
-
-/// Parse fake-infix adverb arguments: `:key<val> :key2<val2>`.
-pub(super) fn parse_fake_infix_adverbs(input: &str) -> PResult<'_, Vec<Expr>> {
-    let mut args = Vec::new();
-    let mut r = input;
-    while r.starts_with(':') && !r.starts_with("::") {
-        if let Ok((r2, arg)) = crate::parser::primary::misc::colonpair_expr(r) {
-            args.push(arg);
-            let (r3, _) = ws(r2)?;
-            r = r3;
-        } else {
-            break;
-        }
-    }
-    Ok((r, args))
 }
 
 /// Handle binding `:=` or `::=`.

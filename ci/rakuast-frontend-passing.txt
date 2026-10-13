@@ -2174,6 +2174,7 @@ t/lang/operators/dot-eq-sink.t
 t/lang/operators/dot-eq.t
 t/lang/operators/dotassign-chain.t
 t/lang/operators/dotplus-type-object.t
+t/lang/operators/dotty-assign-declaration-code-var.t
 t/lang/operators/fat-arrow-associativity.t
 t/lang/operators/fat-arrow-autoquotes-so-and-not.t
 t/lang/operators/fat-arrow-key-shadows-term.t
@@ -2330,6 +2331,7 @@ t/lang/parsing/parser-anonymous-state-assignment.t
 t/lang/parsing/parser-batch3.t
 t/lang/parsing/parser-batch4.t
 t/lang/parsing/parser-expression-gaps.t
+t/lang/parsing/parser-lib-blockers.t
 t/lang/parsing/parser-lowercase-type-smiley-union.t
 t/lang/parsing/parser-modifier-key-after-comma.t
 t/lang/parsing/parser-nesting-limit.t
@@ -3673,6 +3675,7 @@ t/oo/method/datetime-method-rows.t
 t/oo/method/definite-type-method-assign-v6c.t
 t/oo/method/definite-type-method-assign-v6d.t
 t/oo/method/destroy-plain-method.t
+t/oo/method/dot-assign-decl-indirect-method.t
 t/oo/method/dot-method-subrule-with-args.t
 t/oo/method/dynamic-method-object-call.t
 t/oo/method/dynamic-method-type-object.t
@@ -3734,6 +3737,7 @@ t/oo/method/metaop-assign-readonly-method-result.t
 t/oo/method/method-anonymous-invocant.t
 t/oo/method/method-assigns-outer-callable-lexical.t
 t/oo/method/method-bare-array-attr-index-assign.t
+t/oo/method/method-call-assign-untyped-decl.t
 t/oo/method/method-call-attrs-lazy.t
 t/oo/method/method-call-colon-empty-args.t
 t/oo/method/method-call-colonpair-adverb.t
@@ -4502,6 +4506,7 @@ t/rakuast/rakuast-declared-name.t
 t/rakuast/rakuast-declared-sub-bareword.t
 t/rakuast/rakuast-desugar-boundary.t
 t/rakuast/rakuast-do-whenever.t
+t/rakuast/rakuast-dotty-term-method.t
 t/rakuast/rakuast-elsif.t
 t/rakuast/rakuast-enum-term.t
 t/rakuast/rakuast-enum.t
@@ -5840,6 +5845,7 @@ t/routines/signature/destructure-nested-pattern.t
 t/routines/signature/destructure-rest-params-named-default.t
 t/routines/signature/destructuring-sigilless-params.t
 t/routines/signature/direct-call-outer-var-ignores-callers-readonly-param.t
+t/routines/signature/dot-assign-nested-and-parameterized.t
 t/routines/signature/dualstore-param-not-mirrored.t
 t/routines/signature/dynamic-param-out-redirects-say.t
 t/routines/signature/dynamic-var-sigil-alias-raw-param.t

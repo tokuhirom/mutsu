@@ -914,3 +914,24 @@ label when one of that name is in scope or by the parser's own
 `is_loop_control_label` (any word before v6.e, a declared or all-caps one
 from v6.e), and a slipped argument stays the call form in
 `loop_control_expr`, as `loop_control_call_form` parses it.
+
+### 6.40 S10: `.=` with a term as the method (2026-10-13)
+
+Rakudo 2026.09 renders the method of a `.=` whose method is not a name as
+the term itself: `$x .= &f` and `$x .= $m` are `ApplyDottyInfix(right =>
+Call::TermAsMethod(callee => …))`, even for `&f` (after a plain `.`, `$o.&f`
+is a `Call::NameAsMethod`), and an interpolated quoted name (`$x .=
+"{…}"(42)`) is a `Call::QuotedMethod`. A declaration has the same call in
+its `Initializer::CallAssign` (`my %h .= &f`, accessor `postfixish`). Lowering
+takes the call over a placeholder invocant and gives each target the parser's
+`.=` expansion reaches its own copy, so the static and the dynamic forms share
+one path.
+
+The declaration's source form (`ast::method_assign_decl::MethodAssignDecl`)
+now also keeps a term as the method (`callee`), a trailing postfix chain
+(`chain`) and a shaped array's dimensions (`shape`). The chain applies to the
+new value and is sunk (`my $o .= $m.uc`); rakudo makes the declaration the
+innermost operand of the chain's `ApplyPostfix`, and lowering rebuilds the
+form with the chain over the declared variable. The shape is source-only: the
+parser's call already builds the container (`my @c[2;2] .= new(:shape(2,2),
+…)`), so the expansion is unchanged.
