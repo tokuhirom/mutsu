@@ -2566,6 +2566,10 @@ impl Interpreter {
                     // (Routine, :$export!)` prelude candidate (see
                     // vm::vm_trait_mod_export_ops).
                     result
+                } else if let Some(result) = self.try_routine_set_returns(name, &args) {
+                    // The return-type writeback behind the `trait_mod:<of>`
+                    // prelude candidates (see vm::vm_trait_mod_of_ops).
+                    result
                 } else if let Some(result) = self.try_trait_mod_set_default(name, &args) {
                     // The writeback behind the `trait_mod:<is>(Attribute,
                     // :$default!)` prelude candidate (see

@@ -178,6 +178,20 @@ multi sub trait_mod:<does>(Mu $doee, Mu $role) is export {
 }
 "#;
 
+/// `trait_mod:<of>` / `trait_mod:<returns>(Routine:D, Mu:U)` — CORE.setting's
+/// candidates behind a declaration's `of T` / `returns T`, made callable
+/// directly so a distribution's own routine-trait handler can re-dispatch to
+/// them (`Path::Finder`'s `is constraint` does `trait_mod:<of>($method, ...)`).
+/// `__mutsu_routine_set_returns` records the type (`vm::vm_trait_mod_of_ops`).
+pub(super) const TRAIT_MOD_OF_PRELUDE: &str = r#"
+multi sub trait_mod:<of>(Routine:D \r, Mu:U \type) is export {
+    __mutsu_routine_set_returns(r, type);
+}
+multi sub trait_mod:<returns>(Routine:D \r, Mu:U \type) is export {
+    __mutsu_routine_set_returns(r, type);
+}
+"#;
+
 /// `trait_mod:<is>(Attribute:D $attr, :$default!)` — CORE.setting's candidate
 /// behind the literal `has $.x is default(...)` sugar, made callable directly
 /// so a distribution's own attribute-trait handler can re-dispatch to it.
@@ -471,6 +485,7 @@ impl Interpreter {
         Self::inject_prelude_roles(&code, &mut stmts);
         Self::inject_iosocket_prelude(&code, &mut stmts);
         Self::inject_trait_mod_does_prelude(&code, &mut stmts);
+        Self::inject_trait_mod_of_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_default_prelude(&code, &mut stmts);
         Self::inject_trait_mod_is_export_prelude(&code, &mut stmts);
         Self::inject_metamodel_role_prelude(&code, &mut stmts);
