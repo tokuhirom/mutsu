@@ -346,7 +346,7 @@ impl MetaNs {
             MetaNs::SigillessAlias => crate::symbol::SIGILLESS_ALIAS_KEY_PREFIX,
             MetaNs::SigillessReadonly => "__mutsu_sigilless_readonly::",
             MetaNs::Type => crate::symbol::TYPE_META_PREFIX,
-            MetaNs::HashKeyType => "__mutsu_hash_key_type::",
+            MetaNs::HashKeyType => crate::symbol::HASH_KEY_META_PREFIX,
             MetaNs::State => "__mutsu_state_key::",
             MetaNs::Bound => "__mutsu_bound::",
             MetaNs::BoundIndex => "__mutsu_bound_index::",
