@@ -1187,6 +1187,9 @@ impl Interpreter {
                 .iter()
                 .map(|n| (n.clone(), self.env.get(n).cloned()))
                 .collect();
+            // Their `@`/`%` type lanes too: the body's declarations overwrite
+            // the importer's (#13086, `vm_unit_lexical_meta_lanes`).
+            let saved_unit_lex_lanes = self.snapshot_unit_lexical_meta_lanes(&unit_lex_names);
             // The bindings a unit drops below take their type markers with them.
             let saved_type_markers = if unit_name.is_some() {
                 let dropped = facts
@@ -1569,6 +1572,7 @@ impl Interpreter {
                         }
                     }
                 }
+                self.leave_unit_lexical_meta_lanes(unit, saved_unit_lex_lanes);
             }
             // The module's own `$=pod` document is a compunit lexical too: its
             // routines read it after the load, when the restore below has put

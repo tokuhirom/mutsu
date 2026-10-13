@@ -552,7 +552,9 @@ impl Interpreter {
             return None;
         }
         let meta_key = self.type_meta_key_cached(name_sym);
-        let stored = self.env.get_sym(meta_key)?;
+        // A unit's own `@`/`%` lexical keeps its lane in the unit's record
+        // once its load ended (#13086).
+        let stored = self.declared_meta_lane(meta_key)?;
         match stored.view() {
             ValueView::Str(_) => Some(stored.clone()),
             // A `:=` rebind override (`runtime_var_bind_meta`): the value half
@@ -883,7 +885,7 @@ impl Interpreter {
         name_sym: Symbol,
     ) -> Option<String> {
         let meta_key = Self::hash_key_meta_key_for_sym(name_sym);
-        if let Some(ValueView::Str(tc)) = self.env.get_sym(meta_key).map(Value::view) {
+        if let Some(ValueView::Str(tc)) = self.declared_meta_lane(meta_key).map(Value::view) {
             return Some(tc.as_str().to_owned());
         }
         self.attr_hash_key_constraint(name)
