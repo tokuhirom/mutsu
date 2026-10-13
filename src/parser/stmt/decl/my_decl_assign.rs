@@ -8,7 +8,7 @@ use super::my_decl::MyDeclState;
 use super::{
     consume_scalar_decl_trailing_comma, default_decl_expr, method_decl_body,
     parse_assign_expr_or_comma, parse_comma_chained_decls, parse_statement_modifier,
-    rewrite_decl_assignment_or_chain, wrap_with_will_leave,
+    rewrite_decl_assignment_or_chain, wrap_with_will_phasers,
 };
 use crate::ast::{AssignOp, Expr, Stmt};
 use crate::symbol::Symbol;
@@ -286,7 +286,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
                         None => (r2, None),
                     }
                 };
-                let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
+                let stmt = wrap_with_will_phasers(stmt, &s.name, s.will_phasers);
                 // Assign the initializer BEFORE mixing the role in: the `does`
                 // desugar mixes the role into the value currently held by the
                 // variable and writes it back, so a later assignment would drop
@@ -300,7 +300,7 @@ pub(super) fn my_decl_assign_or_default(input: &str, s: MyDeclState) -> PResult<
             }
         }
     }
-    let stmt = wrap_with_will_leave(stmt, &s.name, s.will_phasers);
+    let stmt = wrap_with_will_phasers(stmt, &s.name, s.will_phasers);
     if s.apply_modifier {
         // A bare declaration followed by a loose word-logical (`my %h andthen
         // do { ... }`, `my $x orelse fail`): the word-logicals are looser than
@@ -521,7 +521,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 }))),
                 right,
             });
-            let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_phasers);
+            let stmt = wrap_with_will_phasers(stmt, &var_name_for_leave, s.will_phasers);
             let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
             let (rest, stmt) = if s.apply_modifier {
                 consume_scalar_decl_trailing_comma(rest, stmt)?
@@ -575,7 +575,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
                 where_constraint: s.where_constraint.clone(),
             }));
         }
-        let stmt = wrap_with_will_leave(
+        let stmt = wrap_with_will_phasers(
             Stmt::Expr(feed),
             &var_name_for_leave,
             s.will_phasers.clone(),
@@ -617,7 +617,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         where_constraint: s.where_constraint.clone(),
     };
     if let Some(stmt) = rewrite_decl_assignment_or_chain(expr.clone(), base_stmt) {
-        let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_phasers.clone());
+        let stmt = wrap_with_will_phasers(stmt, &var_name_for_leave, s.will_phasers.clone());
         let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
         // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
         // Only in statement context (apply_modifier=true). In expression context (e.g.,
@@ -659,7 +659,7 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         custom_traits,
         where_constraint: s.where_constraint.clone(),
     };
-    let stmt = wrap_with_will_leave(stmt, &var_name_for_leave, s.will_phasers.clone());
+    let stmt = wrap_with_will_phasers(stmt, &var_name_for_leave, s.will_phasers.clone());
     let (rest, stmt) = parse_comma_chained_decls(rest, stmt)?;
     // For scalar declarations, consume trailing sink expressions (e.g. `my $c = 1, 2, 3;`)
     // Only in statement context (apply_modifier=true). In expression context (e.g.,

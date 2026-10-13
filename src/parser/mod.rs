@@ -65,6 +65,7 @@ pub(crate) use stmt::class::{inject_implicit_rule_ws, inject_separator_ws, role_
 /// The default the parser plants for a typed scalar attribute with no
 /// initializer; the RakuAST lowering re-plants the same one.
 pub(crate) use stmt::decl::attribute_type_seed;
+pub(crate) use stmt::decl::wrap_with_will_phasers;
 pub(crate) use stmt::decl::destructure::desugar::signature_decl as signature_decl_expansion;
 pub(crate) use stmt::decl::{attribute_compound_assign, expand_attribute_compound_assign};
 pub(crate) use stmt::decl::{build_sigilless_bind_stmt, is_anon_sigilless_source};

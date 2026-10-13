@@ -93,6 +93,7 @@ mod type_lower;
 mod use_stmt;
 mod var_decl_constructor;
 mod var_does;
+mod var_will;
 mod word_quote;
 
 pub use formatter::formatter_ast;
@@ -429,6 +430,8 @@ pub enum RakuAstClass {
     TraitIs,
     /// `handles TERM` on an attribute.
     TraitHandles,
+    /// `will PHASE { ... }` on a variable declaration.
+    TraitWill,
     TraitDoes,
     /// `class A hides B`.
     TraitHides,
@@ -738,6 +741,7 @@ impl RakuAstClass {
             StatementLoopRepeatUntil => "RakuAST::Statement::Loop::RepeatUntil",
             TraitIs => "RakuAST::Trait::Is",
             TraitHandles => "RakuAST::Trait::Handles",
+            TraitWill => "RakuAST::Trait::Will",
             TraitDoes => "RakuAST::Trait::Does",
             TraitHides => "RakuAST::Trait::Hides",
             StatementTrusts => "RakuAST::Statement::Trusts",
@@ -1613,6 +1617,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::StatementLoopRepeatUntil,
     RakuAstClass::TraitIs,
     RakuAstClass::TraitHandles,
+    RakuAstClass::TraitWill,
     RakuAstClass::TraitDoes,
     RakuAstClass::TraitHides,
     RakuAstClass::StatementTrusts,

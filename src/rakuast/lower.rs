@@ -2838,6 +2838,15 @@ pub(super) fn lower_var_decl(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     // attribute (`has $.x does R`) reads its own traits.
     let is_attribute = matches!(leaf_str(node, "scope").as_deref(), Ok("has"))
         || matches!(leaf_str(node, "twigil").as_deref(), Ok("." | "!"));
+    // `my $x will begin { ... }`: the parser's phasers after the declaration.
+    if !is_attribute && let Some((stripped, phasers)) = super::var_will::split(node)? {
+        let declaration = lower_var_decl(&stripped)?;
+        let Stmt::VarDecl { name, .. } = &declaration else {
+            return Err(unsupported(node));
+        };
+        let name = name.clone();
+        return Ok(crate::parser::wrap_with_will_phasers(declaration, &name, phasers));
+    }
     if !is_attribute && let Some((stripped, roles)) = super::var_does::split(node)? {
         let declaration = lower_var_decl_plain(&stripped)?;
         return super::var_does::lower_expansion(node, declaration, &roles);
