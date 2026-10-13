@@ -914,3 +914,29 @@ label when one of that name is in scope or by the parser's own
 `is_loop_control_label` (any word before v6.e, a declared or all-caps one
 from v6.e), and a slipped argument stays the call form in
 `loop_control_expr`, as `loop_control_call_form` parses it.
+
+### 6.39 S10: names a loaded module or a package alias makes known (2026-10-13)
+
+Rakudo resolves a name while parsing, so its node says what the name is. The
+converter learns the names of a loaded module from the parse-time module
+scan, which missed five kinds; each rendered as a `Call::Name` (the round
+trip then looked up `&NAME`) or was refused. Measured on rakudo 2026.09, all
+are terms or packages:
+
+- an `our` enum's values qualified by the enum's own name, from any module
+  loaded transitively (`enum DepsShort::LC <New>` → `DepsShort::LC::New`);
+- a qualified enum or role exported with `is export`, under its short name,
+  the way a class already was (`my enum M::Endian is export` makes
+  `Endian::Vax` a value, `unit role M::Greeter is export` makes `Greeter` a type);
+- the enum values an `import Module :TAG` selects (only `use` replayed the
+  tagged values before; an `import` now replays the scan with its tags);
+- a module's `EXPORT`, `EXPORT::DEFAULT` and `EXPORT::ALL` packages, which
+  an `is export` routine creates;
+- a sigilless value bound into an export stash at BEGIN time
+  (`EXPORT::special::<Answer> := 42`), which the scan now records like an
+  exported constant.
+
+Within one unit, a `constant` bound to a package the unit declares is that
+package (`constant E = Outer::Inner`): the converter renders `E` as a
+`Type::Simple` and copies every name declared under the target to the alias
+(`E::Status::Started`), in `src/rakuast/bareword/package_alias.rs`.
