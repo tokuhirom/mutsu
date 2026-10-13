@@ -89,8 +89,6 @@ impl<'ast> Visit<'ast> for PlaceholderMutationScan<'_> {
                 modifier: Some('='),
                 ..
             } => self.refs_placeholder(target),
-            // A direct assignment to the placeholder.
-            Expr::AssignExpr { name, .. } => name == self.name,
             _ => false,
         };
         if !self.found {

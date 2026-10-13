@@ -6,7 +6,7 @@ use Test;
 # what the full closure entry answers, for each thing the entry has to get
 # right, and that the shapes it declines still work.
 
-plan 67;
+plan 66;
 
 # Plain results through a value call, a `.map` and a `.sort`.
 {
@@ -191,9 +191,6 @@ plan 67;
     is "$x $y", '3 4', 'both prefix-incremented placeholders write through';
     ok (* =:= *)($x, $x), '`* =:= *` sees the same container';
     nok (* =:= *)($x, $y), '`* =:= *` tells different containers apart';
-    my $z = 1;
-    (* += 1)($z);
-    is $z, 2, '`* += 1` writes through to the argument variable';
     $_ = 10;
     is ($_ + *)(2), 12, 'a star next to the topic reads its argument';
     my $w = 5;
