@@ -292,10 +292,9 @@ impl<'ast> Visit<'ast> for DeclScan {
                 if !*is_my && !self.prefix.is_empty() {
                     let prefix = self.prefix.clone();
                     self.out.enum_values.extend(
-                        variants
+                        crate::parser::enum_value_names(variants)
                             .iter()
-                            .map(|(value, _)| value)
-                            .filter(|value| *value != "__DYNAMIC__" && !value.is_empty())
+                            .filter(|value| !value.is_empty())
                             .map(|value| compose_type_name(&prefix, value)),
                     );
                 }
@@ -304,16 +303,26 @@ impl<'ast> Visit<'ast> for DeclScan {
             Stmt::VarDecl {
                 name,
                 is_export,
+                is_our,
                 custom_traits,
                 ..
             } => {
                 // Sigiled constants (`constant $x = 1`) are not barewords.
                 if custom_traits.iter().any(|(t, _)| t == "__constant")
-                    && (self.spine || *is_export)
                     && !name.is_empty()
                     && !name.starts_with(['$', '@', '%', '&'])
                 {
-                    self.out.constant_names.push(name.clone());
+                    if self.spine || *is_export {
+                        self.out.constant_names.push(name.clone());
+                    }
+                    // An `our` constant is installed in its package, so
+                    // `Pkg::NAME` resolves from any file that loaded the
+                    // module, export or not.
+                    if *is_our && !self.prefix.is_empty() {
+                        self.out
+                            .constant_names
+                            .push(compose_type_name(&self.prefix, name));
+                    }
                 }
                 // `our &infix:<op> is export = &[other];` (PatternMatching's
                 // `┇` alias) exports a routine under the same `&name` a

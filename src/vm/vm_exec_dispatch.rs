@@ -255,18 +255,29 @@ impl Interpreter {
             // callee body is its own cost); the by-name fallback also clones the call site, O(a).
             OpCode::CallTrir { site: site_idx, .. } => {
                 let site = &code.trir_call_sites[*site_idx as usize];
-                let result = match self.exec_call_trir_site(site, compiled_fns, code) {
-                    Some(r) => r?,
-                    None => {
-                        let site = code.trir_call_sites[*site_idx as usize].clone();
-                        match self.exec_call_trir_fallback_frame_lexical(
-                            code,
-                            &site,
-                            compiled_fns,
-                        )? {
-                            Some(v) => v,
-                            None => self.exec_call_trir_fallback(&site, code)?,
+                let ran = (|| -> Result<Value, RuntimeError> {
+                    Ok(match self.exec_call_trir_site(site, compiled_fns, code) {
+                        Some(r) => r?,
+                        None => {
+                            let site = code.trir_call_sites[*site_idx as usize].clone();
+                            match self.exec_call_trir_fallback_frame_lexical(
+                                code,
+                                &site,
+                                compiled_fns,
+                            )? {
+                                Some(v) => v,
+                                None => self.exec_call_trir_fallback(&site, code)?,
+                            }
                         }
+                    })
+                })();
+                // Same resume point as `CallFunc`: an exception raised by the
+                // call (a parameter-binding failure) can be `.resume`d after it.
+                let result = match ran {
+                    Ok(v) => v,
+                    Err(e) => {
+                        self.record_call_resume_point(code, *ip, &e);
+                        return Err(e);
                     }
                 };
                 self.stack.push(result);
