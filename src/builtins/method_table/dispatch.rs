@@ -501,12 +501,20 @@ pub(crate) fn shapeless_row(
         ValueView::Instance { class_name, .. } if mu => {
             // The first class in the MRO that declares the method answers it
             // (`class M is Match` keeps `Match.not`); `Mu` ends every MRO.
-            interp?
+            let owner = interp?
                 .class_mro(class_name.as_str())
                 .iter()
                 .copied()
                 .find(|&class| super::owner_row(class, method, 0).is_some())
-                .unwrap_or(mu_owner)
+                .unwrap_or(mu_owner);
+            // A built-in class's rendering reads its own state, not a
+            // subclass's: an `Exception` subclass renders its own `message`,
+            // a `Str` subclass keeps its type. The interpreter answers those
+            // (§9.93).
+            if matches!(method.as_str(), "Str" | "Stringy") && owner != mu_owner {
+                return None;
+            }
+            owner
         }
         _ if mu => mu_owner,
         ValueView::Enum { .. }

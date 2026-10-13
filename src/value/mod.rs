@@ -3807,10 +3807,11 @@ pub(crate) struct LazyList {
 }
 
 /// Placeholder string rendered for a genuinely-lazy list under
-/// gist/Str/raku/perl, matching Rakudo: `...` for `.Str`, `[...]` for a list
+/// gist/Str/Stringy/raku/perl, matching Rakudo: `...` for `.Str` and
+/// `.Stringy`, `[...]` for a list
 /// held in `@` array context, `(...)` for a bare Seq.
 pub(crate) fn lazy_list_placeholder(method: &str, array_context: bool) -> String {
-    if method == "Str" {
+    if matches!(method, "Str" | "Stringy") {
         "...".to_string()
     } else if array_context {
         "[...]".to_string()

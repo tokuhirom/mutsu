@@ -7,10 +7,10 @@
 //! value" warning, resuming with `""`), an unhandled `Failure` (it throws), a
 //! lazy array (`...`), a `Junction`, a `Promise`, a `Channel` and the other
 //! receivers with no shape, by their string form. It declines what needs the
-//! interpreter: an instance (its class may declare `Str`), a user type object,
-//! an enum, a lazy list that must be forced, a list or quant hash holding an
-//! element whose class may declare `Str`, a regex (it warns) and a code object
-//! (the `Code.Str` row).
+//! interpreter: an instance or a mixin (its class or role may declare `Str`
+//! or `message`), a user type object, an enum, a lazy list that must be
+//! forced, a list or quant hash holding an element whose class may declare
+//! `Str`, a regex (it warns) and a code object (the `Code.Str` row).
 //!
 //! `Mu.Stringy` is an interpreter row: it calls the receiver's own `Str`, so a
 //! user class that declares only `Str`, a `Hash` subclass and every closed
@@ -68,7 +68,10 @@ fn str_(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> 
                 Value::str(String::new()),
             )));
         }
-        ValueView::Instance { .. } | ValueView::LazyList(_) | ValueView::Enum { .. } => {
+        ValueView::Instance { .. }
+        | ValueView::Mixin(..)
+        | ValueView::LazyList(_)
+        | ValueView::Enum { .. } => {
             return None;
         }
         // A lazy (infinite-backed) array stringifies to a bounded `...`
