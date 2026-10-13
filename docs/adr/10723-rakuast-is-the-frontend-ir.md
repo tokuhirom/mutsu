@@ -870,3 +870,14 @@ of its `slip` entries) come from one parser helper, `enum_value_names`, which
 the converter's declared-name table and the module export scan share; an
 `our` enum's values are also declared under the enclosing packages
 (`module M { enum E <a> }; M::a`).
+
+### 6.37 S10: `$.name OP= EXPR` as a statement (2026-10-13)
+
+The statement parser spells `$.n += 100` as a method compound assignment on
+`__ANON_STATE__`, the bare-`$` carrier the VM resolves to `self`; the
+expression parser spells `($.n += 100)` over `Var(".n")`. Rakudo 2026.09
+builds one node for both: `ApplyInfix(left => Var::Attribute::Public("$.n"),
+infix => MetaInfix::Assign(Infix("+")))`. The converter now reads the
+statement spelling as that node, and lowering keeps producing the expression
+spelling, which computes the same thing (an `is rw` accessor assigns; a
+read-only one assigns into a throwaway container).

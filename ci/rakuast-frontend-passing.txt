@@ -3064,6 +3064,7 @@ t/nativecall/native-failure-ctor.t
 t/nativecall/native-instant-duration-render.t
 t/nativecall/native-instant-from-posix.t
 t/nativecall/native-int-array-store.t
+t/nativecall/native-int-attr-accessor-assign-wraps.t
 t/nativecall/native-int-attr-incdec-wraps.t
 t/nativecall/native-int-classhow-nativesize-unsigned.t
 t/nativecall/native-int-coerce-aggregate-count.t
@@ -3334,6 +3335,8 @@ t/oo/attribute/classhow-can-attribute-accessor-rw.t
 t/oo/attribute/datetime-attributes-unmarshal.t
 t/oo/attribute/dollar-dot-underscore-accessor.t
 t/oo/attribute/dot-assign-accessor.t
+t/oo/attribute/dot-twigil-accessor-readonly-rmw.t
+t/oo/attribute/dot-twigil-accessor-readonly.t
 t/oo/attribute/dynamic-rw-accessor-self-writeback.t
 t/oo/attribute/fast-accessor-read-value-kinds.t
 t/oo/attribute/for-rw-accessor-source.t
@@ -4431,6 +4434,7 @@ t/rakuast/rakuast-array-context-seq-reread.t
 t/rakuast/rakuast-ast.t
 t/rakuast/rakuast-atomic-operators.t
 t/rakuast/rakuast-attribute-bind.t
+t/rakuast/rakuast-attribute-compound-assign.t
 t/rakuast/rakuast-attribute-default.t
 t/rakuast/rakuast-attribute-group.t
 t/rakuast/rakuast-attribute-handles.t
@@ -5642,6 +5646,7 @@ t/routines/dispatch/proto-sub-declares-infix.t
 t/routines/dispatch/proto-sub.t
 t/routines/dispatch/proto-subrule-variant-reference.t
 t/routines/dispatch/proto-vm-dispatch.t
+t/routines/dispatch/qualified-walk-compiled-dispatch.t
 t/routines/dispatch/reverse-metaop-numeric-candidate.t
 t/routines/dispatch/routine-candidates-multi-flag.t
 t/routines/dispatch/routine-code-object-dispatch.t

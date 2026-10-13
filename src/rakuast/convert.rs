@@ -2051,7 +2051,32 @@ fn compound_assignment_infix(
     op: &str,
     rhs: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
-    compound_assignment_with_left(convert_expr(target)?, op, rhs)
+    let left = match public_attribute_call(target) {
+        Some(name) => var_lexical("$", &format!(".{name}")),
+        None => convert_expr(target)?,
+    };
+    compound_assignment_with_left(left, op, rhs)
+}
+
+/// The attribute name of `$.name` as the statement parser spells an
+/// `$.name OP= EXPR` target: a method call on `__ANON_STATE__`, the bare-`$`
+/// carrier the VM resolves to `self`. Rakudo 2026.09 builds the same
+/// `Var::Attribute::Public` it builds for `$.name` anywhere else.
+// Cost: O(1).
+fn public_attribute_call(target: &Expr) -> Option<&str> {
+    match target {
+        Expr::MethodCall {
+            target,
+            name,
+            args,
+            modifier: None,
+            quoted: false,
+            ..
+        } if args.is_empty() && matches!(target.as_ref(), Expr::Var(v) if v == "__ANON_STATE__") => {
+            Some(name.as_str())
+        }
+        _ => None,
+    }
 }
 
 /// `my $x OP= EXPR` (`ast::decl_compound_assign`) -> `ApplyInfix(left =>
