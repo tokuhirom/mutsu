@@ -17,11 +17,18 @@ thread_local! {
 pub(in crate::rakuast) struct CallerNames(HashMap<String, DeclaredKind>);
 
 impl CallerNames {
+    /// A setting term the caller's registry also lists (`Less`,
+    /// `PromiseStatus::Kept`) keeps its setting classification (`Term::Enum`).
     // Cost: O(n), n = number of caller names.
     pub(in crate::rakuast) fn install(types: Vec<String>, terms: Vec<String>) -> Self {
         let mut names = HashMap::new();
         names.extend(types.into_iter().map(|n| (n, DeclaredKind::Type)));
-        names.extend(terms.into_iter().map(|n| (n, DeclaredKind::Term)));
+        names.extend(
+            terms
+                .into_iter()
+                .filter(|n| crate::rakuast::core_term_names::kind(n).is_none())
+                .map(|n| (n, DeclaredKind::Term)),
+        );
         Self(CALLER_NAMES.with(|c| std::mem::replace(&mut *c.borrow_mut(), names)))
     }
 }
