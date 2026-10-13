@@ -18,7 +18,9 @@
 
 use super::numify::numify;
 use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::Named;
 use crate::builtins::methods_0arg::{parse_raku_int_from_str, str_numeric_failure};
+use crate::runtime::Interpreter;
 use crate::value::str_numeric::str_numifies_to_complex;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -66,7 +68,14 @@ pub(super) static COOL_ROWS: &[MethodRow] = &[
         named: &[],
     },
     narrow!("Cool", "Rat", cool_rat),
-    narrow!("Cool", "UInt", cool_uint),
+    MethodRow {
+        owner: "Cool",
+        name: "UInt",
+        arity: 0,
+        handler: Handler::Interp(cool_uint),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
 ];
 
 /// The error a `Str` row raises for a receiver that is not a `Str`; the table
@@ -225,18 +234,26 @@ fn cool_rat(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
     }
 }
 
-/// `Cool.UInt`: `.Int`, then the range check. A `Complex` is a `Real` only
-/// within `$*TOLERANCE`, which the interpreter reads
-/// (`Interpreter::dispatch_complex_to_real`): the row declines it, so a pure
-/// caller (that conversion itself asks `Num.UInt`) is answered too.
+/// `Cool.UInt`: `.Int`, then the range check. An interpreter row: a `Complex`
+/// is a `Real` only within `$*TOLERANCE` (`Interpreter::dispatch_complex_to_real`).
 // Cost: as `cool_int`.
-fn cool_uint(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    if matches!(target.view(), ValueView::Complex(..)) {
-        return None;
+fn cool_uint(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if let ValueView::Complex(re, im) = target.view() {
+        return Some(interp.dispatch_complex_to_real("UInt", re, im, target, &[]));
     }
     // A lazy list cannot count itself (`X::Cannot::Lazy`).
     if crate::builtins::methods_0arg::is_lazy_count_source(target) {
         return Some(Ok(crate::runtime::utils::cannot_lazy_failure("elems")));
+    }
+    // A `Match` coerces its matched text (`Cool.UInt` is `self.Int`, and
+    // `Match.Int` is `self.Str.Int`).
+    if target.dispatch_shape() == Some(crate::value::DispatchShape::Match) {
+        return int_of_str(&target.to_string_value()).map(|int| Ok(uint_of_int(int)));
     }
     let int = cool_int(target, &[])?;
     Some(int.map(uint_of_int))

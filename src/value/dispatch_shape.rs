@@ -387,15 +387,35 @@ impl DispatchShape {
             return self.reaches_audited_any_method(method);
         }
         if const_str_eq(owner, "Mu") {
-            return const_list_contains(&MU_FOR_CLOSED_SHAPES, method);
+            return const_list_contains(&MU_FOR_CLOSED_SHAPES, method)
+                || self.reaches_mu_numeric(method);
         }
         if matches!(self, DispatchShape::Match) {
             return const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
-                || const_list_contains(&COOL_TEXT_FOR_MATCH, method);
+                || const_list_contains(&COOL_TEXT_FOR_MATCH, method)
+                // `Match` declares `Int`/`Num`/`Numeric`, not `UInt`: `Cool.UInt`
+                // reads the matched text (§9.92).
+                || const_str_eq(method, "UInt");
         }
         const_list_contains(&COOL_TEXT_FOR_CLOSED_SHAPES, method)
             || (!matches!(self, DispatchShape::IoPath)
                 && const_list_contains(&COOL_NUMERIC_FOR_COLLECTIONS, method))
+    }
+
+    /// Whether `Mu`'s `Int`/`Numeric` row (`method_table::ctors_mop::mu_numeric`)
+    /// reaches this closed shape (ADR-11276 §9.92): a `Range` numifies to its
+    /// element count (Rakudo's `Range` declares `Numeric`, not `Int`) and a
+    /// `Blob`/`Buf` to its length. The other closed shapes declare their own
+    /// or have none in Rakudo either.
+    // Cost: O(1).
+    const fn reaches_mu_numeric(self, method: &str) -> bool {
+        match self {
+            DispatchShape::Range => const_str_eq(method, "Int"),
+            DispatchShape::Blob | DispatchShape::Buf => {
+                const_str_eq(method, "Int") || const_str_eq(method, "Numeric")
+            }
+            _ => false,
+        }
     }
 
     /// Whether rows owned by an ancestor of this shape's type reach it. The

@@ -12,6 +12,7 @@ mod grammar;
 mod mu_answers;
 mod mu_base;
 mod mu_identity;
+mod mu_numeric;
 
 /// The HOW classes whose rows answer a metamethod call, in lookup order.
 pub(crate) static MOP_OWNERS: &[&str] = &[
@@ -31,6 +32,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     mu_base::ROWS,
     mu_answers::ROWS,
     mu_identity::ROWS,
+    mu_numeric::ROWS,
 ];
 
 /// Whether a `Metamodel::*HOW` owner has a row named `method` at any arity a

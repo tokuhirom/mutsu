@@ -41,7 +41,15 @@ impl Interpreter {
             let real = Value::num(re);
             let method_sym = Symbol::intern(method);
             let answered = match args {
-                [] => crate::builtins::methods_0arg::native_method_0arg(&real, method_sym),
+                // The table first: `Cool.UInt` is an interpreter row.
+                [] => crate::builtins::method_table::try_dispatch_in(
+                    self,
+                    |_| true,
+                    &real,
+                    method_sym,
+                    &[],
+                )
+                .or_else(|| crate::builtins::methods_0arg::native_method_0arg(&real, method_sym)),
                 [epsilon] => crate::builtins::native_method_1arg(&real, method_sym, epsilon),
                 _ => None,
             };
