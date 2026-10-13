@@ -289,6 +289,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
         ],
         InitializerAssign | InitializerBind => &[("expression", Absent::Required)],
+        InitializerCallAssign => &[("postfixish", Absent::Required)],
         VarDeclarationSignature => &[
             ("signature", Absent::Required),
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
@@ -472,6 +473,7 @@ pub(super) fn positional_accessor(class: RakuAstClass) -> Option<&'static str> {
         Blockoid => "statement-list",
         VarDeclarationPlaceholderPositional | VarDeclarationPlaceholderNamed => "lexical-name",
         InitializerAssign | InitializerBind => "expression",
+        InitializerCallAssign => "postfixish",
         MetaInfixAssign => "infix",
         RegexSequentialConjunction => "branches",
         RegexConjunction => "branches",

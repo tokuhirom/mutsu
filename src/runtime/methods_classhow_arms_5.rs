@@ -309,6 +309,13 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } => class_name.resolve(),
                 _ => args[0].to_string_value(),
             };
+            // `buf8`/`blob8`... are the native-sized spellings of `Buf[uint8]`
+            // / `Blob[uint8]`, whose pun is that parameterised class itself
+            // (`nqp::create(buf8.^pun)` in path-utils).
+            let canonical = crate::runtime::utils::normalize_buf_type_name(&role_name);
+            if canonical != role_name {
+                return Ok(Value::package(Symbol::intern(&canonical)));
+            }
             self.punned_role_type_object(&role_name)
     }
 

@@ -208,7 +208,7 @@ pub(super) fn parse_sigilless_decl(
             parse_colon_args(r_before_ws)?
         } else if r.starts_with(':') && !r.starts_with("::") {
             // Fake-infix adverb form (space before ':'): .=method :key<val>
-            super::my_decl_assign::parse_fake_infix_adverbs(r)?
+            super::helpers::parse_fake_infix_adverbs(r)?
         } else {
             (r, Vec::new())
         };
