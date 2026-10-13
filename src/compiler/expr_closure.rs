@@ -380,6 +380,7 @@ impl Compiler {
         if is_pointy {
             compiled.is_pointy_block = true;
         }
+        compiled.is_whatever_code = is_whatever_code;
         compiled.declarator_doc = declarator_doc;
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
@@ -551,6 +552,7 @@ impl Compiler {
         if !is_whatever_code {
             compiled.is_pointy_block = true;
         }
+        compiled.is_whatever_code = is_whatever_code;
         compiled.pointy_alias_param = pointy_alias_param;
         // `supply { … }` lowers to `Supply.on-demand(-> $__mutsu_supply_emitter_N
         // { … })`, so the generated emitter parameter identifies the supply body.

@@ -1782,6 +1782,25 @@ pub(crate) struct ParamNameSyms {
     /// (`-> $a, $b { … }`) have. Classified by
     /// [`crate::vm::light_def_params`]; see there for what is refused.
     pub(crate) light_def_params: Option<Box<[crate::vm::LightDefParam]>>,
+    /// How the light closure *call* (#13286, `vm_closure_light_call.rs`) may
+    /// bind a legacy-path signature [`Self::light_bindable`] refuses, settled
+    /// from the names alone. Only that call reads it: its body reaches no
+    /// name, so what the general binder does beyond storing the value -- the
+    /// twigil-less alias and readonly mark of a placeholder, the topic rules
+    /// of `_` -- has nothing to observe it.
+    pub(crate) light_call_legacy: Option<LightCallLegacy>,
+}
+
+/// A legacy-path signature the light closure call binds although the light
+/// closure bind does not (see [`ParamNameSyms::light_call_legacy`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LightCallLegacy {
+    /// Every parameter is a `$^name` placeholder (`{ $^a + $^b }`). The
+    /// binder stores them in sorted-name order, itemized like a plain `$x`.
+    Placeholders,
+    /// The one parameter is the topic `_` of a single-`*` WhateverCode
+    /// (`* + 1`), which binds the argument as it is (`name_is_itemize_exempt`).
+    Topic,
 }
 
 /// Whether a legacy-path parameter name is a bare identifier the light closure
@@ -1853,11 +1872,26 @@ impl SubData {
                 && self.param_defs.is_empty()
                 && self.params.iter().all(|p| is_light_bindable_param_name(p));
             let light_def_params = crate::vm::light_def_params(&self.param_defs);
+            let light_call_legacy = if light_bindable || !self.param_defs.is_empty() {
+                None
+            } else if matches!(self.params.as_slice(), [p] if p == "_") {
+                Some(LightCallLegacy::Topic)
+            } else if !self.params.is_empty()
+                && self.params.iter().all(|p| {
+                    p.strip_prefix('^')
+                        .is_some_and(is_light_bindable_param_name)
+                })
+            {
+                Some(LightCallLegacy::Placeholders)
+            } else {
+                None
+            };
             Arc::new(ParamNameSyms {
                 params,
                 call_local,
                 light_bindable,
                 light_def_params,
+                light_call_legacy,
             })
         })
     }

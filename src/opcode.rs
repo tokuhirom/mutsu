@@ -6746,6 +6746,11 @@ pub(crate) struct CompiledCode {
     /// Pointy blocks are NOT routine boundaries — `return` propagates through
     /// them to the enclosing routine, and `&?ROUTINE` sees the enclosing routine.
     pub(crate) is_pointy_block: bool,
+    /// Whether this compiled code is a WhateverCode body (`* + 1`, `* + *`),
+    /// built by Whatever-currying. Like a pointy block it is no routine
+    /// boundary, but its call frame is named after the code object rather than
+    /// the pointy-block marker. Read by the light closure call (#13286).
+    pub(crate) is_whatever_code: bool,
     /// Whether this is a single-`$`-sigiled-parameter pointy block (`-> $v {
     /// }`, compiled via `Expr::Lambda`) whose one parameter must be marked
     /// readonly (`ReadonlyKind::Alias`) at the call site. Set only for the
@@ -8085,6 +8090,7 @@ impl CompiledCode {
             may_observe_named_slurpy: false,
             source_line: None,
             is_pointy_block: false,
+            is_whatever_code: false,
             pointy_alias_param: false,
             immutable_topic: false,
             declarator_doc: None,

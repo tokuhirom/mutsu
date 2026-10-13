@@ -110,6 +110,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         sets_routine_state,
         source_line,
         is_pointy_block,
+        is_whatever_code,
         pointy_alias_param,
         immutable_topic,
         writes_topic,

@@ -17,7 +17,11 @@ impl LightClosureShape {
     /// The shape of `cc`'s body, or `None` when the light call cannot run it.
     // Cost: O(n + l), n = ops, l = locals.
     pub(crate) fn of(cc: &CompiledCode) -> Option<Self> {
-        if !cc.is_pointy_block
+        // A WhateverCode's single `*` is its topic parameter `_`, so its body
+        // reads `$_` -- through that parameter's slot, which is the read the
+        // local check below admits. Any other `$_` read reaches a name.
+        let topic_is_param = cc.is_whatever_code && cc.locals.iter().any(|l| l == "_");
+        if !(cc.is_pointy_block || cc.is_whatever_code)
             || cc.is_routine
             || cc.is_supply_block_body
             || cc.static_name_lookup
@@ -26,7 +30,7 @@ impl LightClosureShape {
             || cc.uses_capture
             || cc.reads_args_array
             || cc.reads_args_hash
-            || cc.reads_topic
+            || (cc.reads_topic && !topic_is_param)
             || cc.writes_topic
             || cc.uses_routine_state
             || cc.sets_routine_state
