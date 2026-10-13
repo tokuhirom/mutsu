@@ -350,6 +350,13 @@ impl Interpreter {
         if user_key != core_key {
             return core_key > user_key;
         }
+        // Equally narrow by nominal type (`multi infix:<+>(U $a, U $b) is
+        // default` against the core `(Int:D, Int:D)` for `1 but U`), `is
+        // default` is what breaks the tie in the user candidate's favour; an
+        // unmarked one is ambiguous in rakudo, so the core candidate keeps it.
+        if def.is_default {
+            return false;
+        }
         let user_distance = self.candidate_type_distance(&args, def);
         core.distance <= user_distance
     }
