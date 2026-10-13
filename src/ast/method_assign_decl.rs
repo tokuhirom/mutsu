@@ -70,8 +70,7 @@ pub(crate) fn expanded_declaration(form: &MethodAssignDecl) -> Stmt {
     let mut custom_traits = form.custom_traits.clone();
     if !matches!(target, Expr::BareWord(_)) {
         custom_traits.push((METHOD_ASSIGN_DECL_TRAIT.to_string(), None));
-    } else if form.shape.is_none() && !custom_traits.iter().any(|(n, _)| n == "__has_initializer")
-    {
+    } else if form.shape.is_none() && !custom_traits.iter().any(|(n, _)| n == "__has_initializer") {
         custom_traits.push(("__has_initializer".to_string(), None));
     }
     let expr = match &form.callee {

@@ -6100,7 +6100,10 @@ fn call_quoted_method(name: &str, args: &[Expr]) -> Result<RakuAstNode, RuntimeE
 /// Construct `Call::QuotedMethod` from the quoted-string expression that names
 /// it.  Dynamic quoted names retain their interpolation tree here rather than
 /// being flattened into a static method-name string.
-pub(super) fn call_quoted_method_expr(name: RakuAstNode, args: &[Expr]) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn call_quoted_method_expr(
+    name: RakuAstNode,
+    args: &[Expr],
+) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = vec![node_field(Some("name"), name)];
     if !args.is_empty() {
         fields.push(node_field(Some("args"), arg_list(args)?));

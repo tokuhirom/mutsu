@@ -2,8 +2,8 @@
 
 use super::convert::{Initializer, arg_list, leaf_field, node_field, unsupported, var_declaration};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode, decl_traits};
-use crate::ast::{Expr, SourceForm, Stmt};
 use crate::ast::method_assign_decl::MethodAssignDecl;
+use crate::ast::{Expr, SourceForm, Stmt};
 use crate::value::{RuntimeError, Value, ValueView};
 
 /// A declaration with a source-level `.=` initializer.
@@ -74,7 +74,7 @@ fn with_innermost_operand(
             return Err(unsupported_chain());
         };
         let replaced = if child.class == RakuAstClass::ApplyPostfix {
-            with_innermost_operand(&child, operand.clone())?
+            with_innermost_operand(child, operand.clone())?
         } else {
             operand.clone()
         };

@@ -21,7 +21,8 @@ use super::convert::{
     unsupported as unsupported_expr,
 };
 use super::lower::{
-    arg_exprs, arg_list_exprs, call_name_str, dispatch_modifier, lower_expr, named_child, unsupported,
+    arg_exprs, arg_list_exprs, call_name_str, dispatch_modifier, lower_expr, named_child,
+    unsupported,
 };
 use super::{RakuAstClass, RakuAstNode};
 use crate::ast::Expr;
@@ -99,7 +100,9 @@ pub(super) fn call_assign_postfix(call: &Expr) -> Result<RakuAstNode, RuntimeErr
             quoted: true,
             ..
         } => super::convert::call_quoted_method_expr(convert_expr(name_expr)?, args),
-        _ => Err(unsupported_expr("`.=` with a call that is not a method call")),
+        _ => Err(unsupported_expr(
+            "`.=` with a call that is not a method call",
+        )),
     }
 }
 
