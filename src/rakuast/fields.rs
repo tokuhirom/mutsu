@@ -273,6 +273,14 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("where", EXPRESSION),
             ("scope", Absent::Str("my")),
         ],
+        // Rakudo answers `our` for a constant with no scope (measured on 2026.09).
+        VarDeclarationConstant => &[
+            ("type", Absent::TypeObject("RakuAST::Type")),
+            ("name", Absent::Required),
+            ("traits", Absent::EmptyList),
+            ("initializer", Absent::TypeObject("RakuAST::Initializer")),
+            ("scope", Absent::Str("our")),
+        ],
         VarDeclarationAnonymous => &[
             ("type", Absent::TypeObject("RakuAST::Type")),
             ("scope", Absent::Required),

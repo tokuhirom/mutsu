@@ -684,3 +684,24 @@ parser's metadata setters around the role declaration, which keeps role body
 lexicals in scope for its methods. The focused RakuAST test checks the measured
 name and signature shape, round-trip composition, and a role body lexical. The
 frontend ratchet now passes 7,105 of 7,393 files.
+
+### 6.23 S10: exported declarations and imported type names (2026-10-13)
+
+The parser keeps `is export` on a `constant` or an `our` variable as the
+declaration's `is_export` flag and tags, not as a custom trait, and the
+converter used to drop both: under `MUTSU_RAKUAST=1` an exported constant
+nested in a routine body was not exported at all. Conversion now renders the
+flag as rakudo's `Trait::Is(export)` (with the tags as its colonpair
+argument, measured on 2026.09), and lowering reads that trait back into the
+flag, so both directions go through the parser's own export registration.
+Like `is dynamic`, the flag has lost its position among other traits, so an
+exported declaration with further traits stays the boundary.
+
+A bareword naming an imported type resolves only if the importer's module
+scan (`decl_scan.rs`) lists it. The scan now lists what rakudo imports and
+it had missed: a lexical `my class X is export` nested in a routine or
+block, a `class GLOBAL::X` (an absolute name), and the short name of an
+exported qualified type (`class A::B::C is export` imports `C`). These were
+the `BareWord` first refusals of the `t/modules/` import tests; a name the
+importer cannot see in rakudo either (an undeclared name under `try`) stays
+a refusal.

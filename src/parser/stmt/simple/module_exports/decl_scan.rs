@@ -182,6 +182,24 @@ impl DeclScan {
     }
 }
 
+/// `name` as the importer can write it: a `GLOBAL::` prefix is the root
+/// namespace every spelling already starts from (`class GLOBAL::X` is `X`).
+fn absolute_name(name: &str) -> String {
+    name.strip_prefix("GLOBAL::")
+        .filter(|rest| !rest.is_empty())
+        .unwrap_or(name)
+        .to_string()
+}
+
+/// The full name of a type declared as `name` inside the package path
+/// `prefix`: a `GLOBAL::`-qualified name is absolute, not nested.
+fn package_type_name(prefix: &str, name: &str) -> String {
+    match name.strip_prefix("GLOBAL::") {
+        Some(rest) if !rest.is_empty() => rest.to_string(),
+        _ => compose_type_name(prefix, name),
+    }
+}
+
 impl<'ast> Visit<'ast> for DeclScan {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
@@ -189,6 +207,7 @@ impl<'ast> Visit<'ast> for DeclScan {
                 name,
                 is_lexical,
                 is_unit,
+                custom_traits,
                 ..
             } => {
                 let name = name.resolve();
@@ -197,9 +216,18 @@ impl<'ast> Visit<'ast> for DeclScan {
                 if name.starts_with("__ANON_") {
                     return self.enter_package(stmt, self.prefix.clone(), false, String::new());
                 }
-                let composed = compose_type_name(&self.prefix, &name);
-                if self.spine || !*is_lexical {
-                    self.push_type(composed.clone(), name, false);
+                let composed = package_type_name(&self.prefix, &name);
+                // `is export` reaches the importer from any depth, a lexical
+                // `my class` in a routine or block included, and under the
+                // class's short name (`class A::B::C is export` imports `C`).
+                let exported = custom_traits
+                    .iter()
+                    .any(|(t, _)| t == crate::parser::EXPORT_TYPE_MARKER);
+                if exported && let Some((_, short)) = name.rsplit_once("::") {
+                    self.out.type_names.push(short.to_string());
+                }
+                if self.spine || !*is_lexical || exported {
+                    self.push_type(composed.clone(), absolute_name(&name), false);
                 }
                 self.enter_package(stmt, composed, *is_unit, String::new());
             }
@@ -208,8 +236,8 @@ impl<'ast> Visit<'ast> for DeclScan {
                 if name.starts_with("__ANON_") {
                     return self.enter_package(stmt, self.prefix.clone(), false, String::new());
                 }
-                let composed = compose_type_name(&self.prefix, &name);
-                self.push_type(composed.clone(), name, false);
+                let composed = package_type_name(&self.prefix, &name);
+                self.push_type(composed.clone(), absolute_name(&name), false);
                 self.enter_package(stmt, composed, false, String::new());
             }
             Stmt::Package {
@@ -370,7 +398,20 @@ impl<'ast> Visit<'ast> for DeclScan {
             // `module Foo:auth<x> { }`) is wrapped in a bare or synthetic
             // block together with its metadata statements. The wrapper opens
             // no package, so it stays on the spine with the same paths.
-            Stmt::Block(_) | Stmt::SyntheticBlock(_) => walk_stmt(self, stmt),
+            Stmt::Block(_) | Stmt::SyntheticBlock(_) => {
+                // An exported qualified type is imported under its short name
+                // too (`class A::B::C is export { }` imports `C`).
+                if let Some((decl, header)) = crate::ast::package_header::unwrap(stmt)
+                    && header.export_tags.is_some()
+                    && let Stmt::ClassDecl { name, .. }
+                    | Stmt::RoleDecl { name, .. }
+                    | Stmt::Package { name, .. } = decl
+                    && let Some((_, short)) = name.resolve().rsplit_once("::")
+                {
+                    self.out.type_names.push(short.to_string());
+                }
+                walk_stmt(self, stmt)
+            }
             _ => self.off_spine(|v| walk_stmt(v, stmt)),
         }
     }
