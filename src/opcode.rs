@@ -9839,7 +9839,10 @@ impl CompiledCode {
         while i < bytes.len() {
             let c = bytes[i];
             if matches!(c, b'$' | b'@' | b'%' | b'&') {
-                let start_ident = i + 1;
+                // A placeholder (`$^a`) is keyed with its `^` twigil, the way
+                // the block's implicit signature names it.
+                let twigil = usize::from(bytes.get(i + 1) == Some(&b'^'));
+                let start_ident = i + 1 + twigil;
                 if start_ident < bytes.len()
                     && (bytes[start_ident].is_ascii_alphabetic() || bytes[start_ident] == b'_')
                 {
@@ -9852,7 +9855,7 @@ impl CompiledCode {
                     // while @/%/& lexicals keep their sigil. Match that convention
                     // so the free-var name lines up with the local slot / env key.
                     let name = if c == b'$' {
-                        pattern[start_ident..j].to_string()
+                        pattern[i + 1..j].to_string()
                     } else {
                         pattern[i..j].to_string()
                     };
