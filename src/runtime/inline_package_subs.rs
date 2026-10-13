@@ -29,10 +29,15 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let mut collector = InlinePackageSubCollector::default();
         crate::ast_visit::walk_stmts(&mut collector, stmts);
-        let declarations = collector.out;
+        let unit_package = self.current_package();
+        let declarations: Vec<_> = collector
+            .out
+            .into_iter()
+            .map(|decl| (decl.package.clone().unwrap_or_else(|| unit_package.clone()), decl))
+            .collect();
 
         // Protos first: a candidate's `our`-scope check reads `proto_subs`.
-        for InlinePackageDecl { package, stmt, .. } in &declarations {
+        for (package, InlinePackageDecl { stmt, .. }) in &declarations {
             let Stmt::ProtoDecl {
                 name,
                 params,
@@ -83,12 +88,15 @@ impl Interpreter {
             drop(result);
         }
 
-        for InlinePackageDecl {
+        for (
             package,
-            stmt,
-            nested,
-            outer_packages,
-        } in declarations
+            InlinePackageDecl {
+                stmt,
+                nested,
+                outer_packages,
+                ..
+            },
+        ) in declarations
         {
             let Stmt::SubDecl {
                 name,
@@ -339,8 +347,9 @@ impl Interpreter {
 
 /// One routine declaration the prepass registers.
 struct InlinePackageDecl {
-    /// The fully-qualified package the routine is installed in.
-    package: String,
+    /// The fully-qualified package the routine is installed in; `None` for
+    /// the package the unit is compiled in.
+    package: Option<String>,
     /// The `Stmt::SubDecl` / `Stmt::ProtoDecl`.
     stmt: Stmt,
     /// Declared below the package body's own statement list -- in a nested
@@ -402,6 +411,18 @@ impl InlinePackageSubCollector {
 
     fn collect(&mut self, stmt: &Stmt, is_our: bool, is_export: bool) {
         let Some((package, outer)) = self.packages.split_last() else {
+            // Outside every package, an `our` routine nested in a routine or
+            // block of the mainline installs into the unit's own package
+            // (`GLOBAL`, or an EVAL's caller's package) (#13091). One directly
+            // in the unit's statement list is registered by the unit itself.
+            if self.nested && is_our {
+                self.out.push(InlinePackageDecl {
+                    package: None,
+                    stmt: stmt.clone(),
+                    nested: true,
+                    outer_packages: Vec::new(),
+                });
+            }
             return;
         };
         if self.exports_only && !is_export {
@@ -411,7 +432,7 @@ impl InlinePackageSubCollector {
             return;
         }
         self.out.push(InlinePackageDecl {
-            package: package.clone(),
+            package: Some(package.clone()),
             stmt: stmt.clone(),
             // A class body's routine is registered by the class itself.
             nested: self.nested || self.exports_only,
