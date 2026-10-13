@@ -90,7 +90,10 @@ pub(crate) fn recognize(stmt: &Stmt) -> Option<(&Stmt, Vec<(&PhaserKind, &[Stmt]
         };
         // A run-time phaser's topic is the variable; a compile-time one's is
         // the declaration's initial value.
-        let compile_time = matches!(kind, PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init);
+        let compile_time = matches!(
+            kind,
+            PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init
+        );
         if !compile_time && !matches!(topic, Expr::Var(v) if v == name) {
             return None;
         }

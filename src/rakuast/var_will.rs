@@ -4,8 +4,8 @@
 //! ([`crate::ast::var_will`]).
 
 use super::convert::{
-    convert_stmt, expression_of, leaf_field, node_field, signature_block_node, statement_expression,
-    unsupported,
+    convert_stmt, expression_of, leaf_field, node_field, signature_block_node,
+    statement_expression, unsupported,
 };
 use super::lower::{leaf_str, lower_block, named_child, rakuast_node_of};
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -74,7 +74,11 @@ pub(super) fn split(
     let mut stripped = node.clone();
     if kept.is_empty() {
         stripped.fields.retain(|f| f.name != Some("traits"));
-    } else if let Some(f) = stripped.fields.iter_mut().find(|f| f.name == Some("traits")) {
+    } else if let Some(f) = stripped
+        .fields
+        .iter_mut()
+        .find(|f| f.name == Some("traits"))
+    {
         f.value = RakuAstFieldValue::List(kept);
     }
     Ok(Some((stripped, phasers)))
