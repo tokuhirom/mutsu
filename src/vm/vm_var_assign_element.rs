@@ -629,6 +629,19 @@ impl Interpreter {
         target_slot: Option<u32>,
         element_share: bool,
     ) -> Result<(), RuntimeError> {
+        // A user object key of a `Str`-keyed hash is stored under its `.Str`
+        // (#13293), the key the read side looks up.
+        if !is_positional
+            && let Some(last) = self.stack.last()
+            && matches!(last.view(), ValueView::Instance { .. })
+            && let Some(hash) = target_slot
+                .and_then(|slot| self.locals.get(slot as usize).cloned())
+                .or_else(|| self.env().get_sym(code.const_sym(name_idx)).cloned())
+        {
+            let key = self.stack.pop().unwrap_or(Value::NIL);
+            let key = self.hash_key_through_user_str(&hash, key)?;
+            self.stack.push(key);
+        }
         // `self[...] = ...` in a role method names the implicit invocant, not
         // an ordinary lexical aggregate.  Handle a role-mixed aggregate before
         // the name-keyed fast lanes: those lanes quite correctly only recognize
