@@ -63,6 +63,17 @@ thread_local! {
 
 /// The pattern's compiled program, compiled at most once per pattern.
 // Cost: O(1) after the first call per pattern; O(t) on it, t = tokens.
+/// [`program_for`] for a mark-stripped whole-`:m` rule body run as a frame
+/// over a subject that has marks ([`RxProgram::markless`]).
+// Cost: O(1) once compiled; the first call compiles, O(t), t = tokens.
+pub(super) fn markless_program_for(pattern: &RegexPattern) -> Option<&Arc<RxProgram>> {
+    pattern
+        .derived
+        .rx_markless_program
+        .get_or_init(|| rx_compile::compile_markless(pattern).ok().map(Arc::new))
+        .as_ref()
+}
+
 pub(super) fn program_for(pattern: &RegexPattern) -> Option<&Arc<RxProgram>> {
     pattern
         .derived

@@ -13,7 +13,7 @@ use std::sync::Arc;
 use super::super::regex_lr_state::lr_name_active;
 use super::super::regex_token_candidates::TokenCandidates;
 use super::RxProgram;
-use super::rx_entry::program_for;
+use super::rx_entry::{markless_program_for, program_for};
 use super::rx_scope::CallWindow;
 use crate::runtime::Interpreter;
 use crate::runtime::regex::regex_dynparams::{
@@ -57,12 +57,19 @@ pub(super) enum CallTarget {
     /// One plain rule: its program and the package its body matches in (a rule
     /// is matched in the package that defines it).
     Plain(Arc<RxProgram>, Symbol),
-    /// A single plain `:m` rule: the program of its mark-stripped pattern, the
-    /// package, and the candidates. Over a subject that has no marks `:m`
-    /// changes nothing, so the call is a [`CallTarget::Plain`] frame
-    /// (`rx_call_resolve` turns it into one); otherwise it is evaluated
-    /// eagerly over the stripped subject, as any `:m` callee is.
-    PlainMarkless(Arc<RxProgram>, Symbol, Arc<TokenCandidates>),
+    /// A single plain `:m` rule: the program of its mark-stripped pattern, its
+    /// markless compile when the body allows one, the package, and the
+    /// candidates. Over a subject that has no marks `:m` changes nothing, so
+    /// the call is a [`CallTarget::Plain`] frame of the first program; over
+    /// one that has marks it is a frame of the markless program, whose atoms
+    /// compare each grapheme's base (`rx_call_resolve` settles which); with
+    /// neither, it is evaluated eagerly over the stripped subject.
+    PlainMarkless(
+        Arc<RxProgram>,
+        Option<Arc<RxProgram>>,
+        Symbol,
+        Arc<TokenCandidates>,
+    ),
     /// A proto: the `:sym<…>` candidates, ranked at the call by the walk's own
     /// LTM measurement (ADR-0046), of which the first that matches wins.
     Proto(Arc<TokenCandidates>),
@@ -160,9 +167,11 @@ impl Interpreter {
             }
         };
         let verdict = match verdict {
-            CallTarget::PlainMarkless(program, sub_pkg, candidates) => {
+            CallTarget::PlainMarkless(program, markless, sub_pkg, candidates) => {
                 if subject_has_no_marks(chars) {
                     CallTarget::Plain(program, sub_pkg)
+                } else if let Some(markless) = markless {
+                    CallTarget::Plain(markless, sub_pkg)
                 } else {
                     CallTarget::Eager(candidates, "ignoremark-callee")
                 }
@@ -377,15 +386,22 @@ impl Interpreter {
         }
         // `:m` remaps positions across the whole result set, which the all-ends
         // entry does over the mark-stripped subject. A single plain rule that
-        // could be a frame is offered one over a mark-free subject
-        // (`PlainMarkless`), because a frame enters its ends lazily.
+        // could be a frame is offered one (`PlainMarkless`), because a frame
+        // enters its ends lazily: over a mark-free subject as compiled, over
+        // one with marks as its markless compile.
         if candidates.iter().any(|(parsed, _, _)| parsed.ignore_mark) {
             if let [(parsed, sub_pkg, None)] = &candidates[..]
                 && self.subrule_cannot_left_reenter(spec.lookup_sym, pkg)
                 && let stripped = strip_marks_pattern(parsed)
                 && let Some(program) = program_for(&stripped)
             {
-                return CallTarget::PlainMarkless(Arc::clone(program), *sub_pkg, candidates.clone());
+                let markless = markless_program_for(&stripped).cloned();
+                return CallTarget::PlainMarkless(
+                    Arc::clone(program),
+                    markless,
+                    *sub_pkg,
+                    candidates.clone(),
+                );
             }
             return CallTarget::Eager(candidates, "ignoremark-callee");
         }
