@@ -375,7 +375,7 @@ impl Walker<'_> {
         for f in (0..frames).rev() {
             let routines = &self.frames[f].routines;
             let named = || routines.iter().enumerate().filter(|(_, r)| r.name == name);
-            if let Some((r, _)) = named().filter(|(_, r)| !r.multi).last() {
+            if let Some((r, _)) = named().rfind(|(_, r)| !r.multi) {
                 // A plain routine shadows everything further out; under inner
                 // candidates, it is shadowed in turn.
                 if found.is_empty() {
