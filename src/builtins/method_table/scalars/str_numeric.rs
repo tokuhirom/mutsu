@@ -69,7 +69,14 @@ pub(super) static COOL_ROWS: &[MethodRow] = &[
     },
     narrow!("Cool", "Rat", cool_rat),
     narrow!("Cool", "FatRat", cool_fat_rat),
-    narrow!("Cool", "AST", cool_ast),
+    MethodRow {
+        owner: "Cool",
+        name: "AST",
+        arity: 0,
+        handler: Handler::Interp(cool_ast),
+        flags: RowFlags::NONE,
+        named: &[],
+    },
     MethodRow {
         owner: "Cool",
         name: "UInt",
@@ -250,10 +257,20 @@ fn cool_fat_rat(target: &Value, _args: &[Value]) -> Option<Result<Value, Runtime
 }
 
 /// `Cool.AST`: the receiver's string form parsed as Raku source, a RakuAST
-/// tree (ADR-0010; ADR-11276 §9.96). A `Match` parses its matched text.
-// Cost: O(n), n = chars of the source (one parse).
-fn cool_ast(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    Some(crate::rakuast::str_dot_ast(&target.to_string_value()))
+/// tree (ADR-0010; ADR-11276 §9.96). A `Match` parses its matched text. An
+/// interpreter row: the parse scans the modules the source `use`s with this
+/// interpreter's module search paths (`Interpreter::str_ast_with_paths`).
+// Cost: O(n), n = chars of the source (one parse), plus the `use`d modules' scan.
+fn cool_ast(
+    interp: &mut Interpreter,
+    target: &Value,
+    _args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    if matches!(target.view(), ValueView::Package(_)) {
+        return None;
+    }
+    Some(interp.str_ast_with_paths(&target.to_string_value(), false))
 }
 
 /// `Cool.UInt`: `.Int`, then the range check. An interpreter row: a `Complex`

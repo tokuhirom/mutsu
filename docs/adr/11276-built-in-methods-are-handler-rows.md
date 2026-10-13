@@ -2254,7 +2254,8 @@ on `Cool`, `Str`, `Any`, `Mu` and `List`, over a plain match and a grammar match
    (`Rat`, `FatRat`, `Failure`, `parse-names`, `uniparse`, `AST`), which the fallback used to serve on the string. `numify` reads a
    `Match` as its text (`Match.Numeric` is `self.Str.Numeric`), and so does `Cool.Real`.
 3. **`Cool.FatRat` and `Cool.AST` are rows** (Rakudo declares both on `Cool`; the recognition table gains them). `FatRat` reads its
-   receiver as `Cool.Rat` does, `AST` parses the receiver's string form.
+   receiver as `Cool.Rat` does, `AST` (an interpreter row: the parse scans `use`d modules with the interpreter's paths) parses
+   the receiver's string form.
 4. **`Any.end` reaches a `Match`** and counts its positional captures (`1` for two, `-1` for a grammar match with none).
 5. **`list` and `Capture` are `Capture`'s rows** (`CAPTURE_FOR_MATCH`): `Capture.list` returns a `Match`'s live positional view
    (`match_list_view`), `Capture.Capture` the `Match` itself. `reaches_audited_ancestor`, the fallback's only reader, is gone.
