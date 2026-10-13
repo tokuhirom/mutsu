@@ -2349,6 +2349,10 @@ reach `Any`'s rows for these names, and `batch(:elems(N))`, whose named argument
 3. **`Any.batch(:$elems!)` is an arity-0 `Handler::Named` row**, Rakudo's named candidate. Without `:elems` it raises
    `X::Multi::NoMatch`, as Rakudo does (`.batch()` used to be `X::Method::NotFound`).
 4. **`round` needed nothing**: an allomorph already reaches `Cool.round($scale)` through its numeric value.
+5. **The sub form calls the handler**: `combinations($n, $k)` asked the method entry on its list, which the guard step declines
+   for an allomorph `$k` (`roast/S32-list/combinations.t`: `combinations(|<3.5 2e0>)`); it now calls `combinations_of`, the
+   rows' one implementation. The handler reads an itemized `$k` (`my $k = 1..2`) as its value, and `invoke_unadmitted` (§9.99)
+   hands an `ANY_ARGS` row an itemized plain argument without its `Scalar`, so `$seq.combinations($k)` answers too.
 
 `method-rows-report.py --arms`: `dispatch_1arg.rs` goes from 27 to 24 arms. Pinned in `t/types/any-combinations-batch-rows.t`.
 

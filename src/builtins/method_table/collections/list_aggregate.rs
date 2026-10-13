@@ -36,10 +36,8 @@ pub(super) static LIST_ROWS: &[MethodRow] = rows!["List":
 /// in to every plain argument. Rakudo declares it on `List` and on `Any`
 /// (`self.list.combinations(|c)`), which a `Seq`, a `Range` or a `Str`
 /// reaches (ADR-11276 §9.100).
-pub(super) static LIST_COMBINATIONS_OF: &[MethodRow] = &[
-    combinations_of_row("List"),
-    combinations_of_row("Any"),
-];
+pub(super) static LIST_COMBINATIONS_OF: &[MethodRow] =
+    &[combinations_of_row("List"), combinations_of_row("Any")];
 
 const fn combinations_of_row(owner: &'static str) -> MethodRow {
     MethodRow {
@@ -558,6 +556,8 @@ pub(crate) fn combinations_of(
     let [arg] = args else {
         return None;
     };
+    // A `$k` read out of a variable is an itemized Range or Int.
+    let arg = arg.descalarize();
     // `self.list.combinations` counts the list first: a lazy one throws
     // (`(1..*).combinations(2)` is `X::Cannot::Lazy`), never hangs.
     if crate::builtins::methods_0arg::is_lazy_count_source(target)

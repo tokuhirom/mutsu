@@ -5,7 +5,7 @@ use Test;
 # a `Str` and the other closed shapes reach, so the one-argument cascade arms
 # that answered them are gone. The answers below are Rakudo's.
 
-plan 14;
+plan 16;
 
 is (1..3).combinations(2).raku, '((1, 2), (1, 3), (2, 3)).Seq', 'Range.combinations';
 is (1, 2, 3).Seq.combinations(2).raku, '((1, 2), (1, 3), (2, 3)).Seq', 'Seq.combinations';
@@ -13,6 +13,9 @@ is (1..3).combinations(1..2).elems, 6, 'Range.combinations(Range)';
 is-deeply "abc".combinations(2).List, (), 'Str.combinations is over one element';
 is (a => 1).combinations(1).elems, 1, 'Pair.combinations';
 is Str.combinations(1).elems, 1, 'a type object answers Any.combinations';
+my $k = 1..2;
+is (1, 2, 3).Seq.combinations($k).elems, 6, 'an itemized Range $of (method form)';
+is combinations((1, 2, 3), $k).elems, 6, '... and the sub form';
 throws-like { (1..*).combinations(2).List }, X::Cannot::Lazy,
     'an infinite Range refuses combinations';
 
