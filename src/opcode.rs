@@ -5413,6 +5413,9 @@ fn role_body_our_scope_violation(body: &[Stmt]) -> Option<&'static str> {
             Stmt::SubsetDecl { is_my: true, .. } => None,
             Stmt::SubsetDecl { .. } => Some("subset"),
             Stmt::EnumDecl { is_my: true, .. } => None,
+            // An anonymous `enum <A B>` installs no package symbol, so there is
+            // nothing ambiguous to complain about (rakudo accepts it).
+            Stmt::EnumDecl { name, .. } if name.as_str().is_empty() => None,
             Stmt::EnumDecl { .. } => Some("enum"),
             Stmt::RoleDecl { custom_traits, .. }
                 if custom_traits.iter().any(|(t, _)| t == "__my_scoped") =>
