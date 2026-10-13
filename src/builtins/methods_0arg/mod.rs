@@ -454,6 +454,10 @@ pub(crate) fn native_method_0arg_cascade(
 
     // For Mixin values, handle Bool/WHICH method specially, then delegate to inner.
     if let ValueView::Mixin(inner, mixins) = target.view() {
+        // A plain allomorph's method with a row is the row's (§9.101).
+        if crate::builtins::method_table::allomorph::answers(target, method_sym, &[]) {
+            return None;
+        }
         if method == "Bool"
             && let Some(bool_val) = mixins.get("Bool")
         {
@@ -528,32 +532,16 @@ pub(crate) fn native_method_0arg_cascade(
                 attrs,
             )));
         }
-        // For allomorphic types, string-oriented methods should use the Str part.
-        if let Some(str_val) = mixins.get("Str") {
-            match method {
-                // `ord`/`ords` belong here for the same reason as `comb`: they
-                // read the *characters*, so on an allomorph they must read the
-                // Str part. Without them the generic mixin delegation below
-                // handed them the inner NUMBER, so `IntStr.new(0, "zero").ords`
-                // was `(48,)` — the codepoint of "0" — instead of "zero"'s.
-                "comb" | "chars" | "codes" | "words" | "lines" | "chomp" | "chop" | "trim"
-                | "trim-leading" | "trim-trailing" | "uc" | "lc" | "tc" | "tclc" | "fc"
-                | "flip" | "ord" | "ords" | "samemark" | "samespace" | "uniname" | "uninames"
-                | "unival" | "univals" | "uniprop" | "uniprops" | "uniparse" | "parse-names"
-                | "NFC" | "NFD" | "NFKC" | "NFKD" | "encode" => {
-                    return native_method_0arg(str_val, method_sym);
-                }
-                // `wordcase` reads the Str part like its siblings above, but
-                // unlike them it preserves the allomorph type — see
-                // `allomorph_wordcase_result` for why.
-                "wordcase" => {
-                    let wordcased = crate::value::wordcase_str(&str_val.to_string_value());
-                    return Some(Ok(crate::value::types::allomorph_wordcase_result(
-                        inner, wordcased,
-                    )));
-                }
-                _ => {}
-            }
+        // An allomorph's `wordcase` reads the Str part but preserves the
+        // allomorph type (see `allomorph_wordcase_result`); its other string
+        // methods are `Str`'s and `Cool`'s rows on the Str part (§9.101).
+        if method == "wordcase"
+            && let Some(str_val) = mixins.get("Str")
+        {
+            let wordcased = crate::value::wordcase_str(&str_val.to_string_value());
+            return Some(Ok(crate::value::types::allomorph_wordcase_result(
+                inner, wordcased,
+            )));
         }
         // An allomorph (IntStr/RatStr/NumStr/ComplexStr) renders its `.raku` /
         // `.perl` as `TypeStr.new(<numeric>, "<string>")`, NOT the bare inner

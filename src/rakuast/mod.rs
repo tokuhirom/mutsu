@@ -36,6 +36,7 @@ mod declare_how;
 mod declared_routines;
 mod deferred_name;
 mod dynamic_method;
+mod enum_term;
 mod feed_op;
 mod fields;
 mod formatter;

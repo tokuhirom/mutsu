@@ -284,6 +284,8 @@ pub(crate) use stmt::sub::is_builtin_param_trait;
 /// declaration/assignment that binds tighter than the feed.
 pub(crate) use expr::precedence::{feed_leftmost_operand_mut, lift_feed_in_list};
 
+pub(crate) use stmt::decl::{enum_value_names, enum_variants_from_body};
+
 pub(crate) fn current_language_version() -> String {
     stmt::simple::current_language_version()
 }

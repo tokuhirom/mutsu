@@ -335,11 +335,19 @@ fn dispatch(
         // The native-base resolution (§9.79): an instance of a user class
         // deriving from a built-in scalar type has no shape of its own, and is
         // answered by the rows of its payload's shape, the payload as invocant.
-        None => {
-            payload = crate::builtins::native_base::redirect(target, method.as_str())?;
-            let receiver = Receiver::of_settled(&payload)?;
-            (&payload, super::resolve(receiver, method, arity)?)
-        }
+        None => match crate::builtins::native_base::redirect(target, method.as_str()) {
+            Some(base) => {
+                payload = base;
+                let receiver = Receiver::of_settled(&payload)?;
+                (&payload, super::resolve(receiver, method, arity)?)
+            }
+            // An allomorph is answered on the part the row reads (§9.101).
+            None => {
+                let (part, id) = super::allomorph::redirect(target, method, arity)?;
+                payload = part;
+                (&payload, id)
+            }
+        },
     };
     let row = row(id);
     // The caller's veto, asked once the row is known and before the handler

@@ -853,6 +853,24 @@ puts the declaration back under a postfix of the parser's declaration tail
 The parser's tail read the declared array or hash as `Var("@a")` rather than
 the `ArrayVar` / `HashVar` a written `@a` is; it now builds the same node.
 
+### 6.34 S10: enum base types, colonpair words and computed bodies (2026-10-13)
+
+An enum's body is one term rakudo evaluates at compile time, and
+`Type::Enum.term` keeps it as written. Measured on rakudo 2026.09: a base
+type (`our Str enum E ...`) is the `of` field (a `Type::Simple`, between
+`name` and `traits`); a colonpair word of a `«…»` body is a `QuoteWordsAtom`
+segment over a `ColonPair::Value` between the literal words; a parenthesized
+body the parser cannot decompose (`enum E (:20A, slip <B C>)`) is the
+`Circumfix::Parentheses` term itself. The converter renders the three from
+the parser's variants (`src/rakuast/enum_term.rs`), and lowering decomposes
+a parenthesized term with the parser's own `enum_variants_from_body`, so a
+round-tripped enum takes the static or the computed path the parsed one took.
+The value names a computed body introduces (its static pairs and the words
+of its `slip` entries) come from one parser helper, `enum_value_names`, which
+the converter's declared-name table and the module export scan share; an
+`our` enum's values are also declared under the enclosing packages
+(`module M { enum E <a> }; M::a`).
+
 ### 6.35 S10: hyper prefix operators (2026-10-13)
 
 `-« @a`, `++<< @a` and the other hyper prefixes are, on rakudo 2026.09, an

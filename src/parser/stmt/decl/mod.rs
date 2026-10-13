@@ -1,6 +1,7 @@
 mod constant_subset;
 pub(crate) mod destructure;
 mod enum_decl;
+pub(crate) use enum_decl::{enum_value_names, enum_variants_from_body};
 mod enum_decl_traits;
 mod handles;
 mod has_decl;
@@ -16,7 +17,6 @@ mod use_decl;
 // Re-export public items that were previously accessible from the flat `decl` module.
 pub(in crate::parser) use constant_subset::inline_subset_term;
 pub(in crate::parser::stmt) use constant_subset::{constant_decl, constant_stmt, subset_decl};
-pub(in crate::parser::stmt) use enum_decl::collect_dynamic_enum_value_names;
 pub(crate) use enum_decl::{anon_enum_decl, enum_decl};
 pub(crate) use handles::handle_specs_from_term;
 pub(in crate::parser::stmt) use handles::parse_handle_specs;

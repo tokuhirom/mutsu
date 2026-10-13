@@ -493,6 +493,14 @@ const COOL_NUMERIC_FOR_COLLECTIONS: [&str; 51] = [
     "rand", "int", "uint", "byte", "Complex", "UInt", "Version", "Real", "Num",
 ];
 
+/// Whether `Cool` declares `name` as `self.Numeric.METHOD` (or a numeric
+/// coercion), so a receiver with both a string and a number (an allomorph,
+/// `method_table::allomorph`) answers it on its number.
+// Cost: O(m), m = names in [`COOL_NUMERIC_FOR_COLLECTIONS`].
+pub(crate) fn cool_numeric_method(name: &str) -> bool {
+    COOL_NUMERIC_FOR_COLLECTIONS.contains(&name)
+}
+
 /// The `Cool` text methods a `Range`, `Seq`, `IO::Path` or `Match` reaches
 /// ([`DispatchShape::reaches_audited`]), and every receiver with no shape
 /// that is a `Cool` (`method_table::answer_shapeless`). Each reads the
