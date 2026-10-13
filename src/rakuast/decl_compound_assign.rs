@@ -28,10 +28,6 @@ pub(super) fn is_declaration_compound_assign(node: &RakuAstNode) -> bool {
 // Cost: O(n), n = size of the declaration and the right-hand side.
 pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let decl = lower_stmt(named_child(node, "left")?)?;
-    let Stmt::VarDecl { name, .. } = &decl else {
-        return Err(unsupported(node));
-    };
-    let name = name.clone();
     let infix = named_child_or_positional(named_child(node, "infix")?)?;
     let op = match super::lower::positional_leaf(infix)?.view() {
         ValueView::Str(op) => op.to_string(),
@@ -43,6 +39,30 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         return Err(unsupported(node));
     };
     let rhs = lower_expr(named_child(node, "right")?)?;
+    // `has $!g //= 5`: the attribute's own expansion. A public `$.g` keeps no
+    // source in the parser, so the converter never renders one.
+    if let Stmt::HasDecl {
+        name,
+        is_public: false,
+        is_alias,
+        default: None,
+        ..
+    } = &decl
+    {
+        let assign = crate::parser::attribute_compound_assign(
+            &name.resolve(),
+            false,
+            *is_alias,
+            compound,
+            rhs,
+            true,
+        );
+        return Ok(crate::parser::expand_attribute_compound_assign(decl, assign));
+    }
+    let Stmt::VarDecl { name, .. } = &decl else {
+        return Err(unsupported(node));
+    };
+    let name = name.clone();
     let value = crate::parser::compound_assigned_value_expr(
         crate::ast::Expr::Var(name.clone()),
         compound,

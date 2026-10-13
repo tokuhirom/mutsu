@@ -3737,6 +3737,7 @@ t/oo/method/gate-b-class-method-outer-lexical.t
 t/oo/method/gate-b-jit-method-mut-writeback.t
 t/oo/method/gate-b-method-lvalue-writeback.t
 t/oo/method/has-decl-nested-in-method-closures.t
+t/oo/method/has-decl-nested-in-method.t
 t/oo/method/hash-subclass-qualified-base-method.t
 t/oo/method/hash-subclass-store-in-method.t
 t/oo/method/hyper-callable-method.t
@@ -4621,6 +4622,7 @@ t/rakuast/rakuast-frontend-mode.t
 t/rakuast/rakuast-given-pointy-block.t
 t/rakuast/rakuast-given-when.t
 t/rakuast/rakuast-handles-spelling.t
+t/rakuast/rakuast-has-compound-assign.t
 t/rakuast/rakuast-hash-literal.t
 t/rakuast/rakuast-heredoc-spelling.t
 t/rakuast/rakuast-hyper-function-infix.t

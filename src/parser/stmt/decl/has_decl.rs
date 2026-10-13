@@ -2,7 +2,7 @@ use super::super::super::expr::expression;
 use super::super::super::helpers::{ws, ws1};
 use super::super::super::parse_result::{PError, PResult, opt_char, parse_char, take_while1};
 use super::super::assign::{
-    compound_assigned_value_expr, parse_assign_expr_or_comma, parse_compound_assign_op,
+    parse_assign_expr_or_comma, parse_compound_assign_op,
 };
 use super::super::{ident, keyword};
 use super::handles::parse_handle_specs;
@@ -12,7 +12,7 @@ use super::helpers::{
 use super::method_decl_body;
 use super::parse_decl_type_constraint;
 use crate::ast::attr_trait::AttrTrait;
-use crate::ast::{AssignOp, Expr, Stmt};
+use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
@@ -1403,28 +1403,14 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // through the real accessor and dies the same way rakudo's does when it
     // isn't `is rw`.
     let assign_stmt = compound_assign_after_decl.map(|(op, rhs)| {
-        if is_public {
-            let var_name = format!(".{name}");
-            let read = Expr::Var(var_name.clone());
-            Stmt::Expr(Expr::AssignExpr {
-                name: var_name,
-                expr: Box::new(compound_assigned_value_expr(read, op, rhs)),
-                is_bind: false,
-            })
-        } else {
-            let var_name = if is_alias {
-                name.clone()
-            } else {
-                format!("!{name}")
-            };
-            let read = Expr::Var(var_name.clone());
-            Stmt::Assign {
-                name: var_name,
-                expr: compound_assigned_value_expr(read, op, rhs),
-                op: AssignOp::Assign,
-                target_is_sigilless: false,
-            }
-        }
+        super::has_compound_assign::attribute_compound_assign(
+            &name,
+            is_public,
+            is_alias,
+            op,
+            rhs,
+            crate::ast::spelled::keeping(),
+        )
     });
     // Combine into ONE flat `SyntheticBlock` — never a `SyntheticBlock`
     // nested inside another — since the class-body attribute-discovery walk
@@ -1440,7 +1426,9 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     } else {
         match (assign_stmt, modifier_sink) {
             (None, None) => decl,
-            (Some(assign_stmt), None) => Stmt::SyntheticBlock(vec![decl, assign_stmt]),
+            (Some(assign_stmt), None) => {
+                super::has_compound_assign::expand_attribute_compound_assign(decl, assign_stmt)
+            }
             (None, Some(sink)) => Stmt::SyntheticBlock(vec![decl, sink]),
             (Some(assign_stmt), Some(sink)) => Stmt::SyntheticBlock(vec![decl, assign_stmt, sink]),
         }

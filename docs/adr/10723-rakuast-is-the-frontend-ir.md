@@ -1095,3 +1095,17 @@ A `my $ = EXPR` in expression position is a `VarDeclaration::Anonymous` with
 rakudo's default scope (no `scope` field), no longer a `VarDeclaration::Simple`
 named `__ANON_STATE__`; lowering gives it a non-`state` declaration.
 `VarDeclaration::Simple.name` answers the full spelling (`$x`, `$*x`).
+
+### 6.50 S10: `has $!g OP= EXPR` (2026-10-13)
+
+A `has` declaration whose operator is not one of its initializers (`//=`,
+`+=`, ...) declares the attribute without one and applies the operator to it
+as an ordinary compound assignment (#8441 gap 2). Rakudo 2026.09 renders it
+like `my $x OP= EXPR`: `ApplyInfix(left => VarDeclaration::Simple(scope =>
+"has"), infix => MetaInfix::Assign(Infix(OP)), right => EXPR)`. In a
+spelling-keeping parse the parser now builds the same record for a private or
+alias attribute (`SourceForm::DeclarationCompoundAssign`, the assignment's
+`Expr::CompoundAssign`), and `decl_compound_assign::parts` accepts a
+`HasDecl`. The expansion lives in `parser::attribute_compound_assign`, which
+both the parser and the lowering call. A public `$.g` writes through its
+accessor (`Expr::AssignExpr`) and keeps no record, so it stays the boundary.
