@@ -84,6 +84,10 @@ impl Value {
         let ValueView::Hash(arc) = self.view() else {
             return None;
         };
+        // A concurrent insert rehashes the map under the node's stripe
+        // (ADR-0068); the promotion below is a leaf write, so take it too.
+        let _structure =
+            crate::value::container_lock::ContainerStructGuard::acquire_for(None, self);
         // SAFETY: aliased in-place mutation of a shared container; see
         // `gc_contents_mut`. No borrow into the map is live across the write.
         let data = unsafe { crate::value::gc_contents_mut(&arc) };

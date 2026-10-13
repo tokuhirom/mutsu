@@ -3325,7 +3325,7 @@ impl Interpreter {
                     // its identity. The metadata-tagging block further below is
                     // bypassed by this early return, so it must be applied here.
                     let name = name.clone();
-                    let old = arc.lock().unwrap().clone();
+                    let old = arc.load();
                     val = if name.starts_with('%') {
                         self.hash_container_writethrough_value(&name, val, &old)?
                     } else {

@@ -384,7 +384,7 @@ impl Interpreter {
                 // Non-array inner (e.g. Hash): generic clone-and-write-back.
                 let val = val_slot.take().expect("push value present");
                 let result = loan_env!(self, call_method_with_values(inner, "push", vec![val]))?;
-                *cell.lock().unwrap() = result.clone();
+                cell.store(result.clone());
                 self.stack.push(result);
                 return Ok(());
             }

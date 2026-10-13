@@ -484,7 +484,7 @@ impl Interpreter {
                 Ok(assigned) => assigned,
                 Err(e) => return Some(Err(e)),
             };
-            *cell.lock().unwrap() = assigned;
+            cell.store(assigned);
         }
         Some(Ok(()))
     }
@@ -808,7 +808,7 @@ impl Interpreter {
         let unit_cell = self
             .unit_lexical_container_cell(var_name_for_cell)
             .or_else(|| self.capture_cell_for_element_store(code, var_sym, &mut owner_slots));
-        let seeded_inner = unit_cell.as_ref().map(|cell| cell.lock().unwrap().clone());
+        let seeded_inner = unit_cell.as_ref().map(|cell| cell.load());
         let saved_env_entry = seeded_inner.as_ref().map(|inner| {
             let saved = self.env().get_sym(var_sym).cloned();
             self.env_mut()
@@ -844,7 +844,7 @@ impl Interpreter {
             if let Some(mutated) = slot_mutated.or_else(|| self.env().get_sym(var_sym).cloned())
                 && !matches!(mutated.view(), ValueView::ContainerRef(c) if crate::gc::Gc::ptr_eq(&c, &cell))
             {
-                *cell.lock().unwrap() = mutated;
+                cell.store(mutated);
             }
             // `saved_env_entry` is `Some(_)` whenever `unit_cell` is (both
             // guarded by the same `if let Some(cell) = ...` above at seed

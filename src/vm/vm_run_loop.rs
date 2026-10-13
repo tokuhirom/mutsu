@@ -1300,7 +1300,7 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn topic_holds_scalar(cur: &Value) -> bool {
         let cur = if let ValueView::ContainerRef(cell) = cur.view() {
-            cell.lock().unwrap().clone()
+            cell.load()
         } else {
             cur.clone()
         };

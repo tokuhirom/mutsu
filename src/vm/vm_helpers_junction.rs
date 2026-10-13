@@ -256,7 +256,7 @@ impl Interpreter {
                 .iter()
                 .map(|v| match v.view() {
                     ValueView::ContainerRef(cell) => {
-                        let inner = cell.lock().unwrap().clone();
+                        let inner = cell.load();
                         if matches!(inner.view(), ValueView::HashEntryRef { .. }) {
                             inner.hash_entry_read()
                         } else {

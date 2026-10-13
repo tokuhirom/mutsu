@@ -2742,13 +2742,13 @@ impl Interpreter {
                         // token (`my $r := @a[2]`): the first write
                         // materializes the element -- type-checked against the
                         // container -- and the cell then aliases it (#9488).
-                        let inner = arc.lock().unwrap().clone();
+                        let inner = arc.load();
                         if !name.starts_with(['@', '%'])
                             && matches!(inner.view(), ValueView::HashEntryRef { .. })
                             && let Some(terminal) = inner.hash_entry_terminal()
                         {
                             let cell = self.materialize_entry_cell(&terminal, val.clone())?;
-                            *arc.lock().unwrap() = Value::container_ref(cell);
+                            arc.store(Value::container_ref(cell));
                             *ip += 1;
                             return Ok(());
                         }

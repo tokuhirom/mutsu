@@ -148,7 +148,7 @@ impl Interpreter {
             && let Some(source) = self.env().get(resolved_source)
             && let ValueView::ContainerRef(holder) = source.view()
         {
-            let held = holder.lock().unwrap().clone();
+            let held = holder.load();
             if held.container_ref_is_itemized()
                 && let ValueView::ContainerRef(shared) = held.view()
             {

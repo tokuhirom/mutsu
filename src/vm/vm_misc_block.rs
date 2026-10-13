@@ -210,7 +210,7 @@ impl Interpreter {
         // is in `restore_let_value`. Gated on the same toggle as the boxing it
         // supports, so the default build is byte-identical to before.
         let old_val = match old_val.view() {
-            ValueView::ContainerRef(arc) => arc.lock().unwrap().clone(),
+            ValueView::ContainerRef(arc) => arc.load(),
             _ => old_val.clone(),
         };
         // Copy an Array/Hash one level deep so the snapshot is independent of

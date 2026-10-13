@@ -680,7 +680,7 @@ impl Interpreter {
                             None => self.typecheck_assignment_failure(&c.ty, &value, None),
                         });
                     }
-                    *cell.lock().unwrap() = value.clone();
+                    cell.store(value.clone());
                     return Ok(value);
                 }
                 // `.value = X` / `.value--` on a Pair yielded by a mutable
@@ -1029,7 +1029,7 @@ impl Interpreter {
         // override in place through the cell (visible to every alias); any
         // other method-lvalue delegates to the inner value.
         if let ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) = target.view() {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             if let ValueView::Mixin(minner, mixins) = inner.view() {
                 let mixin_attr_key = MetaNs::Attr.owned_key_for_str(method);
                 if mixins.contains_key(&mixin_attr_key) {

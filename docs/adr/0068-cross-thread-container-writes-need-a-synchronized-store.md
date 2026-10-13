@@ -952,3 +952,71 @@ Pinned by the `container_lock` unit test
 - #13016 item 2 cannot race. Since #11242, `SeqBody`'s generations are published as
   immutable `Arc<Vec<Value>>` generations behind an `AtomicPtr`, and a reader never touches
   the graveyard `Vec` that a publisher pushes onto (`value/seq_body/generations.rs`).
+
+## 18. A cell's whole value is stored and cloned under its stripe (2026-10-13, #13016)
+
+Resolves §17.1's first item. The underflow was not the descend pointer racing a clone of
+its own: it was a store that held only the cell's mutex. When a routine returns, its `@x`
+parameter's final value is written back into the caller's cell
+(`apply_rw_bindings_to_env`, `*cell.lock() = updated`). A worker's `@x.push`/`.splice`
+mutates the same slot through `descend_container_ref`'s pointer, holding the cell's stripe
+and not its mutex. Each side dropped the node it replaced, so the node was released twice.
+`rust-gdb` on a one-thread `rd(@x); @x.splice(...)` loop shows the writeback firing on every
+`rd` call.
+
+The mutex and the stripe are two locks over one slot, and §7.4 had every *mutating* funnel
+take the stripe. So the slot's two other kinds of access now take it too, each through one
+primitive:
+
+- `ContainerCell::store(v)` replaces the whole value under the stripe, then the mutex. Every
+  `*cell.lock().unwrap() = v` in `src/` (about 30 sites) goes through it.
+- `ContainerCell::load()` clones the value under the stripe, then the mutex. Every
+  `cell.lock().unwrap().clone()` of a `ContainerCell` (about 80 sites) goes through it.
+  `Value::with_deref` / `into_deref` already did this (§7.4).
+
+Both are leaves, so §7.4 still holds. A store that runs while this thread already holds a
+stripe is a no-op acquisition, which is the known hole §7.4 accepts.
+
+Writers through a cell had a second gap. `invoke_mut` (and `celled_array_mutate`) read the
+held node, released the cell stripe, then took the cell-and-node pair. A writer on another
+thread could re-seat the cell in between. The node stripe then covered a node nobody was
+writing, and an argument-binding probe (`is_multidim_slice_cells`) that keyed on the new node
+saw it torn. `ContainerStructGuard::acquire_for_celled` / `acquire_for_cell_holding` re-read
+the node under the pair and retake it until the two agree. `named_root_struct_guard` (the
+element store and `:delete` of a celled variable) keyed on the cell alone; it now takes the
+pair too.
+
+`t/concurrency/concurrent-param-array-reader-families.t` is #13016's acceptance harness. Eight
+threads share a parameter array captured from a nested routine; four restructure it
+(`push`/`shift`, `splice`, `:delete` plus store, `unshift`/`pop`), and four read it, both
+directly and through a routine call that writes `@x` back. It found five more unguarded leaf
+readers, now guarded:
+
+- `to_string_value`'s Array/Hash arms take the node stripe.
+- Prefix `~` renders a `shared_snapshot`, as `.Str` does (§16).
+- The `@a[$i]` fast path takes the node stripe.
+- A `for` loop over a live array reads each item and its length under the stripe, plans its
+  element aliases over a snapshot, and promotes an element (`array_slot_ref` /
+  `hash_slot_ref`) under the stripe.
+- The topic writeback's probe and copy of the source node run under the stripe.
+
+Measured on a debug build, `main` → this slice:
+
+| Shape | `main` | This slice |
+| --- | --- | --- |
+| §17.1's nested-routine `rd(@x)` / `splice` repro | 5/8 crash | 0/12 |
+| The same in a `use Test` file | 1/6 | 0/12 |
+| `rd(@x)` while others push, final count | 1/5 crash | 0/6, count exact |
+| The reader-family harness (9 tests), written for this slice | not run | 0/10 |
+
+### 18.1 Still open
+
+- `ArrayData::items()` hands out a borrowed slice, so no lock can cover what a caller does with
+  it. Each leaf reader of a shared live array is still a funnel of its own, and the harness
+  is what finds the next one. The issue's design note still applies: only a guard inside
+  `gc_contents_mut`, or an owner check once `MULTI_MUTATOR_THREADS` is set, cannot miss a
+  shape. Tracked as #13079.
+- The topic writeback (`write_back_for_topic_item`) and the rw parameter writeback still
+  rebuild a copy of the source and store it whole. Under a concurrent writer that loses the
+  other thread's update. It is no longer a crash, but it is still a wrong answer. Tracked as
+  #13078.

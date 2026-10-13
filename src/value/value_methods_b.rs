@@ -178,13 +178,13 @@ impl Value {
         let is_hole = |v: &Value| matches!(v.view(), ValueView::Nil | ValueView::Package(..));
         // Deref an existing ContainerRef cell so we inspect/replace its inner value.
         if let ValueView::ContainerRef(cell) = data[idx].view() {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             if matches!(inner.view(), ValueView::Array(..)) {
                 return Some(inner);
             }
             if is_hole(&inner) {
                 let fresh = Value::real_array(Vec::new());
-                *cell.lock().unwrap() = fresh.clone();
+                cell.store(fresh.clone());
                 return Some(fresh);
             }
             return None;
@@ -242,6 +242,11 @@ impl Value {
     /// subscript to descend it (the analogue of `hash_autovivify_cell`).
     pub fn array_slot_ref(&self, idx: usize, terminal: bool) -> Option<Value> {
         if let ValueView::Array(arc, _kind) = self.view() {
+            // The bounds check and the promotion below write the node in place;
+            // another thread's `push`/`shift` restructures it under the node's
+            // stripe (ADR-0068), so take it too (a leaf: no user code runs).
+            let _structure =
+                crate::value::container_lock::ContainerStructGuard::acquire_for(None, self);
             if idx >= arc.len() {
                 if terminal {
                     // Past the end and nothing to promote: hand back a DEFERRED

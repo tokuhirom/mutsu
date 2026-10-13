@@ -397,9 +397,7 @@ impl Interpreter {
             let slot = items.get(usize::try_from(i).ok()?)?.clone();
             if n + 1 == dims.len() {
                 return match slot.view() {
-                    ValueView::ContainerRef(cell) if cell.is_readonly() => {
-                        Some(cell.lock().unwrap().clone())
-                    }
+                    ValueView::ContainerRef(cell) if cell.is_readonly() => Some(cell.load()),
                     _ => None,
                 };
             }

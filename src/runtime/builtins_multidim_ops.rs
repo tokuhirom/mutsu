@@ -130,9 +130,9 @@ impl Interpreter {
             let mut leaves = Vec::new();
             multidim_collect_leaves(&target_val, &indices, &[], &mut leaves);
             if let Some(cell) = capture_cell {
-                let mut inner = cell.lock().unwrap().clone();
+                let mut inner = cell.load();
                 multidim_delete(&mut inner, &indices);
-                *cell.lock().unwrap() = inner;
+                cell.store(inner);
             } else if let Some(t) = self.env.get_mut(&var_name) {
                 multidim_delete(t, &indices);
                 self.writeback_multidim_var_to_local(&var_name);
@@ -149,9 +149,9 @@ impl Interpreter {
             return Ok(Value::NIL);
         }
         if let Some(cell) = capture_cell {
-            let mut inner = cell.lock().unwrap().clone();
+            let mut inner = cell.load();
             let result = multidim_delete(&mut inner, &indices);
-            *cell.lock().unwrap() = inner;
+            cell.store(inner);
             return Ok(array_to_list(result));
         }
         let Some(target) = self.env.get_mut(&var_name) else {

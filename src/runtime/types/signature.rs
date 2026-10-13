@@ -12,7 +12,7 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
     // (`@a.grep(...); @a.map(-> [$x, $y] {...})`) has to look through the cell, or it
     // sees one opaque value and reports "Too few positional arguments".
     if let ValueView::ContainerRef(cell) = value.view() {
-        let inner = cell.lock().unwrap().clone();
+        let inner = cell.load();
         return positional_values_from_unpack_target(&inner);
     }
     // An array/hash ELEMENT read wraps a non-itemized-by-kind value (a `Seq`

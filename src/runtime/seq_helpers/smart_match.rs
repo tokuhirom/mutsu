@@ -434,7 +434,7 @@ impl Interpreter {
         // `.grep(...).head` rw alias / `:=`-bound slot) is transparent to
         // smartmatch — test the contained value (Raku container semantics).
         if let ValueView::ContainerRef(cell) = left.view() {
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             return self.smart_match_inner(&inner, right, err);
         }
         // ADR-0040 slices 1-2: a `Range`/`Seq`/`Set`-family value stored as a

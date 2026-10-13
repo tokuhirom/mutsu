@@ -143,7 +143,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         // GetLocal decontainerization step, but the scalar wrapper deliberately
         // survives that step to preserve itemization. Read through the cell
         // here before applying the ordinary aggregate cardinality rules.
-        ValueView::ContainerRef(cell) => coerce_to_numeric(cell.lock().unwrap().clone()),
+        ValueView::ContainerRef(cell) => coerce_to_numeric(cell.load()),
         ValueView::Mixin(inner, _) => coerce_to_numeric(inner.as_ref().clone()),
         ValueView::Int(_)
         | ValueView::BigInt(_)

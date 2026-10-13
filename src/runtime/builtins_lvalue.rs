@@ -80,7 +80,7 @@ impl Interpreter {
             let fetched = result?;
             let contents = match fetched.view() {
                 ValueView::ContainerRef(cell) | ValueView::ContainerView(cell) => {
-                    Some(cell.lock().unwrap().clone())
+                    Some(cell.load())
                 }
                 _ => None,
             };

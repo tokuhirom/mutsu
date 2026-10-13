@@ -44,7 +44,7 @@ fn find(v: &Value, seen: &mut HashSet<usize>, depth: usize) -> Option<RuntimeErr
         ValueView::ContainerRef(cell) => {
             // Clone out and drop the guard before recursing: a cycle can
             // close through a cell (`my @e; @e.push(@e)`).
-            let inner = cell.lock().unwrap().clone();
+            let inner = cell.load();
             find(&inner, seen, next)
         }
         ValueView::Array(data, kind) => {

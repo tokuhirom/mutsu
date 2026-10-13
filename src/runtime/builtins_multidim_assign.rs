@@ -50,7 +50,7 @@ impl Interpreter {
     fn detached_lvalue_value(value: &Value) -> Value {
         match value.view() {
             ValueView::ContainerRef(cell) => {
-                Self::detached_lvalue_value(&cell.lock().unwrap().clone())
+                Self::detached_lvalue_value(&cell.load())
             }
             ValueView::Hash(hash) => Value::hash(
                 hash.iter()
@@ -861,7 +861,7 @@ impl Interpreter {
 
         let current = self.call_method_with_values(target.clone(), &method, Vec::new())?;
         let current = match current.view() {
-            ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+            ValueView::ContainerRef(cell) => cell.load(),
             _ => current,
         };
         // The default returned for an absent key: the container's own

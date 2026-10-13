@@ -535,6 +535,11 @@ impl Value {
                     return "[...]".to_string();
                 }
                 SEEN_ARR_PTRS.with(|seen| seen.borrow_mut().push(ptr));
+                // The walk reads the live range another thread's `push`/`shift`
+                // rewrites under the node's stripe (ADR-0068): take it too. A
+                // leaf (rendering runs no user code); nested renders no-op.
+                let structure =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for(None, self);
                 // A hole stringifies as the container's `is default(...)` value,
                 // not the `Any` marker the slot holds (`items_with_default`).
                 let result = items
@@ -543,6 +548,7 @@ impl Value {
                     .map(|v| v.to_str_context())
                     .collect::<Vec<_>>()
                     .join(" ");
+                drop(structure);
                 SEEN_ARR_PTRS.with(|seen| {
                     let mut s = seen.borrow_mut();
                     if let Some(pos) = s.iter().rposition(|p| *p == ptr) {
@@ -589,6 +595,9 @@ impl Value {
                     return "{...}".to_string();
                 }
                 SEEN_HASH_PTRS.with(|seen| seen.borrow_mut().push(ptr));
+                // As for an Array above: a concurrent insert can rehash the map.
+                let structure =
+                    crate::value::container_lock::ContainerStructGuard::acquire_for(None, self);
                 let mut pairs: Vec<_> = items
                     .iter()
                     .map(|(k, v)| {
@@ -601,6 +610,7 @@ impl Value {
                         )
                     })
                     .collect();
+                drop(structure);
                 pairs.sort();
                 SEEN_HASH_PTRS.with(|seen| {
                     let mut s = seen.borrow_mut();

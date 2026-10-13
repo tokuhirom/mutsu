@@ -1409,7 +1409,7 @@ impl Interpreter {
                     if let ValueView::ContainerRef(cell) = slot.view() {
                         // A shared cell keeps its identity: every other alias of
                         // the same variable observes the write.
-                        *cell.lock().unwrap() = val.clone();
+                        cell.store(val.clone());
                     } else {
                         *slot = Value::scalar(val.clone());
                     }
@@ -2223,9 +2223,7 @@ impl Interpreter {
                     self.env_mut()
                         .insert(var_name.clone(), Value::hash(ValueMap::default()));
                 }
-                let mut celled_inner = celled_hash
-                    .as_ref()
-                    .map(|cell| cell.lock().unwrap().clone());
+                let mut celled_inner = celled_hash.as_ref().map(|cell| cell.load());
                 let slice_is_object_hash =
                     loan_env!(self, var_hash_key_constraint(&var_name)).is_some();
                 // Phase 2 Stage 2 (hash slice bind): pre-read each bind source
@@ -2319,7 +2317,7 @@ impl Interpreter {
                     });
                 }
                 if let (Some(cell), Some(inner)) = (celled_hash, celled_inner) {
-                    *cell.lock().unwrap() = inner;
+                    cell.store(inner);
                 }
                 for (source_name, cell) in pending_source_cells {
                     // Bind the source variable to the same cell installed at
@@ -3002,7 +3000,7 @@ impl Interpreter {
                                             // Phase 2: the element is a `:=`-bound
                                             // shared cell — write through it so the
                                             // alias observes the new value.
-                                            *cell.lock().unwrap() = native_store_val.clone();
+                                            cell.store(native_store_val.clone());
                                         }
                                     } else {
                                         arr[i] = if is_self_array_ref {

@@ -699,9 +699,16 @@ impl Interpreter {
         // carve-outs); see `vm_for_loop_alias.rs`.
         // The plan checks that the loop iterates its source one-for-one; a
         // live source IS that array, so it is shown the array's own items.
-        let live_items = live.and_then(|array| match array.view() {
-            ValueView::Array(items, _) => Some(items.clone()),
-            _ => None,
+        // Once another thread can restructure that array, the plan reads a
+        // copy taken under its stripe instead (ADR-0068 §16, #13016): its
+        // probes walk the items with no lock held.
+        let live_items = live.and_then(|array| {
+            let array = crate::value::container_lock::shared_snapshot(array)
+                .unwrap_or_else(|| array.clone());
+            match array.view() {
+                ValueView::Array(items, _) => Some(items.clone()),
+                _ => None,
+            }
         });
         let alias_items: &[Value] = match &live_items {
             Some(items) => items,
@@ -1830,7 +1837,12 @@ impl Interpreter {
 // Cost: O(1).
 fn live_array_len(array: &Value) -> usize {
     match array.view() {
-        ValueView::Array(items, _) => items.len(),
+        // Under the node's stripe, as each item read is (`ForItemIter::Live`).
+        ValueView::Array(items, _) => {
+            let _structure =
+                crate::value::container_lock::ContainerStructGuard::acquire_for(None, array);
+            items.len()
+        }
         _ => 0,
     }
 }

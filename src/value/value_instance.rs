@@ -76,7 +76,7 @@ impl Clone for InstanceAttrs {
         // clones each `has` container too).
         for v in map.values_mut() {
             if let ValueView::ContainerRef(cell) = v.view() {
-                let inner = cell.lock().unwrap().clone();
+                let inner = cell.load();
                 *v = inner;
             }
             *v = std::mem::replace(v, Value::NIL).detach_shared_container();
@@ -466,7 +466,7 @@ impl InstanceAttrs {
                 if let ValueView::ContainerRef(cell) = slot.view()
                     && !slot.container_ref_is_itemized()
                 {
-                    *cell.lock().unwrap() = value;
+                    cell.store(value);
                 } else {
                     *slot = value;
                 }

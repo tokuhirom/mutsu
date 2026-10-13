@@ -101,7 +101,7 @@ impl Interpreter {
             ValueView::Scalar(inner) => Self::collect_minmax_candidates(inner, out),
             // Unwrap first-class element containers (`:=`-bound / grep rw alias).
             ValueView::ContainerRef(cell) => {
-                Self::collect_minmax_candidates(&cell.lock().unwrap().clone(), out)
+                Self::collect_minmax_candidates(&cell.load(), out)
             }
             ValueView::Range(a, b)
             | ValueView::RangeExcl(a, b)

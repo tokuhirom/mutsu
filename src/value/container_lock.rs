@@ -159,6 +159,41 @@ impl ContainerStructGuard {
         }
     }
 
+    /// [`Self::acquire_for`] for a writer that holds the cell itself: keyed on
+    /// the cell and on the node the cell holds while the stripes are held. The
+    /// node is read before the stripes are taken, so a writer that re-seats
+    /// the cell in between would leave the wrong node stripe held; the read is
+    /// repeated under the stripes and the pair re-taken until they agree.
+    // Cost: O(1) expected; one retry per concurrent re-seat of the cell.
+    pub(crate) fn acquire_for_celled(cell: &crate::value::ContainerCell) -> Option<Self> {
+        Self::acquire_for_cell_holding(std::ptr::from_ref(cell) as usize, || cell.load())
+    }
+
+    /// [`Self::acquire_for_celled`] for a caller that reaches the cell's value
+    /// through its own path (`load`, run before and under the stripes, returns
+    /// what the cell at `cell_addr` holds now; under the stripes it must not
+    /// block on one).
+    // Cost: O(1) expected, plus two calls of `load`; one retry per concurrent
+    // re-seat of the cell.
+    pub(crate) fn acquire_for_cell_holding(
+        cell_addr: usize,
+        mut load: impl FnMut() -> crate::value::Value,
+    ) -> Option<Self> {
+        if !multi_mutator_threads_live() {
+            return None;
+        }
+        loop {
+            let node = container_node_addr(&load());
+            let guard = match node {
+                Some(node) => Self::acquire_pair(cell_addr, node),
+                None => Self::acquire(cell_addr),
+            }?;
+            if container_node_addr(&load()) == node {
+                return Some(guard);
+            }
+        }
+    }
+
     /// Lock the stripes of two keys. They are taken in stripe order, which is
     /// the one order every pair acquisition uses, so two threads cannot wait
     /// on each other; a single-key acquisition holds one stripe and waits for
@@ -228,6 +263,47 @@ impl ContainerStructGuard {
 impl Drop for ContainerStructGuard {
     fn drop(&mut self) {
         HOLDS_STRUCT_LOCK.with(|held| held.set(false));
+    }
+}
+
+impl crate::value::ContainerCell {
+    /// Replace the value this cell holds, under the cell's stripe as well as
+    /// its own mutex, and return the value it held before.
+    ///
+    /// The mutex alone excludes only the other holders of the mutex. A writer
+    /// that mutates through the pointer `descend_container_ref` derives (a
+    /// `Mut` method row, `push_to_shared_var`, an element store) holds the
+    /// cell's stripe instead and has released the mutex, so a bare
+    /// `*cell.lock() = v` replaced the slot under it: the two dropped the old
+    /// node twice, and the main thread later died on `Gc::drop strong-count
+    /// underflow` (#13016, a callee's `@x` writeback racing a worker's
+    /// `@x.splice`). Every store that replaces a cell's whole value goes
+    /// through here. A no-op beyond the mutex until a second VM mutator thread
+    /// exists, and when this thread already holds a stripe.
+    ///
+    /// The old value is returned rather than dropped inside the locks, so a
+    /// caller that does not want it drops it with nothing held.
+    // Cost: O(1).
+    pub(crate) fn store(&self, value: crate::value::Value) -> crate::value::Value {
+        let _structure = ContainerStructGuard::acquire(std::ptr::from_ref(self) as usize);
+        let mut slot = self
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        std::mem::replace(&mut *slot, value)
+    }
+
+    /// A clone of the value this cell holds, taken under the cell's stripe as
+    /// well as its mutex: the read half of [`Self::store`]. Cloning under the
+    /// mutex alone can take a refcount on a node that a writer holding the
+    /// stripe (and not the mutex) is dropping at that moment (#13016). A
+    /// reader that only inspects the value in place uses `Value::with_deref`,
+    /// which takes the same pair.
+    // Cost: O(1).
+    pub(crate) fn load(&self) -> crate::value::Value {
+        let _structure = ContainerStructGuard::acquire(std::ptr::from_ref(self) as usize);
+        self.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 }
 
