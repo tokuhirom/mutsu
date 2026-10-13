@@ -2072,7 +2072,9 @@ fn public_attribute_call(target: &Expr) -> Option<&str> {
             modifier: None,
             quoted: false,
             ..
-        } if args.is_empty() && matches!(target.as_ref(), Expr::Var(v) if v == "__ANON_STATE__") => {
+        } if args.is_empty()
+            && matches!(target.as_ref(), Expr::Var(v) if v == "__ANON_STATE__") =>
+        {
             Some(name.as_str())
         }
         _ => None,
