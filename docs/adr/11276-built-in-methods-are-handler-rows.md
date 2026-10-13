@@ -2516,7 +2516,7 @@ new one. Decisions:
    a `Slip`, a buffer storage) for the positional pair, a `Junction`, a `Proxy`, `Nil` and a mixin for all four, and for the
    associative pair a package (its stash is `Associative`: `CORE::<&say>`), an instance (its `{ }` may be a user
    `postcircumfix:<{ }>` or a tied store, resolved first) and a hash with no settled shape (a `Map` subclass's raw storage, which
-   keeps the associative rows' implementation in the cascade). `Map` gains its own `AT-KEY` row, which it would otherwise miss.
+   keeps the associative rows' implementation in the cascade).
 3. **A `Match` reaches `Capture`'s `AT-POS`/`EXISTS-POS`** (`CAPTURE_FOR_MATCH`): the handlers read its positional captures, and an
    optional group that did not match does not exist. The `Match` branch of the cascade arm goes.
 4. **The associative rows of the collections take a user-object key** (`OBJECT_ARGS` on `subscript.rs`'s rows); their delegation
