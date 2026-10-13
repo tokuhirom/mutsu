@@ -14,6 +14,8 @@ pub(super) struct Scan {
     pub(super) callees: HashSet<crate::symbol::Symbol>,
     /// The routines among `callees` read as `&name` rather than only called.
     pub(super) code_reads: HashSet<crate::symbol::Symbol>,
+    /// What the code does with each routine it reads as `&name`.
+    pub(super) code_uses: super::code_uses::CodeUses,
     /// The code can reach a name dynamically (`EVAL`, `CALLER::`, symbolic
     /// lookup), which neither of the sets above can bound.
     pub(super) reflective: bool,
@@ -36,6 +38,7 @@ impl Scan {
             free,
             callees: HashSet::new(),
             code_reads: HashSet::new(),
+            code_uses: super::code_uses::CodeUses::of(stmts),
             reflective: false,
         };
         scan.absorb_code(&code);
