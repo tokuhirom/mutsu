@@ -631,7 +631,7 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         if pd.slurpy {
             continue;
         }
-        let mut candidate = if pd.named {
+        let candidate = if pd.named {
             extract_named_from_unpack_target(interpreter, value, &pd.name)
         } else if positional_idx < positional.len() {
             let v = positional[positional_idx].clone();
@@ -640,10 +640,12 @@ pub(in crate::runtime) fn sub_signature_matches_value(
         } else {
             None
         };
-        if candidate.is_none()
-            && let Some(default) = &pd.default
-        {
-            candidate = interpreter.eval_param_default_expr(pd, default).ok();
+        // An omitted parameter with a default always matches: the default is
+        // evaluated at bind time, in the scope of the parameters bound before
+        // it (`Str :$require = $model`), and it is not type-checked while
+        // dispatching. Evaluating it here would see `$model` unbound.
+        if candidate.is_none() && pd.default.is_some() {
+            continue;
         }
         let Some(candidate) = candidate else {
             // Optional params are OK without a value.  Named parameters are
