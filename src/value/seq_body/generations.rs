@@ -105,9 +105,7 @@ impl Drop for Generation {
         // SAFETY: the parts are those of the `Vec` `from_vec` took apart,
         // with exactly `len` slots initialized; `&mut self` means no reader
         // is left.
-        drop(unsafe {
-            Vec::from_raw_parts(*self.ptr.get_mut(), *self.len.get_mut(), self.cap)
-        });
+        drop(unsafe { Vec::from_raw_parts(*self.ptr.get_mut(), *self.len.get_mut(), self.cap) });
     }
 }
 
@@ -153,7 +151,9 @@ impl Generations {
 
     // Cost: O(1) amortized.
     fn graveyard(&self) -> MutexGuard<'_, Vec<Box<Generation>>> {
-        self.graveyard.lock().unwrap_or_else(PoisonError::into_inner)
+        self.graveyard
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Make `generation` the newest one, under the graveyard lock, so two
@@ -271,10 +271,18 @@ mod tests {
         for i in 1..1000 {
             generations.append(vec![Value::int(i)]);
         }
-        assert_eq!(first, &[Value::int(0)], "an earlier borrow keeps its prefix");
+        assert_eq!(
+            first,
+            &[Value::int(0)],
+            "an earlier borrow keeps its prefix"
+        );
         let live = generations.live();
         assert_eq!(live.len(), 1000);
-        assert!(live.iter().enumerate().all(|(i, v)| *v == Value::int(i as i64)));
+        assert!(
+            live.iter()
+                .enumerate()
+                .all(|(i, v)| *v == Value::int(i as i64))
+        );
         // Doubling: 1000 one-element appends need about log2(1000) buffers,
         // not one per append (#13023).
         assert!(generations.graveyard().len() <= 10);
