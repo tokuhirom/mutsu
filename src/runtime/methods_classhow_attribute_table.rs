@@ -35,9 +35,7 @@ impl Interpreter {
                         _ => None,
                     };
                     if let Some(name) = name {
-                        if !table.contains_key(&name) {
-                            table.insert(name, attr);
-                        }
+                        table.entry(name).or_insert(attr);
                     }
                 }
             }
