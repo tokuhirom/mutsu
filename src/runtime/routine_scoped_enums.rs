@@ -177,10 +177,10 @@ impl Interpreter {
     // Cost: O(e * v), e = enums, v = variants per enum.
     pub(crate) fn preregister_routine_enums(&mut self, enums: &[RoutineEnum]) {
         for decl in enums {
-            let key = match &decl.package {
-                Some(package) if package != "GLOBAL" => {
-                    crate::qualified::qualified(Symbol::intern(package), Symbol::intern(&decl.name))
-                        .resolve()
+            let package = decl.package.as_deref().map(Symbol::intern);
+            let key = match package {
+                Some(package) if !crate::qualified::is_global_package(package) => {
+                    crate::qualified::qualified(package, Symbol::intern(&decl.name)).resolve()
                 }
                 _ => decl.name.clone(),
             };
