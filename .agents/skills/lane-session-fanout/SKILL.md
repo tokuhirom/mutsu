@@ -52,8 +52,8 @@ environment, `AGENTS.md` and the skills, so the prompt only needs the lane-speci
 3. `Releasing: <branch>` when merged, stopped or blocked.
 4. **Keep going**: after the PR merges, take the lane's next issue, **up to 5 tickets** (the
    `mutsu-ticket-flow` run cap) - but once context use passes **60%**, stop instead of
-   starting another, post the next-session prompt on the issue and repeat it in the final report
-   (`mutsu-ticket-flow`, "Stopping mid-campaign").
+   starting another, post a short status note on the issue and stop; the child never starts its own
+   successor (`mutsu-ticket-flow`, "Stopping mid-campaign").
 5. Replies to the user in Japanese; repository artifacts in English.
 
 Why several tickets per session and not one: a fresh container has an empty `target/`, so every
@@ -100,8 +100,8 @@ relaunching a `completed` child:
 2. Skip issues whose PR is still waiting on CI: the previous session's `Claiming:` stays live
    until its `Releasing:`, so name those issues in the new prompt ("do not touch #N").
 3. Launch on the same lane with the same prompt, plus the previous session's leftovers (its final
-   report, and the next-session prompt it posted on the carrier or issue). Tell the child which
-   comment to read first.
+   report, and the status note it posted on the carrier or issue). Tell the child which
+   comment to read first; if there is none, the carrier issue and its ADR are enough.
 4. **Model.** Same model as before, except: if the previous session stopped because the next
    item needs a design (not because of the cap or the 60% rule), a sonnet child tends to stop
    at the same place (method-table reverted a slice and stopped; nqp stopped at the `p6*` ops
