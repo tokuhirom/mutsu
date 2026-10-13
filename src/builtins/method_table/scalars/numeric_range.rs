@@ -10,8 +10,8 @@
 //! (`method_table::collections::type_params::type_object_row`).
 
 use super::{Handler, MethodRow, RowFlags};
-use num_traits::ToPrimitive;
 use crate::value::{RuntimeError, Value, ValueView};
+use num_traits::ToPrimitive;
 
 macro_rules! row {
     ($owner:literal, $handler:ident) => {
@@ -84,8 +84,12 @@ fn native_int_range(name: &str) -> Option<Value> {
     {
         return Some(Value::range(min, max));
     }
-    let min = min_i64.map(Value::int).unwrap_or_else(|| Value::bigint(min_big));
-    let max = max_i64.map(Value::int).unwrap_or_else(|| Value::bigint(max_big));
+    let min = min_i64
+        .map(Value::int)
+        .unwrap_or_else(|| Value::bigint(min_big));
+    let max = max_i64
+        .map(Value::int)
+        .unwrap_or_else(|| Value::bigint(max_big));
     Some(Value::generic_range(min, max, false, false))
 }
 
