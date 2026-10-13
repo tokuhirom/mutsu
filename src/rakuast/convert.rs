@@ -3123,7 +3123,7 @@ pub(super) fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 });
             }
             if name.as_str() == "require"
-                && let Some(require) = super::use_stmt::convert_require(args)
+                && let Some(require) = super::use_stmt::convert_require(args)?
             {
                 return Ok(require);
             }

@@ -174,20 +174,31 @@ pub(super) fn convert_need(module: &str) -> RakuAstNode {
 
 /// A statically named `require` keeps its package target through the round trip.
 // Cost: O(1).
-pub(super) fn convert_require(args: &[Expr]) -> Option<RakuAstNode> {
-    let [Expr::Literal(target)] = args else {
-        return None;
+pub(super) fn convert_require(args: &[Expr]) -> Result<Option<RakuAstNode>, RuntimeError> {
+    let (Expr::Literal(target), rest) = (match args {
+        [first, rest @ ..] => (first, rest),
+        [] => return Ok(None),
+    }) else {
+        return Ok(None);
     };
     let ValueView::Package(module) = target.view() else {
-        return None;
+        return Ok(None);
     };
-    Some(RakuAstNode {
+    let mut node = RakuAstNode {
         class: RakuAstClass::StatementRequire,
         fields: vec![node_field(
             Some("module-name"),
             name_from_identifier(&module.resolve()),
         )],
-    })
+    };
+    match rest {
+        [] => {}
+        [import_list] => node
+            .fields
+            .push(node_field(Some("argument"), convert_expr(import_list)?)),
+        _ => return Ok(None),
+    }
+    Ok(Some(node))
 }
 
 /// Lower `Statement::Require` to the parser's package-valued call operand.
@@ -196,7 +207,7 @@ pub(super) fn lower_require(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
     if node
         .fields
         .iter()
-        .any(|field| matches!(field.name, Some("file" | "argument")))
+        .any(|field| matches!(field.name, Some("file")))
     {
         return Err(super::lower::unsupported(node));
     }
@@ -204,9 +215,13 @@ pub(super) fn lower_require(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         Some(NameShape::Identifier(name)) => name,
         _ => return Err(super::lower::unsupported(node)),
     };
+    let mut args = vec![Expr::Literal(Value::package(Symbol::intern(&module)))];
+    if let Ok(import_list) = named_child(node, "argument") {
+        args.push(lower_expr(import_list)?);
+    }
     Ok(Expr::Call {
         name: Symbol::intern("require"),
-        args: vec![Expr::Literal(Value::package(Symbol::intern(&module)))],
+        args,
         listop: false,
     })
 }

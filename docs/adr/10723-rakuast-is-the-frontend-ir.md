@@ -1124,3 +1124,12 @@ the parser also uses, and lowering strips the traits and hands the phasers to
 `wrap_with_will_phasers`. The parser reads `is` traits both before and after
 `will` ones without recording their order, so a declaration with both stays
 the boundary rather than render a guessed order.
+
+### 6.52 S10: `require MODULE <imports>` (2026-10-13)
+
+Rakudo renders the import list as `Statement::Require(module-name => ...,
+argument => QuotedString(words))`. The converter now keeps the one-list form
+(any other operand shape stays the boundary) and lowering passes it back as the
+call's second operand. The caller names of an `EVAL` string include the loaded
+modules' packages, since a package is global rather than lexical to the frame
+that runs the `EVAL`.

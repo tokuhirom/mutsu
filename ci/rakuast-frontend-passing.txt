@@ -2741,6 +2741,7 @@ t/modules/import-export/re-exported-trait-mod-local-multi.t
 t/modules/import-export/re-exported-trait-mod.t
 t/modules/import-export/reimport-tagged-export-after-plain-use.t
 t/modules/import-export/require-dist-selectors.t
+t/modules/import-export/require-expression.t
 t/modules/import-export/require-in-method-keeps-module-type-alias.t
 t/modules/import-export/require-in-param-default-keeps-imports.t
 t/modules/import-export/require-in-sub-module-curried-lexical-role.t
@@ -4726,6 +4727,7 @@ t/rakuast/rakuast-regex-sym-adverb.t
 t/rakuast/rakuast-regex-symbolic-subrule.t
 t/rakuast/rakuast-regex-tree-gaps.t
 t/rakuast/rakuast-regex.t
+t/rakuast/rakuast-require-import-list.t
 t/rakuast/rakuast-require-statement.t
 t/rakuast/rakuast-return-type.t
 t/rakuast/rakuast-role-parameterization-traits.t
