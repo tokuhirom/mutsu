@@ -260,10 +260,31 @@ impl Interpreter {
                 state.recursion = 0;
                 super::thread_lock_count::note_lock_released();
                 lock.lock_cv.notify_one();
+                // The main program's thread re-checks for a worker's pending
+                // `exit` every `exit_handover::POLL` (ADR-11617, #13052): the
+                // signaller may be that very worker. It gives up without the
+                // lock, so the caller unwinds instead of running on.
+                let adopter = crate::exit_handover::is_adopter_thread();
                 loop {
-                    state = cond
-                        .wait(state)
-                        .map_err(|_| RuntimeError::new("Condition wait failed"))?;
+                    state = if adopter {
+                        // A timeout is not a signal: wait again until one
+                        // arrives or the handover does.
+                        loop {
+                            let (s, timeout) = cond
+                                .wait_timeout(state, crate::exit_handover::POLL)
+                                .map_err(|_| RuntimeError::new("Condition wait failed"))?;
+                            if crate::exit_handover::requested() {
+                                return Err(RuntimeError::exit_handover_pending());
+                            }
+                            state = s;
+                            if !timeout.timed_out() {
+                                break state;
+                            }
+                        }
+                    } else {
+                        cond.wait(state)
+                            .map_err(|_| RuntimeError::new("Condition wait failed"))?
+                    };
                     while state.owner.is_some() && state.owner != Some(me) {
                         state = lock
                             .lock_cv
