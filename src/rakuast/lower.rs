@@ -4572,7 +4572,9 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 },
             })
         }
-        RakuAstClass::ColonPairVariable | RakuAstClass::ColonPairValue => {
+        RakuAstClass::ColonPairVariable
+        | RakuAstClass::ColonPairValue
+        | RakuAstClass::ColonPairNumber => {
             let key = leaf_str(node, "key")?;
             let value_node = named_child(node, "value")?;
             let value = lower_expr(value_node)?;
@@ -4582,6 +4584,8 @@ pub(super) fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 right: Box::new(value),
                 form: if node.class == RakuAstClass::ColonPairVariable {
                     crate::ast::BinaryForm::ColonPairVariable
+                } else if node.class == RakuAstClass::ColonPairNumber {
+                    crate::ast::BinaryForm::ColonPairNumber
                 } else if matches!(
                     value_node.class,
                     RakuAstClass::CircumfixArrayComposer | RakuAstClass::QuotedString

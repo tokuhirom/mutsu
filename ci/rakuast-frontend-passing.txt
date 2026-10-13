@@ -2155,6 +2155,7 @@ t/lang/issue-7752-modulo-divisible-failure.t
 t/lang/item-assignment-comma-precedence-value.t
 t/lang/literal-hex-float.t
 t/lang/malformed-my-sigilless.t
+t/lang/malformed-syntax-classes.t
 t/lang/operators/amp-bracket-nested-metaop.t
 t/lang/operators/andthen-orelse-instance-rhs.t
 t/lang/operators/andthen-roast-regressions.t
@@ -4510,6 +4511,7 @@ t/rakuast/rakuast-callable-lvalue.t
 t/rakuast/rakuast-calls-assign.t
 t/rakuast/rakuast-class-traits-multi-constant.t
 t/rakuast/rakuast-class.t
+t/rakuast/rakuast-colonpair-literal.t
 t/rakuast/rakuast-compound-assign.t
 t/rakuast/rakuast-compunit.t
 t/rakuast/rakuast-constant-smiley-term.t
