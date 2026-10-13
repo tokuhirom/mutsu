@@ -47,8 +47,8 @@
 //!   redeclaring one, one with a computed name, a token, a method-level proto;
 //!   see [`routines`]);
 //! - it names a type or package of an inner scope that cannot be declared again
-//!   unobservably (its body runs code), or reads an inner variable typed by
-//!   one;
+//!   unobservably (see [`decls`]; an inner variable typed by one names it too,
+//!   and gets an untyped cell);
 //! - it calls a routine that is neither one of the scope's nor a core one
 //!   (which may evaluate a string where it was called from), or a pseudo-package
 //!   qualified one (`MY::helper()`), in a scope that declares a routine or a
@@ -77,7 +77,9 @@ mod walk;
 
 use super::package_phasers::Enclosing;
 use crate::ast::{Expr, PhaserKind, Stmt};
-use cell_ast::{decl_from_cell, read_var, renamed_static_decl, sigil_of, static_scalar};
+use cell_ast::{
+    decl_from_cell, read_var, renamed_static_decl, sigil_of, static_scalar, untyped_cell_decl,
+};
 use decls::TypeDecl;
 use routines::{Access, Dependencies, FrameBlock, Routine};
 use scan::Scan;
@@ -411,6 +413,10 @@ impl Walker<'_> {
     /// allocating its static cell on first use.
     fn cell_access(&mut self, frame: usize, binding: usize) -> (Stmt, Stmt) {
         let name = self.frames[frame].bindings[binding].name.clone();
+        let untyped = matches!(
+            &self.frames[frame].bindings[binding].kind,
+            BindingKind::Local { static_decl, .. } if self.cell_names_inner_type(static_decl)
+        );
         let BindingKind::Local {
             index,
             static_decl,
@@ -424,13 +430,23 @@ impl Walker<'_> {
             Some(cell_name) => cell_name.clone(),
             None => {
                 let cell_name = format!("{}{}", sigil_of(&name), next_slot("__begin_cell_"));
-                self.lifted
-                    .decls
-                    .push(renamed_static_decl(static_decl, &cell_name));
+                let mut cell_decl = renamed_static_decl(static_decl, &cell_name);
+                if untyped {
+                    cell_decl = untyped_cell_decl(cell_decl);
+                }
+                self.lifted.decls.push(cell_decl);
                 let head = decl_from_cell(static_decl, &cell_name);
-                let edit = Edit::Split {
-                    head: Box::new(head),
-                    assign: assign.take(),
+                let edit = if untyped {
+                    // The declaration names a type of an inner scope, which
+                    // the scope's head precedes, so it stays in place.
+                    let mut stmts = vec![head];
+                    stmts.extend(assign.take().map(|a| *a));
+                    Edit::Replace(Box::new(Stmt::SyntheticBlock(stmts)))
+                } else {
+                    Edit::Split {
+                        head: Box::new(head),
+                        assign: assign.take(),
+                    }
                 };
                 let index = *index;
                 *cell = Some(cell_name.clone());

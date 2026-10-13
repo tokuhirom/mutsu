@@ -268,6 +268,15 @@ impl Walker<'_> {
         })
     }
 
+    /// Whether the static declaration `static_decl` of an inner variable names
+    /// a type or package an inner scope declared (`my K $v`), which the
+    /// variable's static cell, declared at the unit's level, cannot.
+    // Cost: O(n * t), n = the names `static_decl` mentions, t = the names the
+    // inner scopes declare.
+    pub(super) fn cell_names_inner_type(&self, static_decl: &Stmt) -> bool {
+        self.names_inner_type(&Mentions::of([static_decl]))
+    }
+
     /// Whether `mentions` names a type or package an inner scope declared.
     fn names_inner_type(&self, mentions: &Mentions) -> bool {
         self.frames
@@ -298,13 +307,12 @@ impl Walker<'_> {
         for (&(frame, binding), access) in &deps.bindings {
             match (access, &self.frames[frame].bindings[binding].kind) {
                 (Access::CopyIn(decl), _) => stmts.push(decl),
-                // A cell is declared at the unit's level, where no inner type
-                // exists, so its type constraint cannot name one.
-                (Access::Cell, BindingKind::Local { static_decl, .. }) => {
-                    if self.names_inner_type(&Mentions::of([&**static_decl])) {
-                        return None;
-                    }
-                }
+                // The copy-in declaration repeats the variable's type
+                // constraint, so a type of the scope it names is repeated too.
+                // (The cell itself is declared at the unit's level, where no
+                // inner type exists, so it is left untyped:
+                // [`Walker::cell_names_inner_type`].)
+                (Access::Cell, BindingKind::Local { static_decl, .. }) => stmts.push(static_decl),
                 (Access::Cell, _) => {}
             }
         }
