@@ -33,10 +33,12 @@ impl Interpreter {
     pub(super) fn exec_meta_op(&mut self, meta: MetaKind, op: Symbol) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap_or(Value::NIL);
         let left = self.stack.pop().unwrap_or(Value::NIL);
-        // A plain gather operand is streamed through its coroutine list
-        // (ADR-11678), so `(gather { loop { ... } }) Z (1..3)` stays lazy.
+        // Both iterate their operands, consuming an uncached Seq; a plain
+        // gather is streamed through its coroutine list (ADR-11678), so
+        // `(gather { loop { ... } }) Z (1..3)` stays lazy.
         let (left, right) = if matches!(meta, MetaKind::Zip | MetaKind::Cross) {
-            (self.gather_operand(left), self.gather_operand(right))
+            let left = self.iterated_operand(left, true, false)?;
+            (left, self.iterated_operand(right, true, false)?)
         } else {
             (left, right)
         };

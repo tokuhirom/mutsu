@@ -45,6 +45,15 @@ pub(crate) fn is_unbounded_operand(v: &Value) -> bool {
     }
 }
 
+/// Whether `v` is a `$`-itemized `Seq` (`my $s = gather {...}`): a zip or
+/// cross product reads it as one element (`$s Z 1` is `((($s) 1))`), as it
+/// does an itemized Array.
+// Cost: O(1).
+fn is_item_seq(v: &Value) -> bool {
+    v.is_seq_value()
+        && matches!(v.view(), ValueView::Seq(body) if matches!(body.view(), crate::value::SeqView::ItemSeq))
+}
+
 /// Whether `v` is an operand a cross product cannot finish: an infinite Range
 /// or a genuinely lazy list. A finite lazy list (a gather, a closure sequence
 /// with an endpoint) is reified instead.
@@ -138,6 +147,7 @@ impl Interpreter {
     pub(crate) fn cross_operand_list(&mut self, v: &Value) -> Result<Vec<Value>, RuntimeError> {
         match v.view() {
             ValueView::LazyList(ll) => self.force_lazy_list_vm(&ll),
+            _ if is_item_seq(v) => Ok(vec![v.clone()]),
             _ => Ok(crate::runtime::value_to_list(v)),
         }
     }
@@ -147,6 +157,7 @@ impl Interpreter {
     pub(crate) fn zip_operand_list(v: &Value) -> Vec<Value> {
         match v.view() {
             ValueView::Nil => vec![Value::NIL],
+            _ if is_item_seq(v) => vec![v.clone()],
             _ => crate::runtime::value_to_list(v),
         }
     }
