@@ -145,6 +145,12 @@ impl Interpreter {
                 Some(kt) => format!("{}{{{}}}", info.value_type, kt),
                 None => info.value_type,
             });
+        // No constraint to register, and no `__mutsu_type::` record under this
+        // name anywhere to shadow: the binder's own early return for that case,
+        // without resolving the name again (#12526).
+        if typed.is_none() && !Self::env_type_constraint_seen_for(sym) {
+            return;
+        }
         self.bind_param_type_constraint_sym(name, sym, typed.as_deref());
     }
 
