@@ -578,10 +578,9 @@ pub(crate) const ANY_LIST_FOR_CLOSED_SHAPES: [&str; 15] = [
 /// The `Capture` rows a `Match` reaches ([`DispatchShape::reaches_audited`];
 /// ADR-11276 §9.95): Rakudo's `Match` is a `Capture` and declares none of
 /// them, and their handlers (`method_table::collections::capture`) read a
-/// `Match`'s captures as its parts. `list` and `Hash` stay `Match`'s own
-/// answers in `methods_0arg` (a live view of the positional captures, a
-/// mutable `Hash`).
-pub(crate) const CAPTURE_FOR_MATCH: [&str; 7] = [
+/// `Match`'s captures as its parts, `list` as a live view of its positional
+/// captures and `Capture` as the `Match` itself (§9.96).
+pub(crate) const CAPTURE_FOR_MATCH: [&str; 9] = [
     "keys",
     "values",
     "kv",
@@ -589,6 +588,8 @@ pub(crate) const CAPTURE_FOR_MATCH: [&str; 7] = [
     "antipairs",
     "hash",
     "elems",
+    "list",
+    "Capture",
 ];
 
 /// The `Mu` methods every closed shape reaches ([`DispatchShape::reaches_audited`])

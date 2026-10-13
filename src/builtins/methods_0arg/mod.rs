@@ -1250,9 +1250,6 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
             return Some(result);
         }
         match method {
-            "list" => {
-                return Some(Ok(target.match_list_view()));
-            }
             // Cost: O(p), p = positional captures (copied once into the result).
             // The 0-arg members of `is_capture_list_method` that arrays answer
             // natively: a Match is never coerced to its `.Str` for them.
@@ -1265,16 +1262,13 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 return native_method_0arg(&list, Symbol::intern(method));
             }
-            // `keys`, `values`, `kv`, `pairs`, `antipairs`, `hash` and
-            // `elems` are `Capture`'s rows (`CAPTURE_FOR_MATCH`, §9.95).
+            // `keys`, `values`, `kv`, `pairs`, `antipairs`, `hash`, `elems`,
+            // `list` and `Capture` are `Capture`'s rows (`CAPTURE_FOR_MATCH`,
+            // §9.95, §9.96).
             "Hash" => {
                 return Some(Ok(target
                     .match_named()
                     .unwrap_or_else(|| Value::hash(ValueMap::default()))));
-            }
-            "Capture" => {
-                // Match.Capture returns self
-                return Some(Ok(target.clone()));
             }
             // Every other name is answered on the Match itself, never on its
             // matched string (ADR-11276 §9.96): a row of `Mu`, `Any`, `Capture`
