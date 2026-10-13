@@ -116,29 +116,32 @@ impl Interpreter {
         cf: &CompiledFunction,
         compiled_fns: &CompiledFns,
     ) {
+        let pkg_sym = self.current_package_sym();
+        let generation = self.caches.fn_resolve_gen;
+        // A family refused once is refused for every key: its calls skip the
+        // key derivation below (an allocation per call on
+        // `bench-multi-dispatch`'s subset family).
+        if self
+            .caches
+            .multi_plan_light_refused
+            .get(generation, &(pkg_sym, name_sym), || {
+                self.dispatch.fn_family_gens.of_name(name_sym)
+            })
+            .is_some()
+        {
+            return;
+        }
         let Some(keys) = self.multi_arg_type_keys(args) else {
             return;
         };
-        let key = (self.current_package_sym(), name_sym, keys);
-        let generation = self.caches.fn_resolve_gen;
-        // Recorded already, either way: a plan-light entry, or the negative
-        // `multi_light_cache` entry a family the light path cannot serve gets,
-        // so its calls stop re-deriving the plan key here (one allocation per
-        // call on `bench-multi-dispatch`'s subset family).
+        let key = (pkg_sym, name_sym, keys);
         if self
             .caches
-            .multi_light_cache
+            .multi_plan_light_cache
             .get(generation, &key, || {
                 self.dispatch.fn_family_gens.of_name(name_sym)
             })
             .is_some()
-            || self
-                .caches
-                .multi_plan_light_cache
-                .get(generation, &key, || {
-                    self.dispatch.fn_family_gens.of_name(name_sym)
-                })
-                .is_some()
         {
             return;
         }
@@ -148,12 +151,12 @@ impl Interpreter {
             self.light_bare_multi_plan(name, args, &key.2)
         };
         let Some((plan_key, plan)) = plan else {
-            self.caches.multi_light_cache.insert(
+            self.caches.multi_plan_light_refused.insert(
                 generation,
                 self.caches.fn_resolve_gen,
                 || self.dispatch.fn_family_gens.of_name(name_sym),
-                key,
-                None,
+                (pkg_sym, name_sym),
+                (),
             );
             return;
         };

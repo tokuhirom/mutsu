@@ -405,6 +405,10 @@ pub(crate) struct ResolutionCaches {
     /// same key, but the entry runs the family's stage program to pick the
     /// winner per call (ADR-12529 §2.4, `vm_multi_plan_light_call.rs`).
     pub(crate) multi_plan_light_cache: FamilyGenCache<FuncMultiResolveKey, Arc<MultiPlanLight>>,
+    /// `(package, name)` of the value-dependent families the plan light path
+    /// refused (no inline-checks program): their generic light calls skip
+    /// the per-call plan-key derivation (`note_multi_plan_light_call`).
+    pub(crate) multi_plan_light_refused: FamilyGenCache<(Symbol, Symbol), ()>,
     /// Type-keyed dispatch plans for bare-name multi calls: the gathered,
     /// ranked candidate passes, so a value-dependent family (`where`,
     /// `subset`) re-runs only its bind checks per call (#9967,
