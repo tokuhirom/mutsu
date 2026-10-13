@@ -2460,6 +2460,41 @@ they go with the `Blob`/`Buf` user-instance mechanism (the same one `methods_nar
 `method-rows-report.py --arms`: pure cascades 127 -> 121 arms (`dispatch_1arg.rs` 19 -> 13; `dispatch_2arg.rs` loses `flat`).
 Pinned in `t/oo/method/{flat-levels,int-str-script,mu-isa,fatrat-base}-method-rows.t` and `t/oo/method/zprintf-no-method.t`.
 
+### 9.105 Slice 5: a positional index and an `ACCEPTS` topic bind like Rakudo's candidates; four 1-arg arms are gone (2026-10-13)
+
+`refactor/11276-user-object-args`. The `AT-POS`/`EXISTS-POS` arms of `Uni` and `Capture` and the `ACCEPTS` arms of the quant
+hashes, `Pair` and `Range` in `methods_narg/dispatch_1arg.rs` only re-called their rows' handlers, but they also answered the
+arguments the guard step does not admit (a user object, a collection), so deleting them needed a way for a row to bind such an
+argument (§9.104, "Not done"). Probed: seven receivers × nine arguments (a user object, one with `.Int`/`.Numeric`/`.Str`, a type
+object, a `Range`, an `Int`, a `Str`, a `Set`, a `List`, a `Hash`) for the three names, then the edge cases (`Bool`, an enum, an
+`Int` subclass, a negative index, `Nil`), on `raku`, the binary before the slice and the new one. Decisions:
+
+1. **`RowFlags::INDEX_ARG`: a positional index is bound by Rakudo's candidates' rules** (`method_table::index_arg`). Rakudo's
+   `Range`, `Uni` and `List` declare `AT-POS`/`EXISTS-POS` for `Int:D` only; any other index reaches `Any`'s candidates, where
+   `AT-POS(Any:D \pos)` re-dispatches on `pos.Int`, `EXISTS-POS(Any:D \pos)` is `pos.Int == 0` (a non-`Int` index addresses the
+   one-element list `Any` is: `(1, 2).EXISTS-POS("1")` is `False`), and a type object is `Cannot use 'T' as an index`. `Capture`
+   declares `Int(Any) $pos` instead (`RowFlags::INDEX_COERCES`): everything is coerced, a type object to `0` with the warning. The
+   guard step admits only an `Int` to such a row; `invoke_unadmitted` binds every other argument, calling its `.Int` through the
+   interpreter (user code for a user object). A `Bool`, an `Int`-valued enum and an instance of an `Int` subclass are `Int:D` and
+   bind the row's own candidate. The flag is on the `Range` and `Uni` rows of both names, `Capture`'s, and `List.EXISTS-POS`;
+   `List.AT-POS`/`Array.AT-POS` stay `builtin_at_pos`'s (the subscript opcode's own binding). The cascade declines a call such a
+   row resolves (`index_arg::binds`), so the generic `AT-POS` arm no longer answers `\(1, 2).AT-POS(1..2)` with `Nil`.
+2. **`RowFlags::OBJECT_ARGS`: a row that binds `Mu \topic`** takes any argument from `invoke_unadmitted` but a `Junction`, a
+   `Failure` and a named argument. The `ACCEPTS` rows of the six quant hashes, `Pair` and `Range` are now `Handler::Interp` rows
+   with it (`collections/accepts.rs`): a quant hash coerces a topic of another kind to its own (`.Set`/`.Bag`/`.Mix`, so
+   `set(1, 2).ACCEPTS(1..2)` and `bag(1, 2).ACCEPTS(set(1, 2))` are `True`; both were `False`); `Pair` follows
+   `Type/Pair.rakudoc` (an `Associative` topic is looked up and smartmatched, any other topic is called the method the key names
+   and the truths compared, so `(abs => 5).ACCEPTS(-5)` is `True` and `(a => 1).ACCEPTS(5)` is `X::Method::NotFound`; the arm
+   compared values with `==`); `Range` compares a user object with the ends by `cmp` on its `.Stringy`, as Rakudo's
+   `(topic cmp $!min)` does. The runtime's `Pair.ACCEPTS` arm for an instance topic (`methods_call_dispatch.rs`) is deleted too.
+
+Not changed: `Set` has no `Int`/`Numeric` (#13281), so `(1..5).AT-POS(set(1, 2))` stays `X::Method::NotFound` (Rakudo: `3`) and
+`(1..5).ACCEPTS(set(1, 2))` `False` (Rakudo: `True`); `Capture.ACCEPTS` and `Uni.ACCEPTS` are still missing (#13282); a positional
+`Pair` argument is read as a named one (ADR-0021), so `(a => 1).ACCEPTS(a => 1)` is `X::Method::NotFound` where Rakudo's is
+`X::Multi::NoMatch` (it answered `True`); `\(1, 2, 3).AT-POS("x")` raises `X::Str::Numeric` where Rakudo fails to unbox.
+`method-rows-report.py --arms`: pure cascades 121 -> 116 arms (`dispatch_1arg.rs` 13 -> 8; the report counts the three guarded
+`ACCEPTS` arms once). Pinned in `t/collections/subscript/at-pos-index-arg-rows.t` and `t/oo/method/accepts-method-rows.t`.
+
 ## 10. Slice plan for the remaining migration (amendment 2026-10-06)
 
 This section replaces §6 item 3. It changes how the work is cut, not what is built: §2 and §4
