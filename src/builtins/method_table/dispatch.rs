@@ -500,7 +500,31 @@ pub(crate) fn shapeless_row(
                     | "chop"
                     | "flat"
                     | "isa"
+                    | "AT-POS"
+                    | "EXISTS-POS"
+                    | "AT-KEY"
+                    | "EXISTS-KEY"
             ))
+    {
+        return None;
+    }
+    // `Any`'s subscript protocol answers a value that is not `Positional`; a
+    // list with no settled shape (lazy, shaped, a `Seq`, a `Slip`, a buffer)
+    // indexes its elements through the interpreter, though it has no keys
+    // either (§9.106).
+    let positional = matches!(method.as_str(), "AT-POS" | "EXISTS-POS");
+    if (positional || matches!(method.as_str(), "AT-KEY" | "EXISTS-KEY"))
+        && match target.descalarize().view() {
+            ValueView::Array(..)
+            | ValueView::BufStorage(..)
+            | ValueView::Seq(..)
+            | ValueView::HyperSeq(..)
+            | ValueView::RaceSeq(..)
+            | ValueView::Slip(..)
+            | ValueView::LazyList(..) => positional,
+            ValueView::Junction { .. } | ValueView::Proxy { .. } | ValueView::Nil => true,
+            _ => false,
+        }
     {
         return None;
     }

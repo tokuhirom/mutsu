@@ -271,6 +271,13 @@ fn native_method_1arg_cascade(
             allomorph_accepts(target, arg).map(|result| Ok(Value::truth(result)))
         }
         "AT-POS" => {
+            // Any other index is bound through its `.Int` (`index_arg`).
+            if !matches!(
+                arg.view(),
+                ValueView::Int(_) | ValueView::Num(_) | ValueView::Rat(..) | ValueView::Str(_)
+            ) {
+                return None;
+            }
             // The index a Str, Rat or Num stands for (the `AT-POS` rows'
             // implementation, `method_table::positional`).
             let idx = match crate::builtins::method_table::positional::at_pos_index(arg) {
@@ -284,19 +291,8 @@ fn native_method_1arg_cascade(
             }
             {
                 match target.view() {
-                    ValueView::Str(s) => {
-                        let ch = s.chars().nth(idx).map(|c| Value::str(c.to_string()));
-                        Some(Ok(ch.unwrap_or(Value::NIL)))
-                    }
-                    ValueView::Instance { .. } if target.is_match_instance() => {
-                        let list_v = target.match_list();
-                        if let Some(ValueView::Array(positional, ..)) =
-                            list_v.as_ref().map(Value::view)
-                        {
-                            return Some(Ok(positional.get(idx).cloned().unwrap_or(Value::NIL)));
-                        }
-                        Some(Ok(Value::NIL))
-                    }
+                    // `Nil` answers every method with itself.
+                    ValueView::Nil => Some(Ok(Value::NIL)),
                     ValueView::Instance {
                         class_name,
                         attributes,
@@ -333,41 +329,6 @@ fn native_method_1arg_cascade(
                             })
                             .unwrap_or(Value::NIL)))
                     }
-                    // `Any.AT-POS`: an ordinary instance without a positional
-                    // protocol is a one-element list holding itself. User
-                    // `AT-POS` methods are resolved before this native fallback,
-                    // while the subscript opcode keeps an `AT-KEY` protocol from
-                    // being shadowed by this inherited default.
-                    ValueView::Instance { attributes, .. }
-                        if !attributes.contains_key("__mutsu_array_storage") =>
-                    {
-                        Some(Ok(if idx == 0 {
-                            target.descalarize().clone()
-                        } else {
-                            crate::value::RuntimeError::out_of_range_failure(
-                                "Index",
-                                Value::int(idx as i64),
-                                "0..0",
-                            )
-                        }))
-                    }
-                    // `Any.AT-POS`: a non-Positional value is a one-element list
-                    // holding itself under a positional subscript, so index 0
-                    // answers the value and everything else is out of range. The
-                    // Associative containers are included, the mirror of the
-                    // `EXISTS-POS` arm below — `%h.AT-POS(0)` is the hash rather
-                    // than a missing-method error, and `%h.AT-POS(1)` the Failure.
-                    _ if target.is_one_element_under_positional_subscript() => {
-                        Some(Ok(if idx == 0 {
-                            target.descalarize().clone()
-                        } else {
-                            crate::value::RuntimeError::out_of_range_failure(
-                                "Index",
-                                Value::int(idx as i64),
-                                "0..0",
-                            )
-                        }))
-                    }
                     _ => None,
                 }
             }
@@ -381,23 +342,10 @@ fn native_method_1arg_cascade(
             ) {
                 return Some(answer);
             }
-            // (Past here the index is a non-negative number.)
-            let idx = match arg.view() {
-                ValueView::Int(i) => i,
-                ValueView::Num(f) => f as i64,
-                ValueView::Str(s) if s.trim().parse::<f64>().is_err() => {
-                    return Some(Err(crate::builtins::methods_0arg::str_numeric_error(&s)));
-                }
-                _ => return Some(Ok(Value::FALSE)),
-            };
-            // `Any.EXISTS-POS`: a non-Positional value is a one-element list
-            // holding itself under a positional subscript, so index 0 is the
-            // only one that exists. The Associative containers are included —
-            // `Hash`/`Set`/`Bag`/`Mix` do not do `Positional`, so
-            // `%h.EXISTS-POS(1)` is False however many keys the hash has. A
-            // class declaring its own EXISTS-POS is never shadowed by this.
-            if target.is_one_element_under_positional_subscript() {
-                return Some(Ok(Value::truth(idx == 0)));
+            // `Nil.EXISTS-POS` is `False`; a value that is not `Positional`
+            // is `Any`'s row (`method_table::collections::any_subscript`).
+            if matches!(target.view(), ValueView::Nil) {
+                return Some(Ok(Value::FALSE));
             }
             None
         }
@@ -410,17 +358,11 @@ fn native_method_1arg_cascade(
             target,
             std::slice::from_ref(arg),
         ),
+        // A value that is not `Associative` answers `Any`'s rows
+        // (`method_table::collections::any_subscript`), a key of a hash or a
+        // quant hash its own (`method_table::subscript`, which also take a
+        // user-object key through `invoke_unadmitted`).
         "AT-KEY" => match target.view() {
-            // The associative rows' implementation (`method_table::subscript`).
-            ValueView::Hash(_)
-            | ValueView::Set(..)
-            | ValueView::Bag(..)
-            | ValueView::Mix(..)
-            | ValueView::Pair(..)
-            | ValueView::ValuePair(..)
-            | ValueView::Capture { .. } => {
-                crate::builtins::method_table::subscript::at_key(target, std::slice::from_ref(arg))
-            }
             // IO::Path::Parts does Associative: `$parts<volume>` returns the part.
             ValueView::Instance {
                 class_name,
@@ -434,52 +376,11 @@ fn native_method_1arg_cascade(
                     .cloned()
                     .unwrap_or(Value::NIL)))
             }
-            ValueView::Nil => Some(Ok(Value::package(crate::symbol::wk::any()))),
-            ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
-                Some(Ok(Value::package(crate::symbol::wk::any())))
-            }
-            // Anything else does not do `Associative`, and raku's `Any.AT-KEY`
-            // fails for it. An Instance/Mixin/Package may carry a user-defined
-            // AT-KEY, so those keep falling through to the runtime dispatcher.
-            _ if !matches!(
-                target.view(),
-                ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Package(_)
-            ) =>
-            {
-                Some(Ok(RuntimeError::assoc_indexing_failure(
-                    crate::runtime::utils::value_type_name(target),
-                )))
-            }
+            // `Nil` answers every method with itself.
+            ValueView::Nil => Some(Ok(Value::NIL)),
             _ => None,
         },
-        "EXISTS-KEY" => match target.view() {
-            // The associative rows' implementation (`method_table::subscript`).
-            ValueView::Hash(_)
-            | ValueView::Set(..)
-            | ValueView::Bag(..)
-            | ValueView::Mix(..)
-            | ValueView::Pair(..)
-            | ValueView::ValuePair(..)
-            | ValueView::Capture { .. } => crate::builtins::method_table::subscript::exists_key(
-                target,
-                std::slice::from_ref(arg),
-            ),
-            ValueView::Nil => Some(Ok(Value::FALSE)),
-            ValueView::Package(name) if matches!(name.resolve().as_str(), "Any" | "Mu") => {
-                Some(Ok(Value::FALSE))
-            }
-            // `Any.EXISTS-KEY` is always False, so a value that does not do
-            // `Associative` has no keys at all (the Instance/Mixin/Package
-            // carve-out mirrors the AT-KEY arm above).
-            _ if !matches!(
-                target.view(),
-                ValueView::Instance { .. } | ValueView::Mixin(..) | ValueView::Package(_)
-            ) =>
-            {
-                Some(Ok(Value::FALSE))
-            }
-            _ => None,
-        },
+        "EXISTS-KEY" if matches!(target.view(), ValueView::Nil) => Some(Ok(Value::FALSE)),
         // A user class composing a buffer role over a VMArray body
         // (`class B does Blob[uint8] is repr('VMArray')`) has no shape; the
         // `Blob` row's handler answers it and keeps its class.

@@ -47,7 +47,13 @@ pub(crate) fn invoke(
     if arg.is_string_pair_value() || arg.is_junction_value() || is_failure(arg) {
         return None;
     }
-    let id = resolve(Receiver::of_settled(target.descalarize())?, method, 1)?;
+    let target = target.descalarize();
+    // A receiver with no shape (an instance, a type object without one)
+    // reaches `Any`'s rows through its MRO (§9.106).
+    let id = match Receiver::of_settled(target) {
+        Some(receiver) => resolve(receiver, method, 1)?,
+        None => super::dispatch::shapeless_row(Some(&mut *interp), target, method, 1)?,
+    };
     let flags = row(id).flags;
     if !flags.contains(RowFlags::INDEX_ARG) {
         return None;
@@ -59,7 +65,7 @@ pub(crate) fn invoke(
     // A `Bool`, an `Int`-valued enum or an instance of a user subclass of
     // `Int` is an `Int:D`, which the row's own candidate binds.
     if let Some(index) = int_of(arg) {
-        return invoke_in(id, interp, target.descalarize(), &[index]);
+        return invoke_in(id, interp, target, &[index]);
     }
     if !flags.contains(RowFlags::INDEX_COERCES)
         && let Some(name) = type_object_name(arg)
@@ -87,10 +93,14 @@ pub(crate) fn invoke(
             })));
     }
     if flags.contains(RowFlags::INDEX_COERCES) || method.as_str() == "AT-POS" {
-        return invoke_in(id, interp, target.descalarize(), &[index]);
+        return invoke_in(id, interp, target, &[index]);
     }
-    // `Any.EXISTS-POS`: the one-element list `Any` is has only index 0.
-    Some(Ok(Value::truth(matches!(index.view(), ValueView::Int(0)))))
+    // `Any.EXISTS-POS`: the one-element list `Any` is has only index 0, which
+    // a type object does not hold.
+    let is_type_object = matches!(target.view(), ValueView::Package(_));
+    Some(Ok(Value::truth(
+        matches!(index.view(), ValueView::Int(0)) && !is_type_object,
+    )))
 }
 
 /// Whether `arg` is a `Failure`.

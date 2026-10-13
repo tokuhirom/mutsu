@@ -12,6 +12,7 @@ pub(crate) mod any_collection;
 mod any_interp;
 pub(crate) mod any_list_hash;
 pub(crate) mod any_misc;
+mod any_subscript;
 pub(crate) mod capture;
 pub(crate) mod clone;
 mod descriptor;
@@ -74,6 +75,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     quanthash::ROWS,
     subscript::ROWS,
     accepts::ROWS,
+    any_subscript::ROWS,
     range::ROWS,
     sampling::BOOL_ROWS,
     sampling::PICK_ROWS,
