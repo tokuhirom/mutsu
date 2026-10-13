@@ -2819,6 +2819,7 @@ t/modules/module-local-type-shadows-builtin.t
 t/modules/module-method-lexical-sub.t
 t/modules/module-method-resolves-in-its-own-unit.t
 t/modules/module-noarg-default-private-sub-comma.t
+t/modules/module-our-globals-outlive-scope.t
 t/modules/module-own-dynamic-does-not-leak.t
 t/modules/module-parse-warning-once.t
 t/modules/module-pod-late-call.t
@@ -2826,6 +2827,7 @@ t/modules/module-pod-variable.t
 t/modules/module-private-enum-qualified-scope.t
 t/modules/module-private-sub-does-not-leak.t
 t/modules/module-qualified-code-constants-off-env.t
+t/modules/module-qualified-our-constants-off-env.t
 t/modules/module-qualified-self-after-namespace-load.t
 t/modules/module-reuse-class-in-block.t
 t/modules/module-reused-role-does-in-nested-decl.t
@@ -2849,6 +2851,7 @@ t/modules/module-toplevel-enum-keys-off-frame-env.t
 t/modules/module-toplevel-package-names-off-frame-env.t
 t/modules/module-toplevel-qualified-names-off-frame-env.t
 t/modules/module-toplevel-routine-state-outlives-loader.t
+t/modules/module-transitive-use-does-not-leak-types.t
 t/modules/module-warning-location-misattributed.t
 t/modules/multi-method-where-module-scope.t
 t/modules/multi-rank-resolves-type-in-declaring-package.t
@@ -2870,6 +2873,7 @@ t/modules/operator-import-bare-module.t
 t/modules/our-array-hash-in-nested-scope.t
 t/modules/our-bare-scalar-default-in-module.t
 t/modules/our-bind-source-shadow-slot.t
+t/modules/our-constant-stash-name.t
 t/modules/our-container-bare-name-resolution.t
 t/modules/our-container-decl-preserves-value.t
 t/modules/our-guillemet-symbol-bind.t
@@ -2909,6 +2913,7 @@ t/modules/package-nested-type-name.t
 t/modules/package-our-sub-installed-at-compile-time.t
 t/modules/package-qualified-enum-value-transitive.t
 t/modules/package-qualified-unwritten-container-var-reads-any.t
+t/modules/package-qualified-var-lookup.t
 t/modules/package-quote-language-names.t
 t/modules/package-receiver-accessor-type-object-error.t
 t/modules/package-relative-type-name.t
@@ -4621,6 +4626,7 @@ t/rakuast/rakuast-pre-post-phasers.t
 t/rakuast/rakuast-prefix-bitwise-negation.t
 t/rakuast/rakuast-proto-onlystar-coercion.t
 t/rakuast/rakuast-qualified-decl-name.t
+t/rakuast/rakuast-qualified-module-constants.t
 t/rakuast/rakuast-qualified-variable-declaration.t
 t/rakuast/rakuast-quoted-method.t
 t/rakuast/rakuast-react-whenever-done.t
