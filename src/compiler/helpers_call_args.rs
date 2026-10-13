@@ -360,11 +360,13 @@ impl Compiler {
     pub(super) fn is_closure_literal_arg(arg: &Expr) -> bool {
         // `my sub (|c) { ... }` written as an argument parses to a `do`
         // around the anonymous routine; it is the same literal (#12803).
-        if let Expr::DoStmt(stmt) = arg
-            && let Stmt::Expr(inner) = stmt.as_ref()
-        {
-            return Self::is_closure_literal_arg(inner);
-        }
+        let arg = match arg {
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::Expr(inner) => inner,
+                _ => arg,
+            },
+            _ => arg,
+        };
         matches!(
             arg,
             Expr::Block(_)
