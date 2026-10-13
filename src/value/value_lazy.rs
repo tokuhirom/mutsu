@@ -479,6 +479,17 @@ impl LazyList {
         cloned
     }
 
+    /// Return a clone of this list tagged as a plain `Seq` again (the `.Seq`
+    /// coercion of a lazy `.List`/`.Array` view). The generator is untouched,
+    /// so laziness is preserved.
+    pub(crate) fn with_seq_context(&self) -> Self {
+        let mut cloned = self.clone();
+        cloned.list_context = false;
+        cloned.array_context = false;
+        cloned.itemized = false;
+        cloned
+    }
+
     /// Whether this list is a `.cache`-returned view whose sink is a no-op
     /// (see the `cached_no_sink` field doc on `LazyList`).
     pub(crate) fn is_cached_no_sink(&self) -> bool {
