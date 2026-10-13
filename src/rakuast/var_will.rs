@@ -43,12 +43,15 @@ pub(super) fn convert(stmt: &Stmt) -> Result<RakuAstNode, RuntimeError> {
     Ok(statement_expression(declaration))
 }
 
+/// A lowered `will` phaser: its kind and body.
+type LoweredPhaser = (PhaserKind, Vec<Stmt>);
+
 /// A declaration node without its `Trait::Will` entries, and the phasers they
 /// declare (kind and lowered body); `None` when it has none.
 // Cost: O(n), n = size of the phaser bodies.
 pub(super) fn split(
     node: &RakuAstNode,
-) -> Result<Option<(RakuAstNode, Vec<(PhaserKind, Vec<Stmt>)>)>, RuntimeError> {
+) -> Result<Option<(RakuAstNode, Vec<LoweredPhaser>)>, RuntimeError> {
     let Some(RakuAstField {
         value: RakuAstFieldValue::List(items),
         ..

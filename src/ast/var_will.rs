@@ -53,10 +53,13 @@ pub(crate) fn phase_kind(name: &str) -> Option<PhaserKind> {
     })
 }
 
+/// One `will` phaser of an expansion: its kind and the written body.
+pub(crate) type WillPhaser<'a> = (&'a PhaserKind, &'a [Stmt]);
+
 /// The declaration and its `will` phasers (kind and written body) of an
 /// expansion the parser built, or `None` for any other statement.
 // Cost: O(p), p = number of phasers.
-pub(crate) fn recognize(stmt: &Stmt) -> Option<(&Stmt, Vec<(&PhaserKind, &[Stmt])>)> {
+pub(crate) fn recognize(stmt: &Stmt) -> Option<(&Stmt, Vec<WillPhaser<'_>>)> {
     let Stmt::SyntheticBlock(stmts) = stmt else {
         return None;
     };
