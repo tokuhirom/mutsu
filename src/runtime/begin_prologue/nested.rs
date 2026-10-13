@@ -43,16 +43,17 @@
 //! A BEGIN is not lifted in these cases, and keeps its pre-ADR handling:
 //!
 //! - an enclosing inner scope declares, ahead of it, a pragma it cannot repeat
-//!   (see [`pragmas`]), or a routine that is not a plain `sub` (a `multi`, an
-//!   `our sub`, an operator, an exported one), which the prologue cannot
-//!   reproduce yet;
+//!   (see [`pragmas`]), or a routine the prologue cannot declare again (a
+//!   redeclaring one, one with a computed name, a token, a method-level proto;
+//!   see [`routines`]);
 //! - it names a type or package of an inner scope that cannot be declared again
 //!   unobservably (its body runs code), or reads an inner variable typed by
 //!   one;
-//! - it can reach a name dynamically (`EVAL`, `CALLER::`, symbolic lookup), or
-//!   calls a routine that is neither one of the scope's nor a core one (which
-//!   may evaluate a string where it was called from), in a scope that declares
-//!   a routine or a type, since it cannot say which one it needs;
+//! - it calls a routine that is neither one of the scope's nor a core one
+//!   (which may evaluate a string where it was called from), or a pseudo-package
+//!   qualified one (`MY::helper()`), in a scope that declares a routine or a
+//!   type, since it cannot say which one it needs (a body that uses `EVAL` or a
+//!   symbolic lookup gets every name of its scopes instead);
 //! - it sits in a body that cannot give it what it reads (a role or a class
 //!   declared in code that reads `self`, a `$?` variable or `$*PACKAGE`; see
 //!   [`phasers`]). A `BEGIN` of a class or package body, or of one of its
@@ -65,9 +66,12 @@ mod cell_ast;
 pub(super) use cell_ast::slot_read;
 mod decl_regex;
 mod decls;
+mod mentions;
 mod phasers;
 mod pragmas;
+mod routine_copy;
 mod routines;
+mod scan;
 pub(super) mod var_traits;
 mod walk;
 
@@ -75,7 +79,8 @@ use super::package_phasers::Enclosing;
 use crate::ast::{Expr, PhaserKind, Stmt};
 use cell_ast::{decl_from_cell, read_var, renamed_static_decl, sigil_of, static_scalar};
 use decls::TypeDecl;
-use routines::{Access, Dependencies, FrameBlock, Routine, Scan};
+use routines::{Access, Dependencies, FrameBlock, Routine};
+use scan::Scan;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::AtomicU64;
 
@@ -169,11 +174,6 @@ struct Frame {
     /// statement. A lifted BEGIN that calls one gets its own copy
     /// ([`Routine`]).
     routines: Vec<Routine>,
-    /// Routines declared in this scope that the prologue cannot copy but that a
-    /// body can only reach by calling them by name: a `multi`, an `our` or
-    /// exported `sub`. A lifted BEGIN that calls any name it cannot copy stays
-    /// behind, so these need no more than their presence recorded.
-    uncopyable_routines: bool,
     /// Edits to this scope's statement list, applied once it has been walked.
     edits: Vec<(usize, Edit)>,
     /// Phasers prepended to this scope's statements once it has been walked.

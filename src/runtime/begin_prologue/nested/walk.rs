@@ -304,6 +304,11 @@ impl Walker<'_> {
                     self.block_current_frame();
                 }
             }
+            // A proto of a multi a lifted BEGIN calls is copied with its
+            // candidates.
+            Stmt::ProtoDecl { is_method: false, .. } if !self.directly_in_package() => {
+                self.declare_routine(stmt)
+            }
             Stmt::ProtoDecl { .. }
             | Stmt::MethodDecl { .. }
             | Stmt::ProtoToken { .. }

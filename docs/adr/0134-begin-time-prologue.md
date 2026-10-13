@@ -491,6 +491,44 @@ nested BEGIN, implemented** (`src/runtime/begin_prologue/nested/pragmas.rs`,
   variable, since the undeclared name resolves to nothing the unit declares,
   and the pragmas listed above.
 
+**Slice 2 follow-up — multis, `our`, exported and operator routines, and
+dynamic lookup, implemented** (`src/runtime/begin_prologue/nested/routines.rs`,
+`t/control/begin-prologue-inner-calls.t`; #10395).
+
+- **Multis.** A `multi` candidate and a sub-level `proto` are copied like a
+  plain `sub`. A call to a multi brings every candidate (and proto) of the name
+  it can reach: those of the innermost scope that declares one, and of each
+  scope further out, up to one that declares the name as a plain routine,
+  which shadows the rest. The unit's own candidates are already declared by the
+  prologue. A proto's `{*}` counts as a core call. A body that reads a multi as
+  `&name` (not only calls it) is not lifted: that is the proto object, which it
+  may change (`BEGIN &p.add_dispatchee(...)`), and a change to the copy would
+  be lost (`t/routines/dispatch/proto-add-dispatchee-closure.t`).
+- **`our` and exported routines.** The copy drops `our` and `is export`: it
+  is lexical only, so the body reaches it by its bare name, and the in-place
+  declaration still installs into the package and exports. The scope therefore
+  no longer needs `Frame::uncopyable_routines`, which is gone.
+- **Operators and other category routines** (`sub infix:<plus>`) are copied
+  whether or not the body seems to call one, as operator code variables are:
+  the parser registered their syntax for the rest of the scope, which a scan
+  need not see. The `__prec` trait carrying the precedence and associativity is
+  copied with them.
+- **Dynamic lookup.** A body (or a copied routine) that uses `EVAL`, `.EVAL` or
+  a symbolic lookup (`::($name)`, `&::($name)`) gets every variable and routine
+  of the scopes it sees, the innermost of each name, which is all such a lookup
+  can reach. That fixes the same body in a scope with no routine, too: `sub f {
+  my $x; BEGIN EVAL 'say $x' }` used to fail at startup with `Variable '$x' is
+  not declared`, and now sees the static `(Any)`, as on rakudo.
+  - An `EVAL` counts as naming every type and as changing a type through its
+    metaobject, so a body that uses one in a scope that declares a type is
+    still not lifted (`sub f { my class K { }; BEGIN EVAL 'say K.^name' }`).
+- **Still not lifted.** A redeclaring routine, one with a computed name, a
+  `token`/`rule`/`regex` or a method-level proto declared ahead; a
+  pseudo-package qualified call (`MY::helper()`); a call to a routine that is
+  neither one of the scope's nor a core one. `Lifted::halted` is unchanged.
+  `t/control/begin-time-region-unwind.t` now uses a `my token` to keep its
+  BEGIN on the in-place path.
+
 **Slice 3 — `use`, `constant` and conditional `use` implemented**
 (`src/runtime/begin_prologue/mod.rs`,
 `t/modules/import-export/use-if-begin-time.t`,
