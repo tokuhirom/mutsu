@@ -47,6 +47,9 @@ const READ_ONLY_METHODS: &[&str] = &[
 #[derive(Default)]
 pub(super) struct CodeUses {
     unbounded: HashSet<String>,
+    /// The next expression visited is the invocant of a read-only method or
+    /// the callee of a call, which the walk visits first.
+    harmless_target: bool,
 }
 
 impl CodeUses {
@@ -66,31 +69,19 @@ impl CodeUses {
 
 impl<'ast> Visit<'ast> for CodeUses {
     fn visit_expr(&mut self, expr: &'ast Expr) {
+        let harmless = std::mem::take(&mut self.harmless_target);
         match expr {
-            Expr::CodeVar(name) => {
+            Expr::CodeVar(name) if !harmless => {
                 self.unbounded.insert(name.clone());
             }
-            Expr::MethodCall {
-                target,
-                name,
-                args,
-                modifier,
-                ..
-            } => match &**target {
-                Expr::CodeVar(code) => {
-                    let method = name.resolve();
-                    if modifier.is_some() || !READ_ONLY_METHODS.contains(&method.as_str()) {
-                        self.unbounded.insert(code.clone());
-                    }
-                    args.iter().for_each(|arg| self.visit_expr(arg));
-                }
-                _ => walk_expr(self, expr),
-            },
-            // `&p(...)`, `&p.(...)`: a call through the routine.
-            Expr::CallOn { target, args } if matches!(&**target, Expr::CodeVar(_)) => {
-                args.iter().for_each(|arg| self.visit_expr(arg));
+            Expr::MethodCall { name, modifier, .. } => {
+                self.harmless_target =
+                    modifier.is_none() && READ_ONLY_METHODS.contains(&name.resolve().as_str());
             }
-            _ => walk_expr(self, expr),
+            // `&p(...)`, `&p.(...)`: a call through the routine.
+            Expr::CallOn { .. } => self.harmless_target = true,
+            _ => {}
         }
+        walk_expr(self, expr);
     }
 }
