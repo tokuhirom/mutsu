@@ -122,7 +122,8 @@ pub(crate) fn interpreter_version() -> String {
     // declaration text), shifting the discriminants after `Regex`.
     // 21: source spelling records gained semicolon-separated array sections.
     // 22: source spelling records gained labelled blocks and imported terms.
-    const CACHE_FORMAT_VERSION: u32 = 25;
+    // 26: `ModuleLoadFacts` gained `routine_enums` (#13010).
+    const CACHE_FORMAT_VERSION: u32 = 26;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
