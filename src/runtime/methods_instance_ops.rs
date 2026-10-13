@@ -2736,8 +2736,14 @@ impl Interpreter {
                     }
                 }
 
-                // Try user-defined FALLBACK method
-                if method != "FALLBACK" && self.has_user_method(&class_name.resolve(), "FALLBACK") {
+                // Try user-defined FALLBACK method. `.REPR` is a universal
+                // (Mu) pseudo-method that every object answers itself, so a
+                // class's FALLBACK must never see it (Gnome::N's native-sub
+                // setup does `self.package.REPR` on a class with a FALLBACK).
+                if method != "FALLBACK"
+                    && !(method == "REPR" && args.is_empty())
+                    && self.has_user_method(&class_name.resolve(), "FALLBACK")
+                {
                     let mut fallback_args = vec![Value::str(method.to_string())];
                     fallback_args.extend(args);
                     return self.call_method_with_values(target, "FALLBACK", fallback_args);
