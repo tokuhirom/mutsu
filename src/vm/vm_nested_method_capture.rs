@@ -111,21 +111,25 @@ impl Interpreter {
         // them from its capture.
         let owner = self.lexicals.nested_capture_owners.last().copied();
         let group_cells = self.nested_capture_group_cells(owner, spec);
-        // Scalars are keyed by their bare name; `@`/`%`/`&` values are their
-        // own containers, and a sigilless term is a binding.
-        let scalars: Vec<Symbol> = env
+        // `@`/`%` variables are boxed too (#13056): the array value is a
+        // copy-on-write node, so a thread whose `push` copied it would write
+        // the copy back into its own snapshot of the method table and the
+        // other threads would never see it. In a cell, the mutation goes
+        // through the one shared container (`celled_array_mutate`). A `&`
+        // value is a routine and a sigilless term is a binding.
+        let boxed: Vec<Symbol> = env
             .iter()
             .filter(|(sym, v)| {
                 !v.is_container_ref()
                     && sym.with_str(|name| {
                         crate::env::is_plain_user_lexical(name)
-                            && !name.starts_with(['@', '%', '&'])
+                            && !name.starts_with('&')
                             && !name.starts_with(crate::term_names::TERM_PREFIX)
                     })
             })
             .map(|(sym, _)| *sym)
             .collect();
-        for sym in scalars {
+        for sym in boxed {
             let cell = group_cells
                 .as_ref()
                 .and_then(|cells| cells.get_sym(sym))
