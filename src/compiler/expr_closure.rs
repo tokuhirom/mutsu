@@ -379,6 +379,11 @@ impl Compiler {
         };
         if is_pointy {
             compiled.is_pointy_block = true;
+            // A body TRIR proves runs as TRIR from a value call (#8335).
+            let plain = !is_whatever_code && return_type.is_none() && !is_rw && !is_raw;
+            if plain && custom_traits.is_empty() && !compiled.uses_capture {
+                compiled.closure_trir = self.compile_block_trir(param_defs, params, body);
+            }
         }
         compiled.declarator_doc = declarator_doc;
         let esc = self.escaping_position;
@@ -559,6 +564,11 @@ impl Compiler {
         compiled.supply_emitter_sym = compiled
             .is_supply_block_body
             .then(|| crate::symbol::Symbol::intern(param));
+        // A `-> $x { ... }` body TRIR proves runs as TRIR from a value call
+        // (#8335).
+        if pointy_alias_param && !compiled.is_supply_block_body && !compiled.uses_capture {
+            compiled.closure_trir = self.compile_pointy_trir(param, &params, body);
+        }
         let esc = self.escaping_position;
         let cc_idx = self.add_closure_code_baked(compiled, esc);
         let idx = self.code.add_stmt(Stmt::SubDecl {

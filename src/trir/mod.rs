@@ -41,6 +41,7 @@ use crate::value::Value;
 pub(crate) mod class_operand;
 pub(crate) mod compile;
 pub(crate) mod entry;
+mod entry_closure;
 mod entry_values;
 pub(crate) mod exec;
 pub(crate) mod exec_call;
@@ -266,6 +267,10 @@ pub(crate) struct TrChunk {
     /// body -- a TRIR chunk's execution does not maintain
     /// `Interpreter::lexical_fatal_mode` (see that field's doc comment).
     pub(crate) captured_fatal_mode: bool,
+    /// A closure literal's body (`compile::compile_block`), entered only from
+    /// a value call: its `routine_stack` entry is a block's, which
+    /// `&?ROUTINE` and `return` look past.
+    pub(crate) block: bool,
 }
 
 /// The next chunk identity. Wrapping is unreachable in practice (a program

@@ -20,7 +20,7 @@ use crate::value::{RuntimeError, Value, ValueView};
 
 /// Where a native `is rw` parameter's result goes when the routine returns.
 #[derive(Clone, Copy)]
-enum RwTarget {
+pub(super) enum RwTarget {
     /// A caller frame slot holding the value directly.
     Slot(u32),
     /// A caller frame slot holding a shared container cell; the write goes
@@ -30,7 +30,7 @@ enum RwTarget {
 
 /// One bound `is rw` parameter at the OUTER boundary: the spill slot holding
 /// its value for the duration of the call, and where it goes back.
-type RwPlan = ([(u16, RwTarget); 4], usize);
+pub(super) type RwPlan = ([(u16, RwTarget); 4], usize);
 
 /// The package a TRIR body must resolve names in: the routine's own declaring
 /// package, exactly as `call_compiled_function_named_inner` establishes it for
@@ -76,9 +76,13 @@ impl Interpreter {
             return None;
         }
         let pkg = site.link.pkg;
-        self.run_trir_from_outside(&chunk, pkg, compiled_fns, |me, frame| {
-            me.trir_bind_from_slots(&chunk, frame, site, caller_code)
-        })
+        self.run_trir_from_outside(
+            &chunk,
+            pkg,
+            compiled_fns,
+            |me, frame| me.trir_bind_from_slots(&chunk, frame, site, caller_code),
+            Self::trir_seed_outers,
+        )
     }
 
     /// Run `cf`'s chunk with the arguments at `stack[args_base..]`.
@@ -101,9 +105,13 @@ impl Interpreter {
             return None;
         }
         let pkg = trir_body_package(cf);
-        let out = self.run_trir_from_outside(&chunk, pkg, compiled_fns, |me, frame| {
-            me.trir_bind_from_stack(&chunk, frame, args_base, caller_code)
-        })?;
+        let out = self.run_trir_from_outside(
+            &chunk,
+            pkg,
+            compiled_fns,
+            |me, frame| me.trir_bind_from_stack(&chunk, frame, args_base, caller_code),
+            Self::trir_seed_outers,
+        )?;
         self.stack.truncate(args_base);
         Some(out)
     }
@@ -112,12 +120,13 @@ impl Interpreter {
     /// `is rw` parameters, and close the frame — on every exit path.
     ///
     /// Shared by both doors so the frame bookkeeping exists once.
-    fn run_trir_from_outside(
+    pub(super) fn run_trir_from_outside(
         &mut self,
         chunk: &TrChunk,
         pkg: Option<Symbol>,
         compiled_fns: &CompiledFns,
         bind: impl FnOnce(&mut Self, TrFrame) -> Option<RwPlan>,
+        seed: impl FnOnce(&mut Self, &TrChunk, TrFrame) -> bool,
     ) -> Option<Result<Value, RuntimeError>> {
         // The frame carries one SPILL slot per `is rw` parameter above its own
         // native slots: the caller's variable lives in a `Value`, which has no
@@ -136,7 +145,7 @@ impl Interpreter {
         // the free variables resolves the callee's lexicals by name, and so
         // does every `CallGen` the body makes.
         let guard = pkg.map(|p| self.enter_package_guarded_sym(p));
-        if !self.trir_seed_outers(chunk, frame) {
+        if !seed(self, chunk, frame) {
             drop(guard);
             self.trir.pop_frame(frame);
             super::stats::record(super::stats::TrirEntry::BindDeclined);

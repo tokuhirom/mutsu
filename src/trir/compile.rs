@@ -82,6 +82,12 @@ pub(crate) struct TrirCompiler<'a> {
     /// Addresses of the routine body's own top-level statements: only a
     /// declaration there is a frame lexical.
     top_level: HashSet<usize>,
+    /// Compiling a closure literal's body ([`compile_block`]), not a
+    /// routine's. A block is not a `return` boundary, its free variables are
+    /// its capture's, and it is entered from a value call with no env frame
+    /// of its own, so a construct that would reach past its own slots
+    /// declines (#8335).
+    pub(super) block: bool,
 }
 
 /// A statement's variant name, for a decline report.
@@ -106,6 +112,8 @@ pub(crate) struct TrirScope<'a> {
     /// Mirrors `CompiledFunction::captured_fatal_mode` (#9521); see
     /// `TrChunk::captured_fatal_mode`'s doc comment.
     pub(crate) captured_fatal_mode: bool,
+    /// The body is a closure literal's (`TrirCompiler::block`).
+    pub(crate) block: bool,
 }
 
 /// `(routine name, positional arity)` -> its `CompiledFns` key and body
@@ -129,6 +137,7 @@ impl<'a> TrirCompiler<'a> {
             fns,
             frame_lexicals,
             captured_fatal_mode,
+            block,
         } = scope;
         if !TrChunk::enabled() {
             return None;
@@ -175,6 +184,7 @@ impl<'a> TrirCompiler<'a> {
             inline_stack: Vec::new(),
             methods: Vec::new(),
             top_level: body.iter().map(|s| s as *const Stmt as usize).collect(),
+            block,
         };
         c.collect_inline_subs(body, frame_lexicals);
         if c.declare_params(param_defs).is_none() {
@@ -184,6 +194,13 @@ impl<'a> TrirCompiler<'a> {
         let Some(last) = c.compile_body(body, returns_nil) else {
             return c.declined(name);
         };
+        // A block runs on its caller's env with no frame of its own: a call
+        // out of it would resolve names (and let a callee observe the frame)
+        // without the capture the untyped closure entry installs.
+        if block && (!c.calls.is_empty() || !c.methods.is_empty()) {
+            c.note_decline(|| "a call in a closure body".to_string());
+            return c.declined(name);
+        }
         // The routine's value: `--> Nil` discards it, otherwise the last
         // statement's value is the result.
         match (returns_nil, last) {
@@ -206,6 +223,7 @@ impl<'a> TrirCompiler<'a> {
             methods: c.methods,
             def_file: std::sync::OnceLock::new(),
             captured_fatal_mode,
+            block,
         })
     }
 
@@ -493,6 +511,30 @@ pub(crate) fn compile_routine(
     scope: TrirScope<'_>,
 ) -> Option<std::sync::Arc<TrChunk>> {
     let chunk = TrirCompiler::compile(name, param_defs, params, return_type, body, scope);
+    dump::report(name, chunk.as_ref());
+    chunk.map(std::sync::Arc::new)
+}
+
+/// Compile a closure literal's body to TRIR, or answer `None` (#8335).
+///
+/// The closure's chunk is entered from a value call
+/// (`Interpreter::try_call_closure_trir`) with no env frame, so only a body
+/// that reaches nothing past its own slots and its captured cells compiles:
+/// no `return` (a block's leaves its enclosing routine), no call, no dynamic
+/// variable.
+pub(crate) fn compile_block(
+    param_defs: &[crate::ast::ParamDef],
+    params: &[String],
+    body: &[crate::ast::Stmt],
+    captured_fatal_mode: bool,
+) -> Option<std::sync::Arc<TrChunk>> {
+    let name = crate::symbol::wk::pointy_block();
+    let scope = TrirScope {
+        captured_fatal_mode,
+        block: true,
+        ..TrirScope::default()
+    };
+    let chunk = TrirCompiler::compile(name, param_defs, params, None, body, scope);
     dump::report(name, chunk.as_ref());
     chunk.map(std::sync::Arc::new)
 }

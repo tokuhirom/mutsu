@@ -3,11 +3,11 @@ use super::*;
 /// What a call site's argument descriptor says about its arguments
 /// ([`Interpreter::stack_arg_kinds`]).
 #[derive(Clone, Copy, Default)]
-pub(super) struct CallArgKinds {
+pub(crate) struct CallArgKinds {
     /// A syntactically named argument (ADR-0021).
-    pub(super) named: bool,
+    pub(crate) named: bool,
     /// A `|EXPR` argument-list interpolation (ADR-0054).
-    pub(super) slip: bool,
+    pub(crate) slip: bool,
 }
 use crate::symbol::Symbol;
 
@@ -97,7 +97,7 @@ impl Interpreter {
     /// by the time the positional-light binder sees the value.
     // Cost: O(a), a = the call's compiled arguments.
     #[inline]
-    pub(super) fn stack_arg_kinds(
+    pub(crate) fn stack_arg_kinds(
         code: &CompiledCode,
         arg_sources_idx: Option<u32>,
     ) -> CallArgKinds {

@@ -6494,6 +6494,10 @@ pub(crate) struct CompiledCode {
     /// ADR-0110 §3.3: the compile-time-resolved TRIR call sites this chunk
     /// contains, indexed by [`OpCode::CallTrir`]'s operand.
     pub(crate) trir_call_sites: Vec<crate::trir::TrCallSite>,
+    /// A closure literal's body compiled to TRIR (#8335,
+    /// `trir::compile::compile_block`), run by a value call of the closure
+    /// instead of the untyped closure entry when the call's shape allows.
+    pub(crate) closure_trir: Option<std::sync::Arc<crate::trir::TrChunk>>,
     /// The typed reduction operators this chunk contains, indexed by
     /// [`OpCode::Reduction`]'s operand. A reduction's operator shape is fixed
     /// by the source text, so it is decoded once here instead of being
@@ -7605,6 +7609,9 @@ pub(crate) struct CompiledCode {
     /// EVERY closure creation — see `capture_free_var_set` / `capture_local_set`.
     pub(crate) free_var_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
     pub(crate) local_sym_set: std::sync::OnceLock<rustc_hash::FxHashSet<Symbol>>,
+    /// Whether the light closure call can run this body, and what it needs
+    /// (#8335, `vm::LightClosureShape`); settled on the first call.
+    pub(crate) light_closure_shape: std::sync::OnceLock<Option<crate::vm::LightClosureShape>>,
     /// Memo of [`Self::capture_hidden_set`].
     pub(crate) capture_hidden_set: std::sync::OnceLock<Option<Arc<rustc_hash::FxHashSet<Symbol>>>>,
     /// Lazily-built list of the env keys a closure capture probes by name
@@ -8041,6 +8048,7 @@ impl CompiledCode {
             proto_token_plans: Vec::new(),
             decl_plans: Vec::new(),
             trir_call_sites: Vec::new(),
+            closure_trir: None,
             reduction_specs: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),
@@ -8166,6 +8174,7 @@ impl CompiledCode {
             free_var_rebinds: Vec::new(),
             free_var_sym_set: std::sync::OnceLock::new(),
             local_sym_set: std::sync::OnceLock::new(),
+            light_closure_shape: std::sync::OnceLock::new(),
             capture_hidden_set: std::sync::OnceLock::new(),
             capture_probe_keys: std::sync::OnceLock::new(),
             free_enum_bare_keys: std::sync::OnceLock::new(),

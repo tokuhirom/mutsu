@@ -32,6 +32,7 @@ impl Encode for CompiledCode {
             proto_token_plans,
             decl_plans,
             trir_call_sites,
+            closure_trir,
             reduction_specs,
             locals,
             locals_sym,
@@ -156,6 +157,7 @@ impl Encode for CompiledCode {
             free_var_rebinds,
             free_var_sym_set: _,
             local_sym_set: _,
+            light_closure_shape: _,
             capture_hidden_set: _,
             capture_probe_keys: _,
             free_enum_bare_keys: _,
@@ -181,6 +183,7 @@ impl Encode for CompiledCode {
         Compat(proto_token_plans).encode(encoder)?;
         decl_plans.encode(encoder)?;
         trir_call_sites.encode(encoder)?;
+        closure_trir.encode(encoder)?;
         reduction_specs.encode(encoder)?;
         locals.encode(encoder)?;
         locals_sym.encode(encoder)?;
@@ -324,6 +327,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             proto_token_plans: decode_serde(decoder)?,
             decl_plans: Decode::decode(decoder)?,
             trir_call_sites: Decode::decode(decoder)?,
+            closure_trir: Decode::decode(decoder)?,
             reduction_specs: Decode::decode(decoder)?,
             locals: Decode::decode(decoder)?,
             locals_sym: Decode::decode(decoder)?,
@@ -449,6 +453,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             free_var_rebinds: Decode::decode(decoder)?,
             free_var_sym_set: Default::default(),
             local_sym_set: Default::default(),
+            light_closure_shape: Default::default(),
             capture_hidden_set: Default::default(),
             capture_probe_keys: Default::default(),
             free_enum_bare_keys: Default::default(),

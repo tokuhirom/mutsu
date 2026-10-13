@@ -28,6 +28,12 @@ impl TrirCompiler<'_> {
     /// operand stacks are truncated when it is popped, so a `return` from the
     /// middle of an expression leaves nothing behind.
     pub(super) fn compile_return(&mut self, args: &[Expr]) -> Option<TrKind> {
+        if self.block {
+            // A block is not a `return` boundary: its `return` leaves the
+            // routine it is written in, which the closure entry cannot reach.
+            self.note_decline(|| "a `return` in a closure body".to_string());
+            return None;
+        }
         if !self.inline_stack.is_empty() {
             // Unreachable: `declare_inline_sub` refuses a body with a
             // `return`. Declining keeps it that way if that scan misses one.

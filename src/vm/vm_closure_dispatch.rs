@@ -207,6 +207,10 @@ impl Interpreter {
         // `.map`/`.grep` argument before binding. A `MapGrep` source is always
         // finite, so this cannot hang.
         self.reify_map_grep_seq_args(&args)?;
+        // A closure literal whose body TRIR proves runs as TRIR (#8335).
+        if let Some(out) = self.try_call_closure_trir(data, cc, &args, compiled_fns) {
+            return out;
+        }
         // RAII (`PragmaGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
         // restores pragma state on drop -- including on a Rust panic unwind
         // through `call_compiled_closure_with_topic` below -- rather than a
@@ -312,6 +316,13 @@ impl Interpreter {
         // inherit the carrier's raw-binding-error request.
         let suppress_bind_enhance =
             std::mem::take(&mut self.dispatch.suppress_binding_error_enhance);
+        // A body that can observe nothing below runs light (#8335).
+        if explicit_topic.is_none()
+            && !capture_rw_topic
+            && let Some(out) = self.try_call_closure_light(data, cc, &args, compiled_fns)
+        {
+            return out;
+        }
         // What the call site knew about the argument (see [`TopicArgSite`]).
         let topic_arg_is_bare = site.bare;
         let topic_alias_source = site
