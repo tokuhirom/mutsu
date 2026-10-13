@@ -363,40 +363,9 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             let s = arg.to_string_value();
             Some(uniparse_impl(&s))
         }
-        "uniprop" => {
-            // uniprop(target) — returns General_Category
-            match arg.view() {
-                ValueView::Int(i) => {
-                    let cp = i as u32;
-                    Some(Ok(
-                        crate::builtins::uniprop::unicode_property_value_for_codepoint(cp, None),
-                    ))
-                }
-                ValueView::Package(_) => {
-                    // uniprop(Str) or uniprop(Int) — type object, not instance
-                    let msg = "Cannot resolve caller uniprop".to_string();
-                    let mut attrs = std::collections::HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(
-                        crate::symbol::Symbol::intern("X::Multi::NoMatch"),
-                        attrs,
-                    );
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    Some(Err(err))
-                }
-                _ => {
-                    let s = arg.to_string_value();
-                    if s.is_empty() {
-                        return Some(Ok(Value::NIL));
-                    }
-                    let ch = s.chars().next().unwrap();
-                    Some(Ok(Value::str_from(
-                        crate::builtins::unicode::unicode_general_category(ch),
-                    )))
-                }
-            }
-        }
+        // `uniprop($x)` is `$x.uniprop` -- one implementation.
+        // Cost: O(1) (a table lookup).
+        "uniprop" => crate::builtins::method_table::scalars::unicode::uniprop(arg, &[]),
         "is-prime" => Some(crate::builtins::methods_0arg::coercion::value_is_prime(arg)),
         // unival/univals delegate to the .unival/.univals method implementation
         // (dispatch_core_unicode) — single source of truth, no separate copy.
