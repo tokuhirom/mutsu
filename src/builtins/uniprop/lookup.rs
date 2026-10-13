@@ -420,6 +420,12 @@ fn east_asian_width_matches(actual: &str, target: &str) -> bool {
     !short.is_empty() && short.eq_ignore_ascii_case(target.trim())
 }
 
+/// The short East_Asian_Width alias (`W`, `Na`, ...) of a codepoint.
+// Cost: O(1) (range table).
+pub(crate) fn east_asian_width_abbrev(ch: char) -> &'static str {
+    east_asian_width_short(&super::char_props::unicode_east_asian_width(ch))
+}
+
 /// The short property-value alias (`W`, `Na`, ...) of an East_Asian_Width
 /// value, or `""` for an unknown one.
 fn east_asian_width_short(value: &str) -> &'static str {
